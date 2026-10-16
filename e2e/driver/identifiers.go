@@ -87,10 +87,6 @@ var AuditedSources = []string{
 	// in the editor's own files — `api.<key>.part.<i>.remove` / `.unbind` in the token view.
 	"ApiFieldEditor.swift",
 	"ApiTokenView.swift",
-	// 3a-i joins here, in the Cover rung that named its surface `git`: its
-	// rows and spine marks are tap targets, and an unnamed one added later
-	// should fail the gate the day it lands.
-	"GitPane.swift",
 	// 3b-i joins here, in the Cover rung that named its surface `editor`. The
 	// unsaved prompt (`UnsavedPromptBar`) lives in this file too, so the
 	// window-level prompt's buttons are under the gate with the pane's.

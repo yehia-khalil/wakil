@@ -23,10 +23,14 @@ executable's directory and an environment, and returns a `WakilWiring`. In order
    - `registerPaneContentActions` (`Registry/PaneContentActions.swift`)
    - `registerTerminalActions` (`Terminal/TerminalActions.swift`), given an `ActiveShellContext`
    - `registerApiActions` (`Api/ApiActions.swift`), which returns the `ApiPaneResolver`
-   - `registerGitActions` (`Git/GitActions.swift`), given a `GitRootsSource`
+   - `GitStatus` (`Git/GitStatus.swift`), built over the git client and `GitRootsSource`, handed to
+     the editor actions, `GitSource` and the window (3b-iii: the Git pane's actions are gone)
+   - `registerEditorActions` (`Editor/EditorActions.swift`), given the files client, the window's
+     file lists, the `GitStatus` and `GitRootsSource`
 5. Tells the registry the active project's production flags (`setEnvironmentProduction`), read
    through `ContextStore`, so `--dispatch` prices environments correctly with no window.
-6. Builds the `VocabularyStore`: live sources `WakilSource`, `PaneSource`, `GitSource`; cached
+6. Builds the `VocabularyStore`: live sources `WakilSource`, `PaneSource`, `GitSource` (which reads
+   the `GitStatus`); cached
    sources `SchemaSource` (when there is a database client) and `CodeSource` (cache under
    `~/.wakil/vocabulary`).
 7. Returns the wiring, adding `FSEventsRootWatcher()`, a `ConfirmationBroker()` and
@@ -39,8 +43,8 @@ What the wiring offers:
 - **`mcpSurface`** — the registry, pane store, layout store, confirmations and a settings reader as
   one `MCPSurface`. It is the only public way to get one, so the socket server cannot be given one
   assembly's registry and another's stores.
-- **`useActiveContext(of:)`** — points the terminal actions' `ActiveShellContext` and the git actions'
-  `GitRootsSource` at the live `WindowModel`. Both are read on every call, never captured.
+- **`useActiveContext(of:)`** — points the terminal actions' `ActiveShellContext` and the
+  `GitRootsSource` the `GitStatus` and the editor's git actions read at the live `WindowModel`. Both are read on every call, never captured.
 - **`switchOrg(to:)`** — stops and restarts every Wakil-owned client in place under the new org,
   with `provider: nil`. In place, because the action handlers captured these client instances.
 - **`shutdown()`** — stops the root watcher, every Wakil-owned client, and every terminal.

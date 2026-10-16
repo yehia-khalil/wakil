@@ -20,10 +20,4 @@
 {"do":{"click":"palette.row.newpane:api"}}
 {"expect":{"pane":"api-3","field":"kind","equals":"api"}}
 {"expect":{"pane":"api-3","field":"entry","equals":""}}
-{"do":{"hotkey":"cmd+p"}}
-{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
-{"do":{"keys":"new git"}}
-{"expect":{"tree":"contains","text":"text 1 of "}}
-{"do":{"press":"Return"}}
-{"expect":{"pane":"git-4","field":"kind","equals":"git"}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}

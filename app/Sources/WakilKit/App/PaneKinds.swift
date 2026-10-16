@@ -9,7 +9,6 @@ enum PaneKinds {
         TerminalPaneKind.self,
         ApiPaneKind.self,
         SettingsPaneKind.self,
-        GitPaneKind.self,
         EditorPaneKind.self,
     ]
 

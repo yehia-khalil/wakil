@@ -77,8 +77,8 @@ public final class WindowModel {
     /// step with `tables` — refreshed by the same `refreshPanes` loop, from the same `PaneStore`,
     /// so the screen reads the snapshot `read_pane` reads (Invariant 3). A terminal's blocks are
     /// captured at each `D` mark by `TerminalStore`'s frame-rate publisher and stored there;
-    /// nothing here reads them back out of the emulator's buffer. Git's contents are only what
-    /// `PaneStore` already holds: `git_refresh` alone re-reads git.
+    /// nothing here reads them back out of the emulator's buffer. Git is not a pane's contents: the
+    /// window's status (`gitStatus`, mirrored in `gitRoots`) is re-read only by the git watcher.
     public private(set) var paneCells: [String: PaneSnapshotCell] = [:]
     public private(set) var thoughts: [ThoughtRow] = []
     /// Monotonic row ids. **Not `thoughts.count`**, which was correct while
@@ -592,17 +592,17 @@ public final class WindowModel {
     ///
     /// The initialiser seeds it with the one `rootPath` it is handed, so a window keeps that
     /// launch directory until its first context read. That seed can be the home directory
-    /// standing in for "no root", which is why the git pane reads `gitRootPaths`, never this.
+    /// standing in for "no root", which is why git reads `gitRootPaths`, never this.
     public private(set) var rootPaths: [String]
-    /// The roots the git pane may read: `rootPaths` when the last context read gave this
-    /// window a project root, and none otherwise — never the home directory `rootPath`
-    /// falls back to.
+    /// The roots git may read (the window's status, the editor's git actions): `rootPaths` when
+    /// the last context read gave this window a project root, and none otherwise — never the
+    /// home directory `rootPath` falls back to.
     public var gitRootPaths: [String] { hasProjectRoot ? rootPaths : [] }
-    /// Keeps open git panes live (3a-i). Started when a git pane is open and the project has
-    /// a root, restarted when the roots change, stopped when the last git pane closes or the
-    /// organisation changes — all in `syncGitWatcher`. Nil only in tests that open no git
-    /// pane; production passes the wiring's (`WindowSession.start`), and the initialiser it
-    /// calls has no default for it (`wakil-never-wired-parameters`). The chaining and the
+    /// Keeps the window's git status live (3a-i; 3b-iii: while an editor pane is open). Started
+    /// when an editor pane is open and the project has a root, restarted when the roots change,
+    /// stopped when the last editor pane closes or the organisation changes — all in
+    /// `syncGitWatcher`. Nil only in tests that show no git; production passes the wiring's
+    /// (`WindowSession.start`), and the initialiser it calls has no default for it (`wakil-never-wired-parameters`). The chaining and the
     /// roots it watches live in `GitRootWatcher`.
     private let gitWatcher: GitRootWatcher?
     /// Keeps open editor panes' files current (3b-i): the project's roots are watched while an
@@ -1296,9 +1296,9 @@ public final class WindowModel {
         vocabulary: VocabularyStore? = nil,
         // 3a-i. **No default, unlike everything above it.** Each of those parameters
         // defaulted to nil and went unpassed at least once, and only running the app found
-        // it (`wakil-never-wired-parameters`); a git pane with no watcher would simply never
+        // it (`wakil-never-wired-parameters`); a git status with no watcher would simply never
         // update, with nothing failing. Production passes `wiring.rootWatcher`; a test that
-        // opens no git pane says `nil` out loud.
+        // shows no git says `nil` out loud.
         rootWatcher: (any RootWatcher)?,
         // 3b-i. No default, for `rootWatcher`'s reason: an editor with no watcher never
         // notices a change on disk, with nothing failing. Production passes
@@ -1657,10 +1657,9 @@ public final class WindowModel {
     public func table(_ paneId: String) -> PaneTable { tables[paneId] ?? .empty }
 
     /// The pane's `TerminalSnapshot`, or `nil` when it is not a terminal pane, or when it has
-    /// not been refreshed yet. `api(_:)` and `git(_:)` answer the same way for their kinds.
+    /// not been refreshed yet. `api(_:)` and `editor(_:)` answer the same way for their kinds.
     public func terminal(_ paneId: String) -> TerminalSnapshot? { paneCells[paneId]?.snapshot.terminal }
     public func api(_ paneId: String) -> ApiSnapshot? { paneCells[paneId]?.snapshot.api }
-    public func git(_ paneId: String) -> GitSnapshot? { paneCells[paneId]?.snapshot.git }
     public func editor(_ paneId: String) -> EditorSnapshot? { paneCells[paneId]?.snapshot.editor }
 
     /// Puts `snapshot` in `paneId`'s cell, adding the cell only if the pane is new.
@@ -3907,7 +3906,7 @@ public final class WindowModel {
         pruneApiSendRequests()
         keyboardFocusRequests = reading.focusRequests
         // Every pane opened or closed — the operator's or the agent's — passes through here
-        // or `readLayoutSnapshot`, so the watcher follows the git panes from these two.
+        // or `readLayoutSnapshot`, so the watchers follow the editor panes from these two.
         await syncGitWatcher()
         await syncEditorWatcher()
         if layoutSnapshot.withoutTransientState != before.withoutTransientState {
@@ -3945,11 +3944,12 @@ public final class WindowModel {
         await syncEditorWatcher()
     }
 
-    // MARK: The git pane's watcher (3a-i)
+    // MARK: The git watcher (3a-i; the window's since 3b-iii)
 
-    /// Starts, restarts or stops `rootWatcher` so it watches `gitRootPaths` exactly while a
-    /// git pane is open. A no-op when that set has not changed, so it is called from every
-    /// place the panes or the roots can change rather than from the few that usually do.
+    /// Starts, restarts or stops `rootWatcher` so it watches `gitRootPaths` exactly while an
+    /// editor pane is open (3b-iii: the Git pane folded into the editor). A no-op when that set
+    /// has not changed, so it is called from every place the panes or the roots can change rather
+    /// than from the few that usually do.
     ///
     /// **Chained, not merely awaited.** Two calls can overlap — a refresh landing during a
     /// project switch — and each hops to the watcher's actor; chaining is what keeps the
@@ -3976,23 +3976,19 @@ public final class WindowModel {
             && layoutScope == LayoutScope(
                 organization: organization, project: project, lineageRoot: lineageRoot)
         guard canvasIsCurrent || roots.isEmpty else { return }
-        let showsGit = layoutSnapshot.panes.contains {
-            PaneKinds.is($0.kind, GitPaneKind.self) || PaneKinds.is($0.kind, EditorPaneKind.self)
-        }
+        let showsGit = layoutSnapshot.panes.contains { PaneKinds.is($0.kind, EditorPaneKind.self) }
         let wanted = showsGit ? roots : []
         let changed: @Sendable (String) async -> Void = { [weak self] root in
             await self?.gitRootChanged(root)
         }
         switch await gitWatcher.sync(to: wanted, changed: changed) {
         case .unchanged:
-            // **A git pane opened while another is open** leaves the roots unchanged, so the
-            // watch does not restart and its read below does not run: the new pane would
-            // show "No project roots to read" until the next file event. Any git pane no
-            // read has reached yet reads now (final review, item 6).
-            if !wanted.isEmpty { await refreshUnreadGitPanes() }
+            // An editor pane opened while another is open reads the window's status, which the
+            // running watch already keeps: nothing to read.
+            break
         case .started:
             // **A watch that starts reads first** (fix round 1, I1). The roots changed, so what
-            // the git panes show is either nothing yet or the state as of some earlier moment —
+            // the editor panes show is either nothing yet or the state as of some earlier moment —
             // a project left and come back to keeps its canvas in memory and runs no restore,
             // so anything changed meanwhile would wait for the next file event. The watcher only
             // reports changes from now on; this read covers everything before it.
@@ -4061,7 +4057,8 @@ public final class WindowModel {
         await refreshPanes()
     }
 
-    /// Something under `root` changed: re-read that root in every open git pane.
+    /// Something under `root` changed: re-read that root of the window's status, then bring every
+    /// editor pane's git state up to it.
     ///
     /// **Straight to the registry, not through `dispatch(_:_:)`**, which clears `status` on
     /// success — a file saved in an editor would wipe a refusal the operator has not read
@@ -4073,19 +4070,13 @@ public final class WindowModel {
     }
 
     /// One read of the window's status, for `only` or every root, shown as it happens: the status
-    /// marks its roots loading and the git panes list them so (and the window's mirror), then the
-    /// read is awaited and the panes take what it found. Without a status the panes read for
-    /// themselves.
+    /// marks its roots loading (and the window's mirror lists them so), then the read is awaited
+    /// and the editor panes take what it found. Without a status there is no git to show.
     private func readStatus(only root: String?) async {
-        guard let gitStatus else {
-            await refreshGitPanes(root: root)
-            return
-        }
+        guard let gitStatus else { return }
         let ticket = await gitStatus.begin(only: root)
         gitRoots = await gitStatus.roots
-        await refreshGitPanes(root: root)
         await gitStatus.finish(ticket)
-        await refreshGitPanes(root: root)
         // The editor panes' git state (the Changes highlight, and later their diff tabs and gutter
         // baselines) against the status just read: `what: git` reads nothing itself.
         for pane in layoutSnapshot.panes where PaneKinds.is(pane.kind, EditorPaneKind.self) {
@@ -4093,35 +4084,6 @@ public final class WindowModel {
             if let root { params["root"] = .string(root) }
             _ = try? await registry.dispatch(
                 name: "editor_refresh", params: .object(params),
-                origin: .ui, environment: environment, confirmation: nil)
-        }
-        await refreshPanes()
-    }
-
-    /// `git_refresh` in every open git pane whose snapshot holds no roots yet — one no read
-    /// has reached. A read in flight has already listed its roots, so it is not read twice.
-    private func refreshUnreadGitPanes() async {
-        var refreshed = false
-        for pane in layoutSnapshot.panes where PaneKinds.is(pane.kind, GitPaneKind.self) {
-            guard await panes.gitSnapshot(paneId: pane.id).roots.isEmpty else { continue }
-            var params: [String: JSONValue] = ["pane": .string(pane.id)]
-            if gitStatus != nil { params["read"] = .bool(false) }
-            _ = try? await registry.dispatch(
-                name: "git_refresh", params: .object(params),
-                origin: .ui, environment: environment, confirmation: nil)
-            refreshed = true
-        }
-        if refreshed { await refreshPanes() }
-    }
-
-    /// `git_refresh` in every open git pane — of `root`, or of every root when nil.
-    private func refreshGitPanes(root: String?) async {
-        for pane in layoutSnapshot.panes where PaneKinds.is(pane.kind, GitPaneKind.self) {
-            var params: [String: JSONValue] = ["pane": .string(pane.id)]
-            if let root { params["root"] = .string(root) }
-            if gitStatus != nil { params["read"] = .bool(false) }
-            _ = try? await registry.dispatch(
-                name: "git_refresh", params: .object(params),
                 origin: .ui, environment: environment, confirmation: nil)
         }
         await refreshPanes()
@@ -5438,8 +5400,6 @@ public final class WindowModel {
         case .resumeSession(let id):
             return await dispatchLayout("session_resume", .object(["id": .string(id)])) != nil
                 ? nil : paletteFailure(since: mark)
-        case .openGitAndSelect(let root, let path, let group):
-            return await openGitAndSelect(root: root, path: path, group: group, mark: mark)
         case .openInEditor(let path):
             let before = paneIds
             guard await dispatchLayout("editor_open", .object(["path": .string(path)])) != nil else {
@@ -5494,13 +5454,17 @@ public final class WindowModel {
             }
             guard await dispatchLayout(name, params) != nil else { return paletteFailure(since: mark) }
             await refreshPanes()
-            return await focusActedOn(
-                since: before, named: optionalString(params, "pane") ?? optionalString(params, "id"), mark: mark)
+            // A changed file names no pane (3b-iii): the editor pane it went to is the one acted on,
+            // by `editor_changes_select`'s own rule — the focused editor pane, else the first.
+            let named = optionalString(params, "pane") ?? optionalString(params, "id")
+                ?? (name == "editor_changes_select" ? focusedEditorPane() : nil)
+            return await focusActedOn(since: before, named: named, mark: mark)
         }
     }
 
-    /// The palette's actions that open a pane when they name none.
-    private static let paletteOpensAPane: Set<String> = ["db_read_table", "api_open"]
+    /// The palette's actions that open a pane when they name none. `editor_changes_select` (3b-iii)
+    /// opens an editor pane when there is none, as the Git pane it replaced was opened.
+    private static let paletteOpensAPane: Set<String> = ["db_read_table", "api_open", "editor_changes_select"]
 
     /// Drops a Send request whose pane has closed.
     private func pruneApiSendRequests() {
@@ -5530,41 +5494,6 @@ public final class WindowModel {
         return await focusPane(id: target) ? nil : paletteFailure(since: mark)
     }
 
-    /// A changed file chosen with no Git pane open (P7 c): open one, wait for its first status
-    /// so the file is in its list, then `git_select` it there. Two dispatches, because the
-    /// second needs the pane id only the first produces.
-    private func openGitAndSelect(root: String, path: String, group: String, mark: PaletteRunMark) async -> String? {
-        let before = paneIds
-        guard await openPane(kind: "git") else { return paletteFailure(since: mark) }
-        guard let pane = layoutSnapshot.panes.first(where: { $0.kind == "git" && !before.contains($0.id) })?.id
-        else { return "pane_open: no git pane opened" }
-        guard await waitForFirstGitStatus(pane) else {
-            // A cancelled run says nothing (`dispatch`'s rule); a pane closed under it does.
-            return Task.isCancelled ? nil : "the git pane closed before it listed its files; nothing was selected"
-        }
-        let params: JSONValue = .object([
-            "pane": .string(pane), "root": .string(root), "path": .string(path), "group": .string(group),
-        ])
-        guard await dispatchLayout("git_select", params) != nil else { return paletteFailure(since: mark) }
-        await refreshPanes()
-        return await focusActedOn(since: paneIds, named: pane, mark: mark)
-    }
-
-    /// Until every root of `pane` has answered once, for at most five seconds. `false` when the
-    /// pane is gone or the run waiting was cancelled: there is then nothing to select in. A
-    /// project with no roots has nothing to wait for, and `git_select` then says why it cannot
-    /// select.
-    func waitForFirstGitStatus(_ pane: String) async -> Bool {
-        let deadline = ContinuousClock.now + .seconds(5)
-        while true {
-            if Task.isCancelled || !paneIds.contains(pane) { return false }
-            if gitRootPaths.isEmpty || ContinuousClock.now >= deadline { return true }
-            let roots = await panes.gitSnapshot(paneId: pane).roots
-            if !roots.isEmpty, roots.allSatisfy({ !$0.loading }) { return true }
-            try? await Task.sleep(for: .milliseconds(20))
-        }
-    }
-
     /// The environments, read as projects and providers are: through `paletteSource`, so an
     /// open palette never writes the window's `status`, not even when the read fails.
     ///
@@ -5588,9 +5517,7 @@ public final class WindowModel {
             let environment = environment
             sources.append(ApiEntriesSource(http: http, environment: { environment }))
         }
-        let changed = ChangedFilesSource(
-            gitPanes: { [weak self] in await self?.paletteGitPanes() ?? [] },
-            statusWithoutPane: { [weak self] in await self?.paletteGitStatusWithoutPane() ?? [] })
+        let changed = ChangedFilesSource(status: { [weak self] in await self?.paletteGitStatus() ?? [] })
         let fileSource: FilesSource? = paletteClients.files.map { files in
             FilesSource(files: files, roots: { [weak self] in await self?.gitRootPaths ?? [] },
                         showIgnored: { [weak self] in await self?.editorSettings.app.showIgnored ?? true })
@@ -5629,21 +5556,19 @@ public final class WindowModel {
 
     private func palettePaneSummaries() async -> [PaneSummary] {
         layoutSnapshot.panes.map { pane in
-            PaneSummary(pane: pane, apiEntry: api(pane.id)?.entry,
-                        gitRoots: git(pane.id)?.roots.count)
+            PaneSummary(pane: pane, apiEntry: api(pane.id)?.entry)
         }
     }
 
-    private func paletteGitPanes() async -> [GitPaneState] {
-        var states: [GitPaneState] = []
-        for pane in layoutSnapshot.panes where pane.kind == "git" {
-            states.append(GitPaneState(paneId: pane.id, snapshot: await panes.gitSnapshot(paneId: pane.id)))
-        }
-        return states
+    /// ⌘P's changed files: the window's status while an editor pane keeps it live, else a read made
+    /// for the palette alone (as before, when no Git pane was open).
+    private func paletteGitStatus() async -> [GitRootState] {
+        if !gitRoots.isEmpty { return gitRoots }
+        return await paletteGitStatusWithoutPane()
     }
 
-    /// Every project root's status, read straight from `wakil-git` — the read a Git pane makes,
-    /// with no pane to draw it in.
+    /// Every project root's status, read straight from `wakil-git` for the palette, with no pane
+    /// to draw it in.
     private func paletteGitStatusWithoutPane() async -> [GitRootState] {
         guard let git = paletteClients.git else { return [] }
         let roots = gitRootPaths

@@ -12,12 +12,12 @@ private let openRows: [PaletteEntry] = [
                  verb: "switch to", action: .setProject("wakil")),
 ]
 
-private let gitContext = PaletteContext(
-    focusedPane: FocusedPane(id: "git-1", kind: "git"), hasEnvironments: true,
+private let dbContext = PaletteContext(
+    focusedPane: FocusedPane(id: "db-1", kind: "db"), dbPageHasNext: true, hasEnvironments: true,
     projectCount: 2, providerCount: 2)
 
-/// The catalog's ⌘K rows over a focused Git pane.
-private let commandRows = CommandCatalog.entries(for: gitContext)
+/// The catalog's ⌘K rows over a focused Database pane with a next page.
+private let commandRows = CommandCatalog.entries(for: dbContext)
 
 private func choice(_ value: String) -> PaletteEntry {
     PaletteEntry(id: value, group: .choices, title: value, subtitle: "", kindLabel: "environment",
@@ -53,7 +53,7 @@ private func environmentStep() -> PaletteModel {
 
 /// ⌘K over an API pane, inside "Fill from cURL…".
 private func curlStep() -> PaletteModel {
-    var ctx = gitContext
+    var ctx = dbContext
     ctx.focusedPane = FocusedPane(id: "api-1", kind: "api")
     var m = cmdK(CommandCatalog.entries(for: ctx))
     m.type("curl")
@@ -73,7 +73,7 @@ private func curlStep() -> PaletteModel {
 @Test func cmdKOpensInCommandsMode() {
     let m = cmdK()
     #expect(m.mode == .commands)
-    #expect(m.results.map(\.id).prefix(3) == ["git.refresh", "git.unfold", "git.close"])
+    #expect(m.results.map(\.id).prefix(3) == ["db.refetch", "db.next", "db.close"])
     #expect(m.placeholder == "run an action…")
 }
 
@@ -124,10 +124,10 @@ private func curlStep() -> PaletteModel {
 @Test func pastedChevronQuerySwitchesAndSearches() {
     var m = cmdP()
     m.rootEntries = openRows
-    m.type(">refresh")
+    m.type(">run query")
     #expect(m.mode == .commands)
     m.rootEntries = commandRows  // the caller swaps lists on a mode change
-    #expect(m.results.first?.title == "Refresh")
+    #expect(m.results.first?.title == "Run query again")
 }
 
 @Test func chevronInCmdKIsLiteral() {
@@ -161,7 +161,7 @@ private func curlStep() -> PaletteModel {
 @Test func selectionFollowsSameIdAcrossContextChange() {
     var m = cmdK()
     select(&m, "Open settings")
-    var ctx = gitContext
+    var ctx = dbContext
     ctx.hasEnvironments = false  // a row above the selection goes
     m.contextChanged(rootEntries: CommandCatalog.entries(for: ctx))
     #expect(m.selected?.title == "Open settings")
@@ -170,8 +170,8 @@ private func curlStep() -> PaletteModel {
 // 6
 @Test func focusedPaneClosingWhileOpenDropsItsCommands() {
     var m = cmdK()
-    m.move(1)  // Unfold list
-    var ctx = gitContext
+    m.move(1)  // Next page
+    var ctx = dbContext
     ctx.focusedPane = nil
     let globals = CommandCatalog.entries(for: ctx)
     m.contextChanged(rootEntries: globals)
@@ -181,10 +181,10 @@ private func curlStep() -> PaletteModel {
         var n = m
         n.move(i - n.selection)
         if case .run(.dispatch(let action, _), _) = n.confirm() {
-            #expect(!action.hasPrefix("git_"))
+            #expect(!action.hasPrefix("db_"))
         }
     }
-    #expect(!m.results.contains { $0.id.hasPrefix("git.") })
+    #expect(!m.results.contains { $0.id.hasPrefix("db.") })
 }
 
 @Test func paneClosingUnderItsStepDropsTheStep() {
@@ -199,15 +199,15 @@ private func curlStep() -> PaletteModel {
 @Test func confirmOnPlainCommandRunsOnce() {
     var m = cmdK()
     let effect = m.confirm()
-    #expect(effect == .run(.dispatch(action: "git_refresh", params: .object(["pane": .string("git-1")]))))
-    #expect(m.inFlight == ["git.refresh"])
+    #expect(effect == .run(.dispatch(action: "db_refetch", params: .object(["pane": .string("db-1")]))))
+    #expect(m.inFlight == ["db.refetch"])
 }
 
 @Test func doubleConfirmRunsOnce() {
     var m = cmdK()
     #expect(m.confirm() != nil)
     #expect(m.confirm() == nil)
-    m.runFinished(entryId: "git.refresh", error: nil)
+    m.runFinished(entryId: "db.refetch", error: nil)
     #expect(m.inFlight.isEmpty)
     #expect(m.confirm() != nil)
 }
@@ -337,7 +337,7 @@ private func curlStep() -> PaletteModel {
     var m = environmentStep()
     m.type("sta")
     _ = m.confirm()
-    let whole = "pane_open: kind must be one of db, terminal, api, git"
+    let whole = "pane_open: kind must be one of db, terminal, api, editor"
     m.runFinished(entryId: "global.env", error: whole)
     #expect(m.error == whole)
     #expect(m.steps.count == 1)
@@ -492,12 +492,12 @@ private func drillStep() -> PaletteModel {
 
 @Test func aSuccessfulRunDoesNotClearAnotherRunsError() {
     var m = cmdK()
-    _ = m.confirm()  // git.refresh
+    _ = m.confirm()  // db.refetch
     m.move(1)
-    _ = m.confirm()  // git.unfold
-    m.runFinished(entryId: "git.refresh", error: "git: not a repository")
-    m.runFinished(entryId: "git.unfold", error: nil)
-    #expect(m.error == "git: not a repository")
+    _ = m.confirm()  // db.next
+    m.runFinished(entryId: "db.refetch", error: "db: no such table")
+    m.runFinished(entryId: "db.next", error: nil)
+    #expect(m.error == "db: no such table")
 }
 
 @Test func choosingARecentWorksWhileARunIsInFlight() {
@@ -512,13 +512,13 @@ private func drillStep() -> PaletteModel {
 }
 
 @Test func prefixedSourceIdsNeverShareInFlightWithCatalogIds() {
-    var m = cmdK(commandRows + [PaletteEntry(id: "pane:git.refresh", group: .openPanes, title: "Git pane",
+    var m = cmdK(commandRows + [PaletteEntry(id: "pane:db.refetch", group: .openPanes, title: "Database pane",
                                              subtitle: "", kindLabel: "pane", verb: "open",
-                                             action: .focusPane(id: "git-1"))])
-    #expect(m.confirm() == .run(.dispatch(action: "git_refresh", params: .object(["pane": .string("git-1")]))))
-    select(&m, "Git pane")
-    #expect(m.confirm() == .run(.focusPane(id: "git-1")))
-    #expect(m.inFlight == ["git.refresh", "pane:git.refresh"])
+                                             action: .focusPane(id: "db-1"))])
+    #expect(m.confirm() == .run(.dispatch(action: "db_refetch", params: .object(["pane": .string("db-1")]))))
+    select(&m, "Database pane")
+    #expect(m.confirm() == .run(.focusPane(id: "db-1")))
+    #expect(m.inFlight == ["db.refetch", "pane:db.refetch"])
 }
 
 // MARK: - Rule 5: the row that is running shows it

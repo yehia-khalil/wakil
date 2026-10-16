@@ -252,7 +252,6 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "editor_refresh", "editor_reload", "editor_replace", "editor_replace_range", "editor_replace_undo", "editor_restore", "editor_save",
              "editor_search", "editor_select", "editor_set_language", "editor_tree", "editor_tree_collapse",
              "editor_tree_expand", "editor_tree_reveal", "files_search",
-             "git_fold", "git_refresh", "git_select", "git_step", "git_unfold",
              "pane_close", "pane_focus", "pane_maximize", "pane_move",
              "pane_open", "pane_resize", "pane_restore", "pane_scroll_clear",
              "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
@@ -707,8 +706,8 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
 // MARK: - 3a-i: wakil-git, rootPaths and the watcher
 
 /// `wakil-git` joins the clients this assembly owns — so an org switch restarts it and
-/// `shutdown` stops it — and the five git actions are registered whether or not its binary
-/// was found, failing per action when it was not.
+/// `shutdown` stops it — and the editor's git actions (3b-iii) are registered whether or not its
+/// binary was found, failing per action when it was not.
 @Test func wakilGitIsAWakilOwnedClientAndItsActionsAreRegistered() async throws {
     let journal = try scratch()
     let emptyBin = try scratch()
@@ -724,43 +723,9 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
     #expect(wiring.gitClient == nil)
     #expect(wiring.diagnostics.contains { $0.hasPrefix("wakil-git:") }, "\(wiring.diagnostics)")
     let names = Set(await wiring.registry.all().map(\.name))
-    for name in ["git_select", "git_step", "git_fold", "git_unfold", "git_refresh"] {
+    for name in ["editor_changes_select", "editor_changes_step", "editor_changes_collapse",
+                 "editor_changes_expand", "editor_open_file"] {
         #expect(names.contains(name), "\(name) is not registered")
-    }
-}
-
-/// The git actions reach THIS assembly's `wakil-git`, and the roots they check against are
-/// the window's. `git_refresh` checks the client before the root, so a refusal naming the
-/// window's roots proves both: with no client it would have been `missingClient`, and with
-/// the roots read from anywhere but the window it would not name these two.
-@MainActor
-@Test func gitActionsReachTheWakilGitClientAndTheWindowsRoots() async throws {
-    let binDir = repoRoot().appendingPathComponent("bin")
-    try #require(
-        FileManager.default.isExecutableFile(atPath: binDir.appendingPathComponent("wakil-git").path),
-        "run `make build` first — wakil-git missing")
-    let journal = try scratch()
-    let wiring = await WakilWiring.build(
-        journalDirectory: journal, sessionId: "s1",
-        environment: ["HOME": try scratch().path, "PATH": "/usr/bin:/bin", "WAKIL_BIN_DIR": binDir.path])
-    defer { shutdownSynchronously(wiring) }
-    #expect(wiring.gitClient != nil, "\(wiring.diagnostics)")
-
-    let model = WindowModel.forTesting(
-        scratchRoot: testScratchRoot,
-        context: ContextStore(client: GitRootsContext(roots: ["/p/api", "/p/portal"])))
-    await model.refreshContext()
-    wiring.useActiveContext(of: model)
-    let pane = await wiring.layout.open(kind: "git", title: "git").id
-
-    do {
-        _ = try await wiring.registry.dispatch(
-            name: "git_refresh", params: .object(["pane": .string(pane), "root": .string("/elsewhere")]),
-            origin: .debug, environment: "staging", confirmation: nil)
-        Issue.record("a root outside the project was accepted")
-    } catch let error as GitActionError {
-        #expect(error == .notAProjectRoot(
-            action: "git_refresh", root: "/elsewhere", roots: ["/p/api", "/p/portal"]))
     }
 }
 

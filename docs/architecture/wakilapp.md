@@ -18,7 +18,6 @@ each mode:
 | `--capture <directory>` | `runCapture` (`Capture.swift`): offscreen Metal renders of the void. |
 | `--capture-motion <directory>` | `runCaptureMotion` (`Capture.swift`): frame sequences per state. |
 | `--bench-surface [rows]` | `runSurfaceBench` (`SurfaceBench.swift`): hosts `DataSurface` over synthetic rows (default 50,000) and prints scroll cost. |
-| `--probe-monaco <directory>` | `runProbeMonacoApp` (`MonacoProbe.swift`): Monaco's diff editor in the built app, network blocked. |
 
 With none of them, `WakilApplication.main()` opens the window.
 
@@ -47,12 +46,11 @@ With none of them, `WakilApplication.main()` opens the window.
 | `db` | `DBPane` (`DBPane.swift`, with `DataSurface.swift` and `QueryLineEditor.swift`) | `table(_:)`, `editable(paneId:)`, query-line state |
 | `terminal` | `TerminalPane` (`TerminalPane.swift`) | `terminal(_:)` |
 | `api` | `ApiPane` (`ApiPane*.swift`, `ApiFieldEditor.swift`, `ApiTokenView.swift`, `ApiPaneFlow.swift`) | `api(_:)` |
-| `git` | `GitPane` (`GitPane.swift`, `MonacoDiffRenderer.swift`) | `git(_:)` |
-| `editor` | `EditorPane` (`EditorPane.swift`, `MonacoEditorRenderer.swift`, `EditorMiddleClick.swift`, `monaco-host.html`) | `editor(_:)`, `editorSaveAsRequest`, the unsaved prompt |
+| `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`) | `editor(_:)`, `gitRoots`, `editorSaveAsRequest`, the unsaved prompt |
 | `settings` (`Pane.settingsKind`) | `SettingsPane` (`SettingsPane.swift`, `SettingsForm.swift`) | `settings`, `accounts`, the login state |
 | anything else | a "no view for a … pane" line | — |
 
-`terminal(_:)`, `api(_:)`, `git(_:)` and `editor(_:)` each read one pane's `PaneSnapshotCell`, so one
+`terminal(_:)`, `api(_:)` and `editor(_:)` each read one pane's `PaneSnapshotCell`, so one
 pane's terminal tick writes only that pane's cell and invalidates only views reading it
 (`refreshPanes`, after every action, still rewrites every pane's cell). Whether SwiftUI redraws
 only that view depends on `paneView`'s call site in `Canvas.swift` (unchanged, untested).

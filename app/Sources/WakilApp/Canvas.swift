@@ -425,25 +425,6 @@ extension WakilWindow {
                     sourceRows: { source in model.table(source).rows },
                     // ⌘K's Send: the pane presses its own Send when this token changes.
                     sendRequest: model.apiSendRequest(pane: pane.id))
-            case "git":
-                // 3a-i. Every click and key is a `git_*` action on this pane, through the
-                // window's own dispatch — the same path the agent's calls take — awaited so
-                // the pane can mark its own select in flight (Rule 5).
-                GitPane(
-                    snapshot: model.git(pane.id) ?? .empty, pane: pane,
-                    dispatch: { name, params in
-                        var withPane = params
-                        withPane["pane"] = .string(pane.id)
-                        await model.dispatchFromSurface(name, .object(withPane))
-                    },
-                    // The same owner test the terminal pane takes, for the same overlays.
-                    isKeyboardOwner: !(
-                        model.showOrgPlane || model.organization.isEmpty || model.pending != nil
-                        || model.paletteShowing || model.unsavedPrompt != nil),
-                    isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
-                    keyboardFocusRequests: model.keyboardFocusRequests,
-                    keyboardReturns: model.keyboardReturns,
-                    fontSize: model.editorSettings.app.fontSize)
             case "editor":
                 // 3b-i. Clicks are `editor_*` actions through the window's dispatch; typing and view
                 // reports take the one non-action path (`editorBufferDidChange`).
@@ -543,12 +524,11 @@ extension WakilWindow {
                     selection: $settingsSelection)
             default:
                 // Unreachable today: `Pane.kinds` is
-                // `["db", "terminal", "api", "settings", "git"]`, all five arms
+                // `["db", "terminal", "api", "settings", "editor"]`, all five arms
                 // above are drawn, and `pane_open` and
                 // `layoutDroppingUnknownPaneKinds` check against the same
-                // set. Here so that adding a FIFTH kind to that set
-                // without adding an arm here shows on screen instead of
-                // crashing.
+                // set. Here so that adding a kind to that set without
+                // adding an arm here shows on screen instead of crashing.
                 Text("no view for a \(pane.kind) pane")
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Color(red: 0.910, green: 0.925, blue: 0.965).opacity(0.30))

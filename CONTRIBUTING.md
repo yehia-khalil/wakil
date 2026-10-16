@@ -12,8 +12,8 @@ Each rule below names the test that enforces it, or says *convention*.
 | You are adding | It goes in | Enforced by |
 |---|---|---|
 | A capability that touches a system (a database, an API, git, Jira, files, the Keychain) | Go: logic in `internal/wakilcore`, a tool in a `cmd/<binary>/main.go` | `internal/wakilcore/layering_test.go` (wakilcore imports nothing else from the module); keeping the MCP SDK out of wakilcore is *convention* |
-| Something the operator or the agent can do | An `Action`, registered by the `register*Actions` function of the folder that owns it (for example `registerGitActions` in `Git/GitActions.swift`) | `ActionClassificationTests` (it declares an audience) |
-| State a pane shows | That pane kind's folder (`Api/`, `Git/`, `Editor/`, `Terminal/`; the db and settings kinds in `Panes/`): its `PaneKind` conformance and `PaneStore+<Kind>.swift`; see "A new pane kind" | *convention* (`PaneKindsTests` checks a kind is registered, not where its state lives) |
+| Something the operator or the agent can do | An `Action`, registered by the `register*Actions` function of the folder that owns it (for example `registerEditorActions` in `Editor/EditorActions.swift`) | `ActionClassificationTests` (it declares an audience) |
+| State a pane shows | That pane kind's folder (`Api/`, `Editor/`, `Terminal/`; the db and settings kinds in `Panes/`): its `PaneKind` conformance and `PaneStore+<Kind>.swift`; see "A new pane kind" | *convention* (`PaneKindsTests` checks a kind is registered, not where its state lives) |
 | A pure decision a view needs (a label, a layout number, a key rule) | `WakilKit`, beside the kind or folder it belongs to; **never `WakilApp`**, which has no test target | *convention* |
 | Drawing | `app/Sources/WakilApp/` | *convention* |
 | A shared value type with no dependencies | `Core/` | `wakilKitKeepsItsLayering` (`Core/` may use no other folder) |
@@ -65,8 +65,8 @@ The folders and what each may use: `docs/architecture/wakilkit.md`.
 ### A new pane kind
 
 A kind is a `PaneKind` conformance (`app/Sources/WakilKit/Panes/PaneKind.swift`); how the store
-holds it is `docs/architecture/wakilkit.md`, "Pane kinds". Git (`Git/GitPaneKind.swift`,
-`Git/PaneStore+Git.swift`) is the smallest example; Editor (`Editor/`) shows a kind with a restore step, a non-action write path and a renderer seam.
+holds it is `docs/architecture/wakilkit.md`, "Pane kinds". Api (`Api/ApiPaneKind.swift`,
+`Api/PaneStore+Api.swift`) is the smallest example; Editor (`Editor/`) shows a kind with a restore step, a non-action write path and a renderer seam.
 
 | Where | What |
 |---|---|

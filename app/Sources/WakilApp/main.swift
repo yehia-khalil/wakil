@@ -264,19 +264,6 @@ if let rowCount = benchSurfaceRowCount(in: CommandLine.arguments) {
     exit(runSurfaceBench(rows: rowCount))
 }
 
-// `--probe-monaco <directory>` (3a-i Task 1): Monaco's diff editor inside the
-// built app, network blocked. Creates its own `NSApplication` as
-// `--bench-surface` does, so it sits with it, above the ordinary launch.
-if let flagIndex = CommandLine.arguments.firstIndex(of: "--probe-monaco") {
-    guard let directory = value(after: flagIndex, in: CommandLine.arguments, flag: "--probe-monaco", named: "<directory>") else {
-        exit(1)
-    }
-    // Synchronous, before any suspension, like the ordinary launch below:
-    // the probe needs `NSApp.run`, and an awaited probe lets the runtime's
-    // main-queue drain return and exit 0 (3a-i-monaco-probe.md).
-    runProbeMonacoApp(into: directory)
-}
-
 // Neither headless mode applied, so this is an ordinary launch: open the
 // window. `WakilApplication.main()` (see WakilWindow.swift) is called rather
 // than marked `@main` because a module with a `main.swift` may not also

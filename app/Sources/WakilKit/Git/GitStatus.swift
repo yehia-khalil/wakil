@@ -136,7 +136,7 @@ func gitPendingRoot(_ root: String) -> GitRootState {
 ///
 /// **Each root is read on its own** and a root that fails carries its own `error`, whole (Rule 8);
 /// it never hides a sibling. **A read a newer one superseded lands nothing** — neither its list nor
-/// the end of its `loading` — so a slow old reply cannot show a stale list (3a-i's `GitFlights`
+/// the end of its `loading` — so a slow old reply cannot show a stale list (3a-i's Git pane's
 /// generations, moved here). A read cut short by cancellation writes no error; its root keeps what
 /// it showed.
 public actor GitStatus {

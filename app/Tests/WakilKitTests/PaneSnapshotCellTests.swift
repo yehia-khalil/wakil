@@ -15,7 +15,7 @@ import Testing
     let flag = Flag()
     withObservationTracking {
         _ = model.api("a1")
-        _ = model.git("g1")
+        _ = model.editor("e1")
     } onChange: { flag.fired = true }
     // Every later tick must touch only t1's own cell.
     await model.refreshTerminal(pane: "t1")

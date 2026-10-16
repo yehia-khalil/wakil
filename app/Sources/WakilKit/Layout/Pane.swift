@@ -164,13 +164,14 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
     /// it before persistence — but it is a registered kind all the same,
     /// so it is listed here like any other, and each name is served by a
     /// `PaneKind` in `App/PaneKinds.swift`.
-    public static let kinds: Set<String> = ["db", "terminal", "api", settingsKind, "git", "editor"]
+    /// 3b-iii removes `git`: the Git pane folded into the editor, and a saved one is migrated
+    /// (`layoutMigratingGitPanes`).
+    public static let kinds: Set<String> = ["db", "terminal", "api", settingsKind, "editor"]
 
     /// The title a pane opened with none is given: the kind's wire word, except where the
-    /// operator reads a name — `Git` (3a-i).
+    /// operator reads a name — `Editor` (3b-i).
     public static func defaultTitle(kind: String) -> String {
         switch kind {
-        case "git": "Git"
         case "editor": "Editor"
         default: kind
         }

@@ -82,7 +82,7 @@ public enum CommandScope: Sendable, Equatable {
 
 /// One operator verb in ⌘K: a label pinned to one registered action.
 public struct CatalogCommand: Sendable {
-    /// Stable: "git.refresh", "global.env", …
+    /// Stable: "db.refetch", "global.env", …
     public let id: String
     /// What the operator reads. Ends in `…` exactly when the command takes an input step.
     public let label: String
@@ -107,10 +107,6 @@ public struct CatalogCommand: Sendable {
 /// own `SQLFormat`, run in the editor, dispatches nothing).
 public enum CommandCatalog {
     public static let all: [CatalogCommand] = [
-        pane("git.refresh", "Refresh", "git", "git_refresh"),
-        pane("git.unfold", "Unfold list", "git", "git_unfold"),
-        close("git"),
-
         pane("db.refetch", "Run query again", "db", "db_refetch"),
         pane("db.next", "Next page", "db", "db_page", extra: ["to": .string("next")],
              available: { $0.dbPageHasNext }),

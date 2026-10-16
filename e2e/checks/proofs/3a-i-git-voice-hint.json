@@ -1,6 +1,0 @@
-{
-  "check": "e2e/checks/agent/3a-i-git-voice-hint.jsonl",
-  "baseCommit": "a376e07968106ccb0d21e7d696c73add044b06ab",
-  "provedAt": "2026-10-09T16:35:25.310486Z",
-  "checkBlob": "0c066382df51b85e97244e7b89c8ffa2e706bebb"
-}

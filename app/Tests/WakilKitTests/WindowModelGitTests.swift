@@ -62,9 +62,9 @@ private struct GitWindowLookup: ProviderCredentialsLookup {
 
 @MainActor final class RootsBox { weak var model: WindowModel? }
 
-/// A window over its own registry, with the layout and git actions registered against a
-/// `FakeGit`, roots read from the window itself — the wiring's arrangement, without the
-/// binaries.
+/// A window over its own registry, with the layout actions and the editor's actions on the
+/// window's status over a `FakeGit` (as `WindowModelEditorTests` builds it), roots read from the
+/// window itself — the wiring's arrangement, without the binaries.
 @MainActor
 private func gitWindow(
     roots: [String] = ["/p/api", "/p/portal"]
@@ -92,48 +92,51 @@ private func gitWindow(
         rootWatcher: watcher, editorRootWatcher: nil, fileLists: nil,
         gitStatus: status, paletteClients: PaletteClients())
     box.model = model
-    await registerGitActions(into: registry, panes: panes, layout: layout, status: status)
+    await registerEditorActions(into: registry, panes: panes, layout: layout, files: nil, fileLists: nil,
+                                gitStatus: status, roots: { await box.model?.gitRootPaths ?? [] })
     return (model, watcher, git, context)
 }
 
 @MainActor
-private func openGitPanes(_ model: WindowModel) async -> [String] {
-    model.layoutSnapshot.panes.filter { $0.kind == "git" }.map(\.id)
+private func openEditorPanes(_ model: WindowModel) async -> [String] {
+    model.layoutSnapshot.panes.filter { $0.kind == "editor" }.map(\.id)
 }
 
+/// The window's git watcher and status (3a-i's, the window's since 3b-iii): it runs while an editor
+/// pane is open, and reads once per root per wake for the window.
 @Suite @MainActor struct WindowModelGitTests {
-    @Test func theWatcherStartsWithAGitPaneAndAProjectAndStopsWithTheLastPane() async throws {
+    @Test func theWatcherStartsWithAnEditorPaneAndAProjectAndStopsWithTheLastPane() async throws {
         let (model, watcher, _, _) = await gitWindow()
         await model.refreshContext()
-        #expect(await watcher.events.isEmpty, "no git pane yet, so nothing is watched")
+        #expect(await watcher.events.isEmpty, "no editor pane yet, so nothing is watched")
 
-        await model.openPane(kind: "git")
-        await model.openPane(kind: "git")
+        await model.openPane(kind: "editor")
+        await model.openPane(kind: "editor")
         #expect(await watcher.events == ["watch /p/api,/p/portal 0.3 seconds"],
-                "one watch for every root, however many git panes are open")
+                "one watch for every root, however many editor panes are open")
 
-        let ids = await openGitPanes(model)
+        let ids = await openEditorPanes(model)
         try #require(ids.count == 2)
         await model.closePane(id: ids[0])
-        #expect(await watcher.events.count == 1, "a git pane is still open")
+        #expect(await watcher.events.count == 1, "an editor pane is still open")
         await model.closePane(id: ids[1])
         #expect(await watcher.events.last == "stop")
     }
 
-    /// A project's arrangement is its own, so a switch carries the git pane only as far as
+    /// A project's arrangement is its own, so a switch carries the editor pane only as far as
     /// the incoming project's canvas has one: none in `q` stops the watcher, one opened there
-    /// watches `q`'s root, and coming back to `p` — whose canvas kept its git pane — watches
+    /// watches `q`'s root, and coming back to `p` — whose canvas kept its editor pane — watches
     /// `p`'s again.
     @Test func aProjectSwitchRestartsTheWatcherOnTheNewRoots() async {
         let (model, watcher, git, context) = await gitWindow()
         await model.refreshContext()
-        await model.openPane(kind: "git")
+        await model.openPane(kind: "editor")
         await context.switchTo(project: "q", roots: ["/q/web"])
         // `setProject` ends in this same read, and so does the agent's `ctx_set_project`.
         await model.refreshContext()
         #expect(await watcher.events == ["watch /p/api,/p/portal 0.3 seconds", "stop"])
 
-        await model.openPane(kind: "git")
+        await model.openPane(kind: "editor")
         #expect(await watcher.events.last == "watch /q/web 0.3 seconds")
 
         await context.switchTo(project: "p", roots: ["/p/api", "/p/portal"])
@@ -141,7 +144,7 @@ private func openGitPanes(_ model: WindowModel) async -> [String] {
         await model.refreshContext()
         let events = await watcher.events
         #expect(events.last == "watch /p/api,/p/portal 0.3 seconds", "\(events)")
-        // Fix round 1, I1: `p`'s canvas comes back as it was left, git pane and all, and no
+        // Fix round 1, I1: `p`'s canvas comes back as it was left, editor pane and all, and no
         // restore runs for an arrangement still in memory — so the watch that starts again
         // must read what changed while the operator was in `q`, not wait for the next event.
         let calls = await git.calls.dropFirst(beforeReturn)
@@ -149,37 +152,32 @@ private func openGitPanes(_ model: WindowModel) async -> [String] {
         #expect(calls.contains { $0.hasPrefix("git_status /p/portal") }, "\(calls)")
     }
 
-    /// Final review, item 6: a second git pane opened while one is open leaves the watched
-    /// roots unchanged, so the watch does not restart — and it must still read, not show
-    /// "No project roots to read" until the next file event.
-    /// 3b-iii: a second pane reads nothing of its own; it adopts the window's status, so it shows
-    /// every root without wakil-git seeing another read.
-    @Test func aSecondGitPaneAdoptsTheWindowsStatusWhenItOpens() async throws {
+    /// A second editor pane opened while one is open leaves the watched roots unchanged, so the
+    /// watch does not restart and nothing is read: the window's status already holds every root.
+    @Test func aSecondEditorPaneReadsNothingOfItsOwn() async throws {
         let (model, _, git, _) = await gitWindow()
         await model.refreshContext()
-        await model.openPane(kind: "git")
+        await model.openPane(kind: "editor")
         let before = await git.statusCount
-        await model.openPane(kind: "git")
-        let second = try #require(await openGitPanes(model).last)
-        try #require(await openGitPanes(model).count == 2)
-        #expect(await apiEventually { model.git(second)?.roots.map(\.root) == ["/p/api", "/p/portal"] },
-                "the second pane never showed the status")
+        await model.openPane(kind: "editor")
+        try #require(await openEditorPanes(model).count == 2)
+        #expect(model.gitRoots.map(\.root) == ["/p/api", "/p/portal"])
         #expect(await git.statusCount == before, "the window's status is read once, not per pane")
     }
 
     @Test func anOrgSwitchStopsTheWatcher() async {
         let (model, watcher, _, _) = await gitWindow()
         await model.refreshContext()
-        await model.openPane(kind: "git")
+        await model.openPane(kind: "editor")
         await model.invalidateForOrgChange()
         #expect(await watcher.events.last == "stop")
     }
 
-    @Test func aWakeRefreshesThatRootInEveryOpenGitPane() async {
+    @Test func aWakeReadsThatRootOnceForTheWindow() async {
         let (model, watcher, git, _) = await gitWindow()
         await model.refreshContext()
-        await model.openPane(kind: "git")
-        await model.openPane(kind: "git")
+        await model.openPane(kind: "editor")
+        await model.openPane(kind: "editor")
         let before = await git.calls.count
 
         await watcher.fire("/p/api")
@@ -190,55 +188,20 @@ private func openGitPanes(_ model: WindowModel) async -> [String] {
         #expect(!calls.contains { $0.hasPrefix("git_status /p/portal") }, "\(calls)")
     }
 
-    /// R6: a git pane brought back by a restore re-reads its status. It has no fetch, so a
-    /// restore that only re-ran fetches would leave it showing nothing.
-    @Test func aRestoredGitPaneReReadsEveryRoot() async {
-        let (model, _, git, _) = await gitWindow()
-        await model.refreshContext()
-        await model.openPane(kind: "git")
-        let before = await git.calls.count
-
-        await model.restorePaneContents()
-
-        let calls = await git.calls.dropFirst(before)
-        #expect(calls.contains { $0.hasPrefix("git_status /p/api") }, "\(calls)")
-        #expect(calls.contains { $0.hasPrefix("git_status /p/portal") }, "\(calls)")
-    }
-
-    /// Task 10: the pane draws what the window holds for it, read after every dispatch and
-    /// every refresh — the same snapshot `read_pane` answers with.
-    @Test func theWindowHoldsEachGitPanesSnapshot() async throws {
-        let (model, watcher, _, _) = await gitWindow()
-        await model.refreshContext()
-        await model.openPane(kind: "git")
-        let id = try #require(await openGitPanes(model).first)
-        await watcher.fire("/p/api")
-        let snapshot = try #require(model.git(id))
-        #expect(snapshot.roots.map(\.name) == ["api", "portal"])
-        #expect(snapshot.roots.first?.files.map(\.path) == ["a.txt"])
-
-        await model.dispatchFromSurface("git_select", .object([
-            "pane": .string(id), "root": .string("/p/api"), "path": .string("a.txt"),
-            "group": .string("changed"),
-        ]))
-        #expect(model.git(id)?.folded == true)
-        #expect(model.git(id)?.selection?.path == "a.txt")
-    }
-
-    /// Opened from the Landing or by an agent naming no title, a git pane is titled `Git`.
-    @Test func aGitPaneIsTitledGit() async throws {
+    /// Opened from the Landing or by an agent naming no title, an editor pane is titled `Editor`.
+    @Test func anEditorPaneIsTitledEditor() async throws {
         let (model, _, _, _) = await gitWindow()
         await model.refreshContext()
-        await model.openPane(kind: "git")
-        let pane = try #require(model.layoutSnapshot.panes.first { $0.kind == "git" })
-        #expect(pane.title == "Git")
+        await model.openPane(kind: "editor")
+        let pane = try #require(model.layoutSnapshot.panes.first { $0.kind == "editor" })
+        #expect(pane.title == "Editor")
         #expect(Pane.defaultTitle(kind: "db") == "db", "every other kind keeps its wire word")
     }
 
     @Test func noProjectRootMeansNoGitRoots() async {
         let (model, watcher, _, _) = await gitWindow(roots: [])
         await model.refreshContext()
-        await model.openPane(kind: "git")
+        await model.openPane(kind: "editor")
         #expect(model.gitRootPaths.isEmpty)
         #expect(model.rootPath == NSHomeDirectory())
         #expect(await watcher.events.isEmpty, "no root, so nothing to watch")
@@ -256,15 +219,12 @@ private func openGitPanes(_ model: WindowModel) async -> [String] {
     @Test func oneReadPerRootPerWakeWhateverTheNumberOfPanes() async throws {
         let (model, watcher, git, _) = await gitWindow()
         await model.refreshContext()
-        await model.openPane(kind: "git")
-        await model.openPane(kind: "git")
+        await model.openPane(kind: "editor")
         await model.openPane(kind: "editor")
         let before = await git.statusCount
         await watcher.fire("/p/api")
         #expect(await git.statusCount == before + 1)
-        for pane in await openGitPanes(model) {
-            #expect(model.git(pane)?.roots.first?.files.map(\.path) == ["a.txt"], "every git pane shows the one read")
-        }
+        #expect(model.gitRoots.first?.files.map(\.path) == ["a.txt"], "the window shows the one read")
     }
 
     @Test func nothingIsReadWithNoPaneThatShowsGit() async throws {
@@ -283,39 +243,36 @@ private func openGitPanes(_ model: WindowModel) async -> [String] {
         #expect(model.gitRoots.isEmpty)
     }
 
-    // Fix round 1, item 2: a newly opened Git pane lists every root loading while the first read is
-    // parked, as it did before the window shared one status — not "No project roots to read".
-    @Test func aNewGitPaneListsEveryRootLoadingWhileTheFirstReadIsParked() async throws {
+    // Fix round 1, item 2: a newly opened editor pane's window lists every root loading while the
+    // first read is parked — not "No project roots to read".
+    @Test func aNewEditorPaneListsEveryRootLoadingWhileTheFirstReadIsParked() async throws {
         let (model, _, git, _) = await gitWindow()
         await model.refreshContext()
         await git.setSlowStatus(true)
-        let opening = Task { await model.openPane(kind: "git") }
+        let opening = Task { await model.openPane(kind: "editor") }
         while await git.statusCount < 2 { await Task.yield() }
-        let pane = try #require(await openGitPanes(model).first)
         #expect(await apiEventually {
-            model.git(pane)?.roots.map(\.root) == ["/p/api", "/p/portal"]
-                && model.git(pane)?.roots.allSatisfy { $0.loading } == true
-        }, "the pane showed no roots loading while the read was parked")
+            model.gitRoots.map(\.root) == ["/p/api", "/p/portal"] && model.gitRoots.allSatisfy { $0.loading }
+        }, "the window showed no roots loading while the read was parked")
         for call in 0..<8 { await git.releaseStatus(call) }
         _ = await opening.value
-        #expect(model.git(pane)?.roots.allSatisfy { !$0.loading } == true)
+        #expect(model.gitRoots.allSatisfy { !$0.loading })
     }
 
-    // And on a wake: the panes carry the loading mark too, not only the window's mirror.
-    @Test func aWakeMarksTheRootLoadingInEveryGitPaneWhileItReads() async throws {
+    // And on a wake: the root carries the loading mark while it is read.
+    @Test func aWakeMarksTheRootLoadingWhileItReads() async throws {
         let (model, watcher, git, _) = await gitWindow()
         await model.refreshContext()
-        await model.openPane(kind: "git")
-        let pane = try #require(await openGitPanes(model).first)
+        await model.openPane(kind: "editor")
         await git.setSlowStatus(true)
         let before = await git.statusCount
         let wake = Task { await watcher.fire("/p/api") }
         while await git.statusCount < before + 1 { await Task.yield() }
         #expect(await apiEventually {
-            model.git(pane)?.roots.first { $0.root == "/p/api" }?.loading == true
-        }, "the pane showed no loading mark on the wake")
+            model.gitRoots.first { $0.root == "/p/api" }?.loading == true
+        }, "the window showed no loading mark on the wake")
         for call in 0..<(before + 8) { await git.releaseStatus(call) }
         await wake.value
-        #expect(model.git(pane)?.roots.allSatisfy { !$0.loading } == true)
+        #expect(model.gitRoots.allSatisfy { !$0.loading })
     }
 }

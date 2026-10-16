@@ -534,7 +534,7 @@ func editorWindowWithFiles(
     @Test func commandWOnANonEditorPaneClosesThePaneAsBefore() async throws {
         let (model, _) = await editorWindow()
         await model.refreshContext()
-        await model.openPane(kind: "git")
+        await model.openPane(kind: "api")
         await model.closeFocusedTabOrPane()
         #expect(model.layoutSnapshot.panes.isEmpty)
     }
@@ -708,7 +708,7 @@ func editorWindowWithFiles(
     @Test func whenFocusLeavesThePaneItsDirtyTabsSave() async throws {
         let (model, files) = await editorWindowWithFiles()
         _ = try await openTyped(model, files, mode: .focus)
-        _ = await model.openPane(kind: "git")      // focus moves to the new pane
+        _ = await model.openPane(kind: "api")      // focus moves to the new pane
         await model.settleEditorAutosave()
         #expect(await files.text(of: "/p/api/a.go") == "b")
     }
@@ -751,7 +751,7 @@ func editorWindowWithFiles(
         await model.settleEditorAutosave()   // the tab switch to b.go saved a.go: dirty it again
         await model.editorBufferDidChange(pane: pane, tab: 0, text: "bb", basis: 0)
         #expect(model.editor(pane)?.tabs.filter(\.dirty).count == 2)
-        _ = await model.openPane(kind: "git")      // focus moves to the new pane
+        _ = await model.openPane(kind: "api")      // focus moves to the new pane
         await model.settleEditorAutosave()
         #expect(await files.text(of: "/p/api/a.go") == "bb")
         #expect(await files.text(of: "/p/api/b.go") == "b")

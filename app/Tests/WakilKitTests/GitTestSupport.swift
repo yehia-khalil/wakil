@@ -96,11 +96,3 @@ actor FakeGit: ToolCaller {
         }
     }
 }
-
-/// A layout with one open `git` pane, built the way the api pane tests build theirs:
-/// `LayoutStore.open` names it, so the id is returned rather than chosen.
-func openGitPane() async -> (layout: LayoutStore, panes: PaneStore, pane: String) {
-    let layout = LayoutStore()
-    let pane = await layout.open(kind: "git", title: "git").id
-    return (layout, PaneStore(), pane)
-}

@@ -913,7 +913,8 @@ struct UnsavedPromptBar: View {
 
 // MARK: - Treatment
 
-/// Rule 5's load mark, the rail's busy treatment — see `GitBusyTick`.
+/// Rule 5's load mark, the rail's busy treatment (`Rail.tick`): a 2 pt tick in §5's green with its
+/// glow — no spinner (§9).
 struct EditorBusyTick: View {
     var label = "saving"
     var identifier = "editor.saving"
@@ -945,5 +946,34 @@ enum EditorPaneStyle {
         case .added: Color(TerminalPalette.green)
         case .muted: text.opacity(0.45)
         }
+    }
+}
+
+/// Hosts the pane's Monaco web view in a container the pane owns (3a-i's, moved here with the Git
+/// pane in 3b-iii). The web view outlives this view — a SwiftUI rebuild removes it and puts the same
+/// one back — so dismantling detaches it and nothing more.
+struct GitDiffHostView: NSViewRepresentable {
+    let webView: WKWebView?
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor(EditorPaneStyle.slab).cgColor
+        attach(to: container)
+        return container
+    }
+
+    func updateNSView(_ container: NSView, context: Context) { attach(to: container) }
+
+    static func dismantleNSView(_ container: NSView, coordinator: ()) {
+        container.subviews.forEach { $0.removeFromSuperview() }
+    }
+
+    private func attach(to container: NSView) {
+        guard let webView, webView.superview !== container else { return }
+        webView.removeFromSuperview()
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.width, .height]
+        container.addSubview(webView)
     }
 }

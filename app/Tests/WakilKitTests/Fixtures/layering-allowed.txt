@@ -40,9 +40,7 @@ Editor -> Panes
 Editor -> Registry
 Git -> Context
 Git -> Identifiers
-Git -> Layout
 Git -> MCP
-Git -> Panes
 Git -> Registry
 Harness -> MCP
 Identifiers -> Context

@@ -56,7 +56,8 @@ public struct WakilWiring: Sendable {
     /// Eager per window, like the other two, and `nil` when the binary
     /// cannot be found or refuses to start — `diagnostics` says which.
     public let httpClient: MCPClient?
-    /// `wakil-git` (3a-i): the git pane's three reads, behind its five actions.
+    /// `wakil-git` (3a-i): the git reads behind the window's status (`GitStatus`) and the editor's
+    /// Changes view and diff tabs (3b-iii).
     ///
     /// Eager per window like the other three, `nil` when the binary cannot be found or
     /// refuses to start — the actions stay registered and fail per call, naming it. Its
@@ -70,8 +71,8 @@ public struct WakilWiring: Sendable {
     /// actions and every editor pane's tree read it. Built whenever `filesClient` is; handed to the
     /// window by `WindowSession.start`, which also gives it to the palette.
     public let fileLists: EditorFileLists?
-    /// What keeps the window's git panes live (3a-i). One per assembly, as the window is;
-    /// `WindowSession.start` hands it to the window, which starts and stops it as git panes
+    /// What keeps the window's git status live (3a-i). One per assembly, as the window is;
+    /// `WindowSession.start` hands it to the window, which starts and stops it as editor panes
     /// open and close, and `shutdown` stops it.
     public let rootWatcher: any RootWatcher
     /// The window's git status (3b-iii). One per assembly; the window, the actions and `GitSource`
@@ -80,7 +81,7 @@ public struct WakilWiring: Sendable {
     /// The editor panes' own watch (3b-i), separate from the git one so each starts and stops
     /// with its own panes. Handed to the window by `WindowSession.start`; `shutdown` stops it.
     public let editorRootWatcher: any RootWatcher
-    /// The roots `git_refresh` and `git_select` check against, asked live: pointed at the
+    /// The roots the window's status reads and the editor's git actions check against, asked live: pointed at the
     /// window by `useActiveContext(of:)`, and read from `wakil-ctx` until then — which is
     /// all `--dispatch`, with no window, ever has.
     let gitRoots: GitRootsSource
@@ -317,7 +318,7 @@ public struct WakilWiring: Sendable {
         // client already up: starting one lazily on first use would put
         // a handshake, and its failure mode, inside the send.
         let httpClient = await startClient("wakil-http")
-        // 3a-i, eager for the same reason: a git pane's first read must find it up.
+        // 3a-i, eager for the same reason: the window's first status read must find it up.
         let gitClient = await startClient("wakil-git")
         // 3b-i, eager for the git client's reason: an editor's first open must find it up.
         let filesClient = await startClient("wakil-files")
@@ -360,7 +361,6 @@ public struct WakilWiring: Sendable {
         // there is one, `wakil-ctx`'s until then.
         let gitRoots = GitRootsSource(context: contextClient)
         let gitStatus = GitStatus(git: gitClient, roots: { await gitRoots.current() })
-        await registerGitActions(into: registry, panes: panes, layout: layout, status: gitStatus)
         await registerEditorActions(
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? filesClient, fileLists: fileLists,
@@ -401,7 +401,7 @@ public struct WakilWiring: Sendable {
         // nothing shows on screen (Interaction Rule 8).
         let vocabulary = VocabularyStore(
             live: [WakilSource(registry: registry), PaneSource(layout: layout, panes: panes),
-                   GitSource(layout: layout, panes: panes)],
+                   GitSource(status: gitStatus)],
             cached: cachedSources,
             report: { source, message in
                 try? await journalRegistry.journalIdentifierEvent(
@@ -733,7 +733,7 @@ public struct WakilWiring: Sendable {
     }
 }
 
-/// Where the git actions read the active project's roots: the window's `gitRootPaths` once
+/// Where the window's git status and the editor's git actions read the active project's roots: the window's `gitRootPaths` once
 /// `WakilWiring.useActiveContext(of:)` has pointed it there, and `wakil-ctx`'s `get_context`
 /// before that — the only source `--dispatch` ever has. `[]` when neither can answer, which
 /// the actions treat as a project with no roots. The same lock-and-closure box as

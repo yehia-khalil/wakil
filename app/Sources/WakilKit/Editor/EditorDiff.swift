@@ -1,6 +1,65 @@
 import Foundation
 
-/// The revisions a diff compares, by group (3a-i's `gitDiffRevs`, with deletions):
+/// The two sides of a diff tab's diff (3a-i's, moved here with the Git pane in 3b-iii). The texts
+/// are large, so `read_pane` publishes only the facts about them.
+public struct GitDiffState: Sendable, Equatable {
+    public var original: String
+    public var modified: String
+    public var language: String
+    public var binary: Bool
+    public var bytes: Int
+    public var lines: Int
+    public var truncated: Bool
+    public var error: String?
+    public var loading: Bool
+    /// A diff tab's file is no longer in its group (committed, staged, discarded): the tab says so
+    /// and stays open until closed, its last texts kept (3b-iii, Rule 7).
+    public var noLongerChanged: Bool
+
+    public init(original: String, modified: String, language: String, binary: Bool, bytes: Int,
+                lines: Int, truncated: Bool, error: String?, loading: Bool, noLongerChanged: Bool = false) {
+        self.original = original
+        self.modified = modified
+        self.language = language
+        self.binary = binary
+        self.bytes = bytes
+        self.lines = lines
+        self.truncated = truncated
+        self.error = error
+        self.loading = loading
+        self.noLongerChanged = noLongerChanged
+    }
+
+    static func loading(_ language: String) -> GitDiffState {
+        GitDiffState(original: "", modified: "", language: language, binary: false, bytes: 0, lines: 0,
+                     truncated: false, error: nil, loading: true)
+    }
+}
+
+/// What the diff cannot show by itself: `binary · 2.1 MB`, or `file is 3.0 MB · first 2 MB
+/// shown` — `git_show` cuts each side at 2 MB (`GitFileByteCap`), and `bytes` is the larger
+/// side's true size. nil when the diff is whole.
+public func gitDiffBanner(_ d: GitDiffState) -> String? {
+    if d.binary { return "binary · \(gitByteSize(d.bytes))" }
+    if d.truncated { return "file is \(gitByteSize(d.bytes)) · first 2 MB shown" }
+    return nil
+}
+
+/// A size in 1,024s — `512 bytes`, `20 KB`, `2.1 MB` — formatted here rather than by
+/// `ByteCountFormatter`, whose output follows the Mac's locale.
+func gitByteSize(_ bytes: Int) -> String {
+    let kb = 1024.0, value = Double(bytes)
+    if value < kb { return "\(bytes) bytes" }
+    if value < kb * kb { return "\(Int((value / kb).rounded())) KB" }
+    let f = NumberFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.minimumFractionDigits = 1
+    f.maximumFractionDigits = 1
+    if value < kb * kb * kb { return "\(f.string(from: NSNumber(value: value / (kb * kb))) ?? "") MB" }
+    return "\(f.string(from: NSNumber(value: value / (kb * kb * kb))) ?? "") GB"
+}
+
+/// The revisions a diff compares, by group (3a-i's, with deletions):
 /// - Staged: HEAD against the index.
 /// - Changes: the index against the working tree.
 /// - Untracked: nothing against the working tree.
@@ -48,7 +107,7 @@ func editorDiffGroupTitle(_ g: GitGroup) -> String {
 /// fetch is cancelled when its tab is replaced (Rules 4, 5).
 ///
 /// **Synchronous, behind a lock, so it can be called inside `PaneStore.updateEditor`** — the turn
-/// that writes the tab also starts the fetch that owns it (3a-i's `GitFlights`, for the same reason).
+/// that writes the tab also starts the fetch that owns it (as 3a-i's Git pane did, for the same reason).
 final class EditorDiffFlights: @unchecked Sendable {
     private let lock = NSLock()
     private var flights: [String: [String: Task<Void, Never>]] = [:]   // pane -> tab key -> fetch

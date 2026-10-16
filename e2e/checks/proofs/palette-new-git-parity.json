@@ -1,6 +1,0 @@
-{
-  "check": "e2e/checks/seeded/palette-new-git-parity.jsonl",
-  "baseCommit": "f25a762e5ee7b303ce0ca6efa5715891820d0e53",
-  "provedAt": "2026-10-10T19:57:57.198384Z",
-  "checkBlob": "04eac213c3138a2cb60e28c59f1d6a5b0d793d3d"
-}

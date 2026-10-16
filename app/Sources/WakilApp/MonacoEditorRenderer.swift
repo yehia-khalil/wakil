@@ -2,13 +2,14 @@ import AppKit
 import WakilKit
 import WebKit
 
-/// The editor pane's Monaco host (3b-i): a `WKWebView` running the bundled host page in editor
-/// mode — one editable Monaco editor, a model per tab — and the one `EditorRenderer`
-/// conformance. What to call and when is `editorRenderSteps`' decision (tested); this only
+/// The editor pane's Monaco host (3b-i): a `WKWebView` running the bundled host page — one
+/// editable Monaco editor, a model per tab, and the diff editor a diff tab shows (3b-iii) — and the
+/// one `EditorRenderer` conformance. What to call and when is `editorRenderSteps`' decision (tested); this only
 /// carries each call to the page and the page's typing and view reports back.
 ///
-/// **It cannot exist without its network block**, for `MonacoDiffRenderer`'s reason: no Monaco,
-/// no extension and no buffer's text may reach the network.
+/// **It cannot exist without its network block.** `blockNetwork` is not optional: every request
+/// that is not `file:` or `blob:` is refused by the content rule list before the page loads, so no
+/// Monaco, no extension and no buffer's or diff's text can reach the network.
 @MainActor
 final class MonacoEditorRenderer: NSObject, EditorRenderer {
     let webView: WKWebView
@@ -33,16 +34,16 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
 
     init(blockNetwork: WKContentRuleList, frame: NSRect = .zero) {
         let config = WKWebViewConfiguration()
-        // See `MonacoDiffRenderer.init`: a pane scrolled off the canvas keeps painting.
+        // WebKit throttles timers, requestAnimationFrame and rendering for an inactive view, and
+        // Monaco paints its lines from those frames: kept so a pane scrolled off the canvas stays
+        // current (3a-i). It cannot help a page WebKit sees as hidden.
         config.preferences.inactiveSchedulingPolicy = .none
         config.userContentController.add(blockNetwork)
-        // Editor mode, set before the host page's own script reads it.
-        config.userContentController.addUserScript(WKUserScript(
-            source: "window.wakilMode = 'editor';", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         contentController = config.userContentController
         webView = WKWebView(frame: frame, configuration: config)
         super.init()
-        // Through a weak proxy, for `MonacoDiffRenderer`'s retain-cycle reason.
+        // Through a weak proxy: the controller retains its handlers, and the renderer retains the
+        // web view that owns the controller — handed `self`, the two would keep each other alive.
         contentController.add(MonacoEditorMessageProxy(self), name: "wakil")
         let root = Bundle.module.resourceURL!
         webView.loadFileURL(root.appendingPathComponent("monaco-host.html"), allowingReadAccessTo: root)
@@ -202,7 +203,7 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     }
 }
 
-/// The page's message handler, holding the renderer weakly — see `MonacoDiffRenderer.init`.
+/// The page's message handler, holding the renderer weakly — see `init`.
 private final class MonacoEditorMessageProxy: NSObject, WKScriptMessageHandler {
     weak var target: MonacoEditorRenderer?
 

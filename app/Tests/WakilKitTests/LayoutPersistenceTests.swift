@@ -625,3 +625,41 @@ private func conversation(_ organization: String, _ project: String, _ root: Str
                               changesHighlight: EditorChangesRow(root: "/p/api", path: "a.go", group: "staged"))
     #expect(try JSONDecoder().decode(EditorColumnState.self, from: JSONEncoder().encode(c)) == c)
 }
+
+// MARK: - 3b-iii: a saved Git pane comes back as the editor on Changes
+
+@Test func aSavedGitPaneLoadsAsAnEditorPaneOnChangesWithItsFrameAndId() throws {
+    let frame = PaneFrame(x: 10, y: 20, width: 600, height: 400)
+    var s = LayoutSnapshot(panes: [Pane(id: "git-1", kind: "git", title: "Git", frame: frame)], graph: SnapGraph())
+    s.focusedId = "git-1"
+    let out = layoutMigratingGitPanes(s)
+    let p = try #require(out.panes.first)
+    #expect(p.id == "git-1" && p.kind == "editor" && p.title == "Editor" && p.frame == frame)
+    #expect(p.editorColumn == EditorColumnState(shown: true, view: .changes, width: 240, open: []))
+    #expect(p.editorTabs == nil && out.focusedId == "git-1")
+}
+
+@Test func theMigratedColumnTakesTheLayoutsDefaultWidth() {
+    var s = LayoutSnapshot(panes: [Pane(id: "g", kind: "git", title: "Git", frame: PaneFrame(x: 0, y: 0, width: 1, height: 1))],
+                           graph: SnapGraph())
+    s.editorColumnDefault = EditorColumnState(shown: false, view: .search, width: 310, open: [])
+    #expect(layoutMigratingGitPanes(s).panes[0].editorColumn?.width == 310)
+}
+
+@Test func anyOtherUnknownKindIsStillDropped() throws {
+    let s = LayoutSnapshot(panes: [Pane(id: "x", kind: "database", title: "D", frame: PaneFrame(x: 0, y: 0, width: 1, height: 1))],
+                           graph: SnapGraph())
+    let checked = layoutDroppingUnknownPaneKinds(layoutMigratingGitPanes(s))
+    #expect(checked.snapshot.panes.isEmpty && checked.note != nil)
+}
+
+@Test func aLayoutFileWithAGitPaneComesBackAsAnEditor() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let persistence = LayoutPersistence(directory: directory)
+    try persistence.save(LayoutSnapshot(panes: [Pane(id: "git-1", kind: "git", title: "Git",
+                                                     frame: PaneFrame(x: 0, y: 0, width: 500, height: 300))],
+                                        graph: SnapGraph()), for: scope("acme", "p"))
+    let (loaded, note) = persistence.load(for: scope("acme", "p"))
+    #expect(loaded?.panes.first?.kind == "editor" && note == nil)
+}

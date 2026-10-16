@@ -37,13 +37,17 @@ never written to `project.json`, only the ref.
 
 ## Only in memory
 
-- **Pane contents** (`PaneStore`): rows, terminal blocks, api drafts and responses, git state, editor tabs and their text (the layout saves only each file tab's path, cursor and scroll; a scratch buffer is not saved). A
+- **Pane contents** (`PaneStore`): rows, terminal blocks, api drafts and responses, editor tabs and their text (the layout saves only each file tab's path, cursor and scroll; a scratch buffer is not saved). A
   result set is not persisted; the pane's page and sort (`PaneFetch`) are, with the layout.
 - **Recent api sends**, capped at `PaneStore.recentCap` (200) per list, gone with the session.
 - **Live PTYs** (`TerminalStore`).
 - **Pending confirmation** (`ConfirmationBroker`), resume and provider-switch requests (`ResumeBroker`,
   `ProviderSwitchBroker`).
 - **The window's own state** (`WindowModel`): context, snapshots, thought thread, status, palette.
+- **The window's git status** (`GitStatus`, mirrored in `WindowModel.gitRoots`, 3b-iii): one read
+  per root, kept while an editor pane is open (`syncGitWatcher()` watches the roots then) and
+  emptied when the last one closes or the organisation switches. Diff tabs are never saved; a
+  saved Git pane loads as an editor pane on Changes (`layoutMigratingGitPanes`).
 
 ## What an org switch resets
 
@@ -53,7 +57,8 @@ environment, production flags (here and in the registry), the session (`sessionS
 `assignedSessionId`, `lineageRoot`), settings and accounts, an in-flight sign-in (a mint in flight
 is left to finish), every pane snapshot and query-line state, database choices and layout scope,
 the thought thread and mirror, the provider id and harness, the pending confirmation and queued
-switch, the layout snapshot, api send requests and the palette. Then it awaits
+switch, the layout snapshot, api send requests, the palette, and the window's git status and its
+`gitRoots` mirror. Then it awaits
 `layout.clearAllScopes()`, `panes.clearAllScopes()`, `terminals.shutdownAll(runStream: .keepOpen)`
 and `syncGitWatcher()`. `organization` is set by the caller, `setOrganization`.
 

@@ -331,7 +331,7 @@ final class WindowSession {
             // (`wakil-never-wired-parameters`). `AppWiringTests` pins that
             // the store itself is built; this line is the hand-off.
             vocabulary: wiring.vocabulary,
-            // 3a-i. What keeps a git pane live. This initialiser takes it with no default,
+            // 3a-i. What keeps the window's git status live. This initialiser takes it with no default,
             // so leaving it out does not compile — the other way it could be lost is this
             // line passing something other than the wiring's, which `AppWiringTests`'
             // `theWatcherIsActuallyPassedIn` pins from the other side.

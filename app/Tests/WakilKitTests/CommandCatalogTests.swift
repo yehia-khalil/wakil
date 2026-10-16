@@ -68,8 +68,8 @@ private func paneKind(_ c: CatalogCommand) -> String? {
 }
 
 @Test func paneScopedParamsNameTheFocusedPane() {
-    let p = CommandCatalog.command(id: "git.refresh")!.params(ctx("git"), nil)
-    #expect(p == .object(["pane": .string("git-1")]))
+    let p = CommandCatalog.command(id: "db.refetch")!.params(ctx("db"), nil)
+    #expect(p == .object(["pane": .string("db-1")]))
     let close = CommandCatalog.command(id: "db.close")!.params(ctx("db"), nil)
     #expect(close == .object(["id": .string("db-1")]))
     let curl = CommandCatalog.command(id: "api.curl")!.params(ctx("api"), "curl https://x")
@@ -89,9 +89,9 @@ private func paneKind(_ c: CatalogCommand) -> String? {
 }
 
 @Test func focusedPaneCommandsComeFirstThenGlobal() {
-    let titles = CommandCatalog.entries(for: ctx("git")).map(\.title)
+    let titles = CommandCatalog.entries(for: ctx("db")).map(\.title)
     let firstGlobal = titles.firstIndex(of: "Switch environment…")!
-    #expect(titles.firstIndex(of: "Refresh")! < firstGlobal)
+    #expect(titles.firstIndex(of: "Run query again")! < firstGlobal)
     #expect(titles.firstIndex(of: "Close pane")! < firstGlobal)
     #expect(!titles.contains("Send"))   // another pane kind's command
 }
@@ -122,13 +122,13 @@ private func paneKind(_ c: CatalogCommand) -> String? {
 }
 
 @Test func entriesCarryRunOrChooseVerbs() {
-    for e in CommandCatalog.entries(for: ctx("git")) {
+    for e in CommandCatalog.entries(for: ctx("db")) {
         let c = CommandCatalog.command(id: e.id)!
         #expect(e.verb == (c.input == nil ? "run" : "choose"))
         #expect(e.group == .commands)
         #expect(e.kindLabel == "command")
         if c.input == nil {
-            #expect(e.action == .dispatch(action: c.action, params: c.params(ctx("git"), nil)))
+            #expect(e.action == .dispatch(action: c.action, params: c.params(ctx("db"), nil)))
         } else {
             #expect(e.action == .pushStep(commandId: c.id))
         }
@@ -137,7 +137,7 @@ private func paneKind(_ c: CatalogCommand) -> String? {
 
 @Test func setLanguageIsOfferedOnlyForAFocusedEditor() async {
     #expect(CommandCatalog.entries(for: ctx("editor")).map(\.title).contains("Set language…"))
-    #expect(!CommandCatalog.entries(for: ctx("git")).map(\.title).contains("Set language…"))
+    #expect(!CommandCatalog.entries(for: ctx("db")).map(\.title).contains("Set language…"))
     #expect(!CommandCatalog.entries(for: ctx(nil)).map(\.title).contains("Set language…"))
     let c = CommandCatalog.command(id: "editor.language")!
     #expect(c.action == "editor_set_language")
