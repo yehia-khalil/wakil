@@ -1,0 +1,26 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_tree","params":{"view":"changes"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-portal","path":"index.txt","group":"changed"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.loading","equals":"false"}}
+{"expect":{"tree":"contains","text":"index.txt (Changes)"}}
+{"dispatch":{"action":"editor_find","params":{"pane":"editor-1","query":"portal"},"refuses":"editor_find: the active tab is a Changes diff, which has no buffer to search; open its file (editor_open_file, ⌘⏎) and find there"}}
+{"expect":{"pane":"editor-1","field":"find","equals":"null"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"x"},"refuses":"editor_replace_range: index.txt (Changes) is open read-only; it cannot be changed from the editor"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_peek","params":{"pane":"editor-1","line":1},"refuses":"editor_peek: the active tab has no change marks"}}
+{"expect":{"pane":"editor-1","field":"peek","equals":"null"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/index.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-portal/index.txt"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":7}},"text":"PORTAL","expect":"gateway"},"refuses":"editor_replace_range: the text in range of index.txt is no longer what expect says"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":7}},"text":"PORTAL","expect":"portal"}}}
+{"expect":{"pane":"editor-1","field":"tabs[1].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":15}}}}}
+{"expect":{"pane":"editor-1","field":"selected_text","equals":"PORTAL, edited"}}
+{"dispatch":{"action":"editor_find","params":{"pane":"editor-1","query":"edited"}}}
+{"expect":{"pane":"editor-1","field":"find.query","equals":"edited"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/index.txt","discard":true}}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}

@@ -21,3 +21,4 @@
 {"expect":{"pane":"api-3","field":"kind","equals":"api"}}
 {"expect":{"pane":"api-3","field":"entry","equals":""}}
 {"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"git"},"refuses":"pane_open: param \"kind\" cannot be \"git\""}}

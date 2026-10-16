@@ -118,6 +118,36 @@ Left over from the build, for the same rung:
 - No test pins that choosing a ⌘P changed file on a fresh session enters the conversation
   (`paletteOpensAPane` gained `editor_changes_select`).
 
+### Residue — what the Cover rung's checks do not cover
+
+The e2e auditor's report (`docs/agents/e2e.md`, The residue report), one line per item.
+
+- **Not proven yet** — every 3b-iii check below is written and unproven: `make e2e-new` and `make e2e`
+  were refused at launch while a hand-opened Wakil from another worktree was running (#332's guard).
+  The machine walk in §4 says so until both run.
+- `editor_peek`, `editor_peek_step`, `editor_peek_close` — no parity. The mark, the peek's ↑ ↓,
+  Revert and × are HTML inside Monaco's web view, with no accessibility identifier the resolver can
+  address. The dispatches and the keys (↑↓, Esc, typing) are checked; clicking them is rows 8–9.
+- **Revert by its button** — walk-only (row 8), for the reason above. The edit it dispatches
+  (`editor_replace_range` with `expect`) and ⌘Z after it are checked.
+- `editor_changes_step`, `editor_open_file` — no parity: their operator channels are keys (↑↓, ⌘⏎),
+  and a parity step's UI half is a click or a drag. Both channels are checked separately.
+- **Double-click pins a diff tab** — walk-only (row 5): the harness has no double-click; `pin: true`
+  is checked by dispatch.
+- **Tones** — green additions, muted deletions, amber marks, no red, folders untinted, ignored files
+  dimmed: visual, the operator's (rows 3, 5, 7, 10).
+- **Speed** — "within about half a second" (row 4) and "within a moment" (row 7): no step kind
+  measures time; the checks only wait for the state.
+- **A deleted line's triangle between two lines** (row 7) — visual; the `deleted` hunk is in no
+  check because no fixture step deletes a tracked line, and its kind is pinned by WakilKitTests.
+- **An unchanged file shows no letter** (row 10) — no step can assert a frame is absent;
+  `editorTreeStatus` pins it in WakilKitTests.
+- `editor.changes.rootError:<…>` — never drawn: the fixture's one root error is one line.
+- `editor.diff.error` — never drawn: no fixture file makes `git_show` fail mid-launch.
+- `editor.diff.loading`, `editor.changes.loading` — drawn for milliseconds; no tree read sees them.
+- **⌘⏎ on a diff tab does not also maximize** — the journal step can only say what happened, not
+  what did not; the check asserts the file tab opened.
+
 ## 4. The machine walk
 
 Rendered by `make e2e-runbook` after the Cover rung. Nothing is written here by hand.

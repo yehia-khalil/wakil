@@ -260,7 +260,9 @@ struct EditorColumn: View {
     }
 
     private func rowLabel(_ row: EditorTreeRow) -> some View {
-        HStack(spacing: 5) {
+        // Hoisted for the identifier harvest, as in `treeRow`.
+        let path = rowPath(row)
+        return HStack(spacing: 5) {
             if row.loading { EditorBusyTick(label: "loading", identifier: "editor.tree.loading") }
             switch row.kind {
             case .root, .repo, .folder:
@@ -285,6 +287,9 @@ struct EditorColumn: View {
                 Text(letter)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(EditorPaneStyle.tone(gitStatusTone(letter)))
+                    // The row's git status letter (3b-iii), named so it can be found per row: the
+                    // tree reads it as a bare "M" or "?" beside the name.
+                    .accessibilityIdentifier("editor.tree.status:\(path)")
             }
         }
         .foregroundStyle(EditorPaneStyle.text.opacity(row.kind == .root ? 0.62 : 0.86))

@@ -1,0 +1,66 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_tree","params":{"view":"changes"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"M, index.txt"}}
+{"expect":{"tree":"absent","text":"?, fresh"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"keys":"printf 'new\\n' > ../e2e-api/fresh"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"tree":"contains","text":"?, fresh"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"app.txt","group":"changed"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.group","equals":"changed"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.no_longer_changed","equals":"false"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-api add app.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"app.txt"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"staged"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.no_longer_changed","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.group","equals":"changed"}}
+{"expect":{"tree":"contains","text":"No longer changed"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"BookingController.php","group":"untracked"}}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"BookingController.php"}}
+{"expect":{"tree":"absent","text":"No longer changed"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"rm ../e2e-api/BookingController.php"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"tree":"absent","text":"?, BookingController.php"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"fresh"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"untracked"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.no_longer_changed","equals":"true"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"printf 'a\\000b' > ../e2e-api/blob.bin"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"tree":"contains","text":"?, blob.bin"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"blob.bin","group":"untracked"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.binary","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.bytes","equals":"3"}}
+{"expect":{"tree":"contains","text":"binary · 3 bytes"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"rm ../e2e-portal/index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"tree":"contains","text":"D, index.txt"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-portal","path":"index.txt","group":"changed"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.loading","equals":"false"}}
+{"dispatch":{"action":"editor_open_file","params":{"pane":"editor-1"},"refuses":"/e2e-portal/index.txt is deleted in the working tree, so there is no file to open"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal checkout -- index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight","equals":"null"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.no_longer_changed","equals":"true"}}
+{"expect":{"tree":"contains","text":"No longer changed"}}

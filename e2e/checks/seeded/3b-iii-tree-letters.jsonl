@@ -1,0 +1,17 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"expect":{"pane":"editor-1","field":"column.open","contains":"/e2e-api"}}
+{"expect":{"tree":"contains","text":"README.md"}}
+{"expect":{"frame":"editor.tree.status:e2e-api/app.txt","inside":"editor.tree.row:e2e-api/app.txt","maxWidth":24}}
+{"expect":{"frame":"editor.tree.status:e2e-api/notes","inside":"editor.tree.row:e2e-api/notes","maxWidth":24}}
+{"expect":{"frame":"editor.tree.status:e2e-api/BookingController.php","inside":"editor.tree.row:e2e-api/BookingController.php","maxWidth":24}}
+{"do":{"click":"editor.tree.row:e2e-portal"}}
+{"expect":{"frame":"editor.tree.status:e2e-portal/index.txt","inside":"editor.tree.row:e2e-portal/index.txt","maxWidth":24}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"editor.tree.status:e2e-api/BookingController.php","inside":"editor.column","maxWidth":24}}
+{"expect":{"frame":"editor.tree.row:e2e-api/BookingController.php","inside":"editor.column","maxHeight":30}}
