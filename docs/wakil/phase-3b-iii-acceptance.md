@@ -27,7 +27,7 @@ and the git config it exports do not stay. Set `ORG` to one you have registered
 (
 set -e
 ORG=initech   # the org to walk under; initech or umbrella
-cd /Users/yehia/Desktop/scripts/wakil-public
+cd ~/Desktop/scripts/wakil-public
 rm -rf /tmp/walk-changes /tmp/walk-changes-project
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 g() { git -c user.name=walk -c user.email=walk@example.com "$@"; }
@@ -55,7 +55,7 @@ echo 'plain notes, no repository' > /tmp/walk-changes/docs/README.txt
 cat > /tmp/walk-changes-project/project.json <<J
 {"name":"walk-changes","org":"$ORG","roots":[{"path":"/tmp/walk-changes/api"},{"path":"/tmp/walk-changes/portal"},{"path":"/tmp/walk-changes/docs"}],"scopes":{},"environments":{}}
 J
-cd /Users/yehia/Desktop/scripts/wakil-public
+cd ~/Desktop/scripts/wakil-public
 ./bin/wakil project rm walk-changes --org "$ORG" || true
 ./bin/wakil project add walk-changes --path /tmp/walk-changes-project/project.json --org "$ORG"
 )
@@ -65,7 +65,7 @@ cd /Users/yehia/Desktop/scripts/wakil-public
 untracked, `Obsolete.php` deleted, and `Legacy.php` renamed to `Modern.php`; `.env` is gitignored.
 `portal` holds one change, `src/routes.ts`. `docs` is not a repository.
 
-Launch it with `cd /Users/yehia/Desktop/scripts/wakil-public && ORG=initech && WAKIL_ORG=$ORG app/Wakil.app/Contents/MacOS/Wakil` (`ORG=umbrella` for the other), then make the project
+Launch it with `cd ~/Desktop/scripts/wakil-public && ORG=initech && WAKIL_ORG=$ORG app/Wakil.app/Contents/MacOS/Wakil` (`ORG=umbrella` for the other), then make the project
 active with the project switcher (⌘P, choose `walk-changes`). Registering does not select it.
 
 ## 1. The walk
