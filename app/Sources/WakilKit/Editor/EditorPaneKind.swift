@@ -52,6 +52,9 @@ enum EditorPaneKind: PaneKind {
             .array(editorHunks(base: base, text: t.text).map { h in
                 .object(["kind": .string(h.kind.rawValue), "line": .number(Double(h.newStart)),
                          "count": .number(Double(h.newCount))]) }) } } ?? .null
+        o["peek"] = tab.flatMap(editorPeekView).map { v in
+            .object(["index": .number(Double(v.index)), "count": .number(Double(v.count)),
+                     "line": .number(Double(v.afterLine))]) } ?? .null
         o["visible_text"] = tab.flatMap { t in t.visibleRange.map { .string(editorLines(t.text, $0)) } } ?? .null
         o["selected_text"] = tab.flatMap { t in t.selection.map { .string(editorText(t.text, in: $0)) } } ?? .null
         o["column"] = s.column.map { c in .object([

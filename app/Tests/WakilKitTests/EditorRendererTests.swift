@@ -230,6 +230,7 @@ private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRender
     }
     func showDiff(key: String, original: String, modified: String, language: String) { calls.append("diff \(key)") }
     func captureKeys(_ keys: [String]) { calls.append("keys \(keys)") }
+    func showPeek(key: String, _ peek: EditorPeekView?) { calls.append("peek \(key) \(peek?.title ?? "nil")") }
 }
 
 @MainActor @Test func aFindStepReachesTheRendererLast() {
@@ -301,4 +302,17 @@ private func loaded(_ o: String, _ m: String) -> GitDiffState {
     #expect(editorCapturedKeys(comparing: false, peek: false) == [])
     #expect(editorCapturedKeys(comparing: true, peek: false) == ["escape"])
     #expect(editorCapturedKeys(comparing: false, peek: true) == ["up", "down", "escape"])
+}
+
+@Test func anOpenPeekIsAStepAndShowingAnotherTabDropsIt() {
+    var t = EditorTab.file(path: "/p/a.go", root: "/p", text: "a\nB\n", mtime: 1, language: "go")
+    t.baseline = "a\nb\n"
+    t.peek = 0
+    let s = EditorSnapshot(tabs: [t], active: 0)
+    let steps = editorRenderSteps(rendered: [:], active: nil, snapshot: s)
+    #expect(steps.contains(.peek(key: "file:/p/a.go", editorPeekView(t))))
+    let r = editorRenderedAfter(steps, rendered: [:], snapshot: s)
+    #expect(!editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: s).contains { if case .peek = $0 { true } else { false } })
+    var closed = s; closed.tabs[0].peek = nil
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: closed) == [.peek(key: "file:/p/a.go", nil)])
 }

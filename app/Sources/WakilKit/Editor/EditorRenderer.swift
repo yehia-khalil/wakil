@@ -28,6 +28,8 @@ import Foundation
     func showDiff(key: String, original: String, modified: String, language: String)
     /// The keys the page takes from Monaco and posts back (`editorCapturedKeys`). Told only on a change.
     func captureKeys(_ keys: [String])
+    /// Show `peek` under its hunk in `key`'s model as a view zone, or remove it (nil). One per pane.
+    func showPeek(key: String, _ peek: EditorPeekView?)
 }
 
 /// What the renderer was last told, per tab key.
@@ -40,8 +42,10 @@ public struct EditorRendered: Sendable, Equatable {
     public var selection: EditorRange?
     /// A diff's original side; nil for a model.
     public var original: String?
+    /// The peek shown in the model; nil when none.
+    public var peek: EditorPeekView?
     public init(text: String, language: String, readOnly: Bool, agentSerial: Int,
-                cursor: EditorPosition, selection: EditorRange?, original: String? = nil) {
+                cursor: EditorPosition, selection: EditorRange?, original: String? = nil, peek: EditorPeekView? = nil) {
         self.text = text
         self.language = language
         self.readOnly = readOnly
@@ -49,6 +53,7 @@ public struct EditorRendered: Sendable, Equatable {
         self.cursor = cursor
         self.selection = selection
         self.original = original
+        self.peek = peek
     }
 }
 
@@ -63,6 +68,7 @@ public enum EditorRenderStep: Sendable, Equatable {
     case dispose(key: String)
     case find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool)
     case diff(key: String, original: String, modified: String, language: String)
+    case peek(key: String, EditorPeekView?)
 }
 
 /// "file:<path>" or "scratch:<n>".
@@ -115,10 +121,15 @@ public func editorRenderSteps(rendered: [String: EditorRendered], active: String
             if t.cursor != r.cursor || t.selection != r.selection {
                 steps.append(.reveal(key: key, cursor: t.cursor, selection: t.selection))
             }
+            // A tab re-shown starts with no zone, since `wakilShowModel` removes it.
+            let was = key == active ? r.peek : nil
+            let now = editorPeekView(t)
+            if now != was { steps.append(.peek(key: key, now)) }
         } else {
             steps.append(.show(key: key, text: t.text, language: t.language, readOnly: t.readOnly))
             steps.append(.reveal(key: key, cursor: t.cursor, selection: t.selection))
             steps.append(.scroll(key: key, top: t.scrollTop))
+            if let now = editorPeekView(t) { steps.append(.peek(key: key, now)) }
         }
         // Once per find serial, for the pane: a tab first shown after it never replays it.
         if let f = snapshot.find, f.serial > findShown {
@@ -145,7 +156,7 @@ public func editorRenderedAfter(_ steps: [EditorRenderStep], rendered: [String: 
         } else {
             out[key] = EditorRendered(text: t.text, language: t.language, readOnly: t.readOnly,
                                       agentSerial: t.lastAgentEdit?.serial ?? 0, cursor: t.cursor,
-                                      selection: t.selection)
+                                      selection: t.selection, peek: editorPeekView(t))
         }
     }
     return out
@@ -189,6 +200,7 @@ public func editorFindShownSeed(_ snapshot: EditorSnapshot) -> Int {
             renderer.find(key: key, query: query, caseSensitive: caseSensitive, wholeWord: wholeWord, regex: regex)
         case .diff(let key, let o, let m, let language):
             renderer.showDiff(key: key, original: o, modified: m, language: language)
+        case .peek(let key, let p): renderer.showPeek(key: key, p)
         }
     }
 }

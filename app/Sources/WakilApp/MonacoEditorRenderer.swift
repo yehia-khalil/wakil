@@ -28,6 +28,8 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     var onLog: ((String) -> Void)?
     /// A key the page took from Monaco (`captureKeys`): "up", "down" or "escape".
     var onKey: ((String) -> Void)?
+    /// A peek control pressed in `key`: "up", "down", "revert" or "close".
+    var onPeek: ((String, String) -> Void)?
     private var capturing: [String] = []
 
     /// Held so `tearDown` can reach it from `deinit`, which is not main-actor isolated.
@@ -105,6 +107,12 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
 
     func showDiff(key: String, original: String, modified: String, language: String) {
         run("wakilShowDiff(\([key, original, modified, language].map(Self.jsString).joined(separator: ",")))")
+    }
+
+    func showPeek(key: String, _ p: EditorPeekView?) {
+        guard let p else { run("wakilPeek(\(Self.jsString(key)),null)"); return }
+        let old = p.old.map(Self.jsString).joined(separator: ","), new = p.new.map(Self.jsString).joined(separator: ",")
+        run("wakilPeek(\(Self.jsString(key)),{title:\(Self.jsString(p.title)),afterLine:\(p.afterLine),old:[\(old)],new:[\(new)]})")
     }
 
     func captureKeys(_ keys: [String]) {
@@ -190,6 +198,8 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
             onView?(key, cursor, selection, visible, top)
         case "key":
             if let key = body["key"] as? String { onKey?(key) }
+        case "peek":
+            if let key = body["key"] as? String, let op = body["op"] as? String { onPeek?(key, op) }
         case "mark":
             if let key = body["key"] as? String, let line = Self.int(body["line"]) { onMark?(key, line) }
         case "find":

@@ -8,6 +8,11 @@
 .wakil-mark-deletedBelow::after,.wakil-mark-deletedAbove::after{content:'';position:absolute;left:3px;border:4px solid transparent;border-left-color:rgba(232,236,246,.45)}
 .wakil-mark-deletedBelow::after{bottom:-4px}
 .wakil-mark-deletedAbove::after{top:-4px}
+.wakil-peek{pointer-events:auto;background:#11141e;border-top:1px solid #2a2f40;border-bottom:1px solid #2a2f40;font:12px Menlo,monospace}
+.wakil-peek-head{display:flex;gap:10px;padding:2px 8px;color:rgba(232,236,246,.62);font-size:11px}
+.wakil-peek-head button{all:unset;cursor:pointer;color:rgba(232,236,246,.9)}
+.wakil-peek-old{color:rgba(232,236,246,.45);padding-left:8px;white-space:pre}
+.wakil-peek-new{color:#8be0c8;padding-left:8px;white-space:pre}
 </style></head>
 <body><div id="d"></div>
 <script>
@@ -110,6 +115,7 @@
     });
     function showCode() { dd.style.display = 'none'; codeHost.style.display = 'block'; diffKey = null; }
     window.wakilShowDiff = function (key, original, modified, language) {
+      ed.changeViewZones(dropPeek);
       diffScroll = key === diffKey ? dme.getScrollTop() : null;
       const old = diff.getModel();
       diff.setModel({ original: monaco.editor.createModel(original, language),
@@ -181,7 +187,34 @@
     });
     ed.onDidChangeCursorSelection(report);
     ed.onDidScrollChange(function (e) { if (e.scrollTopChanged) report(); });
+    // 3b-iii: the peek — one view zone under a hunk, its old lines muted over its new ones in green.
+    // Its buttons post back; the app dispatches (editor_peek_step / _close, and Revert's edit).
+    let peekZone = null;
+    function dropPeek(acc) { if (peekZone !== null) { acc.removeZone(peekZone); peekZone = null; } }
+    window.wakilPeek = function (key, p) {
+      ed.changeViewZones(function (acc) {
+        dropPeek(acc);
+        if (!p || key !== current) return;
+        const node = document.createElement('div'); node.className = 'wakil-peek';
+        const head = document.createElement('div'); head.className = 'wakil-peek-head';
+        const title = document.createElement('span'); title.textContent = p.title; head.appendChild(title);
+        [['\u2191', 'up'], ['\u2193', 'down'], ['Revert', 'revert'], ['\u00d7', 'close']].forEach(function (b) {
+          const el = document.createElement('button'); el.textContent = b[0];
+          el.addEventListener('mousedown', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            post({ type: 'peek', key: key, op: b[1] });
+          });
+          head.appendChild(el);
+        });
+        node.appendChild(head);
+        p.old.forEach(function (l) { const d = document.createElement('div'); d.className = 'wakil-peek-old'; d.textContent = l; node.appendChild(d); });
+        p.new.forEach(function (l) { const d = document.createElement('div'); d.className = 'wakil-peek-new'; d.textContent = l; node.appendChild(d); });
+        peekZone = acc.addZone({ afterLineNumber: p.afterLine, heightInLines: 1 + p.old.length + p.new.length, domNode: node });
+      });
+      if (p && key === current) ed.revealLinesInCenterIfOutsideViewport(Math.max(p.afterLine, 1), p.afterLine + 1 + p.old.length + p.new.length);
+    };
     window.wakilShowModel = function (key, text, language, readOnly) {
+      ed.changeViewZones(dropPeek);
       showCode();
       if (!models[key]) { models[key] = monaco.editor.createModel(text, language); indent(models[key]); }
       current = key;

@@ -17,6 +17,12 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
     case notADiff(action: String)
     /// `editor_open_file` on a diff whose file is gone from the working tree.
     case fileGone(path: String)
+    /// The active tab has no change marks: untracked, outside a repository, scratch, read-only, or a diff.
+    case noMarks(action: String)
+    /// `editor_peek` on a line with no mark.
+    case noChange(line: Int)
+    /// `editor_peek_step` with no peek open.
+    case noPeek(action: String)
 
     public var description: String {
         switch self {
@@ -37,6 +43,10 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
         case .notADiff(let action): "\(action): the active tab is not a Changes diff; it opens a diff's file"
         case .fileGone(let path):
             "editor_open_file: \(path) is deleted in the working tree, so there is no file to open"
+        case .noMarks(let action):
+            "\(action): the active tab has no change marks (it is untracked, outside a repository, a scratch or read-only tab, or a diff)"
+        case .noChange(let line): "editor_peek: line \(line) has no change mark"
+        case .noPeek(let action): "\(action): no peek is open; open one with editor_peek on a marked line"
         case .nothingToUndo:
             "editor_replace_undo: this pane has no replace to undo; only its latest replace can be undone, "
                 + "once, while the window is open"
@@ -137,6 +147,12 @@ func editorTab(fromRead o: [String: JSONValue], path: String, root: String) -> E
 /// What a tab becomes after re-reading its file (spec, Data flow: disk changes). `read` is the tab
 /// a fresh `files_read` made. The operator's cursor, scroll, language and view are always kept.
 func editorAfterDiskRead(_ tab: EditorTab, read: EditorTab) -> EditorTab {
+    var out = editorAfterDiskReadRaw(tab, read: read)
+    out.peek = editorPeekClamped(out.peek, baseline: out.baseline, text: out.text)   // R12; nil when read-only
+    return out
+}
+
+private func editorAfterDiskReadRaw(_ tab: EditorTab, read: EditorTab) -> EditorTab {
     var t = tab        // keeps `baseline` (the index text is not the disk's)
     if read.diskState == .deleted {
         t.diskState = .deleted
@@ -713,6 +729,7 @@ public func registerEditorActions(
                 guard let i = editorTabIndex(s, path: path) else { return .noTab }
                 if s.tabs[i].readOnly { return .readOnly(s.tabs[i].path ?? "", s.tabs[i].notice) }
                 s.tabs[i].text = editorReplacing(s.tabs[i].text, r, with: text)
+                s.tabs[i].peek = editorPeekClamped(s.tabs[i].peek, baseline: s.tabs[i].baseline, text: s.tabs[i].text)
                 s.tabs[i].edits += 1
                 s.tabs[i].preview = false   // an edit keeps a preview tab (spec)
                 let serial = (s.tabs[i].lastAgentEdit?.serial ?? 0) + 1
@@ -723,6 +740,80 @@ public func registerEditorActions(
             case .noTab: throw EditorActionError.noTab(action: "editor_replace_range")
             case .readOnly(let p, let n): throw EditorActionError.readOnly(action: "editor_replace_range", path: p, notice: n)
             case .replaced: break
+            }
+            return await reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "editor_peek",
+        description: "Open the peek on the change marked at line (1-based) of the editor pane's active file tab: "
+            + "the hunk's old lines over its new ones, under it in the file, with previous / next and Revert. The "
+            + "cursor moves to the hunk. Marks compare the buffer with the file's index text. Returns the pane's state.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["line": .object(["type": .string("integer")])], required: ["line"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_peek")
+            guard let line = jsonObject(params)?["line"]?.intValue else {
+                throw StandardActionError.missingParam(action: "editor_peek", param: "line")
+            }
+            let outcome = await panes.updateEditor(paneId: pane) { s -> EditorPeekOutcome in
+                guard let i = editorTabIndex(s, path: nil) else { return .noTab }
+                guard let base = s.tabs[i].baseline, !s.tabs[i].readOnly else { return .noMarks }
+                let hunks = editorHunks(base: base, text: s.tabs[i].text)
+                guard let h = editorHunkIndex(at: line, in: hunks) else { return .noChange }
+                s.tabs[i].peek = h
+                s.tabs[i].cursor = EditorPosition(line: editorGutterMarks(hunks)[h].start, column: 1)
+                s.tabs[i].selection = nil
+                return .ok
+            }
+            switch outcome {
+            case .noTab: throw EditorActionError.noTab(action: "editor_peek")
+            case .noMarks: throw EditorActionError.noMarks(action: "editor_peek")
+            case .noChange: throw EditorActionError.noChange(line: line)
+            case .noPeek, .ok: break
+            }
+            return await reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "editor_peek_step",
+        description: "Move the open peek delta changes (1 next, -1 previous) through the active tab's changes, "
+            + "stopping at either end; the cursor moves with it. Returns the pane's state.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["delta": .object(["type": .string("integer")])], required: ["delta"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_peek_step")
+            guard let delta = jsonObject(params)?["delta"]?.intValue else {
+                throw StandardActionError.missingParam(action: "editor_peek_step", param: "delta")
+            }
+            let outcome = await panes.updateEditor(paneId: pane) { s -> EditorPeekOutcome in
+                guard let i = editorTabIndex(s, path: nil) else { return .noTab }
+                guard let p = s.tabs[i].peek, let base = s.tabs[i].baseline else { return .noPeek }
+                let hunks = editorHunks(base: base, text: s.tabs[i].text)
+                guard !hunks.isEmpty else { s.tabs[i].peek = nil; return .noPeek }
+                let next = min(max(p + delta, 0), hunks.count - 1)
+                s.tabs[i].peek = next
+                s.tabs[i].cursor = EditorPosition(line: editorGutterMarks(hunks)[next].start, column: 1)
+                s.tabs[i].selection = nil
+                return .ok
+            }
+            switch outcome {
+            case .noTab: throw EditorActionError.noTab(action: "editor_peek_step")
+            case .noPeek, .noMarks, .noChange: throw EditorActionError.noPeek(action: "editor_peek_step")
+            case .ok: break
+            }
+            return await reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "editor_peek_close",
+        description: "Close the active tab's peek; the cursor stays where it is. Nothing to close is not an error.",
+        kind: .control, audience: .agentReachable,
+        schema: schema([:]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_peek_close")
+            await panes.updateEditor(paneId: pane) { s in
+                if let i = editorTabIndex(s, path: nil) { s.tabs[i].peek = nil }
             }
             return await reply(pane)
         }))
@@ -1680,6 +1771,7 @@ private actor EditorColumnWrites {
 }
 
 private enum EditorCloseOutcome: Sendable { case noTab, unsaved(String), closed }
+private enum EditorPeekOutcome: Sendable { case ok, noTab, noMarks, noChange, noPeek }
 private enum EditorReplaceOutcome: Sendable { case noTab, readOnly(String, String?), replaced }
 private enum EditorUndoClaim: Sendable { case busy, nothing, claimed([EditorReplaceUndoRecord]) }
 private enum EditorSaveClaim: Sendable {

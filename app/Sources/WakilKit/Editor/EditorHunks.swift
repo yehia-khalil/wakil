@@ -131,3 +131,57 @@ public func editorRevertEdit(_ hunk: EditorHunk, text: String) -> (range: Editor
         return (EditorRange(start: tail(last), end: tail(last)), "\n" + old)              // after a last line with no newline
     }
 }
+
+/// What the peek draws for a tab: its hunk's old lines over its new ones, under line `afterLine`
+/// (0: above the first line), and its header's title — `2 of 5 changes`.
+public struct EditorPeekView: Sendable, Equatable {
+    public var index: Int
+    public var count: Int
+    public var afterLine: Int
+    public var title: String
+    public var old: [String]
+    public var new: [String]
+}
+
+public func editorPeekView(_ tab: EditorTab) -> EditorPeekView? {
+    guard let i = tab.peek, let base = tab.baseline, !tab.readOnly else { return nil }
+    let hunks = editorHunks(base: base, text: tab.text)
+    guard hunks.indices.contains(i) else { return nil }
+    let h = hunks[i], lines = editorHunkLines(tab.text)
+    let new = h.newCount == 0 ? [] : Array(lines[(h.newStart - 1)..<(h.newStart - 1 + h.newCount)])
+    let after = h.kind == .deleted ? h.newStart - 1 : h.newStart + h.newCount - 1
+    let title = "\(i + 1) of \(hunks.count) change\(hunks.count == 1 ? "" : "s")"
+    return EditorPeekView(index: i, count: hunks.count, afterLine: after, title: title, old: h.oldLines, new: new)
+}
+
+/// Whether `line` has a change mark in `tab`: what the view asks before it dispatches `editor_peek`,
+/// since a click anywhere in the gutter strip posts, marked or not.
+public func editorPeekLineHasMark(_ tab: EditorTab, line: Int) -> Bool {
+    guard let base = tab.baseline, !tab.readOnly else { return false }
+    return editorHunkIndex(at: line, in: editorHunks(base: base, text: tab.text)) != nil
+}
+
+/// Revert's `editor_replace_range`, for the active tab's open peek: its path, the range and the old lines.
+public func editorPeekRevert(_ s: EditorSnapshot) -> (path: String, range: EditorRange, text: String)? {
+    guard let a = s.active, a < s.tabs.count, let path = s.tabs[a].path, let i = s.tabs[a].peek,
+          let base = s.tabs[a].baseline else { return nil }
+    let hunks = editorHunks(base: base, text: s.tabs[a].text)
+    guard hunks.indices.contains(i) else { return nil }
+    let e = editorRevertEdit(hunks[i], text: s.tabs[a].text)
+    return (path, e.range, e.text)
+}
+
+/// The peek index after `text` changed under it (R12): clamped to the hunks there are, nil when none.
+public func editorPeekClamped(_ peek: Int?, baseline: String?, text: String) -> Int? {
+    guard let peek, let baseline else { return nil }
+    let n = editorHunks(base: baseline, text: text).count
+    return n == 0 ? nil : min(peek, n - 1)
+}
+
+/// `range` as an action's `range` param.
+public func editorRangeParam(_ r: EditorRange) -> JSONValue {
+    func p(_ x: EditorPosition) -> JSONValue {
+        .object(["line": .integer(Int64(x.line)), "column": .integer(Int64(x.column))])
+    }
+    return .object(["start": p(r.start), "end": p(r.end)])
+}

@@ -135,6 +135,7 @@ extension PaneStore {
             s.tabs[i].text = text
             s.tabs[i].edits += 1
             s.tabs[i].preview = false   // an edit keeps a preview tab (spec)
+            s.tabs[i].peek = nil        // typing closes the peek (spec); the marks stay
         }
     }
 
