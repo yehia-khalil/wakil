@@ -65,7 +65,7 @@ private func runProbeMonaco(into directory: String) async -> Int32 {
     let app = NSApplication.shared
 
     let blocker: WKContentRuleList
-    do { blocker = try await MonacoDiffRenderer.compileNetworkBlock() } catch {
+    do { blocker = try await MonacoEditorRenderer.compileNetworkBlock() } catch {
         log("[host] return 1: could not compile the network block: \(error)")
         return 1
     }

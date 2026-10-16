@@ -228,6 +228,8 @@ private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRender
     func find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool) {
         calls.append("find \(key) \(query) \(caseSensitive) \(wholeWord) \(regex)")
     }
+    func showDiff(key: String, original: String, modified: String, language: String) { calls.append("diff \(key)") }
+    func captureKeys(_ keys: [String]) { calls.append("keys \(keys)") }
 }
 
 @MainActor @Test func aFindStepReachesTheRendererLast() {
@@ -237,4 +239,66 @@ private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRender
     editorApply(editorRenderSteps(rendered: [:], active: nil, snapshot: s, findShown: 0), to: r)
     #expect(r.calls == ["show file:/p/a.go", "reveal file:/p/a.go", "scroll file:/p/a.go",
                         "find file:/p/a.go q true false true"])
+}
+
+// MARK: - Diff tabs (3b-iii)
+
+private func diffTab(_ d: GitDiffState) -> EditorTab {
+    var t = EditorTab.diff(root: "/p/api", path: "b.go", group: .changed)
+    t.diffState = d
+    return t
+}
+private func loaded(_ o: String, _ m: String) -> GitDiffState {
+    GitDiffState(original: o, modified: m, language: "go", binary: false, bytes: 1, lines: 1, truncated: false,
+                 error: nil, loading: false)
+}
+
+@Test func aDiffTabIsShownInTheDiffEditorAndNeverAsAModel() {
+    let s = EditorSnapshot(tabs: [diffTab(loaded("a\n", "b\n"))], active: 0)
+    let steps = editorRenderSteps(rendered: [:], active: nil, snapshot: s)
+    #expect(steps == [.diff(key: "diff:changed:/p/api/b.go", original: "a\n", modified: "b\n", language: "go")])
+}
+
+@Test func theSameDiffReDeliveredIsNoStep() {
+    let s = EditorSnapshot(tabs: [diffTab(loaded("a\n", "b\n"))], active: 0)
+    let steps = editorRenderSteps(rendered: [:], active: nil, snapshot: s)
+    let after = editorRenderedAfter(steps, rendered: [:], snapshot: s)
+    #expect(editorRenderSteps(rendered: after, active: "diff:changed:/p/api/b.go", snapshot: s).isEmpty)
+}
+
+// The last file's diff must not sit under the new file's name while the new one loads (3a-i).
+@Test func aDiffStillLoadingWhenFirstShownShowsNothing() {
+    var d = loaded("", ""); d.loading = true
+    let s = EditorSnapshot(tabs: [diffTab(d)], active: 0)
+    #expect(editorRenderSteps(rendered: [:], active: nil, snapshot: s)
+        == [.diff(key: "diff:changed:/p/api/b.go", original: "", modified: "", language: "plaintext")])
+}
+
+@Test func aRefreshLoadingTheShownDiffKeepsIt() {
+    let s = EditorSnapshot(tabs: [diffTab(loaded("a\n", "b\n"))], active: 0)
+    let after = editorRenderedAfter(editorRenderSteps(rendered: [:], active: nil, snapshot: s), rendered: [:], snapshot: s)
+    var reloading = s; reloading.tabs[0].diffState?.loading = true
+    #expect(editorRenderSteps(rendered: after, active: "diff:changed:/p/api/b.go", snapshot: reloading).isEmpty)
+}
+
+@Test func anErrorOrABinaryDiffShowsAnEmptyDiffBesideItsBanner() {
+    var d = loaded("x", "y"); d.binary = true
+    let s = EditorSnapshot(tabs: [diffTab(d)], active: 0)
+    #expect(editorRenderSteps(rendered: [:], active: nil, snapshot: s)
+        == [.diff(key: "diff:changed:/p/api/b.go", original: "", modified: "", language: "go")])
+}
+
+@Test func leavingADiffForAFileTabShowsTheModelAgain() {
+    let file = EditorTab.file(path: "/p/api/a.go", root: "/p/api", text: "x", mtime: 1, language: "go")
+    let s = EditorSnapshot(tabs: [diffTab(loaded("a", "b")), file], active: 0)
+    let r = editorRenderedAfter(editorRenderSteps(rendered: [:], active: nil, snapshot: s), rendered: [:], snapshot: s)
+    var onFile = s; onFile.active = 1
+    let steps = editorRenderSteps(rendered: r, active: "diff:changed:/p/api/b.go", snapshot: onFile)
+    #expect(steps.first == .show(key: "file:/p/api/a.go", text: "x", language: "go", readOnly: false))
+}
+
+@Test func thePageTakesOnlyTheKeysAnOpenPeekOrCompareNeeds() {
+    #expect(editorCapturedKeys(comparing: false, peek: false) == [])
+    #expect(editorCapturedKeys(comparing: true, peek: false) == ["escape"])
+    #expect(editorCapturedKeys(comparing: false, peek: true) == ["up", "down", "escape"])
 }

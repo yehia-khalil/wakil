@@ -64,8 +64,6 @@ struct EditorPane: View {
     let resolveUnsaved: (UnsavedChoice) -> Void
 
     @State private var host = EditorHost()
-    /// Compare's diff host: made the first time Compare opens, kept for the pane's life.
-    @State private var compareHost = GitDiffHost()
     /// Compare, open: the path and the disk text it shows against the buffer.
     @State private var comparing: EditorComparing?
     /// Compare could not read the file: the reason, whole (Rule 8).
@@ -128,8 +126,10 @@ struct EditorPane: View {
         }
         .onChange(of: viewOptions, initial: true) { _, o in
             host.setOptions(o)
-            // A nil renderer is fine: showCompare re-sends the font size when Compare opens.
-            compareHost.renderer?.setFontSize(o.fontSize)
+        }
+        // The keys the page takes follow the pane's state (R13). Task 7 adds the peek.
+        .onChange(of: comparing != nil, initial: true) { _, on in
+            host.renderer?.captureKeys(editorCapturedKeys(comparing: on, peek: false))
         }
         .task {
             host.bufferChanged = bufferChanged
@@ -178,7 +178,7 @@ struct EditorPane: View {
                 // Compare's diff) with it — keys typed after a click on the Settings tree were
                 // going into the file. Only when one of them still holds it: a field the click
                 // landed on has it already, and a pane that takes it is not overruled.
-                host.resignKeyboard(alsoFrom: compareHost.renderer?.webView)
+                host.resignKeyboard(alsoFrom: nil)
                 return
             }
             if !saveAsRequested, !columnOwnsKeyboard { host.focus() }
@@ -212,14 +212,15 @@ struct EditorPane: View {
                 lineText(compareFailure).accessibilityIdentifier("editor.compare.failure")
             }
             if saveAsRequested { saveAsField }
-            ZStack {
-                if let comparing {
-                    compareView(comparing)
-                } else {
+            // One web view for the code editor, a diff tab and Compare: the page chooses what shows.
+            ZStack(alignment: .top) {
+                VStack(spacing: 0) {
+                    if let comparing { compareHeader(comparing) }
+                    if let tab = activeTab, let d = tab.diffState { diffLine(tab, d) }
                     GitDiffHostView(webView: host.renderer?.webView)
-                        .accessibilityIdentifier("editor.monaco")
-                    if snapshot.tabs.isEmpty { emptyState }
+                        .accessibilityIdentifier(comparing != nil ? "editor.compare.diff" : "editor.monaco")
                 }
+                if snapshot.tabs.isEmpty, comparing == nil { emptyState }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -426,6 +427,22 @@ struct EditorPane: View {
         .accessibilityIdentifier("editor.diskChanged")
     }
 
+    // MARK: - Diff tab line
+
+    /// A diff tab's state: Loading (Rule 5), its error whole (Rule 8), the binary or truncated
+    /// banner (3a-i), or "No longer changed".
+    @ViewBuilder
+    private func diffLine(_ tab: EditorTab, _ d: GitDiffState) -> some View {
+        if d.loading {
+            HStack(spacing: 6) { EditorBusyTick(); lineText("Loading") }.accessibilityIdentifier("editor.diff.loading")
+        } else if let error = d.error {
+            lineText(error).accessibilityIdentifier("editor.diff.error")
+        } else if let banner = gitDiffBanner(d) {
+            lineText(banner).accessibilityIdentifier("editor.diff.banner")
+        }
+        if d.noLongerChanged { lineText("No longer changed").accessibilityIdentifier("editor.diff.gone") }
+    }
+
     // MARK: - Compare
 
     private func openCompare(_ tab: EditorTab) {
@@ -437,19 +454,15 @@ struct EditorPane: View {
                 return
             }
             comparing = EditorComparing(path: path, disk: disk)
-            await compareHost.start()
-            compareHost.onKey = { key in if key == "escape" { closeCompare() } }
-            compareHost.captureKeys(true)
+            host.onKey = { key in if key == "escape" { closeCompare() } }
             showCompare()
         }
     }
 
     /// Disk on the original side, the buffer as it is now on the modified side.
     private func showCompare() {
-        guard let c = comparing, let renderer = compareHost.renderer,
-              let tab = snapshot.tabs.first(where: { $0.path == c.path }) else { return }
-        renderer.show(original: c.disk, modified: tab.text, language: tab.language)
-        renderer.setFontSize(viewOptions.fontSize)
+        guard let c = comparing, let tab = snapshot.tabs.first(where: { $0.path == c.path }) else { return }
+        host.showCompare(original: c.disk, modified: tab.text, language: tab.language)
     }
 
     private var ownsCompareEscape: Bool {
@@ -458,11 +471,11 @@ struct EditorPane: View {
 
     private func closeCompare() {
         comparing = nil
-        compareHost.captureKeys(false)
+        host.endCompare()
         host.focus()
     }
 
-    private func compareView(_ c: EditorComparing) -> some View {
+    private func compareHeader(_ c: EditorComparing) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 12) {
                 Text("\((c.path as NSString).lastPathComponent) — on disk ↔ unsaved")
@@ -483,9 +496,6 @@ struct EditorPane: View {
                     .accessibilityIdentifier("editor.compare.close")
             }
             .padding(.horizontal, 10)
-            GitDiffHostView(webView: compareHost.renderer?.webView)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .accessibilityIdentifier("editor.compare.diff")
         }
     }
 
@@ -675,6 +685,11 @@ final class EditorHost {
     /// The newest snapshot handed in. One that lands while the renderer is still being made
     /// (a new pane's first tab) is applied when it exists, not dropped.
     @ObservationIgnored private var latest: EditorSnapshot?
+    /// The pane's key handler for keys the page took (`captureKeys`), re-handed by the view.
+    @ObservationIgnored var onKey: ((String) -> Void)?
+    /// Compare is on screen: snapshots are kept (`latest`) but not rendered, or the next one — a
+    /// keystroke's echo, a view report — would put the active tab back over Compare.
+    @ObservationIgnored private var comparing = false
 
     /// The offline rule list, compiled once per launch and shared by every editor pane.
     private static var networkBlock: WKContentRuleList?
@@ -688,7 +703,7 @@ final class EditorHost {
             if let cached = Self.networkBlock {
                 block = cached
             } else {
-                block = try await MonacoDiffRenderer.compileNetworkBlock()
+                block = try await MonacoEditorRenderer.compileNetworkBlock()
                 Self.networkBlock = block
             }
         } catch {
@@ -733,6 +748,7 @@ final class EditorHost {
                 self.viewsInFlight -= 1
             }
         }
+        made.onKey = { [weak self] key in self?.onKey?(key) }
         made.onFind = { [weak self] report in
             guard let send = self?.findReported else { return }
             Task { @MainActor in await send(report) }
@@ -761,7 +777,7 @@ final class EditorHost {
     func apply(_ snapshot: EditorSnapshot) {
         latest = snapshot
         subjects = Dictionary(snapshot.tabs.map { (editorTabKey($0), $0.subject) }, uniquingKeysWith: { a, _ in a })
-        guard let renderer else { return }
+        guard !comparing, let renderer else { return }
         let activeKey = active
         guard let shown = editorSnapshotToRender(
             snapshot, rendered: rendered, active: activeKey, typed: activeKey.flatMap { typed[$0] } ?? [],
@@ -778,6 +794,20 @@ final class EditorHost {
             basisSent[key] = serial
             renderer.setBasis(key: key, serial: serial)
         }
+    }
+
+    /// Shows `original` ↔ `modified` in the diff editor as Compare (R2), outside the tab render.
+    func showCompare(original: String, modified: String, language: String) {
+        comparing = true
+        renderer?.showDiff(key: "compare", original: original, modified: modified, language: language)
+        active = nil   // when Compare ends, the active tab is shown again, as a switch would show it
+    }
+
+    /// Back from Compare: the active tab is shown again.
+    func endCompare() {
+        comparing = false
+        active = nil
+        if let latest { apply(latest) }
     }
 
     /// The editor takes the keyboard: the web view first responder, then Monaco.

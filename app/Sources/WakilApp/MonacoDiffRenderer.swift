@@ -71,23 +71,11 @@ final class MonacoDiffRenderer: NSObject, DiffRenderer {
         onReady = []
     }
 
-    /// Blocks every request that is not `file:` or `blob:` (the host page
-    /// starts Monaco's worker from a blob). WKContentRuleList regexes support
-    /// no groups or lookahead, so "everything except" is block-all followed by
-    /// ignore-previous-rules for each allowed scheme.
-    static func compileNetworkBlock() async throws -> WKContentRuleList {
-        let rules = #"[{"trigger":{"url-filter":".*"},"action":{"type":"block"}},{"trigger":{"url-filter":"^file:"},"action":{"type":"ignore-previous-rules"}},{"trigger":{"url-filter":"^blob:"},"action":{"type":"ignore-previous-rules"}}]"#
-        guard let list = try await WKContentRuleListStore.default()
-            .compileContentRuleList(forIdentifier: "wakil-monaco-offline-v3", encodedContentRuleList: rules)
-        else { throw CocoaError(.featureUnsupported) }
-        return list
-    }
-
     // MARK: DiffRenderer
 
     func show(original: String, modified: String, language: String) {
         lastScrollTop = 0   // a new model pair starts at the top
-        let args = [original, modified, language].map(Self.jsString).joined(separator: ",")
+        let args = [original, modified, language].map(MonacoEditorRenderer.jsString).joined(separator: ",")
         run("wakilShowDiff(\(args))")
     }
 
@@ -158,11 +146,6 @@ final class MonacoDiffRenderer: NSObject, DiffRenderer {
     private static func json(_ object: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return "\(object)" }
         return String(decoding: data, as: UTF8.self)
-    }
-
-    static func jsString(_ s: String) -> String {
-        let data = try! JSONSerialization.data(withJSONObject: [s])
-        return String(String(data: data, encoding: .utf8)!.dropFirst().dropLast())
     }
 }
 

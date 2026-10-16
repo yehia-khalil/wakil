@@ -23,6 +23,9 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     var onFind: ((EditorFindReport) -> Void)?
     /// One line per page diagnostic and per failed `evaluateJavaScript`.
     var onLog: ((String) -> Void)?
+    /// A key the page took from Monaco (`captureKeys`): "up", "down" or "escape".
+    var onKey: ((String) -> Void)?
+    private var capturing: [String] = []
 
     /// Held so `tearDown` can reach it from `deinit`, which is not main-actor isolated.
     nonisolated private let contentController: WKUserContentController
@@ -97,6 +100,16 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
 
     func focus() { run("wakilFocus()") }
 
+    func showDiff(key: String, original: String, modified: String, language: String) {
+        run("wakilShowDiff(\([key, original, modified, language].map(Self.jsString).joined(separator: ",")))")
+    }
+
+    func captureKeys(_ keys: [String]) {
+        guard keys != capturing else { return }
+        capturing = keys
+        run("wakilCaptureKeys([\(keys.map(Self.jsString).joined(separator: ","))])")
+    }
+
     /// The agent-edit serial `key`'s model now holds. Queued after the steps that applied it, so
     /// the page's posts carry it only once the edit is in the model.
     func setBasis(key: String, serial: Int) { run("wakilSetBasis(\(Self.js(key)),\(serial))") }
@@ -106,7 +119,24 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
         run("wakilSetOptions({fontSize:\(o.fontSize),wordWrap:\(o.wordWrap),tabSize:\(o.tabSize),insertSpaces:\(o.insertSpaces)})")
     }
 
-    private static func js(_ s: String) -> String { MonacoDiffRenderer.jsString(s) }
+    private static func js(_ s: String) -> String { jsString(s) }
+
+    /// `s` as a JavaScript string literal.
+    static func jsString(_ s: String) -> String {
+        let data = try! JSONSerialization.data(withJSONObject: [s])
+        return String(String(data: data, encoding: .utf8)!.dropFirst().dropLast())
+    }
+
+    /// Blocks every request that is not `file:` or `blob:` (the host page starts Monaco's worker
+    /// from a blob). WKContentRuleList regexes support no groups or lookahead, so "everything
+    /// except" is block-all followed by ignore-previous-rules for each allowed scheme.
+    static func compileNetworkBlock() async throws -> WKContentRuleList {
+        let rules = #"[{"trigger":{"url-filter":".*"},"action":{"type":"block"}},{"trigger":{"url-filter":"^file:"},"action":{"type":"ignore-previous-rules"}},{"trigger":{"url-filter":"^blob:"},"action":{"type":"ignore-previous-rules"}}]"#
+        guard let list = try await WKContentRuleListStore.default()
+            .compileContentRuleList(forIdentifier: "wakil-monaco-offline-v3", encodedContentRuleList: rules)
+        else { throw CocoaError(.featureUnsupported) }
+        return list
+    }
 
     /// Runs `js` once the page is ready, in call order; a failure goes to `onLog`.
     private func run(_ js: String) {
@@ -150,6 +180,8 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
             }()
             let top = (body["scrollTop"] as? NSNumber)?.doubleValue ?? 0
             onView?(key, cursor, selection, visible, top)
+        case "key":
+            if let key = body["key"] as? String { onKey?(key) }
         case "find":
             onFind?(EditorFindReport(query: body["query"] as? String ?? "",
                                      caseSensitive: (body["matchCase"] as? NSNumber)?.boolValue ?? false,

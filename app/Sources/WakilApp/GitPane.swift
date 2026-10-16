@@ -497,7 +497,7 @@ final class GitDiffHost {
             if let cached = Self.networkBlock {
                 block = cached
             } else {
-                block = try await MonacoDiffRenderer.compileNetworkBlock()
+                block = try await MonacoEditorRenderer.compileNetworkBlock()
                 Self.networkBlock = block
             }
         } catch {

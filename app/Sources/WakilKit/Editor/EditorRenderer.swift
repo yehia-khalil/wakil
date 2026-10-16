@@ -22,6 +22,12 @@ import Foundation
     func focus()
     /// Open Monaco's find bar on `key`'s model with the query and its switches (`editor_find`).
     func find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool)
+    /// Show a two-sided inline diff (a diff tab, or Compare) in the pane's diff editor, the code editor
+    /// hidden until the next `showModel`. `key` names what is shown: the same key shown again keeps
+    /// its scroll (a refresh, Rule 6).
+    func showDiff(key: String, original: String, modified: String, language: String)
+    /// The keys the page takes from Monaco and posts back (`editorCapturedKeys`). Told only on a change.
+    func captureKeys(_ keys: [String])
 }
 
 /// What the renderer was last told, per tab key.
@@ -32,14 +38,17 @@ public struct EditorRendered: Sendable, Equatable {
     public var agentSerial: Int
     public var cursor: EditorPosition
     public var selection: EditorRange?
+    /// A diff's original side; nil for a model.
+    public var original: String?
     public init(text: String, language: String, readOnly: Bool, agentSerial: Int,
-                cursor: EditorPosition, selection: EditorRange?) {
+                cursor: EditorPosition, selection: EditorRange?, original: String? = nil) {
         self.text = text
         self.language = language
         self.readOnly = readOnly
         self.agentSerial = agentSerial
         self.cursor = cursor
         self.selection = selection
+        self.original = original
     }
 }
 
@@ -53,6 +62,7 @@ public enum EditorRenderStep: Sendable, Equatable {
     case scroll(key: String, top: Double)
     case dispose(key: String)
     case find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool)
+    case diff(key: String, original: String, modified: String, language: String)
 }
 
 /// "file:<path>" or "scratch:<n>".
@@ -73,7 +83,22 @@ public func editorRenderSteps(rendered: [String: EditorRendered], active: String
     let keys = Set(snapshot.tabs.map(editorTabKey))
     if let i = snapshot.active, i < snapshot.tabs.count {
         let t = snapshot.tabs[i], key = editorTabKey(t)
-        if let r = rendered[key] {
+        if let d = t.diffState {
+            let r = rendered[key]
+            if d.loading {
+                // A refresh keeps the shown diff; a diff never shown yet shows nothing, so the last
+                // file's diff never sits under this one's name (3a-i).
+                if key != active || r == nil {
+                    steps.append(.diff(key: key, original: "", modified: "", language: "plaintext"))
+                }
+            } else {
+                let empty = d.error != nil || d.binary
+                let o = empty ? "" : d.original, m = empty ? "" : d.modified
+                if key != active || r?.original != o || r?.text != m {
+                    steps.append(.diff(key: key, original: o, modified: m, language: t.language))
+                }
+            }
+        } else if let r = rendered[key] {
             if key != active { steps.append(.show(key: key, text: t.text, language: t.language, readOnly: t.readOnly)) }
             if t.text != r.text {
                 let serial = t.lastAgentEdit?.serial ?? 0
@@ -111,11 +136,26 @@ public func editorRenderedAfter(_ steps: [EditorRenderStep], rendered: [String: 
     for step in steps { if case .dispose(let key) = step { out[key] = nil } }
     if let i = snapshot.active, i < snapshot.tabs.count {
         let t = snapshot.tabs[i]
-        out[editorTabKey(t)] = EditorRendered(text: t.text, language: t.language, readOnly: t.readOnly,
-                                              agentSerial: t.lastAgentEdit?.serial ?? 0, cursor: t.cursor,
-                                              selection: t.selection)
+        let key = editorTabKey(t)
+        if t.diffState != nil {
+            for case .diff(let k, let o, let m, let language) in steps where k == key {
+                out[key] = EditorRendered(text: m, language: language, readOnly: true, agentSerial: 0,
+                                          cursor: t.cursor, selection: nil, original: o)
+            }
+        } else {
+            out[key] = EditorRendered(text: t.text, language: t.language, readOnly: t.readOnly,
+                                      agentSerial: t.lastAgentEdit?.serial ?? 0, cursor: t.cursor,
+                                      selection: t.selection)
+        }
     }
     return out
+}
+
+/// The keys the page takes from Monaco (R13): up, down and Esc while the peek is open, Esc while
+/// Compare is. Nothing else, so Monaco keeps every other key.
+public func editorCapturedKeys(comparing: Bool, peek: Bool) -> [String] {
+    if peek { return ["up", "down", "escape"] }
+    return comparing ? ["escape"] : []
 }
 
 /// The pane's find serial after `steps`: the snapshot's once its `.find` step was applied.
@@ -147,6 +187,8 @@ public func editorFindShownSeed(_ snapshot: EditorSnapshot) -> Int {
         case .dispose(let key): renderer.disposeModel(key: key)
         case .find(let key, let query, let caseSensitive, let wholeWord, let regex):
             renderer.find(key: key, query: query, caseSensitive: caseSensitive, wholeWord: wholeWord, regex: regex)
+        case .diff(let key, let o, let m, let language):
+            renderer.showDiff(key: key, original: o, modified: m, language: language)
         }
     }
 }

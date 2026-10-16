@@ -1,6 +1,7 @@
 <!doctype html>
 <html><head><meta charset="utf-8">
-<style>html,body,#d{margin:0;height:100%;background:#0b0d14}</style></head>
+<style>html,body,#d{margin:0;height:100%;background:#0b0d14}
+#dd{position:absolute;inset:0;display:none;background:#0b0d14}</style></head>
 <body><div id="d"></div>
 <script>
   // Diagnostics, kept for the real pane: errors and warnings from the page
@@ -75,7 +76,7 @@
     });
     // Editor mode (3b-i): `window.wakilMode` is set to 'editor' by a WKUserScript at document
     // start (MonacoEditorRenderer). One editable editor, one model per tab key, each keeping its
-    // own undo; the diff editor below is never created. The app's own edits land with `applying`
+    // own undo, and (3b-iii) a diff editor beside it; the diff-mode tail below is never reached. The app's own edits land with `applying`
     // set, so they are not reported back as typing.
     if (window.wakilMode === 'editor') {
       const post = function (m) { window.webkit.messageHandlers.wakil.postMessage(m); };
@@ -83,8 +84,50 @@
         theme: 'wakil', automaticLayout: true, minimap: { enabled: false },
         fontFamily: 'Menlo, monospace', fontSize: 12, model: null
       });
+      // 3b-iii: the pane's diff editor, in the same page as the code editor — a diff tab and Compare
+      // show here. The active tab chooses which is visible; no second page is ever loaded.
+      const codeHost = document.getElementById('d');
+      const dd = document.createElement('div'); dd.id = 'dd'; document.body.appendChild(dd);
+      const diff = monaco.editor.createDiffEditor(dd, {
+        theme: 'wakil', readOnly: true, originalEditable: false, renderSideBySide: false,
+        automaticLayout: true, minimap: { enabled: false }, fontFamily: 'Menlo, monospace', fontSize: 12
+      });
+      const dme = diff.getModifiedEditor();
+      let diffKey = null;        // what the diff editor shows; null while the code editor is visible
+      let diffScroll = null;     // re-applied once a re-shown diff is computed (its view zones move it)
+      diff.onDidUpdateDiff(function () { if (diffScroll !== null) { dme.setScrollTop(diffScroll); diffScroll = null; } });
+      // The diff's cursor, so the window's open-file command can open the file at that line.
+      dme.onDidChangeCursorPosition(function () {
+        if (!diffKey) return;
+        const p = dme.getPosition();
+        post({ type: 'view', key: diffKey, cursor: p ? { line: p.lineNumber, column: p.column } : { line: 1, column: 1 },
+               selection: null, visible: null, scrollTop: dme.getScrollTop() });
+      });
+      function showCode() { dd.style.display = 'none'; codeHost.style.display = 'block'; diffKey = null; }
+      window.wakilShowDiff = function (key, original, modified, language) {
+        diffScroll = key === diffKey ? dme.getScrollTop() : null;
+        const old = diff.getModel();
+        diff.setModel({ original: monaco.editor.createModel(original, language),
+                        modified: monaco.editor.createModel(modified, language) });
+        if (old) { old.original.dispose(); old.modified.dispose(); }
+        diffKey = key;
+        current = null;          // the code editor reports nothing while it is hidden
+        codeHost.style.display = 'none';
+        dd.style.display = 'block';
+      };
+      // The keys the app asks for (editorCapturedKeys), taken before Monaco's own and posted back.
+      let captured = [];
+      window.wakilCaptureKeys = function (keys) { captured = keys; };
+      window.addEventListener('keydown', function (e) {
+        if (!captured.length || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+        const key = { ArrowUp: 'up', ArrowDown: 'down', Escape: 'escape' }[e.key];
+        if (!key || captured.indexOf(key) < 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        post({ type: 'key', key: key });
+      }, true);
       const models = {};          // key -> model
-      let current = null;         // key shown
+      let current = null;         // key shown in the code editor
       let applying = false;       // true while the app's own edit lands: not reported back as typing
       let typingTimer = null;
       // key -> the agent-edit serial this page has applied (wakilSetBasis, queued right after the
@@ -104,6 +147,7 @@
         opts = o;
         ed.updateOptions({ fontSize: o.fontSize, wordWrap: o.wordWrap ? 'on' : 'off',
                            tabSize: o.tabSize, insertSpaces: o.insertSpaces });
+        diff.updateOptions({ fontSize: o.fontSize, wordWrap: o.wordWrap ? 'on' : 'off' });
         // Only a changed fallback re-detects: a font or wrap change must not undo an indentation
         // the operator set by hand on a model.
         if (was.tabSize !== o.tabSize || was.insertSpaces !== o.insertSpaces) {
@@ -133,6 +177,7 @@
       ed.onDidChangeCursorSelection(report);
       ed.onDidScrollChange(function (e) { if (e.scrollTopChanged) report(); });
       window.wakilShowModel = function (key, text, language, readOnly) {
+        showCode();
         if (!models[key]) { models[key] = monaco.editor.createModel(text, language); indent(models[key]); }
         current = key;
         ed.setModel(models[key]);
@@ -188,7 +233,7 @@
       window.wakilSetScrollTop = function (key, top) { if (key === current) ed.setScrollTop(top); };
       window.wakilSetBasis = function (key, serial) { basis[key] = serial; };
       window.wakilDispose = function (key) { if (models[key]) { models[key].dispose(); delete models[key]; } delete basis[key]; if (current === key) current = null; };
-      window.wakilFocus = function () { ed.focus(); };
+      window.wakilFocus = function () { if (diffKey) dme.focus(); else ed.focus(); };
       // Monaco's find bar (3b-ii). Its state — query, switches, count, open — goes back to the app on
       // every change, as the cursor's does: the pane's find record and read_pane's `find` read it.
       const findCtl = ed.getContribution('editor.contrib.findController');
