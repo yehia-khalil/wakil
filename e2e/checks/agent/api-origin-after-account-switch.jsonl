@@ -1,0 +1,7 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog.e2e-fixture.invalid"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"do":{"click":"settings.row.e2e-provider-spare.use"}}
+{"expect":{"tree":"contains","text":"ACCOUNT e2e-provider-spare"}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog.e2e-fixture.invalid"}}

@@ -1,0 +1,6 @@
+{"expect":{"tree":"contains","text":"e2e-project"}}
+{"expect":{"tree":"absent","text":"no project root available yet"}}
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-rootless"}}}
+{"expect":{"tree":"contains","text":"no project root available yet"}}
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-project"}}}
+{"expect":{"tree":"absent","text":"no project root available yet"}}

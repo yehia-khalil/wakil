@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-v-editor-indent-scratch.jsonl",
+  "baseCommit": "e6c782b4f52f9e4c17f82bfadd17b13c8252445a",
+  "provedAt": "2026-10-13T12:35:19.419434Z",
+  "checkBlob": "acc11e07b21246c711d5c4b6bce1371aa7207338"
+}

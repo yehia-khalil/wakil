@@ -1,0 +1,21 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db","grantWrite":true,"writeDsn":"{fixtureRoot}/bookings.db"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-1","database":"bookings","query":"SELECT * FROM bookings ORDER BY id"}}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"2"}}
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"pane_move","params":{"id":"api-2","x":740,"y":60}}}
+{"dispatch":{"action":"pane_resize","params":{"id":"api-2","width":640,"height":720}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-2","path":[{"literal":"/v1/bookings/"},{"slot":"id"},{"literal":"/confirm"}]}}}
+{"do":{"drag":{"from":"db.row.0.grip","to":"api.pane"}}}
+{"expect":{"pane":"api-2","field":"request.path[1].binding","equals":"live"}}
+{"expect":{"tree":"contains","text":"id = 8842 · live · bookings"}}
+{"dispatch":{"action":"api_request","params":{"pane":"api-2"}}}
+{"expect":{"pane":"api-2","field":"recent[0].path","equals":"/v1/bookings/<id>/confirm"}}
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"expect":{"pane":"api-3","field":"recent[0].path","equals":"/v1/bookings/<id>/confirm"}}
+{"dispatch":{"action":"pane_close","params":{"id":"api-2"}}}
+{"expect":{"tree":"absent","text":"id = 8842 · live · bookings"}}
+{"do":{"click":"api.recent"}}
+{"expect":{"tree":"contains","text":"GET /v1/bookings/<id:8842>/confirm"}}
+{"do":{"click":"api.recent.0.reopen"}}
+{"expect":{"pane":"api-3","field":"request.path[1].binding","equals":"live"}}

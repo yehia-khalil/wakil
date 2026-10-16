@@ -1,0 +1,18 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"bookings"}}
+{"expect":{"tree":"contains","text":"text 2 of "}}
+{"do":{"click":"palette.row.table:bookings/bookings"}}
+{"expect":{"pane":"db-1","field":"kind","equals":"db"}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"2"}}
+{"expect":{"journal":{"contains":"db_read_table"}}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"click":"palette.row.db:bookings"}}
+{"expect":{"tree":"contains","text":"text BOOKINGS"}}
+{"expect":{"tree":"contains","text":"Placeholder: bookings"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"db-2","field":"kind","equals":"db"}}
+{"expect":{"pane":"db-2","field":"rowCount","equals":"2"}}

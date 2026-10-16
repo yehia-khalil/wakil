@@ -1,0 +1,10 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"post","body":[{"slot":"a"},{"literal":"/"},{"slot":"b"}]}}}
+{"expect":{"pane":"api-1","field":"request.body[2].slot","equals":"b"}}
+{"do":{"focus":"api.body"}}
+{"do":{"hotkey":"cmd+Down"}}
+{"do":{"type":{"into":"api.body","text":"x"}}}
+{"expect":{"pane":"api-1","field":"request.body[0].slot","equals":"a"}}
+{"expect":{"pane":"api-1","field":"request.body[1].literal","equals":"/"}}
+{"expect":{"pane":"api-1","field":"request.body[2].slot","equals":"b"}}
+{"expect":{"pane":"api-1","field":"request.body[3].literal","equals":"x"}}

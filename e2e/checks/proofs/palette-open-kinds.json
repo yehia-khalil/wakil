@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/palette-open-kinds.jsonl",
+  "baseCommit": "f25a762e5ee7b303ce0ca6efa5715891820d0e53",
+  "provedAt": "2026-10-10T19:57:57.198384Z",
+  "checkBlob": "1d583115e9624395bb296815b973305340054c66"
+}

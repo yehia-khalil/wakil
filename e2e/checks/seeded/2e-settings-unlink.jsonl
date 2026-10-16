@@ -1,0 +1,19 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"e2e-provider"}}
+{"dispatch":{"action":"ctx_list_accounts","params":{}}}
+{"do":{"click":"settings.row.e2e-provider.unlink"}}
+{"expect":{"tree":"contains","text":"Unlink e2e-provider from e2e-fixture?"}}
+{"expect":{"tree":"contains","text":"revocable only in your Anthropic account"}}
+{"do":{"click":"settings.unlink.keep"}}
+{"expect":{"tree":"absent","text":"Unlink e2e-provider from e2e-fixture?"}}
+{"expect":{"tree":"contains","text":"e2e-provider"}}
+{"do":{"click":"settings.row.e2e-provider.unlink"}}
+{"expect":{"tree":"contains","text":"Unlink e2e-provider from e2e-fixture?"}}
+{"do":{"click":"settings.unlink.confirm"}}
+{"expect":{"tree":"contains","text":"no accounts registered in this organisation"}}
+{"expect":{"tree":"contains","text":"revocable only in your Anthropic account"}}
+{"expect":{"tree":"contains","text":"is left exactly as it was"}}
+{"do":{"click":"settings.unlink.dismiss"}}
+{"expect":{"tree":"absent","text":"is left exactly as it was"}}
+{"expect":{"tree":"contains","text":"no accounts registered in this organisation"}}

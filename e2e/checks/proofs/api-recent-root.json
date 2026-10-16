@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/api-recent-root.jsonl",
+  "baseCommit": "e51e847b8e5e22158561a0891d4b371fcc3923af",
+  "provedAt": "2026-10-15T14:25:20.280249Z",
+  "checkBlob": "cc6c8655d615b5d40c13b500b17ab62b6959b705"
+}

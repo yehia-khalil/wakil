@@ -1,0 +1,155 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    /* THE ROOM WITH NO COLOUR IN IT.
+       §4 splits the two channels: hue belongs to the ENVIRONMENT, motion and
+       intensity to agent state. Before an org is chosen there is no project,
+       so there is no environment, so there is nothing that owns a hue — and
+       VoidPalette is never consulted. The honest render of that is not a
+       dimmed violet room; it is the bare field, the vignette and the grain,
+       with no bleeds at all. The room is not yet anybody's. */
+    .void {
+      position: relative; width: 1440px; height: 900px; overflow: hidden;
+      background: linear-gradient(180deg, #030408 0%, #070812 100%);
+    }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .plane {
+      width: 520px; padding: 24px; border-radius: 12px;
+      background: rgba(0,0,0,0.86);
+      box-shadow:
+        0 0 60px rgba(0,0,0,0.75),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .row {
+      display: flex; align-items: center; gap: 16px;
+      padding: 13px 14px; border-radius: 6px; cursor: pointer;
+      background: rgba(232,236,246,0); transition: background 240ms ease-out;
+    }
+    .row:hover { background: rgba(232,236,246,0.055); }
+  </style>
+</helmet>
+
+<div class="void">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <!-- §8.5: the org-less launch does not take Esc — there is nothing behind it
+       to use. So there is no inert canvas here and no rail: this is the only
+       surface in the application that belongs to no organisation. -->
+  <div style="position: absolute; left: 50%; top: 168px; transform: translateX(-50%);">
+    <div class="plane" style="display: flex; flex-direction: column; gap: 18px;">
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="micro">Organisation</div>
+        <div style="font-size: 15px; color: rgba(232,236,246,0.86); text-wrap: pretty;">{{reasonText}}</div>
+      </div>
+
+      <!-- Amber is caution, and a launch that named an org this machine does
+           not hold is exactly that: nothing has failed and nothing is lost. -->
+      <sc-if value="{{showReason}}" hint-placeholder-val="{{showReason}}">
+        <div style="display: flex; align-items: center; gap: 11px; padding: 11px 13px; border-radius: 6px; background: rgba(232,180,90,0.10);">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e8b45a" stroke-width="1.3" stroke-linecap="round" style="flex-shrink: 0;"><path d="M8 4.5v4M8 11.2v.1"/><circle cx="8" cy="8" r="6.2"/></svg>
+          <div class="mono" style="font-size: 11px; line-height: 1.45; color: #e8b45a;">WAKIL_ORG named umbrela, which is not a registered organisation</div>
+        </div>
+      </sc-if>
+
+      <div style="display: flex; flex-direction: column; gap: 2px; margin: 0 -14px;">
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1;">
+            <div style="font-size: 15px; color: #e8ecf6;">Initech Labs</div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">initech.atlassian.net</span>
+              <span class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">2 accounts</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1;">
+            <div style="font-size: 15px; color: #e8ecf6;">Umbrella</div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">umbrella.atlassian.net</span>
+              <span class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">1 account</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1;">
+            <div style="font-size: 15px; color: #e8ecf6;">personal</div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">no Jira site</span>
+              <span class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">1 account</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; align-items: center; gap: 11px; flex-grow: 1; color: rgba(232,236,246,0.72);">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
+            <div style="font-size: 14px;">New organisation</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="micro">No organisation is open · nothing behind this plane</div>
+
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"reason":{"editor":"enum","options":["none","unknown org"],"default":"none","section":"Launch"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var unknown = (this.props.reason || 'none') === 'unknown org';
+    return {
+      showReason: unknown,
+      reasonText: unknown
+        ? 'Wakil could not open the organisation it was launched with. Choose one, or create it.'
+        : 'Wakil holds one organisation at a time. Choose the one to open.'
+    };
+  }
+}
+</script>
+</body>
+</html>

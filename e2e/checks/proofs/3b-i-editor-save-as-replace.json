@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-i-editor-save-as-replace.jsonl",
+  "baseCommit": "0c9e85c6f259709c820148fa01cff5fb2be62f8c",
+  "provedAt": "2026-10-12T19:51:14.376655Z",
+  "checkBlob": "a9d79c4afd8a9f5d08f8aeb0a6c44ff886c2054b"
+}

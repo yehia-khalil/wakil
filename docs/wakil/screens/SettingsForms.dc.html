@@ -1,0 +1,263 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    .sheet {
+      position: relative; width: 2300px; height: 900px; overflow: hidden;
+      background:
+        radial-gradient(circle 1350px at 50% 122%,
+          rgba(124,92,255,0.2) 0%, rgba(124,92,255,0.075) 42%,
+          rgba(124,92,255,0.028) 58%, rgba(124,92,255,0.008) 75%,
+          rgba(124,92,255,0) 92%),
+        linear-gradient(180deg, #030408 0%, #070812 100%);
+    }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .plane {
+      width: 520px; padding: 24px; border-radius: 12px;
+      background: rgba(0,0,0,0.86);
+      display: flex; flex-direction: column; gap: 18px;
+      box-shadow:
+        0 0 60px rgba(0,0,0,0.75),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .field {
+      padding: 10px 12px; border-radius: 6px;
+      background: rgba(232,236,246,0.055);
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 12.5px; color: #e8ecf6;
+    }
+
+    .btn {
+      padding: 9px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;
+      background: rgba(232,236,246,0.10); color: #e8ecf6;
+      transition: background 240ms ease-out;
+    }
+    .btn:hover { background: rgba(232,236,246,0.16); }
+    .btn.quiet { background: rgba(232,236,246,0); color: rgba(232,236,246,0.62); }
+    .btn.quiet:hover { background: rgba(232,236,246,0.06); }
+
+    .row {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 14px; border-radius: 6px; cursor: pointer;
+      background: rgba(232,236,246,0); transition: background 240ms ease-out;
+    }
+    .row:hover { background: rgba(232,236,246,0.055); }
+
+    .lbl { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  </style>
+</helmet>
+
+<div class="sheet">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <!-- ══ ADD A PROVIDER ══ Two doors, and the split is not cosmetic: adopting
+       an account already registered on this machine needs no Keychain WRITE
+       (#25's --share established the cross-org binding), while registering a
+       new one stores an OAuth token and is Decision 21's costed half, still
+       unscheduled. The form offers both and says which one actually lands
+       here — the same line PR #29 §8.6 draws for the org plane, which is also
+       why the top half of this form IS that plane's adopting state rather
+       than a second implementation of it. -->
+  <div style="position: absolute; left: 230px; top: 110px; display: flex; flex-direction: column; gap: 16px;">
+    <div class="micro">Add a provider</div>
+    <div class="plane">
+      <div class="micro">Accounts on this machine</div>
+
+      <div style="display: flex; flex-direction: column; gap: 2px; margin: 0 -14px;">
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1;">
+            <div class="mono" style="font-size: 13px; color: #e8ecf6;">personal/main</div>
+            <div class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">~/.claude-personal · claude-code</div>
+          </div>
+          <div class="micro">Adopt</div>
+        </div>
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1;">
+            <div class="mono" style="font-size: 13px; color: #e8ecf6;">umbrella/ops</div>
+            <div class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">~/.claude-umbrella · claude-code</div>
+          </div>
+          <div class="micro">Adopt</div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="lbl"><div class="micro">Kind</div><div class="micro" style="color: rgba(232,236,246,0.50);">claude-code · codex · local</div></div>
+        <div class="field">claude-code</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="lbl"><div class="micro">Config dir</div><div class="micro" style="color: rgba(232,236,246,0.50);">One dir serves one homing org</div></div>
+        <div class="field">~/.claude-umbrella</div>
+      </div>
+
+      <!-- WHERE THE TOKEN COMES FROM. There is no paste field here and that is
+           the design, not an omission: a token entered in Swift would be the
+           first Keychain WRITE from Swift, which is Decision 21's costed half
+           and unscheduled. The token lives at wakil:<org>:provider:<id> and is
+           put there by the CLI. What the form owes is the STATE of that entry
+           and the exact line that creates it. -->
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="lbl"><div class="micro">Token</div><div class="micro" style="color: rgba(232,236,246,0.50);">wakil:umbrella:provider:ops</div></div>
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#e8b45a" stroke-width="1.35" stroke-linecap="round" style="flex-shrink: 0;"><path d="M8 4.5v4M8 11.2v.1"/><circle cx="8" cy="8" r="6.2"/></svg>
+          <div class="mono" style="font-size: 11px; color: #e8b45a;">no entry yet · Wakil reads it, the CLI writes it</div>
+        </div>
+        <div class="field" style="font-size: 11.5px; color: rgba(232,236,246,0.86);">claude setup-token<br>wakil secrets set provider:ops --org umbrella</div>
+      </div>
+
+      <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border-radius: 6px; background: rgba(232,180,90,0.10);">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e8b45a" stroke-width="1.3" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M8 4.5v4M8 11.2v.1"/><circle cx="8" cy="8" r="6.2"/></svg>
+        <div style="font-size: 12px; line-height: 1.5; color: #e8b45a; text-wrap: pretty;">Paste the token into the CLI, not here — setup-token wraps across terminal lines and a mouse selection captures the wraps as real characters. The CLI strips them; a text field would store 112 characters where 108 were meant.</div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+        <div class="btn quiet">Cancel</div>
+        <div class="btn">Adopt</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ RENAME AN ENVIRONMENT ══ THE ONE THAT IS NOT A TEXT FIELD.
+       isProductionEnvironment (EnvironmentName.swift:38) is an exact match on
+       "production", trimmed and lowercased — nothing else. So the environment's
+       NAME is the only thing arming the write gate and the red room, and a
+       rename silently disarms both. That is the design review's §H finding
+       ("prod, prd and live get no red room, no red badge and no write block at
+       all") reached deliberately instead of by accident. The form therefore
+       shows the CONSEQUENCE of the new name before it will accept it. -->
+  <div style="position: absolute; left: 890px; top: 110px; display: flex; flex-direction: column; gap: 16px;">
+    <div class="micro">Rename an environment</div>
+    <div class="plane">
+      <div class="micro">production · wakil-acceptance</div>
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="lbl"><div class="micro">Name</div><div class="micro" style="color: rgba(232,236,246,0.50);">Key in environments</div></div>
+        <div class="field">prod<span style="display: inline-block; width: 1.5px; height: 13px; background: #9e82ff; vertical-align: -2px; margin-left: 2px;"></span></div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 11px; padding: 14px 14px; border-radius: 6px; background: rgba(232,92,92,0.10);">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#e85c5c" stroke-width="1.35" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8"/><circle cx="8" cy="8" r="6.2"/></svg>
+          <div style="font-size: 13px; line-height: 1.45; color: #e85c5c; text-wrap: pretty;">prod is not production. This turns the safeguards off.</div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 7px; padding-left: 26px;">
+          <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.86);">· the room stops turning red</div>
+          <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.86);">· the badge stops alarming</div>
+          <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.86);">· 2 databases become mutable without a block</div>
+        </div>
+        <div class="micro" style="padding-left: 26px; color: rgba(232,236,246,0.52);">The gate matches the exact string production</div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+        <div class="btn quiet">Cancel</div>
+        <div class="btn" style="color: #e85c5c; background: rgba(232,92,92,0.14);">Rename anyway</div>
+      </div>
+
+      <div class="micro">Renaming staging to production arms them instead · same rule, read the other way</div>
+    </div>
+  </div>
+
+  <!-- ══ ADD A DATABASE ══ Two credentials, never one boolean. Database.WriteRef
+       names a SECOND Keychain entry holding a credential the SERVER granted
+       write permission to, so write authority is proven to the server rather
+       than asserted by Wakil to itself. A database with no writeRef cannot be
+       mutated by anything: not the agent, not the operator, not --dispatch. -->
+  <div style="position: absolute; left: 1550px; top: 110px; display: flex; flex-direction: column; gap: 16px;">
+    <div class="micro">Add a database · staging</div>
+    <div class="plane">
+      <div class="micro">New database</div>
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="micro">Name</div>
+        <div class="field">orders</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="lbl"><div class="micro">Driver</div><div class="micro" style="color: rgba(232,236,246,0.50);">mysql · postgres · sqlite · mongo</div></div>
+        <div class="field">mysql</div>
+      </div>
+
+      <!-- THERE IS NO HOST FIELD, AND NOTHING IS MISSING. The secret IS the
+           DSN — OpenDatabase calls SecretGet(d.Ref) and hands the string
+           straight to the driver, which parses it (driver_mysql.go:22). So
+           host, port, user, password and database name all live inside the
+           Keychain entry, and project.json holds only name, driver, ref and
+           writeRef. That is worth keeping: the host travels WITH the
+           credential, so a staging host can never be paired with production's
+           password by editing one half of a form.
+           What the form owes in exchange is the DSN's shape, and an echo of
+           the non-secret half once the entry resolves. -->
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="lbl"><div class="micro">Read credential</div><div class="micro" style="color: rgba(232,236,246,0.50);">Keychain entry name</div></div>
+        <div class="field">wakil:initech:orders-ro</div>
+        <div class="micro" style="color: rgba(232,236,246,0.52);">The entry holds a full DSN · user:pass@tcp(host:port)/db</div>
+        <div style="display: flex; align-items: flex-start; gap: 9px;">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8be0c8" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><path d="M4.5 8.4l2.4 2.4 4.6-5"/><circle cx="8" cy="8" r="6.2"/></svg>
+          <div style="display: flex; flex-direction: column; gap: 5px;">
+            <div class="mono" style="font-size: 11px; color: #8be0c8;">resolves · parsed, not stored</div>
+            <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.86);">····@tcp(db-staging.initech.internal:3306)/orders</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="lbl"><div class="micro">Write credential</div><div class="micro" style="color: rgba(232,236,246,0.50);">Optional · grants mutation</div></div>
+        <div class="field" style="color: rgba(232,236,246,0.50);">none — this database will be read-only</div>
+      </div>
+
+      <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border-radius: 6px; background: rgba(232,180,90,0.10);">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e8b45a" stroke-width="1.3" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M8 4.5v4M8 11.2v.1"/><circle cx="8" cy="8" r="6.2"/></svg>
+        <div style="font-size: 12px; line-height: 1.5; color: #e8b45a; text-wrap: pretty;">These are entry NAMES. Wakil reads them from the Keychain and never stores or displays a secret — put the values there with Keychain Access or the CLI.</div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+        <div class="btn quiet">Cancel</div>
+        <div class="btn">Add</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":2300,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
+{"do":{"keys":"echo git checkout main"}}
+{"expect":{"pane":"terminal-1","field":"grid","contains":"% echo git checkout main"}}
+{"do":{"hotkey":"shift+Left"}}
+{"do":{"hotkey":"shift+Left"}}
+{"do":{"hotkey":"shift+Left"}}
+{"do":{"hotkey":"shift+Left"}}
+{"do":{"keys":"dev"}}
+{"expect":{"pane":"terminal-1","field":"grid","contains":"% echo git checkout dev"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].command","equals":"echo git checkout dev"}}

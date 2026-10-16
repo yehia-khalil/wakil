@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-i-git-press.jsonl",
+  "baseCommit": "a376e07968106ccb0d21e7d696c73add044b06ab",
+  "provedAt": "2026-10-09T16:35:25.310486Z",
+  "checkBlob": "ccd8275120994f278b7cc8b211daf9a40dc52518"
+}

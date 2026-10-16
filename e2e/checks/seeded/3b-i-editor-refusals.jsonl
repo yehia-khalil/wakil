@@ -1,0 +1,32 @@
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/bookings.db"},"refuses":"is outside the active project's roots; editor reads and writes are confined to them (Invariant 6, Decision 36)"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1"},"refuses":"a scratch tab needs a path to save as"}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/outside.txt"},"refuses":"(Invariant 6, Decision 36)"}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/e2e-project/../escaped.txt"},"refuses":"/escaped.txt is outside the active project's roots"}}
+{"expect":{"journal":{"contains":"(Invariant 6, Decision 36)"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].saving","equals":"false"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"must not be dropped"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1"},"refuses":"Untitled-1 has unsaved edits; save it, or close with discard true to drop them"}}
+{"dispatch":{"action":"pane_close","params":{"id":"editor-1"},"refuses":"editor-1 has unsaved edits in Untitled-1; save them, or close with discard true to drop them"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_new_scratch","params":{"pane":"editor-1"}}}
+{"dispatch":{"action":"editor_new_scratch","params":{"pane":"editor-1"}}}
+{"dispatch":{"action":"editor_focus_tab","params":{"pane":"editor-1","index":1}}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].scratch","equals":"3"}}
+{"dispatch":{"action":"editor_focus_tab","params":{"pane":"editor-1","index":5},"refuses":"editor_focus_tab: the editor pane has no open tab"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/never-opened.txt"},"refuses":"editor_close: the editor pane has no open tab"}}
+{"dispatch":{"action":"editor_reload","params":{"pane":"editor-1"},"refuses":"editor_reload: the tab is a scratch buffer, not a file"}}
+{"dispatch":{"action":"pane_close","params":{"id":"editor-1","discard":true}}}
+{"expect":{"journal":{"contains":"\"discard\":true"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"editor"}}}
+{"expect":{"pane":"editor-2","field":"tabs","equals":"[]"}}
+{"expect":{"pane":"editor-2","field":"active","equals":"null"}}
+{"dispatch":{"action":"editor_goto","params":{"pane":"editor-2","line":3},"refuses":"editor_goto: the editor pane has no open tab"}}
+{"dispatch":{"action":"editor_set_language","params":{"pane":"editor-2","language":"sql"},"refuses":"editor_set_language: the editor pane has no open tab"}}

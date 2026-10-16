@@ -1,0 +1,6 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"get","path":[{"literal":"/kept"}]}}}
+{"dispatch":{"action":"api_fill_from_curl","params":{"pane":"api-1","text":"curl https://api.other.invalid/x"},"refuses":"no entry in staging has that host"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/kept"}}
+{"dispatch":{"action":"api_fill_from_curl","params":{"pane":"api-1","text":"curl https://catalog-qa.e2e-fixture.invalid/x"},"refuses":"switch environment first"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/kept"}}

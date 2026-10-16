@@ -1,0 +1,8 @@
+{"expect":{"tree":"contains","text":"e2e-provider"}}
+{"expect":{"tree":"absent","text":"unset"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"do":{"click":"settings.row.e2e-provider.unlink"}}
+{"do":{"click":"settings.unlink.confirm"}}
+{"expect":{"tree":"contains","text":"no accounts registered in this organisation"}}
+{"expect":{"tree":"contains","text":"unset"}}

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-ii-b-tab-move.jsonl",
+  "baseCommit": "5c38f72852bf3febfa10e09fea88c4df5460e388",
+  "provedAt": "2026-10-14T19:03:37.967076Z",
+  "checkBlob": "9354da38da1a1ff81754c13b9e71adb271d23292"
+}

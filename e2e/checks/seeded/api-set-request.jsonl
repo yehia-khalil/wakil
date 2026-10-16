@@ -1,0 +1,29 @@
+{"dispatch":{"action":"api_open","params":{"entry":"billing"}}}
+{"expect":{"pane":"api-1","field":"request.method","equals":"GET"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"post","path":[{"literal":"/invoices/"},{"slot":"invoiceId"}],"query":[{"name":"expand","value":[{"literal":"lines"}]}],"headers":[{"name":"x-tenant-id","value":[{"literal":"acme"}]}],"contentType":"application/merge-patch+json","body":[{"literal":"{\"paid\": true}"}]}}}
+{"expect":{"pane":"api-1","field":"request.method","equals":"POST"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/invoices/"}}
+{"expect":{"pane":"api-1","field":"request.path[1].slot","equals":"invoiceId"}}
+{"expect":{"pane":"api-1","field":"request.query[0].name","equals":"expand"}}
+{"expect":{"pane":"api-1","field":"request.query[0].value[0].literal","equals":"lines"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"{\"paid\": true}"}}
+{"expect":{"pane":"api-1","field":"request.headers","contains":"x-tenant-id"}}
+{"expect":{"pane":"api-1","field":"request.headers","contains":"application/merge-patch+json"}}
+{"expect":{"tree":"contains","text":"/invoices/"}}
+{"expect":{"tree":"contains","text":"invoiceId"}}
+{"expect":{"tree":"contains","text":"expand"}}
+{"expect":{"tree":"contains","text":"x-tenant-id"}}
+{"expect":{"tree":"contains","text":"application/merge-patch+json"}}
+{"expect":{"tree":"contains","text":"{\"paid\": true}"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","query":[]}}}
+{"expect":{"pane":"api-1","field":"request.query","equals":"[]"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/invoices/"}}
+{"expect":{"tree":"absent","text":"expand"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","entry":"catalog"}}}
+{"expect":{"pane":"api-1","field":"entry","equals":"catalog"}}
+{"expect":{"pane":"api-1","field":"credentialed","equals":"false"}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog.e2e-fixture.invalid"}}
+{"expect":{"pane":"api-1","field":"request.method","equals":"POST"}}
+{"expect":{"pane":"api-1","field":"request.path[1].slot","equals":"invoiceId"}}
+{"expect":{"tree":"absent","text":"supplied by the billing entry"}}
+{"expect":{"tree":"contains","text":"https://catalog.e2e-fixture.invalid"}}

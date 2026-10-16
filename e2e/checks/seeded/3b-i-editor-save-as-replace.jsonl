@@ -1,0 +1,30 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"original"}}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/e2e-project/replace-me.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-project/replace-me.txt"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs","equals":"[]"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"keys":"newer"}}
+{"do":{"hotkey":"cmd+s"}}
+{"expect":{"tree":"contains","text":"Save as (a path inside the project)"}}
+{"expect":{"tree":"contains","text":"e2e-project/"}}
+{"do":{"keys":"replace-me.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Replace replace-me.txt?"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"click":"editor.saveAs.replaceCancel"}}
+{"expect":{"tree":"absent","text":"Replace replace-me.txt?"}}
+{"expect":{"tree":"contains","text":"e2e-project/replace-me.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Replace replace-me.txt?"}}
+{"do":{"click":"editor.saveAs.replace"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-project/replace-me.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"expect":{"tree":"absent","text":"Save as (a path inside the project)"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":6}}}}}
+{"expect":{"pane":"editor-1","field":"selected_text","equals":"newer"}}

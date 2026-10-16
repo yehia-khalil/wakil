@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/db-query-line-not-formatted.jsonl",
+  "baseCommit": "3c9c923b17ca8bf5551c011519ce326919bbf282",
+  "provedAt": "2026-10-07T12:58:29.298556Z",
+  "checkBlob": "105db5251064befe49cca45a9f32bc1e7e64ba55"
+}

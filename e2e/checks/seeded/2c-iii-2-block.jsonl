@@ -1,0 +1,12 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-1","field":"blocks","equals":"[]"}}
+{"do":{"keys":"ls"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].command","equals":"ls"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].durationMs","present":true}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].origin","equals":"operator"}}
+{"do":{"keys":"false"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"1"}}

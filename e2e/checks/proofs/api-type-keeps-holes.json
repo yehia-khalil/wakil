@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/api-type-keeps-holes.jsonl",
+  "baseCommit": "9ecb83800726aabc3f9f868a2c83d504af5085e1",
+  "provedAt": "2026-10-08T13:09:41.391217Z",
+  "checkBlob": "8bd0dd35ca4a1269f873b173fd22c5a759fc68b8"
+}

@@ -1,0 +1,33 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"post","path":[{"literal":"/a/"},{"slot":"x"},{"literal":"/b/"},{"slot":"y"},{"literal":"/c"}],"body":[{"literal":"[1, "},{"slot":"p"},{"literal":"2, "},{"slot":"q"},{"literal":"]"}]}}}
+{"do":{"focus":"api.path"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Backspace"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/a//b/"}}
+{"expect":{"pane":"api-1","field":"request.path[1].slot","equals":"y"}}
+{"do":{"press":"i"}}
+{"do":{"press":"d"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/a/id/b/"}}
+{"expect":{"pane":"api-1","field":"request.path[1].slot","equals":"y"}}
+{"expect":{"pane":"api-1","field":"request.path[2].literal","equals":"/c"}}
+{"do":{"focus":"api.body"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Backspace"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"[1, 2, "}}
+{"expect":{"pane":"api-1","field":"request.body[1].slot","equals":"q"}}
+{"do":{"click":"api.body.hole"}}
+{"do":{"type":{"into":"api.body.hole.name","text":"h"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"[1, "}}
+{"expect":{"pane":"api-1","field":"request.body[1].slot","equals":"h"}}
+{"expect":{"pane":"api-1","field":"request.body[2].literal","equals":"2, "}}
+{"expect":{"pane":"api-1","field":"request.body[3].slot","equals":"q"}}

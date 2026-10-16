@@ -1,0 +1,14 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"hotkey":"cmd+shift+f"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"search"}}
+{"do":{"click":"editor.search.regex"}}
+{"expect":{"pane":"editor-1","field":"search.regex","equals":"true"}}
+{"do":{"keys":"book("}}
+{"expect":{"tree":"contains","text":"missing closing )"}}
+{"expect":{"pane":"editor-1","field":"search.error","contains":"missing closing )"}}
+{"expect":{"pane":"editor-1","field":"search.query","equals":"book("}}
+{"expect":{"pane":"editor-1","field":"search.in_flight","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"search.results","equals":"[]"}}

@@ -1,0 +1,11 @@
+{"do":{"type":{"into":"window.composer","text":"echo pasted-in"}}}
+{"do":{"focus":"window.composer"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"hotkey":"cmd+c"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
+{"do":{"hotkey":"cmd+v"}}
+{"expect":{"pane":"terminal-1","field":"grid","contains":"% echo pasted-in"}}
+{"expect":{"pane":"terminal-1","field":"blocks","equals":"[]"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].command","equals":"echo pasted-in"}}

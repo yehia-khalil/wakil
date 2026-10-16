@@ -1,0 +1,13 @@
+diff --git a/app/Sources/WakilKit/Terminal/TerminalStore.swift b/app/Sources/WakilKit/Terminal/TerminalStore.swift
+index 369a18c..4e617f2 100644
+--- a/app/Sources/WakilKit/Terminal/TerminalStore.swift
++++ b/app/Sources/WakilKit/Terminal/TerminalStore.swift
+@@ -580,7 +580,7 @@ public actor TerminalStore {
+         await panes.setTerminalLiveState(
+             paneId: paneId, cwd: session.cwd, shell: session.shellName,
+             cols: session.cols, rows: session.rows,
+-            screen: onTheGrid ? .grid : .blocks,
++            screen: .blocks,
+             // **Always, not only under the alternate screen** (final
+             // review, Critical 2). This used to publish `[]` on the block
+             // surface, on the argument that the rows are already in the

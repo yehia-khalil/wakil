@@ -1,0 +1,12 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-1","field":"screen","equals":"blocks"}}
+{"do":{"keys":"vim"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"screen","equals":"grid"}}
+{"do":{"keys":":q"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"screen","equals":"blocks"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].command","equals":"vim"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].durationMs","present":true}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].heldTheGrid","equals":"true"}}

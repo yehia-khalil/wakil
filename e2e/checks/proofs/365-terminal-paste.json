@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/365-terminal-paste.jsonl",
+  "baseCommit": "f25a762e5ee7b303ce0ca6efa5715891820d0e53",
+  "provedAt": "2026-10-09T19:53:28.726309Z",
+  "checkBlob": "2a55a37d44514d1e81f032306b96046caa11c74d"
+}

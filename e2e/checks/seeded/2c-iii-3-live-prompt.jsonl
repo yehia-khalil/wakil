@@ -1,0 +1,9 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
+{"do":{"keys":"echo not-run-yet"}}
+{"expect":{"pane":"terminal-1","field":"grid","contains":"% echo not-run-yet"}}
+{"expect":{"pane":"terminal-1","field":"commandRunning","equals":"false"}}
+{"expect":{"pane":"terminal-1","field":"blocks","equals":"[]"}}
+{"expect":{"pane":"terminal-1","field":"cursorRow","present":true}}
+{"expect":{"pane":"terminal-1","field":"cursorCol","present":true}}

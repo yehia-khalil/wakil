@@ -1,0 +1,16 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"echo one-two-three"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"one-two-three"}}
+{"do":{"keys":"vim"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"screen","equals":"grid"}}
+{"do":{"type":{"into":"window.composer","text":"what did my last command print?"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"your last command printed: one-two-three"}}
+{"expect":{"pane":"terminal-1","field":"screen","equals":"grid"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":":q"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"screen","equals":"blocks"}}

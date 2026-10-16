@@ -1,0 +1,41 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"cells","driver":"sqlite","dsn":"{fixtureRoot}/cells.db"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-1","database":"cells","query":"SELECT id, label, note, doc FROM cells WHERE id IN (1, 2) ORDER BY id"}}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"2"}}
+{"dispatch":{"action":"pane_select_cell","params":{"pane":"db-1","row":0,"column":"label"}}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"0"}}
+{"expect":{"tree":"absent","text":"\"a\" : 1"}}
+{"do":{"click":"rail.db-1"}}
+{"do":{"press":"Space"}}
+{"expect":{"tree":"contains","text":"\"a\" : 1"}}
+{"expect":{"tree":"contains","text":"text NULL"}}
+{"do":{"press":"Down"}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"1"}}
+{"expect":{"pane":"db-1","field":"selection.anchorColumn","equals":"label"}}
+{"expect":{"journal":{"contains":"\"action\":\"pane_scroll_to_row\""}}}
+{"expect":{"tree":"contains","text":"\"k4999\" : 4999"}}
+{"expect":{"tree":"absent","text":"\"a\" : 1"}}
+{"do":{"press":"Up"}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"0"}}
+{"expect":{"tree":"contains","text":"\"a\" : 1"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"\"a\" : 1"}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"0"}}
+{"expect":{"pane":"db-1","field":"selection.rows","equals":"[0]"}}
+{"do":{"press":"Space"}}
+{"expect":{"tree":"contains","text":"\"a\" : 1"}}
+{"do":{"press":"Space"}}
+{"expect":{"tree":"absent","text":"\"a\" : 1"}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"0"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Space"}}
+{"expect":{"tree":"contains","text":"\"k4999\" : 4999"}}
+{"do":{"click":"db.db-1.detail.close"}}
+{"expect":{"tree":"absent","text":"\"k4999\" : 4999"}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"1"}}
+{"do":{"press":"Space"}}
+{"expect":{"tree":"contains","text":"\"k4999\" : 4999"}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-1","database":"cells","query":"SELECT id, label, note, doc FROM cells WHERE id = 1"}}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"1"}}
+{"expect":{"tree":"absent","text":"\"k4999\" : 4999"}}
+{"expect":{"tree":"absent","text":"no row selected"}}

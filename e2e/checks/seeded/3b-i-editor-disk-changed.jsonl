@@ -1,0 +1,57 @@
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"mine"}}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/e2e-project/disk.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-project/disk.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":5},"end":{"line":1,"column":5}},"text":" unsaved"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"editor"}}}
+{"expect":{"pane":"editor-2","field":"kind","equals":"editor"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/disk.txt"}}}
+{"expect":{"pane":"editor-2","field":"visible_text","equals":"mine"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-2","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":5}},"text":"theirs"}}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-2"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"false"}}
+{"dispatch":{"action":"pane_close","params":{"id":"editor-2"}}}
+{"dispatch":{"action":"editor_refresh","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].disk_state","equals":"changedOnDisk"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"expect":{"tree":"contains","text":"disk.txt changed on disk"}}
+{"do":{"click":"editor.compare"}}
+{"expect":{"tree":"contains","text":"disk.txt — on disk ↔ unsaved"}}
+{"expect":{"tree":"absent","text":"disk.txt changed on disk"}}
+{"do":{"click":"editor.compare.close"}}
+{"expect":{"tree":"absent","text":"on disk ↔ unsaved"}}
+{"expect":{"tree":"contains","text":"disk.txt changed on disk"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].disk_state","equals":"changedOnDisk"}}
+{"do":{"click":"editor.compare"}}
+{"expect":{"tree":"contains","text":"disk.txt — on disk ↔ unsaved"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"on disk ↔ unsaved"}}
+{"expect":{"tree":"contains","text":"disk.txt changed on disk"}}
+{"parity":{"action":"editor_reload","params":{"pane":"editor-1"},"click":"editor.reload","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].disk_state","equals":"inSync"}}
+{"expect":{"tree":"absent","text":"disk.txt changed on disk"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":7}}}}}
+{"expect":{"pane":"editor-1","field":"selected_text","equals":"theirs"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"editor"}}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-3","path":"{fixtureRoot}/e2e-project/disk.txt"}}}
+{"expect":{"pane":"editor-3","field":"visible_text","equals":"theirs"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-3","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":7}},"text":"again"}}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-3"}}}
+{"expect":{"pane":"editor-3","field":"tabs[0].dirty","equals":"false"}}
+{"dispatch":{"action":"pane_close","params":{"id":"editor-3"}}}
+{"expect":{"pane":"editor-1","field":"visible_text","equals":"again"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":6}}}}}
+{"expect":{"pane":"editor-1","field":"selected_text","equals":"again"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].disk_state","equals":"inSync"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"kept "}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_restore","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-project/disk.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}

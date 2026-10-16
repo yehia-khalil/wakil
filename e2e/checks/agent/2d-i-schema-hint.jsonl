@@ -1,0 +1,9 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db"}}}
+{"dispatch":{"action":"ctx_set_environment","params":{"name":"qa"}}}
+{"dispatch":{"action":"ctx_set_environment","params":{"name":"staging"}}}
+{"do":{"type":{"into":"window.composer","text":"what is in booking id"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"the agent was handed booking_id from the bookings schema"}}
+{"expect":{"tree":"contains","text":"booking id → booking_id"}}
+{"expect":{"journal":{"contains":"booking_id (column"}}}

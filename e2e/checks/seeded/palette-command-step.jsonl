@@ -1,0 +1,19 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"keys":"newpane"}}
+{"expect":{"tree":"contains","text":"Value: newpane"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"PANE KIND"}}
+{"expect":{"tree":"contains","text":"Placeholder: Pane kind"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"tree":"contains","text":"Value: terminal"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"journal":{"contains":"\"action\":\"term_open\""}}}
+{"expect":{"tree":"absent","text":"PANE KIND"}}
+{"do":{"keys":"echo palette-landed"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"palette-landed"}}

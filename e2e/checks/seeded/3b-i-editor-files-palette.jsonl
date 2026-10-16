@@ -1,0 +1,21 @@
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"found by name"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/e2e-project/palette-target.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-project/palette-target.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs","equals":"[]"}}
+{"expect":{"tree":"absent","text":"palette-target.txt"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"palette-target"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-project/palette-target.txt"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_open\""}}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":14}}}}}
+{"expect":{"pane":"editor-1","field":"selected_text","equals":"found by name"}}

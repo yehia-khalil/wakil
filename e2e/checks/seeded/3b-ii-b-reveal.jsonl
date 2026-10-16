@@ -1,0 +1,17 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"deep"}}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/e2e-api/deep/er/x.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-api/deep/er/x.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"expect":{"pane":"editor-1","field":"column.open","equals":"[]"}}
+{"parity":{"action":"editor_tree_reveal","params":{"pane":"editor-1"},"click":"editor.tree.reveal","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"column.open","contains":"/e2e-api/deep/er"}}
+{"do":{"click":"editor.tree.row:e2e-api/deep/er/x.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-api/deep/er/x.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
+{"dispatch":{"action":"editor_tree_reveal","params":{"pane":"editor-1","path":"/etc/hosts"},"refuses":"Invariant 6"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_tree_reveal\""}}}

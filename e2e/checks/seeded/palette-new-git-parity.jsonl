@@ -1,0 +1,19 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"new git"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:git"}}
+{"expect":{"pane":"git-1","field":"kind","equals":"git"}}
+{"expect":{"pane":"git-1","field":"folded","equals":"false"}}
+{"expect":{"pane":"git-1","field":"roots[1].name","equals":"e2e-api"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[0].path","equals":"app.txt"}}
+{"expect":{"pane":"git-1","field":"selection","equals":"null"}}
+{"expect":{"journal":{"contains":"\"params\":{\"kind\":\"git\"}"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"git"}}}
+{"expect":{"pane":"git-2","field":"kind","equals":"git"}}
+{"expect":{"pane":"git-2","field":"folded","equals":"false"}}
+{"expect":{"pane":"git-2","field":"roots[1].name","equals":"e2e-api"}}
+{"expect":{"pane":"git-2","field":"roots[1].files[0].path","equals":"app.txt"}}
+{"expect":{"pane":"git-2","field":"selection","equals":"null"}}

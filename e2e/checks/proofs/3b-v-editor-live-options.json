@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-v-editor-live-options.jsonl",
+  "baseCommit": "e6c782b4f52f9e4c17f82bfadd17b13c8252445a",
+  "provedAt": "2026-10-13T12:35:19.419434Z",
+  "checkBlob": "f4111c3257d8de3bf7c41364e14b2fdc158c70e5"
+}

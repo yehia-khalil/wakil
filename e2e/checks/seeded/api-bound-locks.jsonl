@@ -1,0 +1,39 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db","grantWrite":true,"writeDsn":"{fixtureRoot}/bookings.db"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-1","database":"bookings","query":"SELECT * FROM bookings ORDER BY id"}}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"2"}}
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"pane_move","params":{"id":"api-2","x":740,"y":60}}}
+{"dispatch":{"action":"pane_resize","params":{"id":"api-2","width":640,"height":720}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-2","path":[{"literal":"/v1/bookings/"},{"slot":"id"},{"literal":"/"},{"slot":"nope"}]}}}
+{"do":{"drag":{"from":"db.row.0.grip","to":"api.pane"}}}
+{"expect":{"pane":"api-2","field":"request.path[1].binding","equals":"live"}}
+{"expect":{"tree":"contains","text":"Filled id from bookings · row 1 · no column for nope"}}
+{"do":{"click":"api.path.part.3.remove"}}
+{"expect":{"pane":"api-2","field":"request.path[3]","present":false}}
+{"expect":{"pane":"api-2","field":"request.path[1].binding","equals":"live"}}
+{"do":{"focus":"api.path"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"press":"x"}}
+{"expect":{"tree":"contains","text":"a selection holding a bound value can't be deleted or replaced"}}
+{"expect":{"pane":"api-2","field":"request.path[1].binding","equals":"live"}}
+{"do":{"hotkey":"cmd+Down"}}
+{"do":{"press":"c"}}
+{"do":{"press":"a"}}
+{"do":{"press":"n"}}
+{"do":{"press":"c"}}
+{"do":{"press":"e"}}
+{"do":{"press":"l"}}
+{"expect":{"pane":"api-2","field":"request.path[2].literal","equals":"/cancel"}}
+{"expect":{"pane":"api-2","field":"request.path[1].binding","equals":"live"}}
+{"expect":{"pane":"api-2","field":"request.path[1].source.keyValues[0]","equals":"8842"}}
+{"do":{"focus":"api.body"}}
+{"do":{"click":"api.method.POST"}}
+{"expect":{"pane":"api-2","field":"request.method","equals":"POST"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-2","path":[{"literal":"/v2/"},{"name":"id","binding":"live","source":{"pane":"db-1","table":"bookings","keyColumns":["id"],"keyValues":["8842"],"column":"id"}}]}}}
+{"expect":{"pane":"api-2","field":"request.path[0].literal","equals":"/v2/"}}
+{"expect":{"pane":"api-2","field":"request.path[1].binding","equals":"live"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-2","path":[{"name":"id","binding":"live","source":{"pane":"db-1","table":"bookings","keyColumns":["id"],"keyValues":["8843"],"column":"id"}}]},"refuses":"a bound value this region does not hold"}}
+{"expect":{"pane":"api-2","field":"request.path[0].literal","equals":"/v2/"}}
+{"do":{"click":"api.path.part.1.unbind"}}
+{"expect":{"pane":"api-2","field":"request.path[1].slot","equals":"id"}}

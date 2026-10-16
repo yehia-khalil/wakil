@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-ii-tree-preview.jsonl",
+  "baseCommit": "8e8ec7d29e7f4b3b8e1306e2b50a5af40e8e90bf",
+  "provedAt": "2026-10-14T15:10:02.437416Z",
+  "checkBlob": "72d63ae00c8f765d01136a67e3711901eb87d6da"
+}

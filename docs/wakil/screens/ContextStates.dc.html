@@ -1,0 +1,318 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    /* A sheet of context-control states rather than a window. The room is
+       rendered plainly; only the Production cell carries a local red bleed,
+       because that cell is the one where the room itself changes. */
+    .sheet {
+      position: relative; width: 1440px; height: 1560px; overflow: hidden;
+      background:
+        radial-gradient(circle 1300px at 50% 108%,
+          rgba(124,92,255,0.16) 0%, rgba(124,92,255,0.060) 42%,
+          rgba(124,92,255,0.022) 58%, rgba(124,92,255,0.006) 75%,
+          rgba(124,92,255,0) 92%),
+        linear-gradient(180deg, #030408 0%, #070812 100%);
+    }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .slab {
+      background: #0e1019;
+      border-radius: 10px;
+      box-shadow:
+        0 8px 36px rgba(0,0,0,0.55),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .grid { display: flex; flex-direction: column; gap: 58px; width: 1288px; }
+    .cell { position: relative; display: grid; grid-template-columns: 616px 1fr; gap: 16px 56px; align-items: start; }
+    .cell > .micro { grid-column: 1 / -1; }
+    .cell > .note { grid-column: 2; grid-row: 2 / span 2; align-self: start; }
+    .note { font-size: 12.5px; line-height: 1.58; color: rgba(232,236,246,0.66); text-wrap: pretty; }
+    .note b { color: rgba(232,236,246,0.90); font-weight: 500; }
+
+    .ctl { display: flex; gap: 28px; padding: 15px 18px; width: 616px; }
+    .seg { display: flex; flex-direction: column; gap: 7px; }
+    .seg .val { display: flex; align-items: center; gap: 9px; font-size: 14.5px; color: rgba(232,236,246,0.82); }
+    .seg.open .val { color: #e8ecf6; }
+    .seg.empty .val { color: rgba(232,236,246,0.46); }
+
+    .menu { width: 302px; padding: 6px 0; }
+    .row { position: relative; display: flex; align-items: center; gap: 14px; padding: 10px 16px; }
+    .row .edge {
+      position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px;
+      border-radius: 1px; background: transparent;
+    }
+    .row.on .edge { background: #9e82ff; box-shadow: 0 0 8px rgba(158,130,255,0.70); }
+    .row.on { background: rgba(232,236,246,0.06); }
+    .ttl { font-size: 13.5px; color: rgba(232,236,246,0.82); }
+    .row.on .ttl { color: #e8ecf6; }
+    .sub {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 10px; color: rgba(232,236,246,0.50);
+    }
+
+    .account { display: flex; align-items: baseline; gap: 8px; }
+    .account .lbl {
+      font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px;
+      text-transform: uppercase; color: rgba(124,92,255,0.55);
+    }
+    .account .val {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11px; color: rgba(124,92,255,0.90);
+    }
+  </style>
+</helmet>
+
+<div class="sheet">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <div style="position: absolute; left: 76px; top: 64px; display: flex; flex-direction: column; gap: 10px;">
+    <div class="micro">Context control · states</div>
+    <div style="font-size: 13px; color: rgba(232,236,246,0.56); max-width: 900px; line-height: 1.55;">Every state the promoted line of <span class="mono" style="font-size: 12px;">Context.dc.html</span> has to survive. An organisation-less launch is not here: it has no context line at all, and <span class="mono" style="font-size: 12px;">OrgFirstRun.dc.html</span> is that surface.</div>
+  </div>
+
+  <div class="grid" style="position: absolute; left: 76px; top: 168px;">
+
+    <!-- ══ 1 · ORG OPEN, NO PROJECT ══ The empty workspace. An environment
+         belongs to a project (Environment lives inside project.json's
+         `environments` map), so with no project there is no environment to
+         name - and the segment is ABSENT rather than blank. A blank segment
+         would assert that an environment exists and is merely unset. -->
+    <div class="cell">
+      <div class="micro">Organisation open · no project</div>
+      <div class="slab ctl">
+        <div class="seg" style="width: 178px;">
+          <div class="micro">Organisation</div>
+          <div class="val">Initech Labs
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5L11 8l-4.5 4.5"/></svg>
+          </div>
+        </div>
+        <div class="seg open empty" style="width: 200px;">
+          <div class="micro">Project</div>
+          <div class="val">Choose a project
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#9e82ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5l4-4 4 4"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="slab menu" style="margin-left: 224px;">
+        <div class="row"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div class="ttl">wakil-acceptance</div><div class="sub">2 roots · INI</div></div></div>
+        <div class="row"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div class="ttl">booking-api</div><div class="sub">4 roots · INI</div></div></div>
+        <div class="row"><div class="edge"></div>
+          <div style="display: flex; align-items: center; gap: 11px; color: rgba(232,236,246,0.62);">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
+            <div style="font-size: 13.5px;">New project</div></div></div>
+      </div>
+      <div class="note">The <b>Environment segment is absent, not blank.</b> An environment lives inside a project’s own <span class="mono" style="font-size: 11.5px;">environments</span> map, so before a project is chosen there is nothing for it to be unset <em style="font-style: normal;">from</em>. The room has no bleeds in this state either, for the same reason the org-less launch has none: nothing owns a hue yet.</div>
+    </div>
+
+    <!-- ══ 2 · ONE ENVIRONMENT ══ A control that offers a choice of one is a
+         lie about the shape of the data. The chevron is what promises a menu,
+         so it is what goes. -->
+    <div class="cell">
+      <div class="micro">Project with one environment</div>
+      <div class="slab ctl">
+        <div class="seg" style="width: 178px;">
+          <div class="micro">Organisation</div>
+          <div class="val">personal
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5L11 8l-4.5 4.5"/></svg>
+          </div>
+        </div>
+        <div class="seg" style="width: 200px;">
+          <div class="micro">Project</div>
+          <div class="val">telemetry
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l4 4 4-4"/></svg>
+          </div>
+        </div>
+        <div class="seg" style="width: 152px;">
+          <div class="micro">Environment</div>
+          <div class="val">Local</div>
+        </div>
+      </div>
+      <div class="note"><b>No chevron, because there is nothing to open.</b> The segment still draws — Invariant 8 puts the environment on screen at all times, and “only one” is not “none”. What goes is the affordance that would promise a menu and then show a list of one.</div>
+    </div>
+
+    <!-- ══ 3 · NOTHING CONFIGURED ══ A declared environment with no databases
+         and no API is a real state: project.json can name an environment whose
+         value is an empty object. Counting is what makes it visible - a row
+         that named a DSN could not render this case at all. -->
+    <div class="cell">
+      <div class="micro">An environment with nothing configured</div>
+      <div class="slab ctl">
+        <div class="seg" style="width: 178px;">
+          <div class="micro">Organisation</div>
+          <div class="val">Initech Labs
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5L11 8l-4.5 4.5"/></svg>
+          </div>
+        </div>
+        <div class="seg" style="width: 200px;">
+          <div class="micro">Project</div>
+          <div class="val">booking-api
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l4 4 4-4"/></svg>
+          </div>
+        </div>
+        <div class="seg open" style="width: 152px;">
+          <div class="micro">Environment</div>
+          <div class="val">Staging
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#9e82ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5l4-4 4 4"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="slab menu" style="margin-left: 452px;">
+        <div class="row on"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div class="ttl">Staging</div><div class="sub">3 databases · 1 API</div></div></div>
+        <div class="row"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div class="ttl">Sandbox</div><div class="sub" style="color: rgba(232,236,246,0.38);">nothing configured</div></div></div>
+        <div class="row"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div class="ttl" style="color: #e85c5c;">Production</div>
+            <div class="sub" style="color: rgba(232,92,92,0.66);">1 database · no API · read-only</div></div></div>
+      </div>
+      <div class="note"><b>This is what counting buys.</b> A subtitle naming one DSN could not draw this row at all — it would have had to invent a connection or leave the line blank, and a blank line reads as “not loaded yet”. <span class="mono" style="font-size: 11.5px;">nothing configured</span> is a fact about the project file, and it is switchable-to: an empty environment is still a valid context.</div>
+    </div>
+
+    <!-- ══ 4 · PRODUCTION ══ Invariant 8: production looks alarming. The room
+         itself turns - both bleeds go red - so the cell carries a local red
+         bleed rather than pretending the control changes alone. -->
+    <div class="cell">
+      <div style="position: absolute; left: -36px; width: 700px; top: -18px; height: 168px; pointer-events: none; border-radius: 18px;
+                  background: radial-gradient(ellipse 66% 116% at 46% 96%, rgba(232,92,92,0.14) 0%, rgba(232,92,92,0.045) 54%, rgba(232,92,92,0) 100%);"></div>
+      <div class="micro">Production · the room turns with it</div>
+      <div class="slab ctl">
+        <div class="seg" style="width: 178px;">
+          <div class="micro">Organisation</div>
+          <div class="val">Umbrella
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5L11 8l-4.5 4.5"/></svg>
+          </div>
+        </div>
+        <div class="seg" style="width: 200px;">
+          <div class="micro">Project</div>
+          <div class="val">booking-api
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l4 4 4-4"/></svg>
+          </div>
+        </div>
+        <div class="seg" style="width: 152px;">
+          <div class="micro">Environment</div>
+          <div class="val" style="color: #e85c5c;">Production
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,92,92,0.62)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l4 4 4-4"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="note"><b>The segment is red because the room is.</b> Hue belongs to the environment (§4), and <span class="mono" style="font-size: 11.5px;">isProductionEnvironment</span> is an exact match on <span class="mono" style="font-size: 11.5px;">"production"</span> — so a renamed <span class="mono" style="font-size: 11.5px;">prod</span> disarms both this and the write gate, together, which is the point of driving them from one predicate.</div>
+    </div>
+
+    <!-- ══ 5 · NO PROVIDER ══ The control is UNCHANGED, and that is the
+         finding. The provider is session-scoped and deliberately outside
+         Invariant 5's triple (Decision 4), so it has no segment to be empty. -->
+    <div class="cell">
+      <div class="micro">No account chosen</div>
+      <div class="slab ctl">
+        <div class="seg" style="width: 178px;">
+          <div class="micro">Organisation</div>
+          <div class="val">Initech Labs
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5L11 8l-4.5 4.5"/></svg>
+          </div>
+        </div>
+        <div class="seg" style="width: 200px;">
+          <div class="micro">Project</div>
+          <div class="val">wakil-acceptance
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l4 4 4-4"/></svg>
+          </div>
+        </div>
+        <div class="seg" style="width: 152px;">
+          <div class="micro">Environment</div>
+          <div class="val">Staging
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l4 4 4-4"/></svg>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 14px; padding-left: 2px;">
+        <div class="account"><div class="lbl">Account</div><div class="val" style="color: rgba(124,92,255,0.58);">unset</div></div>
+        <div class="micro" style="letter-spacing: 1.2px;">bottom-trailing edge, where it always is</div>
+      </div>
+      <div class="note"><b>The control does not change, deliberately.</b> A provider is not a member of the triple, so it gets no fourth segment — adding one would assert a membership Decision 4 refuses. It reads <span class="mono" style="font-size: 11.5px;">unset</span> rather than blank, because empty means “never chosen for this window”, not “not resolved yet”.</div>
+    </div>
+
+    <!-- ══ 6 · UNREACHABLE ══ The ruling this artboard exists to make. -->
+    <div class="cell">
+      <div class="micro">The environment’s database does not answer</div>
+      <div class="slab ctl">
+        <div class="seg" style="width: 178px;">
+          <div class="micro">Organisation</div>
+          <div class="val">Initech Labs
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5L11 8l-4.5 4.5"/></svg>
+          </div>
+        </div>
+        <div class="seg" style="width: 200px;">
+          <div class="micro">Project</div>
+          <div class="val">wakil-acceptance
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l4 4 4-4"/></svg>
+          </div>
+        </div>
+        <div class="seg" style="width: 152px;">
+          <div class="micro">Environment</div>
+          <div class="val">Staging
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5l4 4 4-4"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="slab" style="width: 420px; padding: 15px 18px; display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: baseline; gap: 11px;">
+          <div class="micro">bookings</div>
+          <div class="mono" style="font-size: 10px; color: rgba(232,236,246,0.42);">core</div>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e8b45a" stroke-width="1.3" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M8 4.5v4M8 11.2v.1"/><circle cx="8" cy="8" r="6.2"/></svg>
+          <div class="mono" style="font-size: 11px; line-height: 1.5; color: #e8b45a;">core did not answer · dial tcp 10.0.3.4:3306: i/o timeout</div>
+        </div>
+      </div>
+      <div class="note"><b>The context line does not carry reachability, and must not.</b> An environment is a fact about <span class="mono" style="font-size: 11.5px;">project.json</span>; whether one of its three databases answers right now is a fact about that database. Marking the segment would make one dead resource look like a failed switch — the switch succeeded. The pane that tried to read names which one, and says so in the shape <span class="mono" style="font-size: 11.5px;">unreadProviders</span> already uses: answered-and-had-nothing stays distinguishable from was-never-asked.</div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":1560}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

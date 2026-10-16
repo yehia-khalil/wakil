@@ -1,0 +1,24 @@
+{"dispatch":{"action":"api_open","params":{"entry":"slow"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","path":[{"literal":"/stall"}]}}}
+{"do":{"click":"api.send"}}
+{"expect":{"pane":"api-1","field":"sending","equals":"true"}}
+{"dispatch":{"action":"api_request","params":{"pane":"api-1"},"refuses":"a send is already in flight on this pane"}}
+{"do":{"click":"api.send"}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"cancelled"}}
+{"expect":{"pane":"api-1","field":"sending","equals":"false"}}
+{"expect":{"tree":"contains","text":"cancelled after"}}
+{"expect":{"pane":"api-1","field":"recent[0].cancelled","equals":"true"}}
+{"do":{"click":"api.send"}}
+{"expect":{"pane":"api-1","field":"sending","equals":"true"}}
+{"dispatch":{"action":"api_cancel","params":{"pane":"api-1"}}}
+{"expect":{"pane":"api-1","field":"sending","equals":"false"}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"cancelled"}}
+{"expect":{"pane":"api-1","field":"recent[1].cancelled","equals":"true"}}
+{"expect":{"pane":"api-1","field":"recent[0].cancelled","equals":"true"}}
+{"dispatch":{"action":"api_cancel","params":{"pane":"api-1"},"refuses":"nothing is in flight"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"post","body":[{"literal":"{}"}]}}}
+{"do":{"click":"api.send"}}
+{"expect":{"pane":"api-1","field":"sending","equals":"true"}}
+{"do":{"click":"api.send"}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"unknown"}}
+{"expect":{"tree":"contains","text":"the server may already have it"}}

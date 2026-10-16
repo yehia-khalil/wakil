@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-v-heavy-folders.jsonl",
+  "baseCommit": "5c38f72852bf3febfa10e09fea88c4df5460e388",
+  "provedAt": "2026-10-15T12:28:32.532769Z",
+  "checkBlob": "867d66e39ddab5a8710566b0c0255e09272c3d5f"
+}

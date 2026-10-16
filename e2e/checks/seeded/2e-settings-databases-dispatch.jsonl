@@ -1,0 +1,20 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+{"expect":{"tree":"contains","text":"no databases in this environment"}}
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"orders","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/orders"}}}
+{"expect":{"tree":"contains","text":"read db:e2e-project:staging:orders"}}
+{"expect":{"tree":"absent","text":"no databases in this environment"}}
+{"expect":{"journal":{"contains":"db_set_dsn"}}}
+{"expect":{"journal":{"contains":"[redacted]"}}}
+{"dispatch":{"action":"db_remove_database","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"orders"}}}
+{"expect":{"tree":"contains","text":"no databases in this environment"}}
+{"expect":{"journal":{"contains":"db_remove_database"}}}
+{"do":{"type":{"into":"settings.db.name","text":"ledger"}}}
+{"do":{"type":{"into":"settings.db.host","text":"localhost"}}}
+{"do":{"type":{"into":"settings.db.database","text":"ledger"}}}
+{"do":{"type":{"into":"settings.db.user","text":"e2e"}}}
+{"do":{"type":{"into":"settings.db.password","text":"secret"}}}
+{"do":{"click":"settings.db.save"}}
+{"expect":{"tree":"contains","text":"Store a connection string for ledger in staging?"}}
+{"parity":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"ledger","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/ledger"},"click":"settings.dsn.confirm","assert":"tree"}}
+{"expect":{"tree":"contains","text":"read db:e2e-project:staging:ledger"}}

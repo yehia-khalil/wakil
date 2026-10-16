@@ -1,0 +1,1168 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not an artboard, not a spec, not a source of truth.
+  Open it by double-clicking. No build, no server, no dependencies.
+
+  ─────────────────────────────────────────────────────────────────────────
+  THE QUESTION (issue #179, the `resolveDraft` seam)
+
+  A request field in the API client pane is a SEQUENCE OF PARTS, and there is
+  no delimiter anywhere in Wakil. A part is a literal, a named hole, or a
+  bound value taken from another pane — live (re-read at send by its row's
+  key values) or captured (holds what it was given, and dies with the rows it
+  came from). At send, one pure function turns the draft into a wire request
+  or into ONE aggregated refusal naming every failure.
+
+  Does that model hold up when you push it through the awkward cases?
+  Specifically:
+
+    · Does binding by EXACT COLUMN NAME, one drop filling many holes, feel
+      like one gesture or like a dialogue?
+    · Does a live value found BY KEY and never by position actually survive
+      the grid being re-sorted and re-run?
+    · Is "a captured value lives exactly as long as the rows it was taken
+      from" (#137) a safety property or an annoyance? How often does the
+      operator end up re-binding?
+    · Is ONE aggregated refusal readable when five things are wrong at once,
+      and are "never bound" and "the row is gone" distinguishable?
+    · Does the emit-per-position rule mean no cell content can ever change
+      the SHAPE of the request?
+
+  ─────────────────────────────────────────────────────────────────────────
+  WHAT IT HAS ALREADY ANSWERED, by being built and driven through its own
+  six walkthroughs. Two of these are corrections the spec does not carry;
+  both are marked in the code at the line that implements them.
+
+  1. THE AGGREGATE MUST NOT REPORT DERIVED FAILURES. An unresolved body part
+     leaves a gap in the emitted document, so validating the document
+     unconditionally reported "not valid JSON" beside EVERY body failure — a
+     second entry that is a consequence of the first and that the operator
+     cannot act on. Walkthrough 5 read "five failures" when four things were
+     wrong. The aggregate exists so that fixing the request is ONE PASS;
+     padding it with derived failures makes it harder to read, which is the
+     failure it was built to prevent. The document is now validated only when
+     every part of it resolved. → `resolveDraft`, the body region.
+
+  2. A DROP MUST RE-BIND A DEAD BINDING, not only fill a hole. #137 prices
+     the captured value's short life at "the operator re-binds, ONE CLICK on
+     a row that is on screen", and #112 keeps a lost binding as a bound value
+     rather than degrading it to a clean hole. Those two are only compatible
+     if `api_bind` overwrites a binding that does not currently resolve —
+     otherwise re-binding is unbind-then-drop, two clicks, and #137's
+     accepted cost is understated. A binding that DOES resolve is never
+     overwritten. → `fillHoles`.
+
+  3. THE RULINGS THAT HELD, watched rather than reasoned about: a re-sort
+     moves booking 8842 to a different row and the live value still sends
+     8842 (walkthrough 2); `../etc/passwd` emits as `..%2Fetc%2Fpasswd`, one
+     inert segment that cannot climb, while a bare `..` survives encoding
+     intact and is refused by name (walkthrough 6); a DECIMAL "19.90" emits
+     as the JSON number 19.90 rather than a quoted string; and an
+     environment switch kills a capture outright while the live value
+     re-resolves to production's own 312.00 (walkthrough 4).
+
+  ─────────────────────────────────────────────────────────────────────────
+  WHAT IS REAL AND WHAT IS STAGE DRESSING
+
+  The `<script id="seam">` block below is the bit worth keeping. It is a pure
+  module over plain values — no DOM, no events, nothing reaching out of it —
+  and it is the shape `resolveDraft(draft:sources:) -> Result<WireRequest,
+  SendRefusal>` lifts into WakilKit as. Everything after it is a throwaway
+  page that calls into it and draws what came back.
+
+  Rulings it encodes, so a reader can check it rather than trust it:
+  #112 (two kinds of bound value, keyed not positional), #116 (the body is
+  parts, JSON only, empty body sends none, the part decides its own JSON
+  literal from declared type AND exact lexical form), #122 (the four data
+  positions; escape at emit; a path part resolving to `.` or `..` refused),
+  #137 (no age, ever; captured lives as long as its rows; a generation
+  counter, not a sweep), #150 (a named hole is a part, made by gesture),
+  #158 (headers are a map; C0 and DEL refused, tab included; empty emits
+  empty; name-sorted with derived last).
+
+  WHAT IT DELIBERATELY DOES NOT MODEL: the write gate and the production
+  confirmation (that is the send's price, not the draft's resolution — and
+  resolution runs BEFORE the gate, so a refusal never reaches the plane);
+  two-writer contention (#130); the transport, the credential and the
+  response. A send here stops at the wire request.
+
+  ONE THING THE PROTOTYPE HAD TO DECIDE THAT NO RULING COVERS, flagged rather
+  than smuggled: in the PATH, literals pass through unescaped (the operator
+  authors the slashes) while bound and hole-derived parts are percent-encoded
+  as segments. In a QUERY VALUE the whole resolved value is escaped, literals
+  included, because the region already carries name and value separately so
+  no operator ever needs to author a delimiter there. If that asymmetry is
+  wrong, it is wrong in `emitPath`/`emitQueryValue` and nowhere else.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>resolveDraft — prototype</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    --bg:      #05060c;
+    --slab:    #0e1019;
+    --edge:    rgba(255,255,255,0.075);
+    --ink:     #e8ecf6;
+    --ink-2:   rgba(232,236,246,0.72);
+    --ink-3:   rgba(232,236,246,0.44);
+    --ink-4:   rgba(232,236,246,0.24);
+    --live:    #b9a4ff;
+    --live-bg: rgba(124,92,255,0.16);
+    --bad:     #e85c5c;
+    --bad-bg:  rgba(232,92,92,0.13);
+    --good:    #5ecf9a;
+    --warn:    #e8b45a;
+  }
+
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    font-size: 13.5px; line-height: 1.6;
+    padding: 0 24px 120px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+          font-variant-numeric: tabular-nums; }
+  .micro { font-size: 9px; font-weight: 600; letter-spacing: 1.7px;
+           text-transform: uppercase; color: var(--ink-3); }
+
+  /* ---- 1. title and the question ---- */
+  header { padding: 56px 0 28px; border-bottom: 1px solid var(--edge); }
+  h1 { font-size: 27px; font-weight: 600; letter-spacing: -0.4px; margin: 0 0 4px; }
+  .sub { color: var(--ink-3); font-size: 12px; letter-spacing: 0.2px; margin-bottom: 22px; }
+  .question { color: var(--ink-2); max-width: 74ch; }
+  .question strong { color: var(--ink); font-weight: 600; }
+  .throwaway { display: inline-block; margin-bottom: 14px; padding: 3px 9px; border-radius: 3px;
+    background: rgba(232,180,90,0.14); color: var(--warn);
+    font-size: 9px; font-weight: 700; letter-spacing: 1.7px; text-transform: uppercase; }
+
+  /* ---- 2. the state panel ---- */
+  .state { position: sticky; top: 0; z-index: 10; background: var(--bg);
+           padding: 18px 0 14px; border-bottom: 1px solid var(--edge);
+           max-height: 78vh; overflow-y: auto; }
+  .changed { font-size: 12px; color: var(--warn); min-height: 20px; margin-bottom: 12px; }
+  .changed:empty::before { content: "Nothing yet — press a button."; color: var(--ink-4); }
+
+  .cols { display: grid; grid-template-columns: 1.15fr 1fr; gap: 14px; align-items: start; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+
+  .card { background: var(--slab); border-radius: 8px; padding: 13px 15px 15px;
+          box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.08); }
+  .card + .card { margin-top: 10px; }
+  .card h3 { margin: 0 0 10px; }
+
+  .row { display: grid; grid-template-columns: 78px minmax(0,1fr); gap: 10px;
+         align-items: baseline; padding: 3px 0; }
+  .row .lbl { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase;
+              color: var(--ink-3); }
+  .row .val { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+              font-size: 12px; color: var(--ink); word-break: break-word; }
+  .dim { color: var(--ink-3); }
+  .none { color: var(--ink-4); font-style: italic; font-family: inherit; font-size: 12px; }
+
+  /* the parts, drawn as chips */
+  .part { display: inline-block; padding: 1px 6px; border-radius: 4px; margin: 1px 1px;
+          font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 12px; }
+  .part.lit  { color: var(--ink); background: rgba(232,236,246,0.06); }
+  .part.hole { color: var(--ink-3); background: transparent;
+               border: 1px dashed rgba(232,236,246,0.28); }
+  .part.live { color: var(--live); background: var(--live-bg); }
+  .part.cap  { color: rgba(232,236,246,0.78); background: rgba(232,236,246,0.06);
+               border-left: 2px solid rgba(232,236,246,0.26); padding-left: 5px; }
+  .part.unres { color: var(--bad); background: var(--bad-bg); border-left-color: var(--bad); }
+
+  table.grid { width: 100%; border-collapse: collapse; font-size: 11.5px;
+               font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  table.grid th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 9px;
+                  letter-spacing: 1.1px; text-transform: uppercase;
+                  padding: 3px 8px 5px 0; border-bottom: 1px solid var(--edge); }
+  table.grid td { padding: 3px 8px 3px 0; color: var(--ink-2); border-bottom: 1px solid rgba(255,255,255,0.03); }
+  table.grid tr.anchor td { color: var(--ink); background: rgba(232,236,246,0.045); }
+  .pane-foot { margin-top: 6px; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+               color: var(--ink-3); display: flex; gap: 12px; }
+  .pane-foot .ed { color: var(--live); }
+
+  /* the outcome */
+  .outcome { border-radius: 8px; padding: 13px 15px 15px; }
+  .outcome.ok      { background: rgba(94,207,154,0.07); box-shadow: inset 0 0 0 1px rgba(94,207,154,0.22); }
+  .outcome.refused { background: rgba(232,92,92,0.07);  box-shadow: inset 0 0 0 1px rgba(232,92,92,0.26); }
+  .outcome.idle    { background: var(--slab); }
+  .verdict { font-size: 11px; font-weight: 700; letter-spacing: 1.7px; text-transform: uppercase;
+             margin-bottom: 10px; }
+  .outcome.ok .verdict      { color: var(--good); }
+  .outcome.refused .verdict { color: var(--bad); }
+  .outcome.idle .verdict    { color: var(--ink-4); }
+  .fail { padding: 7px 0; border-top: 1px solid rgba(232,92,92,0.16); }
+  .fail:first-of-type { border-top: 0; }
+  .fail .where { font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--bad); }
+  .fail .what { font-size: 12.5px; color: var(--ink); }
+  .fail .avail { font-size: 11.5px; color: var(--ink-3);
+                 font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  pre.wire { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.65;
+             font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; color: var(--ink); }
+  pre.wire .k { color: var(--ink-3); }
+  pre.wire .d { color: var(--ink-3); }
+
+  /* ---- 3 & 4. controls ---- */
+  section { padding: 30px 0 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.1px; }
+  .hint { color: var(--ink-3); font-size: 12.5px; margin: 0 0 16px; max-width: 74ch; }
+
+  .group { margin-bottom: 14px; }
+  .group > .micro { margin-bottom: 7px; display: block; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  button {
+    font: inherit; font-size: 12.5px; cursor: pointer;
+    background: rgba(232,236,246,0.07); color: var(--ink);
+    border: 0; border-radius: 6px; padding: 7px 12px;
+    transition: background 120ms ease-out, color 120ms ease-out;
+  }
+  button:hover { background: rgba(232,236,246,0.14); }
+  button:active { background: rgba(232,236,246,0.2); }
+  button.send { background: var(--live-bg); color: var(--live); font-weight: 600; }
+  button.send:hover { background: rgba(124,92,255,0.28); }
+  button.reset { background: transparent; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--edge); }
+  button.reset:hover { color: var(--ink); }
+  button.done { color: var(--ink-4); background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); }
+  button.next { background: var(--ink); color: #0b0d14; font-weight: 600; }
+  button.next:hover { background: #fff; }
+
+  /* tabs */
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--edge);
+          margin-bottom: 18px; }
+  .tabs button { border-radius: 6px 6px 0 0; background: transparent; color: var(--ink-3);
+                 padding: 9px 13px; margin-bottom: -1px; border-bottom: 1px solid transparent; }
+  .tabs button:hover { color: var(--ink); background: rgba(232,236,246,0.05); }
+  .tabs button.on { color: var(--ink); border-bottom-color: var(--live); background: transparent; }
+
+  .scenario p { max-width: 74ch; color: var(--ink-2); margin: 0 0 8px; }
+  .scenario .watch { color: var(--warn); font-size: 12.5px; margin: 0 0 18px; max-width: 74ch; }
+  .steps { counter-reset: s; display: flex; flex-direction: column; gap: 7px; align-items: flex-start; }
+  .step { display: flex; align-items: baseline; gap: 10px; }
+  .step .n { counter-increment: s; font-size: 10px; color: var(--ink-4); width: 16px;
+             font-family: ui-monospace, monospace; }
+  .step .n::before { content: counter(s); }
+  .step .note { font-size: 12px; color: var(--ink-3); }
+
+  /* the action log */
+  .log { margin-top: 10px; font-size: 11.5px; max-height: 128px; overflow-y: auto;
+         font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .log div { padding: 1.5px 0; color: var(--ink-3); }
+  .log div .ax { color: var(--ink-2); }
+  .log div.refused .ax { color: var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="throwaway">Prototype · throwaway</div>
+  <h1>A request built of parts</h1>
+  <div class="sub mono">2c-iv · issue #179 · the <span style="color:var(--live)">resolveDraft</span> seam</div>
+  <p class="question">
+    In the API client pane a request field is a <strong>sequence of parts</strong> — a literal,
+    a <strong>named hole</strong>, or a <strong>bound value</strong> taken from a grid on screen. There is no
+    delimiter anywhere, so a database cell containing <span class="mono">{{</span> or
+    <span class="mono">../</span> is inert by construction rather than by escaping.
+    A <strong>live</strong> bound value is re-read at send by its row's key values; a
+    <strong>captured</strong> one holds what it was given and dies with the rows it came from.
+    One pure function turns the draft into a wire request, or into <strong>one refusal naming every
+    failure</strong>.
+  </p>
+  <p class="question" style="margin-top:12px">
+    This page exists to answer one question: <strong>does that model hold up when you push it
+    through the cases that are hard to reason about on paper?</strong> Press buttons. Watch the
+    state. The interesting moment is when you think <em>“wait, that shouldn't be possible”</em>.
+  </p>
+</header>
+
+<div class="state">
+  <div class="changed" id="changed"></div>
+  <div class="cols">
+    <div>
+      <div class="card">
+        <div class="micro" style="margin-bottom:9px">The draft request</div>
+        <div id="draft"></div>
+      </div>
+      <div class="outcome idle" id="outcome">
+        <div class="verdict">Not sent yet</div>
+        <div class="none">Press <b>Send</b> to run resolveDraft over the draft above.</div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="micro" style="margin-bottom:9px">The grids it can bind from</div>
+        <div id="sources"></div>
+      </div>
+      <div class="card">
+        <div class="micro" style="margin-bottom:9px">Actions dispatched</div>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section>
+  <h2>Free play</h2>
+  <p class="hint">
+    Every action, always available, in any order. Nothing here is a wizard — poke at it.
+  </p>
+  <div id="freeplay"></div>
+</section>
+
+<section>
+  <h2>Guided walkthroughs</h2>
+  <p class="hint">
+    Six situations that are hard to hold in your head. Each one resets to a known start, so it
+    runs the same way every time. Press the steps in order.
+  </p>
+  <div class="tabs" id="tabs"></div>
+  <div class="scenario" id="scenario"></div>
+</section>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     THE SEAM. Pure. No DOM, no events, no I/O. This is the bit that lifts
+     into WakilKit as resolveDraft(draft:sources:) and fillHoles(...).
+     ══════════════════════════════════════════════════════════════════════ -->
+<script id="seam">
+const Seam = (() => {
+
+  // ── Parts ──────────────────────────────────────────────────────────────
+  // Three kinds, decoded by key presence. Nothing is ever marked up as text
+  // and nothing is ever parsed back.
+  const literal = (text) => ({ kind: 'literal', text });
+  const hole    = (name) => ({ kind: 'hole',    name });               // named, sourceless, never on the wire
+  const boundLive = (name, source) =>
+    ({ kind: 'bound', binding: 'live', name, source });                // holds NO value: re-read at send
+  const boundCaptured = (name, source, held) =>
+    ({ kind: 'bound', binding: 'captured', name, source, held });      // held: { value, type }
+
+  // A source: { pane, table, keyColumns, keyValues, column, generation }
+  // `generation` is recorded at capture and only ever read by a CAPTURED
+  // part (#137's build note: a generation, not a sweep — the value lives on
+  // the consuming pane, so setRows must not reach across and write into
+  // another pane's draft).
+
+  // ── Resolution ─────────────────────────────────────────────────────────
+  // A snapshot: { table, columns[], types{}, keyColumns[], rows[],
+  //               generation, editable, pending }
+  function resolvePart(part, sources) {
+    if (part.kind === 'literal') return { ok: true, value: part.text, type: 'text', authored: true };
+    if (part.kind === 'hole')    return { ok: false, why: 'neverBound', part };
+
+    const src = sources[part.source.pane];
+
+    if (part.binding === 'captured') {
+      // Lives exactly as long as the rows it was taken from (#137 ruling 2).
+      // Origin persists; value does not. EXACTLY ONE failure mode — a closed
+      // pane and a re-run query are the same event to a capture — so the
+      // discriminator carries the reason and `available` stays null.
+      if (!src || src.pending || src.generation !== part.source.generation)
+        return { ok: false, why: 'rowsGone', part };
+      return { ok: true, value: part.held.value, type: part.held.type };
+    }
+
+    // Live. Found by the row's KEY COLUMN VALUES and never by its position,
+    // so re-sorting or re-running the source query cannot make a POST
+    // confirm a different booking (#112).
+    if (!src) return { ok: false, why: 'paneClosed', part };
+    if (src.pending) return { ok: false, why: 'notFetched', part };
+    const row = src.rows.find(r =>
+      part.source.keyColumns.every((c, i) => String(r[c]) === part.source.keyValues[i]));
+    if (!row) return { ok: false, why: 'noRow', part, available: src.columns.slice() };
+    if (!src.columns.includes(part.source.column))
+      return { ok: false, why: 'noColumn', part, available: src.columns.slice() };
+    return { ok: true, value: String(row[part.source.column]),
+             type: src.types[part.source.column] || 'TEXT' };
+  }
+
+  // ── Emit. The POSITION decides the escape, always at emit, so no
+  //    position's safety depends on what is in the cell (#122). ──────────
+  const pct = (s) => encodeURIComponent(s);
+
+  // PATH: literals pass through (the operator authors the slashes); every
+  // other part is escaped as one segment. A part resolving to `.` or `..` is
+  // refused outright — PathEscape("..") == "..", so encoding cannot reach a
+  // dot segment, and Go's guard is two processes away from the message.
+  function emitPath(parts, resolved, fails) {
+    let out = '';
+    parts.forEach((p, i) => {
+      const r = resolved[i];
+      if (!r.ok) return;
+      if (r.authored) { out += r.value; return; }
+      if (r.value === '.' || r.value === '..') {
+        fails.push({ where: 'Path', what:
+          `“${p.name}” resolves to “${r.value}”, which is a path segment that climbs. ` +
+          `Wakil will not put it on the wire.` });
+        return;
+      }
+      out += pct(r.value);
+    });
+    return out;
+  }
+
+  // QUERY VALUE: the region carries name and value separately, so nobody
+  // ever needs to author a delimiter — the whole resolved value is escaped.
+  function emitQueryValue(parts, resolved) {
+    return parts.map((p, i) => resolved[i].ok ? pct(resolved[i].value) : '').join('');
+  }
+
+  // HEADER VALUE: no escape exists. Every C0 control and DEL is refused, tab
+  // included — wider than Go, which takes a tab verbatim. Space is legal.
+  // An empty value emits empty, so a legitimately-empty header is expressible.
+  const CTRL = /[\u0000-\u001F\u007F]/;
+  function emitHeaderValue(parts, resolved) {
+    return parts.map((p, i) => resolved[i].ok ? resolved[i].value : '').join('');
+  }
+
+  // BODY: a field of parts Wakil never parses. The part decides its own JSON
+  // literal, from its declared type AND its exact lexical form — a DECIMAL
+  // arrives from the driver as the string "19.90", and neither the arrived
+  // type nor a float64 round-trip would emit that correctly (#112, #116).
+  const NUMERIC = ['DECIMAL','NUMERIC','INTEGER','INT','BIGINT','SMALLINT','FLOAT','DOUBLE','REAL'];
+  function jsonLiteral(value, type) {
+    const t = String(type || '').toUpperCase();
+    if (NUMERIC.includes(t)) return value;                 // exact lexical form, unquoted
+    if (t === 'BOOLEAN') return value.toLowerCase() === 'true' ? 'true' : 'false';
+    if (t === 'NULL')    return 'null';
+    return JSON.stringify(value);                          // quoted, and escaped by the encoder
+  }
+  function emitBody(parts, resolved) {
+    return parts.map((p, i) => {
+      const r = resolved[i];
+      if (!r.ok) return '';
+      return r.authored ? r.value : jsonLiteral(r.value, r.type);
+    }).join('');
+  }
+
+  // ── The refusal's own language. Two message classes where the remedies
+  //    differ: nothing bound yet, and the row is gone. ───────────────────
+  function describe(f, where) {
+    const p = f.part, s = p.source;
+    const origin = s ? `${s.table} · ${s.keyColumns.map((c, i) => `${c} ${s.keyValues[i]}`).join(' · ') || 'no key'} · ${s.column}` : '';
+    switch (f.why) {
+      case 'neverBound':
+        return { where, what: `“${p.name}” has never been bound. Drop a row on it, or type a literal in its place.` };
+      case 'paneClosed':
+        return { where, what: `“${p.name}” came from a pane that is closed (${origin}). Re-bind it from a grid that is open.` };
+      case 'rowsGone':
+        return { where, what: `“${p.name}” was captured from ${origin}. Those rows are gone, so the value is too. Re-bind it.` };
+      case 'notFetched':
+        return { where, what: `“${p.name}” reads ${origin}, and that grid has not re-fetched yet. Send again once it lands.` };
+      case 'noRow':
+        return { where, what: `“${p.name}” reads ${origin}, and no row matches that key any more.`,
+                 avail: `Rows now keyed: see the grid. Columns available: ${f.available.join(', ')}` };
+      case 'noColumn':
+        return { where, what: `“${p.name}” reads a column ${origin.split(' · ').pop()} that the grid no longer has.`,
+                 avail: `Columns available: ${f.available.join(', ')}` };
+    }
+  }
+
+  // ── resolveDraft — the seam itself ────────────────────────────────────
+  // SendRefusal carries EVERY failure, never the first, so fixing the
+  // request is one pass rather than four sends.
+  function resolveDraft(draft, sources) {
+    const fails = [];
+
+    const runRegion = (parts, where) => {
+      const resolved = parts.map(p => resolvePart(p, sources));
+      resolved.forEach(r => { if (!r.ok) fails.push(describe(r, where)); });
+      return resolved;
+    };
+
+    // path
+    const pathResolved = runRegion(draft.path, 'Path');
+    const path = emitPath(draft.path, pathResolved, fails);
+
+    // query
+    const query = draft.query.map(q => ({
+      name: q.name,
+      value: emitQueryValue(q.value, runRegion(q.value, `Query · ${q.name}`))
+    }));
+
+    // headers — a map. A name already present is refused rather than added,
+    // which is what lets the `authorization` row be honest with no copy of
+    // the deny list to go stale.
+    const seen = new Set();
+    if (draft.credentialed) seen.add(draft.authHeader.toLowerCase());
+    const headers = [];
+    draft.headers.forEach(h => {
+      const name = h.name.toLowerCase();
+      const where = `Header · ${h.name}`;
+      const value = emitHeaderValue(h.value, runRegion(h.value, where));
+      if (seen.has(name)) {
+        fails.push({ where, what: `“${h.name}” is already on this request. A header region is a map, not a list — one of the two would be silently lost.` });
+        return;
+      }
+      seen.add(name);
+      if (CTRL.test(value)) {
+        const ch = value.match(CTRL)[0];
+        const nm = { '\n': 'a newline', '\r': 'a carriage return', '\t': 'a tab', '\0': 'a NUL' }[ch]
+                 || `a control character (U+${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')})`;
+        fails.push({ where, what: `The value carries ${nm}. There is no escape for one in a header, so Wakil refuses rather than mangling it.` });
+        return;
+      }
+      headers.push({ name: h.name, value, source: 'authored' });
+    });
+    if (draft.credentialed)
+      headers.push({ name: draft.authHeader, value: null, source: 'entry' });   // never held by the app
+
+    // body — empty sends NO body and NO content-type. Three wire states.
+    let body = null;
+    if (draft.body.length) {
+      const resolved = runRegion(draft.body, 'Body');
+      const text = emitBody(draft.body, resolved);
+      // FOUND BY THE PROTOTYPE, and it is a correction to the aggregate rather
+      // than to any ruling. An unresolved body part leaves a gap in the
+      // emitted document, so validating unconditionally reported "not valid
+      // JSON" alongside EVERY body failure — a second entry that is a
+      // CONSEQUENCE of the first and that the operator cannot act on. The
+      // aggregate exists so fixing the request is one pass; padding it with
+      // derived failures makes it harder to read, not easier. So the document
+      // is validated only when every part of it resolved.
+      if (resolved.every(r => r.ok)) {
+        // Wakil validates the EMITTED document, never the operator's text.
+        try { JSON.parse(text); body = text; }
+        catch (e) {
+          fails.push({ where: 'Body', what: `The document this emits is not JSON: ${e.message}.`,
+                       avail: text.length > 160 ? text.slice(0, 160) + '…' : text });
+        }
+      }
+      if (body !== null) headers.push({ name: 'content-type', value: draft.contentType, source: 'derived' });
+    }
+
+    if (fails.length) return { ok: false, refusal: { failures: fails } };
+
+    // Order is a contract: name-sorted, derived last — on screen and in the
+    // agent's copy alike, so a re-render never reorders them.
+    const rank = h => (h.source === 'derived' ? 1 : 0);
+    headers.sort((a, b) => rank(a) - rank(b) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+    const qs = query.length ? '?' + query.map(q => `${pct(q.name)}=${q.value}`).join('&') : '';
+    return { ok: true, wire: { method: draft.method, url: draft.origin + path + qs, headers, body } };
+  }
+
+  // ── fillHoles — api_bind's matching rule. One row, many holes, EXACT
+  //    column name. No fuzzy match, no substring match, no proposal step:
+  //    "a matched name is a guess" is answered by deleting what made it one.
+  //    A hole matching no column stays a hole. One drop is ONE action —
+  //    one journal line, one aggregated report.
+  //
+  //    ONE THING THE PROTOTYPE FORCED, and it is not in any ruling: a drop
+  //    also RE-BINDS a bound value that does not currently resolve. #137
+  //    prices the captured value's short life at "the operator re-binds, ONE
+  //    CLICK on a row that is on screen" — and that is only true if the drop
+  //    overwrites a dead binding. Filling holes alone would make it two
+  //    clicks (unbind, then drop) and the accepted cost would be wrong. A
+  //    binding that DOES resolve is never overwritten, because silently
+  //    repointing a working binding is the opposite failure.
+  function fillHoles(draft, snapshot, row, sources) {
+    const filled = [], rebound = [], missed = [];
+    const live = snapshot.editable && snapshot.keyColumns.length > 0;
+    const dead = (p) => p.kind === 'bound' && !resolvePart(p, sources).ok;
+
+    const convert = (part) => {
+      if (part.kind !== 'hole' && !dead(part)) return part;
+      if (!snapshot.columns.includes(part.name)) { missed.push(part.name); return part; }
+      (part.kind === 'hole' ? filled : rebound).push(part.name);
+      const source = {
+        pane: snapshot.pane, table: snapshot.table,
+        keyColumns: snapshot.keyColumns, keyValues: snapshot.keyColumns.map(c => String(row[c])),
+        column: part.name, generation: snapshot.generation
+      };
+      return live
+        ? boundLive(part.name, source)
+        : boundCaptured(part.name, source,
+            { value: String(row[part.name]), type: snapshot.types[part.name] || 'TEXT' });
+    };
+
+    const next = {
+      ...draft,
+      path:    draft.path.map(convert),
+      query:   draft.query.map(q => ({ ...q, value: q.value.map(convert) })),
+      headers: draft.headers.map(h => ({ ...h, value: h.value.map(convert) })),
+      body:    draft.body.map(convert)
+    };
+    return { draft: next, filled, rebound, missed, binding: live ? 'live' : 'captured' };
+  }
+
+  // ── api_unbind. A fill-first binding has no name to return to, so
+  //    unbinding removes the part outright rather than inventing one.
+  function unbind(draft, name) {
+    const revert = (parts) => parts.flatMap(p => {
+      if (p.kind !== 'bound' || p.name !== name) return [p];
+      return p.named === false ? [] : [hole(p.name)];
+    });
+    return { ...draft, path: revert(draft.path),
+             query: draft.query.map(q => ({ ...q, value: revert(q.value) })),
+             headers: draft.headers.map(h => ({ ...h, value: revert(h.value) })),
+             body: revert(draft.body) };
+  }
+
+  return { literal, hole, boundLive, boundCaptured, resolvePart, resolveDraft, fillHoles, unbind };
+})();
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     THE PAGE. Throwaway. Calls into the seam; nothing flows back.
+     ══════════════════════════════════════════════════════════════════════ -->
+<script>
+const { literal, hole, resolveDraft, fillHoles, unbind } = Seam;
+
+// ── fixtures ────────────────────────────────────────────────────────────
+const ORIGINS = { staging: 'https://billing-staging.example.com',
+                  production: 'https://billing.example.com' };
+
+const STAGING_BOOKINGS = [
+  { id: 8842, booking_id: 'BK-8842', guest: 'Nadia H.', status: 'pending',   price: '19.90' },
+  { id: 8843, booking_id: 'BK-8843', guest: 'Omar S.',  status: 'confirmed', price: '245.00' },
+  { id: 8844, booking_id: 'BK-8844', guest: 'Lena R.',  status: 'pending',   price: '71.50' }
+];
+const PRODUCTION_BOOKINGS = [
+  { id: 8842, booking_id: 'BK-8842', guest: 'Nadia H.', status: 'pending', price: '312.00' },
+  { id: 9001, booking_id: 'BK-9001', guest: 'Yusuf K.', status: 'pending', price: '88.00' }
+];
+
+const newBookingsPane = (rows) => ({
+  pane: 'p3', table: 'bookings',
+  columns: ['id', 'booking_id', 'guest', 'status', 'price'],
+  types: { id: 'INTEGER', booking_id: 'TEXT', guest: 'TEXT', status: 'TEXT', price: 'DECIMAL' },
+  keyColumns: ['id'], rows: rows.map(r => ({ ...r })),
+  generation: 1, editable: true, pending: false,
+  subject: 'select id, booking_id, guest, status, price from bookings'
+});
+
+const newJoinPane = () => ({
+  pane: 'p7', table: 'bookings ⋈ rate_plans',
+  columns: ['booking_id', 'rate_code', 'rate_name', 'price'],
+  types: { booking_id: 'TEXT', rate_code: 'TEXT', rate_name: 'TEXT', price: 'DECIMAL' },
+  keyColumns: [], rows: [
+    { booking_id: 'BK-8842', rate_code: 'FLEX-2026', rate_name: 'Flexible 2026', price: '19.90' }
+  ],
+  generation: 1, editable: false, pending: false,
+  subject: 'select b.booking_id, r.rate_code, r.rate_name, b.price from bookings b join rate_plans r on …'
+});
+
+function fresh() {
+  return {
+    env: { name: 'staging', production: false },
+    entry: 'billing',
+    credentialed: true,
+    authHeader: 'Authorization',
+    sources: { p3: newBookingsPane(STAGING_BOOKINGS) },
+    anchor: { p3: 0, p7: 0 },
+    draft: {
+      method: 'POST',
+      path: [literal('/v1/bookings')],
+      query: [],
+      headers: [],
+      contentType: 'application/json',
+      body: []
+    },
+    outcome: null,
+    log: [],
+    changed: ''
+  };
+}
+let W = fresh();
+
+// ── actions. Each one is one dispatch, and says so in the log. ──────────
+// One dispatch, one log line. `fn` returns a refusal string, or null and sets
+// W.changed itself when the message depends on what it found.
+function act(name, note, fn) {
+  W.changed = note;
+  const refused = fn();
+  const line = refused || W.changed || note;
+  W.changed = (refused ? '✗ ' : '') + line;
+  W.log.unshift({ name: typeof name === 'function' ? name() : name, note: line, refused: !!refused });
+  render();
+}
+const draftOrigin = () => ORIGINS[W.env.name];
+const wireDraft = () => ({ ...W.draft, origin: draftOrigin(),
+                           credentialed: W.credentialed, authHeader: W.authHeader });
+
+const A = {
+  reset: () => act('reset', 'Back to a clean draft against staging.', () => { W = fresh(); }),
+
+  openJoin: () => act('db_run_query', 'Opened the joined grid — it selects no primary key, so it can only give captured values.',
+    () => { W.sources.p7 = newJoinPane(); }),
+
+  holePath: () => act('api_set_request', 'Named a hole “booking_id” in the path. It is a part, not typed characters — no braces anywhere.',
+    () => {
+      if (W.draft.path.some(p => p.name === 'booking_id')) return 'The path already has a booking_id position.';
+      W.draft.path = [literal('/v1/bookings/'), hole('booking_id'), literal('/confirm')];
+    }),
+
+  holeQuery: () => act('api_set_request', 'Added query notify = a hole named “channel”. No “?” typed, and no boundary for Wakil to guess.',
+    () => {
+      if (W.draft.query.some(q => q.name === 'notify')) return 'There is already a notify parameter.';
+      W.draft.query.push({ name: 'notify', value: [hole('channel')] });
+    }),
+
+  holeBody: () => act('api_set_request', 'Set a JSON body with two holes in value positions — price and rate_code.',
+    () => {
+      W.draft.body = [
+        literal('{"price": '), hole('price'),
+        literal(', "rate": '),  hole('rate_code'),
+        literal(', "note": "confirmed from Wakil"}')
+      ];
+    }),
+
+  emptyBody: () => act('api_set_request', 'Emptied the body. An empty body sends no body AND no content-type — three wire states, not two.',
+    () => { W.draft.body = []; }),
+
+  headerOk: () => act('api_set_request', 'Typed x-request-id: rq-0f31.',
+    () => {
+      if (W.draft.headers.some(h => h.name.toLowerCase() === 'x-request-id')) return 'x-request-id is already on the request.';
+      W.draft.headers.push({ name: 'x-request-id', value: [literal('rq-0f31')] });
+    }),
+
+  headerBoundGuest: () => act('api_set_request', 'Typed x-guest, with a hole named “guest” for its value.',
+    () => {
+      if (W.draft.headers.some(h => h.name.toLowerCase() === 'x-guest')) return 'x-guest is already on the request.';
+      W.draft.headers.push({ name: 'x-guest', value: [hole('guest')] });
+    }),
+
+  headerDup: () => act('api_set_request', '',
+    () => `Refused as a duplicate: the ${W.entry} entry already supplies authorization. The region is a map — one of the two would be silently lost.`),
+
+  headerEmpty: () => act('api_set_request', 'Typed x-trace with an empty value. Empty emits empty — a legitimately-empty header is expressible.',
+    () => {
+      if (W.draft.headers.some(h => h.name.toLowerCase() === 'x-trace')) return 'x-trace is already on the request.';
+      W.draft.headers.push({ name: 'x-trace', value: [literal('')] });
+    }),
+
+  method: () => act('api_set_request', '', () => {
+    W.draft.method = W.draft.method === 'POST' ? 'GET' : 'POST';
+    W.changed = `Method is now ${W.draft.method}.`;
+    return null;
+  }),
+
+  drop: (paneId) => act('api_bind', '', () => {
+    const src = W.sources[paneId];
+    if (!src) return `The ${paneId === 'p3' ? 'bookings' : 'joined'} grid is not open.`;
+    if (src.pending) return 'That grid has not re-fetched yet — there is no row to drop.';
+    const row = src.rows[W.anchor[paneId]];
+    if (!row) return 'There is no anchored row in that grid to drop.';
+    const r = fillHoles(W.draft, src, row, W.sources);
+    W.draft = r.draft;
+    if (!r.filled.length && !r.rebound.length && !r.missed.length)
+      return 'Nothing to fill — the draft has no named hole and no dead binding.';
+    const parts = [];
+    if (r.filled.length)  parts.push(`filled ${r.filled.join(', ')} as ${r.binding}`);
+    if (r.rebound.length) parts.push(`re-bound ${r.rebound.join(', ')} as ${r.binding}`);
+    if (r.missed.length)  parts.push(`left ${r.missed.join(', ')} alone — no column of that exact name`);
+    W.changed = `One drop, one action: ${parts.join('; ')}.`;
+    return null;
+  }),
+
+  unbind: (name) => act('api_unbind', '', () => {
+    const before = JSON.stringify(W.draft);
+    W.draft = unbind(W.draft, name);
+    if (JSON.stringify(W.draft) === before) return `Nothing named “${name}” is bound.`;
+    W.changed = `Unbound “${name}” — the position is a named hole again.`;
+    return null;
+  }),
+
+  resort: () => act('db_run_query', '', () => {
+    const s = W.sources.p3;
+    if (!s) return 'The bookings grid is closed.';
+    s.rows.reverse(); s.generation++;
+    W.changed = `Re-sorted the grid. Generation ${s.generation}. Row 8842 is now at position ${s.rows.findIndex(r => r.id === 8842) + 1}.`;
+    return null;
+  }),
+
+  rowGone: () => act('db_run_query', '', () => {
+    const s = W.sources.p3;
+    if (!s) return 'The bookings grid is closed.';
+    s.rows = s.rows.filter(r => r.id !== 8842); s.generation++;
+    W.changed = `Re-ran the query with “where status = 'confirmed'”. Booking 8842 is no longer in the result.`;
+    return null;
+  }),
+
+  renameColumn: () => act('db_run_query', '', () => {
+    const s = W.sources.p3;
+    if (!s) return 'The bookings grid is closed.';
+    s.columns = s.columns.map(c => c === 'booking_id' ? 'ref' : c);
+    s.rows = s.rows.map(r => { const { booking_id, ...rest } = r; return { ...rest, ref: booking_id }; });
+    s.types.ref = s.types.booking_id; delete s.types.booking_id;
+    s.generation++;
+    W.changed = 'Re-ran the query as “select booking_id as ref”. The column the binding reads is gone.';
+    return null;
+  }),
+
+  cellTraversal: () => act('db_run_mutation', '', () => {
+    const s = W.sources.p3;
+    if (!s) return 'The bookings grid is closed.';
+    const row = s.rows.find(r => r.id === 8842);
+    if (!row) return 'Booking 8842 is not in the grid.';
+    row.booking_id = '../etc/passwd';
+    W.changed = 'Booking 8842’s booking_id is now “../etc/passwd”. The cell can hold anything.';
+    return null;
+  }),
+
+  cellDotDot: () => act('db_run_mutation', '', () => {
+    const s = W.sources.p3;
+    if (!s) return 'The bookings grid is closed.';
+    const row = s.rows.find(r => r.id === 8842);
+    if (!row) return 'Booking 8842 is not in the grid.';
+    row.booking_id = '..';
+    W.changed = 'Booking 8842’s booking_id is now exactly “..” — the one case encoding cannot save.';
+    return null;
+  }),
+
+  cellNewline: () => act('db_run_mutation', '', () => {
+    const s = W.sources.p3;
+    if (!s) return 'The bookings grid is closed.';
+    const row = s.rows.find(r => r.id === 8842);
+    if (!row) return 'Booking 8842 is not in the grid.';
+    row.guest = 'Nadia H.\nX-Admin: true';
+    W.changed = 'Booking 8842’s guest cell now carries a newline and a second header line.';
+    return null;
+  }),
+
+  closePane: (paneId) => act('pane_close', '', () => {
+    if (!W.sources[paneId]) return 'That grid is already closed.';
+    const t = W.sources[paneId].table;
+    delete W.sources[paneId];
+    W.changed = `Closed the ${t} grid.`;
+    return null;
+  }),
+
+  switchEnv: () => act('set_environment', '', () => {
+    const to = W.env.name === 'staging' ? 'production' : 'staging';
+    W.env = { name: to, production: to === 'production' };
+    W.outcome = { cleared: to };                               // the response is cleared, the draft is kept
+    Object.values(W.sources).forEach(s => { s.rows = []; s.pending = true; s.generation++; });
+    W.changed = `Environment is now ${to}. The response is cleared, the draft is kept, and every grid is re-running. Nothing was re-sent.`;
+    return null;
+  }),
+
+  refetch: () => act('db_run_query', '', () => {
+    const pending = Object.values(W.sources).filter(s => s.pending);
+    if (!pending.length) return 'No grid is waiting on a re-fetch.';
+    pending.forEach(s => {
+      s.pending = false;
+      s.rows = s.pane === 'p3'
+        ? (W.env.name === 'production' ? PRODUCTION_BOOKINGS : STAGING_BOOKINGS).map(r => ({ ...r }))
+        : newJoinPane().rows;
+    });
+    W.changed = `The grids finished re-fetching against ${W.env.name}.`;
+    return null;
+  }),
+
+  // The send is TWO actions, because ActionKind is fixed per action and one
+  // .mutate send would price a GET at .gate. The control picks by method.
+  send: () => act(() => ['GET', 'HEAD'].includes(W.draft.method) ? 'api_request' : 'api_send', '', () => {
+    const r = resolveDraft(wireDraft(), W.sources);
+    W.outcome = r;
+    const n = r.ok ? 0 : r.refusal.failures.length;
+    W.changed = r.ok
+      ? `Resolved. ${W.draft.method} ${r.wire.url}`
+      : `Refused, and nothing was cleared — ${n} failure${n === 1 ? '' : 's'}, named together.`;
+    return null;
+  })
+};
+
+// ── rendering ───────────────────────────────────────────────────────────
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const vis = (s) => esc(s).replace(/\n/g, '<span style="color:var(--bad)">⏎</span>')
+                          .replace(/\t/g, '<span style="color:var(--bad)">⇥</span>');
+
+function partChip(p) {
+  if (p.kind === 'literal')
+    return `<span class="part lit">${p.text === '' ? '<span class="dim">∅ empty</span>' : vis(p.text)}</span>`;
+  if (p.kind === 'hole')
+    return `<span class="part hole" title="A named hole. Never goes on the wire.">○ ${esc(p.name)}</span>`;
+  const r = Seam.resolvePart(p, W.sources);
+  const cls = 'part ' + (p.binding === 'live' ? 'live' : 'cap') + (r.ok ? '' : ' unres');
+  const s = p.source;
+  const title = `${s.table} · ${s.keyColumns.map((c, i) => c + ' ' + s.keyValues[i]).join(' · ') || 'no key'} · ${s.column}`;
+  const shown = r.ok ? vis(r.value) : 'unresolved';
+  // "preview, never value" — what the source holds NOW, not what will be sent.
+  return `<span class="part ${cls.slice(5)}" title="${esc(title)}">◆ ${esc(p.name)}
+            <span style="opacity:.62">· ${p.binding}${r.ok ? ' · ' + shown : ''}</span></span>`;
+}
+const parts = (ps) => ps.length ? ps.map(partChip).join('') : '<span class="none">empty</span>';
+
+function renderDraft() {
+  const d = W.draft;
+  const prodMark = W.env.production
+    ? ' <span style="color:var(--bad);font-size:10px;letter-spacing:1.2px">· PRODUCTION</span>' : '';
+  const hdrs = d.headers.length
+    ? d.headers.map(h => `<div style="padding:1px 0"><span class="mono dim">${esc(h.name)}:</span> ${parts(h.value)}</div>`).join('')
+    : '<span class="none">none authored</span>';
+  const supplied = W.credentialed
+    ? `<div style="padding:1px 0"><span class="mono dim">${esc(W.authHeader)}:</span>
+         <span class="none">supplied by the ${esc(W.entry)} entry — the app never holds it</span></div>` : '';
+  const ct = d.body.length
+    ? `<div style="padding:1px 0"><span class="mono dim">content-type:</span> <span class="part lit">${esc(d.contentType)}</span>
+         <span class="none">derived</span></div>`
+    : `<div style="padding:1px 0"><span class="none">no content-type — the body is empty</span></div>`;
+
+  document.getElementById('draft').innerHTML = `
+    <div class="row"><span class="lbl">Env</span><span class="val">${esc(W.env.name)}${prodMark}</span></div>
+    <div class="row"><span class="lbl">Entry</span><span class="val">${esc(W.entry)}
+      <span class="dim">· ${esc(draftOrigin())}</span></span></div>
+    <div class="row"><span class="lbl">Method</span><span class="val">${esc(d.method)}
+      <span class="dim">· ${['GET','HEAD'].includes(d.method) ? 'api_request · .read · free' : 'api_send · .mutate · ' + (W.env.production ? 'gated' : 'allowed')}</span></span></div>
+    <div class="row"><span class="lbl">Path</span><span class="val">${parts(d.path)}</span></div>
+    <div class="row"><span class="lbl">Query</span><span class="val">${
+      d.query.length ? d.query.map(q => `<span class="mono dim">${esc(q.name)}=</span>${parts(q.value)}`).join('<br>')
+                     : '<span class="none">none</span>'}</span></div>
+    <div class="row"><span class="lbl">Headers</span><span class="val">${hdrs}${supplied}${ct}</span></div>
+    <div class="row"><span class="lbl">Body</span><span class="val">${parts(d.body)}</span></div>`;
+}
+
+function renderSources() {
+  const keys = Object.keys(W.sources);
+  if (!keys.length) { document.getElementById('sources').innerHTML = '<span class="none">No grid is open. Every binding is unresolved.</span>'; return; }
+  document.getElementById('sources').innerHTML = keys.map(k => {
+    const s = W.sources[k];
+    const head = s.columns.map(c => `<th>${esc(c)}${s.keyColumns.includes(c) ? ' <span style="color:var(--live)">key</span>' : ''}</th>`).join('');
+    const body = s.pending
+      ? `<tr><td colspan="${s.columns.length}" class="none" style="padding:8px 0">re-fetching against ${esc(W.env.name)}…</td></tr>`
+      : (s.rows.length
+          ? s.rows.map((r, i) => `<tr class="${i === W.anchor[k] ? 'anchor' : ''}">${s.columns.map(c => `<td>${vis(r[c] ?? '')}</td>`).join('')}</tr>`).join('')
+          : `<tr><td colspan="${s.columns.length}" class="none" style="padding:8px 0">no rows</td></tr>`);
+    return `<div style="margin-bottom:14px">
+      <div class="mono" style="font-size:11.5px;color:var(--ink-2);margin-bottom:5px">${esc(s.table)}
+        <span class="dim">· pane ${esc(s.pane)}</span></div>
+      <table class="grid"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+      <div class="pane-foot">
+        <span class="${s.editable ? 'ed' : ''}">${s.editable ? 'editable — a live value source' : 'read-only — captured values only'}</span>
+        <span>generation ${s.generation}</span>
+      </div></div>`;
+  }).join('');
+}
+
+function renderOutcome() {
+  const el = document.getElementById('outcome');
+  const o = W.outcome;
+  if (!o) { el.className = 'outcome idle';
+    el.innerHTML = `<div class="verdict">Not sent yet</div><div class="none">Press <b>Send</b> to run resolveDraft over the draft above.</div>`;
+    return; }
+  if (o.cleared) { el.className = 'outcome idle';
+    el.innerHTML = `<div class="verdict">Response cleared</div>
+      <div class="none">The environment switched to ${esc(o.cleared)}. The draft is kept, the response is gone, and nothing was re-sent.</div>`;
+    return; }
+  if (o.ok) {
+    const h = o.wire.headers.map(x =>
+      `<span class="k">${esc(x.name)}:</span> ${x.value === null
+        ? '<span class="d">&lt;resolved inside Go — never enters the app&gt;</span>'
+        : (x.value === '' ? '<span class="d">&lt;empty&gt;</span>' : esc(x.value))}`).join('\n');
+    el.className = 'outcome ok';
+    el.innerHTML = `<div class="verdict">Resolved — this is what leaves</div><pre class="wire">${
+      esc(o.wire.method)} ${esc(o.wire.url)}\n${h}${o.wire.body === null
+        ? '\n\n<span class="d">(no body, and no content-type)</span>'
+        : '\n\n' + esc(o.wire.body)}</pre>`;
+    return;
+  }
+  el.className = 'outcome refused';
+  el.innerHTML = `<div class="verdict">Refused — ${o.refusal.failures.length} thing${o.refusal.failures.length === 1 ? '' : 's'}, said once</div>` +
+    o.refusal.failures.map(f => `<div class="fail">
+      <div class="where">${esc(f.where)}</div>
+      <div class="what">${esc(f.what)}</div>
+      ${f.avail ? `<div class="avail">${esc(f.avail)}</div>` : ''}</div>`).join('') +
+    `<div class="none" style="margin-top:10px">Nothing was cleared. The draft still holds the only copy of what you meant.</div>`;
+}
+
+function renderLog() {
+  document.getElementById('log').innerHTML = W.log.length
+    ? W.log.slice(0, 40).map(l => `<div class="${l.refused ? 'refused' : ''}"><span class="ax">${esc(l.name || '—')}</span> <span>${esc(l.note)}</span></div>`).join('')
+    : '<div class="none">nothing dispatched</div>';
+}
+
+function render() {
+  document.getElementById('changed').textContent = W.changed;
+  renderDraft(); renderSources(); renderOutcome(); renderLog();
+}
+
+// After every click, put the state back on screen. The panel is sticky, so
+// scrolling IT into view pins it at the top and leaves the buttons below it.
+const showState = () =>
+  document.querySelector('.state').scrollIntoView({ block: 'start', behavior: 'smooth' });
+
+// ── free play ───────────────────────────────────────────────────────────
+const FREEPLAY = [
+  ['Build the request', [
+    ['Name a hole “booking_id” in the path', A.holePath],
+    ['Add query notify = hole “channel”',    A.holeQuery],
+    ['Set a JSON body with holes price + rate_code', A.holeBody],
+    ['Empty the body',                        A.emptyBody],
+    ['Type header x-request-id',              A.headerOk],
+    ['Type header x-guest = hole “guest”',    A.headerBoundGuest],
+    ['Type header x-trace with an empty value', A.headerEmpty],
+    ['Type header authorization',             A.headerDup],
+    ['Flip the method',                       A.method]
+  ]],
+  ['Bind a value from a grid', [
+    ['Open the joined grid',                  A.openJoin],
+    ['Drop the anchored bookings row',        () => A.drop('p3')],
+    ['Drop the anchored joined row',          () => A.drop('p7')],
+    ['Unbind “booking_id”',                   () => A.unbind('booking_id')],
+    ['Unbind “price”',                        () => A.unbind('price')]
+  ]],
+  ['The world moves underneath', [
+    ['Re-sort the bookings grid',             A.resort],
+    ['Re-run the query — 8842 drops out',     A.rowGone],
+    ['Re-run it as “booking_id as ref”',      A.renameColumn],
+    ['Close the bookings grid',               () => A.closePane('p3')],
+    ['Close the joined grid',                 () => A.closePane('p7')],
+    ['Switch the environment',                A.switchEnv],
+    ['Let the grids finish re-fetching',      A.refetch]
+  ]],
+  ['What a cell can hold', [
+    ['Put “../etc/passwd” in booking_id',     A.cellTraversal],
+    ['Put exactly “..” in booking_id',        A.cellDotDot],
+    ['Put a newline in the guest cell',       A.cellNewline]
+  ]],
+  ['', [
+    ['Send',            A.send,   'send'],
+    ['Reset everything', A.reset, 'reset']
+  ]]
+];
+
+document.getElementById('freeplay').innerHTML = FREEPLAY.map((g, gi) => `
+  <div class="group">${g[0] ? `<span class="micro">${g[0]}</span>` : ''}
+    <div class="btns">${g[1].map((b, bi) =>
+      `<button class="${b[2] || ''}" data-g="${gi}" data-b="${bi}">${esc(b[0])}</button>`).join('')}</div>
+  </div>`).join('');
+document.getElementById('freeplay').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  FREEPLAY[+b.dataset.g][1][+b.dataset.b][1]();
+  showState();
+});
+
+// ── walkthroughs ────────────────────────────────────────────────────────
+const SCENARIOS = [
+  { tab: 'The happy chain',
+    why: `The everyday case the whole pane exists for. The booking is on screen in a grid; the next step is to call the endpoint that confirms it. Today that means selecting the id, copying it, and pasting it into another application.`,
+    watch: `Watch the hole become a violet live chip carrying its origin — bookings · id 8842 · booking_id — and watch the URL resolve only at send. The draft never publishes a resolved URL, because that would be a prediction.`,
+    steps: [
+      ['Start clean', A.reset],
+      ['Name a hole “booking_id” in the path', A.holePath, 'A part, made by a gesture. No braces are typed anywhere.'],
+      ['Drop the anchored bookings row', () => A.drop('p3'), 'One drop, one action, one journal line.'],
+      ['Send', A.send]
+    ] },
+
+  { tab: 'The grid moves under you',
+    why: `A live bound value is found by its row's KEY COLUMN VALUES and never by its position. This is the ruling that stops a re-sort turning your POST into a different booking's POST — and it is worth watching rather than trusting.`,
+    watch: `After the re-sort, 8842 has moved to a different row of the grid and the chip still reads the same value. After the re-run drops it, the refusal names what WAS available, so a binding broken by a renamed column is distinguishable from a typo.`,
+    steps: [
+      ['Start clean', A.reset],
+      ['Name a hole “booking_id” in the path', A.holePath],
+      ['Drop the anchored bookings row', () => A.drop('p3')],
+      ['Re-sort the grid', A.resort, 'The row moves. The binding must not.'],
+      ['Send', A.send, 'Still 8842.'],
+      ['Re-run it as “booking_id as ref”', A.renameColumn],
+      ['Send', A.send, 'The row is still there; the column it reads is not.'],
+      ['Re-run the query — 8842 drops out', A.rowGone],
+      ['Send', A.send, 'A different failure with a different remedy — and it says what WAS available.']
+    ] },
+
+  { tab: 'A join gives you captured',
+    why: `Decision 20's precondition fails on every JOIN, every aliased key, DISTINCT, a subquery and a CTE — six of nineteen measured SQL shapes qualify as live, so a join is the everyday case. A captured value holds what it was given and cannot be re-read. #137 ruled it lives exactly as long as the rows it came from.`,
+    watch: `The captured chip carries no hue at all — drawing it violet would promise a source that can be asked again. Wakil says NOTHING about its age: no clock, no "4 minutes ago", no expiry. And when the source re-runs, the value is simply gone — never old-but-usable.`,
+    steps: [
+      ['Start clean', A.reset],
+      ['Open the joined grid', A.openJoin, 'Read-only in its footer, so captured only.'],
+      ['Set a JSON body with holes price + rate_code', A.holeBody],
+      ['Drop the anchored joined row', () => A.drop('p7'), 'Both holes fill. Both are captured.'],
+      ['Send', A.send, 'A DECIMAL price arrives as a JSON number, not a quoted string.'],
+      ['Re-run the query — 8842 drops out', A.rowGone, 'Wrong grid — the joined one is untouched. Nothing happens to the capture.'],
+      ['Close the joined grid', () => A.closePane('p7'), 'Now the rows it was taken from are gone.'],
+      ['Send', A.send, 'The captured value is unresolved, not stale. Re-binding is the whole answer.']
+    ] },
+
+  { tab: 'Staging cannot reach production',
+    why: `An environment switch re-runs every db pane. That is what stops a row captured against staging riding into a request against production with nothing anywhere noticing — a live value would re-resolve and catch it, a captured one has nothing to re-resolve against.`,
+    watch: `The switch clears the response, keeps the draft, and re-sends nothing. While the grids are re-fetching, even the LIVE value has nothing to read and the send refuses. Once they land, the live price resolves to production's own number — 312.00, not staging's 19.90. The captured one does not come back at all, and re-binding it is one click on a row that is on screen.`,
+    steps: [
+      ['Start clean', A.reset],
+      ['Name a hole “booking_id” in the path', A.holePath],
+      ['Set a JSON body with holes price + rate_code', A.holeBody],
+      ['Drop the anchored bookings row', () => A.drop('p3'), 'booking_id and price fill LIVE; rate_code is not a column of this grid, so it stays a hole.'],
+      ['Open the joined grid', A.openJoin],
+      ['Drop the anchored joined row', () => A.drop('p7'), 'rate_code fills CAPTURED. price is already bound and resolving, so it is left alone.'],
+      ['Send', A.send, 'Staging. price is 19.90.'],
+      ['Switch the environment', A.switchEnv],
+      ['Send', A.send, 'Refused — the grids have not re-fetched, and the capture is already gone.'],
+      ['Let the grids finish re-fetching', A.refetch],
+      ['Send', A.send, 'Still refused, but for one reason only: the captured rate_code.'],
+      ['Drop the anchored joined row', () => A.drop('p7'), 'One click re-binds the dead one.'],
+      ['Send', A.send, 'price is now 312.00 — the live value is the environment’s value.']
+    ] },
+
+  { tab: 'One refusal, not four',
+    why: `A send that reports the FIRST problem costs the operator four sends to fix four problems. SendRefusal carries every failure. Two message classes are kept apart deliberately, because the remedies differ: "nothing bound yet" and "the row is gone" are not the same problem.`,
+    watch: `Four different things are wrong in four different regions, and they arrive in one message. Nothing is cleared — the draft still holds the only copy of what you meant.`,
+    steps: [
+      ['Start clean', A.reset],
+      ['Name a hole “booking_id” in the path', A.holePath],
+      ['Add query notify = hole “channel”', A.holeQuery, 'This one is never going to be bound.'],
+      ['Type header x-guest = hole “guest”', A.headerBoundGuest],
+      ['Set a JSON body with holes price + rate_code', A.holeBody],
+      ['Drop the anchored bookings row', () => A.drop('p3'), 'Fills booking_id, guest and price. Leaves channel and rate_code holes.'],
+      ['Put a newline in the guest cell', A.cellNewline],
+      ['Put exactly “..” in booking_id', A.cellDotDot],
+      ['Send', A.send, 'One pass, four named failures, two message classes.']
+    ] },
+
+  { tab: 'The cell decides nothing structural',
+    why: `A bound value may occupy a position that carries DATA, never one that carries STRUCTURE. The position decides the escape, and Wakil escapes at emit — so no position's safety depends on what is in the cell. There is one narrow case percent-encoding cannot reach, and it is refused by name.`,
+    watch: `“../etc/passwd” becomes ONE inert path segment — the slashes are encoded, so it cannot climb. But “..” alone survives encoding intact (PathEscape("..") == ".."), so it is refused outright rather than escaped. And a newline in a header value has no escape at all, so it is refused too.`,
+    steps: [
+      ['Start clean', A.reset],
+      ['Name a hole “booking_id” in the path', A.holePath],
+      ['Drop the anchored bookings row', () => A.drop('p3')],
+      ['Put “../etc/passwd” in booking_id', A.cellTraversal],
+      ['Send', A.send, 'One segment. The path cannot climb.'],
+      ['Put exactly “..” in booking_id', A.cellDotDot],
+      ['Send', A.send, 'Refused by name — this is the one case encoding cannot reach.'],
+      ['Type header x-guest = hole “guest”', A.headerBoundGuest],
+      ['Drop the anchored bookings row', () => A.drop('p3')],
+      ['Put a newline in the guest cell', A.cellNewline],
+      ['Send', A.send, 'No escape exists in a header value, so Wakil refuses rather than mangling it.']
+    ] }
+];
+
+let tab = 0;
+function renderTabs() {
+  document.getElementById('tabs').innerHTML = SCENARIOS.map((s, i) =>
+    `<button class="${i === tab ? 'on' : ''}" data-t="${i}">${esc(s.tab)}</button>`).join('');
+  const s = SCENARIOS[tab];
+  document.getElementById('scenario').innerHTML = `
+    <p>${esc(s.why)}</p>
+    <p class="watch">${esc(s.watch)}</p>
+    <div class="steps">${s.steps.map((st, i) =>
+      `<div class="step"><span class="n"></span>
+         <button data-s="${i}" class="${i === 0 ? 'next' : ''}">${esc(st[0])}</button>
+         ${st[2] ? `<span class="note">${esc(st[2])}</span>` : ''}</div>`).join('')}</div>`;
+}
+document.getElementById('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  tab = +b.dataset.t; renderTabs();
+});
+document.getElementById('scenario').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const i = +b.dataset.s;
+  SCENARIOS[tab].steps[i][1]();
+  // mark it done and offer the next one
+  const btns = [...document.querySelectorAll('#scenario button')];
+  btns.forEach((x, j) => { x.className = j < i + 1 ? 'done' : (j === i + 1 ? 'next' : ''); });
+  showState();
+});
+
+renderTabs();
+render();
+</script>
+</body>
+</html>

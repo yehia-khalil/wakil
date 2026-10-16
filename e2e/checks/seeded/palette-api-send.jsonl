@@ -1,0 +1,18 @@
+{"dispatch":{"action":"api_open","params":{"entry":"slow"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","path":[{"literal":"/stall"}]}}}
+{"expect":{"pane":"api-1","field":"sending","equals":"false"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"keys":"send"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.api.send"}}
+{"expect":{"pane":"api-1","field":"sending","equals":"true"}}
+{"expect":{"tree":"absent","text":"RUN A COMMAND"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"keys":"cancel"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.api.cancel"}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"cancelled"}}
+{"expect":{"pane":"api-1","field":"sending","equals":"false"}}
+{"expect":{"journal":{"contains":"api_cancel"}}}

@@ -1,0 +1,12 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-api/app.txt"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"dispatch":{"action":"editor_find","params":{"pane":"editor-1","query":"line"}}}
+{"expect":{"pane":"editor-1","field":"find.query","equals":"line"}}
+{"expect":{"pane":"editor-1","field":"find.word","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"find.count","equals":"3"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_find\""}}}

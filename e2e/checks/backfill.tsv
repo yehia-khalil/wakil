@@ -1,0 +1,94 @@
+# Checks whose failability was proved somewhere other than against the
+# merge-base. One per line: the check file, a TAB, and where it WAS seen to
+# fail.
+#
+# **A redirect, never an exemption.** `make e2e-new` proves a branch's new
+# checks failable against the merge-base, on the premise that a check
+# accompanies the work it tests. 2c-iii's seven check surface that shipped on
+# 2026-09-18, five days before the branch that wrote them forked — so all seven
+# PASS against the merge-base, and the target is right to refuse them. The
+# premise does not apply; the checks are backfill.
+#
+# Every entry here is printed on every run and recorded in the verdict, because
+# a list nobody is reminded of is a list that grows. The reason is prose and a
+# reviewer reads it. `make e2e-new` refuses an entry with no reason; `make test`
+# refuses one naming a check that is not there and one pointing at a
+# retrodiction that does not exist.
+#
+# A check NAMED on the command line is never redirected — that run is the one
+# proving it, and filtering it would make this file cite evidence it had made
+# unreproducible.
+e2e/checks/seeded/2c-iii-1-bundle-path.jsonl	make e2e-retrodict: 1-profile-never-sourced
+e2e/checks/seeded/2c-iii-3-live-prompt.jsonl	make e2e-retrodict: 2-no-live-prompt
+e2e/checks/seeded/2c-iii-5-full-screen.jsonl	make e2e-retrodict: 4-full-screen-never-takes-the-pane
+e2e/checks/seeded/2c-iii-6-no-orphan.jsonl	make e2e-retrodict: 6-pane-close-leaves-an-orphan
+e2e/checks/seeded/2c-iii-7-org-switch.jsonl	make e2e-retrodict: 5-switch-stops-the-journal
+# These two cover claims the 2c-iii walk found NO defect in — the phase-log is
+# explicit that none of the twenty-one was in the PTY, the mark scanner or the
+# block model — so there is no recorded shape to put back, and inventing a
+# mutation for them would measure the mutation. Both were seen to fail against
+# 3bc0d1f, the last build before the terminal pane existed, which is weaker
+# evidence and is recorded as such in agent-e2e-retrodiction.md §4.
+e2e/checks/seeded/2c-iii-2-block.jsonl	make e2e-new E2E_NEW_ARGS='--base 3bc0d1f': red, on a build with no terminal pane
+e2e/checks/seeded/2c-iii-4-interrupt.jsonl	make e2e-new E2E_NEW_ARGS='--base 3bc0d1f': red, on a build with no terminal pane
+# The api pane's two checks (#296). The Cover rung was added 2026-09-24,
+# between #188's merge and #190's, so both actions and the whole surface
+# reached main uncovered — the premise that a check accompanies its work does
+# not apply, exactly as it did not for 2c-iii's seven above. Proved failable
+# against 3af9ba3, the last main commit before #190, which #296 names as the
+# right base because the work is already on main and there is no branch to
+# diff. The reasons were read, not the count: api-set-request went red on
+# `-32601: Unknown action: api_set_request`, and api-open on the three strings
+# #190's header region and response line put in the tree. api-open's
+# `read_pane` assertions PASS against 3af9ba3 — that half is backfill for
+# #188's data, and only its drawing half tests #190.
+e2e/checks/seeded/api-open.jsonl	make e2e-new E2E_NEW_ARGS='--base 3af9ba3': red, on the last build before #190 drew the pane
+e2e/checks/seeded/api-set-request.jsonl	make e2e-new E2E_NEW_ARGS='--base 3af9ba3': red, on a build with no api_set_request action
+
+# ---- 2d-ii: the composer's send act changed, and no earlier build has it ----
+#
+# 2d-ii deleted window.send; Return in the composer sends. No build before
+# 2d-ii sends on Return (the merge-base's TextField has no onSubmit), so in every
+# agent launch against the merge-base the agent is never spawned and the run is
+# unsound by #284's guard — correctly, since a red after a send that never
+# happened proves nothing. The send act itself is proved instead in a seeded
+# launch, where no agent is involved: seeded/2d-ii-composer-return-sends.jsonl,
+# red against the merge-base because Return there produces no send at all.
+e2e/checks/agent/2d-i-code-hint.jsonl	assertions unchanged from 2d-i, where make e2e-new proved them red vs fb7e8f09d0f3 (docs/wakil/phase-2d-i-acceptance.md); 2d-ii changed only the send act (window.send → Return), proved red vs the merge-base by seeded/2d-ii-composer-return-sends.jsonl
+e2e/checks/agent/2d-i-failed-source.jsonl	assertions unchanged from 2d-i, where make e2e-new proved them red vs fb7e8f09d0f3 (docs/wakil/phase-2d-i-acceptance.md); 2d-ii changed only the send act (window.send → Return), proved red vs the merge-base by seeded/2d-ii-composer-return-sends.jsonl
+e2e/checks/agent/2d-i-hint-or-plain.jsonl	assertions unchanged from 2d-i, where make e2e-new proved them red vs fb7e8f09d0f3 (docs/wakil/phase-2d-i-acceptance.md); 2d-ii changed only the send act (window.send → Return), proved red vs the merge-base by seeded/2d-ii-composer-return-sends.jsonl
+e2e/checks/agent/2d-i-over-limit.jsonl	assertions unchanged from 2d-i, where make e2e-new proved them red vs fb7e8f09d0f3 (docs/wakil/phase-2d-i-acceptance.md); 2d-ii changed only the send act (window.send → Return), proved red vs the merge-base by seeded/2d-ii-composer-return-sends.jsonl
+e2e/checks/agent/2d-i-pane-hint.jsonl	assertions unchanged from 2d-i, where make e2e-new proved them red vs fb7e8f09d0f3 (docs/wakil/phase-2d-i-acceptance.md); 2d-ii changed only the send act (window.send → Return), proved red vs the merge-base by seeded/2d-ii-composer-return-sends.jsonl
+e2e/checks/agent/2d-i-schema-hint.jsonl	assertions unchanged from 2d-i, where make e2e-new proved them red vs fb7e8f09d0f3 (docs/wakil/phase-2d-i-acceptance.md); 2d-ii changed only the send act (window.send → Return), proved red vs the merge-base by seeded/2d-ii-composer-return-sends.jsonl
+e2e/checks/agent/both-surfaces.jsonl	assertions unchanged, and never asked to go red: the check predates every branch since #255 ("not new on this branch" in each runbook since). 2d-ii changed only the send act (window.send → Return), proved red vs the merge-base by seeded/2d-ii-composer-return-sends.jsonl
+e2e/checks/agent/two-enter.jsonl	assertions unchanged, and never asked to go red: the check predates every branch since #255 ("not new on this branch" in each runbook since). 2d-ii changed only the send act (window.send → Return), proved red vs the merge-base by seeded/2d-ii-composer-return-sends.jsonl
+e2e/checks/agent/2d-ii-thread-earlier.jsonl	make e2e-new E2E_NEW_ARGS='--base 5979778 e2e/checks/agent/2d-ii-thread-earlier.jsonl': the first branch commit where Return sends, so the agent spawns and the run is sound, and before the four-row thread (a4f8d53), so "EARLIER · SHOW" is never drawn
+e2e/checks/agent/2d-ii-voice-turn.jsonl	red vs 3c9c923 at step 5, BEFORE its first send — the hold lands nothing, the merge-base has no push-to-talk (.context/e2e/new/20261008-072711); that run is unsound only because no merge-base send spawns an agent, which cannot explain a step that precedes the send. The landing it sends is proved soundly by seeded/2d-ii-voice-lands-*.jsonl. Its voice_turn journal assertions have no build that shows them red: voice_turn (978c0e6) predates Return sending (5979778)
+
+# ---- 3b-v's tree checks, repaired after the hints they could not see past ----
+#
+# 4e546413 added Settings hints reading "like .env or build output" and "like
+# vendor or node_modules", and these two checks' bare-word tree assertions broke
+# or went vacuous. Rewritten to name the row (`text .env`), they pass against
+# this branch's merge-base, which already has the feature — so they are
+# redirected to where they WERE seen to fail on their own assertions: 5c38f728,
+# before Show ignored files existed (committed proofs in e2e/checks/proofs/).
+e2e/checks/seeded/3b-v-heavy-folders.jsonl	make e2e-new E2E_NEW_ARGS='--base 5c38f728 e2e/checks/seeded/3b-v-heavy-folders.jsonl': red at step 5, the Show ignored files control not there
+e2e/checks/seeded/3b-v-show-ignored.jsonl	make e2e-new E2E_NEW_ARGS='--base 5c38f728 e2e/checks/seeded/3b-v-show-ignored.jsonl': red at step 5, no SHOW IGNORED FILES section
+
+# ---- The walk findings no check caught (2026-10-15 walk-gaps spec) ----------
+#
+# Each covers a defect the operator found on a walk and that was fixed before
+# this branch forked, so each passes against the merge-base and was proved red
+# against the commit before its own fix instead (committed proofs in
+# e2e/checks/proofs/). The reasons were read, not the count: each went red on
+# its own assertion.
+e2e/checks/seeded/2e-settings-unlink-indicator.jsonl	make e2e-new E2E_NEW_ARGS='--base 4e1492a2^ …': red at step 8, the indicator never said unset after the unlink (#324)
+e2e/checks/seeded/365-terminal-option-word.jsonl	make e2e-new E2E_NEW_ARGS='--base fa5e3e16^ …': red at step 11, the line ran "echo aa bb XcY" — ⌥ moved and deleted nothing word-wise (zsh's ⌥→ ends at the next word's start, so the fixed line is "echo aa Xbb Y")
+e2e/checks/seeded/api-recent-root.jsonl	make e2e-new E2E_NEW_ARGS='--base d7549158^ …': red at step 5, no "GET / · no reply" row
+e2e/checks/seeded/api-paste-curl-www.jsonl	make e2e-new E2E_NEW_ARGS='--base 19d493a3^ …': red at step 9, the www. host stayed on catalog (Amendment 11)
+e2e/checks/seeded/project-root-note.jsonl	make e2e-new E2E_NEW_ARGS='--base 80c97d7e^ …': red at step 4, the note was fixed at launch and never appeared for the rootless project
+e2e/checks/agent/api-origin-after-account-switch.jsonl	make e2e-new E2E_NEW_ARGS='--base 57c7aeda^ …': red at step 7, request.origin null after USE switched the account (2c-iv W1)
+e2e/checks/seeded/2e-settings-narrow-rows.jsonl	make e2e-new E2E_NEW_ARGS='--base 64afbf8f^ …': red at step 5, the verb 0 wide and 66 tall at the narrowest window (#326)
+e2e/checks/seeded/3b-v-click-focuses-pane.jsonl	make e2e-new E2E_NEW_ARGS='--base 236a6b31^ …': red at step 13, keys still went to the editor after a click on Settings; this branch adds only expect.focus
+e2e/checks/seeded/2e-settings-doors.jsonl	assertions only removed: lines 17-18 (USE, then "RUNNING") passed whether or not #331 was fixed, because the seeded launch stores no credential and USE is refused; nothing new to prove

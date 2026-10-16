@@ -1,0 +1,31 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"post","path":[{"literal":"/orders"}]}}}
+{"expect":{"pane":"api-1","field":"request.body","equals":"[]"}}
+{"do":{"type":{"into":"api.body","text":"{\"a\":1,"}}}
+{"do":{"press":"Return"}}
+{"do":{"keys":"\"b\":2"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"{\"a\":1,\n\"b\":2"}}
+{"do":{"click":"api.body.format"}}
+{"expect":{"tree":"contains","text":"not JSON — nothing formatted"}}
+{"do":{"type":{"into":"api.body","text":"}"}}}
+{"expect":{"tree":"absent","text":"not JSON — nothing formatted"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"{\"a\":1,\n\"b\":2}"}}
+{"do":{"click":"api.body.format"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"{\n  \"a\": 1,\n  \"b\": 2\n}"}}
+{"do":{"focus":"api.path"}}
+{"do":{"type":{"into":"api.body","text":"x"}}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","contains":"x"}}
+{"do":{"press":"Escape"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"{\n  \"a\": 1,\n  \"b\": 2\n}"}}
+{"do":{"click":"api.body.hole"}}
+{"do":{"type":{"into":"api.body.hole.name","text":"tail"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"api-1","field":"request.body[1].slot","equals":"tail"}}
+{"do":{"focus":"api.body"}}
+{"do":{"press":"Tab"}}
+{"do":{"hotkey":"shift+]"}}
+{"do":{"hotkey":"cmd+Return"}}
+{"expect":{"pane":"api-1","field":"request.body[2].literal","equals":"  }"}}
+{"expect":{"journal":{"contains":"Send POST https:\\/\\/catalog.e2e-fixture.invalid\\/orders with "}}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"refusal"}}
+{"expect":{"pane":"api-1","field":"response.failures[0].region","equals":"Body"}}

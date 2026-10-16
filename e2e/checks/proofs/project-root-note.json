@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/project-root-note.jsonl",
+  "baseCommit": "8089dd200320715b206c436c5623ac0f8992a325",
+  "provedAt": "2026-10-15T14:26:06.261782Z",
+  "checkBlob": "9272d5e620f4851fb70885994659c4c96d2b5bbc"
+}

@@ -1,0 +1,9 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"hold":"option"}}
+{"expect":{"tree":"contains","text":"Hearing nothing from E2E Microphone"}}
+{"expect":{"tree":"contains","text":"say hello from the microphone"}}
+{"do":{"release":"option"}}
+{"expect":{"tree":"contains","text":"HEARD · RETURN SENDS · EDIT FIRST"}}
+{"do":{"keys":" now"}}
+{"expect":{"tree":"contains","text":"say hello from the microphone now"}}

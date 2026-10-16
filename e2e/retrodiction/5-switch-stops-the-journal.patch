@@ -1,0 +1,35 @@
+diff --git a/app/Sources/WakilKit/App/AppWiring.swift b/app/Sources/WakilKit/App/AppWiring.swift
+index 26e041e..436d905 100644
+--- a/app/Sources/WakilKit/App/AppWiring.swift
++++ b/app/Sources/WakilKit/App/AppWiring.swift
+@@ -554,7 +554,16 @@ public struct WakilWiring: Sendable {
+     /// fate-unknown**. Recording it is #187/#194's, not this function's;
+     /// what is this function's is not claiming the stronger guarantee for
+     /// a client it does not hold for.
++    ///
++    /// RECONSTRUCTION (#253): see switchOrg's body.
++    nonisolated(unsafe) static var aSwitchHasHappened = false
+     public func switchOrg(to org: String) async -> [String] {
++        // RECONSTRUCTION (#253): the shape of the 2c-iii defect where an
++        // organisation switch silently stopped every later command being
++        // journalled. Set on the SWITCH, which is the event the walk found —
++        // not on any property of a fixture, so the mutation knows nothing
++        // about the check that has to catch it.
++        WakilWiring.aSwitchHasHappened = true
+         let childEnvironment = Self.childProcessEnvironment(
+             from: ProcessInfo.processInfo.environment, org: org,
+             // Deliberately nil: the new org's provider is not known yet.
+diff --git a/app/Sources/WakilKit/App/WindowModel.swift b/app/Sources/WakilKit/App/WindowModel.swift
+index 315690f..daac0a5 100644
+--- a/app/Sources/WakilKit/App/WindowModel.swift
++++ b/app/Sources/WakilKit/App/WindowModel.swift
+@@ -6056,6 +6056,9 @@ public final class WindowModel {
+     /// become where a `keychain` grep's secrets accumulate because the
+     /// type reaching this method never held them.
+     private func journalTerminalRun(_ run: TerminalRun) async {
++        // RECONSTRUCTION (#253): the journal stops once a switch has
++        // happened. The condition is the switch, not the org's name.
++        if WakilWiring.aSwitchHasHappened { return }
+         let context = activeShellContext
+         let params: JSONValue = .object([
+             "pane": .string(run.paneId),

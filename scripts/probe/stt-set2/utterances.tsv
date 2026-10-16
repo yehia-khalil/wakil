@@ -1,0 +1,26 @@
+# Set 2 — written 2026-10-06, before any audio. utterance <TAB> identifiers (comma-separated) <TAB> R=regular, A=contains an abbreviation
+Open the customers table on staging	customers,staging	R
+Show me pk_uniq in the core database	pk_uniq	R
+Move INI-1042 to in progress	INI-1042	R
+What does fuzzyScore return for an empty query?	fuzzyScore	R
+Is ClaudeCodeCLIHarness the only harness?	ClaudeCodeCLIHarness	R
+Call list_tables on production	list_tables,production	R
+Where is buildLaunch defined?	buildLaunch	R
+Run ctx_list_environments for this project	ctx_list_environments	A
+What does db_set_dsn write?	db_set_dsn	A
+Open ContextStore.swift	ContextStore.swift	R
+Count the rows in bookings	bookings	R
+Assign INI-317 to me	INI-317	R
+Is rafiq-recall running for Umbrella?	rafiq-recall,Umbrella	R
+Show the DataSurfaceSnapshot fields	DataSurfaceSnapshot	R
+Who calls ProviderSwitchBroker?	ProviderSwitchBroker	R
+Does parse_curl keep the headers?	parse_curl	R
+Update edit_comp where the key is two	edit_comp	R
+Check columnTypesInferred on this pane	columnTypesInferred	R
+What's in SecretSet?	SecretSet	R
+Run unlink_provider on the old account	unlink_provider	R
+Is activeEnv set after the switch?	activeEnv	A
+Where does copiedCtx come from?	copiedCtx	A
+Does the PaneStore drop stale rows?	PaneStore	R
+Call locate_api_url for the quotes endpoint	locate_api_url	R
+Is rafiq-http allowed to write on staging?	rafiq-http,staging	R

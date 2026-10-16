@@ -1,0 +1,16 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"pane_resize","params":{"id":"api-1","width":640,"height":720}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"get","path":[{"literal":"/orders"}],"contentType":"application/json","body":[{"literal":"{\"a\":1}"}]}}}
+{"do":{"click":"api.send"}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"transport"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"{\"a\":1}"}}
+{"expect":{"tree":"absent","text":"unexpected additional properties"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"delete","body":[]}}}
+{"do":{"click":"api.send"}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"transport"}}
+{"expect":{"pane":"api-1","field":"recent[0].method","equals":"DELETE"}}
+{"expect":{"tree":"absent","text":"is set beside an empty body"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","entry":"billing","method":"get"}}}
+{"do":{"click":"api.send"}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"refusal"}}
+{"expect":{"pane":"api-1","field":"response.failures[0].region","present":false}}

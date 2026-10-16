@@ -1,0 +1,443 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    .sheet { position: relative; width: 6312px; height: 1060px; overflow: hidden; background: #050609; }
+
+    /* Each state is a whole window, because "what the canvas draws when
+       nothing is open" is a claim about the whole window and cannot be shown
+       by a fragment of one. */
+    .win { position: absolute; top: 96px; width: 1440px; height: 900px; overflow: hidden; border-radius: 12px; }
+
+    /* The room, with an environment in it. */
+    .lit {
+      background:
+        radial-gradient(circle 1100px at 110% -10%,
+          rgba(79,185,232,0.232) 0%, rgba(79,185,232,0.086) 41%,
+          rgba(79,185,232,0.029) 59%, rgba(79,185,232,0.007) 77%,
+          rgba(79,185,232,0) 100%),
+        radial-gradient(circle 1200px at 50% 118%,
+          rgba(124,92,255,0.336) 0%, rgba(124,92,255,0.124) 42%,
+          rgba(124,92,255,0.048) 58%, rgba(124,92,255,0.014) 75%,
+          rgba(124,92,255,0) 92%),
+        linear-gradient(180deg, #030408 0%, #070812 100%);
+    }
+    /* The room with no colour in it: field, vignette and grain, no bleeds.
+       Extends `uncoloured-room`, which settled the ORG-less case. The same
+       argument reaches one axis further in - see this artboard's annotation. */
+    .unlit { background: linear-gradient(180deg, #030408 0%, #070812 100%); }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .slab {
+      background: #0e1019;
+      border-radius: 10px;
+      box-shadow:
+        0 8px 36px rgba(0,0,0,0.55),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    .chip {
+      font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px;
+      text-transform: uppercase; padding: 3px 7px; border-radius: 3px; white-space: nowrap;
+    }
+
+    .col { position: absolute; display: flex; flex-direction: column; gap: 14px; }
+    .sess { display: flex; flex-direction: column; gap: 8px; padding: 17px 24px; }
+    .sess .q { font-size: 15px; line-height: 1.38; color: rgba(232,236,246,0.92); text-wrap: pretty; }
+    .meta { display: flex; align-items: center; gap: 15px; }
+    .meta span { font-size: 10px; color: rgba(232,236,246,0.50); }
+
+    .orow { display: flex; align-items: center; gap: 14px; padding: 14px 22px; }
+    .orow .name { font-size: 14px; color: rgba(232,236,246,0.88); }
+    .orow .hint {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 10px; color: rgba(232,236,246,0.42); margin-left: auto;
+    }
+
+    .utter {
+      position: absolute; left: 88px; right: 88px; bottom: 78px;
+      display: flex; align-items: center; justify-content: space-between; gap: 28px;
+    }
+    .caret { width: 1.5px; height: 18px; border-radius: 1px; background: #9e82ff; flex-shrink: 0; }
+    .ask { font-size: 16px; color: rgba(232,236,246,0.50); }
+
+    .account { display: flex; align-items: baseline; gap: 8px; }
+    .account .lbl {
+      font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px;
+      text-transform: uppercase; color: rgba(124,92,255,0.55);
+    }
+    .account .val {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11px; color: rgba(124,92,255,0.90);
+    }
+
+    .cap { position: absolute; top: 48px; display: flex; align-items: baseline; gap: 14px; }
+    .cap .n { font-size: 15px; color: #e8ecf6; font-weight: 500; }
+  </style>
+</helmet>
+
+<div class="sheet">
+
+  <!-- Continue rows carry an AGE and no environment chip, corrected twice on
+       2026-09-20. The chip goes and stays gone: SessionMeta carries id, root,
+       provider, modTime, firstPrompt, cwd, title and parent, and nothing about
+       the environment a session ran against.
+
+       The age was struck with it and should not have been. `modTime` has been
+       on the wire since Phase 1 and is what ListSessions sorts newest-first
+       on; what was missing was a reader in `app/`, which
+       `WindowModel.age(ofRFC3339:)` now is. The order still carries recency -
+       hence the label - and the age now says it in words.
+
+       ════════════ 1 · THE EMPTY CANVAS ════════════
+       Settled 2026-09-20: the Landing IS what the canvas draws when zero
+       panes are open, not a launch phase you leave. Close the last pane and
+       it comes back. One surface, two populations. -->
+  <div class="cap" style="left: 76px;">
+    <div class="n">Sessionless</div>
+    <div class="micro">a fresh open · nothing started yet</div>
+  </div>
+  <div class="win lit" style="left: 76px;">
+    <div class="grain"></div><div class="vignette"></div>
+
+    <div style="position: absolute; left: 88px; top: 60px; display: flex; flex-direction: column; gap: 9px;">
+      <div class="micro">Organisation</div>
+      <div style="display: flex; align-items: baseline; gap: 15px;">
+        <div style="font-size: 19px; color: #e8ecf6; letter-spacing: -0.1px;">Initech Labs</div>
+        <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.50);">wakil-acceptance</div>
+        <div class="chip" style="color: #8be0c8; background: rgba(139,224,200,0.12);">Staging</div>
+      </div>
+    </div>
+
+    <div class="col" style="left: 88px; top: 172px; width: 700px;">
+      <div class="micro">Continue · newest first</div>
+      <div class="slab" style="padding: 10px 0;">
+        <div class="sess">
+          <div class="q">the org switch is landing — walk 2c-ii-b at the window</div>
+          <div class="meta">
+            <span class="mono">2h 14m · main · wakil-acceptance</span>
+          </div>
+        </div>
+        <div class="sess">
+          <div class="q">show me the bookings where confirmed_at is null</div>
+          <div class="meta">
+            <span class="mono">yesterday · main · resumed 2× · booking-api</span>
+          </div>
+        </div>
+        <div class="sess">
+          <div class="q">why does register-provider pin WAKIL_ORG inside the config dir</div>
+          <div class="meta">
+            <span class="mono">2d · work · telemetry</span>
+          </div>
+        </div>
+        <div class="sess">
+          <div class="q">run the 2c-i acceptance and read me only the failures</div>
+          <div class="meta">
+            <span class="mono">2h 14m · main · wakil-acceptance</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OPEN. These are ⌘K's own expanded rows, drawn where there is room for
+         them - not a second way to open a pane. The moment a pane exists this
+         block is gone, which is why naming the kinds here costs §1 nothing:
+         there is nothing yet for chrome to occlude. -->
+    <div class="col" style="left: 836px; top: 172px; width: 516px;">
+      <div class="micro">Open</div>
+      <div class="slab" style="padding: 8px 0;">
+        <div class="orow">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.62)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 4.4c0-1 2.4-1.8 5.4-1.8s5.4.8 5.4 1.8-2.4 1.8-5.4 1.8-5.4-.8-5.4-1.8z"/><path d="M2.6 4.4v7.2c0 1 2.4 1.8 5.4 1.8s5.4-.8 5.4-1.8V4.4"/><path d="M2.6 8c0 1 2.4 1.8 5.4 1.8s5.4-.8 5.4-1.8"/></svg>
+          <div class="name">Database pane</div>
+          <div class="hint">pane_open · db</div>
+        </div>
+        <div class="orow">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.62)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2.2" y="3.2" width="11.6" height="9.6" rx="1.6"/><path d="M5 6.4l2 1.6-2 1.6M8.6 10h2.6"/></svg>
+          <div class="name">Terminal pane</div>
+          <div class="hint">pane_open · terminal</div>
+        </div>
+        <!-- The ellipsis is the convention, not decoration: a row without one
+             runs on Return, a row with one asks first. `term_open` takes a
+             path and a path is not enumerable. -->
+        <div class="orow">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.62)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 5.2c0-.9.7-1.6 1.6-1.6h2.4l1.4 1.6h4.6c.9 0 1.6.7 1.6 1.6v4.4c0 .9-.7 1.6-1.6 1.6H3.8c-.9 0-1.6-.7-1.6-1.6z"/></svg>
+          <div class="name">Terminal pane at…</div>
+          <div class="hint">term_open · asks</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col" style="left: 836px; top: 453px; width: 516px;">
+      <div class="micro">This week</div>
+      <div class="slab">
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding: 20px 22px 0;">
+          <div style="display: flex; flex-direction: column; gap: 7px;">
+            <div class="mono" style="font-size: 25px; color: #e8ecf6;">18</div>
+            <div class="micro" style="color: rgba(232,236,246,0.50);">Sessions</div></div>
+          <div style="display: flex; flex-direction: column; gap: 7px;">
+            <div class="mono" style="font-size: 25px; color: #e8ecf6;">412</div>
+            <div class="micro" style="color: rgba(232,236,246,0.50);">Turns</div></div>
+          <div style="display: flex; flex-direction: column; gap: 7px;">
+            <div class="mono" style="font-size: 25px; color: #e8ecf6;">26.4</div>
+            <div class="micro" style="color: rgba(232,236,246,0.50);">Hours</div></div>
+        </div>
+        <div style="display: flex; align-items: flex-end; gap: 9px; min-height: 34px; padding: 20px 22px 22px;">
+          <div style="flex-grow: 1; height: 11px; border-radius: 1px; background: rgba(232,236,246,0.32);"></div>
+          <div style="flex-grow: 1; height: 17px; border-radius: 1px; background: rgba(232,236,246,0.32);"></div>
+          <div style="flex-grow: 1; height: 24px; border-radius: 1px; background: rgba(232,236,246,0.32);"></div>
+          <div style="flex-grow: 1; height: 13px; border-radius: 1px; background: rgba(232,236,246,0.32);"></div>
+          <div style="flex-grow: 1; height: 30px; border-radius: 1px; background: rgba(232,236,246,0.32);"></div>
+          <div style="flex-grow: 1; height: 20px; border-radius: 1px; background: rgba(232,236,246,0.32);"></div>
+          <div style="flex-grow: 1; height: 26px; border-radius: 1px; background: rgba(232,236,246,0.62);"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="utter">
+      <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+        <div class="caret"></div><div class="ask">Ask, or name what to open</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 24px;">
+        <div class="micro">Hold ⌥ to speak</div>
+        <div class="micro">⌘P open</div>
+        <div class="micro">⌘K actions</div>
+        <div class="account"><div class="lbl">Account</div><div class="val">main</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 2 · NO PROJECT ════════════ -->
+  <div class="cap" style="left: 1616px;">
+    <div class="n">Organisation open · no project</div>
+    <div class="micro">no project ⇒ no environment ⇒ no bleeds</div>
+  </div>
+  <div class="win unlit" style="left: 1616px;">
+    <div class="grain"></div><div class="vignette"></div>
+
+    <div style="position: absolute; left: 88px; top: 60px; display: flex; flex-direction: column; gap: 9px;">
+      <div class="micro">Organisation</div>
+      <div style="display: flex; align-items: baseline; gap: 15px;">
+        <div style="font-size: 19px; color: #e8ecf6; letter-spacing: -0.1px;">Initech Labs</div>
+        <!-- No project name and NO environment chip. Invariant 8 puts the
+             active environment on screen at all times; there is no active
+             environment to put there, and a chip reading "unknown" would be
+             the assertion this state exists to avoid. -->
+        <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.38);">no project</div>
+      </div>
+    </div>
+
+    <div class="col" style="left: 88px; top: 172px; width: 700px;">
+      <div class="micro">Projects</div>
+      <div class="slab" style="padding: 8px 0;">
+        <div class="orow"><div class="name">wakil-acceptance</div>
+          <div class="hint">2 roots · INI · 3 environments</div></div>
+        <div class="orow"><div class="name">booking-api</div>
+          <div class="hint">4 roots · INI · 3 environments</div></div>
+        <div class="orow"><div class="name">telemetry</div>
+          <div class="hint">1 root · no Jira scope · 1 environment</div></div>
+        <div class="orow"><div class="name">ops-runbooks</div>
+          <div class="hint">1 root · INI · 2 environments</div></div>
+        <div class="orow" style="color: rgba(232,236,246,0.62);">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
+          <div class="name" style="color: rgba(232,236,246,0.62);">New project</div></div>
+      </div>
+    </div>
+
+    <div class="col" style="left: 836px; top: 172px; width: 516px;">
+      <div class="micro">Continue · newest first</div>
+      <div class="slab" style="padding: 10px 0;">
+        <div class="sess">
+          <div class="q" style="font-size: 14px;">the org switch is landing — walk 2c-ii-b</div>
+          <div class="meta"><span class="mono">2h 14m · main · wakil-acceptance</span></div>
+        </div>
+        <div class="sess">
+          <div class="q" style="font-size: 14px;">show me the bookings where confirmed_at is null</div>
+          <div class="meta"><span class="mono">yesterday · main · booking-api</span></div>
+        </div>
+      </div>
+      <div style="font-size: 11.5px; line-height: 1.5; color: rgba(232,236,246,0.56); padding: 0 2px;">
+        Resuming one of these sets the project it ran in.
+      </div>
+    </div>
+
+    <!-- No Open block. Every pane kind this build draws needs a project: a db
+         pane resolves its databases from the active environment, and a
+         terminal opens at the active project's root. Drawing the rows here
+         and refusing them on Return is worse than not drawing them. -->
+
+    <div class="utter">
+      <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+        <div class="caret"></div><div class="ask">Choose a project, or ask for one by name</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 24px;">
+        <div class="micro">Hold ⌥ to speak</div>
+        <div class="micro">⌘P open</div>
+        <div class="account"><div class="lbl">Account</div><div class="val">main</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 3 · NOTHING YET ════════════ -->
+  <div class="cap" style="left: 3156px;">
+    <div class="n">A fresh organisation</div>
+    <div class="micro">empty, and saying which kind of empty</div>
+  </div>
+  <div class="win unlit" style="left: 3156px;">
+    <div class="grain"></div><div class="vignette"></div>
+
+    <div style="position: absolute; left: 88px; top: 60px; display: flex; flex-direction: column; gap: 9px;">
+      <div class="micro">Organisation</div>
+      <div style="display: flex; align-items: baseline; gap: 15px;">
+        <div style="font-size: 19px; color: #e8ecf6; letter-spacing: -0.1px;">client-a</div>
+        <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.38);">no project</div>
+      </div>
+    </div>
+
+    <div class="col" style="left: 88px; top: 172px; width: 620px;">
+      <div class="micro">Projects</div>
+      <div class="slab" style="padding: 8px 0;">
+        <div style="padding: 22px 22px 18px; display: flex; flex-direction: column; gap: 9px;">
+          <div style="font-size: 15px; color: rgba(232,236,246,0.86);">No projects in client-a yet.</div>
+          <div style="font-size: 12.5px; line-height: 1.55; color: rgba(232,236,246,0.56); text-wrap: pretty;">A project is a <span class="mono" style="font-size: 11.5px;">project.json</span> — one or more roots, a Jira scope, and its environments. Registering one does not select it.</div>
+        </div>
+        <div class="orow" style="color: rgba(232,236,246,0.72);">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
+          <div class="name" style="color: rgba(232,236,246,0.72);">New project</div>
+          <div class="hint">writes project.json</div>
+        </div>
+      </div>
+
+      <!-- PARTIALITY, CARRIED. "No sessions" and "could not read the store"
+           must never look alike (§9, and wakilcore's own rule that an empty
+           list with a non-zero `skipped` means "could not look"). This org
+           has one account whose store could not be opened, so the empty
+           Continue below says which - it does not simply render nothing. -->
+      <div style="margin-top: 22px; display: flex; flex-direction: column; gap: 14px;">
+        <div class="micro">Continue · newest first</div>
+        <div class="slab" style="padding: 20px 22px;">
+          <div style="display: flex; align-items: flex-start; gap: 11px;">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e8b45a" stroke-width="1.3" stroke-linecap="round" style="flex-shrink: 0; margin-top: 2px;"><path d="M8 4.5v4M8 11.2v.1"/><circle cx="8" cy="8" r="6.2"/></svg>
+            <div style="font-size: 13px; line-height: 1.55; color: #e8b45a;">Nothing to continue — and one account was not readable, so this may not be all of it. Could not read: <span class="mono" style="font-size: 12px;">client-a-main</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- No "This week": there is no week. A zeroed stat block is a claim that
+         nothing happened, which is true here but indistinguishable from a
+         stat block that failed to load - and it costs three large numerals
+         to say nothing. -->
+
+    <div class="utter">
+      <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+        <div class="caret"></div><div class="ask">Add a project, or ask what this organisation holds</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 24px;">
+        <div class="micro">⌘⇧O organisations</div>
+        <div class="account"><div class="lbl">Account</div><div class="val">client-a-main</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ 4 · IN A SESSION, EVERY PANE CLOSED ════════════
+       The state the earlier rule said did not exist. It is not the Landing
+       and it is not nothing: §4's room carries the four agent states, §9's
+       thought thread is at the bottom edge with the bleed lifting locally
+       beneath it, and the utterance line is live. Drawing Continue over this
+       would offer to start work on top of work already in flight. -->
+  <div class="cap" style="left: 4696px;">
+    <div class="n">In a session · every pane closed</div>
+    <div class="micro">the room, not the landing</div>
+  </div>
+  <div class="win lit" style="left: 4696px;">
+    <div class="grain"></div><div class="vignette"></div>
+
+    <div style="position: absolute; left: 88px; top: 60px; display: flex; flex-direction: column; gap: 9px;">
+      <div class="micro">Organisation</div>
+      <div style="display: flex; align-items: baseline; gap: 15px;">
+        <div style="font-size: 19px; color: #e8ecf6; letter-spacing: -0.1px;">Initech Labs</div>
+        <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.50);">wakil-acceptance</div>
+        <div class="chip" style="color: #8be0c8; background: rgba(139,224,200,0.12);">Staging</div>
+      </div>
+    </div>
+
+    <!-- §9's thought thread, rising out of the bottom edge's glow. Completed
+         steps fade to dim green; the live step pulses. No spinner, and none
+         is wanted. Upcoming steps are deliberately absent — nothing in the
+         harness stream announces what the agent intends next, so drawing one
+         would be a promise the interface has no standing to make. -->
+    <div style="position: absolute; left: 88px; bottom: 132px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="display: flex; align-items: baseline; gap: 12px;">
+        <div class="micro" style="color: rgba(139,224,200,0.42);">read</div>
+        <div style="font-size: 11px; color: rgba(232,236,246,0.34);">bookings · 5 rows</div>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 12px;">
+        <div class="micro" style="color: rgba(139,224,200,0.52);">query</div>
+        <div style="font-size: 11px; color: rgba(232,236,246,0.44);">confirmed_at is null · 2 rows</div>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 12px;">
+        <div class="micro" style="color: rgba(139,224,200,0.62);">closed</div>
+        <div style="font-size: 11px; color: rgba(232,236,246,0.56);">bookings · confirm</div>
+      </div>
+      <div style="display: flex; align-items: baseline; gap: 12px;">
+        <div class="micro" style="color: #8be0c8;">thinking</div>
+        <div style="font-size: 11px; color: rgba(232,236,246,0.78);">what else references booking_id</div>
+      </div>
+    </div>
+
+    <!-- The bleed lifts locally beneath the thread while work is in flight,
+         and fades with it. One Metal layer; nothing luminous in front. -->
+    <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 300px; pointer-events: none;
+                background: radial-gradient(ellipse 26% 100% at 16% 118%, rgba(124,92,255,0.20) 0%, rgba(124,92,255,0.06) 48%, rgba(124,92,255,0) 100%);"></div>
+
+    <div class="utter">
+      <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+        <div class="caret"></div><div class="ask">Ask, or name what to open</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 24px;">
+        <div class="micro">Hold ⌥ to speak</div>
+        <div class="micro">⌘P open</div>
+        <div class="micro">⌘K actions</div>
+        <div class="account"><div class="lbl">Account</div><div class="val">main</div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":6312,"height":1060}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

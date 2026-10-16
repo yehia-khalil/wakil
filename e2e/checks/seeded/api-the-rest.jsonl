@@ -1,0 +1,15 @@
+{"dispatch":{"action":"api_open","params":{"entry":"billing"}}}
+{"expect":{"tree":"contains","text":"BILLING"}}
+{"expect":{"tree":"contains","text":"BODY · JSON"}}
+{"expect":{"tree":"contains","text":"Placeholder: application/json"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","contentType":"text/plain"}}}
+{"expect":{"tree":"contains","text":"BODY · TEXT"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","entry":"catalog"}}}
+{"expect":{"pane":"api-1","field":"entry","equals":"catalog"}}
+{"expect":{"tree":"contains","text":"CATALOG"}}
+{"do":{"focus":"api.path"}}
+{"do":{"click":"api.query.add"}}
+{"do":{"keys":"page"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"api-1","field":"request.query[0].name","equals":"page"}}
+{"expect":{"pane":"api-1","field":"request.path","equals":"[]"}}

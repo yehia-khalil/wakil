@@ -1,0 +1,10 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"capacity_record","params":{"provider":"e2e-provider","fiveHour":{"percentLeft":30,"resetsAt":"2020-01-01T00:00:00Z"},"sevenDay":{"percentLeft":47,"resetsAt":"2099-07-21T12:00:00Z"},"asOf":"2099-01-01T00:00:00Z"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"· not read since"}}
+{"expect":{"tree":"contains","text":"47% · 21 Jul"}}
+{"expect":{"tree":"absent","text":"30% ·"}}
+{"expect":{"pane":"settings-1","field":"kind","equals":"settings"}}
+{"dispatch":{"action":"pane_close","params":{"id":"settings-1"}}}
+{"expect":{"tree":"contains","text":"5h reset · week 47%"}}

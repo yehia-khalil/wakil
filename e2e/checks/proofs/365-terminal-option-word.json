@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/365-terminal-option-word.jsonl",
+  "baseCommit": "d42426358835da9e5aa8c7e44fa85fc4fe4fd147",
+  "provedAt": "2026-10-15T15:17:21.273482Z",
+  "checkBlob": "a5e232363cb526f4c3f37da2f98d060df4fa2733"
+}

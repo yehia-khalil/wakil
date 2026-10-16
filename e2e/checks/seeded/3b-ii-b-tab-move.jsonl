@@ -1,0 +1,15 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"dispatch":{"action":"editor_new_scratch","params":{"pane":"editor-1"}}}
+{"dispatch":{"action":"editor_new_scratch","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[2].scratch","equals":"3"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"2"}}
+{"do":{"drag":{"from":"editor.tab.0","to":"editor.tab.2"}}}
+{"expect":{"pane":"editor-1","field":"tabs[2].scratch","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"2"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_move_tab\""}}}
+{"dispatch":{"action":"editor_move_tab","params":{"pane":"editor-1","from":2,"to":0}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"2"}}

@@ -1,0 +1,18 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"post","body":[{"literal":"{\"a\": "},{"slot":"a"},{"literal":", \"b\": "},{"slot":"b"},{"literal":"}"}]}}}
+{"do":{"click":"api.body.format"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"{\n  \"a\": "}}
+{"expect":{"pane":"api-1","field":"request.body[1].slot","equals":"a"}}
+{"expect":{"pane":"api-1","field":"request.body[2].literal","equals":",\n  \"b\": "}}
+{"expect":{"pane":"api-1","field":"request.body[3].slot","equals":"b"}}
+{"expect":{"pane":"api-1","field":"request.body[4].literal","equals":"\n}"}}
+{"do":{"focus":"api.body"}}
+{"do":{"hotkey":"cmd+Up"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"x"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"{\nx  \"a\": "}}
+{"do":{"press":"Down"}}
+{"do":{"hotkey":"cmd+Right"}}
+{"do":{"press":"Backspace"}}
+{"expect":{"pane":"api-1","field":"request.body[3]","present":false}}
+{"expect":{"pane":"api-1","field":"request.body[2].literal","equals":",\n  \"b\": \n}"}}

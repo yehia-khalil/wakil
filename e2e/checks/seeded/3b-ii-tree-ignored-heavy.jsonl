@@ -1,0 +1,15 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.shown","equals":"true"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"expect":{"tree":"contains","text":".env"}}
+{"expect":{"tree":"contains","text":"vendor"}}
+{"expect":{"tree":"absent","text":"autoload.php"}}
+{"do":{"click":"editor.tree.row:e2e-api/vendor"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_tree_expand\""}}}
+{"expect":{"tree":"contains","text":"autoload.php"}}
+{"do":{"click":"editor.tree.row:e2e-api/.env"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-api/.env"}}

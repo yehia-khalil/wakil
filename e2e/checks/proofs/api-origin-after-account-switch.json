@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/api-origin-after-account-switch.jsonl",
+  "baseCommit": "9e657511c804df47c0d58eba78068e1ca258c4d5",
+  "provedAt": "2026-10-15T14:28:01.483442Z",
+  "checkBlob": "b029396d4949f57be0aedb51149bfa7cd8d3bbbc"
+}

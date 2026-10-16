@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/db-detail-strip.jsonl",
+  "baseCommit": "e6c782b4f52f9e4c17f82bfadd17b13c8252445a",
+  "provedAt": "2026-10-14T20:58:03.235922Z",
+  "checkBlob": "29f73743fe441624820816258eb7cb3852b2060e"
+}

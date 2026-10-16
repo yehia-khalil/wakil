@@ -1,0 +1,25 @@
+{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"expect":{"tree":"contains","text":"Placeholder: run an action…"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"Placeholder: open or switch to…"}}
+{"expect":{"tree":"absent","text":"RUN A COMMAND"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":">"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"expect":{"tree":"contains","text":"Value: >"}}
+{"do":{"press":"Backspace"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"zzqxj"}}
+{"expect":{"tree":"contains","text":"text 0 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Value: zzqxj"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/palette-api-send.jsonl",
+  "baseCommit": "f25a762e5ee7b303ce0ca6efa5715891820d0e53",
+  "provedAt": "2026-10-10T19:57:57.198384Z",
+  "checkBlob": "64c46184e2ec0d528bb1aa23ac661092b2e4870e"
+}

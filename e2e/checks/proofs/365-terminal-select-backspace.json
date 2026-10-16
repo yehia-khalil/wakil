@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/365-terminal-select-backspace.jsonl",
+  "baseCommit": "f25a762e5ee7b303ce0ca6efa5715891820d0e53",
+  "provedAt": "2026-10-09T19:53:28.726309Z",
+  "checkBlob": "167b40e77a6f8fe101978c78c5b62835dc8deb67"
+}

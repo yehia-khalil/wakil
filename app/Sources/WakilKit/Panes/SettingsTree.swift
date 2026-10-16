@@ -1,0 +1,416 @@
+import Foundation
+
+/// The active organisation's configuration, as the settings pane draws it.
+///
+/// A typed mirror of Go's `wakilcore.ConfigTree`, decoded from
+/// `ctx_config_tree`'s reply. Typed rather than passed around as a
+/// `JSONValue` for the reason `PaneSnapshot` is typed: the alternative is a
+/// hand-written parser in the view whose failure mode is a silently empty
+/// pane, which is the symptom this app is worst at surfacing.
+///
+/// **The shape is the layout** (`phase-2e-probe.md` §4, chosen from five
+/// drawn variants), and two things about it are binding:
+///
+/// - **It is four deep, not three.** An `Environment` — not a project —
+///   holds `databases` and `api` (`config.go`). A three-deep tree would
+///   have to put a database under a project, and a project has none.
+/// - **Providers cannot nest at all.** A binding is
+///   `(organisation, provider id)`, so providers sit BESIDE the projects
+///   and every project in the organisation draws on them. The credential
+///   spine cuts across the tree rather than along it.
+///
+/// **Nothing here can hold a credential's value.** A database carries its
+/// Keychain entry NAME — which is what an operator's own settings pane is
+/// for — and there is no field on any of these types a secret could travel
+/// in.
+public struct SettingsTree: Sendable, Equatable, Decodable {
+    public var org: SettingsOrg
+    public var providers: [SettingsProvider]
+    public var projects: [SettingsProject]
+
+    /// Registry entries whose project file declares another organisation.
+    /// **Named rather than dropped**, the same house rule `ProjectListing`,
+    /// `SessionList` and `IssuePage` follow: a pane that draws "could not
+    /// look" as "there is nothing there" is the failure this carries.
+    public var misfiled: [SettingsMisfiledProject]
+    /// Registry entries whose project file could not be read at all.
+    public var unreadable: [String]
+    /// Provider records that could not be parsed.
+    public var providersSkipped: [String]
+    public var editor: SettingsEditor
+    public var editorError: String?
+
+    public init(
+        org: SettingsOrg,
+        providers: [SettingsProvider] = [],
+        projects: [SettingsProject] = [],
+        misfiled: [SettingsMisfiledProject] = [],
+        unreadable: [String] = [],
+        providersSkipped: [String] = [],
+        editor: SettingsEditor = .defaults,
+        editorError: String? = nil
+    ) {
+        self.org = org
+        self.providers = providers
+        self.projects = projects
+        self.misfiled = misfiled
+        self.unreadable = unreadable
+        self.providersSkipped = providersSkipped
+        self.editor = editor
+        self.editorError = editorError
+    }
+
+    /// Every optional-on-the-wire collection decodes to empty rather than
+    /// failing. Go omits `misfiled`, `unreadable` and `providersSkipped`
+    /// when there is nothing to report, and a decoder that treated an
+    /// absent key as malformed would make the ordinary case — a healthy
+    /// organisation — the one that draws nothing.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        org = try container.decode(SettingsOrg.self, forKey: .org)
+        providers = try container.decodeIfPresent([SettingsProvider].self, forKey: .providers) ?? []
+        projects = try container.decodeIfPresent([SettingsProject].self, forKey: .projects) ?? []
+        misfiled = try container.decodeIfPresent([SettingsMisfiledProject].self, forKey: .misfiled) ?? []
+        unreadable = try container.decodeIfPresent([String].self, forKey: .unreadable) ?? []
+        providersSkipped = try container.decodeIfPresent([String].self, forKey: .providersSkipped) ?? []
+        editor = try container.decodeIfPresent(SettingsEditor.self, forKey: .editor) ?? .defaults
+        editorError = try container.decodeIfPresent(String.self, forKey: .editorError)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case org, providers, projects, misfiled, unreadable, providersSkipped, editor, editorError
+    }
+
+    /// Whether anything could not be read. The pane draws a line saying so
+    /// when this is true — the note is what makes the loss visible rather
+    /// than silent, which is the idiom used everywhere else in this
+    /// product.
+    public var hasResidue: Bool {
+        !misfiled.isEmpty || !unreadable.isEmpty || !providersSkipped.isEmpty
+    }
+}
+
+/// How autosave behaves (3b-v): never, a second after the last edit, or when focus leaves.
+/// Declared here rather than in `Editor/`, because `Panes` may not depend on `Editor`.
+public enum EditorAutosaveMode: String, Sendable, Equatable, CaseIterable {
+    case off, pause, focus
+
+    public var label: String {
+        switch self {
+        case .off: "Off"
+        case .pause: "After a pause"
+        case .focus: "When focus leaves"
+        }
+    }
+}
+
+/// The app-wide editor tier (`~/.wakil/settings.json`), defaults filled by Go. An absent key or an
+/// unknown autosave value decodes to the default, so an older or hand-edited answer still draws.
+public struct SettingsEditor: Sendable, Equatable, Decodable {
+    public var fontSize: Int
+    public var wordWrap: Bool
+    public var autosave: EditorAutosaveMode
+    /// Off hides gitignored files from the tree and ⌘P (3b-v part 2). On by default.
+    public var showIgnored: Bool
+
+    public static let defaults = SettingsEditor(fontSize: 12, wordWrap: false, autosave: .off)
+
+    public init(fontSize: Int, wordWrap: Bool, autosave: EditorAutosaveMode, showIgnored: Bool = true) {
+        self.fontSize = fontSize
+        self.wordWrap = wordWrap
+        self.autosave = autosave
+        self.showIgnored = showIgnored
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fontSize = try c.decodeIfPresent(Int.self, forKey: .fontSize) ?? Self.defaults.fontSize
+        wordWrap = try c.decodeIfPresent(Bool.self, forKey: .wordWrap) ?? Self.defaults.wordWrap
+        autosave = (try c.decodeIfPresent(String.self, forKey: .autosave)).flatMap(EditorAutosaveMode.init(rawValue:)) ?? .off
+        showIgnored = try c.decodeIfPresent(Bool.self, forKey: .showIgnored) ?? Self.defaults.showIgnored
+    }
+
+    private enum CodingKeys: String, CodingKey { case fontSize, wordWrap, autosave, showIgnored }
+}
+
+/// One project's editor tier (`project.json`'s `editor`), defaults filled by Go.
+public struct SettingsProjectEditor: Sendable, Equatable, Decodable {
+    public var tabSize: Int
+    public var insertSpaces: Bool
+    /// The heavy folders besides .git, which is always heavy (3b-v part 2). Empty is a value.
+    public var heavyFolders: [String]
+
+    public static let defaults = SettingsProjectEditor(tabSize: 4, insertSpaces: true)
+
+    public init(tabSize: Int, insertSpaces: Bool, heavyFolders: [String] = ["vendor", "node_modules"]) {
+        self.tabSize = tabSize
+        self.insertSpaces = insertSpaces
+        self.heavyFolders = heavyFolders
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tabSize = try c.decodeIfPresent(Int.self, forKey: .tabSize) ?? Self.defaults.tabSize
+        insertSpaces = try c.decodeIfPresent(Bool.self, forKey: .insertSpaces) ?? Self.defaults.insertSpaces
+        heavyFolders = try c.decodeIfPresent([String].self, forKey: .heavyFolders) ?? Self.defaults.heavyFolders
+    }
+
+    private enum CodingKeys: String, CodingKey { case tabSize, insertSpaces, heavyFolders }
+}
+
+/// The organisation's four editable strings, and the id, which is the
+/// directory name and therefore not editable at all.
+public struct SettingsOrg: Sendable, Equatable, Decodable {
+    public var id: String
+    public var displayName: String
+    public var jiraBase: String
+    public var defaultProvider: String
+    public var speechProvider: String
+
+    public init(
+        id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
+        speechProvider: String = ""
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.jiraBase = jiraBase
+        self.defaultProvider = defaultProvider
+        self.speechProvider = speechProvider
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName) ?? ""
+        jiraBase = try container.decodeIfPresent(String.self, forKey: .jiraBase) ?? ""
+        defaultProvider = try container.decodeIfPresent(String.self, forKey: .defaultProvider) ?? ""
+        speechProvider = try container.decodeIfPresent(String.self, forKey: .speechProvider) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, displayName, jiraBase, defaultProvider, speechProvider }
+
+    /// What the tree's Organisation node is labelled with: the display
+    /// name when there is one, the id otherwise. The same fallback
+    /// `list_orgs` describes — *"an organisation without a display name
+    /// falls back to showing its id"* — so the pane and the org picker
+    /// name the same organisation the same way.
+    public var label: String { displayName.isEmpty ? id : displayName }
+}
+
+/// One provider binding, org-level.
+///
+/// Deliberately thinner than #200's account table, which adds credential
+/// presence, liveness and the minted token's date, and lists accounts
+/// homed in OTHER organisations too. This answers "what has this
+/// organisation registered", which is what a read-only tree needs.
+public struct SettingsProvider: Sendable, Equatable, Decodable {
+    public var id: String
+    public var kind: String
+    public var label: String
+    public var configDir: String
+    /// That this binding did not claim the config dir's headless home.
+    /// Drawn as a **fact rather than a control**: it is add-time only, so
+    /// remove-and-re-add is the honest gesture and there is nothing here
+    /// to edit.
+    public var shared: Bool
+
+    public init(id: String, kind: String, label: String = "", configDir: String = "", shared: Bool = false) {
+        self.id = id
+        self.kind = kind
+        self.label = label
+        self.configDir = configDir
+        self.shared = shared
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? ""
+        label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
+        configDir = try container.decodeIfPresent(String.self, forKey: .configDir) ?? ""
+        shared = try container.decodeIfPresent(Bool.self, forKey: .shared) ?? false
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, kind, label, configDir, shared }
+}
+
+public struct SettingsProject: Sendable, Equatable, Decodable {
+    public var name: String
+    public var path: String
+    public var roots: [SettingsRoot]
+    public var environments: [SettingsEnvironment]
+    public var editor: SettingsProjectEditor
+
+    public init(
+        name: String, path: String = "",
+        roots: [SettingsRoot] = [], environments: [SettingsEnvironment] = [],
+        editor: SettingsProjectEditor = .defaults
+    ) {
+        self.name = name
+        self.path = path
+        self.roots = roots
+        self.environments = environments
+        self.editor = editor
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        path = try container.decodeIfPresent(String.self, forKey: .path) ?? ""
+        roots = try container.decodeIfPresent([SettingsRoot].self, forKey: .roots) ?? []
+        environments = try container.decodeIfPresent([SettingsEnvironment].self, forKey: .environments) ?? []
+        editor = try container.decodeIfPresent(SettingsProjectEditor.self, forKey: .editor) ?? .defaults
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, path, roots, environments, editor }
+}
+
+public struct SettingsRoot: Sendable, Equatable, Decodable {
+    public var path: String
+    public var role: String
+
+    public init(path: String, role: String = "") {
+        self.path = path
+        self.role = role
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        path = try container.decode(String.self, forKey: .path)
+        role = try container.decodeIfPresent(String.self, forKey: .role) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case path, role }
+}
+
+/// The level that holds things, and the reason the tree is four deep.
+public struct SettingsEnvironment: Sendable, Equatable, Decodable {
+    public var name: String
+    public var databases: [SettingsDatabase]
+    /// The environment's API entries, **drawn read-only permanently**.
+    ///
+    /// **A LIST, because it became one.** This was a single optional entry
+    /// and the comment here said a form built on today's API shape is one
+    /// rebuilt on someone else's schedule. 2c-iv then made it a list of
+    /// NAMED entries, so one request can run against staging and then
+    /// production. Read-only is what kept the cost to a shape change.
+    public var api: [SettingsAPI]
+
+    public init(name: String, databases: [SettingsDatabase] = [], api: [SettingsAPI] = []) {
+        self.name = name
+        self.databases = databases
+        self.api = api
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        databases = try container.decodeIfPresent([SettingsDatabase].self, forKey: .databases) ?? []
+        api = try container.decodeIfPresent([SettingsAPI].self, forKey: .api) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, databases, api }
+}
+
+/// A database row: its name, driver, and the Keychain entry NAMES of its
+/// credentials. Never a value.
+public struct SettingsDatabase: Sendable, Equatable, Decodable {
+    public var name: String
+    public var driver: String
+    public var ref: String
+    public var writeRef: String
+    /// Derived on the Go side from `writeRef` rather than stored, so the
+    /// two cannot disagree — the class of lie issue #14 was.
+    public var writable: Bool
+
+    public init(name: String, driver: String = "", ref: String = "", writeRef: String = "", writable: Bool = false) {
+        self.name = name
+        self.driver = driver
+        self.ref = ref
+        self.writeRef = writeRef
+        self.writable = writable
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        driver = try container.decodeIfPresent(String.self, forKey: .driver) ?? ""
+        ref = try container.decodeIfPresent(String.self, forKey: .ref) ?? ""
+        writeRef = try container.decodeIfPresent(String.self, forKey: .writeRef) ?? ""
+        writable = try container.decodeIfPresent(Bool.self, forKey: .writable) ?? false
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, driver, ref, writeRef, writable }
+}
+
+public struct SettingsAPI: Sendable, Equatable, Decodable {
+    /// What a request records — never the origin, which is what lets one
+    /// request run against staging and then production (2c-iv).
+    public var name: String
+    public var baseUrl: String
+    public var authRef: String
+
+    public init(name: String = "", baseUrl: String, authRef: String = "") {
+        self.name = name
+        self.baseUrl = baseUrl
+        self.authRef = authRef
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        baseUrl = try container.decodeIfPresent(String.self, forKey: .baseUrl) ?? ""
+        authRef = try container.decodeIfPresent(String.self, forKey: .authRef) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, baseUrl, authRef }
+}
+
+public struct SettingsMisfiledProject: Sendable, Equatable, Decodable {
+    public var name: String
+    public var path: String
+    public var filedUnder: String
+    public var declaredOrg: String
+
+    public init(name: String, path: String = "", filedUnder: String = "", declaredOrg: String = "") {
+        self.name = name
+        self.path = path
+        self.filedUnder = filedUnder
+        self.declaredOrg = declaredOrg
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        path = try container.decodeIfPresent(String.self, forKey: .path) ?? ""
+        filedUnder = try container.decodeIfPresent(String.self, forKey: .filedUnder) ?? ""
+        declaredOrg = try container.decodeIfPresent(String.self, forKey: .declaredOrg) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case name, path, filedUnder, declaredOrg }
+}
+
+/// Decodes `ctx_config_tree`'s reply into a `SettingsTree`.
+///
+/// **Extracted and tested directly**, which is this phase's standing rule
+/// for a decoder (the spec's *Testing Decisions*, following
+/// `decodeProviderCredentials`): the browser trip and the Keychain are the
+/// operator's machine and belong to the runbook, and everything either
+/// side of them is a pure function of bytes.
+///
+/// **It refuses rather than passing a half-read tree on.** `nil` means the
+/// reply was not a config tree, and the pane says so; a decoder that
+/// returned an empty tree for a malformed reply would draw an organisation
+/// with no projects, which is a sentence about the operator's machine that
+/// may be false.
+public func decodeSettingsTree(fromResult result: JSONValue?) -> SettingsTree? {
+    guard case .object(let object)? = result,
+          let structured = object["structuredContent"]
+    else { return nil }
+    // Round-tripped through `Data` rather than walked by hand: the tree is
+    // four levels of nested objects and arrays, and a hand-written walk of
+    // it is exactly the parser whose failure mode is a silently empty
+    // pane.
+    guard let data = try? JSONEncoder().encode(structured) else { return nil }
+    return try? JSONDecoder().decode(SettingsTree.self, from: data)
+}

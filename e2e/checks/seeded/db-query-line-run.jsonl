@@ -1,0 +1,21 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-1","database":"bookings","query":"SELECT * FROM bookings ORDER BY id"}}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"2"}}
+{"do":{"focus":"db.db-1.queryLine"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"SELECT * FROM bookings WHERE id = 8843"}}
+{"do":{"click":"db.db-1.run"}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"1"}}
+{"expect":{"journal":{"contains":"WHERE id = 8843"}}}
+{"do":{"focus":"db.db-1.queryLine"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < 2000000000) SELECT max(x) AS n FROM c"}}
+{"do":{"click":"db.db-1.run"}}
+{"expect":{"pane":"db-1","field":"running","equals":"true"}}
+{"do":{"click":"db.db-1.lineCancel"}}
+{"expect":{"pane":"db-1","field":"running","equals":"false"}}
+{"expect":{"pane":"db-1","field":"cancelledAfterMs","present":true}}
+{"expect":{"tree":"contains","text":"cancelled after"}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"1"}}
+{"expect":{"tree":"contains","text":"text entry area (settable) WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < 2000000000) SELECT max(x) AS n FROM c"}}

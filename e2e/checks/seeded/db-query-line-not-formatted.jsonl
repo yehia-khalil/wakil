@@ -1,0 +1,18 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-1","database":"bookings","query":"SELECT * FROM bookings ORDER BY id"}}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"2"}}
+{"do":{"focus":"db.db-1.queryLine"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"SELECT * FROM bookings WHERE status = 'held"}}
+{"do":{"click":"db.db-1.format"}}
+{"expect":{"tree":"contains","text":"not formatted: a string opened at character 39 never closes"}}
+{"expect":{"tree":"contains","text":"text entry area (settable) SELECT * FROM bookings WHERE status = 'held"}}
+{"do":{"focus":"db.db-1.queryLine"}}
+{"do":{"keys":"'"}}
+{"expect":{"tree":"absent","text":"not formatted:"}}
+{"do":{"click":"db.db-1.format"}}
+{"do":{"focus":"db.db-1.queryLine"}}
+{"do":{"press":"Return"}}
+{"expect":{"journal":{"contains":"SELECT *\\nFROM bookings\\nWHERE status = 'held'"}}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"1"}}

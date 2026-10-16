@@ -1,0 +1,20 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-1","field":"blocks","equals":"[]"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"propose a command that prints a marker"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"echo proposed-by-the-agent"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].origin","equals":"proposed"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"null"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"grid","contains":"echo proposed-by-the-agent"}}
+{"expect":{"pane":"terminal-1","field":"commandRunning","equals":"false"}}
+{"expect":{"pane":"terminal-1","field":"blocks","equals":"[]"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].command","equals":"echo proposed-by-the-agent"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].origin","equals":"operator"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"proposed-by-the-agent"}}

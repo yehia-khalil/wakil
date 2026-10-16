@@ -1,0 +1,29 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.projectEditor.e2e-project"}}
+{"expect":{"tree":"contains","text":"TAB SIZE"}}
+{"do":{"focus":"settings.projectEditor.tabSize"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"2"}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.tabSize","equals":"2"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"click":"rail.editor-2"}}
+{"do":{"press":"Tab"}}
+{"do":{"keys":"x"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-2","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":4}}}}}
+{"expect":{"pane":"editor-2","field":"selected_text","equals":"  x"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.tabSize","equals":"2"}}
+{"do":{"click":"settings.projectEditor.indent.tabs"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.insertSpaces","equals":"false"}}
+{"dispatch":{"action":"editor_new_scratch","params":{"pane":"editor-2"}}}
+{"expect":{"pane":"editor-2","field":"tabs[1].scratch","equals":"2"}}
+{"expect":{"pane":"editor-2","field":"active","equals":"1"}}
+{"do":{"click":"rail.settings-1"}}
+{"do":{"click":"rail.editor-2"}}
+{"do":{"press":"Tab"}}
+{"do":{"keys":"x"}}
+{"expect":{"pane":"editor-2","field":"tabs[1].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-2","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":3}}}}}
+{"expect":{"pane":"editor-2","field":"selected_text","equals":"\tx"}}

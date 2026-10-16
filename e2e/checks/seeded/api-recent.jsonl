@@ -1,0 +1,15 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"expect":{"pane":"api-1","field":"recent","equals":"[]"}}
+{"expect":{"tree":"contains","text":"none yet"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"get","path":[{"literal":"/bookings/41"}]}}}
+{"dispatch":{"action":"api_request","params":{"pane":"api-1"}}}
+{"expect":{"pane":"api-1","field":"recent[0].method","equals":"GET"}}
+{"expect":{"pane":"api-1","field":"recent[0].path","equals":"/bookings/41"}}
+{"expect":{"tree":"contains","text":"1 send"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","path":[{"literal":"/bookings/99"}]}}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/bookings/99"}}
+{"do":{"click":"api.recent"}}
+{"expect":{"tree":"contains","text":"GET /bookings/41"}}
+{"do":{"click":"api.recent.0.reopen"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/bookings/41"}}
+{"expect":{"pane":"api-1","field":"recent[0].path","equals":"/bookings/41"}}

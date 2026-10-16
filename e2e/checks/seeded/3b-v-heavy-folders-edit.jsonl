@@ -1,0 +1,34 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"do":{"click":"settings.tree.projectEditor.e2e-project"}}
+{"expect":{"tree":"contains","text":"HEAVY FOLDERS"}}
+{"expect":{"tree":"contains","text":"always"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].name","equals":"e2e-project"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[1]","equals":"node_modules"}}
+{"do":{"focus":"settings.projectEditor.heavy.1"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"deps"}}
+{"expect":{"tree":"contains","text":"Value: deps"}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[1]","equals":"deps"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[0]","equals":"vendor"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[2]","present":false}}
+{"expect":{"tree":"contains","text":"HEAVY FOLDERS"}}
+{"expect":{"tree":"contains","text":"Value: deps"}}
+{"dispatch":{"action":"ctx_editor_settings","params":{}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[1]","equals":"deps"}}
+{"do":{"focus":"settings.projectEditor.heavy.0"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"third_party"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[0]","equals":"third_party"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[1]","equals":"deps"}}
+{"do":{"click":"settings.projectEditor.heavy.1.remove"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[1]","present":false}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[0]","equals":"third_party"}}
+{"expect":{"tree":"contains","text":"Value: third_party"}}
+{"do":{"click":"settings.projectEditor.heavy.0.remove"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.heavyFolders[0]","present":false}}
+{"expect":{"tree":"absent","text":"Value: third_party"}}
+{"expect":{"tree":"contains","text":"HEAVY FOLDERS"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"vendor"}}

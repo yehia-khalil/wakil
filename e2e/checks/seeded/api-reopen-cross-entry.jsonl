@@ -1,0 +1,14 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"get","path":[{"literal":"/bookings/41"}]}}}
+{"dispatch":{"action":"api_request","params":{"pane":"api-1"}}}
+{"expect":{"pane":"api-1","field":"recent[0].entry","equals":"catalog"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","entry":"billing"}}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://billing.e2e-fixture.invalid"}}
+{"expect":{"pane":"api-1","field":"credentialed","equals":"true"}}
+{"do":{"click":"api.recent"}}
+{"expect":{"tree":"contains","text":"catalog · GET /bookings/41"}}
+{"do":{"click":"api.recent.0.reopen"}}
+{"expect":{"pane":"api-1","field":"entry","equals":"catalog"}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog.e2e-fixture.invalid"}}
+{"expect":{"pane":"api-1","field":"credentialed","equals":"false"}}
+{"expect":{"tree":"absent","text":"no origin — this entry does not resolve"}}

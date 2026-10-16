@@ -1,0 +1,14 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"hold":"option"}}
+{"expect":{"tree":"contains","text":"say hello from the microphone"}}
+{"do":{"release":"option"}}
+{"expect":{"tree":"contains","text":"HEARD · RETURN SENDS · EDIT FIRST"}}
+{"expect":{"tree":"absent","text":"the spoken turn arrived"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"the spoken turn arrived"}}
+{"expect":{"journal":{"contains":"\"action\":\"voice_turn\""}}}
+{"expect":{"journal":{"contains":"{\"via\":\"voice\"}"}}}
+{"expect":{"tree":"contains","text":"say hello from the microphone"}}
+{"expect":{"tree":"contains","text":"TO SPEAK"}}

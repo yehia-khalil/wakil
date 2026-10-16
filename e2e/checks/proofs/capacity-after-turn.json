@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/capacity-after-turn.jsonl",
+  "baseCommit": "1402c099d411b089307bc11a7d330405e5ec4d31",
+  "provedAt": "2026-10-11T13:50:31.228681Z",
+  "checkBlob": "71654f457d63f061b057bf9c81cf8fea1ba82242"
+}

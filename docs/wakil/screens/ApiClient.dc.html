@@ -1,0 +1,900 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    .void { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    /* §10: once two panes are snapped their shared edge is coordinated, so the
+       pair reads as one surface with a seam rather than two slabs with a gap. */
+    .slab {
+      background: #0e1019; overflow: hidden;
+      box-shadow: 0 8px 36px rgba(0,0,0,0.55), inset 0 0.5px 0 rgba(255,255,255,0.10), inset 0 -0.5px 0 rgba(255,255,255,0.03);
+    }
+    .slab.left  { border-radius: 10px 0 0 10px; box-shadow: 0 8px 36px rgba(0,0,0,0.55), inset 0 0.5px 0 rgba(255,255,255,0.10), inset 0 -0.5px 0 rgba(255,255,255,0.03), inset 0.5px 0 0 rgba(255,255,255,0.06); }
+    .slab.right { border-radius: 0 10px 10px 0; box-shadow: 0 8px 36px rgba(0,0,0,0.55), inset 0 0.5px 0 rgba(255,255,255,0.10), inset 0 -0.5px 0 rgba(255,255,255,0.03), inset -0.5px 0 0 rgba(255,255,255,0.06); }
+    .seam { width: 1px; background: rgba(255,255,255,0.055); flex-shrink: 0; }
+    .hseam { height: 1px; background: rgba(255,255,255,0.055); flex-shrink: 0; }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chip {
+      font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px;
+      text-transform: uppercase; padding: 3px 7px; border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    .cell {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums; font-size: 12px;
+      color: rgba(232,236,246,0.92);
+    }
+
+    .line {
+      padding: 10px 12px; border-radius: 6px;
+      background: rgba(232,236,246,0.055);
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 12px; line-height: 1.5; color: #e8ecf6;
+    }
+
+    /* THE BOUND VALUE. §8 made the anchor a (row, column) pair precisely
+       because §11 has this pane consuming VALUES from other panes, and a value
+       lives in a cell. Both ends carry one mark — violet, monospace, named —
+       and only the source end glows, because §8 carves out exactly one
+       luminous mark inside a surface.
+
+       AND IT NOW HAS TWO THINGS TO SAY (2c-iv, #112). A LIVE bound value
+       re-resolves against its source pane at send, so it is a reference and
+       wears the reference's mark. A CAPTURED one holds a copy and cannot be
+       re-read, so it wears NO HUE AT ALL: violet would promise a source that
+       can be asked again. §5 forbids inventing a second hue for it, so the
+       difference is carried by the absence of the first — recessed, flat, and
+       edged, the same treatment Terminal.dc.html gives the agent's own blocks.
+
+       AND IT SAYS NOTHING ABOUT AGE (#137). An earlier draw carried a bare
+       wall-clock stamp in the caption; it is cut. Wakil shows durations and
+       no clock times, and an elapsed number here would be a guess about
+       truth — a value captured four seconds ago can already be false. What
+       is drawn instead is what Wakil knows: a captured value lives exactly
+       as long as the rows it came from, so when the source pane re-runs its
+       query the value is GONE and draws as unresolved, in the refusal
+       below. There is no third chip state to invent. */
+    .bound {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 12px; color: #b9a4ff;
+      background: rgba(124,92,255,0.16);
+      padding: 2px 6px; border-radius: 4px;
+    }
+    .bound.captured {
+      color: rgba(232,236,246,0.78); background: rgba(232,236,246,0.06);
+      border-left: 2px solid rgba(232,236,246,0.22); padding-left: 5px;
+    }
+    /* An unresolved bound value, live or captured alike: §5's reserved
+       destructive red, because the send is refused. #137 made this the
+       captured value's ONLY other state — there is no "old but usable". */
+    .bound.unres {
+      color: #f0c4c4; background: rgba(232,92,92,0.16);
+      border-left: 2px solid rgba(232,92,92,0.55); padding-left: 5px;
+    }
+
+    /* History is not a feature, it is the data surface pointed at this pane's
+       own log — the same move that made 2c-ii's schema browser a result set
+       instead of a sidebar. A past request is a row; §8's hover-revealed row
+       action reopens it, into a draft of LITERALS WITH NO BINDINGS, because
+       #137 keeps a past send's values as emitted literals and never as bindings.
+
+       #152: the strip is the PANE'S OWN in-memory state, capped at 200 rows in
+       the store exactly as the Terminal pane's block history is
+       (`TerminalBlock.historyCap`), and it DIES WITH THE SESSION. It is not the
+       action journal and not a view over one: a `JournalEntry` records a
+       dispatch and has nowhere for `status` or `millis`. `Recent · 12` counts
+       this session, and the fold restarts at zero after a relaunch. An
+       ENVIRONMENT SWITCH does not clear it — the draft is future, the response
+       is present, the strip is past, and a switch clears only the present.
+
+       UNDER 2c-iv's RESPONSE SURFACE the strip is FOLDED by default: the
+       response occupies the lower half, and the log is one summary line that
+       opens into these rows. That eviction is the accepted cost of the chosen
+       design, not an oversight — see the block comment on the response region.
+       Every row carries its ENTRY and its ENVIRONMENT, always and not
+       conditionally (#109, #110): two rows differing only in environment are
+       otherwise separable only by reading their responses. #152 is what the
+       environment column is FOR — a row outlives the switch inside one
+       session, which is why `stg`, `stg` and `prod` sit in one strip below. */
+    .hrow {
+      display: grid; grid-template-columns: 38px 58px 40px minmax(0, 1fr) 38px 48px;
+      gap: 10px; align-items: center; height: 27px; padding: 0 20px;
+      background: rgba(232,236,246,0); transition: background 240ms ease-out; cursor: pointer;
+    }
+    .hrow:hover { background: rgba(232,236,246,0.05); }
+
+    .fold { cursor: pointer; color: rgba(232,236,246,0.52); transition: color 240ms ease-out; }
+    .fold:hover { color: rgba(232,236,246,0.90); }
+
+    /* A `(name, value-parts)` ROW, shared by the query region and the header
+       region because #158 ruled them the same shape. The NAME is drawn in the
+       recessed weight and the VALUE in the readable one, so the eye lands on
+       the half that carries data — and #122 puts exactly that half on the data
+       side of its table. The separator is drawn, dim and unselectable-looking,
+       so that the row reads as a pair rather than as a string that happens to
+       contain a `=` or a `:`. There is no delimiter here either: these are
+       three siblings in a grid, not one field split at a character. */
+    .kvrow {
+      display: grid; grid-template-columns: minmax(0, auto) 10px minmax(0, 1fr);
+      gap: 0 4px; align-items: baseline;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11.5px; line-height: 1.38;
+    }
+    .kvname  { color: rgba(232,236,246,0.60); }
+    .kvsep   { color: rgba(232,236,246,0.28); }
+    .kvvalue { color: rgba(232,236,246,0.86); }
+    /* A WITHHELD value is not a value. Story 21 names three classes of
+       header — the ones the operator authored, the one the ENTRY supplies,
+       and the one Wakil DERIVES — and only the entry-supplied one has a value
+       the pane may not print. `authorization` says where the header came from
+       and never what it holds, so it wears the caption's weight rather than
+       the value's: the row is honest about being a statement about the
+       request rather than a field of it. `content-type` is the derived row
+       and its value IS printable, so it is an ordinary `.kvvalue`. */
+    .kvwithheld { color: rgba(232,236,246,0.46); }
+
+    /* THE EMIT'S QUOTES, not the value's. Drawn outside the chip and dimmer
+       than the document's own punctuation, so the pair reads as something the
+       send ADDS around the part rather than as characters sitting inside it. A part in a path segment has no `.q` beside it; the
+       same part in a JSON string position has two. */
+    .q { color: rgba(232,236,246,0.42); margin: 0 -1px; }
+    /* The body's own line. Its trims are scoped here rather than onto `.line`,
+       which is also the SQL box in the left slab and the URL line above: a
+       chip in a JSON value position sits between two `"` and needs its padding
+       cut so the pair reads as adjacent, and a chip in a path segment does
+       not. */
+    .urlline  { padding: 8px 12px; }
+    .bodyline { padding: 8px 12px; line-height: 1.35; }
+    .bodyline .bound { padding: 2px 4px; }
+    .bodyline .bound.captured, .bodyline .bound.unres { padding-left: 3px; }
+
+    /* A RESPONSE BODY CARRIES NO HUE. §5 reserves green, amber and red for
+       meaning and forbids a decorative fourth, and a server's JSON is quoted
+       material with no SGR to inherit — so it is cool white stepped by opacity
+       alone, exactly as §5's last line says. The STATUS is the one coloured
+       thing here, and it is coloured because §5 reserves those hues for
+       precisely this: healthy, and failed. */
+    .jsonline {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11.5px; line-height: 1.40; white-space: pre;
+    }
+
+    /* THE ONE SURFACE IN THE RESPONSE REGION THAT GIVES WAY. Everything
+       around it — the status line, the credential note, the two folds — is
+       furniture Wakil owns and sizes, and none of it may be pushed out by how
+       much the server chose to say. Story 62 wants the whole document drawn,
+       so the query region this redraw adds is paid for out of the request
+       stack's own leading rather than out of here: every scene fits. */
+    .respbody { flex: 1 1 0; min-height: 0; overflow: hidden; }
+  </style>
+</helmet>
+
+<div class="void" style="background: {{voidBackground}};">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <!-- The rail. CORRECTED 2c-iv (#109): this row read `confirm · http`. The
+       pane's kind is `api`, per Pane.kinds' own reservation, and its title is
+       `<entry> · <last non-parameter path segment>`, RE-DERIVED ON EVERY SEND
+       rather than frozen — because no pane can be renamed by an operator today
+       and `resolvePane` retitles on every call carrying a title, so a frozen
+       name would outlive the entry it names. The missing rename control is
+       filed as #131 and is owed to every pane kind, not to this one. -->
+  <div style="position: absolute; left: 44px; top: 132px; width: 220px; transform: scale(0.94); transform-origin: left top; opacity: 0.30; filter: blur(1.4px); display: flex; flex-direction: column; gap: 2px;">
+    <div style="display: flex; align-items: center; gap: 11px; padding: 9px 12px;">
+      <div style="width: 2px; height: 14px; flex-shrink: 0;"></div>
+      <div style="font-size: 12px; color: rgba(232,236,246,0.70); flex-grow: 1;">bookings</div>
+      <div class="micro" style="color: rgba(232,236,246,0.35);">db</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 11px; padding: 9px 12px;">
+      <div style="width: 2px; height: 14px; border-radius: 1px; background: #9e82ff; box-shadow: 0 0 7px rgba(158,130,255,0.75); flex-shrink: 0;"></div>
+      <div style="font-size: 12px; color: #e8ecf6; flex-grow: 1;">billing · confirm</div>
+      <div class="micro" style="color: rgba(232,236,246,0.35);">api</div>
+    </div>
+  </div>
+
+  <!-- The window badge is the environment's ONE rendering. CORRECTED 2c-iv
+       (#110): this pane used to draw a second one, a Local / Staging /
+       Production·blocked chip row, and it is deleted rather than disabled. The
+       badge is exempt from the far plane's opacity and blur precisely because
+       it "exists to be read at the moment it matters" (design-language.md:64),
+       and production turns the whole room red on top of it. A duplicate that
+       adds no information and one misreading is worth less than nothing. The
+       pane never SWITCHES the environment either: an operator's switch is
+       `.allow` and never confirmed, so a Production chip one click away inside
+       the pane whose subject is a gated write would be the one unguarded
+       entrance in it. An in-window switcher is #133, owed to every pane. -->
+  <div style="position: absolute; left: 296px; top: 56px; display: flex; align-items: baseline; gap: 15px;">
+    <div style="font-size: 17px; color: #e8ecf6;">Initech Labs</div>
+    <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.50);">wakil-acceptance</div>
+    <div class="chip" style="color: {{envColour}}; background: {{envTint}};">{{envLabel}}</div>
+  </div>
+
+  <div style="position: absolute; left: 296px; top: 118px; display: flex; height: 606px;">
+
+    <!-- ── The source: a DB pane with an anchored (row, column) pair ── -->
+    <div class="slab left" style="width: 452px; display: flex; flex-direction: column; padding: 16px 0 0;">
+      <div class="micro" style="padding: 0 20px 13px;">bookings</div>
+
+      <div class="line" style="margin: 0 20px 16px;">{{sqlLine1}}<br>{{sqlLine2}}</div>
+
+      <div style="display: grid; grid-template-columns: 52px 132px minmax(0, 1fr); gap: 14px; padding: 0 20px 10px;">
+        <div class="micro" style="color: rgba(232,236,246,0.50);">{{col1}}</div>
+        <div class="micro" style="color: rgba(232,236,246,0.50);">{{col2}}</div>
+        <div class="micro" style="color: rgba(232,236,246,0.50);">{{col3}}</div>
+      </div>
+
+      <sc-for list="{{rows}}" as="row" hint-placeholder-count="5">
+        <div style="position: relative; display: grid; grid-template-columns: 52px 132px minmax(0, 1fr); gap: 14px; padding: 0 20px; height: 38px; align-items: center; background: {{ row.background }};">
+          <div style="position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; border-radius: 1px; background: {{ row.edge }}; box-shadow: {{ row.edgeGlow }};"></div>
+          <div class="cell">{{ row.id }}</div>
+          <div style="justify-self: start;"><span class="cell" style="background: {{ row.cellBackground }}; padding: 3px 6px; border-radius: 4px; margin-left: -6px;">{{ row.booking }}</span></div>
+          <div style="justify-self: start; min-width: 0;"><span class="cell" style="background: {{ row.cellBackground }}; padding: 3px 6px; border-radius: 4px; margin-left: -6px;">{{ row.guest }}</span></div>
+        </div>
+      </sc-for>
+
+      <!-- CORRECTED 2c-iv, found while drawing the two halves together (#115):
+           this footer read `read-only`. The query names ONE table and selects
+           its primary key, so Decision 20's precondition holds — and #112 made
+           that footer word load-bearing in a way it was not when this screen
+           was first drawn: "a pane that draws `editable` in its footer is
+           exactly a live value source." The artboard was binding a LIVE value
+           out of a pane that claimed it could not be written. -->
+      <div style="margin-top: auto; display: flex; align-items: center; gap: 16px; padding: 0 20px 16px;">
+        <div class="mono micro" style="letter-spacing: 1.2px;">rows 1–5 · more remain</div>
+        <div class="mono micro" style="letter-spacing: 1.2px;">21ms</div>
+        <div class="mono micro" style="letter-spacing: 1.2px;">editable</div>
+      </div>
+    </div>
+
+    <div class="seam"></div>
+
+    <!-- ── The consumer ── -->
+    <div class="slab right" style="width: 592px; display: flex; flex-direction: column; padding: 16px 0 0;">
+
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 20px 10px;">
+        <div class="micro">billing · confirm</div>
+        <div class="mono micro" style="letter-spacing: 1.2px;">POST</div>
+      </div>
+
+      <!-- THE URL LINE, REDRAWN 2c-iv (#108, #109): chooser · resolved origin ·
+           path.
+
+           What was here before was a free-text base URL marked "Editable here ·
+           this request only", with a "Save to staging" row action beside it.
+           BOTH HALVES ARE CUT. Invariant 6 refuses a request leaving the
+           targeted entry's baseUrl, and read literally the override IS the
+           thing the refusal names — so the artboard was wrong rather than the
+           charter. Dropping the credential would not have rescued it either,
+           because the body carries values bound out of a database row. To reach
+           a different host you add an `api[]` entry to project.json, which is
+           the accepted price, or you use curl in the terminal pane, which
+           carries no credential at all.
+
+           The three parts each earn their place. The NAME is what the agent
+           passes and the only part the operator can move, and `billing` versus
+           `auth` does not say which host. The ORIGIN says which host and cannot
+           be chosen or typed. The PATH is a sequence of parts (below). The
+           chooser is DISABLED rather than hidden at one entry, on
+           `databaseChooser()`'s precedent, so the line's shape does not change
+           as configuration grows — DRAWN, not merely asserted here: the
+           `entries` control switches between the two, and at one entry the
+           caret goes and the name recesses while the row keeps its position
+           and its box. A hidden chooser would move the origin and the path
+           leftward, so a project with one backend and a project with three
+           would not read as the same surface; it is fed by a `list_apis` wrapper at the
+           action layer, and it shows NAMES ONLY — `list_apis` publishes
+           `authenticated`, and a published boolean that promises nothing is
+           issue #14's exact shape. -->
+      <div class="line urlline" style="margin: 0 20px 9px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+        <span style="display: inline-flex; align-items: center; gap: 5px; background: {{chooserBackground}}; padding: 3px 7px; border-radius: 4px;">
+          <span class="micro" style="color: {{chooserColour}}; letter-spacing: 1.4px;">{{chooserName}}</span>
+          <span style="display: {{chooserCaretDisplay}}; color: rgba(232,236,246,0.46); font-size: 9px;">▾</span>
+        </span>
+        <span class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.42);">{{resolvedOrigin}}</span>
+        <span style="display: inline-flex; align-items: center; gap: 2px;">
+          <span>/v1/bookings/</span><span class="{{pathBookingIdClass}}">booking_id</span><span>/confirm</span>
+        </span>
+      </div>
+
+      <!-- ── THE QUERY REGION, ADDED 2c-iv (#158) ──────────────────────────
+           This screen had no query region at all, so the only place a query
+           could have gone was the end of the path — which means an operator
+           typing a `?` and Wakil finding the boundary. #158 ruled the region
+           its own, and it is drawn here in WIRE ORDER, between the path and
+           the headers, because the four regions read in the order the bytes
+           leave: path · query · headers · body.
+
+           A ROW IS `(name, value-parts)`, drawn as two fields and never as
+           one string, and that separation is the whole ruling. #122's table
+           puts the query NAME on the structure side and the query VALUE on
+           the data side: a name selects what the server parses, a value is
+           data. So a bound value may occupy the value field and may never
+           occupy the name field — which is legible here only because the two
+           are drawn apart. A single `name=value` string would have to be
+           re-split to say the same thing, and re-splitting a field is the
+           delimiter this pane does not have.
+
+           Like the header region it is a MAP: a name already present is
+           refused rather than added. Wakil escapes at emit, so a value
+           containing `&` or `=` is inert by construction rather than by the
+           operator's care.
+
+           ONE ROW IS DRAWN, not two. What this region owes a reader is that a
+           row is `(name, value-parts)` and never one `name=value` string; that
+           it is a list of them is drawn by the header region immediately
+           below, in the same `.kvrow` shape. The second row bought no ruling
+           and cost the response surface a line of the server's document, which
+           story 62 does not allow. -->
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 0 20px 8px;">
+        <div class="micro" style="color: rgba(232,236,246,0.50);">Query · 1</div>
+        <div style="display: flex; flex-direction: column; gap: 3px;">
+          <div class="kvrow"><span class="kvname">expand</span><span class="kvsep">=</span><span class="kvvalue">guest,rate</span></div>
+        </div>
+      </div>
+
+      <!-- CORRECTED 2c-iv (#67): this label read "Headers · 2 · auth from
+           wakil:initech:api-staging". The pane names NO secret and no ref. An
+           `authRef` is a bare Keychain name on the api entry, `list_apis`
+           publishes neither it nor the value, and #67 refused an
+           environment-level credential default precisely so that a credential
+           always comes from an entry the configuration names. What the pane may
+           say is THAT the entry is credentialed, and where the header came
+           from. A caller-set Authorization is refused outright, so this row can
+           never be the operator's own.
+
+           CORRECTED AGAIN 2c-iv (#158): `Headers · 2` was FLAT TEXT where it is
+           a FOLD, and the two rows below it were one monospace run split by a
+           `<br>` — a string, not rows. Both are repaired together because they
+           are the same mistake at two sizes: the region is a MAP of
+           `(name, value-parts)` rows, so it folds like one and draws like one.
+           It is drawn OPEN here, where `Response headers · 4 ▸` is drawn shut,
+           and the asymmetry is the ruling: request headers are AUTHORED and a
+           response's are CONSULTED.
+
+           THE ORDER IS NAME-SORTED WITH DERIVED ROWS LAST, on screen and in the
+           agent's copy alike, so a re-render never reorders them. Story 21
+           names three classes and neither row here is the first of them:
+           `authorization` is SUPPLIED BY THE BILLING ENTRY and `content-type`
+           is DERIVED by Wakil, so a header the operator authored would sit
+           above both, and these two sort against each other by name. That is
+           why `authorization` now precedes `content-type`; the previous draw's
+           order was the order they were typed in, which is exactly the thing a
+           re-render loses.
+
+           `content-type` is Wakil's row and the one derived row that is
+           EDITABLE, free text and literal-only, so a `+json` media type an API
+           needs is not fenced out by a list somebody guessed. `authorization`
+           is drawn WITH NO VALUE: the pane may say the request is credentialed
+           and may name the entry, and may say nothing further. -->
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 0 20px 8px;">
+        <div class="fold micro">Headers · 2 ▾</div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <div class="kvrow"><span class="kvname">authorization</span><span class="kvsep">:</span><span class="kvwithheld">added by the billing entry</span></div>
+          <div class="kvrow"><span class="kvname">content-type</span><span class="kvsep">:</span><span class="kvvalue">application/json</span></div>
+        </div>
+      </div>
+
+      <!-- A field is a SEQUENCE OF PARTS and there is no delimiter anywhere —
+           no curly pair, no angle pair, no sigil. (Named here in words rather
+           than written out: a literal delimiter inside this file is itself a
+           placeholder to whatever renders it, which is the argument in
+           miniature.) This line always drew it and never said
+           so: the value positions are siblings in a flex row, not markup inside
+           a string. That is what makes #122's delimiter-in-content class VOID
+           rather than mitigated, and what makes CVE-2025-1087's "never
+           re-render" rule free rather than enforced — which matters more here
+           than for Insomnia, because the source is a database cell an attacker
+           may have written.
+
+           CORRECTED 2c-iv (#116, and the probe of 2026-09-22): the chips were
+           drawn WITHOUT QUOTES, which hid the one thing the body's emit rule
+           turns on. The quotes are drawn now, and they are drawn OUTSIDE the
+           chip on purpose — they are the EMIT's, not the value's. The same
+           three marks appear in three positions on this screen and quote
+           differently: `booking_id` in a path segment carries none,
+           `guest` in a JSON string position carries a pair, and `rate` —
+           captured out of a `DECIMAL` column — carries NONE, because its
+           declared type emits a JSON number.
+
+           WHAT DECIDES IT IS THE DECLARED TYPE, and the probe is why that
+           sentence is shorter than #116 ruling 3's. The ruling said a part
+           carries the cell's declared type AND its exact lexical form, on the
+           premise that a `DECIMAL` arrives from the driver as the string
+           `19.90`. Measured on sqlite, it arrives as `float64 19.9` however it
+           was stored — NUMERIC affinity converts at INSERT, two processes
+           before any Wakil code runs, so there is no lexical form left to
+           carry. What a part carries is the declared type and the JSON TOKEN
+           the pane received, and emit decides quoting from the declared type,
+           exactly as ruled. A bound value out of a numeric-affinity column
+           sits in `"rate"` with no quotes at all, and that is what is drawn:
+           `rate` is captured out of `rate_plans.amount`, a `DECIMAL(10,2)`,
+           and emits as the JSON number `19.90` while `guest` beside it emits
+           as a quoted string. The same mark, two positions, two emits — which
+           is the whole of the rule and was invisible while every drawn value
+           came out of a text column. Whether MySQL's real fixed-point
+           `DECIMAL` keeps its lexical form is measured by #184 and changes
+           only how wide the correction is.
+
+           The unquoted value position was what Paw has refused to deliver
+           since 2015 (Paw-Issues #40), because its structured editor owns
+           quoting at author time. It is affordable here because the part
+           carries the source column's declared type, and quoting is decided at
+           EMIT time. Where in the emit that happens is #116's. -->
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 0 20px 8px;">
+        <div class="micro" style="color: rgba(232,236,246,0.50);">Body</div>
+        <div class="line bodyline" style="font-size: 11px;">{ "channel": "wakil", "guest": <span class="q">"</span><span class="{{bodyGuestClass}}">guest</span><span class="q">"</span>, "rate": <span class="{{bodyRateClass}}">rate</span>, "notify": true }</div>
+      </div>
+
+      <!-- Decision 20's provenance rule, said out loud and made plural: a
+           consumed value names the pane, the column and the row it came from,
+           so a request reads without going and looking.
+
+           MOVED 2c-iv (#115): this strip was drawn ABOVE the headers, inside
+           the run of regions, where it reads as part of one of them. IT IS A
+           CROSS-CUTTING INDEX OVER ALL FOUR — the three values below sit in the
+           path, the body and the body again — so it belongs BELOW all four,
+           which is where it is now: after path · query · headers · body and
+           before the send. Nothing about it changed except where it sits, and
+           where it sits was the claim it was getting wrong.
+
+           CORRECTED 2c-iv (#112): the caption named the row by its VISUAL
+           ORDINAL — "bookings · booking_id · row 4" — and the drawn anchor row
+           carries id 8842 while sitting fourth. A bound value is KEYED on the
+           anchored row's primary-key column values, never positional and never
+           on a `rowKey` (opaque, and handing one back would make resolution an
+           execution). The selection stays positional and 2c-i's check 12 still
+           stands: a bound value is MADE FROM a selection and then stops being
+           one. Under a positional binding an environment switch re-runs every
+           db pane's subject, `clampToRowCount` keeps the index in range, and
+           the same POST confirms a different booking with nothing failing. -->
+      <div style="display: flex; flex-direction: column; gap: 3px; padding: 0 20px 8px;">
+        <div class="micro" style="color: rgba(232,236,246,0.50);">{{ boundHeader }}</div>
+        <sc-for list="{{boundValues}}" as="bv" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span class="{{ bv.chipClass }}">{{ bv.name }}</span>
+            <span class="mono" style="font-size: 10.5px; color: rgba(232,236,246,0.48);">{{ bv.origin }}</span>
+            <span class="mono" style="font-size: 11px; color: rgba(232,236,246,0.86); margin-left: auto;">{{ bv.value }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- THE SEND, REDRAWN 2c-iv (#107). Two claims were stale here and both
+           are gone. The environment chips read "Production · blocked", and the
+           line under the button read "Type confirm to send" with STAGING
+           selected — one drawn as a wall, the other as a toll on every
+           environment. Both predate the write earning in.
+
+           The price is (production: .gate, otherwise: .allow), Decision 25's row
+           unchanged. So OUTSIDE PRODUCTION the send is immediate, whoever asked
+           for it — that is what makes Phase 2's exit criterion speakable end to
+           end, and Invariant 7's per-adapter exception exists for exactly it.
+           IN PRODUCTION it costs a typed confirmation, which is NOT typed here:
+           the button enters 2b-iii's confirmation plane. Invariant 8 is
+           untouched — the room still turns red; what changed is that the red
+           now means a keystroke rather than a wall.
+
+           `.gate` reaches a plane that is SQL-shaped at the point of entry:
+           MCPServer.swift reads a `statement` for any `.mutate` and hard-errors
+           on an empty one. So the send must describe itself in a sentence. The
+           slot below is that sentence's place; its WORDING is #117's. What is
+           this screen's to say is that the BOUND VALUES ARE RESOLVED BEFORE THE
+           OPERATOR IS ASKED — confirming a request built of unresolved parts
+           would be confirming a request nobody can read. -->
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 20px 10px;">
+        <div class="micro" style="color: {{sendNoteColour}};">{{sendNote}}</div>
+        <div style="padding: 8px 16px; border-radius: 6px; background: {{sendBackground}}; font-size: 13px; color: {{sendColour}}; cursor: pointer;">Send</div>
+      </div>
+
+      <div style="display: {{confirmSlotDisplay}}; align-items: baseline; gap: 10px; margin: 0 20px 10px; padding: 6px 11px; border-radius: 6px; background: rgba(0,0,0,0.26); box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.045);">
+        <div class="micro" style="color: rgba(232,236,246,0.40); white-space: nowrap;">You will confirm</div>
+        <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.80); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">POST {{resolvedOrigin}}/v1/bookings/BK-2026-8842/confirm</div>
+      </div>
+
+      <!-- ── THE RESPONSE, ADDED 2c-iv (#115) ──────────────────────────────
+           This screen drew the request in full and the response NOT AT ALL.
+
+           THE RESPONSE IS THE BOTTOM OF THE REQUEST'S OWN SURFACE — always
+           present, replaced on every send, never a second pane and never a row
+           in a log. Chosen over both alternatives on the drawn prototype
+           (branch prototype/115-api-client-redraw): a log whose anchored row
+           opens into the response, and a reply that opens as its own pane.
+
+           A BODY IS TEXT. A response is not rows, and §8's own rule is that a
+           surface which cannot do the thing must not look like it can — the
+           grid promises sort, paging, selection and a (row, column) anchor,
+           and a JSON object can honour none of them. Response headers are a
+           fold, because they are consulted rather than read.
+
+           A REFUSAL IS NOT A RESPONSE. When a bound value cannot resolve, no
+           request is built, so there is no status, no timing and no size to
+           report — the strip says `not sent` and nothing else. The first draft
+           of the prototype printed `200 · 184ms` over a request that was never
+           built, which is the exact dishonesty this pane exists against.
+
+           A SEND WITH NO REPLY IS NOT A FAILURE EITHER. It is recorded
+           fate-unknown, in the vocabulary `mutationFateUnknown` already ships:
+           "this is NOT a report that nothing happened."
+
+           THE ACCEPTED COST, drawn rather than argued: the response evicts the
+           `Recent` strip to a single folded line. And an org switch destroys
+           this pane, so a send recorded fate-unknown AT the switch has no
+           surface here to appear on. #152 ruled where that record lives: NOT
+           here and not in the strip, but in the action journal, which
+           `recordUncertainMutation` already writes to before the client stops
+           and which an org switch does not touch. The reader it lacks is
+           owed to every gated write, not to this pane (#167). -->
+      <div class="hseam" style="margin-top: auto;"></div>
+      <div style="flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: rgba(0,0,0,0.16);">
+
+        <div style="flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 8px 20px 0;">
+          <span class="mono" style="display: {{codeDisplay}}; font-size: 13px; color: {{statusColour}};">{{statusLabel}}</span>
+          <span class="chip" style="display: {{chipDisplay}}; color: {{statusColour}}; background: {{statusTint}};">{{statusLabel}}</span>
+          <span class="mono micro" style="letter-spacing: 1.2px;">{{statusMeta}}</span>
+        </div>
+
+        <div class="respbody" style="display: {{responseDisplay}}; padding: 8px 20px 0;">
+          <sc-for list="{{responseLines}}" as="ln" hint-placeholder-count="7">
+            <div class="jsonline"><span style="color: {{ ln.keyColour }};">{{ ln.key }}</span><span style="color: rgba(232,236,246,0.32);">{{ ln.sep }}</span><span style="color: {{ ln.valueColour }};">{{ ln.value }}</span></div>
+          </sc-for>
+        </div>
+
+        <!-- #113 made this pane the credential read-back: there is no
+             `secrets get` in 2c-iv, so a 401 HERE is how an operator learns the
+             credential behind an entry is wrong, shown where it was used. The
+             pane still names no ref — it names the ENTRY, which is what it is
+             allowed to know, and the command that replaces the secret the
+             entry resolves.
+
+             MOVED 2c-iv (#115), alongside the headers fold: this note was drawn
+             INSIDE the body div, so it and the fold competed for the same
+             clipped space and the response could only ever show one of them.
+             It is not body text — it is Wakil speaking ABOUT the response —
+             so it is pinned outside the clip, where the server's document
+             cannot decide whether the operator is told how to fix this. -->
+        <div style="display: {{credentialNoteDisplay}}; flex-shrink: 0; margin: 7px 20px 0; padding: 7px 11px; border-radius: 6px; background: rgba(232,92,92,0.08);">
+          <div class="micro" style="color: rgba(232,92,92,0.95); padding-bottom: 5px;">The credential on the billing entry was rejected</div>
+          <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.76);">wakil secrets set-api &lt;ref&gt; --auth bearer</div>
+        </div>
+
+        <!-- MOVED 2c-iv (#115): this fold was drawn INSIDE the body
+             div above, which clips. A response body long enough to fill the
+             surface — six lines does it — pushed the fold out of the frame, so
+             whether the request's headers were consultable depended on how much
+             the server said. It is pinned outside the body now, on the `Recent`
+             fold's own precedent. Response headers are CONSULTED rather than
+             read, and consulting them must not require reading past the body. -->
+        <div class="fold micro" style="flex-shrink: 0; display: {{headersFoldDisplay}}; padding: 8px 20px 0;">Response headers · 4 ▸</div>
+
+        <div style="flex-shrink: 0; display: {{recentDisplay}}; padding-top: 6px;">
+          <sc-for list="{{history}}" as="h" hint-placeholder-count="3">
+            <div class="hrow">
+              <div class="mono micro" style="letter-spacing: 1.1px;">{{ h.method }}</div>
+              <div class="mono micro" style="letter-spacing: 1.1px; color: rgba(232,236,246,0.70);">{{ h.entry }}</div>
+              <div class="mono micro" style="letter-spacing: 1.1px;">{{ h.env }}</div>
+              <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.86); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ h.path }}</div>
+              <div class="mono" style="font-size: 11px; color: {{ h.codeColour }};">{{ h.code }}</div>
+              <div class="mono micro" style="letter-spacing: 1.1px; text-align: right;">{{ h.ms }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div class="fold micro" style="flex-shrink: 0; margin-top: auto; padding: 8px 20px 11px; border-top: 1px solid rgba(255,255,255,0.045);">{{recentFoldLabel}}</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="position: absolute; left: 88px; right: 88px; bottom: 74px; display: flex; align-items: center; justify-content: space-between; gap: 28px;">
+    <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+      <div style="width: 1.5px; height: 18px; border-radius: 1px; background: #9e82ff; flex-shrink: 0;"></div>
+      <div style="font-size: 16px; color: rgba(232,236,246,0.50);">{{corePrompt}}</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <div class="micro" style="color: rgba(232,236,246,0.50);">Hold ⌥ to speak</div>
+      <div class="micro" style="color: rgba(232,236,246,0.50);">⌘P open</div>
+      <div class="micro" style="color: rgba(232,236,246,0.50);">⌘K actions</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"scene":{"editor":"enum","options":["ok","unauthorized","refused","no reply","recent"],"default":"ok","section":"Response"},"env":{"editor":"enum","options":["local","staging","production"],"default":"staging","section":"Environment"},"entries":{"editor":"enum","options":["several","one"],"default":"several","section":"Environment"},"$preview":{"width":1440,"height":900}}'>
+function rgba(hex, a) {
+  var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
+function bleed(hex, cx, cy, sigma, peak) {
+  function s(k) { return rgba(hex, Math.round(peak * k * 10000) / 10000); }
+  return 'radial-gradient(circle ' + Math.round(2.4 * sigma) + 'px at ' + cx + '% ' + cy + '%, ' +
+    s(1) + ' 0%, ' + s(0.368) + ' 41.7%, ' + s(0.14) + ' 58.3%, ' +
+    s(0.039) + ' 75%, ' + s(0.008) + ' 91.7%, ' + rgba(hex, 0) + ' 100%)';
+}
+
+var FIELD = 'linear-gradient(180deg, #030408 0%, #070812 100%)';
+
+// Invariant 8 is untouched by the write price: the room still turns red in
+// production. What the red MEANS changed — a typed confirmation, not a wall.
+function room(env) {
+  var prod = env === 'production';
+  var a = prod ? '#e85c5c' : '#7c5cff';
+  var b = prod ? '#e85c5c' : '#4fb9e8';
+  return {
+    background: [
+      bleed(b, 110, -10, 900 / Math.sqrt(4.0), 0.38 * 0.61),
+      bleed(a, 50, 118, 900 / Math.sqrt(3.2), 0.55 * 0.61),
+      FIELD
+    ].join(', '),
+    colour: prod ? '#e85c5c' : '#8be0c8',
+    tint: prod ? rgba('#e85c5c', 0.13) : rgba('#8be0c8', 0.12),
+    label: prod ? 'Production' : (env === 'local' ? 'Local' : 'Staging'),
+    origin: prod ? 'https://billing.initech.com' : 'https://billing.initech.dev',
+    short: prod ? 'production' : (env === 'local' ? 'local' : 'staging')
+  };
+}
+
+// The rows AFTER the re-run that broke the bindings. The refusal text and the
+// source pane must agree: a refusal that says "the source pane re-ran" drawn
+// over the pane's previous rows is the screen contradicting itself.
+var ROWS_MOVED = [
+  { id: '8851', booking: 'BK-2026-8851', guest: 'held' },
+  { id: '8849', booking: 'BK-2026-8849', guest: 'held' },
+  { id: '8845', booking: 'BK-2026-8845', guest: 'held' },
+  { id: '8843', booking: 'BK-2026-8843', guest: 'held' },
+  { id: '8841', booking: 'BK-2026-8841', guest: 'held' }
+];
+
+var ROWS = [
+  { id: '8845', booking: 'BK-2026-8845', guest: 'A. Haddad' },
+  { id: '8843', booking: 'BK-2026-8843', guest: 'S. Lindqvist' },
+  { id: '8841', booking: 'BK-2026-8841', guest: 'M. Okonjo' },
+  { id: '8842', booking: 'BK-2026-8842', guest: 'R. Demir', anchor: true },
+  { id: '8838', booking: 'BK-2026-8838', guest: 'N. Farouk' }
+];
+
+var KEY = 'rgba(232,236,246,0.92)', VAL = 'rgba(232,236,246,0.74)', PUN = 'rgba(232,236,246,0.32)';
+var DIM = 'rgba(232,236,246,0.56)', BRIGHT = '#e8ecf6', RED = '#e85c5c';
+
+function pair(indent, key, value, comma) {
+  return { key: indent + key, keyColour: KEY, sep: ': ', value: value + (comma ? ',' : ''), valueColour: VAL };
+}
+function punct(text) { return { key: '', keyColour: PUN, sep: '', value: text, valueColour: PUN }; }
+function prose(text, colour) { return { key: '', keyColour: PUN, sep: '', value: text, valueColour: colour }; }
+function named(name, text) { return { key: name, keyColour: RED, sep: ' — ', value: text, valueColour: 'rgba(232,236,246,0.72)' }; }
+
+var BODY_200 = [
+  punct('{'),
+  pair('  ', '"id"', '"BK-2026-8842"', true),
+  pair('  ', '"status"', '"confirmed"', true),
+  pair('  ', '"confirmed_at"', '"2026-09-20T14:31:07Z"', true),
+  pair('  ', '"channel"', '"wakil"', true),
+  pair('  ', '"guest"', '"R. Demir"', false),
+  punct('}')
+];
+
+var BODY_401 = [
+  punct('{'),
+  pair('  ', '"error"', '"invalid_token"', true),
+  pair('  ', '"message"', '"The access token expired at 2026-09-19T23:00:00Z"', false),
+  punct('}')
+];
+
+// #112: aggregate EVERY unresolved bound value, never only the first, and say
+// what WAS available — a binding broken by a renamed column is otherwise
+// indistinguishable from a typo.
+var REFUSED = [
+  prose('Nothing was sent.', BRIGHT),
+  prose('', PUN),
+  named('booking_id', 'bookings holds no row with id 8842.'),
+  prose('   rows now: 8851, 8849, 8845, 8843, 8841', 'rgba(232,236,246,0.46)'),
+  named('guest', 'bookings has no column guest.'),
+  prose('   columns now: id, booking_id, status', 'rgba(232,236,246,0.46)'),
+  // #137: the SAME re-run ends the captured value, and it is the one entry
+  // with no "rows now" or "columns now" line under it — a captured value has
+  // no key to look for and no column list to compare, so there is nothing
+  // available to report. Its lifetime was the rows', and the rows are gone.
+  named('rate', 'captured from rows bookings ⋈ rate_plans no longer holds.'),
+  prose('', PUN),
+  prose('The source pane re-ran its query. Re-bind from a row that is', DIM),
+  prose('there, or send with a literal.', DIM)
+];
+
+// The wording is `mutationFateUnknown`'s own, said for HTTP. A forgotten reader
+// dying quietly is acceptable; a write whose fate is unknown is not.
+var LOST = [
+  prose('No reply after 20s. This is not a report that nothing happened.', BRIGHT),
+  prose('', PUN),
+  prose('Wakil stopped waiting; it did not stop the request. The booking', DIM),
+  prose('may already be confirmed. Check billing before sending again —', DIM),
+  prose('a second POST would confirm it twice.', DIM),
+  prose('', PUN),
+  prose('POST /v1/bookings/BK-2026-8842/confirm', 'rgba(232,236,246,0.60)')
+];
+
+function codeHue(code) { return code.charAt(0) === '2' ? '#8be0c8' : '#e85c5c'; }
+
+class Component extends DCLogic {
+  renderVals() {
+    var r = room(this.props.env || 'staging');
+    var scene = this.props.scene || 'ok';
+    var recent = scene === 'recent';
+
+    var moved = scene === 'refused';
+    // The environment holds ONE api entry, so the chooser has nothing to
+    // choose between.
+    var single = (this.props.entries || 'several') === 'one';
+    var sourceRows = moved ? ROWS_MOVED : ROWS;
+
+    var status, lines;
+    if (scene === 'unauthorized') {
+      status = { label: '401', colour: '#e85c5c', chip: false, meta: 'unauthorized · 96ms · 104 B · billing · ' + r.short };
+      lines = BODY_401;
+    } else if (scene === 'refused') {
+      // no code, no timing, no size: there is no reply to describe
+      status = { label: 'not sent', colour: '#e85c5c', chip: true, meta: 'no request was built · nothing reached billing' };
+      lines = REFUSED;
+    } else if (scene === 'no reply') {
+      status = { label: 'fate unknown', colour: '#e8b45a', chip: true, meta: 'no reply · 20.0s · billing · ' + r.short };
+      lines = LOST;
+    } else {
+      status = { label: '200', colour: '#8be0c8', chip: false, meta: 'ok · 184ms · 182 B · billing · ' + r.short };
+      lines = BODY_200;
+    }
+
+    return {
+      voidBackground: r.background,
+      envColour: r.colour,
+      envTint: r.tint,
+      envLabel: r.label,
+      resolvedOrigin: r.origin,
+
+      // #115 AC: disabled rather than HIDDEN at one entry. The box and the
+      // row stay; the caret and the hover affordance go, and the name drops
+      // to the recessed weight that says "this is a fact, not a control".
+      chooserName: single ? 'api' : 'billing',
+      chooserCaretDisplay: single ? 'none' : 'inline',
+      chooserBackground: single ? 'rgba(232,236,246,0.035)' : 'rgba(232,236,246,0.07)',
+      chooserColour: single ? 'rgba(232,236,246,0.52)' : 'rgba(232,236,246,0.86)',
+
+      // #137: three, not two. The re-run that broke the two live bindings
+      // ended the captured one as well.
+      corePrompt: scene === 'refused'
+        ? 'nothing was sent — three values could not be found'
+        : 'call the confirmation endpoint with that id',
+
+      sqlLine1: moved ? 'select id, booking_id, status' : 'select id, booking_id, guest',
+      sqlLine2: 'from bookings where confirmed_at is null',
+      col1: 'id',
+      col2: 'booking_id',
+      col3: moved ? 'status' : 'guest',
+
+      rows: sourceRows.map(function (row) {
+        return {
+          id: row.id,
+          booking: row.booking,
+          guest: row.guest,
+          // The ROW carries the one permitted luminous mark, its left edge;
+          // the COLUMN half of the pair is each bound cell's lifted
+          // background — opaque and non-luminous, so the rule stays true.
+          edge: row.anchor ? '#9e82ff' : 'transparent',
+          edgeGlow: row.anchor ? '0 0 8px rgba(158,130,255,0.70)' : 'none',
+          background: row.anchor ? 'rgba(232,236,246,0.05)' : 'transparent',
+          cellBackground: row.anchor ? 'rgba(124,92,255,0.16)' : 'transparent'
+        };
+      }),
+
+      // Two live, one captured. The captured one came out of a join, which is
+      // the everyday case rather than the exotic one: of nineteen SQL shapes
+      // measured against Decision 20's precondition, six qualify.
+      //
+      // #137 made this strip SCENE-DEPENDENT. In the refused scene the source
+      // pane has re-run, so all three are unresolved — and the captured one is
+      // unresolved for a different reason than the two live ones. A live value
+      // looked for its row and did not find it. A captured value did not look:
+      // its lifetime WAS the rows', and they are gone. Drawing it violet, or
+      // recessed-but-present, beside a refusal that names it would be the
+      // screen contradicting itself.
+      // EVERY MARK ON THE SCREEN CARRIES THE SAME STATE AS THE STRIP.
+      // #137 made the bound-values strip scene-dependent on the argument that
+      // drawing a value violet beside a refusal naming it is the screen
+      // contradicting itself. The same three marks appear ABOVE the strip —
+      // `booking_id` in the URL line, `guest` and `rate` in the body —
+      // and the URL line is the one a reader meets first, so it is the one
+      // the contradiction cost most.
+      pathBookingIdClass: moved ? 'bound unres' : 'bound',
+      bodyGuestClass: moved ? 'bound unres' : 'bound',
+      bodyRateClass: moved ? 'bound unres' : 'bound captured',
+
+      boundHeader: moved
+        ? 'Bound values · 3 unresolved'
+        : 'Bound values · 2 live · 1 captured',
+      boundValues: moved
+        ? [
+            { chipClass: 'bound unres', name: 'booking_id', origin: 'bookings · id 8842 · booking_id', value: 'not found' },
+            { chipClass: 'bound unres', name: 'guest', origin: 'bookings · id 8842 · guest', value: 'no column' },
+            { chipClass: 'bound unres', name: 'rate', origin: 'captured · bookings ⋈ rate_plans · amount', value: 'rows replaced' }
+          ]
+        : [
+            { chipClass: 'bound', name: 'booking_id', origin: 'bookings · id 8842 · booking_id', value: 'BK-2026-8842' },
+            { chipClass: 'bound', name: 'guest', origin: 'bookings · id 8842 · guest', value: 'R. Demir' },
+            // #137 cut the wall-clock stamp this caption used to carry ('· 14:22').
+            // The origin says where the value came from. It says nothing about when,
+            // because Wakil cannot vouch for a copy's truth by its age.
+            // A DECIMAL(10,2), drawn as the JSON number it emits as —
+            // the probe of 2026-09-22 measured that a DECIMAL arrives as a
+            // number and that the declared type, not a lexical form, is what
+            // decides quoting. It is the one drawn value whose body position
+            // carries no quotes.
+            { chipClass: 'bound captured', name: 'rate', origin: 'captured · bookings ⋈ rate_plans · amount', value: '19.90' }
+          ],
+
+      sendNote: r.short === 'production' ? 'Production · a typed confirmation' : 'Staging · sends immediately',
+      sendNoteColour: r.short === 'production' ? rgba('#e85c5c', 0.95) : 'rgba(232,236,246,0.42)',
+      sendBackground: r.short === 'production' ? rgba('#e85c5c', 0.14) : 'rgba(232,236,246,0.10)',
+      sendColour: r.short === 'production' ? '#f3d6d6' : '#e8ecf6',
+      confirmSlotDisplay: r.short === 'production' ? 'flex' : 'none',
+
+      statusLabel: status.label,
+      statusColour: status.colour,
+      statusTint: rgba(status.colour, 0.13),
+      statusMeta: status.meta,
+      codeDisplay: status.chip ? 'none' : 'inline',
+      chipDisplay: status.chip ? 'inline-block' : 'none',
+
+      responseLines: lines,
+      responseDisplay: recent ? 'none' : 'block',
+      credentialNoteDisplay: scene === 'unauthorized' ? 'block' : 'none',
+      headersFoldDisplay: (scene === 'ok' || scene === 'unauthorized') ? 'block' : 'none',
+
+      // Every row carries its entry AND its environment, always. A row readable
+      // only after checking the chooser is not readable, and a column that
+      // appears and disappears as the chooser moves is worse than one that is
+      // always there.
+      recentDisplay: recent ? 'block' : 'none',
+      recentFoldLabel: recent ? 'Recent · 12 ▾' : 'Recent · 12 ▸',
+      history: [
+        { method: 'POST', entry: 'billing', env: 'stg', path: '/v1/bookings/BK-2026-8839/confirm', code: '200', codeColour: codeHue('200'), ms: '184ms' },
+        { method: 'GET', entry: 'billing', env: 'stg', path: '/v1/bookings/BK-2026-8839', code: '200', codeColour: codeHue('200'), ms: '61ms' },
+        { method: 'POST', entry: 'billing', env: 'prod', path: '/v1/bookings/BK-2026-8834/confirm', code: '200', codeColour: codeHue('200'), ms: '221ms' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

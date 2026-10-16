@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/2d-i-failed-source.jsonl",
+  "baseCommit": "fb7e8f09d0f3bb7ce0ee7744b4f3294bf25f643a",
+  "provedAt": "2026-10-06T18:08:53.989535Z",
+  "checkBlob": "466f14368d291feca90d28487f35a38eb8444315"
+}

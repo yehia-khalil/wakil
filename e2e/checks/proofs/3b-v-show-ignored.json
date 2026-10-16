@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-v-show-ignored.jsonl",
+  "baseCommit": "5c38f72852bf3febfa10e09fea88c4df5460e388",
+  "provedAt": "2026-10-15T12:28:32.532769Z",
+  "checkBlob": "487a0302e72865eeda900a633e71b6534ba5cf6e"
+}

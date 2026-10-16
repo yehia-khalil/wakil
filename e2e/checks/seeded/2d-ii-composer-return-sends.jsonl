@@ -1,0 +1,6 @@
+{"do":{"type":{"into":"window.composer","text":"is anyone there"}}}
+{"expect":{"tree":"contains","text":"is anyone there"}}
+{"expect":{"tree":"absent","text":"no agent session"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"no agent session"}}
+{"expect":{"tree":"contains","text":"is anyone there"}}

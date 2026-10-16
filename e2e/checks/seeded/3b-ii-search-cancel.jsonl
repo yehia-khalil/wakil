@@ -1,0 +1,19 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"hotkey":"cmd+shift+f"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"search"}}
+{"do":{"click":"editor.search.regex"}}
+{"expect":{"pane":"editor-1","field":"search.regex","equals":"true"}}
+{"do":{"type":{"into":"editor.search.query","text":"\\w+zq\\d"}}}
+{"expect":{"tree":"contains","text":"searching"}}
+{"do":{"click":"editor.search.cancel"}}
+{"expect":{"pane":"editor-1","field":"search.in_flight","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"search.results","equals":"[]"}}
+{"expect":{"journal":{"contains":"\"cancel\":true"}}}
+{"expect":{"pane":"editor-1","field":"search.cancelled","equals":"true"}}
+{"expect":{"tree":"contains","text":"search cancelled"}}
+{"do":{"click":"editor.search.rerunCancelled"}}
+{"expect":{"tree":"contains","text":"searching"}}
+{"expect":{"pane":"editor-1","field":"search.cancelled","equals":"false"}}

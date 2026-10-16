@@ -1,0 +1,27 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"get","path":[{"literal":"/before"}]}}}
+{"dispatch":{"action":"api_fill_from_curl","params":{"pane":"api-1","text":"curl -X POST 'https://billing.e2e-fixture.invalid/v1/invoices?paid=true' -H 'Authorization: Bearer s3cr3t' -H 'X-Trace: 7' -H 'content-type: application/json' -d '{\"a\":1}' -k"}}}
+{"expect":{"pane":"api-1","field":"entry","equals":"billing"}}
+{"expect":{"pane":"api-1","field":"request.method","equals":"POST"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/v1/invoices"}}
+{"expect":{"pane":"api-1","field":"request.query[0].name","equals":"paid"}}
+{"expect":{"pane":"api-1","field":"request.headers[0].name","equals":"X-Trace"}}
+{"expect":{"pane":"api-1","field":"request.headers[1].name","equals":"content-type"}}
+{"expect":{"pane":"api-1","field":"request.headers[1].value[0].literal","equals":"application/json"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"{\"a\":1}"}}
+{"expect":{"tree":"contains","text":"Filled from cURL · billing · dropped: Authorization, -k"}}
+{"expect":{"tree":"absent","text":"s3cr3t"}}
+{"do":{"click":"api.fill.undo"}}
+{"expect":{"pane":"api-1","field":"entry","equals":"catalog"}}
+{"expect":{"pane":"api-1","field":"request.method","equals":"GET"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/before"}}
+{"dispatch":{"action":"api_fill_from_curl","params":{"pane":"api-1","text":"curl -X POST 'https://billing.e2e-fixture.invalid/v1/invoices'"}}}
+{"expect":{"pane":"api-1","field":"entry","equals":"billing"}}
+{"dispatch":{"action":"api_undo_fill","params":{"pane":"api-1"}}}
+{"expect":{"pane":"api-1","field":"entry","equals":"catalog"}}
+{"expect":{"pane":"api-1","field":"request.method","equals":"GET"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/before"}}
+{"dispatch":{"action":"api_fill_from_curl","params":{"pane":"api-1","text":"curl https://www.billing.e2e-fixture.invalid/v1/x"}}}
+{"expect":{"pane":"api-1","field":"entry","equals":"billing"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/v1/x"}}
+{"expect":{"tree":"contains","text":"host www.billing.e2e-fixture.invalid taken as billing.e2e-fixture.invalid"}}

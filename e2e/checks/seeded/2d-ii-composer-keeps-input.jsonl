@@ -1,0 +1,9 @@
+{"expect":{"tree":"contains","text":"TO SPEAK"}}
+{"do":{"type":{"into":"window.composer","text":"a draft nobody sent"}}}
+{"expect":{"tree":"contains","text":"a draft nobody sent"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"tree":"contains","text":"a draft nobody sent"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":" is still here"}}
+{"expect":{"tree":"contains","text":"a draft nobody sent is still here"}}

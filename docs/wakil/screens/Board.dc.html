@@ -1,0 +1,335 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    .void { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .slab {
+      background: #0e1019;
+      border-radius: 10px;
+      box-shadow:
+        0 8px 36px rgba(0,0,0,0.55),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chip {
+      font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px;
+      text-transform: uppercase; padding: 3px 7px; border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    /* §10's magnetic edges: releasing over a column locks the card into it,
+       and the snap-line is what says WHERE. Armed on every column while a card
+       is in flight, but only the one under the cursor reads as the target —
+       five equally bright lines would say nothing. Violet, and deliberately not
+       luminous: §8 permits exactly one glowing mark inside a surface and it is
+       the anchor's left edge. */
+    .column .snap { opacity: 0; transition: opacity 420ms ease-out; }
+    .column.armed .snap { opacity: 0.3; }
+    .column.armed:hover .snap { opacity: 1; }
+
+    .navbtn {
+      cursor: pointer; color: rgba(232,236,246,0.52);
+      transition: color 240ms ease-out, opacity 420ms ease-out;
+    }
+    .navbtn:hover { color: rgba(232,236,246,0.92); }
+  </style>
+</helmet>
+
+<div class="void" style="background: {{voidBackground}};">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <!-- The rail. Far plane in full: scale .94, opacity .30, blur 1.4px -
+       nothing on it is being read. -->
+  <div style="position: absolute; left: 44px; top: 138px; width: 220px; transform: scale(0.94); transform-origin: left top; opacity: 0.30; filter: blur(1.4px); display: flex; flex-direction: column; gap: 2px;">
+    <div style="display: flex; align-items: center; gap: 11px; padding: 9px 12px;">
+      <div style="width: 2px; height: 14px; border-radius: 1px; background: #9e82ff; box-shadow: 0 0 7px rgba(158,130,255,0.75); flex-shrink: 0;"></div>
+      <div style="font-size: 12px; color: #e8ecf6; flex-grow: 1;">wakil-acceptance</div>
+      <div class="micro" style="color: rgba(232,236,246,0.35);">board</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 11px; padding: 9px 12px;">
+      <div style="width: 2px; height: 14px; flex-shrink: 0;"></div>
+      <div style="font-size: 12px; color: rgba(232,236,246,0.70); flex-grow: 1;">bookings</div>
+      <div class="micro" style="color: rgba(232,236,246,0.35);">db</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 11px; padding: 9px 12px;">
+      <div style="width: 2px; height: 14px; flex-shrink: 0;"></div>
+      <div style="font-size: 12px; color: rgba(232,236,246,0.70); flex-grow: 1;">orders</div>
+      <div style="width: 5px; height: 5px; border-radius: 50%; background: #8be0c8; box-shadow: 0 0 7px rgba(139,224,200,0.9);"></div>
+      <div class="micro" style="color: rgba(232,236,246,0.35);">db</div>
+    </div>
+  </div>
+
+  <!-- The board's own header: ambient chrome, so it carries the far plane's
+       scale. Exempted from its opacity and blur on the EnvironmentBadge rule -
+       this line says which org and project the board is scoped to, and that
+       is read at the moment it matters. -->
+  <div style="position: absolute; left: 296px; top: 58px; right: 48px; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; transform: scale(0.94); transform-origin: left bottom;">
+    <div style="display: flex; flex-direction: column; gap: 9px;">
+      <div class="micro" style="color: rgba(232,236,246,0.50);">Organisation · Project</div>
+      <div style="display: flex; align-items: baseline; gap: 14px;">
+        <div style="font-size: 15px; color: rgba(232,236,246,0.72);">Initech Labs</div>
+        <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.50);">wakil-acceptance</div>
+        <div class="chip" style="color: {{envColour}}; background: {{envTint}};">{{envLabel}}</div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 18px;">
+      <div class="mono micro" style="color: rgba(232,236,246,0.50); letter-spacing: 1.2px;">{{nav.range}}</div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <div class="navbtn" style="display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 5px; opacity: {{nav.prevOpacity}};" onClick="{{ nav.prev }}">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>
+        </div>
+        <div class="navbtn" style="display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 5px; opacity: {{nav.nextOpacity}};" onClick="{{ nav.next }}">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The board. Columns are slabs on the mid plane: full contrast, crisp,
+       and still. -->
+  <div style="position: absolute; left: 256px; top: 96px; width: 1122px; height: 660px; padding: 44px 40px 48px; overflow: hidden;">
+    <div style="display: flex; gap: 22px; transform: translateX({{board.shift}}); transition: transform 520ms cubic-bezier(0.22, 0.68, 0.14, 1);">
+      <sc-for list="{{board.columns}}" as="column" hint-placeholder-count="5">
+        <div class="slab column {{ column.armed }}" style="width: 244px; flex-shrink: 0; height: 568px; display: flex; flex-direction: column;" onClick="{{ column.drop }}">
+
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 16px 12px;">
+            <div class="micro">{{ column.name }}</div>
+            <div class="mono" style="font-size: 10px; color: rgba(232,236,246,0.52);">{{ column.count }}</div>
+          </div>
+
+          <div class="snap" style="height: 1.5px; margin: 0 16px 11px; border-radius: 1px; background: #7c5cff;"></div>
+
+          <div style="display: flex; flex-direction: column; gap: 10px; padding: 0 12px 14px; min-height: 0; overflow-y: auto;">
+            <sc-for list="{{ column.cards }}" as="card" hint-placeholder-count="3">
+              <div style="background: {{card.background}}; border-radius: 6px; padding: 12px 13px; display: flex; flex-direction: column; gap: 9px; box-shadow: {{card.shadow}}; transform: {{card.lift}}; transition: transform 420ms ease-out, box-shadow 420ms ease-out, background 420ms ease-out; cursor: pointer;" onClick="{{ card.pick }}">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                  <span class="mono" style="font-size: 9.5px; letter-spacing: 0.5px; color: rgba(232,236,246,0.58);">{{ card.id }}</span>
+                  <sc-if value="{{ card.hasChip }}" hint-placeholder-val="{{ card.hasChip }}">
+                    <span class="chip" style="color: {{card.chipColour}}; background: {{card.chipTint}};">{{ card.chipLabel }}</span>
+                  </sc-if>
+                </div>
+                <div style="font-size: 12.5px; line-height: 1.42; color: rgba(232,236,246,0.92); text-wrap: pretty;">{{ card.title }}</div>
+                <div class="micro" style="color: rgba(232,236,246,0.50);">{{ card.who }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Near plane. §9: the thread rises out of the bottom edge's glow, and the
+       bleed lifts locally beneath it while work is in flight. -->
+  <div style="position: absolute; left: 296px; right: 48px; bottom: 74px; display: flex; align-items: center; justify-content: space-between; gap: 28px;">
+    <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+      <div style="width: 1.5px; height: 18px; border-radius: 1px; background: #9e82ff; flex-shrink: 0;"></div>
+      <div style="font-size: 16px; color: rgba(232,236,246,0.50);">{{board.prompt}}</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <div class="micro" style="color: rgba(232,236,246,0.50);">Hold ⌥ to speak</div>
+      <div class="micro" style="color: rgba(232,236,246,0.50);">⌘P open</div>
+      <div class="micro" style="color: rgba(232,236,246,0.50);">⌘K actions</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"env":{"editor":"enum","options":["local","staging","production"],"default":"staging","section":"Environment"},"$preview":{"width":1440,"height":900}}'>
+function rgba(hex, a) {
+  var r = parseInt(hex.slice(1, 3), 16);
+  var g = parseInt(hex.slice(3, 5), 16);
+  var b = parseInt(hex.slice(5, 7), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
+function voidBackground(bleedA, bleedB) {
+  return [
+    'radial-gradient(circle 1100px at 110% -10%, ',
+    rgba(bleedB, 0.232), ' 0%, ',
+    rgba(bleedB, 0.086), ' 41%, ',
+    rgba(bleedB, 0.029), ' 59%, ',
+    rgba(bleedB, 0.007), ' 77%, ',
+    rgba(bleedB, 0), ' 100%), ',
+    'radial-gradient(circle 1200px at 50% 118%, ',
+    rgba(bleedA, 0.336), ' 0%, ',
+    rgba(bleedA, 0.124), ' 42%, ',
+    rgba(bleedA, 0.048), ' 58%, ',
+    rgba(bleedA, 0.014), ' 75%, ',
+    rgba(bleedA, 0), ' 92%), ',
+    'linear-gradient(180deg, #030408 0%, #070812 100%)'
+  ].join('');
+}
+
+function room(env) {
+  if (env === 'production') {
+    return {
+      background: voidBackground('#e85c5c', '#e85c5c'),
+      colour: '#e85c5c',
+      tint: rgba('#e85c5c', 0.13),
+      label: 'Production'
+    };
+  }
+  return {
+    background: voidBackground('#7c5cff', '#4fb9e8'),
+    colour: '#8be0c8',
+    tint: rgba('#8be0c8', 0.12),
+    label: env === 'local' ? 'Local' : 'Staging'
+  };
+}
+
+var COLUMNS = [
+  { id: 'backlog', name: 'Backlog' },
+  { id: 'progress', name: 'In progress' },
+  { id: 'review', name: 'In review' },
+  { id: 'done', name: 'Done' },
+  { id: 'archive', name: 'Archive' }
+];
+
+// Green is local / staging / healthy / completed, amber is pending or caution,
+// red is production / destructive / failed. Never decorative, anywhere - so a
+// card without one of those meanings carries no chip.
+var CARDS = [
+  { id: 'RAF-2841', col: 'backlog', who: 'Ada', title: 'Board columns inherit the active project' },
+  { id: 'RAF-2838', col: 'backlog', who: 'Ada', title: 'Rail shows a board pane’s working state' },
+  { id: 'RAF-2835', col: 'backlog', who: 'Ada', title: 'Org switch drops panes naming a dead root', chip: 'Pending', hue: '#e8b45a' },
+  { id: 'RAF-2831', col: 'backlog', who: 'Ada', title: 'Snap solver coordinates a shared edge on resize' },
+  { id: 'RAF-2829', col: 'progress', who: 'Ada', title: 'Pass --mcp-config per session with WAKIL_ORG' },
+  { id: 'RAF-2827', col: 'progress', who: 'Ada', title: 'A sorted result that is still truncated admits it' },
+  { id: 'RAF-2822', col: 'review', who: 'Ada', title: 'A paged result reports no total, deliberately', chip: 'Pending', hue: '#e8b45a' },
+  { id: 'RAF-2814', col: 'done', who: 'Ada', title: 'The void carries the four Core states', chip: 'Done', hue: '#8be0c8' },
+  { id: 'RAF-2809', col: 'done', who: 'Ada', title: 'Production badge exempt from far-plane opacity', chip: 'Done', hue: '#8be0c8' },
+  { id: 'RAF-2803', col: 'done', who: 'Ada', title: 'Keychain service name is wakil:<org>:<ref>', chip: 'Done', hue: '#8be0c8' },
+  { id: 'RAF-2788', col: 'archive', who: 'Ada', title: 'Iridescent sphere Core, superseded by the room' }
+];
+
+var COLUMN_STEP = 266;
+var MAX_SCROLL = 1;
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    // The board opens with a card already lifted, so the in-flight state and
+    // its snap-lines are what you see first. Click a column to set it down.
+    this.state = { picked: 'RAF-2835', scroll: 0, moved: {} };
+  }
+
+  columnOf(card) {
+    return this.state.moved[card.id] || card.col;
+  }
+
+  renderVals() {
+    var self = this;
+    var picked = this.state.picked;
+    var r = room(this.props.env || 'staging');
+
+    var columns = COLUMNS.map(function (column) {
+      var cards = CARDS.filter(function (card) {
+        return self.columnOf(card) === column.id;
+      }).map(function (card) {
+        var isPicked = picked === card.id;
+        return {
+          id: card.id,
+          title: card.title,
+          who: card.who,
+          hasChip: !!card.chip,
+          chipLabel: card.chip || '',
+          chipColour: card.hue || 'transparent',
+          chipTint: card.hue ? rgba(card.hue, 0.13) : 'transparent',
+          // §8's lifted background: opaque, non-luminous. The one luminous
+          // mark is the left edge, and only while the card is in flight.
+          background: isPicked ? 'rgba(232,236,246,0.09)' : 'rgba(232,236,246,0.045)',
+          shadow: isPicked
+            ? '0 14px 34px rgba(0,0,0,0.60), inset 2px 0 0 #9e82ff'
+            : '0 2px 8px rgba(0,0,0,0.35)',
+          lift: isPicked ? 'scale(1.02)' : 'none',
+          pick: function (event) {
+            if (event && event.stopPropagation) { event.stopPropagation(); }
+            self.setState({ picked: isPicked ? null : card.id });
+          }
+        };
+      });
+
+      var count = String(cards.length);
+      return {
+        name: column.name,
+        count: count.length < 2 ? '0' + count : count,
+        cards: cards,
+        armed: picked ? 'armed' : '',
+        drop: function () {
+          if (!picked) { return; }
+          var moved = Object.assign({}, self.state.moved);
+          moved[picked] = column.id;
+          self.setState({ moved: moved, picked: null });
+        }
+      };
+    });
+
+    var scroll = this.state.scroll;
+    return {
+      voidBackground: r.background,
+      envColour: r.colour,
+      envTint: r.tint,
+      envLabel: r.label,
+      board: {
+        columns: columns,
+        shift: '-' + scroll * COLUMN_STEP + 'px',
+        prompt: picked
+          ? 'Set ' + picked + ' down in a column, or say where it goes'
+          : 'Ask, or move a card'
+      },
+      nav: {
+        range: (scroll + 1) + '–' + (scroll + 4) + ' / 5',
+        prevOpacity: scroll > 0 ? '1' : '0.25',
+        nextOpacity: scroll < MAX_SCROLL ? '1' : '0.25',
+        prev: function () {
+          self.setState({ scroll: Math.max(0, self.state.scroll - 1) });
+        },
+        next: function () {
+          self.setState({ scroll: Math.min(MAX_SCROLL, self.state.scroll + 1) });
+        }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

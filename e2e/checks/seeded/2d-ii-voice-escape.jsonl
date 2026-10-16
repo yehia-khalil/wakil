@@ -1,0 +1,12 @@
+{"do":{"type":{"into":"window.composer","text":"keep this"}}}
+{"expect":{"tree":"contains","text":"keep this"}}
+{"do":{"hold":"option"}}
+{"expect":{"tree":"contains","text":"Hearing nothing from E2E Microphone"}}
+{"expect":{"tree":"contains","text":"say hello from the microphone"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"contains","text":"TO SPEAK"}}
+{"expect":{"tree":"absent","text":"say hello from the microphone"}}
+{"do":{"release":"option"}}
+{"expect":{"tree":"contains","text":"keep this"}}
+{"expect":{"tree":"absent","text":"say hello from the microphone"}}
+{"expect":{"tree":"absent","text":"HEARD · RETURN SENDS"}}

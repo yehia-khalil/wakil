@@ -1,0 +1,11 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
+{"do":{"keys":"echo aa bb cc"}}
+{"expect":{"pane":"terminal-1","field":"grid","contains":"% echo aa bb cc"}}
+{"do":{"hotkey":"option+Backspace"}}
+{"do":{"hotkey":"option+Left"}}
+{"do":{"keys":"X"}}
+{"do":{"hotkey":"option+Right"}}
+{"do":{"keys":"Y"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].command","contains":"echo aa Xbb Y"}}

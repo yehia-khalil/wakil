@@ -1,0 +1,9 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"touch wakil-e2e-orphan-marker && tail -f wakil-e2e-orphan-marker"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks","equals":"[]"}}
+{"expect":{"process":{"any-matching":"tail -f wakil-e2e-orphan-marker"}}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"null"}}
+{"expect":{"process":{"none-matching":"tail -f wakil-e2e-orphan-marker"}}}

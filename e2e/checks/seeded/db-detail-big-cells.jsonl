@@ -1,0 +1,23 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"cells","driver":"sqlite","dsn":"{fixtureRoot}/cells.db"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-1","database":"cells","query":"SELECT id, label, doc, big FROM cells WHERE id IN (2, 3) ORDER BY id"}}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"2"}}
+{"expect":{"pane":"db-1","field":"rows[1][3]","contains":"-BIG-END"}}
+{"dispatch":{"action":"pane_select_cell","params":{"pane":"db-1","row":0,"column":"doc"}}}
+{"do":{"click":"rail.db-1"}}
+{"do":{"press":"Space"}}
+{"expect":{"tree":"contains","text":"\"k4999\" : 4999"}}
+{"expect":{"tree":"contains","text":"\"k0000\" : 0"}}
+{"do":{"press":"Down"}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"1"}}
+{"expect":{"tree":"contains","text":"\"c\" : 3"}}
+{"expect":{"tree":"absent","text":"\"k4999\" : 4999"}}
+{"do":{"press":"Up"}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"0"}}
+{"expect":{"tree":"contains","text":"\"k4999\" : 4999"}}
+{"do":{"press":"Down"}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"1"}}
+{"expect":{"tree":"contains","text":"\"c\" : 3"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"\"c\" : 3"}}
+{"expect":{"pane":"db-1","field":"selection.anchorRow","equals":"1"}}

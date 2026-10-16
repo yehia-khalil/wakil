@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/db-cancel-click.jsonl",
+  "baseCommit": "e6c782b4f52f9e4c17f82bfadd17b13c8252445a",
+  "provedAt": "2026-10-14T20:58:03.235922Z",
+  "checkBlob": "18656dd8eb0026bbf3240d30a3ca2a735374abfa"
+}

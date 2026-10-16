@@ -1,0 +1,5 @@
+{"do":{"resize":{"width":1000,"height":900}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"e2e-provider"}}
+{"expect":{"frame":"settings.row.e2e-provider.unlink","minWidth":30,"maxHeight":24}}

@@ -1,0 +1,12 @@
+diff --git a/app/Sources/WakilKit/Terminal/ShellIntegration.swift b/app/Sources/WakilKit/Terminal/ShellIntegration.swift
+index ebafd14..6ef2942 100644
+--- a/app/Sources/WakilKit/Terminal/ShellIntegration.swift
++++ b/app/Sources/WakilKit/Terminal/ShellIntegration.swift
+@@ -66,7 +66,6 @@ fi
+ # Without this, `which kubectl` fails in Wakil.app and succeeds in every
+ # test, because a test inherits a terminal's environment and the bundled
+ # app inherits launchd's.
+-[ -r "$ZDOTDIR/.zprofile" ] && source "$ZDOTDIR/.zprofile"
+ [ -r "$ZDOTDIR/.zshrc" ] && source "$ZDOTDIR/.zshrc"
+ 
+ __wakil_osc() { printf '\033]%s\007' "$1" }

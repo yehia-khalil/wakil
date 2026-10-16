@@ -1,0 +1,3 @@
+# The seeded canvas is a build output — it bundles a ~2 MiB editor payload.
+# Re-seed it from the .dc.html sources and canvas.json instead.
+wakil-new-screens.html

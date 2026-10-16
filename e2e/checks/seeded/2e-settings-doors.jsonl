@@ -1,0 +1,16 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"do":{"click":"settings.door.register"}}
+{"expect":{"tree":"contains","text":"The directory is derived from this id, and Wakil never shows you a token."}}
+{"do":{"type":{"into":"settings.register.id","text":"probe-account"}}}
+{"do":{"type":{"into":"settings.register.claudePath","text":"-edited"}}}
+{"do":{"click":"settings.register.add"}}
+{"expect":{"tree":"contains","text":"You will sign in, then approve a long-lived credential"}}
+{"do":{"click":"settings.login.notNow"}}
+{"expect":{"tree":"absent","text":"You will sign in, then approve a long-lived credential"}}
+{"do":{"click":"settings.door.adopt"}}
+{"expect":{"tree":"contains","text":"in e2e-fixture-two"}}
+{"do":{"click":"settings.row.e2e-fixture-two.e2e-provider-two.adopt"}}
+{"expect":{"tree":"contains","text":"shared, homes to e2e-fixture-two"}}
+{"expect":{"tree":"contains","text":"2 binding(s) in this organisation have no stored credential"}}
+{"expect":{"tree":"contains","text":"every account on this machine is already bound here"}}

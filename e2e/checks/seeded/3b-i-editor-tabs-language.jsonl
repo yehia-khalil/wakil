@@ -1,0 +1,32 @@
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].language","equals":"plaintext"}}
+{"dispatch":{"action":"editor_new_scratch","params":{"pane":"editor-1","language":"json"}}}
+{"expect":{"pane":"editor-1","field":"tabs[1].scratch","equals":"2"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].language","equals":"json"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"parity":{"action":"editor_focus_tab","params":{"pane":"editor-1","index":0},"click":"editor.tab.0","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"select 1\nfrom bookings"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_goto","params":{"pane":"editor-1","line":2,"column":6}}}
+{"expect":{"pane":"editor-1","field":"cursor.line","equals":"2"}}
+{"expect":{"pane":"editor-1","field":"cursor.column","equals":"6"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-1","range":{"start":{"line":2,"column":6},"end":{"line":2,"column":14}}}}}
+{"expect":{"pane":"editor-1","field":"selected_text","equals":"bookings"}}
+{"expect":{"pane":"editor-1","field":"selection.start.line","equals":"2"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"keys":"set language"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Language"}}
+{"do":{"keys":"sql"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"parity":{"action":"editor_set_language","params":{"pane":"editor-1","language":"sql"},"click":"palette.row.sql","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].language","equals":"sql"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].language","equals":"json"}}
+{"expect":{"tree":"absent","text":"Placeholder: Language"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_set_language\""}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}

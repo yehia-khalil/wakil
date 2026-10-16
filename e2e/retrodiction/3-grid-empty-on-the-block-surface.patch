@@ -1,0 +1,13 @@
+diff --git a/app/Sources/WakilKit/Terminal/TerminalStore.swift b/app/Sources/WakilKit/Terminal/TerminalStore.swift
+index 369a18c..879f100 100644
+--- a/app/Sources/WakilKit/Terminal/TerminalStore.swift
++++ b/app/Sources/WakilKit/Terminal/TerminalStore.swift
+@@ -599,7 +599,7 @@ public actor TerminalStore {
+             // `TerminalSnapshot.grid`'s own rule, and the reason this is
+             // affordable at all: the bound is `cols × rows`, per pane,
+             // per dirty frame, not the history.
+-            grid: session.screenLines(),
++            grid: onTheGrid ? session.screenLines() : [],
+             // The two walk-fix seams (walk-defects list): the row the
+             // current prompt began on, and the pty's own cursor — both
+             // tracked by `TerminalSession` already, published here

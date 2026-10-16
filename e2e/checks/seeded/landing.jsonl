@@ -1,0 +1,5 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"expect":{"tree":"contains","text":"e2e-project"}}
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"expect":{"tree":"contains","text":"e2e-provider"}}
+{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}

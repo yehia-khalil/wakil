@@ -1,0 +1,13 @@
+diff --git a/app/Sources/WakilKit/Terminal/TerminalStore.swift b/app/Sources/WakilKit/Terminal/TerminalStore.swift
+index 369a18c..25dc5bb 100644
+--- a/app/Sources/WakilKit/Terminal/TerminalStore.swift
++++ b/app/Sources/WakilKit/Terminal/TerminalStore.swift
+@@ -604,7 +604,7 @@ public actor TerminalStore {
+             // current prompt began on, and the pty's own cursor — both
+             // tracked by `TerminalSession` already, published here
+             // alongside the grid they share a coordinate space with.
+-            promptRow: session.promptRow, cursorRow: cursor.row, cursorCol: cursor.col,
++            promptRow: nil, cursorRow: nil, cursorCol: nil,
+             // `grid`'s own colour, read from SwiftTerm's per-cell
+             // `Attribute` and coalesced into runs — see
+             // `TerminalSession.styledScreenLines`'s own doc comment.

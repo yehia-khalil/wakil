@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/2e-settings-unlink-indicator.jsonl",
+  "baseCommit": "b4410759858cf4eb92c0ad8a68c9d5d91d580870",
+  "provedAt": "2026-10-15T14:24:25.429242Z",
+  "checkBlob": "9bd092db73140f45f9ed49ca08e9adfef8116fad"
+}

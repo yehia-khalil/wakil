@@ -1,0 +1,39 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"editor-1","field":"kind","equals":"editor"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"visible_range.first","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}
+{"do":{"keys":"typed here"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":11}}}}}
+{"expect":{"pane":"editor-1","field":"selected_text","equals":"typed here"}}
+{"expect":{"pane":"editor-1","field":"selection.end.column","equals":"11"}}
+{"do":{"hotkey":"cmd+s"}}
+{"expect":{"tree":"contains","text":"Save as (a path inside the project)"}}
+{"expect":{"tree":"absent","text":"Save changes"}}
+{"expect":{"tree":"contains","text":"e2e-project/"}}
+{"do":{"keys":"scratch-saved.txt"}}
+{"expect":{"tree":"contains","text":"e2e-project/scratch-saved.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-project/scratch-saved.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"null"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].disk_state","equals":"inSync"}}
+{"expect":{"tree":"absent","text":"Save as (a path inside the project)"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-1","range":{"start":{"line":1,"column":11},"end":{"line":1,"column":11}}}}}
+{"expect":{"pane":"editor-1","field":"cursor.column","equals":"11"}}
+{"do":{"keys":" and more"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"do":{"hotkey":"cmd+s"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].saving","equals":"false"}}
+{"expect":{"tree":"absent","text":"Save changes"}}
+{"expect":{"tree":"absent","text":"Save as (a path inside the project)"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs","equals":"[]"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/scratch-saved.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-project/scratch-saved.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].language","equals":"plaintext"}}
+{"dispatch":{"action":"editor_select","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":20}}}}}
+{"expect":{"pane":"editor-1","field":"selected_text","equals":"typed here and more"}}

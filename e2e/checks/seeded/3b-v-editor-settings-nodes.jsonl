@@ -1,0 +1,52 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"do":{"click":"settings.tree.editor"}}
+{"expect":{"tree":"contains","text":"FONT SIZE"}}
+{"expect":{"tree":"contains","text":"WORD WRAP"}}
+{"expect":{"tree":"contains","text":"AUTOSAVE"}}
+{"expect":{"tree":"contains","text":"stored in ~/.wakil/settings.json"}}
+{"dispatch":{"action":"ctx_editor_settings","params":{}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"12"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.wordWrap","equals":"false"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.autosave","equals":"off"}}
+{"do":{"focus":"settings.editor.fontSize"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"16"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"16"}}
+{"do":{"focus":"settings.editor.fontSize"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"30"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"font size 30 is out of range: 9 to 24"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"16"}}
+{"do":{"focus":"settings.editor.fontSize"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"big"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Font size must be a whole number from 9 to 24"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"16"}}
+{"do":{"focus":"settings.editor.fontSize"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"14"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"14"}}
+{"expect":{"tree":"absent","text":"Font size must be a whole number"}}
+{"expect":{"tree":"absent","text":"is out of range"}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"14"}}
+{"expect":{"tree":"contains","text":"Value: 14"}}
+{"dispatch":{"action":"ctx_set_editor_settings","params":{"fontSize":8},"refuses":"font size 8 is out of range: 9 to 24"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"14"}}
+{"parity":{"action":"ctx_set_editor_settings","params":{"wordWrap":true},"click":"settings.editor.wordWrap.on","assert":"tree"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.wordWrap","equals":"true"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"14"}}
+{"do":{"click":"settings.editor.wordWrap.off"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.wordWrap","equals":"false"}}
+{"do":{"click":"settings.editor.autosave.pause"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.autosave","equals":"pause"}}
+{"do":{"click":"settings.editor.autosave.focus"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.autosave","equals":"focus"}}
+{"do":{"click":"settings.editor.autosave.off"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.autosave","equals":"off"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"14"}}

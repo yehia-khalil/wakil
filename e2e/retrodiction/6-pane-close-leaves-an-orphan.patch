@@ -1,0 +1,17 @@
+diff --git a/app/Sources/WakilKit/Terminal/TerminalStore.swift b/app/Sources/WakilKit/Terminal/TerminalStore.swift
+index 369a18c..f8e502a 100644
+--- a/app/Sources/WakilKit/Terminal/TerminalStore.swift
++++ b/app/Sources/WakilKit/Terminal/TerminalStore.swift
+@@ -427,6 +427,12 @@ public actor TerminalStore {
+     /// Kills one pane's shell and waits for it. Safe concurrently, twice,
+     /// and on a pane that never opened.
+     public func close(paneId: String) async {
++        // RECONSTRUCTION (#253): a pane that closes without killing its
++        // shell — 2c-iii's check 21 / runbook item 8, the orphan. The pane
++        // vanishes from the canvas exactly as it should; only `ps` can see
++        // the difference, which is why this check reads the process table
++        // and not the window.
++        if true { return }
+         if let existing = teardownTasks[paneId] {
+             await existing.value
+             return

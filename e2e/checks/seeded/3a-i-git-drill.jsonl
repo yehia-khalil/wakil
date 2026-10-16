@@ -1,0 +1,36 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"do":{"click":"landing.row.open:git"}}
+{"expect":{"pane":"git-1","field":"kind","equals":"git"}}
+{"expect":{"tree":"contains","text":"STAGED"}}
+{"dispatch":{"action":"git_select","params":{"pane":"git-1","root":"{fixtureRoot}/e2e-api","path":"app.txt","group":"staged"}}}
+{"expect":{"pane":"git-1","field":"folded","equals":"true"}}
+{"expect":{"pane":"git-1","field":"selection.path","equals":"app.txt"}}
+{"expect":{"pane":"git-1","field":"selection.group","equals":"staged"}}
+{"expect":{"pane":"git-1","field":"diff.loading","equals":"false"}}
+{"expect":{"pane":"git-1","field":"diff.error","equals":"null"}}
+{"expect":{"tree":"contains","text":"e2e-api / app.txt · 1 of 5 · ↑↓"}}
+{"expect":{"tree":"absent","text":"STAGED"}}
+{"expect":{"tree":"contains","text":"HTML content"}}
+{"expect":{"tree":"absent","text":"e2e-git · not a git repository"}}
+{"dispatch":{"action":"git_step","params":{"pane":"git-1","delta":1}}}
+{"expect":{"pane":"git-1","field":"selection.group","equals":"changed"}}
+{"expect":{"tree":"contains","text":"e2e-api / app.txt · 2 of 5 · ↑↓"}}
+{"dispatch":{"action":"git_step","params":{"pane":"git-1","delta":2}}}
+{"expect":{"pane":"git-1","field":"selection.path","equals":"notes"}}
+{"dispatch":{"action":"git_step","params":{"pane":"git-1","delta":1}}}
+{"expect":{"pane":"git-1","field":"selection.root","contains":"/e2e-portal"}}
+{"expect":{"pane":"git-1","field":"selection.path","equals":"index.txt"}}
+{"expect":{"tree":"contains","text":"e2e-portal / index.txt · 5 of 5 · ↑↓"}}
+{"dispatch":{"action":"git_step","params":{"pane":"git-1","delta":-1}}}
+{"expect":{"pane":"git-1","field":"selection.root","contains":"/e2e-api"}}
+{"expect":{"pane":"git-1","field":"selection.path","equals":"notes"}}
+{"dispatch":{"action":"git_unfold","params":{"pane":"git-1"}}}
+{"expect":{"pane":"git-1","field":"folded","equals":"false"}}
+{"expect":{"pane":"git-1","field":"selection.path","equals":"notes"}}
+{"expect":{"pane":"git-1","field":"selection.group","equals":"untracked"}}
+{"expect":{"tree":"contains","text":"STAGED"}}
+{"expect":{"tree":"contains","text":"e2e-git · not a git repository"}}
+{"dispatch":{"action":"git_fold","params":{"pane":"git-1"}}}
+{"expect":{"pane":"git-1","field":"folded","equals":"true"}}
+{"expect":{"tree":"contains","text":"e2e-api / notes · 4 of 5 · ↑↓"}}

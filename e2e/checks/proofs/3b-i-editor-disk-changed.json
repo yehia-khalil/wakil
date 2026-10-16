@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-i-editor-disk-changed.jsonl",
+  "baseCommit": "0c9e85c6f259709c820148fa01cff5fb2be62f8c",
+  "provedAt": "2026-10-12T19:51:14.376655Z",
+  "checkBlob": "e0c7ad1b9206ccf5f6be7eaf486bb7d2c9ca3a20"
+}

@@ -1,0 +1,23 @@
+{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}
+{"dispatch":{"action":"api_open","params":{"entry":"billing"}}}
+{"expect":{"pane":"api-1","field":"kind","equals":"api"}}
+{"expect":{"tree":"absent","text":"CONTINUE · NEWEST FIRST"}}
+{"expect":{"pane":"api-1","field":"entry","equals":"billing"}}
+{"expect":{"pane":"api-1","field":"environment","equals":"staging"}}
+{"expect":{"pane":"api-1","field":"credentialed","equals":"true"}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://billing.e2e-fixture.invalid"}}
+{"expect":{"pane":"api-1","field":"request.method","equals":"GET"}}
+{"expect":{"pane":"api-1","field":"request.path","equals":"[]"}}
+{"expect":{"pane":"api-1","field":"request.query","equals":"[]"}}
+{"expect":{"pane":"api-1","field":"request.body","equals":"[]"}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"none"}}
+{"expect":{"tree":"contains","text":"https://billing.e2e-fixture.invalid"}}
+{"expect":{"tree":"contains","text":"nothing sent yet"}}
+{"expect":{"tree":"contains","text":"supplied by the billing entry"}}
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"expect":{"pane":"api-2","field":"entry","equals":"catalog"}}
+{"expect":{"pane":"api-2","field":"credentialed","equals":"false"}}
+{"expect":{"pane":"api-2","field":"request.origin","equals":"https://catalog.e2e-fixture.invalid"}}
+{"dispatch":{"action":"api_open","params":{"pane":"api-2","entry":"billing"}}}
+{"expect":{"pane":"api-2","field":"entry","equals":"billing"}}
+{"expect":{"pane":"api-2","field":"credentialed","equals":"true"}}

@@ -1,0 +1,14 @@
+{"dispatch":{"action":"api_open","params":{"entry":"billing"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"post","path":[{"literal":"/bookings/41/confirm"}],"body":[{"literal":"{}"}]}}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"none"}}
+{"parity":{"action":"api_send","params":{"pane":"api-1","statement":"POST /bookings/41/confirm"},"click":"api.send","assert":"read_pane"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"get","path":[{"literal":"/bookings/"},{"slot":"id"}],"body":[]}}}
+{"dispatch":{"action":"api_request","params":{"pane":"api-1"}}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"refusal"}}
+{"expect":{"pane":"api-1","field":"response.failures[0].region","equals":"Path"}}
+{"expect":{"pane":"api-1","field":"request.path[1].slot","equals":"id"}}
+{"expect":{"pane":"api-1","field":"recent","equals":"[]"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","path":[{"literal":"/bookings/41"}]}}}
+{"dispatch":{"action":"api_request","params":{"pane":"api-1"}}}
+{"expect":{"pane":"api-1","field":"response.state","equals":"refusal"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/bookings/41"}}

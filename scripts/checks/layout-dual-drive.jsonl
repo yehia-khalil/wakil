@@ -1,0 +1,9 @@
+{"action":"pane_open","params":{"kind":"db","title":"Left"}}
+{"action":"pane_open","params":{"kind":"db","title":"Right"}}
+{"action":"pane_open","params":{"kind":"db","title":"Below"}}
+{"action":"pane_move","params":{"id":"db-1","x":100,"y":100}}
+{"action":"pane_resize","params":{"id":"db-1","width":300,"height":400}}
+{"action":"pane_snap","params":{"id":"db-2","toPaneId":"db-1","edge":"left"}}
+{"action":"pane_focus","params":{"id":"db-3"}}
+{"action":"pane_maximize","params":{"id":"db-3"}}
+{"action":"pane_restore","params":{}}

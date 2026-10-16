@@ -1,0 +1,12 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"DISPLAY NAME"}}
+{"expect":{"tree":"contains","text":"JIRA SITE"}}
+{"do":{"type":{"into":"settings.org.jiraBase","text":"https://e2e.atlassian.net"}}}
+{"expect":{"tree":"contains","text":"https://e2e.atlassian.net"}}
+{"parity":{"action":"ctx_update_org","params":{"id":"e2e-fixture","jiraBase":"https://e2e.atlassian.net"},"click":"settings.org.jiraBase.save","assert":"tree"}}
+{"do":{"type":{"into":"settings.org.displayName","text":"-abandoned"}}}
+{"expect":{"tree":"contains","text":"-abandoned"}}
+{"do":{"click":"settings.org.displayName.revert"}}
+{"expect":{"tree":"absent","text":"-abandoned"}}
+{"expect":{"tree":"contains","text":"E2E Fixture"}}

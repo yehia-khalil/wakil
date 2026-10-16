@@ -1,0 +1,13 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"echo buildLaunch > launcher.txt && git init -q && git add -A && git -c user.name=e2e -c user.email=e2e commit -qm seed"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"dispatch":{"action":"ctx_set_environment","params":{"name":"qa"}}}
+{"dispatch":{"action":"ctx_set_environment","params":{"name":"staging"}}}
+{"do":{"type":{"into":"window.composer","text":"where is build launch defined"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"the agent was handed buildLaunch from the code"}}
+{"expect":{"tree":"contains","text":"build launch → buildLaunch"}}
+{"expect":{"journal":{"contains":"buildLaunch (code"}}}

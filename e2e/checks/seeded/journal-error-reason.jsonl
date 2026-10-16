@@ -1,0 +1,3 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_cancel","params":{"pane":"api-1"},"refuses":"nothing is in flight"}}
+{"expect":{"journal":{"contains":"nothing is in flight on this pane"}}}

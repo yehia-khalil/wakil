@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/palette-escape.jsonl",
+  "baseCommit": "f25a762e5ee7b303ce0ca6efa5715891820d0e53",
+  "provedAt": "2026-10-10T19:57:57.198384Z",
+  "checkBlob": "510b54baf3d0cafd8881f74eb75eaff9b393f104"
+}

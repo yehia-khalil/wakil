@@ -1,0 +1,5 @@
+{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}
+{"dispatch":{"action":"term_open","params":{}}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"tree":"absent","text":"CONTINUE · NEWEST FIRST"}}
+{"expect":{"tree":"contains","text":"zsh"}}

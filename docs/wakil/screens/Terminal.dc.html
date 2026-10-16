@@ -1,0 +1,580 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    .void { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .slab {
+      background: #0e1019; border-radius: 10px;
+      box-shadow:
+        0 8px 36px rgba(0,0,0,0.55),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chip {
+      font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px;
+      text-transform: uppercase; padding: 3px 7px; border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    /* THE BLOCK IS THE TERMINAL'S ROW.
+       §8's surface is built around a row and an anchor; a terminal's natural
+       unit is a command with its output. Making the block the row buys three
+       things for one structure and no new chrome: Invariant 3's deictic
+       references get something to resolve against ("that error" is a block),
+       §8's hover-revealed row actions apply unchanged, and the anchor
+       treatment already exists. A scrollback of loose lines has no unit and
+       can offer none of it.
+
+       CONFIRMED 2026-09-16 by #39, which made the block the unit of one
+       terminal action, and by §9, which now defines it. */
+    .block { position: relative; padding: 0 20px 0 20px; }
+    .block .actions { opacity: 0; transition: opacity 240ms ease-out; }
+    .block:hover .actions { opacity: 1; }
+    .act { cursor: pointer; color: rgba(232,236,246,0.52); transition: color 240ms ease-out; }
+    .act:hover { color: rgba(232,236,246,0.92); }
+
+    /* A DIRECTORY LISTING IS A RESULT SET. That sentence is 2c-ii's, about
+       table lists, and it is the whole answer to "does the terminal need a
+       file browser". It does not: ls already produces the listing, and §8's
+       surface already knows how to draw one — so the browser is a RENDERING of
+       output this pane was going to print anyway, with §8's hover-revealed row
+       action opening a file in the editor. A sidebar would be a second way to
+       ask the same question, and §1 forbids sidebars outright.
+
+       AFTER #43 this is a per-command allowlist over the BLOCK HISTORY, and
+       that is what lets it survive a character grid: the live grid cannot draw
+       an Open button beside a file, and the history is not a character grid. */
+    .frow {
+      display: grid; grid-template-columns: 22px minmax(0, 1fr) 84px 92px;
+      gap: 12px; align-items: center; height: 26px; padding: 0 0 0 27px;
+      background: rgba(232,236,246,0); transition: background 240ms ease-out; cursor: pointer;
+    }
+    .frow:hover { background: rgba(232,236,246,0.05); }
+    .frow .open { opacity: 0; transition: opacity 240ms ease-out; }
+    .frow:hover .open { opacity: 1; }
+
+    /* SEARCH RETURNS BLOCKS, NOT LINES — which is the block-as-row decision
+       paying for itself a second time. A match is a command with its output and
+       its exit status, so "where did that keychain failure happen" lands on the
+       whole event rather than on one line of it, and non-matching blocks fold
+       away instead of scrolling past.
+       The hit colour is a lifted white, never one of §5's three: a search match
+       carries no meaning about local, pending or failed, and a reserved hue
+       used decoratively is the one thing §5 forbids outright. */
+    .hit { border-radius: 2px; padding: 0 2px; }
+
+    .out {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11.5px; line-height: 1.65; white-space: pre-wrap;
+      color: rgba(232,236,246,0.72);
+    }
+
+    /* THE AGENT'S SHELL IS NEVER LUMINOUS. §1's second principle says light is
+       information — "alive, active, or asking for attention" — and a mirrored
+       block is none of those to the operator: it is a report of something that
+       already happened somewhere else, and it wants nothing from your hands.
+       Emphasis in this pane tracks exactly one thing: whether the block is
+       asking for your Enter. So violet is spent on the proposal alone, and the
+       mirror is drawn RECESSED — a darker inset with a hatched edge, legible
+       and unmistakable without being lit. */
+    .mirror { background: rgba(0,0,0,0.26); box-shadow: inset 0 0.5px 0 rgba(255,255,255,0.045); border-radius: 6px; }
+    .hatch { background-image: repeating-linear-gradient(180deg, rgba(232,236,246,0.34) 0 3px, rgba(232,236,246,0) 3px 7px); }
+
+    /* THE LIVE GRID IS DRAWN AS ITSELF. No rounded rows, no chips, no hover
+       affordances — a foreground program owns every cell and Wakil may not put
+       a control inside one. */
+    .gridsurface {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 12px; line-height: 1.5; white-space: pre; color: rgba(232,236,246,0.86);
+      background: #06070d;
+    }
+    .gridcaret { display: inline-block; width: 7px; height: 14px; background: rgba(232,236,246,0.82); vertical-align: -3px; }
+  </style>
+</helmet>
+
+<div class="void" style="background: {{voidBackground}};">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <div style="position: absolute; left: 44px; top: 132px; width: 220px; transform: scale(0.94); transform-origin: left top; opacity: 0.30; filter: blur(1.4px); display: flex; flex-direction: column; gap: 2px;">
+    <div style="display: flex; align-items: center; gap: 11px; padding: 9px 12px;">
+      <div style="width: 2px; height: 14px; border-radius: 1px; background: #9e82ff; box-shadow: 0 0 7px rgba(158,130,255,0.75); flex-shrink: 0;"></div>
+      <div style="font-size: 12px; color: #e8ecf6; flex-grow: 1;">wakilcore</div>
+      <div class="micro" style="color: rgba(232,236,246,0.35);">terminal</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 11px; padding: 9px 12px;">
+      <div style="width: 2px; height: 14px; flex-shrink: 0;"></div>
+      <div style="font-size: 12px; color: rgba(232,236,246,0.70); flex-grow: 1;">bookings</div>
+      <div class="micro" style="color: rgba(232,236,246,0.35);">db</div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 296px; top: 56px; display: flex; align-items: baseline; gap: 15px;">
+    <div style="font-size: 17px; color: #e8ecf6;">Initech Labs</div>
+    <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.50);">wakil-acceptance</div>
+    <div class="chip" style="color: {{envColour}}; background: {{envTint}};">{{envLabel}}</div>
+  </div>
+
+  <div class="slab" style="position: absolute; left: 296px; top: 118px; width: 1048px; height: 572px; display: flex; flex-direction: column; padding: 16px 0 0; overflow: hidden;">
+
+    <!-- ONE SHELL, OPENED AT A PATH, AND NO TAB BAR — §1 forbids one, and #42
+         removed the root concept from this pane entirely. The header names the
+         LIVE cwd rather than the path the pane opened at: it is a real PTY, cd
+         walks anywhere, and OSC 7 is what keeps the header honest about where
+         the shell actually is. A second shell is a second pane.
+
+         CUT 2026-09-16 by #42: the `root 1 of 3` counter, the cross-root
+         `Infra · exit 1` chip, the `Outside every root` chip and its banner,
+         and `All roots` on ⌘F and on a block. A command fanned out across
+         roots is cross-pane reference, which is 2c-iv's unbuilt fog. -->
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 20px 14px; flex-shrink: 0;">
+      <div style="display: flex; align-items: baseline; gap: 14px; min-width: 0;">
+        <div class="micro" style="flex-shrink: 0;">Terminal</div>
+        <div class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.86); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{cwd}}</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
+        <sc-if value="{{agentBusy}}" hint-placeholder-val="{{agentBusy}}">
+          <div class="chip" style="color: #e8b45a; background: rgba(232,180,90,0.13);">Wakil is running one</div>
+        </sc-if>
+      </div>
+    </div>
+
+    <!-- =================== THE LIVE GRID ===================
+         The second of the pane's two surfaces (§9). A foreground program has
+         taken the screen, and while it has, the pane IS that program: the
+         block history is parked, not destroyed.
+
+         THE PARKED STRIP IS WAKIL'S ONLY SURFACE HERE, and it has to be,
+         because the alternative is that Wakil goes silent for as long as vim
+         is open — including for a proposal it has already made. It sits ABOVE
+         the grid rather than inside it: nothing Wakil draws may occupy a cell
+         the program believes it owns.
+
+         MIRRORING PAUSES under a full-screen program and catches up when it
+         exits (#43). Foreign rows cannot be spliced into a live emulator
+         buffer without lying to the shell about where its cursor is. -->
+    <sc-if value="{{onGrid}}" hint-placeholder-val="{{onGrid}}">
+     <div style="position: absolute; inset: 0; background: #0e1019; border-radius: 10px; display: flex; flex-direction: column; padding: 16px 0 0;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 20px 14px; flex-shrink: 0;">
+        <div style="display: flex; align-items: baseline; gap: 14px; min-width: 0;">
+          <div class="micro" style="flex-shrink: 0;">Terminal</div>
+          <div class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.86); white-space: nowrap;">{{cwd}}</div>
+        </div>
+        <div class="chip" style="color: #e8b45a; background: rgba(232,180,90,0.13); flex-shrink: 0;">Live grid · vim</div>
+      </div>
+      <div style="flex-shrink: 0; margin: 0 20px 10px; padding: 9px 13px; border-radius: 7px; background: rgba(232,236,246,0.035); display: flex; align-items: center; gap: 16px;">
+        <div class="micro" style="flex-shrink: 0;">History parked · 14 blocks</div>
+        <div class="micro" style="color: rgba(232,236,246,0.42); flex-grow: 1;">Mirror paused · 1 command waiting</div>
+        <div class="micro" style="color: #9e82ff;">Wakil proposes a command</div>
+        <div class="act micro">⌘⏎ to see it</div>
+      </div>
+      <div class="gridsurface" style="flex-grow: 1; min-height: 0; padding: 14px 20px; overflow: hidden;">  1 # Wakil — north star
+  2
+  3 ## 9. Glossary
+  4
+  5 | **Terminal pane** | The pane hosting an interactive shell on a PTY,
+  6 | opened at a path, carrying the active environment's variables and
+  7 | the org's credentials. Two surfaces: the **block history** of
+  8 | finished blocks, and the **live grid** a foreground program draws
+  9 | on. |<span class="gridcaret"></span>
+ 10
+~
+~
+~
+<span style="color: rgba(232,236,246,0.55);">-- INSERT --                                              9,42          Top</span></div>
+      <div style="display: flex; align-items: center; gap: 16px; padding: 10px 20px 16px; flex-shrink: 0;">
+        <div class="mono micro" style="letter-spacing: 1.2px;">zsh · 132×36</div>
+        <div class="mono micro" style="letter-spacing: 1.2px;">vim · 4m 12s</div>
+        <div style="flex-grow: 1;"></div>
+        <div class="micro" style="color: rgba(232,236,246,0.52);">The pane is the program's screen until it exits</div>
+      </div>
+     </div>
+    </sc-if>
+
+    <!-- =================== THE BLOCK HISTORY ===================
+         The first surface (§9): finished blocks, reconstructed from the
+         shell's OSC 133 marks, Wakil-drawn, scrollable, searchable. This is
+         where every treatment below lives, and the mirror lives here and
+         never in the grid. -->
+      <!-- ⌘F, in the pane rather than floating over it: an overlay would be
+           chrome, and this is a row like every other row. -->
+      <sc-if value="{{searching}}" hint-placeholder-val="{{searching}}">
+        <div style="display: flex; align-items: center; gap: 14px; margin: 0 20px 14px; padding: 10px 13px; border-radius: 6px; background: rgba(232,236,246,0.055); flex-shrink: 0;">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.62)" stroke-width="1.35" stroke-linecap="round" style="flex-shrink: 0;"><circle cx="7.2" cy="7.2" r="4.6"/><path d="M10.6 10.6l3 3"/></svg>
+          <div class="mono" style="font-size: 12px; color: #e8ecf6; flex-grow: 1;">keychain<span style="display: inline-block; width: 1.5px; height: 13px; background: #9e82ff; vertical-align: -2px; margin-left: 2px;"></span></div>
+          <div class="mono micro" style="letter-spacing: 1.2px;">2 blocks · 3 matches</div>
+        </div>
+      </sc-if>
+
+      <div style="flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-bottom: 14px;">
+
+        <!-- Structured where the output IS structured, plain everywhere else.
+             Opt-in per command and it degrades to text the moment the shape is
+             not recognised, because guessing at arbitrary output is how a
+             terminal starts lying about what a program printed. -->
+        <div class="block">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div class="mono" style="font-size: 13px; color: rgba(232,236,246,0.42); flex-shrink: 0;">›</div>
+            <div class="mono" style="font-size: 13px; color: #e8ecf6; flex-grow: 1;">ls -la</div>
+            <div class="actions" style="display: flex; align-items: center; gap: 14px;">
+              <div class="act micro">Copy</div>
+              <div class="act micro">Rerun</div>
+              <div class="act micro">As text</div>
+            </div>
+            <div class="mono micro" style="letter-spacing: 1.2px;">0.02s</div>
+            <div class="chip" style="color: #8be0c8; background: rgba(139,224,200,0.12);">0</div>
+          </div>
+          <div style="padding: 9px 0 0;">
+            <div class="frow">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.52)" stroke-width="1.3" stroke-linejoin="round"><path d="M2 5.2h4.4l1.2 1.6H14v6.4H2z"/><path d="M2 5.2V3.1h3.6l1.1 1.5"/></svg>
+              <div class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.92);">gate/</div>
+              <div class="mono micro" style="letter-spacing: 1.2px;">6 items</div>
+              <div class="open micro" style="text-align: right;">Open</div>
+            </div>
+            <div class="frow">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.3" stroke-linejoin="round"><path d="M9 1.8H4.2v12.4h7.6V4.6z"/><path d="M9 1.8v2.8h2.8"/></svg>
+              <div class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.92);"><span class="hit" style="background: {{hitStrong}};">keychain</span>.go</div>
+              <div class="mono micro" style="letter-spacing: 1.2px;">4.1 kB</div>
+              <div class="open micro" style="text-align: right;">Open</div>
+            </div>
+            <div class="micro" style="padding: 8px 0 0 27px; color: rgba(232,236,246,0.52);">28 entries · 2 shown · ⌘⇧E for the rest</div>
+          </div>
+        </div>
+
+        <!-- A block that came back from the grid. The program owned every cell
+             while it ran, so there is no output to keep — but the command, its
+             duration and its exit code are all still block state, and a
+             history that silently dropped the four minutes you just spent in
+             vim would be lying about what you did. -->
+        <sc-if value="{{afterGrid}}" hint-placeholder-val="{{afterGrid}}">
+          <div class="block">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <div class="mono" style="font-size: 13px; color: rgba(232,236,246,0.42); flex-shrink: 0;">›</div>
+              <div class="mono" style="font-size: 13px; color: #e8ecf6; flex-grow: 1;">vim docs/wakil/north-star.md</div>
+              <div class="actions" style="display: flex; align-items: center; gap: 14px;">
+                <div class="act micro">Copy</div>
+                <div class="act micro">Rerun</div>
+              </div>
+              <div class="mono micro" style="letter-spacing: 1.2px;">4m 12s</div>
+              <div class="chip" style="color: #8be0c8; background: rgba(139,224,200,0.12);">0</div>
+            </div>
+            <div class="micro" style="padding: 9px 0 0 27px; color: rgba(232,236,246,0.52);">Held the grid · no output captured</div>
+          </div>
+        </sc-if>
+
+        <div class="block">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div class="mono" style="font-size: 13px; color: rgba(232,236,246,0.42); flex-shrink: 0;">›</div>
+            <div class="mono" style="font-size: 13px; color: #e8ecf6; flex-grow: 1;">go test ./internal/wakilcore/...</div>
+            <div class="actions" style="display: flex; align-items: center; gap: 14px;">
+              <div class="act micro">Copy</div>
+              <div class="act micro">Rerun</div>
+              <div class="act micro">Send to thread</div>
+            </div>
+            <div class="mono micro" style="letter-spacing: 1.2px;">8.1s</div>
+            <div class="chip" style="color: #e85c5c; background: rgba(232,92,92,0.13);">1</div>
+          </div>
+          <div class="out" style="padding: 9px 0 0 27px;">--- FAIL: Test<span class="hit" style="background: {{hitSoft}};">Keychain</span>ServiceNamesTheOrg (0.00s)
+    <span class="hit" style="background: {{hitSoft}};">keychain</span>_test.go:41: got wakil:umbrella:bookings, want wakil:initech:bookings
+FAIL	github.com/yehia-khalil/wakil/internal/wakilcore	8.104s</div>
+        </div>
+
+        <!-- =================== THE MIRROR ===================
+             What the agent runs in its OWN shell, drawn in this pane because
+             the operator asked to see it: "when it is open I would like to
+             see it." Nothing is dispatched and nothing is journalled here —
+             this is a RENDERING of `toolUse`/`toolResult` off the harness
+             stream, which Wakil already receives in full. Invariant 2 is not
+             engaged.
+
+             IT SAYS WHERE IT RAN, on its own line, because it did not run
+             here: a different cwd, and a BARE environment built from nothing
+             but CLAUDE_CONFIG_DIR, CLAUDE_CODE_OAUTH_TOKEN, HOME and PATH.
+             This pane's PTY carries the active environment's variables and
+             the org's credentials. Drawn like a block you ran, it would be
+             read as having run with your credentials.
+
+             RERUN BECOMES PROPOSE RERUN. Running a mirrored command here
+             would take a command the agent chose and execute it with the
+             operator's credentials in the operator's environment — the propose
+             path wearing a disguise, and a credential escalation. Copy and
+             Send to thread are unaffected.
+
+             BACKFILLED, because the record predates the pane. The mirror is
+             reconstructed from the transcript, not observed live, so a pane
+             opened mid-task can show what already happened — and a pane you
+             opened BECAUSE you wanted to see what the agent was doing, which
+             then showed you nothing until its next command, would defeat the
+             want it was opened for. Bounded by the same block cap as the rest
+             of the history, and it says it is backfilled.
+
+             CONSECUTIVE AGENT BLOCKS COLLAPSE INTO A GROUP. A turn can be six
+             greps between two of your commands; ungrouped, the mirror buries
+             your own history in someone else's. Grouping keeps every block
+             present — the alternative, a mirror on/off toggle, hides what you
+             turned on the pane to see. -->
+        <sc-if value="{{mirror}}" hint-placeholder-val="{{mirror}}">
+          <div class="block">
+            <div class="micro" style="padding-bottom: 9px; color: rgba(232,236,246,0.42);">Backfilled · 4 commands Wakil ran before this pane opened</div>
+            <div class="mirror" style="padding: 9px 12px; display: flex; align-items: center; gap: 13px;">
+              <div class="hatch" style="width: 3px; height: 14px; border-radius: 1px; flex-shrink: 0;"></div>
+              <div class="micro" style="flex-shrink: 0;">Wakil</div>
+              <div class="mono" style="font-size: 12px; color: rgba(232,236,246,0.62); flex-grow: 1;">4 commands · rg, cat, go vet, git status</div>
+              <div class="mono micro" style="letter-spacing: 1.2px;">1.9s</div>
+              <div class="act micro">Expand</div>
+            </div>
+          </div>
+
+          <div class="block">
+            <div class="mirror" style="padding: 10px 12px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="hatch" style="width: 3px; height: 15px; border-radius: 1px; flex-shrink: 0;"></div>
+                <div class="mono" style="font-size: 13px; color: rgba(232,236,246,0.80); flex-grow: 1;">rg -n "operatorOnlyActions" --type swift</div>
+                <div class="actions" style="display: flex; align-items: center; gap: 14px;">
+                  <div class="act micro">Copy</div>
+                  <div class="act micro">Propose rerun</div>
+                  <div class="act micro">Send to thread</div>
+                </div>
+                <div class="mono micro" style="letter-spacing: 1.2px;">0.31s</div>
+                <div class="chip" style="color: #8be0c8; background: rgba(139,224,200,0.12);">0</div>
+              </div>
+              <div class="micro" style="padding: 7px 0 0 17px;">Wakil's shell · ~/src/initech/api · bare environment</div>
+              <div class="out" style="padding: 6px 0 0 17px;">app/WakilKit/Sources/WakilKit/PermissionPrompt.swift:91:    static let operatorOnlyActions: Set&lt;String&gt; = [</div>
+            </div>
+          </div>
+
+          <!-- THE RUNNING STATE, AND WHY IT CANNOT BE A PROGRESS BAR.
+               `toolUse` arrives the instant the agent issues the call, before
+               the command runs; `toolResult` arrives whole when it finishes.
+               So the block appears immediately and fills in on completion —
+               but characters never scroll as they are produced, and cannot:
+               those Bash calls are auto-allowed by CLI policy and never reach
+               Wakil, so Wakil learns of them from the transcript rather than
+               by running them. Realtime is true of WHAT it is running, not of
+               watching it scroll. The elapsed counter ticks because time
+               passes; there is no bar, because Wakil has no idea how far
+               along the command is, and §9's thought thread already rules
+               that progress bars are what this project draws instead of. -->
+          <div class="block">
+            <div class="mirror" style="padding: 10px 12px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="hatch" style="width: 3px; height: 15px; border-radius: 1px; flex-shrink: 0;"></div>
+                <div class="mono" style="font-size: 13px; color: rgba(232,236,246,0.80); flex-grow: 1;">go build ./...</div>
+                <div class="mono micro" style="letter-spacing: 1.2px;">3.2s</div>
+                <div class="chip" style="color: #e8b45a; background: rgba(232,180,90,0.13);">running</div>
+              </div>
+              <div class="micro" style="padding: 7px 0 0 17px;">Wakil's shell · ~/src/initech/api · bare environment</div>
+              <div class="out" style="padding: 6px 0 0 17px; color: rgba(232,236,246,0.42);">Wakil was told this started. Its output arrives whole when it finishes — nothing scrolls here.</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{searching}}" hint-placeholder-val="{{searching}}">
+          <div class="micro" style="padding: 0 20px; color: rgba(232,236,246,0.52);">1 block hidden · no match</div>
+        </sc-if>
+
+        <!-- =================== THE PROPOSAL ===================
+             THE PANE'S ONE STRUCTURAL RULE, drawn rather than described.
+             The agent may READ this pane (Invariant 3) and may PROPOSE into
+             it. It may not run. A SQL statement can be classified —
+             `classify_statement` is what makes the DB pane's gate possible —
+             and a shell command cannot: `make deploy` may drop a table and
+             nothing in the string says so. Invariant 6 is read-only until a
+             write earns its way in, and an unclassifiable command cannot earn
+             it.
+
+             SETTLED 2026-09-16 by #37. This is an operator-only ACTION, not an
+             exception to dual-drive: the run joins `operatorOnlyActions`,
+             which already holds six actions the UI drives and the agent is
+             denied. 2c's exit criterion stands unamended.
+
+             A PROPOSAL IS A BLOCK THAT HAS NOT RUN, and that is the whole
+             answer to where it renders now that zsh owns the input line.
+             #39 assumed a Wakil-drawn prompt to land it in; #43 gave that
+             prompt to the shell, and Wakil can only inject bytes, which are
+             indistinguishable from typed ones. So the proposal needs a
+             surface of its own — and it already has a shape, because #40
+             ruled that a block carries `origin: operator | agent | proposed`
+             and that `proposed` is the value that EARNS the field: without it
+             the agent cannot tell whether its own proposal was accepted.
+             A proposal is therefore already a block in the snapshot the agent
+             reads. Drawing it as a band or an overlay would give one thing two
+             homes — the agent reading a block where the operator sees a
+             banner. Drawn in the lane, acceptance is one object changing
+             state: the dashed block becomes a real one, and `origin` flips
+             from `proposed` to `operator`.
+
+             It sits at the TAIL of the history, directly above the live
+             prompt, which is where its output will appear. At most one pending
+             proposal per pane (#39): a second replaces the first, and the
+             replacement is itself journalled, so an agent cannot swap the
+             command under a hand already moving to Enter. -->
+        <sc-if value="{{proposed}}" hint-placeholder-val="{{proposed}}">
+          <div class="block">
+            <div style="position: absolute; left: 8px; top: 2px; bottom: 2px; width: 2px; border-radius: 1px; background: #9e82ff; box-shadow: 0 0 8px rgba(158,130,255,0.70);"></div>
+            <div style="border: 1px dashed rgba(158,130,255,0.42); border-radius: 6px; padding: 10px 12px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="mono" style="font-size: 13px; color: #9e82ff; flex-shrink: 0;">›</div>
+                <div class="mono" style="font-size: 13px; color: #e8ecf6; flex-grow: 1;">wakil provider add --share personal/main --org umbrella</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; padding: 8px 0 0 27px;">
+                <div class="micro" style="color: rgba(232,236,246,0.52);">Proposed by Wakil · not run</div>
+                <div class="micro" style="color: rgba(232,236,246,0.52);">⏎ puts it in your prompt · ⌫ discards</div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+
+      <!-- =================== THE LIVE PROMPT ===================
+           zsh's own line, drawn as the grid it is. Wakil puts NOTHING inside
+           it — no placeholder, no ghost text, no affordance — because every
+           cell here belongs to the shell's line editor, and readline, tab
+           completion and ⌃R all move the cursor through cells Wakil does not
+           own.
+
+           ACCEPTING A PROPOSAL IS A HAND-OFF, and it is drawn because it is
+           the one moment the two surfaces touch. ⏎ on the proposed block
+           injects the bytes here, the dashed block disappears, and the command
+           sits in your prompt UNRUN — injected bytes are indistinguishable
+           from typed ones, so from here on it is yours in every sense. It
+           becomes a real block when the shell reports OSC 133 `C`, which is
+           also what journals `term_run`. Two Enters, deliberately: one to
+           accept, one to run, which is Invariant 7's shape generalised from
+           voice to the agent. -->
+      <div style="flex-shrink: 0; padding: 0 20px;">
+        <sc-if value="{{handoff}}" hint-placeholder-val="{{handoff}}">
+          <div class="micro" style="padding-bottom: 7px; color: #9e82ff;">Accepted · it is in your prompt and has not run · ⏎ runs it in your shell</div>
+        </sc-if>
+        <div class="gridsurface" style="border-radius: 6px; padding: 9px 12px;"><span style="color: #8be0c8;">➜</span>  <span style="color: rgba(232,236,246,0.55);">wakilcore</span> {{typed}}<span class="gridcaret"></span></div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 16px; padding: 12px 20px 16px; flex-shrink: 0;">
+        <div class="mono micro" style="letter-spacing: 1.2px;">zsh · 132×36</div>
+        <div class="mono micro" style="letter-spacing: 1.2px;">14 blocks · capped at 200</div>
+        <div class="mono micro" style="letter-spacing: 1.2px;">last exit 1</div>
+        <div style="flex-grow: 1;"></div>
+        <div class="micro" style="color: rgba(232,236,246,0.52);">Wakil may read and propose · it may not run</div>
+      </div>
+
+  </div>
+
+  <div style="position: absolute; left: 88px; right: 88px; bottom: 74px; display: flex; align-items: center; justify-content: space-between; gap: 28px;">
+    <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+      <div style="width: 1.5px; height: 18px; border-radius: 1px; background: #9e82ff; flex-shrink: 0;"></div>
+      <div style="font-size: 16px; color: rgba(232,236,246,0.50);">{{promptText}}</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <div class="micro" style="color: rgba(232,236,246,0.50);">Hold ⌥ to speak</div>
+      <div class="micro" style="color: rgba(232,236,246,0.50);">⌘P open</div>
+      <div class="micro" style="color: rgba(232,236,246,0.50);">⌘K actions</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"scene":{"editor":"enum","options":["history","mirror","propose","handoff","grid","after grid"],"default":"mirror","section":"Scene"},"searching":{"editor":"boolean","default":false,"section":"Shell"},"env":{"editor":"enum","options":["local","staging","production"],"default":"local","section":"Environment"},"$preview":{"width":1440,"height":900}}'>
+function rgba(hex, a) {
+  var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
+function bleed(hex, cx, cy, sigma, peak) {
+  function s(k) { return rgba(hex, Math.round(peak * k * 10000) / 10000); }
+  return 'radial-gradient(circle ' + Math.round(2.4 * sigma) + 'px at ' + cx + '% ' + cy + '%, ' +
+    s(1) + ' 0%, ' + s(0.368) + ' 41.7%, ' + s(0.14) + ' 58.3%, ' +
+    s(0.039) + ' 75%, ' + s(0.008) + ' 91.7%, ' + rgba(hex, 0) + ' 100%)';
+}
+
+var FIELD = 'linear-gradient(180deg, #030408 0%, #070812 100%)';
+
+function room(env) {
+  var prod = env === 'production';
+  var a = prod ? '#e85c5c' : '#7c5cff';
+  var b = prod ? '#e85c5c' : '#4fb9e8';
+  return {
+    background: [
+      bleed(b, 110, -10, 900 / Math.sqrt(4.0), 0.38 * 0.61),
+      bleed(a, 50, 118, 900 / Math.sqrt(3.2), 0.55 * 0.61),
+      FIELD
+    ].join(', '),
+    colour: prod ? '#e85c5c' : '#8be0c8',
+    tint: prod ? rgba('#e85c5c', 0.13) : rgba('#8be0c8', 0.12),
+    label: prod ? 'Production' : (env === 'local' ? 'Local' : 'Staging')
+  };
+}
+
+class Component extends DCLogic {
+  renderVals() {
+    var r = room(this.props.env || 'local');
+    var scene = this.props.scene || 'mirror';
+    var searching = this.props.searching === true;
+    var onGrid = scene === 'grid';
+    var proposed = scene === 'propose';
+    var handoff = scene === 'handoff';
+    return {
+      scene: scene,
+      onGrid: onGrid,
+      mirror: scene === 'mirror',
+      agentBusy: scene === 'mirror',
+      proposed: proposed,
+      handoff: handoff,
+      afterGrid: scene === 'after grid',
+      searching: searching && !onGrid,
+      // A lifted white, never a reserved hue: a match means nothing about
+      // local, pending or failed.
+      hitStrong: searching ? 'rgba(232,236,246,0.22)' : 'transparent',
+      hitSoft: searching ? 'rgba(232,236,246,0.14)' : 'transparent',
+      cwd: '~/src/initech/api/internal/wakilcore',
+      // The hand-off: the accepted command sits in zsh's own line, unrun.
+      typed: handoff ? 'wakil provider add --share personal/main --org umbrella' : '',
+      voidBackground: r.background,
+      envColour: r.colour,
+      envTint: r.tint,
+      envLabel: r.label,
+      promptText: proposed
+        ? 'I put a command up for you — it is yours to run'
+        : (handoff ? 'It is in your prompt now' : 'Ask, or name what to open')
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"expect":{"pane":"api-1","field":"environment","equals":"staging"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"keys":"environment"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"ENVIRONMENT"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"keys":"qa"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.qa"}}
+{"expect":{"pane":"api-1","field":"environment","equals":"qa"}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog-qa.e2e-fixture.invalid"}}
+{"expect":{"journal":{"contains":"\"params\":{\"name\":\"qa\"}"}}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"keys":"environment"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"keys":"staging"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"api-1","field":"environment","equals":"staging"}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog.e2e-fixture.invalid"}}
+{"expect":{"journal":{"contains":"\"params\":{\"name\":\"staging\"}"}}}

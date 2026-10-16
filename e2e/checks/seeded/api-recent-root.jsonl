@@ -1,0 +1,5 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_request","params":{"pane":"api-1"}}}
+{"expect":{"pane":"api-1","field":"recent[0].method","equals":"GET"}}
+{"do":{"click":"api.recent"}}
+{"expect":{"tree":"contains","text":"GET / · no reply"}}

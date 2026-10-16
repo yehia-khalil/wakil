@@ -1,0 +1,34 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.editor"}}
+{"do":{"click":"settings.editor.autosave.pause"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.editor.autosave","equals":"pause"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-3","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-3","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"v1"}}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-3","as":"{fixtureRoot}/e2e-project/guard.txt"}}}
+{"expect":{"pane":"editor-3","field":"tabs[0].path","contains":"/e2e-project/guard.txt"}}
+{"expect":{"pane":"editor-3","field":"tabs[0].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_new_scratch","params":{"pane":"editor-3"}}}
+{"expect":{"pane":"editor-3","field":"tabs[1].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-3","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"draft"}}}
+{"expect":{"pane":"editor-3","field":"tabs[1].dirty","equals":"true"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"sleep 3; echo waited"}}
+{"do":{"press":"Return"}}
+{"do":{"click":"rail.editor-3"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"tree":"contains","text":"Save changes to Untitled-1?"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-3","path":"{fixtureRoot}/e2e-project/guard.txt","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":3}},"text":"v2"}}}
+{"expect":{"pane":"editor-3","field":"tabs[0].dirty","equals":"true"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"waited"}}
+{"expect":{"tree":"contains","text":"Save changes to Untitled-1?"}}
+{"expect":{"pane":"editor-3","field":"tabs[0].dirty","equals":"true"}}
+{"expect":{"pane":"editor-3","field":"tabs[0].disk_state","equals":"inSync"}}
+{"do":{"click":"editor.unsaved.dontSave"}}
+{"expect":{"tree":"absent","text":"Save changes to Untitled-1?"}}
+{"expect":{"pane":"editor-3","field":"tabs[1]","present":false}}
+{"expect":{"pane":"editor-3","field":"tabs[0].path","contains":"/e2e-project/guard.txt"}}
+{"expect":{"pane":"editor-3","field":"tabs[0].dirty","equals":"true"}}

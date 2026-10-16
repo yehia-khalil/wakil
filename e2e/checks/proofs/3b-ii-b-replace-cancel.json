@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-ii-b-replace-cancel.jsonl",
+  "baseCommit": "5c38f72852bf3febfa10e09fea88c4df5460e388",
+  "provedAt": "2026-10-14T19:03:37.967076Z",
+  "checkBlob": "60f6e5bd97d2b354ac50653b9bf79499ba05c8aa"
+}

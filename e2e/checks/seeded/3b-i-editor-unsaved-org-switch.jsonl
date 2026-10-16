@@ -1,0 +1,18 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"would be lost"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"do":{"hotkey":"cmd+shift+o"}}
+{"expect":{"tree":"contains","text":"ORGANISATION"}}
+{"do":{"click":"org.row.e2e-fixture-two.switch"}}
+{"expect":{"tree":"contains","text":"Unsaved changes in Untitled-1"}}
+{"do":{"click":"editor.unsaved.cancel"}}
+{"expect":{"tree":"absent","text":"Unsaved changes in Untitled-1"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"do":{"hotkey":"cmd+shift+o"}}
+{"expect":{"tree":"contains","text":"ORGANISATION"}}
+{"do":{"click":"org.row.e2e-fixture-two.switch"}}
+{"expect":{"tree":"contains","text":"Unsaved changes in Untitled-1"}}
+{"do":{"click":"editor.unsaved.dontSave"}}
+{"expect":{"tree":"absent","text":"Unsaved changes in Untitled-1"}}
+{"expect":{"tree":"contains","text":"e2e-project-two"}}

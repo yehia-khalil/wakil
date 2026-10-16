@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/db-grid-copy.jsonl",
+  "baseCommit": "e6c782b4f52f9e4c17f82bfadd17b13c8252445a",
+  "provedAt": "2026-10-14T20:58:03.235922Z",
+  "checkBlob": "3deddd665579a1e30148f30f5e09edadaa7df16b"
+}

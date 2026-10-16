@@ -1,0 +1,426 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    .void { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .slab {
+      background: #0e1019;
+      border-radius: 10px;
+      box-shadow:
+        0 8px 36px rgba(0,0,0,0.55),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+    .chip {
+      font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px;
+      text-transform: uppercase; padding: 3px 7px; border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    /* The promoted control. §3 says far-plane content is never interactive
+       without first being promoted; this is the first place that rule is
+       spent. Promotion releases scale, opacity and blur TOGETHER — "never one
+       alone" — over §7's 400-600ms plane transition. */
+    .seg { display: flex; flex-direction: column; gap: 7px; }
+    .seg .val { display: flex; align-items: center; gap: 9px; font-size: 14.5px; color: rgba(232,236,246,0.82); }
+    .seg.open .val { color: #e8ecf6; }
+
+    /* RESTING is not a dimmed copy of the promoted control - it is the
+       header `Main.dc.html` has always drawn, and it quiets itself with
+       TYPOGRAPHY rather than with opacity.
+
+       Why not the far plane. §3 assigns "ambient context: sessions, roots,
+       status" to it, and this line was filed there - but Invariant 8
+       requires the active environment to be readable AT ALL TIMES, and
+       PRODUCT.md binds 4.5:1 against the actual composite for anything being
+       read. At 0.30 behind a 1.4px blur the organisation and the project
+       land near 2.4:1, which is the same failure EnvironmentBadge was
+       created to fix at 1.47:1 - that exemption patched one third of this
+       line and left the other two thirds failing. So the badge's treatment
+       is applied to the WHOLE line: the far plane's scale and parallax
+       kept, its opacity and blur lifted. Hierarchy does the quieting. */
+    .rest { display: flex; flex-direction: column; gap: 9px;
+            transform: scale(0.94); transform-origin: top left; }
+    .rest .row2 { display: flex; align-items: baseline; gap: 15px; }
+    .rest .org { font-size: 19px; color: #e8ecf6; letter-spacing: -0.1px; }
+    .rest .proj { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+                  font-size: 11px; color: rgba(232,236,246,0.50); }
+
+    /* PROMOTED. Scale, opacity and blur released together - §3's "never one
+       alone" - over §7's 400-600ms ease-out. */
+    .ctl { display: flex; gap: 28px; padding: 15px 18px; width: 622px; }
+
+    /* Anchored under the segment it belongs to, never centred on the window:
+       a menu that forgets which control opened it is a modal wearing a
+       dropdown's clothes. */
+    .dd { position: absolute; top: calc(100% + 9px); width: 302px; padding: 6px 0; }
+
+    /* §8's anchor mark, reused wherever a row is the one you are on. The rail
+       gives the focused pane the same tick, and the palette gives it to the
+       selected row - one idea, one treatment, three places. */
+    .row { position: relative; display: flex; align-items: center; gap: 14px; padding: 10px 16px; }
+    .row .edge {
+      position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px;
+      border-radius: 1px; background: transparent;
+    }
+    .row.on .edge { background: #9e82ff; box-shadow: 0 0 8px rgba(158,130,255,0.70); }
+    .row.on { background: rgba(232,236,246,0.06); }
+    .ttl { font-size: 13.5px; color: rgba(232,236,246,0.82); }
+    .row.on .ttl { color: #e8ecf6; }
+    .sub {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 10px; color: rgba(232,236,246,0.50);
+    }
+
+    .cell { font-size: 12.5px; color: rgba(232,236,246,0.90); }
+    .cellnull {
+      font-size: 12.5px; color: rgba(232,236,246,0.34);
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    }
+    .grid {
+      display: grid; grid-template-columns: 54px 1fr 132px; gap: 18px;
+      align-items: center; padding: 0 18px; height: 40px;
+    }
+    .grid.anchor { background: rgba(232,236,246,0.06); }
+    .term {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11.5px; line-height: 1.85;
+    }
+
+    .account { display: flex; align-items: baseline; gap: 8px; }
+    .account .lbl {
+      font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px;
+      text-transform: uppercase; color: rgba(124,92,255,0.55);
+    }
+    .account .val {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11px; color: rgba(124,92,255,0.90);
+    }
+  </style>
+</helmet>
+
+<div class="void" style="background: {{voidBackground}};">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <!-- THE CANVAS STAYS LIVE. No dimmer, no blur, no recede: changing one word
+       in the room does not take the room away from you. This is the whole
+       argument for promoting the line rather than opening a plane - the org
+       plane dims the canvas because an org switch DESTROYS it, and an
+       environment switch does not. -->
+
+  <div class="slab" style="position: absolute; left: 88px; top: 334px; width: 632px; height: 420px; display: flex; flex-direction: column;">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 15px 18px 13px;">
+      <!-- WHICH database, named by the pane that is actually on it. The
+           environment row upstream cannot say this: an environment holds
+           databases plural (Phase 1's own fixture gives staging three), so a
+           row that named one would be asserting a singular the model does not
+           have. Only the pane knows which one it opened. -->
+      <div style="display: flex; align-items: baseline; gap: 11px;">
+        <div class="micro">bookings</div>
+        <div class="mono" style="font-size: 10px; color: rgba(232,236,246,0.42);">core</div>
+      </div>
+      <div class="chip" style="color: {{envColour}}; background: {{envTint}};">{{envLabel}}</div>
+    </div>
+    <div class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.72); padding: 0 18px 15px;">select id, guest, confirmed_at from bookings limit 5</div>
+    <div class="grid" style="height: 30px;">
+      <div class="micro">id</div><div class="micro">guest</div><div class="micro">confirmed_at</div>
+    </div>
+    <div style="position: relative;">
+      <div class="grid anchor">
+        <div style="position: absolute; left: 0; top: 7px; height: 26px; width: 2px; border-radius: 1px; background: #9e82ff; box-shadow: 0 0 8px rgba(158,130,255,0.70);"></div>
+        <div class="mono cell">4821</div><div class="cell">Layla Haddad</div><div class="mono cell">2026-09-18 09:14</div>
+      </div>
+    </div>
+    <!-- §8: a NULL is drawn as a dimmed NULL, never as an empty cell - an
+         empty string is also an empty cell, and the two must not look alike. -->
+    <div class="grid"><div class="mono cell">4822</div><div class="cell">Omar Nassar</div><div class="cellnull">NULL</div></div>
+    <div class="grid"><div class="mono cell">4823</div><div class="cell">Farah Aziz</div><div class="mono cell">2026-09-18 11:02</div></div>
+    <div class="grid"><div class="mono cell">4824</div><div class="cell">Yusuf Karim</div><div class="cellnull">NULL</div></div>
+    <div class="grid"><div class="mono cell">4825</div><div class="cell">Nadia Sharif</div><div class="mono cell">2026-09-19 08:41</div></div>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 18px; padding: 13px 18px 15px;">
+      <div class="mono micro" style="letter-spacing: 1.2px;">5 rows</div>
+      <div class="mono micro" style="letter-spacing: 1.2px;">42 ms</div>
+      <div class="micro">{{gate}}</div>
+    </div>
+  </div>
+
+  <div class="slab" style="position: absolute; left: 734px; top: 334px; width: 404px; height: 420px; display: flex; flex-direction: column;">
+    <div style="padding: 15px 18px 13px;"><div class="micro">zsh — api</div></div>
+    <!-- §5's terminal carve-out: quoted program output carries the program's
+         own colour, mapped onto §5's own values. SGR 32 is #8be0c8, the same
+         green "healthy" already means everywhere else in this app. -->
+    <div class="term" style="padding: 0 18px; color: rgba(232,236,246,0.78);">
+      <div><span style="color: #8be0c8;">➜</span>&nbsp; api git:(<span style="color: #7c5cff;">main</span>) make test</div>
+      <div style="color: rgba(232,236,246,0.56);">go test ./internal/...</div>
+      <div><span style="color: #8be0c8;">ok</span>&nbsp;&nbsp;&nbsp;wakil/internal/wakilcore&nbsp;&nbsp;1.284s</div>
+      <div><span style="color: #8be0c8;">ok</span>&nbsp;&nbsp;&nbsp;wakil/internal/secrets&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.412s</div>
+      <div style="color: rgba(232,236,246,0.56);">&nbsp;</div>
+      <div><span style="color: #8be0c8;">➜</span>&nbsp; api git:(<span style="color: #7c5cff;">main</span>) <span style="display: inline-block; width: 7px; height: 14px; background: rgba(232,236,246,0.62); vertical-align: -2px;"></span></div>
+    </div>
+  </div>
+
+  <!-- The rail, far plane. See Rail.dc.html: it is drawn here in the state it
+       ships in, which is also the state that fails the contrast floor. -->
+  <div style="position: absolute; left: 1182px; top: 334px; width: 192px; transform: scale(0.94); transform-origin: top left; opacity: 0.30; filter: blur(1.4px);">
+    <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; position: relative;">
+      <div style="position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 1px; background: #9e82ff;"></div>
+      <div style="font-size: 13px; color: #e8ecf6;">bookings</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px;">
+      <div style="font-size: 13px; color: #e8ecf6;">zsh — api</div>
+    </div>
+  </div>
+
+  <!-- ══ THE CONTEXT LINE ══ -->
+  <div style="position: absolute; left: 88px; top: 52px;">
+
+    <!-- RESTING: one cluster, one fact. The environment keeps its CHIP in
+         both states - a filled token is a shape as well as a hue, so
+         production stays alarming peripherally, where a glyph would not
+         survive (the same argument the rail's green tick makes). -->
+    <sc-if value="{{isResting}}" hint-placeholder-val="{{isResting}}">
+      <div class="rest">
+        <div class="micro">Organisation</div>
+        <div class="row2">
+          <div class="org">Initech Labs</div>
+          <div class="proj">wakil-acceptance</div>
+          <div class="chip" style="color: {{envColour}}; background: {{envTint}};">{{envLabel}}</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{isPromoted}}" hint-placeholder-val="{{isPromoted}}">
+    <div class="slab ctl">
+
+      <!-- ORGANISATION ESCALATES: a TRAILING chevron, not a disclosure one.
+           An environment switch invalidates pane contents; an org switch ends
+           the session, closes every pane and crosses a credential boundary
+           (Invariant 4). This opens ⌘⇧O's plane instead of a menu. -->
+      <div class="seg" style="width: 178px;">
+        <div class="micro">Organisation</div>
+        <div class="val">Initech Labs
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5L11 8l-4.5 4.5"/></svg>
+        </div>
+      </div>
+
+      <div class="seg {{projectOpen}}" style="width: 200px;">
+        <div class="micro">Project</div>
+        <div class="val">wakil-acceptance
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="{{projectChevron}}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="{{projectChevronPath}}"/></svg>
+        </div>
+      </div>
+
+      <!-- The chip again, not a bare word: Invariant 8's treatment does not
+           change because the pointer arrived. Only the chevron is added. -->
+      <div class="seg {{envOpen}}" style="width: 152px;">
+        <div class="micro">Environment</div>
+        <div class="val">
+          <span class="chip" style="color: {{envColour}}; background: {{envTint}};">{{envLabel}}</span>
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="{{envChevron}}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="{{envChevronPath}}"/></svg>
+        </div>
+      </div>
+
+    </div>
+    </sc-if>
+
+    <!-- ENVIRONMENT, open. Rows COUNT their resources rather than naming one.
+         `Databases []Database` is plural in shipped code and APIs go plural
+         with 2c-iv (Decision 8, amended 2026-09-19), so a subtitle reading
+         "mysql · api.staging.initech.com" asserts two singulars the model does
+         not have - the same dishonesty `truncated` and the sort footer exist
+         to prevent, one layer up. Counts also separate a CONFIGURED
+         environment from a declared-but-empty one, which a DSN cannot. -->
+    <sc-if value="{{envIsOpen}}" hint-placeholder-val="{{envIsOpen}}">
+      <div class="slab dd" style="left: 452px;">
+        <div class="row {{localOn}}"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+            <div class="ttl">Local</div>
+            <div class="sub">2 databases · 1 API</div>
+          </div>
+        </div>
+        <div class="row {{stagingOn}}"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+            <div class="ttl">Staging</div>
+            <div class="sub">3 databases · 1 API</div>
+          </div>
+        </div>
+        <!-- Production is red in the row, not only in the chip. Invariant 8
+             says production looks alarming; a list you pick from is exactly
+             where that has to be true, because it is the last moment before
+             the room turns. -->
+        <div class="row {{productionOn}}"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+            <div class="ttl" style="color: #e85c5c;">Production</div>
+            <div class="sub" style="color: rgba(232,92,92,0.66);">1 database · no API · read-only</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- PROJECT, open. Roots are 1..n (Decision 7), so the count is the
+         subtitle rather than a path: a microservice project has several and
+         naming the first would be arbitrary. -->
+    <sc-if value="{{projectIsOpen}}" hint-placeholder-val="{{projectIsOpen}}">
+      <div class="slab dd" style="left: 224px;">
+        <div class="row on"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+            <div class="ttl">wakil-acceptance</div>
+            <div class="sub">2 roots · INI</div>
+          </div>
+        </div>
+        <div class="row"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+            <div class="ttl">booking-api</div>
+            <div class="sub">4 roots · INI</div>
+          </div>
+        </div>
+        <div class="row"><div class="edge"></div>
+          <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1;">
+            <div class="ttl">telemetry</div>
+            <div class="sub">1 root · no Jira scope</div>
+          </div>
+        </div>
+        <div class="row"><div class="edge"></div>
+          <div style="display: flex; align-items: center; gap: 11px; flex-grow: 1; color: rgba(232,236,246,0.62);">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
+            <div style="font-size: 13.5px;">New project</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+
+  <!-- The near plane's utterance line, and the account at the opposite end of
+       the same bottom edge. The account is NOT a fourth segment above: the
+       provider is session-scoped and deliberately outside Invariant 5's triple
+       (Decision 4), so putting it in the context control would assert a
+       membership the model refuses. -->
+  <div style="position: absolute; left: 88px; right: 88px; bottom: 78px; display: flex; align-items: center; justify-content: space-between; gap: 28px;">
+    <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+      <div style="width: 1.5px; height: 18px; border-radius: 1px; background: #9e82ff; flex-shrink: 0;"></div>
+      <div style="font-size: 16px; color: rgba(232,236,246,0.50);">Ask, or name what to open</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <div class="micro">Hold ⌥ to speak</div>
+      <div class="micro">⌘P open</div>
+      <div class="micro">⌘K actions</div>
+      <div class="account"><div class="lbl">Account</div><div class="val">main</div></div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"env":{"editor":"enum","options":["local","staging","production"],"default":"staging","section":"Environment"},"state":{"editor":"enum","options":["resting","promoted","environment open","project open"],"default":"environment open","section":"Promotion"},"$preview":{"width":1440,"height":900}}'>
+function rgba(hex, a) {
+  var r = parseInt(hex.slice(1, 3), 16);
+  var g = parseInt(hex.slice(3, 5), 16);
+  var b = parseInt(hex.slice(5, 7), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
+// Void.metal, exactly, as Main.dc.html derives it: the field runs #030408 at
+// the top to #070812 at the bottom; violet rises from uv (0.5, 1.18), cool
+// blue from uv (1.10, -0.10). Idle's amplitude is taken at rest.
+function voidBackground(bleedA, bleedB) {
+  return [
+    'radial-gradient(circle 1100px at 110% -10%, ',
+    rgba(bleedB, 0.232), ' 0%, ', rgba(bleedB, 0.086), ' 41%, ',
+    rgba(bleedB, 0.029), ' 59%, ', rgba(bleedB, 0.007), ' 77%, ',
+    rgba(bleedB, 0), ' 100%), ',
+    'radial-gradient(circle 1200px at 50% 118%, ',
+    rgba(bleedA, 0.336), ' 0%, ', rgba(bleedA, 0.124), ' 42%, ',
+    rgba(bleedA, 0.048), ' 58%, ', rgba(bleedA, 0.014), ' 75%, ',
+    rgba(bleedA, 0), ' 92%), ',
+    'linear-gradient(180deg, #030408 0%, #070812 100%)'
+  ].join('');
+}
+
+// VoidPalette: the environment owns which two colours are in the room, and
+// production is the only environment that changes them - both bleeds go red.
+// isProductionEnvironment is an exact match on "production", trimmed and
+// lowercased; nothing else arms the red room or the write gate.
+function room(env) {
+  if (env === 'production') {
+    return {
+      background: voidBackground('#e85c5c', '#e85c5c'),
+      colour: '#e85c5c', tint: rgba('#e85c5c', 0.13), label: 'Production'
+    };
+  }
+  return {
+    background: voidBackground('#7c5cff', '#4fb9e8'),
+    colour: '#8be0c8', tint: rgba('#8be0c8', 0.12),
+    label: env === 'local' ? 'Local' : 'Staging'
+  };
+}
+
+var CHEVRON_DOWN = 'M4 6.5l4 4 4-4';
+var CHEVRON_UP   = 'M4 9.5l4-4 4 4';
+var DIM = 'rgba(232,236,246,0.42)';
+var ACCENT = '#9e82ff';
+
+class Component extends DCLogic {
+  renderVals() {
+    var env = this.props.env || 'staging';
+    var state = this.props.state || 'environment open';
+    var r = room(env);
+    var resting = state === 'resting';
+    var envIsOpen = state === 'environment open';
+    var projectIsOpen = state === 'project open';
+    return {
+      voidBackground: r.background,
+      envColour: r.colour, envTint: r.tint, envLabel: r.label,
+      gate: env === 'production' ? 'read-only \u00b7 production' : 'read-only',
+      isResting: resting,
+      isPromoted: !resting,
+      envIsOpen: envIsOpen,
+      projectIsOpen: projectIsOpen,
+      envOpen: envIsOpen ? 'open' : '',
+      projectOpen: projectIsOpen ? 'open' : '',
+      envChevron: envIsOpen ? ACCENT : DIM,
+      envChevronPath: envIsOpen ? CHEVRON_UP : CHEVRON_DOWN,
+      projectChevron: projectIsOpen ? ACCENT : DIM,
+      projectChevronPath: projectIsOpen ? CHEVRON_UP : CHEVRON_DOWN,
+      localOn: env === 'local' ? 'on' : '',
+      stagingOn: env === 'staging' ? 'on' : '',
+      productionOn: env === 'production' ? 'on' : ''
+    };
+  }
+}
+</script>
+</body>
+</html>

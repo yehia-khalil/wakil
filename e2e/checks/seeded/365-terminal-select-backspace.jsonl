@@ -1,0 +1,12 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
+{"do":{"keys":"echo keep drop"}}
+{"expect":{"pane":"terminal-1","field":"grid","contains":"% echo keep drop"}}
+{"do":{"hotkey":"shift+Left"}}
+{"do":{"hotkey":"shift+Left"}}
+{"do":{"hotkey":"shift+Left"}}
+{"do":{"hotkey":"shift+Left"}}
+{"do":{"hotkey":"shift+Left"}}
+{"do":{"press":"Backspace"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].command","equals":"echo keep"}}

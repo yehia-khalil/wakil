@@ -1,0 +1,240 @@
+import Foundation
+import Testing
+@testable import WakilKit
+
+private func tab(_ path: String, _ text: String) -> EditorTab {
+    .file(path: path, root: "/p", text: text, mtime: 1, language: "go")
+}
+private func rendered(_ t: EditorTab) -> EditorRendered {
+    EditorRendered(text: t.text, language: t.language, readOnly: t.readOnly,
+                   agentSerial: t.lastAgentEdit?.serial ?? 0, cursor: t.cursor, selection: t.selection)
+}
+
+@Test func aNewTabIsShownRevealedAndScrolledToWhereItWas() {
+    var a = tab("/p/a.go", "x"); a.cursor = EditorPosition(line: 4, column: 1); a.scrollTop = 80
+    let s = EditorSnapshot(tabs: [a], active: 0)
+    #expect(editorRenderSteps(rendered: [:], active: nil, snapshot: s) == [
+        .show(key: "file:/p/a.go", text: "x", language: "go", readOnly: false),
+        .reveal(key: "file:/p/a.go", cursor: EditorPosition(line: 4, column: 1), selection: nil),
+        .scroll(key: "file:/p/a.go", top: 80),
+    ])
+}
+
+@Test func theOperatorsOwnTypingRoundTripsToNothing() {
+    var a = tab("/p/a.go", "x")
+    let r = ["file:/p/a.go": rendered(a)]
+    a.text = "xy"; a.edits = 1
+    var seen = r; seen["file:/p/a.go"]!.text = "xy"   // the view recorded what it sent
+    #expect(editorRenderSteps(rendered: seen, active: "file:/p/a.go", snapshot: EditorSnapshot(tabs: [a], active: 0)) == [])
+}
+
+@Test func renderUpdateForAnAgentEditIsAnEditNotAReset() {
+    var a = tab("/p/a.go", "if x {}")
+    let r = ["file:/p/a.go": rendered(a)]
+    let edit = EditorRange(start: EditorPosition(line: 1, column: 4), end: EditorPosition(line: 1, column: 5))
+    a.text = "if y {}"; a.lastAgentEdit = EditorAgentEdit(serial: 1, range: edit, text: "y")
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: EditorSnapshot(tabs: [a], active: 0))
+        == [.edit(key: "file:/p/a.go", range: edit, text: "y", before: "if x {}", after: "if y {}", basis: 1)])
+}
+
+@Test func anAgentEditOnTextTheRendererHasNotCaughtUpWithIsAReset() {
+    var a = tab("/p/a.go", "abc")
+    let r = ["file:/p/a.go": rendered(a)]
+    a.text = "Xbcdef"   // operator typed "def" (not yet reported) and the agent replaced 1:1-1:2
+    a.lastAgentEdit = EditorAgentEdit(serial: 1, range: EditorRange(start: EditorPosition(line: 1, column: 1), end: EditorPosition(line: 1, column: 2)), text: "X")
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: EditorSnapshot(tabs: [a], active: 0))
+        == [.reset(key: "file:/p/a.go", text: "Xbcdef", basis: 1)])
+}
+
+@Test func aReloadIsAReset() {
+    var a = tab("/p/a.go", "old")
+    let r = ["file:/p/a.go": rendered(a)]
+    a.text = "new"; a.savedText = "new"
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: EditorSnapshot(tabs: [a], active: 0))
+        == [.reset(key: "file:/p/a.go", text: "new", basis: 0)])
+}
+
+@Test func anAgentGotoIsARevealAndAClosedTabIsDisposed() {
+    var a = tab("/p/a.go", "x\ny")
+    let b = tab("/p/b.go", "b")
+    let r = ["file:/p/a.go": rendered(a), "file:/p/b.go": rendered(b)]
+    a.cursor = EditorPosition(line: 2, column: 1)
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: EditorSnapshot(tabs: [a], active: 0)) == [
+        .reveal(key: "file:/p/a.go", cursor: EditorPosition(line: 2, column: 1), selection: nil),
+        .dispose(key: "file:/p/b.go"),
+    ])
+}
+
+@Test func switchingTabsShowsTheOtherModelWithoutRevealing() {
+    let a = tab("/p/a.go", "a"), b = tab("/p/b.go", "b")
+    let r = ["file:/p/a.go": rendered(a), "file:/p/b.go": rendered(b)]
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: EditorSnapshot(tabs: [a, b], active: 1))
+        == [.show(key: "file:/p/b.go", text: "b", language: "go", readOnly: false)])
+}
+
+@Test func aSnapshotBehindTheOperatorsOwnTypingIsHeld() {
+    var a = tab("/p/a.go", "a")
+    var r = ["file:/p/a.go": rendered(a)]
+    r["file:/p/a.go"]!.text = "abc"            // the page has typed on
+    a.text = "ab"; a.edits = 1                 // the store has only the first post so far
+    let s = EditorSnapshot(tabs: [a], active: 0)
+    #expect(editorSnapshotToRender(s, rendered: r, active: "file:/p/a.go", typed: ["ab", "abc"],
+                                   typingInFlight: true, viewInFlight: false) == nil)
+    // Once nothing is in flight, it renders.
+    #expect(editorSnapshotToRender(s, rendered: r, active: "file:/p/a.go", typed: [],
+                                   typingInFlight: false, viewInFlight: false) == s)
+}
+
+@Test func anAgentEditOrAReloadIsNeverHeldBehindTyping() {
+    var a = tab("/p/a.go", "a")
+    var r = ["file:/p/a.go": rendered(a)]
+    r["file:/p/a.go"]!.text = "abc"
+    var edited = a
+    edited.text = "Xa"
+    edited.lastAgentEdit = EditorAgentEdit(serial: 1, range: EditorRange(start: .init(line: 1, column: 1),
+                                                                          end: .init(line: 1, column: 1)), text: "X")
+    let s1 = EditorSnapshot(tabs: [edited], active: 0)
+    #expect(editorSnapshotToRender(s1, rendered: r, active: "file:/p/a.go", typed: ["ab", "abc", "Xa"],
+                                   typingInFlight: true, viewInFlight: false) == s1)
+    a.text = "from disk"; a.savedText = "from disk"; a.edits = 1
+    let s2 = EditorSnapshot(tabs: [a], active: 0)
+    #expect(editorSnapshotToRender(s2, rendered: r, active: "file:/p/a.go", typed: ["ab", "abc"],
+                                   typingInFlight: true, viewInFlight: false) == s2)
+}
+
+@Test func aViewReportInFlightKeepsTheRenderedCursor() {
+    var a = tab("/p/a.go", "abc")
+    var r = ["file:/p/a.go": rendered(a)]
+    r["file:/p/a.go"]!.cursor = EditorPosition(line: 1, column: 4)
+    a.cursor = EditorPosition(line: 1, column: 2)            // an older report's echo
+    let s = EditorSnapshot(tabs: [a], active: 0)
+    let out = editorSnapshotToRender(s, rendered: r, active: "file:/p/a.go", typed: [],
+                                     typingInFlight: false, viewInFlight: true)
+    #expect(out?.tabs[0].cursor == EditorPosition(line: 1, column: 4))
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: out!) == [])
+}
+
+/// Final review I2: an agent edit reaching the page while a keystroke is still unposted. The step
+/// carries the text the range applies to and the text it must produce, so the page can tell its
+/// model is not `before` (it holds the keystroke) and replace it whole instead of applying the
+/// range at shifted columns (`foo(bar)` → `Xfoobazr)`).
+@Test func anAgentEditCarriesTheTextItAppliesToAndTheTextItMustProduce() {
+    var a = tab("/p/a.go", "foo(bar)")
+    let r = ["file:/p/a.go": rendered(a)]
+    let edit = EditorRange(start: EditorPosition(line: 1, column: 5), end: EditorPosition(line: 1, column: 8))
+    a.text = "foo(baz)"; a.lastAgentEdit = EditorAgentEdit(serial: 3, range: edit, text: "baz")
+    let steps = editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: EditorSnapshot(tabs: [a], active: 0))
+    guard case .edit(_, let range, let text, let before, let after, let basis)? = steps.first else {
+        Issue.record("want an edit step, got \(steps)")
+        return
+    }
+    #expect(before == "foo(bar)" && after == "foo(baz)" && basis == 3)
+    // What the page would get by applying the range to a model holding an unposted "X" at 1:1:
+    // not `after`, so the page must not keep it.
+    let shifted = editorReplacing("Xfoo(bar)", range, with: text)
+    #expect(shifted == "Xfoobazr)" && shifted != after && "Xfoo(bar)" != before)
+}
+
+@Test func aPostMadeBeforeAnAgentEditLandedResyncsThePageToTheStore() {
+    let a = tab("/p/a.go", "abcE")
+    var r = ["file:/p/a.go": rendered(a)]
+    r["file:/p/a.go"]!.agentSerial = 2
+    let subjects = ["file:/p/a.go": a.subject]
+    #expect(editorTypingPost(key: "file:/p/a.go", basis: 1, subjects: subjects, rendered: r)
+        == .resync(text: "abcE", basis: 2))
+    #expect(editorTypingPost(key: "file:/p/a.go", basis: 2, subjects: subjects, rendered: r) == .send(a.subject))
+}
+
+@Test func aPostFromATabNoLongerOpenIsDroppedNotSentToAnotherTab() {
+    let b = tab("/p/b.go", "b")
+    let r = ["file:/p/b.go": rendered(b)]
+    #expect(editorTypingPost(key: "file:/p/a.go", basis: 0, subjects: ["file:/p/b.go": b.subject], rendered: r) == .drop)
+}
+
+private func hasFind(_ steps: [EditorRenderStep]) -> Bool { steps.contains { if case .find = $0 { true } else { false } } }
+
+/// Renders `s` the way the view does, keeping the pane's own find record beside `rendered`.
+private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRendered], _ active: inout String?,
+                    _ findShown: inout Int) -> [EditorRenderStep] {
+    let steps = editorRenderSteps(rendered: rendered, active: active, snapshot: s, findShown: findShown)
+    rendered = editorRenderedAfter(steps, rendered: rendered, snapshot: s)
+    findShown = editorFindShownAfter(steps, findShown: findShown, snapshot: s)
+    active = s.active.flatMap { $0 < s.tabs.count ? editorTabKey(s.tabs[$0]) : nil }
+    return steps
+}
+
+@Test func aFindRequestIsOneStepPerSerial() {
+    var s = EditorSnapshot(tabs: [tab("/p/a.go", "a")], active: 0)
+    s.find = EditorFindRequest(query: "x", caseSensitive: false, wholeWord: true, regex: false, serial: 1)
+    var rendered: [String: EditorRendered] = [:], active: String? = nil, shown = 0
+    let key = editorTabKey(s.tabs[0])
+    #expect(render(s, &rendered, &active, &shown).contains(.find(key: key, query: "x", caseSensitive: false, wholeWord: true, regex: false)))
+    #expect(shown == 1)
+    #expect(!hasFind(render(s, &rendered, &active, &shown)))
+    // The pane's record, not the tab's: a render from no rendered tabs never replays it.
+    #expect(!hasFind(editorRenderSteps(rendered: [:], active: nil, snapshot: s, findShown: shown)))
+    s.find?.serial = 2
+    #expect(hasFind(render(s, &rendered, &active, &shown)) && shown == 2)
+}
+
+@Test func aFindIsNotReplayedOnATabFirstShownAfterIt() {
+    var s = EditorSnapshot(tabs: [tab("/p/a.go", "a"), tab("/p/b.go", "b")], active: 0)
+    s.find = EditorFindRequest(query: "x", caseSensitive: false, wholeWord: false, regex: false, serial: 1)
+    var rendered: [String: EditorRendered] = [:], active: String? = nil, shown = 0
+    #expect(hasFind(render(s, &rendered, &active, &shown)))
+    s.active = 1                                              // b.go has never been rendered
+    #expect(!hasFind(render(s, &rendered, &active, &shown)))
+    s.active = 0
+    #expect(!hasFind(render(s, &rendered, &active, &shown)))
+}
+
+// Fix round 1, I2: closing every tab drops every rendered key, never the pane's find record.
+@Test func aFindIsNotReplayedAfterEveryTabClosesAndAnotherOpens() {
+    var s = EditorSnapshot(tabs: [tab("/p/a.go", "a")], active: 0)
+    s.find = EditorFindRequest(query: "x", caseSensitive: false, wholeWord: false, regex: false, serial: 1)
+    var rendered: [String: EditorRendered] = [:], active: String? = nil, shown = 0
+    #expect(hasFind(render(s, &rendered, &active, &shown)))
+    s.tabs = []; s.active = nil
+    _ = render(s, &rendered, &active, &shown)
+    #expect(rendered.isEmpty)
+    s.tabs = [tab("/p/b.go", "b")]; s.active = 0
+    #expect(!hasFind(render(s, &rendered, &active, &shown)))
+}
+
+// Fix round 1, I2: a re-created view starts with nothing rendered. A find its bar already reported
+// was shown by the view before it and is not replayed; one never reported (a pane whose view is
+// new) is still opened.
+@Test func aReCreatedViewDoesNotReplayAFindAlreadyShown() {
+    var s = EditorSnapshot(tabs: [tab("/p/a.go", "a")], active: 0)
+    s.find = EditorFindRequest(query: "x", caseSensitive: false, wholeWord: false, regex: false, serial: 3)
+    #expect(editorFindShownSeed(s) == 0)
+    #expect(hasFind(editorRenderSteps(rendered: [:], active: nil, snapshot: s, findShown: editorFindShownSeed(s))))
+    s.findReport = EditorFindReport(query: "x", caseSensitive: false, wholeWord: false, regex: false, count: 1, shown: true)
+    #expect(editorFindShownSeed(s) == 3)
+    #expect(!hasFind(editorRenderSteps(rendered: [:], active: nil, snapshot: s, findShown: editorFindShownSeed(s))))
+}
+
+@MainActor private final class RecordingRenderer: EditorRenderer {
+    var calls: [String] = []
+    func showModel(key: String, text: String, language: String, readOnly: Bool) { calls.append("show \(key)") }
+    func setLanguage(key: String, language: String) { calls.append("language \(key)") }
+    func setReadOnly(key: String, readOnly: Bool) { calls.append("readOnly \(key)") }
+    func resetText(key: String, text: String, basis: Int) { calls.append("reset \(key)") }
+    func applyEdit(key: String, range: EditorRange, text: String, before: String, after: String, basis: Int) { calls.append("edit \(key)") }
+    func reveal(key: String, cursor: EditorPosition, selection: EditorRange?) { calls.append("reveal \(key)") }
+    func setScrollTop(key: String, top: Double) { calls.append("scroll \(key)") }
+    func disposeModel(key: String) { calls.append("dispose \(key)") }
+    func focus() { calls.append("focus") }
+    func find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool) {
+        calls.append("find \(key) \(query) \(caseSensitive) \(wholeWord) \(regex)")
+    }
+}
+
+@MainActor @Test func aFindStepReachesTheRendererLast() {
+    var s = EditorSnapshot(tabs: [tab("/p/a.go", "a")], active: 0)
+    s.find = EditorFindRequest(query: "q", caseSensitive: true, wholeWord: false, regex: true, serial: 3)
+    let r = RecordingRenderer()
+    editorApply(editorRenderSteps(rendered: [:], active: nil, snapshot: s, findShown: 0), to: r)
+    #expect(r.calls == ["show file:/p/a.go", "reveal file:/p/a.go", "scroll file:/p/a.go",
+                        "find file:/p/a.go q true false true"])
+}

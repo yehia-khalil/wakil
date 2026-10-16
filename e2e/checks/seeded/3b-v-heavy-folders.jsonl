@@ -1,0 +1,62 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.editor"}}
+{"do":{"click":"settings.editor.showIgnored.off"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.showIgnored","equals":"false"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_tree","params":{"pane":"editor-2","shown":true,"view":"files"}}}
+{"expect":{"pane":"editor-2","field":"column.shown","equals":"true"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"expect":{"tree":"contains","text":"text .gitignore"}}
+{"expect":{"tree":"contains","text":"text vendor"}}
+{"expect":{"tree":"absent","text":"autoload.php"}}
+{"do":{"click":"settings.tree.projectEditor.e2e-git"}}
+{"expect":{"tree":"contains","text":"HEAVY FOLDERS"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].name","equals":"e2e-git"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"vendor"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[1]","equals":"node_modules"}}
+{"parity":{"action":"ctx_set_project_editor_settings","params":{"projectPath":"{fixtureRoot}/e2e-git/.wakil/project.json","heavyFolders":["node_modules"]},"click":"settings.projectEditor.heavy.0.remove","assert":"tree"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"node_modules"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[1]","present":false}}
+{"expect":{"tree":"contains","text":"HEAVY FOLDERS"}}
+{"expect":{"tree":"contains","text":"Value: node_modules"}}
+{"expect":{"tree":"contains","text":"text .gitignore"}}
+{"expect":{"tree":"absent","text":"Value: vendor"}}
+{"do":{"click":"settings.projectEditor.heavy.add"}}
+{"do":{"keys":"vendor"}}
+{"expect":{"tree":"contains","text":"Value: vendor"}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[1]","equals":"vendor"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"node_modules"}}
+{"do":{"click":"settings.tree.editor"}}
+{"expect":{"tree":"contains","text":"SHOW IGNORED FILES"}}
+{"expect":{"tree":"contains","text":"text vendor"}}
+{"expect":{"tree":"absent","text":"autoload.php"}}
+{"do":{"click":"editor.tree.row:e2e-api/vendor"}}
+{"expect":{"tree":"contains","text":"autoload.php"}}
+{"do":{"click":"settings.editor.showIgnored.on"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.showIgnored","equals":"true"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"README.md"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"autoload"}}
+{"expect":{"tree":"contains","text":"Value: autoload"}}
+{"expect":{"tree":"contains","text":"text 0 of "}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"click":"settings.tree.projectEditor.e2e-git"}}
+{"expect":{"tree":"contains","text":"HEAVY FOLDERS"}}
+{"do":{"click":"settings.projectEditor.heavy.1.remove"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[1]","present":false}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"node_modules"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"autoload"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"pane":"editor-2","field":"tabs[1].path","contains":"/e2e-api/vendor/autoload.php"}}

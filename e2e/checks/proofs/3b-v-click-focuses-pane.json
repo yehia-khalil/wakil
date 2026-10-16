@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-v-click-focuses-pane.jsonl",
+  "baseCommit": "570f9eee022f026900bfb04a16f78ba755286c47",
+  "provedAt": "2026-10-15T14:28:37.256376Z",
+  "checkBlob": "952e6ef45b14af676afe7bc7e53372adc1f4f4fc"
+}

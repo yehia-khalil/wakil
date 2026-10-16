@@ -1,0 +1,230 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    .sheet {
+      position: relative; width: 1800px; height: 980px; overflow: hidden;
+      background:
+        radial-gradient(circle 1200px at 50% 124%,
+          rgba(124,92,255,0.18) 0%, rgba(124,92,255,0.068) 42%,
+          rgba(124,92,255,0.026) 58%, rgba(124,92,255,0.007) 75%,
+          rgba(124,92,255,0) 92%),
+        linear-gradient(180deg, #030408 0%, #070812 100%);
+    }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .slab {
+      background: #0e1019; border-radius: 10px;
+      box-shadow:
+        0 8px 36px rgba(0,0,0,0.55),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* One field: its name, and one word about what it is. Nothing here is a
+       control — this artboard is a MAP of the config model, not a screen. */
+    .f {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 14px; padding: 7px 0;
+    }
+    .fk {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 12px; color: rgba(232,236,246,0.92);
+    }
+    .fn {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase;
+      color: rgba(232,236,246,0.50); white-space: nowrap;
+    }
+    .sub { padding: 14px 16px; border-radius: 7px; background: rgba(232,236,246,0.045); }
+  </style>
+</helmet>
+
+<div class="sheet">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <div style="position: absolute; left: 80px; top: 58px; right: 80px; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px;">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div class="micro">What is configurable, and where it lives</div>
+      <div style="font-size: 19px; color: #e8ecf6;">Organisation → Project → Environment</div>
+    </div>
+    <div class="micro" style="color: rgba(232,236,246,0.52);">Invariant 5 · exactly one of each is active</div>
+  </div>
+
+  <!-- ══ ORG ══ -->
+  <div class="slab" style="position: absolute; left: 80px; top: 152px; width: 496px; padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div class="micro">1 · Organisation</div>
+      <div class="mono" style="font-size: 10.5px; color: rgba(232,236,246,0.50);">~/.wakil/orgs/&lt;id&gt;/org.json</div>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <div class="f"><div class="fk">displayName</div><div class="fn">Optional</div></div>
+      <div class="f"><div class="fk">jiraBase</div><div class="fn">Optional · normalised</div></div>
+      <div class="f"><div class="fk">defaultProvider</div><div class="fn">Advisory only</div></div>
+    </div>
+
+    <div class="sub" style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+        <div class="micro">Providers</div>
+        <div class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">providers/&lt;id&gt;.json</div>
+      </div>
+      <div style="display: flex; flex-direction: column;">
+        <div class="f"><div class="fk">kind</div><div class="fn">claude-code · codex · local</div></div>
+        <div class="f"><div class="fk">label</div><div class="fn">Optional</div></div>
+        <div class="f"><div class="fk">configDir</div><div class="fn">One dir, one homing org</div></div>
+        <div class="f"><div class="fk">claudePath</div><div class="fn">Binary, not a credential</div></div>
+        <div class="f"><div class="fk">shared</div><div class="fn">Bound, not moved</div></div>
+      </div>
+      <div class="micro" style="color: rgba(232,236,246,0.52); text-transform: none; letter-spacing: 0; font-size: 11px; line-height: 1.5;">Attached to the org, never to a project. One org may hold several; one account may serve several orgs.</div>
+    </div>
+
+    <!-- Invariant 4, and the reason this column is first: everything the other
+         two columns name as a `ref` resolves inside THIS org's namespace. -->
+    <div style="padding: 13px 15px; border-radius: 7px; background: rgba(124,92,255,0.10); font-size: 11.5px; line-height: 1.55; color: rgba(232,236,246,0.86); text-wrap: pretty;">
+      <span style="color: #b9a4ff;">The credential boundary.</span> Every ref named anywhere to the right resolves under <span class="mono" style="color: #b9a4ff;">wakil:&lt;org&gt;:</span> — which is why cross-org bleed is structurally impossible rather than merely avoided.
+    </div>
+  </div>
+
+  <svg style="position: absolute; left: 592px; top: 300px;" width="40" height="16" viewBox="0 0 40 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h34M30 3l6 5-6 5"/></svg>
+  <div class="micro" style="position: absolute; left: 584px; top: 324px; width: 56px; text-align: center; color: rgba(232,236,246,0.52);">Owns</div>
+
+  <!-- ══ PROJECT ══ -->
+  <div class="slab" style="position: absolute; left: 652px; top: 152px; width: 496px; padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div class="micro">2 · Project</div>
+      <div class="mono" style="font-size: 10.5px; color: rgba(232,236,246,0.50);">&lt;project dir&gt;/project.json</div>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <div class="f"><div class="fk">name</div><div class="fn">Required</div></div>
+      <div class="f"><div class="fk">org</div><div class="fn">Declares, never sets</div></div>
+      <div class="f"><div class="fk">roots[].path</div><div class="fn">Multi-root</div></div>
+      <div class="f"><div class="fk">roots[].role</div><div class="fn">Optional</div></div>
+      <div class="f"><div class="fk">scopes.pm.provider</div><div class="fn">Jira account</div></div>
+      <div class="f"><div class="fk">scopes.pm.projectKey</div><div class="fn">e.g. INI</div></div>
+    </div>
+
+    <div class="sub" style="display: flex; flex-direction: column; gap: 9px;">
+      <div class="micro">Inherited from the org</div>
+      <div class="micro" style="color: rgba(232,236,246,0.52); text-transform: none; letter-spacing: 0; font-size: 11px; line-height: 1.5;">The provider, when the project names none — advisory, so nothing is ever blocked for want of it.</div>
+    </div>
+
+    <!-- Invariant 4's own subject: a project DECLARES which org it belongs to,
+         and that is what the cross-org guard checks against. If config could
+         also SET the org, the guard would be comparing a value to itself. -->
+    <div style="padding: 13px 15px; border-radius: 7px; background: rgba(232,180,90,0.09); font-size: 11.5px; line-height: 1.55; color: #e8b45a; text-wrap: pretty;">
+      <span style="font-weight: 600;">org declares, it does not select.</span> The active org comes from the operator, never from a file — otherwise the cross-org guard would compare a value to itself.
+    </div>
+  </div>
+
+  <svg style="position: absolute; left: 1164px; top: 300px;" width="40" height="16" viewBox="0 0 40 16" fill="none" stroke="rgba(232,236,246,0.42)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h34M30 3l6 5-6 5"/></svg>
+  <div class="micro" style="position: absolute; left: 1156px; top: 324px; width: 56px; text-align: center; color: rgba(232,236,246,0.52);">Holds</div>
+
+  <!-- ══ ENVIRONMENT ══ -->
+  <div class="slab" style="position: absolute; left: 1224px; top: 152px; width: 496px; padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div class="micro">3 · Environment</div>
+      <div class="mono" style="font-size: 10.5px; color: rgba(232,236,246,0.50);">project.json · environments[&lt;name&gt;]</div>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <div class="f"><div class="fk">&lt;name&gt;</div><div class="fn">The map key · arms the gate</div></div>
+      <div class="f"><div class="fk">databases[].name</div><div class="fn">Unique per env</div></div>
+      <div class="f"><div class="fk">databases[].driver</div><div class="fn">mysql · postgres · sqlite · mongo</div></div>
+      <div class="f"><div class="fk">databases[].ref</div><div class="fn">Keychain name · holds the DSN</div></div>
+      <div class="f"><div class="fk">databases[].writeRef</div><div class="fn">Absent ⇒ never mutable</div></div>
+      <div class="f"><div class="fk">api[].name</div><div class="fn">Unique per env</div></div>
+      <div class="f"><div class="fk">api[].baseUrl</div><div class="fn">One origin · one backend</div></div>
+      <div class="f"><div class="fk">api[].authRef</div><div class="fn">Keychain name · holds the whole header value</div></div>
+      <div class="f"><div class="fk">api[].authHeader</div><div class="fn">Absent &#8658; Authorization</div></div>
+    </div>
+
+    <!-- The name is the only thing arming the gate, and it is an exact match. -->
+    <div style="padding: 13px 15px; border-radius: 7px; background: rgba(232,92,92,0.10); font-size: 11.5px; line-height: 1.55; color: #e85c5c; text-wrap: pretty;">
+      <span style="font-weight: 600;">The name is a safety control.</span> <span class="mono" style="font-size: 11px;">isProductionEnvironment</span> matches the exact string <span class="mono" style="font-size: 11px;">production</span>. Renaming this key arms or disarms the red room and every write block with it.
+    </div>
+  </div>
+
+  <!-- ══ THE BAND: where the values actually are ══
+       The point of the whole map. A database credential is DECLARED three
+       columns to the right and STORED here, under the org — so the level you
+       edit it at and the level it is scoped to are not the same level. -->
+  <div style="position: absolute; left: 340px; top: 724px; width: 1px; height: 36px; background: rgba(232,236,246,0.22);"></div>
+  <div style="position: absolute; left: 900px; top: 724px; width: 1px; height: 36px; background: rgba(232,236,246,0.22);"></div>
+  <div style="position: absolute; left: 1472px; top: 724px; width: 1px; height: 36px; background: rgba(232,236,246,0.22);"></div>
+
+  <div class="slab" style="position: absolute; left: 80px; top: 760px; width: 1640px; padding: 20px 22px; display: flex; align-items: center; gap: 30px;">
+    <div style="display: flex; flex-direction: column; gap: 8px; width: 300px; flex-shrink: 0;">
+      <div class="micro">Keychain</div>
+      <div class="mono" style="font-size: 12px; color: #e8ecf6;">wakil:&lt;org&gt;:&lt;ref&gt;</div>
+    </div>
+
+    <div style="display: flex; gap: 26px; flex-grow: 1;">
+      <div style="display: flex; flex-direction: column; gap: 7px; flex: 1;">
+        <div class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.92);">provider:&lt;id&gt;</div>
+        <div class="micro" style="color: rgba(232,236,246,0.50);">OAuth token · CLI writes</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 7px; flex: 1;">
+        <div class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.92);">&lt;db ref&gt;</div>
+        <div class="micro" style="color: rgba(232,236,246,0.50);">Full DSN · host, port, user, password</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 7px; flex: 1;">
+        <div class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.92);">&lt;db writeRef&gt;</div>
+        <div class="micro" style="color: rgba(232,236,246,0.50);">A second, server-granted credential</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 7px; flex: 1;">
+        <div class="mono" style="font-size: 11.5px; color: rgba(232,236,246,0.92);">&lt;api authRef&gt;</div>
+        <div class="micro" style="color: rgba(232,236,246,0.50);">The whole header value · scheme included</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 80px; top: 902px; right: 80px; display: flex; align-items: center; gap: 28px;">
+    <div class="micro" style="color: rgba(232,236,246,0.52); text-transform: none; letter-spacing: 0; font-size: 12px; line-height: 1.5;">
+      <span style="color: #b9a4ff;">Declared at one level, stored at another.</span> A database credential is named in an environment and kept under the org, so editing it is a project-level act and leaking it would be an org-level failure. Wakil never displays or writes these values — it reads them.
+    </div>
+    <div style="flex-grow: 1;"></div>
+    <div class="micro" style="white-space: nowrap;">Not per level · bindings are machine · density is per pane · provider is per session</div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1800,"height":980}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

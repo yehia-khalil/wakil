@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "stripe@claude-plugins-official": false,
+    "cloudflare@cloudflare": false,
+    "laravel-simplifier@laravel": false,
+    "frontend-design@claude-plugins-official": false
+  }
+}

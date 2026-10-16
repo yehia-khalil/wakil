@@ -1,0 +1,21 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn two"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"second reply in the thread"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn three"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"third reply in the thread"}}
+{"expect":{"tree":"contains","text":"EARLIER · SHOW"}}
+{"expect":{"tree":"absent","text":"first reply in the thread"}}
+{"do":{"click":"window.thread.earlier"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"expect":{"tree":"absent","text":"EARLIER · SHOW"}}
+{"do":{"click":"window.thread.row.0"}}
+{"expect":{"tree":"contains","text":"expanded"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"contains","text":"EARLIER · SHOW"}}
+{"expect":{"tree":"absent","text":"expanded"}}
+{"expect":{"tree":"absent","text":"first reply in the thread"}}

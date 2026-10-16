@@ -1,0 +1,105 @@
+{
+  "rules": [
+    {
+      "match": "report my capacity at twelve percent",
+      "emit": [
+        {
+          "type": "rate_limit_event",
+          "rate_limit_info": {
+            "status": "allowed",
+            "unifiedWindows": {
+              "five_hour": { "utilization": 0.88, "resetsAt": 4085208000 },
+              "seven_day": { "utilization": 0.41, "resetsAt": 4085208000 }
+            }
+          }
+        }
+      ],
+      "reply": "capacity reported for this turn"
+    },
+    {
+      "match": "report my capacity at twenty-nine percent",
+      "emit": [
+        {
+          "type": "rate_limit_event",
+          "rate_limit_info": {
+            "status": "allowed",
+            "unifiedWindows": {
+              "five_hour": { "utilization": 0.71, "resetsAt": 4085208000 },
+              "seven_day": { "utilization": 0.18, "resetsAt": 4085208000 }
+            }
+          }
+        }
+      ],
+      "reply": "capacity reported for this turn"
+    },
+    {
+      "match": "propose a command that prints",
+      "call": {
+        "action": "term_propose",
+        "params": { "pane": "terminal-1", "command": "echo proposed-by-the-agent" }
+      },
+      "reply": "I put `echo proposed-by-the-agent` in your prompt. Press return to accept it, and again to run it."
+    },
+    {
+      "match": "what did my last command print",
+      "read": { "pane": "terminal-1", "field": "blocks[-1].output[0]" },
+      "reply": "your last command printed: {value}"
+    },
+    {
+      "match": "say hello from the microphone",
+      "reply": "the spoken turn arrived"
+    },
+    {
+      "match": "thread turn one",
+      "reply": "first reply in the thread"
+    },
+    {
+      "match": "thread turn two",
+      "reply": "second reply in the thread"
+    },
+    {
+      "match": "thread turn three",
+      "reply": "third reply in the thread"
+    },
+    {
+      "match": "→ pane_move (action · wakil)",
+      "reply": "the agent was handed pane_move"
+    },
+    {
+      "match": "→ booking_id (column · pane ·",
+      "reply": "the agent was handed booking_id from the open pane"
+    },
+    {
+      "match": "→ booking_id (column · staging · bookings db)",
+      "reply": "the agent was handed booking_id from the bookings schema"
+    },
+    {
+      "match": "→ buildlaunch (code",
+      "reply": "the agent was handed buildLaunch from the code"
+    },
+    {
+      "match": "[wakil: identifiers in scope that match words in this turn",
+      "reply": "a note arrived that no rule expected"
+    },
+    {
+      "match": "tell me a short joke",
+      "reply": "the joke turn arrived with no note"
+    },
+    {
+      "match": "pane move pane focus pane close pane resize",
+      "reply": "nine names arrived with no note"
+    },
+    {
+      "match": "where does pane move live",
+      "reply": "pane move arrived with no note"
+    },
+    {
+      "match": "what is in booking id",
+      "reply": "booking id arrived with no note"
+    },
+    {
+      "match": "where is build launch defined",
+      "reply": "build launch arrived with no note"
+    }
+  ]
+}

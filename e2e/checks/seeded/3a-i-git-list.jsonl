@@ -1,0 +1,32 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"do":{"click":"landing.row.open:git"}}
+{"expect":{"pane":"git-1","field":"kind","equals":"git"}}
+{"expect":{"tree":"contains","text":"GIT"}}
+{"expect":{"pane":"git-1","field":"folded","equals":"false"}}
+{"expect":{"pane":"git-1","field":"roots[0].name","equals":"e2e-git"}}
+{"expect":{"pane":"git-1","field":"roots[0].error","equals":"not a git repository"}}
+{"expect":{"pane":"git-1","field":"roots[0].files","equals":"[]"}}
+{"expect":{"tree":"contains","text":"e2e-git · not a git repository"}}
+{"expect":{"pane":"git-1","field":"roots[1].name","equals":"e2e-api"}}
+{"expect":{"pane":"git-1","field":"roots[1].error","equals":"null"}}
+{"expect":{"pane":"git-1","field":"roots[1].branch","equals":"main"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[0].path","equals":"app.txt"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[0].group","equals":"staged"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[1].path","equals":"app.txt"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[1].group","equals":"changed"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[2].path","equals":"BookingController.php"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[2].group","equals":"untracked"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[3].path","equals":"notes"}}
+{"expect":{"pane":"git-1","field":"roots[2].name","equals":"e2e-portal"}}
+{"expect":{"pane":"git-1","field":"roots[2].files[0].path","equals":"index.txt"}}
+{"expect":{"pane":"git-1","field":"roots[2].files[0].group","equals":"changed"}}
+{"expect":{"tree":"contains","text":"e2e-api · main"}}
+{"expect":{"tree":"contains","text":"STAGED"}}
+{"expect":{"tree":"contains","text":"UNTRACKED"}}
+{"expect":{"tree":"contains","text":"?, notes"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main"}}
+{"expect":{"tree":"contains","text":"M, index.txt"}}
+{"dispatch":{"action":"git_refresh","params":{"pane":"git-1"}}}
+{"expect":{"pane":"git-1","field":"roots[0].error","equals":"not a git repository"}}
+{"expect":{"pane":"git-1","field":"roots[2].files[0].path","equals":"index.txt"}}

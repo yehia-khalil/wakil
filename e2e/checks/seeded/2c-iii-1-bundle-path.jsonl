@@ -1,0 +1,15 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"echo $PATH"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"profile-bin"}}
+{"do":{"keys":"command -v wakil-e2e-profile-marker"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"wakil-e2e-profile-marker"}}
+{"do":{"keys":"command -v wakil-e2e-profile-marker-two"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"wakil-e2e-profile-marker-two"}}

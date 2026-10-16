@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-ii-b-replace-undo.jsonl",
+  "baseCommit": "5c38f72852bf3febfa10e09fea88c4df5460e388",
+  "provedAt": "2026-10-14T19:03:37.967076Z",
+  "checkBlob": "af63ed5baff82400997934b31a9270b9f63aa49b"
+}

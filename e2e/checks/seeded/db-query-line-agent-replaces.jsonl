@@ -1,0 +1,18 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-1","database":"bookings","query":"SELECT * FROM bookings ORDER BY id"}}}
+{"expect":{"pane":"db-1","field":"rowCount","equals":"2"}}
+{"do":{"focus":"db.db-1.queryLine"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"SELECT status FROM bookings"}}
+{"do":{"press":"Return"}}
+{"expect":{"journal":{"contains":"SELECT status FROM bookings"}}}
+{"expect":{"pane":"db-1","field":"columns[0]","equals":"status"}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-1","database":"bookings","query":"SELECT booking_id FROM bookings WHERE id = 8843"}}}
+{"expect":{"pane":"db-1","field":"rows[0][0]","equals":"BK-2026-8843"}}
+{"expect":{"tree":"contains","text":"text entry area (settable) SELECT booking_id FROM bookings WHERE id = 8843"}}
+{"do":{"focus":"db.db-1.queryLine"}}
+{"do":{"hotkey":"cmd+z"}}
+{"expect":{"tree":"contains","text":"text entry area (settable) SELECT booking_id FROM bookings WHERE id = 8843"}}
+{"expect":{"tree":"absent","text":"text entry area (settable) SELECT status FROM bookings"}}
+{"expect":{"tree":"absent","text":"text entry area (settable) SELECT * FROM bookings ORDER BY id"}}

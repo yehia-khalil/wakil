@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/api-paste-curl-www.jsonl",
+  "baseCommit": "20a5384ca1f757855fd3f7d975dd03517e591c82",
+  "provedAt": "2026-10-15T14:25:57.611739Z",
+  "checkBlob": "0d60f4eeaf7f4ae378d5fd6013d83ff9b26c9123"
+}

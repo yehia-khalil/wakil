@@ -1,0 +1,26 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"get","path":[{"literal":"/kept"}]}}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"keys":"curl"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"CURL COMMAND"}}
+{"do":{"keys":"curl https://api.other.invalid/x"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"no entry in staging has that host"}}
+{"expect":{"tree":"contains","text":"CURL COMMAND"}}
+{"expect":{"tree":"contains","text":"Value: curl https://api.other.invalid/x"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/kept"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"CURL COMMAND"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"RUN A COMMAND"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"keys":"curl"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"CURL COMMAND"}}
+{"do":{"click":"palette.row.recent:curl https://api.other.invalid/x"}}
+{"expect":{"tree":"contains","text":"Value: curl https://api.other.invalid/x"}}

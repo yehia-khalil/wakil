@@ -1,0 +1,419 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    .void { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .slab {
+      background: #0e1019; border-radius: 10px;
+      box-shadow:
+        0 8px 36px rgba(0,0,0,0.55),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    /* NOT A SHEET. Palettes.swift presents these in `.sheet`, which brings
+       macOS's own panel chrome into an application whose §1 opens with "no
+       window chrome" — and a system sheet is also the one surface here that
+       still renders in Light Mode, which the 2026-09-14 design review's §F0
+       lists as making the app's safety-critical text invisible.
+       OrgPlane.swift already solved this on main: the plane is a ZStack child
+       over an `rgba(3,4,8,0.58)` dimmer, at ConfirmationPlane's own geometry —
+       black .86, radius 12, width 520, shadow 30. This artboard is that plane
+       with a query field in it, so the restyle is a move to an existing
+       pattern rather than a new one. */
+    .plane {
+      width: 520px; border-radius: 12px;
+      background: rgba(0,0,0,0.86);
+      box-shadow:
+        0 0 60px rgba(0,0,0,0.75),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* A result row, and the anchor mark is §8's — the same luminous left edge
+       the data surface gives its anchor row and the rail gives the focused
+       pane. The palette is a list of things you are about to focus, so it is
+       the same idea and gets the same mark rather than a new one. */
+    .row {
+      position: relative; display: flex; align-items: center; gap: 16px;
+      padding: 11px 22px; cursor: pointer;
+      background: rgba(232,236,246,0); transition: background 240ms ease-out;
+    }
+    .row:hover { background: rgba(232,236,246,0.04); }
+    .row.on { background: rgba(232,236,246,0.06); }
+    .row .edge {
+      position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px;
+      border-radius: 1px; background: transparent;
+    }
+    .row.on .edge { background: #9e82ff; box-shadow: 0 0 8px rgba(158,130,255,0.70); }
+    /* A run in flight on this row (rule 5): the rail's working tick, §5's
+       green `#8be0c8`, the same 2pt mark in the other hue. Working outranks
+       selected on the tick; the wash still says which row the cursor is on. */
+    .row.working .edge { background: #8be0c8; box-shadow: 0 0 8px rgba(139,224,200,0.70); }
+    /* STALE ROWS. Switching mode with `>` (or ⌘P over ⌘K) keeps the old mode's
+       rows on screen, dimmed, until the new list lands, so the plane does not
+       flash empty or say "No results" on the way. They are drawn, never run.
+       The "No results" row and a source's error row take the same dim. */
+    .row.stale, .row.none { opacity: 0.42; cursor: default; }
+    .row.stale:hover, .row.none:hover { background: rgba(232,236,246,0); }
+    .row .ttl { font-size: 14px; color: rgba(232,236,246,0.86); }
+    .row.on .ttl { color: #e8ecf6; }
+    /* A production row is red in every channel it has, because §5's red is
+       the environment's and Invariant 8 wants it unmissable at the one moment
+       that matters: the row you are about to press Return on. The anchor tick
+       stays violet — it means "this is the one you are on", which is a fact
+       about the cursor and not about production. */
+    .row.danger .ttl { color: #e85c5c; }
+    .row.danger .sub { color: rgba(232,92,92,0.66); }
+    .row.danger .kind { color: rgba(232,92,92,0.72); }
+    .row .sub {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 10.5px; color: rgba(232,236,246,0.50);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* The matched run, lifted rather than hued. Violet is already spoken for
+       here — it is the anchor — and §5's three are semantic, so a fuzzy match
+       gets the same stepped white the terminal's ⌘F uses for a hit. One
+       treatment for "this is why you are seeing this row", in both places. */
+    .hit { background: rgba(232,236,246,0.22); border-radius: 2px; padding: 0 1px; }
+  </style>
+</helmet>
+
+<div class="void" style="background: {{voidBackground}};">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <!-- The canvas behind, inert. §4.3's treatment for the org plane, reused:
+       the operator must still see what they are choosing against. -->
+  <div style="position: absolute; left: 296px; top: 132px; display: flex; gap: 0; opacity: 0.22; filter: blur(0.6px);">
+    <div class="slab" style="width: 540px; height: 430px; padding: 16px;"><div class="micro">bookings</div></div>
+    <div class="slab" style="width: 460px; height: 430px; padding: 16px;"><div class="micro">confirm</div></div>
+  </div>
+  <div style="position: absolute; left: 44px; top: 138px; width: 220px; opacity: 0.10; filter: blur(1.4px);">
+    <div style="font-size: 12px; color: #e8ecf6; padding: 9px 12px;">bookings</div>
+    <div style="font-size: 12px; color: #e8ecf6; padding: 9px 12px;">confirm</div>
+  </div>
+
+  <div style="position: absolute; inset: 0; background: rgba(3,4,8,0.58);"></div>
+
+  <div style="position: absolute; left: 50%; top: 150px; transform: translateX(-50%);">
+    <div class="plane" style="display: flex; flex-direction: column; padding: 22px 0 0;">
+
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 0 22px 16px;">
+        <div class="micro">{{label}}</div>
+        <div class="mono micro" style="letter-spacing: 1.2px;">{{chord}}</div>
+      </div>
+
+      <!-- The query line is the plane's only input, so it carries the caret
+           and no box: a field outline here would be the second border in a
+           design language that has none. -->
+      <div style="display: flex; align-items: center; gap: 13px; padding: 0 22px 16px;">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.52)" stroke-width="1.35" stroke-linecap="round" style="flex-shrink: 0;"><circle cx="7.2" cy="7.2" r="4.6"/><path d="M10.6 10.6l3 3"/></svg>
+        <div style="font-size: 15px; color: #e8ecf6; flex-grow: 1;">{{query}}<span style="display: inline-block; width: 1.5px; height: 15px; background: #9e82ff; vertical-align: -2px; margin-left: 2px;"></span></div>
+        <div class="mono micro" style="letter-spacing: 1.2px; flex-shrink: 0;">{{count}}</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; padding-bottom: 8px;">
+        <sc-for list="{{rows}}" as="row" hint-placeholder-count="4">
+          <div class="row {{ row.on }} {{ row.danger }} {{ row.working }} {{ row.stale }} {{ row.none }}">
+            <div class="edge"></div>
+            <div style="display: flex; flex-direction: column; gap: 5px; flex-grow: 1; min-width: 0;">
+              <div class="ttl"><span class="hit">{{ row.hit }}</span>{{ row.rest }}</div>
+              <sc-if value="{{ row.hasSub }}" hint-placeholder-val="{{ row.hasSub }}">
+                <div class="sub">{{ row.sub }}</div>
+              </sc-if>
+            </div>
+            <!-- KIND IS ALREADY IN THE MODEL AND THE VIEW THROWS IT AWAY.
+                 PaletteItem carries `kind` (action · pane · project · session ·
+                 provider) and PaletteView renders only title and subtitle, so
+                 the one field that says WHAT you are about to open is the one
+                 field not drawn. It earns a column in ⌘P, where the set is
+                 heterogeneous — and it is deliberately absent in ⌘K, where
+                 every item is an action and the label would repeat on every
+                 row for no information. §1: calm over dense. -->
+            <!-- UPDATED 2026-10-09 (the palette rework). The kind column is the
+                 row's kind, uppercased by the view: db, git, terminal, table,
+                 api, project, session, provider (an open pane or a new-pane
+                 row carries its pane kind). A choice step says what it is
+                 choosing (environment, project…). A catalog command row has
+                 none ("command" would repeat on every row), so it is blank
+                 there: per row rather than per mode, one layout. -->
+            <sc-if value="{{ row.hasKind }}" hint-placeholder-val="{{ row.hasKind }}">
+              <div class="micro kind" style="flex-shrink: 0;">{{ row.kind }}</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- THE PARTIALITY LINE. `list_sessions` returns `skipped` (stores it
+           could not look inside) and `unreadProviders` (which ones), and
+           wakilcore's own rule is that an empty list with a non-zero `skipped`
+           means "could not look", not "none exist" — so a short ⌘P must be
+           able to say which of the two it is, WHILE you are reading it. The
+           window's status line cannot do that job here: it is drawn outside
+           the plane, under the same full-window dimmer this plane sits on.
+           Hence a line of the plane's own, above the key hints.
+
+           Cool white stepped down, not a warning hue. §5's three are
+           semantic and a partial listing is not unhealthy — the store was
+           unreadable, which is a fact about the search, not about the work.
+           It sits above the hint row rather than inside it because it is a
+           sentence and they are a legend, and it names the providers rather
+           than counting them: `unreadProviders` is a []string precisely so
+           that with two accounts on one org you can tell WHICH went dark. -->
+      <sc-if value="{{ hasNote }}" hint-placeholder-val="{{ hasNote }}">
+        <div style="padding: 2px 22px 0; color: rgba(232,236,246,0.62); font-size: 11px;">{{note}}</div>
+      </sc-if>
+
+      <!-- NO CANCEL BUTTON. Palettes.swift carries one today, with the comment
+           "a sheet has no Escape of its own here, so without this the palette
+           is a trap" — a real bug answered with visible chrome. OrgPlane.swift
+           has since answered the same bug invisibly: a zero-size RENDERED
+           button bound to .keyboardShortcut(.cancelAction), which routes Esc
+           through the window's key-equivalent path rather than the focus chain
+           that .onExitCommand needs and never gets. So the affordance can go
+           back to being a word, as it is on every other plane. -->
+      <div style="display: flex; align-items: center; gap: 20px; padding: 14px 22px 18px;">
+        <div class="micro" style="color: rgba(232,236,246,0.52);">↑↓ move</div>
+        <sc-if value="{{ hasVerb }}" hint-placeholder-val="{{ hasVerb }}">
+          <div class="micro" style="color: rgba(232,236,246,0.52);">⏎ {{verb}}</div>
+        </sc-if>
+        <div style="flex-grow: 1;"></div>
+        <div class="micro" style="color: rgba(232,236,246,0.52);">Esc to dismiss</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"palette":{"editor":"enum","options":["open · ⌘P","actions · ⌘K","step · environment","no results","running","mode switch"],"default":"open · ⌘P","section":"Palette"},"env":{"editor":"enum","options":["local","staging","production"],"default":"staging","section":"Environment"},"$preview":{"width":1440,"height":900}}'>
+function rgba(hex, a) {
+  var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
+function bleed(hex, cx, cy, sigma, peak) {
+  function s(k) { return rgba(hex, Math.round(peak * k * 10000) / 10000); }
+  return 'radial-gradient(circle ' + Math.round(2.4 * sigma) + 'px at ' + cx + '% ' + cy + '%, ' +
+    s(1) + ' 0%, ' + s(0.368) + ' 41.7%, ' + s(0.14) + ' 58.3%, ' +
+    s(0.039) + ' 75%, ' + s(0.008) + ' 91.7%, ' + rgba(hex, 0) + ' 100%)';
+}
+
+var FIELD = 'linear-gradient(180deg, #030408 0%, #070812 100%)';
+
+function room(env) {
+  var prod = env === 'production';
+  var a = prod ? '#e85c5c' : '#7c5cff';
+  var b = prod ? '#e85c5c' : '#4fb9e8';
+  return [
+    bleed(b, 110, -10, 900 / Math.sqrt(4.0), 0.38 * 0.61),
+    bleed(a, 50, 118, 900 / Math.sqrt(3.2), 0.55 * 0.61),
+    FIELD
+  ].join(', ');
+}
+
+// §6.3's "one component" is the claim this tweak exists to test: ⌘P and ⌘K
+// differ only in the items they are handed and what selecting one does. Flip
+// it and everything but the list should hold still.
+var OPEN = {
+  label: 'Open or switch to',
+  chord: '⌘P',
+  query: 'pro',
+  verb: 'open',
+  count: '6 of 41',
+  // Drawn present because the case it covers is the ordinary one, not an
+  // exotic failure: a transcript whose cwd record has not been written yet
+  // is deliberately dropped and counted in `skipped` (sessions.go), which
+  // is exactly the session you started a moment ago. An artboard that only
+  // ever shows the happy list is the reason this field went unread for
+  // three sub-phases.
+  note: 'sessions may be incomplete — 2 unreadable, and could not read: main, work',
+  rows: [
+    { hit: 'pro', rest: 'ducts', sub: 'products · staging · 214 rows', kind: 'db', on: 'on' },
+    // ENVIRONMENT IS NOT A ⌘P ROW ANY MORE. It is ⌘K → Switch environment…,
+    // a choice step (the "step · environment" state below), and production is
+    // red there. The old row drew it in ⌘P because ⌘P was the only surface
+    // with a payload per row.
+    // Tables and API entries are RESOURCES: things with a pane to land in.
+    // `bookings · table` opens a Database pane on it (db_read_table); an API
+    // entry opens an API pane pointed at it (api_open).
+    { hit: 'pro', rest: 'ducts', sub: 'core · staging', kind: 'table' },
+    { hit: 'pro', rest: 'files', sub: 'staging', kind: 'api' },
+    // A changed file lands in the Git pane on that diff (git_select).
+    { hit: 'pro', rest: 'vider.go', sub: 'Changes · api', kind: 'git' },
+    // The subtitle is what `sessionItems(from:)` actually builds: `provider`,
+    // then `resumed N×` when a fork chain was collapsed into this row, then
+    // the session's root when — and only when — the listing spans more than one.
+    { hit: 'pro', rest: 'file the slow booking query', sub: 'main · resumed 2× · api', kind: 'session' },
+    // Projects are the CURRENT organisation's only (Invariant 4): a Umbrella
+    // project cannot appear in a Initech Labs list.
+    { hit: 'pro', rest: 'visioning', sub: '2 roots · Initech Labs', kind: 'project' }
+  ]
+};
+
+// ⌘K IS A CURATED CATALOG (2026-10-09), not `registry.all()`. Each entry is a
+// label pinned to one registered action; the focused pane's commands come
+// first, then the global ones, and what cannot run now is hidden. A row ending
+// in "…" asks for a value first — a choice from a list of what exists, or text
+// only where the value is genuinely open. A row without one runs on Return.
+var ACTIONS = {
+  label: 'Run a command',
+  chord: '⌘K',
+  query: '',
+  verb: 'run',
+  count: '4',
+  // A catalog row has no kind label. The focused pane's commands come first
+  // (here a Database pane), then the global ones; commands that cannot run now
+  // are hidden, not disabled. A row ending in "…" asks for a value first.
+  note: '',
+  rows: [
+    { hit: '', rest: 'Run query again', sub: 'Database pane', on: 'on' },
+    { hit: '', rest: 'Next page', sub: 'Database pane' },
+    { hit: '', rest: 'Close pane', sub: 'Database pane' },
+    { hit: '', rest: 'Switch environment…', sub: 'asks which one' }
+  ]
+};
+
+// THE INPUT-STEP STATE. ⌘K → "Switch environment…" pushes a step into the same
+// plane: the header names what is being asked for (ENVIRONMENT, in the chord's
+// place), the query line filters the choices, and you cannot pick a value that
+// does not exist. Esc pops one step and restores the query; at the root it
+// closes. Production is red in the row (§5, Invariant 8). Switching from here
+// is the operator's own context switch, so no confirmation plane is raised:
+// the gate prices the agent's switch, not this one.
+var STEP = {
+  label: 'Run a command',
+  chord: 'Environment',
+  query: '',
+  verb: 'choose',
+  count: '3',
+  note: '',
+  rows: [
+    { hit: '', rest: 'local', sub: '', kind: 'environment', on: 'on' },
+    { hit: '', rest: 'staging', sub: '', kind: 'environment' },
+    { hit: '', rest: 'production', sub: 'production', kind: 'environment', danger: 'danger' }
+  ]
+};
+
+// NO MATCH: one row, Return does nothing, and the footer has no verb to run.
+var NONE = {
+  label: 'Open or switch to',
+  chord: '⌘P',
+  query: 'catalog zzz',
+  verb: '',
+  count: '0',
+  note: '',
+  rows: [
+    { hit: '', rest: "No results for 'catalog zzz'", sub: '', kind: '', none: true, on: 'on' }
+  ]
+};
+
+// A RUN IN FLIGHT: the row carries the rail's green working tick until the
+// dispatch answers; success closes the plane, failure keeps it open with the
+// error whole under the query line and the input intact.
+var RUNNING = {
+  label: 'Run a command',
+  chord: '⌘K',
+  query: 'refetch',
+  verb: 'run',
+  count: '1',
+  note: '',
+  rows: [
+    { hit: 'refetch', rest: '', sub: 'Run query again · Database pane', working: true, on: 'on' }
+  ]
+};
+
+// A MODE SWITCH: ⌘K typed `>` in ⌘P (or ⌘P pressed over ⌘K). The old mode's
+// rows stay, dimmed and inert, until the new list lands; a slow source shows a
+// `loading…` row of its own rather than holding the others back.
+var SWITCHING = {
+  label: 'Run a command',
+  chord: '⌘K',
+  query: '>',
+  verb: 'run',
+  count: '',
+  note: '',
+  rows: [
+    { hit: '', rest: 'products', sub: 'products · staging · 214 rows', kind: 'db', stale: true },
+    { hit: '', rest: 'bookings', sub: 'core · staging', kind: 'table', stale: true },
+    { hit: '', rest: 'loading…', sub: 'Resources', kind: '', none: true }
+  ]
+};
+
+class Component extends DCLogic {
+  renderVals() {
+    var which = this.props.palette || 'open · ⌘P';
+    var p = which.indexOf('step') === 0 ? STEP
+      : which === 'no results' ? NONE
+      : which === 'running' ? RUNNING
+      : which === 'mode switch' ? SWITCHING
+      : which.indexOf('⌘P') !== -1 ? OPEN : ACTIONS;
+    return {
+      voidBackground: room(this.props.env || 'staging'),
+      label: p.label,
+      chord: p.chord,
+      query: p.query,
+      verb: p.verb,
+      hasVerb: !!p.verb,
+      count: p.count,
+      note: p.note,
+      hasNote: p.note !== '',
+      rows: p.rows.map(function (r) {
+        return {
+          hit: r.hit,
+          rest: r.rest,
+          sub: r.sub,
+          hasSub: !!r.sub,
+          kind: r.kind || '',
+          hasKind: !!r.kind,
+          on: r.on ? 'on' : '',
+          danger: r.danger || '',
+          working: r.working ? 'working' : '',
+          stale: r.stale ? 'stale' : '',
+          none: r.none ? 'none' : ''
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

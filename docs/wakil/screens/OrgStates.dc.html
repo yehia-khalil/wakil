@@ -1,0 +1,241 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    /* A sheet of plane states rather than a window, so the room is rendered
+       plainly: the field, one violet bleed from below, the vignette and the
+       grain. Nothing here is claiming to be 1440x900. */
+    .sheet {
+      position: relative; width: 2960px; height: 900px; overflow: hidden;
+      background:
+        radial-gradient(circle 1450px at 50% 122%,
+          rgba(124,92,255,0.2) 0%, rgba(124,92,255,0.075) 42%,
+          rgba(124,92,255,0.028) 58%, rgba(124,92,255,0.008) 75%,
+          rgba(124,92,255,0) 92%),
+        linear-gradient(180deg, #030408 0%, #070812 100%);
+    }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .plane {
+      width: 520px; padding: 24px; border-radius: 12px;
+      background: rgba(0,0,0,0.86);
+      display: flex; flex-direction: column; gap: 18px;
+      box-shadow:
+        0 0 60px rgba(0,0,0,0.75),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* A field is a data surface one row tall: opaque, full contrast, never
+       translucent and never glowing. */
+    .field {
+      padding: 10px 12px; border-radius: 6px;
+      background: rgba(232,236,246,0.055);
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 12.5px; color: #e8ecf6;
+    }
+
+    .btn {
+      padding: 9px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;
+      background: rgba(232,236,246,0.10); color: #e8ecf6;
+      transition: background 240ms ease-out;
+    }
+    .btn:hover { background: rgba(232,236,246,0.16); }
+    .btn.quiet { background: rgba(232,236,246,0); color: rgba(232,236,246,0.62); }
+    .btn.quiet:hover { background: rgba(232,236,246,0.06); }
+
+    .row {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 14px; border-radius: 6px; cursor: pointer;
+      background: rgba(232,236,246,0); transition: background 240ms ease-out;
+    }
+    .row:hover { background: rgba(232,236,246,0.055); }
+  </style>
+</helmet>
+
+<div class="sheet">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <!-- ══ CREATING ══ §8.3: the form does not re-implement normaliseOrg's rules.
+       It submits and renders the refusal VERBATIM, because a Swift copy of one
+       rule is the same failure the design review found between writeGate and
+       VoidPalette.forEnvironment — two implementations agreeing to stay in step
+       until they quietly did not. -->
+  <div style="position: absolute; left: 230px; top: 120px; display: flex; flex-direction: column; gap: 16px;">
+    <div class="micro">Creating</div>
+    <div class="plane">
+      <div class="micro">New organisation</div>
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div class="micro" style="color: rgba(232,236,246,0.52);">Identifier</div>
+        <div class="field">umbrella-eu</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+          <div class="micro">Jira site</div>
+          <div class="micro" style="color: rgba(232,236,246,0.50);">Optional</div>
+        </div>
+        <div class="field">https://umbrella.atlassian.net/browse</div>
+        <div style="display: flex; align-items: flex-start; gap: 9px;">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#e85c5c" stroke-width="1.35" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8"/><circle cx="8" cy="8" r="6.2"/></svg>
+          <div class="mono" style="font-size: 11px; line-height: 1.45; color: #e85c5c;">jira base must be an absolute https URL with no userinfo, query, fragment or path</div>
+        </div>
+      </div>
+
+      <!-- THERE IS DELIBERATELY NO "DEFAULT PROVIDER" FIELD HERE.
+           An earlier cut of this artboard drew one, optional, reading "none".
+           Spec 8.3 removed it, and the reason is not tidiness: Go refuses a
+           default provider at CREATION by construction, because the id must
+           already name a provider registered under an org that does not exist
+           yet (CreateOrg's doc comment, org.go:89-95; enforced at org.go:170-176
+           where normaliseOrg calls LoadProviderFor). Since this form renders
+           Go's refusal verbatim, the field would render a refusal on every
+           single use -- teaching the operator that creation is broken, at the
+           first moment they touch the surface this sub-phase exists to build.
+           It is settable later via SaveOrg, which carries no such constraint,
+           and that belongs with Adopting. Do not add it back here. -->
+
+      <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+        <div class="btn quiet">Cancel</div>
+        <div class="btn">Create</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ ADOPTING ══ §8.4: the plane shows the warning the CLI already prints.
+       Hiding it would make --share feel like a move rather than a binding,
+       which is the one genuinely surprising thing about shared accounts. -->
+  <div style="position: absolute; left: 890px; top: 120px; display: flex; flex-direction: column; gap: 16px;">
+    <div class="micro">Adopting</div>
+    <div class="plane">
+      <div class="micro">Adopt an account into Umbrella</div>
+
+      <div style="display: flex; flex-direction: column; gap: 2px; margin: 0 -14px;">
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1;">
+            <div class="mono" style="font-size: 13px; color: #e8ecf6;">personal/main</div>
+            <div class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">~/.claude-personal · claude-code</div>
+          </div>
+          <div class="micro">Main</div>
+        </div>
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1;">
+            <div class="mono" style="font-size: 13px; color: #e8ecf6;">initech/work</div>
+            <div class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">~/.claude-initech · claude-code</div>
+          </div>
+          <div class="micro">Work</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 13px; border-radius: 6px; background: rgba(232,180,90,0.10);">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e8b45a" stroke-width="1.3" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M8 4.5v4M8 11.2v.1"/><circle cx="8" cy="8" r="6.2"/></svg>
+        <div style="font-size: 12px; line-height: 1.5; color: #e8b45a; text-wrap: pretty;">The config dir still pins its homing org. A plain claude session started there runs as personal — only inside Wakil does it run as Umbrella.</div>
+      </div>
+
+      <!-- §8.6: recorded because the row is expected, not hypothetical. When
+           Decision 21's costed half is scheduled this becomes a form — an
+           addition to one state, not a redesign of the plane. -->
+      <div style="display: flex; flex-direction: column; gap: 7px; margin: 0 -14px; padding: 0 14px;">
+        <div style="display: flex; align-items: center; gap: 11px; color: rgba(232,236,246,0.72);">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
+          <div style="font-size: 14px;">Register a new account</div>
+        </div>
+        <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.50);">wakil provider add — not yet in-window</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ QUEUED ══ §4.2: an in-flight turn does not block the switch and does
+       not get cut by default. Holding an operator inside org A because org A's
+       agent is mid-answer is a cost setProvider accepts for simplicity; for an
+       org it is the operator's whole context. -->
+  <div style="position: absolute; left: 1550px; top: 120px; display: flex; flex-direction: column; gap: 16px;">
+    <div class="micro">Queued</div>
+    <div class="plane">
+      <div class="micro">Switch queued</div>
+
+      <div style="font-size: 15px; line-height: 1.45; color: #e8ecf6; text-wrap: pretty;">Switching to Umbrella when this turn finishes</div>
+
+      <div style="display: flex; align-items: center; gap: 13px; padding: 13px 14px; border-radius: 6px; background: rgba(232,236,246,0.055);">
+        <div style="width: 2px; height: 26px; border-radius: 1px; background: #9e82ff; flex-shrink: 0;"></div>
+        <div style="display: flex; flex-direction: column; gap: 6px; flex-grow: 1;">
+          <div style="font-size: 13px; color: rgba(232,236,246,0.92);">walk 2c-ii-b at the window</div>
+          <div class="mono" style="font-size: 10px; color: rgba(232,236,246,0.50);">in flight · 14s</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+        <div class="btn quiet">Cancel</div>
+        <div class="btn">Stop the turn and switch now</div>
+      </div>
+
+      <div class="micro">A queued switch is window state · dismissing this plane does not cancel it</div>
+    </div>
+  </div>
+
+  <!-- ══ ERROR ══ §3.1: the residual failure is narrowed, not closed, and it
+       gets an honest degrade. The window does not claim to be in the new org —
+       `organization` is assigned only after the restart returns. -->
+  <div style="position: absolute; left: 2210px; top: 120px; display: flex; flex-direction: column; gap: 16px;">
+    <div class="micro">Error</div>
+    <div class="plane">
+      <div class="micro">Switch failed</div>
+
+      <div style="display: flex; align-items: flex-start; gap: 11px;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#e85c5c" stroke-width="1.35" stroke-linecap="round" style="flex-shrink: 0; margin-top: 2px;"><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8"/><circle cx="8" cy="8" r="6.2"/></svg>
+        <div style="font-size: 15px; line-height: 1.45; color: #e85c5c; text-wrap: pretty;">wakil-db did not come back under umbrella</div>
+      </div>
+
+      <div class="mono" style="font-size: 11.5px; line-height: 1.5; padding: 13px 14px; border-radius: 6px; background: rgba(232,236,246,0.055); color: rgba(232,236,246,0.86);">missingClient: db_run_query needs the db role<br>wakil-ctx restarted · wakil-db did not</div>
+
+      <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+        <div class="btn quiet">Cancel</div>
+        <div class="btn">Retry</div>
+      </div>
+
+      <div class="micro">The window is still in Initech Labs</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":2960,"height":900}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

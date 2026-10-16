@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/journal-error-reason.jsonl",
+  "baseCommit": "dfb508b064207c3f9461bd7b663b416e7200cd01",
+  "provedAt": "2026-10-08T14:32:07.716416Z",
+  "checkBlob": "260feba09e676cfe1a43ac4a89bf2083c64077bf"
+}

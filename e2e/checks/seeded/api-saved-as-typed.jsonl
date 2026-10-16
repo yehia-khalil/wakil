@@ -1,0 +1,16 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"pane_resize","params":{"id":"api-1","width":640,"height":720}}}
+{"do":{"type":{"into":"api.path","text":"/test"}}}
+{"do":{"click":"api.send"}}
+{"expect":{"pane":"api-1","field":"recent[0].path","equals":"/test"}}
+{"expect":{"journal":{"contains":"{\"literal\":\"\\/test\"}"}}}
+{"do":{"focus":"api.path"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"/orders?page=2"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/orders"}}
+{"expect":{"pane":"api-1","field":"request.query[0].value[0].literal","equals":"2"}}
+{"do":{"focus":"api.query.page"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"5"}}
+{"expect":{"pane":"api-1","field":"request.query[0].value[0].literal","equals":"5"}}
+{"expect":{"tree":"contains","text":"/orders?page=5"}}

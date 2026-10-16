@@ -1,0 +1,1008 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not an artboard, not a source of truth.
+
+  Question (issue #115): ApiClient.dc.html draws the request in full and the
+  response NOT AT ALL. Where does a response live, what is a JSON body made of,
+  what does an error look like beside a success — and what do the six stale
+  parts of the artboard become?
+
+  Plan: three structurally different redraws of the API client pane, switchable
+  via the floating bottom bar (or ← →), each drawn across eight scenes (1-8
+  keys). Single file, no build, double-click to open. Not an artboard: no
+  x-dc, no support.js — the whole point is that it can be opened and flipped
+  through, which per #49 no .dc.html in this repo can.
+
+  Each variant is a whole stance on WHAT A RESPONSE IS in this pane, not a
+  skin. They disagree about where it lives, whether the log is the surface,
+  and — sharpest — whether a send that never left the machine is a response
+  at all.
+
+  ─────────────────────────────────────────────────────────────────────────
+  THE SIX CORRECTIONS, applied identically in all three variants. They are
+  ruled, so they are not what is being chosen between:
+
+  1. #67  — the override row's credential line is gone. No secret ref is named
+            anywhere in the pane; list_apis publishes neither authRef nor the
+            value, so the pane cannot name one and does not pretend to.
+  2. #109 — the URL line reads CHOOSER · RESOLVED ORIGIN · PATH.
+  3. #108 — the base-URL row is gone, both halves: the editable free-text URL
+            and "Save to staging". What replaced it is the targeted entry's
+            baseUrl, read-only, on the URL line.
+  4. #109 — the rail row is `billing · confirm`, kind `api` (was `confirm`,
+            kind `http`). The title is re-derived on every send.
+  5. #110 — the Local / Staging / Production·blocked chip row is DELETED, with
+            its "one request, three environments" annotation. The window badge
+            already carries the environment. Every history row gains an
+            environment column beside its entry column.
+  6. #112 — the provenance caption names the KEY, not the visual ordinal:
+            `bookings · id 8842 · booking_id`, never `row 4`. And a CAPTURED
+            bound value is drawn differently from a live one.
+
+  A SEVENTH, found while drawing and not previously booked: the source pane's
+  footer reads `read-only`. Its query selects the primary key from one table,
+  so Decision 20's precondition holds and the pane IS a live value source —
+  #112 makes `editable` in the footer exactly that claim. The artboard draws a
+  live binding out of a pane that says it cannot be written. Corrected here to
+  `editable`; see the hand-off on #115.
+
+  SCENE 8 EXISTS BECAUSE THE OTHER SEVEN LIED BY OMISSION. Every one of them
+  binds a value, which makes binding look compulsory. It is not: #112 ruling 1
+  makes a field a SEQUENCE OF PARTS, and a part may be literal text — the
+  artboard's own `/v1/bookings/` and `/confirm` always were. Scene 8 is the
+  ordinary request: typed, nothing bound, and NO SOURCE PANE ON THE CANVAS AT
+  ALL, which is the strongest way to draw "you do not need one".
+
+  NOT decided here, and deliberately drawn as slots rather than answers:
+  - the body's emit rule and its quoting (#116, in flight)
+  - the confirmation sentence's wording (#117)
+  - what a captured value says about its AGE (#137) — this draws the
+    distinction #112 asked for and stops there
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>API client redraw · prototype · #115</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: #05060c; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+
+  .void { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+  .grain { position: absolute; inset: 0; pointer-events: none; opacity: 0.14; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .vignette { position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%); }
+
+  /* §10: snapped panes share a coordinated edge — one surface with a seam. */
+  .slab { background: #0e1019; overflow: hidden; box-shadow: 0 8px 36px rgba(0,0,0,0.55), inset 0 0.5px 0 rgba(255,255,255,0.10), inset 0 -0.5px 0 rgba(255,255,255,0.03); }
+  .slab.left  { border-radius: 10px 0 0 10px; box-shadow: 0 8px 36px rgba(0,0,0,0.55), inset 0 0.5px 0 rgba(255,255,255,0.10), inset 0 -0.5px 0 rgba(255,255,255,0.03), inset 0.5px 0 0 rgba(255,255,255,0.06); }
+  .slab.right { border-radius: 0 10px 10px 0; box-shadow: 0 8px 36px rgba(0,0,0,0.55), inset 0 0.5px 0 rgba(255,255,255,0.10), inset 0 -0.5px 0 rgba(255,255,255,0.03), inset -0.5px 0 0 rgba(255,255,255,0.06); }
+  .seam { width: 1px; background: rgba(255,255,255,0.055); flex-shrink: 0; }
+  .hseam { height: 1px; background: rgba(255,255,255,0.055); flex-shrink: 0; }
+
+  .micro { font-size: 9px; font-weight: 500; letter-spacing: 1.7px; text-transform: uppercase; color: rgba(232,236,246,0.52); }
+  .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+  .chip { font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px; text-transform: uppercase; padding: 3px 7px; border-radius: 3px; white-space: nowrap; }
+  .cell { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 12px; color: rgba(232,236,246,0.92); }
+  .line { padding: 10px 12px; border-radius: 6px; background: rgba(232,236,246,0.055);
+          font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.5; color: #e8ecf6; }
+
+  /* THE BOUND VALUE — and now it has two things to say (#112).
+     LIVE: violet, the mark it has always carried. It re-resolves against the
+     source pane at send, so it is a reference and looks like one.
+     CAPTURED: no hue at all. A captured value is not a reference — it is a
+     value that was copied. Drawing it violet would promise a source that can
+     be re-read. §5 forbids a second decorative hue, so the difference is
+     carried by the ONE thing violet is: a captured chip is dimmed, flat, and
+     hatched at its left edge, the same recessed treatment the terminal redraw
+     gave the agent's own blocks. */
+  .bound { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 12px;
+           color: #b9a4ff; background: rgba(124,92,255,0.16); padding: 2px 6px; border-radius: 4px; }
+  .bound.cap { color: rgba(232,236,246,0.78); background: rgba(232,236,246,0.06);
+               border-left: 2px solid rgba(232,236,246,0.22); padding-left: 5px; }
+  .bound.unres { color: #e85c5c; background: rgba(232,92,92,0.13); }
+
+  .hrow { display: grid; grid-template-columns: 40px 62px 62px minmax(0,1fr) 42px 50px; gap: 10px; align-items: center;
+          height: 27px; padding: 0 20px; transition: background 240ms ease-out; cursor: pointer; }
+  .hrow:hover { background: rgba(232,236,246,0.05); }
+  .hrow.anchor { background: rgba(232,236,246,0.05); }
+
+  .jkey { color: rgba(232,236,246,0.92); }
+  .jval { color: rgba(232,236,246,0.74); }
+  .jpun { color: rgba(232,236,246,0.32); }
+  .json { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.62; white-space: pre; }
+
+  .fold { cursor: default; color: rgba(232,236,246,0.52); }
+  .fold:hover { color: rgba(232,236,246,0.90); }
+  .tick { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #e8b45a; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+  /* ---- switcher: deliberately not part of the design being judged ---- */
+  .switcher { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50; display: flex; flex-direction: column; align-items: center; gap: 7px; }
+  .bar { display: flex; align-items: center; gap: 4px; background: #f2f4fa; color: #0b0d14; border-radius: 999px; padding: 6px 8px; box-shadow: 0 8px 30px rgba(0,0,0,0.6); font-size: 12px; }
+  .bar button { border: 0; background: transparent; font: inherit; cursor: pointer; padding: 5px 9px; border-radius: 999px; color: #0b0d14; }
+  .bar button:hover { background: rgba(0,0,0,0.08); }
+  .bar .on { background: #0b0d14; color: #f2f4fa; }
+  .bar .name { padding: 0 10px; font-weight: 600; white-space: nowrap; }
+  .claim { max-width: 960px; text-align: center; font-size: 11.5px; line-height: 1.5; color: rgba(232,236,246,0.64); background: rgba(5,6,12,0.88); padding: 6px 12px; border-radius: 6px; }
+  .fixed { max-width: 960px; text-align: center; font-size: 10.5px; line-height: 1.45; color: rgba(232,236,246,0.38); }
+</style>
+</head>
+<body>
+
+<div class="void" id="void">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <!-- the rail, dimmed: correction 4 lives here — `billing · confirm`, kind `api` -->
+  <div style="position:absolute;left:44px;top:132px;width:220px;transform:scale(0.94);transform-origin:left top;opacity:0.30;filter:blur(1.4px);display:flex;flex-direction:column;gap:2px;">
+    <div id="railDb" style="display:flex;align-items:center;gap:11px;padding:9px 12px;">
+      <div style="width:2px;height:14px;flex-shrink:0;"></div>
+      <div style="font-size:12px;color:rgba(232,236,246,0.70);flex-grow:1;">bookings</div>
+      <div class="micro" style="color:rgba(232,236,246,0.35);">db</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:11px;padding:9px 12px;">
+      <div style="width:2px;height:14px;border-radius:1px;background:#9e82ff;box-shadow:0 0 7px rgba(158,130,255,0.75);flex-shrink:0;"></div>
+      <div id="railTitle" style="font-size:12px;color:#e8ecf6;flex-grow:1;">billing · confirm</div>
+      <div class="micro" style="color:rgba(232,236,246,0.35);">api</div>
+    </div>
+    <div id="railThird"></div>
+  </div>
+
+  <!-- the window badge: the environment's ONE rendering, per correction 5 -->
+  <div style="position:absolute;left:296px;top:56px;display:flex;align-items:baseline;gap:15px;">
+    <div style="font-size:17px;color:#e8ecf6;">Initech Labs</div>
+    <div class="mono" style="font-size:11px;color:rgba(232,236,246,0.50);">wakil-acceptance</div>
+    <div class="chip" id="envBadge"></div>
+  </div>
+
+  <div id="stage" style="position:absolute;left:296px;top:118px;width:1048px;height:606px;display:flex;"></div>
+
+  <div style="position:absolute;left:88px;right:88px;bottom:74px;display:flex;align-items:center;justify-content:space-between;gap:28px;">
+    <div style="display:flex;align-items:center;gap:15px;flex-grow:1;">
+      <div style="width:1.5px;height:18px;border-radius:1px;background:#9e82ff;flex-shrink:0;"></div>
+      <div id="corePrompt" style="font-size:16px;color:rgba(232,236,246,0.50);"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:24px;">
+      <div class="micro" style="color:rgba(232,236,246,0.50);">Hold ⌥ to speak</div>
+      <div class="micro" style="color:rgba(232,236,246,0.50);">⌘P open</div>
+      <div class="micro" style="color:rgba(232,236,246,0.50);">⌘K actions</div>
+    </div>
+  </div>
+</div>
+
+<div class="switcher">
+  <div class="claim" id="claim"></div>
+  <div class="bar">
+    <button id="prev">←</button>
+    <div class="name" id="vname"></div>
+    <button id="next">→</button>
+    <div style="width:1px;height:20px;background:rgba(0,0,0,0.14);margin:0 6px;"></div>
+    <div id="scenes" style="display:flex;gap:2px;"></div>
+  </div>
+  <div class="fixed">Fixed in all three (not what is being chosen): no env chip row · URL line = chooser · origin · path · no free-text base URL · no secret named · rail reads <b>billing · confirm · api</b> · provenance names the key, never the row number · live and captured bound values drawn apart</div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════ data */
+
+const ENTRY  = 'billing';
+const ORIGINS = { staging: 'https://billing.initech.dev', production: 'https://billing.initech.com' };
+const BOOKING = 'BK-2026-8842';
+
+function tint(hex, a) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+function bleed(hex, cx, cy, sigma, peak) {
+  const s = k => tint(hex, Math.round(peak*k*10000)/10000);
+  return 'radial-gradient(circle ' + Math.round(2.4*sigma) + 'px at ' + cx + '% ' + cy + '%, ' +
+    s(1) + ' 0%, ' + s(0.368) + ' 41.7%, ' + s(0.14) + ' 58.3%, ' + s(0.039) + ' 75%, ' + s(0.008) + ' 91.7%, ' + tint(hex,0) + ' 100%)';
+}
+/* Invariant 8 is untouched by #107: the room still turns red in production.
+   What changed is what the red MEANS — a keystroke, not a wall. */
+function room(env) {
+  const prod = env === 'production';
+  const a = prod ? '#e85c5c' : '#7c5cff';
+  const b = prod ? '#e85c5c' : '#4fb9e8';
+  return [ bleed(b, 110, -10, 900/Math.sqrt(4.0), 0.38*0.61),
+           bleed(a, 50, 118, 900/Math.sqrt(3.2), 0.55*0.61),
+           'linear-gradient(180deg, #030408 0%, #070812 100%)' ].join(', ');
+}
+
+/* The source pane's rows. In every scene but `refused` the anchored row is
+   present and the binding resolves. In `refused` the source pane has re-run —
+   the anchor row is gone and one column was renamed — which is what a refusal
+   is FOR, and it is visible on screen rather than asserted in a message. */
+const ROWS_OK = {
+  sql: 'select id, booking_id, guest\nfrom bookings where confirmed_at is null',
+  cols: ['id', 'booking_id', 'guest'],
+  rows: [
+    { id:'8845', c1:'BK-2026-8845', c2:'A. Haddad' },
+    { id:'8843', c1:'BK-2026-8843', c2:'S. Lindqvist' },
+    { id:'8841', c1:'BK-2026-8841', c2:'M. Okonjo' },
+    { id:'8842', c1:BOOKING,        c2:'R. Demir', anchor:true },
+    { id:'8838', c1:'BK-2026-8838', c2:'N. Farouk' }
+  ]
+};
+const ROWS_MOVED = {
+  sql: 'select id, booking_id, status\nfrom bookings where confirmed_at is null',
+  cols: ['id', 'booking_id', 'status'],
+  rows: [
+    { id:'8851', c1:'BK-2026-8851', c2:'held' },
+    { id:'8849', c1:'BK-2026-8849', c2:'held' },
+    { id:'8845', c1:'BK-2026-8845', c2:'held' },
+    { id:'8843', c1:'BK-2026-8843', c2:'held' },
+    { id:'8841', c1:'BK-2026-8841', c2:'held' }
+  ]
+};
+
+/* Response payloads. §5 gets no decorative hue here: a body is rendered in
+   cool white stepped by opacity alone. The status code is the one coloured
+   thing, and it is coloured because §5 RESERVES those hues for exactly this —
+   healthy, and failed. */
+const BODY_200 = [
+  ['{'],
+  ['  ', '"id"', ': ', '"BK-2026-8842"', ','],
+  ['  ', '"status"', ': ', '"confirmed"', ','],
+  ['  ', '"confirmed_at"', ': ', '"2026-09-20T14:31:07Z"', ','],
+  ['  ', '"channel"', ': ', '"wakil"', ','],
+  ['  ', '"guest"', ': ', '"R. Demir"', ''],
+  ['}']
+];
+const BODY_401 = [
+  ['{'],
+  ['  ', '"error"', ': ', '"invalid_token"', ','],
+  ['  ', '"message"', ': ', '"The access token expired at 2026-09-19T23:00:00Z"', ''],
+  ['}']
+];
+function jsonHTML(lines) {
+  return lines.map(l => {
+    if (l.length === 1) return '<span class="jpun">' + l[0] + '</span>';
+    return '<span class="jpun">' + l[0] + '</span>' +
+           '<span class="jkey">' + l[1] + '</span>' +
+           '<span class="jpun">' + l[2] + '</span>' +
+           '<span class="jval">' + l[3] + '</span>' +
+           '<span class="jpun">' + l[4] + '</span>';
+  }).join('\n');
+}
+
+const RESP_HEADERS = [
+  ['content-type', 'application/json; charset=utf-8'],
+  ['x-request-id', '7f3c1a9e-4b20-4d11-9c8e-2f0a6d5b1e33'],
+  ['date', 'Sun, 20 Sep 2026 14:31:07 GMT'],
+  ['cache-control', 'no-store']
+];
+
+/* History. Correction 5: every row carries its environment, always — not only
+   when it differs. Correction from #109: every row carries its entry, always.
+   The 409 is kept deliberately: an error that is a RESPONSE sits in the same
+   log as a success, which is the claim all three variants have to survive. */
+const HISTORY = [
+  { m:'POST', entry:'billing', env:'stg',  path:'/v1/bookings/BK-2026-8839/confirm', code:'200', ms:'184ms' },
+  { m:'GET',  entry:'billing', env:'stg',  path:'/v1/bookings/BK-2026-8839',         code:'200', ms:'61ms'  },
+  { m:'POST', entry:'billing', env:'prod', path:'/v1/bookings/BK-2026-8834/confirm', code:'200', ms:'221ms' },
+  { m:'POST', entry:'auth',    env:'stg',  path:'/v1/sessions',                      code:'409', ms:'92ms'  }
+];
+function codeHue(code) {
+  if (code === '—')        return 'rgba(232,236,246,0.42)';
+  if (code === 'unknown')  return '#e8b45a';
+  return code[0] === '2' ? '#8be0c8' : '#e85c5c';
+}
+
+/* ═════════════════════════════════════════════ shared request fragments */
+/* The request form is IDENTICAL in all three variants — it is settled design
+   carrying six settled corrections, so varying it would muddy the one thing
+   being chosen. What each variant does with the space that is LEFT is the
+   finding. */
+
+function sourcePane(scene, width) {
+  const d = (scene === 'refused') ? ROWS_MOVED : ROWS_OK;
+  /* narrow is not a different design — it is §8's own density answer. The
+     columns keep their order and a cell ellipsises; nothing is dropped, which
+     would be the silent lie §8 spends its whole section refusing. */
+  const narrow = width < 400;
+  const grid = narrow
+    ? 'display:grid;grid-template-columns:44px 116px minmax(0,1fr);gap:10px;'
+    : 'display:grid;grid-template-columns:52px 132px minmax(0,1fr);gap:14px;';
+  const clip = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+  return '<div class="slab left" style="width:' + width + 'px;display:flex;flex-direction:column;padding:16px 0 0;">' +
+    '<div class="micro" style="padding:0 20px 13px;">bookings</div>' +
+    '<div class="line" style="margin:0 20px 16px;">' + d.sql.replace('\n','<br>') + '</div>' +
+    '<div style="' + grid + 'padding:0 20px 10px;">' +
+      d.cols.map(c => '<div class="micro" style="color:rgba(232,236,246,0.50);">' + c + '</div>').join('') +
+    '</div>' +
+    d.rows.map(r =>
+      '<div style="position:relative;' + grid + 'padding:0 20px;height:38px;align-items:center;background:' +
+        (r.anchor ? 'rgba(232,236,246,0.05)' : 'transparent') + ';">' +
+        '<div style="position:absolute;left:0;top:5px;bottom:5px;width:2px;border-radius:1px;background:' +
+          (r.anchor ? '#9e82ff' : 'transparent') + ';box-shadow:' + (r.anchor ? '0 0 8px rgba(158,130,255,0.70)' : 'none') + ';"></div>' +
+        '<div class="cell" style="' + clip + '">' + r.id + '</div>' +
+        '<div style="min-width:0;"><span class="cell" style="display:block;' + clip + 'background:' + (r.anchor ? 'rgba(124,92,255,0.16)' : 'transparent') + ';padding:3px 6px;border-radius:4px;margin-left:-6px;">' + r.c1 + '</span></div>' +
+        '<div style="min-width:0;"><span class="cell" style="display:block;' + clip + 'background:' + (r.anchor ? 'rgba(124,92,255,0.16)' : 'transparent') + ';padding:3px 6px;border-radius:4px;margin-left:-6px;">' + r.c2 + '</span></div>' +
+      '</div>').join('') +
+    /* CORRECTION 7, found while drawing: this footer said `read-only`. The
+       query names one table and selects its primary key, so Decision 20's
+       precondition holds — and #112 ruled that a pane drawing `editable` IS
+       a live value source. The artboard bound a live value out of a pane
+       that claimed it could not be written. */
+    '<div style="margin-top:auto;display:flex;align-items:center;gap:16px;padding:0 20px 16px;">' +
+      '<div class="mono micro" style="letter-spacing:1.2px;">rows 1–5 · more remain</div>' +
+      '<div class="mono micro" style="letter-spacing:1.2px;">21ms</div>' +
+      '<div class="mono micro" style="letter-spacing:1.2px;">editable</div>' +
+    '</div>' +
+  '</div>';
+}
+
+/* CORRECTION 2 + 3: chooser · resolved origin · path. The origin is not
+   typeable — #108 cut that field — and it is dim because it is a resolution,
+   not a choice. The chooser is the only part the operator can move. */
+function urlLine(scene, env) {
+  const unres = (scene === 'refused');
+  const path = (scene === 'typed')
+    ? '<span>/v1/bookings/' + BOOKING + '/confirm</span>'
+    : '<span>/v1/bookings/</span>' +
+      (unres ? '<span class="bound unres">booking_id</span>' : '<span class="bound">booking_id</span>') +
+      '<span>/confirm</span>';
+  return '<div class="line" style="margin:0 20px 11px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;">' +
+      '<span style="display:inline-flex;align-items:center;gap:5px;background:rgba(232,236,246,0.07);padding:3px 7px;border-radius:4px;">' +
+        '<span class="micro" style="color:rgba(232,236,246,0.86);letter-spacing:1.4px;">' + ENTRY + '</span>' +
+        '<span style="color:rgba(232,236,246,0.46);font-size:9px;">▾</span>' +
+      '</span>' +
+      '<span class="mono" style="font-size:11.5px;color:rgba(232,236,246,0.42);">' + ORIGINS[env] + '</span>' +
+      '<span style="display:inline-flex;align-items:center;gap:2px;">' + path + '</span>' +
+  '</div>';
+}
+
+/* CORRECTION 6, both halves: the caption names the KEY, and captured is not
+   violet. The third value is captured because it came out of a join — which
+   #112 measured as the everyday case, not an exotic one. */
+function boundValues(scene) {
+  /* nothing bound, nothing drawn. A "Bound values · none" row would be chrome
+     that exists only to describe its own emptiness. */
+  if (scene === 'typed') return '';
+  const unres = (scene === 'refused');
+  const row = (chipCls, name, origin, value, valueDim) =>
+    '<div style="display:flex;align-items:center;gap:12px;">' +
+      '<span class="' + chipCls + '">' + name + '</span>' +
+      '<span class="mono" style="font-size:10.5px;color:rgba(232,236,246,0.48);">' + origin + '</span>' +
+      '<span class="mono" style="font-size:11px;color:' + (valueDim || 'rgba(232,236,246,0.86)') + ';margin-left:auto;">' + value + '</span>' +
+    '</div>';
+  return '<div style="display:flex;flex-direction:column;gap:7px;padding:0 20px 12px;">' +
+    '<div class="micro" style="color:rgba(232,236,246,0.50);">Bound values · 2 live · 1 captured</div>' +
+    (unres
+      ? row('bound unres', 'booking_id', 'bookings · id 8842 · booking_id', 'no such row', '#e85c5c') +
+        row('bound unres', 'guest',      'bookings · id 8842 · guest',      'no such column', '#e85c5c')
+      : row('bound', 'booking_id', 'bookings · id 8842 · booking_id', BOOKING) +
+        row('bound', 'guest',      'bookings · id 8842 · guest',      'R. Demir')) +
+    row('bound cap', 'rate_plan', 'captured · bookings ⋈ rate_plans · 14:22', 'FLEX-2026', 'rgba(232,236,246,0.78)') +
+  '</div>';
+}
+
+/* CORRECTION 1: no ref, no name, no `auth from wakil:initech:api-staging`.
+   list_apis publishes neither authRef nor the value (#67), so the pane can
+   say THAT the entry is credentialed and nothing more. #113 made this pane
+   the read-back: scene 4 is where that promise is paid. */
+function headersSection() {
+  return '<div style="display:flex;flex-direction:column;gap:6px;padding:0 20px 11px;">' +
+    '<div class="micro" style="color:rgba(232,236,246,0.50);">Headers · 2</div>' +
+    '<div class="mono" style="font-size:11.5px;line-height:1.7;color:rgba(232,236,246,0.86);">' +
+      'content-type: application/json<br>' +
+      'authorization: <span style="color:rgba(232,236,246,0.46);">added by the ' + ENTRY + ' entry</span>' +
+    '</div>' +
+  '</div>';
+}
+
+/* The body is drawn as the artboard drew it, plus one captured part. Its EMIT
+   rule — where quoting is decided, given the part knows its own type — is
+   #116's and is in flight; nothing here takes a position on it. */
+function bodySection(scene) {
+  return '<div style="display:flex;flex-direction:column;gap:6px;padding:0 20px 11px;">' +
+    '<div class="micro" style="color:rgba(232,236,246,0.50);">Body</div>' +
+    (scene === 'typed'
+      ? '<div class="line" style="font-size:11px;line-height:1.45;">' +
+          '{ "channel": "wakil", "guest": "R. Demir", "rate": "FLEX-2026", "notify": true }' +
+        '</div>'
+      : '<div class="line" style="font-size:11px;line-height:1.45;">' +
+      '{ "channel": "wakil", "guest": ' +
+      (scene === 'refused' ? '<span class="bound unres">guest</span>' : '<span class="bound">guest</span>') +
+      ', "rate": <span class="bound cap">rate_plan</span>, "notify": true }' +
+    '</div>') +
+  '</div>';
+}
+
+/* CORRECTION from #107, both halves. Outside production there is no keystroke
+   at all — the send is `.allow`, immediate, whoever asked for it, which is
+   what makes Phase 2's exit criterion speakable end to end. In production the
+   send costs a typed confirmation, and it is NOT typed here: it is 2b-iii's
+   confirmation plane, entered from this button. The sentence the plane shows
+   is a SLOT — its wording is #117's. */
+function sendRow(scene, env) {
+  if (scene === 'refused') {
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 20px 14px;">' +
+      '<div class="micro" style="color:#e85c5c;">2 bound values cannot resolve · nothing will be sent</div>' +
+      '<div style="padding:8px 16px;border-radius:6px;background:rgba(232,236,246,0.04);font-size:13px;color:rgba(232,236,246,0.32);">Send</div>' +
+    '</div>';
+  }
+  if (env === 'production') {
+    return '<div style="padding:0 20px 14px;display:flex;flex-direction:column;gap:9px;">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;">' +
+        '<div class="micro" style="color:' + tint('#e85c5c',0.95) + ';">Production · a typed confirmation</div>' +
+        '<div style="padding:8px 16px;border-radius:6px;background:' + tint('#e85c5c',0.14) + ';font-size:13px;color:#f3d6d6;">Send</div>' +
+      '</div>' +
+      '<div style="padding:9px 11px;border-radius:6px;background:rgba(0,0,0,0.26);box-shadow:inset 0 0.5px 0 rgba(255,255,255,0.045);">' +
+        '<div class="micro" style="color:rgba(232,236,246,0.40);padding-bottom:5px;">What the confirmation plane will show · wording is #117\'s</div>' +
+        '<div class="mono" style="font-size:11px;color:rgba(232,236,246,0.80);">POST ' + ORIGINS.production + '/v1/bookings/' + BOOKING + '/confirm</div>' +
+        '<div class="micro" style="color:rgba(232,236,246,0.40);padding-top:5px;">the bound values are resolved before you are asked</div>' +
+      '</div>' +
+    '</div>';
+  }
+  const busy = (scene === 'flight');
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 20px 14px;">' +
+    '<div class="micro" style="color:rgba(232,236,246,0.42);">' + (busy ? 'Sent · staging' : 'Staging · sends immediately') + '</div>' +
+    '<div style="padding:8px 16px;border-radius:6px;background:rgba(232,236,246,' + (busy ? '0.04' : '0.10') + ');font-size:13px;color:' + (busy ? 'rgba(232,236,246,0.32)' : '#e8ecf6') + ';">' + (busy ? 'Sending…' : 'Send') + '</div>' +
+  '</div>';
+}
+
+function requestForm(scene, env) {
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 20px 12px;">' +
+      '<div class="micro">' + ENTRY + ' · confirm</div>' +
+      '<div class="mono micro" style="letter-spacing:1.2px;">POST</div>' +
+    '</div>' +
+    urlLine(scene, env) + boundValues(scene) + headersSection() + bodySection(scene) + sendRow(scene, env);
+}
+
+/* ═══════════════════════════════════════════════ shared response pieces */
+
+function statusStrip(scene, env) {
+  const envWord = env === 'production' ? 'production' : 'staging';
+  if (scene === 'flight')
+    return '<div style="display:flex;align-items:center;gap:14px;"><span class="tick"></span>' +
+      '<span class="mono micro" style="letter-spacing:1.2px;color:#e8b45a;">in flight</span>' +
+      '<span class="mono micro" style="letter-spacing:1.2px;">' + ENTRY + ' · ' + envWord + '</span>' +
+      '<span class="mono micro" id="tick" style="letter-spacing:1.2px;margin-left:auto;">1.4s</span></div>';
+  /* A REFUSAL IS NOT A RESPONSE, and the strip is where that is said or lied
+     about: no code, no timing, no size — there is no reply to describe. The
+     first draft of this file printed `200 · 184ms` over a request that was
+     never built, which is the whole failure this pane exists against. */
+  if (scene === 'refused')
+    return '<div style="display:flex;align-items:center;gap:14px;">' +
+      '<span class="chip" style="color:#e85c5c;background:' + tint('#e85c5c',0.13) + ';">not sent</span>' +
+      '<span class="mono micro" style="letter-spacing:1.2px;">no request was built · nothing reached ' + ENTRY + '</span></div>';
+  if (scene === 'lost')
+    return '<div style="display:flex;align-items:center;gap:14px;">' +
+      '<span class="chip" style="color:#e8b45a;background:' + tint('#e8b45a',0.13) + ';">fate unknown</span>' +
+      '<span class="mono micro" style="letter-spacing:1.2px;">no reply · 20.0s</span>' +
+      '<span class="mono micro" style="letter-spacing:1.2px;">' + ENTRY + ' · ' + envWord + '</span></div>';
+  const code = scene === 'denied' ? '401' : '200';
+  const ms   = scene === 'denied' ? '96ms' : '184ms';
+  const size = scene === 'denied' ? '104 B' : '182 B';
+  return '<div style="display:flex;align-items:center;gap:14px;">' +
+    '<span class="mono" style="font-size:13px;color:' + codeHue(code) + ';">' + code + '</span>' +
+    '<span class="mono micro" style="letter-spacing:1.2px;">' + (code === '401' ? 'unauthorized' : 'ok') + '</span>' +
+    '<span class="mono micro" style="letter-spacing:1.2px;">' + ms + '</span>' +
+    '<span class="mono micro" style="letter-spacing:1.2px;">' + size + '</span>' +
+    '<span class="mono micro" style="letter-spacing:1.2px;">' + ENTRY + ' · ' + envWord + '</span></div>';
+}
+
+/* The refusal text. #112: aggregate EVERY unresolved value, never only the
+   first, and say what WAS available — a binding broken by a renamed column is
+   otherwise indistinguishable from a typo. */
+function refusalBody() {
+  return '<div style="display:flex;flex-direction:column;gap:9px;">' +
+    '<div style="font-size:12.5px;color:#e8ecf6;">Nothing was sent.</div>' +
+    '<div class="mono" style="font-size:11px;line-height:1.75;color:rgba(232,236,246,0.72);">' +
+      '<span style="color:#e85c5c;">booking_id</span> — bookings holds no row with id 8842.<br>' +
+      '<span style="color:rgba(232,236,246,0.46);">rows now: 8851, 8849, 8845, 8843, 8841</span><br>' +
+      '<span style="color:#e85c5c;">guest</span> — bookings has no column guest.<br>' +
+      '<span style="color:rgba(232,236,246,0.46);">columns now: id, booking_id, status</span>' +
+    '</div>' +
+    '<div class="micro" style="color:rgba(232,236,246,0.42);line-height:1.6;">The source pane re-ran its query. Re-bind from a row that is there, or send with a literal.</div>' +
+  '</div>';
+}
+
+/* #114's fate-unknown, in this pane's own words. The vocabulary is the one
+   already shipped for `mutationFateUnknown` — "not a report that nothing
+   happened" is that error's own sentence, and the HTTP case is the same event
+   with a different verb. */
+function lostBody() {
+  return '<div style="display:flex;flex-direction:column;gap:9px;">' +
+    '<div style="font-size:12.5px;color:#e8ecf6;">No reply after 20s. This is not a report that nothing happened.</div>' +
+    '<div class="micro" style="color:rgba(232,236,246,0.56);line-height:1.7;">Wakil stopped waiting; it did not stop the request. The booking may already be confirmed. Check billing before sending again — a second POST would confirm it twice.</div>' +
+    '<div class="mono" style="font-size:11px;color:rgba(232,236,246,0.60);padding-top:2px;">POST ' + ORIGINS.staging + '/v1/bookings/' + BOOKING + '/confirm</div>' +
+  '</div>';
+}
+
+/* #113 made this pane the credential read-back: there is no `secrets get`, so
+   a 401 HERE is how an operator learns the credential is wrong. The pane
+   still names no ref — it names the ENTRY, which is what it is allowed to
+   know, and the command that replaces the secret behind it. */
+function deniedNote() {
+  return '<div style="margin-top:10px;padding:9px 11px;border-radius:6px;background:' + tint('#e85c5c',0.08) + ';">' +
+    '<div class="micro" style="color:' + tint('#e85c5c',0.95) + ';padding-bottom:5px;">The credential on the ' + ENTRY + ' entry was rejected</div>' +
+    '<div class="mono" style="font-size:11px;color:rgba(232,236,246,0.76);">wakil secrets set-api &lt;ref&gt; --auth bearer</div>' +
+  '</div>';
+}
+
+function headersBack(open) {
+  if (!open) return '<div class="fold micro" style="padding-top:2px;">Response headers · 4 ▸</div>';
+  return '<div style="padding-top:4px;"><div class="fold micro" style="padding-bottom:6px;">Response headers · 4 ▾</div>' +
+    '<div class="mono" style="font-size:11px;line-height:1.7;color:rgba(232,236,246,0.70);">' +
+      RESP_HEADERS.map(h => '<span style="color:rgba(232,236,246,0.50);">' + h[0] + ':</span> ' + h[1]).join('<br>') +
+    '</div></div>';
+}
+
+function historyRow(h, extra, height) {
+  return '<div class="hrow' + (extra || '') + '"' + (height ? ' style="height:' + height + 'px;"' : '') + '>' +
+    '<div class="mono micro" style="letter-spacing:1.1px;">' + h.m + '</div>' +
+    '<div class="mono micro" style="letter-spacing:1.1px;color:rgba(232,236,246,0.70);">' + h.entry + '</div>' +
+    '<div class="mono micro" style="letter-spacing:1.1px;">' + h.env + '</div>' +
+    '<div class="mono" style="font-size:11px;color:rgba(232,236,246,0.86);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + h.path + '</div>' +
+    '<div class="mono" style="font-size:11px;color:' + codeHue(h.code) + ';">' + h.code + '</div>' +
+    '<div class="mono micro" style="letter-spacing:1.1px;text-align:right;">' + h.ms + '</div>' +
+  '</div>';
+}
+
+/* the row this scene would itself write into the log */
+function currentRow(scene, env) {
+  const e = env === 'production' ? 'prod' : 'stg';
+  const p = '/v1/bookings/' + BOOKING + '/confirm';
+  if (scene === 'ok' || scene === 'typed') return { m:'POST', entry:ENTRY, env:e, path:p, code:'200', ms:'184ms' };
+  if (scene === 'denied')  return { m:'POST', entry:ENTRY, env:e, path:p, code:'401', ms:'96ms' };
+  if (scene === 'lost')    return { m:'POST', entry:ENTRY, env:e, path:p, code:'unknown', ms:'20.0s' };
+  if (scene === 'refused') return { m:'POST', entry:ENTRY, env:e, path:'/v1/bookings/⟨unresolved⟩/confirm', code:'—', ms:'—' };
+  if (scene === 'flight')  return { m:'POST', entry:ENTRY, env:e, path:p, code:'···', ms:'1.4s' };
+  return null;
+}
+
+/* ═════════════════════════════════════════════════════════════ VARIANT A */
+/*  One pane, two halves. The response is the bottom of the request's own
+    surface — always there, empty before the first send. A body is TEXT: a
+    response is not rows, and pretending otherwise is §8's own dishonesty rule
+    (a surface that cannot do the thing must not look like it can). Headers
+    come on demand. History is evicted to a single folded line, because the
+    response took its space — that is A's admitted cost, drawn rather than
+    argued. And a fate-unknown record has NOWHERE once the pane is gone.        */
+
+function renderA(scene, env) {
+  /* the production slot costs ~70px of form. The lower half yields it rather
+     than the pane overflowing — and in production it is empty anyway, because
+     nothing has been sent. */
+  const low = env === 'production' ? 164 : (scene === 'typed' ? 310 : 236);
+  let inner;
+  if (scene === 'draft') {
+    inner = '<div style="flex-grow:1;display:flex;align-items:center;justify-content:center;">' +
+      '<div class="micro" style="color:rgba(232,236,246,0.30);">nothing sent yet</div></div>';
+  } else if (scene === 'refused') {
+    inner = '<div style="padding:12px 20px 0;">' + refusalBody() + '</div>';
+  } else if (scene === 'lost') {
+    inner = '<div style="padding:12px 20px 0;">' + lostBody() + '</div>';
+  } else if (scene === 'flight') {
+    inner = '<div style="flex-grow:1;display:flex;align-items:center;justify-content:center;">' +
+      '<div class="micro" style="color:rgba(232,236,246,0.34);">waiting for billing</div></div>';
+  } else {
+    const body = scene === 'denied' ? BODY_401 : BODY_200;
+    inner = '<div style="padding:11px 20px 0;overflow:hidden;">' +
+      '<div class="json">' + jsonHTML(body) + '</div>' +
+      (scene === 'denied' ? deniedNote() : '') +
+      '<div style="padding-top:9px;">' + headersBack(false) + '</div>' +
+    '</div>';
+  }
+
+  const strip = (scene === 'draft')
+    ? '<div class="micro" style="color:rgba(232,236,246,0.34);">Response</div>'
+    : statusStrip(scene, env);
+
+  return (scene === 'typed' ? '' : sourcePane(scene, 452) + '<div class="seam"></div>') +
+    '<div class="slab right" style="width:' + (scene === 'typed' ? '1048px;border-radius:10px' : '595px') + ';display:flex;flex-direction:column;padding:16px 0 0;">' +
+      requestForm(scene, env) +
+      '<div class="hseam" style="margin-top:auto;"></div>' +
+      '<div style="height:' + low + 'px;flex-shrink:0;display:flex;flex-direction:column;background:rgba(0,0,0,0.16);">' +
+        '<div style="padding:11px 20px 0;">' + strip + '</div>' +
+        inner +
+        '<div class="fold micro" style="margin-top:auto;padding:10px 20px 14px;border-top:1px solid rgba(255,255,255,0.045);">Recent · 12 ▸</div>' +
+      '</div>' +
+    '</div>';
+}
+
+/* ═════════════════════════════════════════════════════════════ VARIANT B */
+/*  The log IS the surface. The artboard's own instinct — "history is the data
+    surface pointed at this pane's own log" — taken literally: the lower half
+    is §8's grid, one row per send, and the RESPONSE is the anchored row
+    opened in place. §8's one permitted luminous mark, the anchor's left edge,
+    is spent exactly where §8 spends it. Error and success are one shape in
+    two hues. A refusal gets a row too (`—`), and so does a fate-unknown
+    (`unknown`) — B's distinctive claim is that everything the pane DID is a
+    row, including the things that never left. That is also the only variant
+    in which #114's org-switch record has a home, and it costs a persisted
+    log to have one.
+    And B goes one step further than A on the body: a JSON ARRAY OF OBJECTS is
+    rows, and draws on the same grid.                                          */
+
+function renderB(scene, env) {
+  const low = env === 'production' ? 164 : (scene === 'typed' ? 310 : 236);
+  const cur = currentRow(scene, env);
+  const rows = (cur ? [cur] : []).concat(HISTORY).slice(0, 4);
+
+  let record;
+  if (scene === 'draft') {
+    record = '<div style="padding:16px 20px;"><div class="micro" style="color:rgba(232,236,246,0.30);">select a row to open its response</div></div>';
+  } else if (scene === 'refused') {
+    record = '<div style="padding:13px 20px 0;">' + refusalBody() + '</div>';
+  } else if (scene === 'lost') {
+    record = '<div style="padding:13px 20px 0;">' + lostBody() + '</div>';
+  } else if (scene === 'flight') {
+    record = '<div style="padding:16px 20px;">' + statusStrip(scene, env) + '</div>';
+  } else {
+    const body = scene === 'denied' ? BODY_401 : BODY_200;
+    record = '<div style="padding:8px 20px 0;">' +
+      '<div class="json" style="line-height:1.5;">' + jsonHTML(body) + '</div>' +
+      (scene === 'denied' ? deniedNote() : '') +
+      '<div style="padding-top:8px;">' + headersBack(false) + '</div>' +
+    '</div>';
+  }
+
+  const head = '<div class="hrow" style="height:19px;cursor:default;">' +
+      ['', 'entry', 'env', 'path', 'code', 'ms'].map((c,i) =>
+        '<div class="micro" style="font-size:8px;letter-spacing:1.3px;color:rgba(232,236,246,0.34);' +
+        (i === 5 ? 'text-align:right;' : '') + '">' + c + '</div>').join('') +
+    '</div>';
+
+  return (scene === 'typed' ? '' : sourcePane(scene, 452) + '<div class="seam"></div>') +
+    '<div class="slab right" style="width:' + (scene === 'typed' ? '1048px;border-radius:10px' : '595px') + ';display:flex;flex-direction:column;padding:16px 0 0;">' +
+      requestForm(scene, env) +
+      '<div class="hseam" style="margin-top:auto;"></div>' +
+      '<div style="height:' + low + 'px;flex-shrink:0;display:flex;flex-direction:column;background:rgba(0,0,0,0.16);">' +
+        '<div style="padding:6px 20px 1px;display:flex;align-items:center;gap:12px;">' +
+          '<div class="micro" style="color:rgba(232,236,246,0.50);">Log · this pane</div>' +
+          '<div class="mono micro" style="letter-spacing:1.2px;margin-left:auto;">12 sends · survives relaunch</div>' +
+        '</div>' +
+        head +
+        rows.slice(0, cur ? 2 : 3).map((h,i) =>
+          '<div style="position:relative;">' +
+            '<div style="position:absolute;left:0;top:4px;bottom:4px;width:2px;border-radius:1px;background:' +
+              (i === 0 && cur ? '#9e82ff' : 'transparent') + ';box-shadow:' + (i === 0 && cur ? '0 0 8px rgba(158,130,255,0.70)' : 'none') + ';"></div>' +
+            historyRow(h, i === 0 && cur ? ' anchor' : '', 23) +
+          '</div>').join('') +
+        '<div class="hseam"></div>' +
+        record +
+      '</div>' +
+    '</div>';
+}
+
+/* ═════════════════════════════════════════════════════════════ VARIANT C */
+/*  The response is a PANE. §10's canvas is what comparing two of them is for,
+    exactly as "a second query is a second pane" already rules for the DB.
+    Invariant 2 comes free: a response pane is read by `read_pane` like any
+    other, rather than needing an api pane's payload to grow a second half.
+    The request pane keeps one outcome line and its history strip, intact.
+    And the response pane is a VALUE SOURCE — a recorded fact, re-readable,
+    which is #112's protocol satisfied by a pane that holds no rows: chaining
+    a value out of a response falls out instead of being designed.
+    Its costs are drawn too: a refusal opens NO pane (nothing happened), so
+    the refusal is inline; and a 201 with no body still opens a whole pane.    */
+
+function renderC(scene, env) {
+  const cur = currentRow(scene, env);
+  const opens = (scene !== 'draft' && scene !== 'refused');
+
+  let respInner;
+  if (scene === 'flight') {
+    respInner = '<div style="flex-grow:1;display:flex;align-items:center;justify-content:center;">' +
+      '<div class="micro" style="color:rgba(232,236,246,0.34);">waiting for billing</div></div>';
+  } else if (scene === 'lost') {
+    respInner = '<div style="padding:12px 18px 0;">' + lostBody() + '</div>';
+  } else {
+    const body = scene === 'denied' ? BODY_401 : BODY_200;
+    respInner = '<div style="padding:11px 18px 0;overflow:hidden;">' +
+      '<div class="json" style="font-size:11px;">' + jsonHTML(body) + '</div>' +
+      (scene === 'denied' ? deniedNote() : '') +
+      (scene === 'ok'
+        ? '<div style="margin-top:12px;display:flex;align-items:center;gap:9px;">' +
+            '<span class="bound">confirmed_at</span>' +
+            '<span class="micro" style="color:rgba(232,236,246,0.44);">bind into another request</span>' +
+          '</div>'
+        : '') +
+      '<div style="padding-top:10px;">' + headersBack(false) + '</div>' +
+    '</div>';
+  }
+
+  const outcome = (scene === 'draft')
+    ? '<div class="micro" style="color:rgba(232,236,246,0.30);">nothing sent yet</div>'
+    : (scene === 'refused'
+        ? refusalBody()
+        : '<div style="display:flex;align-items:center;gap:10px;">' + statusStrip(scene, env) +
+            '<span class="micro" style="color:rgba(232,236,246,0.40);margin-left:auto;">→ opened beside</span></div>');
+
+  const respPane = opens
+    ? '<div class="seam"></div>' +
+      '<div class="slab right" style="width:' + (scene === 'typed' ? '523px' : '379px') + ';display:flex;flex-direction:column;padding:16px 0 0;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 18px 11px;">' +
+          '<div class="micro">' + ENTRY + ' · confirm · reply</div>' +
+          '<div class="mono micro" style="letter-spacing:1.2px;">14:31:07</div>' +
+        '</div>' +
+        '<div style="padding:0 18px 11px;">' + statusStrip(scene, env) + '</div>' +
+        '<div class="hseam"></div>' +
+        respInner +
+        '<div class="fold micro" style="margin-top:auto;padding:10px 18px 14px;border-top:1px solid rgba(255,255,255,0.045);">Keep · Close · Send to thread</div>' +
+      '</div>'
+    : '<div class="seam"></div>' +
+      '<div class="slab right" style="width:379px;display:flex;align-items:center;justify-content:center;">' +
+        '<div class="micro" style="color:rgba(232,236,246,0.26);text-align:center;line-height:1.7;width:210px;">' +
+          (scene === 'refused' ? 'no pane — nothing was sent' : 'a reply opens here') + '</div>' +
+      '</div>';
+
+  return (scene === 'typed' ? '' : sourcePane(scene, 300) + '<div class="seam"></div>') +
+    '<div class="slab' + (scene === 'typed' ? ' left' : '') + '" style="width:' + (scene === 'typed' ? '524px' : '367px') + ';display:flex;flex-direction:column;padding:16px 0 0;">' +
+      requestForm(scene, env) +
+      '<div style="margin-top:auto;padding:0 20px 10px;">' + outcome + '</div>' +
+      '<div class="micro" style="padding:0 20px 8px;color:rgba(232,236,246,0.44);">Recent</div>' +
+      HISTORY.slice(0, env === 'production' ? 2 : 3).map(h =>
+        '<div class="hrow" style="grid-template-columns:34px 52px 34px minmax(0,1fr) 34px;height:24px;padding:0 20px;">' +
+          '<div class="mono micro" style="letter-spacing:1px;">' + h.m + '</div>' +
+          '<div class="mono micro" style="letter-spacing:1px;color:rgba(232,236,246,0.70);">' + h.entry + '</div>' +
+          '<div class="mono micro" style="letter-spacing:1px;">' + h.env + '</div>' +
+          '<div class="mono" style="font-size:10.5px;color:rgba(232,236,246,0.80);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + h.path + '</div>' +
+          '<div class="mono" style="font-size:10.5px;color:' + codeHue(h.code) + ';text-align:right;">' + h.code + '</div>' +
+        '</div>').join('') +
+      '<div style="height:14px;"></div>' +
+    '</div>' + respPane;
+}
+
+/* ══════════════════════════════════ SCENE 9 — THE BIND GESTURE (#117's) */
+/*  NOT part of the A/B/C choice. The three variants disagree about the
+    RESPONSE; this scene is about how a bound value is MADE, which #117 owns
+    (its item 1: is `bind` an action; item 2: of what kind) and which is
+    blocked behind #116. It is drawn here the way scene 7 draws a slot for the
+    confirmation sentence — to be argued with, not to rule.
+
+    Four constraints already narrow it, and all three candidates obey them:
+      1. Invariant 2 — one enumerated `bind`, dispatched by the click AND by
+         the agent. No UI-only affordance.
+      2. A source: §8's anchor, a (row, column) pair — which §8 says it became
+         precisely because this pane consumes values and a value lives in a cell.
+      3. A destination: a field AND a position in its sequence of parts. The
+         path has no parameter names, only positions.
+      4. It refuses at creation when the anchor names no row.
+
+    So every candidate carries (pane, row, column) -> (field, position). What
+    they disagree about is WHICH END STARTS THE GESTURE.                       */
+
+function miniRow(anchor) {
+  return '<div style="display:grid;grid-template-columns:34px 104px minmax(0,1fr);gap:8px;align-items:center;height:26px;position:relative;background:' +
+      (anchor ? 'rgba(232,236,246,0.05)' : 'transparent') + ';padding:0 9px;">' +
+    '<div style="position:absolute;left:0;top:4px;bottom:4px;width:2px;border-radius:1px;background:' +
+      (anchor ? '#9e82ff' : 'transparent') + ';box-shadow:' + (anchor ? '0 0 8px rgba(158,130,255,0.70)' : 'none') + ';"></div>' +
+    '<div class="mono" style="font-size:10.5px;color:rgba(232,236,246,0.86);">8842</div>' +
+    '<div><span class="mono" style="font-size:10.5px;color:rgba(232,236,246,0.92);background:' +
+      (anchor ? 'rgba(124,92,255,0.16)' : 'transparent') + ';padding:2px 5px;border-radius:4px;margin-left:-5px;">BK-2026-8842</span></div>' +
+    '<div class="mono" style="font-size:10.5px;color:rgba(232,236,246,0.70);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">R. Demir</div>' +
+  '</div>';
+}
+
+function miniPath(slot) {
+  return '<div class="line" style="font-size:10.5px;padding:8px 9px;display:flex;align-items:center;gap:2px;">' +
+    '<span>/v1/bookings/</span>' + slot + '<span>/confirm</span></div>';
+}
+
+function gesturePanel(tag, name, order, art, needs, costs) {
+  return '<div class="slab" style="display:flex;flex-direction:column;padding:15px 0 0;min-width:0;">' +
+    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 16px 3px;">' +
+      '<div class="micro" style="color:rgba(232,236,246,0.86);">' + tag + '</div>' +
+      '<div class="micro" style="font-size:8px;color:rgba(232,236,246,0.40);">' + order + '</div>' +
+    '</div>' +
+    '<div style="font-size:12.5px;color:#e8ecf6;padding:0 16px 12px;">' + name + '</div>' +
+    '<div style="padding:0 16px;">' + art + '</div>' +
+    '<div style="margin-top:auto;padding:12px 16px 14px;display:flex;flex-direction:column;gap:6px;">' +
+      '<div><div class="micro" style="font-size:8px;color:rgba(232,236,246,0.40);padding-bottom:3px;">Needs</div>' +
+        '<div style="font-size:10.5px;line-height:1.45;color:rgba(232,236,246,0.72);">' + needs + '</div></div>' +
+      '<div><div class="micro" style="font-size:8px;color:' + tint('#e8b45a',0.90) + ';padding-bottom:3px;">Costs</div>' +
+        '<div style="font-size:10.5px;line-height:1.45;color:rgba(232,236,246,0.62);">' + costs + '</div></div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderGestures() {
+  /* G1 — the value is pushed. Direct manipulation, no chrome at all. */
+  const art1 =
+    '<div class="micro" style="font-size:8px;padding-bottom:5px;">bookings</div>' +
+    miniRow(true) +
+    '<div style="display:flex;align-items:center;gap:8px;padding:9px 0 9px 44px;">' +
+      '<span class="bound" style="font-size:10.5px;opacity:0.55;">BK-2026-8842</span>' +
+      '<span style="color:rgba(232,236,246,0.34);font-size:13px;">↓</span>' +
+      '<span class="micro" style="font-size:8px;color:rgba(232,236,246,0.40);">dragging</span>' +
+    '</div>' +
+    '<div class="micro" style="font-size:8px;padding-bottom:5px;">billing · confirm</div>' +
+    miniPath('<span style="display:inline-block;width:2px;height:14px;background:#9e82ff;box-shadow:0 0 7px rgba(158,130,255,0.75);margin:0 3px;"></span>');
+
+  /* G2 — the value is offered. §8 already permits exactly one hover-revealed
+     row action, and it is spent on "open that table in a new pane". */
+  const art2 =
+    '<div class="micro" style="font-size:8px;padding-bottom:5px;">bookings</div>' +
+    miniRow(true) +
+    '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;padding:6px 9px 0;">' +
+      '<span class="micro" style="font-size:8px;color:rgba(232,236,246,0.38);">Open ▸</span>' +
+      '<span class="micro" style="font-size:8px;color:rgba(232,236,246,0.92);">Bind to ▸</span>' +
+    '</div>' +
+    '<div style="margin:7px 0 0 auto;width:210px;padding:8px 10px;border-radius:6px;background:rgba(0,0,0,0.30);box-shadow:inset 0 0.5px 0 rgba(255,255,255,0.055);">' +
+      '<div class="mono" style="font-size:10.5px;line-height:1.85;color:rgba(232,236,246,0.86);">' +
+        'billing · confirm · path<br>' +
+        '<span style="color:rgba(232,236,246,0.52);">billing · confirm · body</span><br>' +
+        '<span style="color:rgba(232,236,246,0.52);">billing · confirm · header</span>' +
+      '</div>' +
+    '</div>';
+
+  /* G3 — the value is pulled. The form owns the gesture, so it must draw a
+     position even when nothing is bound there. */
+  const art3 =
+    '<div class="micro" style="font-size:8px;padding-bottom:5px;">billing · confirm</div>' +
+    miniPath('<span style="display:inline-block;min-width:54px;height:17px;border-radius:4px;border:1px dashed rgba(158,130,255,0.60);background:rgba(124,92,255,0.07);margin:0 3px;"></span>') +
+    '<div style="margin-top:9px;width:100%;padding:8px 10px;border-radius:6px;background:rgba(0,0,0,0.30);box-shadow:inset 0 0.5px 0 rgba(255,255,255,0.055);">' +
+      '<div class="micro" style="font-size:8px;color:rgba(232,236,246,0.40);padding-bottom:5px;">Bind from</div>' +
+      '<div class="mono" style="font-size:10.5px;line-height:1.85;color:rgba(232,236,246,0.86);">' +
+        'bookings · id 8842 · booking_id<br>' +
+        '<span style="color:rgba(232,236,246,0.52);">bookings · id 8842 · guest</span><br>' +
+        '<span style="color:rgba(232,236,246,0.52);">Browser · selection</span>' +
+      '</div>' +
+    '</div>';
+
+  /* G4 — the operator's own proposal, and the strongest of the four. It is
+     BOTH ends: you name the hole first (destination-first), then push a whole
+     row at it (source-first), and one drag fills several parts.
+
+     It carries two conditions, drawn rather than footnoted:
+
+     1. `{{ }}` CONVERTS ON THE KEYSTROKE and is never stored. Typing the
+        closing brace replaces those characters with a named empty part. If
+        the braces survive into the stored field and are scanned at send, this
+        is Camp A, #112 ruling 1 falls, #122's item 2 comes back from void,
+        and CVE-2025-1087's remedy stops being free. The line that has to
+        hold: Wakil parses OPERATOR KEYSTROKES, never anything returned from
+        a cell or a response.
+
+     2. A MATCHED NAME IS A GUESS, so the drop PROPOSES and the operator
+        accepts. The trap is in this repo's own demo row: the API's path
+        segment is documented `{id}`, and the row carries both `id` (8842) and
+        `booking_id` (BK-2026-8842). Silent name-matching sends
+        `/v1/bookings/8842/confirm` and nothing fails. The stored identity is
+        still (pane, table, key values, column) — the name is spent once, at
+        creation, and never becomes a lookup key. */
+  const slot = n => '<span style="display:inline-block;padding:1px 6px;margin:0 2px;border-radius:4px;' +
+    'border:1px dashed rgba(158,130,255,0.60);background:rgba(124,92,255,0.07);' +
+    'font-family:ui-monospace,SFMono-Regular,\"SF Mono\",Menlo,monospace;font-size:10px;color:#b9a4ff;">' + n + '</span>';
+  const map = (param, col, val, warn) =>
+    '<div style="display:grid;grid-template-columns:92px 12px 78px minmax(0,1fr);gap:8px;align-items:center;height:21px;">' +
+      '<span class="mono" style="font-size:10.5px;color:#b9a4ff;">' + param + '</span>' +
+      '<span style="color:rgba(232,236,246,0.30);font-size:10px;">←</span>' +
+      '<span class="mono" style="font-size:10.5px;color:' + (warn ? tint('#e8b45a',0.95) : 'rgba(232,236,246,0.86)') + ';">' + col + '</span>' +
+      '<span class="mono" style="font-size:10.5px;color:' + (warn ? tint('#e8b45a',0.95) : 'rgba(232,236,246,0.60)') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + val + '</span>' +
+    '</div>';
+  const art4 =
+    '<div class="micro" style="font-size:8px;padding-bottom:5px;">billing · confirm</div>' +
+    '<div class="line" style="font-size:10.5px;padding:8px 9px;">/v1/bookings/' + slot('id') + '/confirm</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;padding:6px 0 6px 12px;">' +
+      '<span style="color:rgba(232,236,246,0.34);font-size:13px;">↓</span>' +
+      '<span class="micro" style="font-size:8px;color:rgba(232,236,246,0.44);">bookings · row 8842 dropped</span>' +
+    '</div>' +
+    '<div style="padding:9px 11px;border-radius:6px;background:rgba(0,0,0,0.30);box-shadow:inset 0 0.5px 0 rgba(255,255,255,0.055);">' +
+      '<div class="micro" style="font-size:8px;color:rgba(232,236,246,0.40);padding-bottom:4px;">Proposed · nothing is bound until you accept</div>' +
+      map('{{id}}', 'id', '8842 · also matches booking_id', true) +
+      map('{{guest}}', 'guest', 'R. Demir', false) +
+    '</div>';
+
+  const panels = gesturePanel('G1', 'Drag the cell into the hole', 'source-first', art1,
+      'An anchor, and a drop position the form makes visible while you drag.',
+      'Least discoverable of the four. The agent call is a different shape, so the two entrances share an action but not a gesture.') +
+    gesturePanel('G2', 'Bind to, off the row', 'source-first', art2,
+      'An anchor, and a list of open destinations to name.',
+      'Spends §8’s one hover-revealed row action, which already belongs to open-in-new-pane.') +
+    gesturePanel('G3', 'Pull it in at the position', 'destination-first', art3,
+      'An insertion point the form draws, and a list of open value sources. The position has no name, so the picker can only say where it is.',
+      'The form carries a position marker even when nothing is bound there — chrome in the one surface §8 keeps bare. An anchor must exist first, or the list is empty and the gesture dead-ends.') +
+    gesturePanel('G4 · operator’s proposal', 'Name the hole, drop the row', 'both ends', art4,
+      'Named slots, and a row to drop at them. One drag fills several parts, and a hole says what it is for before anything fills it — which none of G1–G3 can do.',
+      'Two. <b style="color:rgba(232,236,246,0.80);font-weight:500;">{{ }} converts on the keystroke, never stored</b> — else #112 ruling 1 falls. And <b style="color:rgba(232,236,246,0.80);font-weight:500;">a matched name is a guess</b>: {id} picks 8842 over BK-2026-8842, and nothing fails.');
+
+  return '<div style="width:1048px;height:606px;border-radius:10px;overflow:hidden;display:grid;' +
+    'grid-template-columns:1fr 1fr;grid-template-rows:0.94fr 1fr;gap:1px;background:rgba(255,255,255,0.055);' +
+    'box-shadow:0 8px 36px rgba(0,0,0,0.55);">' + panels + '</div>';
+}
+
+/* ═══════════════════════════════════════════════════════════ switcher */
+
+const VARIANTS = [
+  { key:'A', name:'A · One pane, two halves', render: renderA,
+    claim: 'The response is the bottom of the request\'s own surface — always present, replaced on every send. A body is text, because a response is not rows. Headers on demand. Cost, drawn: the response evicts the history strip to a folded line, and a fate-unknown record has nowhere to go once the pane is destroyed.' },
+  { key:'B', name:'B · The log is the surface', render: renderB,
+    claim: 'The artboard\'s own instinct, taken literally: the lower half is §8\'s grid, one row per send, and a response is the anchored row opened in place. Everything the pane did is a row — including the refusal that never left and the send whose fate is unknown. Buys #114\'s record a home, and pays for it with a persisted log.' },
+  { key:'C', name:'C · The response is a pane', render: renderC,
+    claim: 'A reply opens beside the request, as a pane — so read_pane reads it like any other, and §10\'s canvas is what comparing two responses is for. It is a recorded fact, so it is a value source: chaining falls out. Costs: a refusal opens no pane, a 201 with no body opens a whole one, and the reply dies with the window like A\'s.' }
+];
+
+const SCENES = [
+  { key:'draft',   label:'1 Draft',      env:'staging',    prompt:'call the confirmation endpoint with that id' },
+  { key:'flight',  label:'2 In flight',  env:'staging',    prompt:'sending — it will say which environment it ran against' },
+  { key:'ok',      label:'3 200',        env:'staging',    prompt:'confirmed' },
+  { key:'denied',  label:'4 401',        env:'staging',    prompt:'the credential on billing was refused' },
+  { key:'refused', label:'5 Refused',    env:'staging',    prompt:'nothing was sent — two values could not be found' },
+  { key:'lost',    label:'6 No reply',   env:'staging',    prompt:'no reply — it may still have landed' },
+  { key:'prod',    label:'7 Production', env:'production', prompt:'this one costs a typed confirmation' },
+  /* the ordinary request the other seven never draw: typed, nothing bound,
+     and no source pane open anywhere on the canvas */
+  { key:'typed',   label:'8 Typed only', env:'staging',    prompt:'confirmed' },
+  /* not part of the A/B/C choice — see renderGestures */
+  { key:'gesture', label:'9 Bind gesture', env:'staging',   prompt:'use that booking id' }
+];
+
+let vi = 0, si = 0, elapsed = 1.4;
+
+function draw() {
+  const v = VARIANTS[vi], s = SCENES[si];
+  /* scene 7 is the production room drawn over the same request */
+  const sceneKey = s.key === 'prod' ? 'draft' : s.key;
+
+  document.getElementById('void').style.background = room(s.env);
+  const badge = document.getElementById('envBadge');
+  badge.textContent = s.env === 'production' ? 'Production' : 'Staging';
+  badge.style.color = s.env === 'production' ? '#e85c5c' : '#8be0c8';
+  badge.style.background = s.env === 'production' ? tint('#e85c5c',0.13) : tint('#8be0c8',0.12);
+
+  const gesture = (sceneKey === 'gesture');
+  document.getElementById('stage').innerHTML = gesture ? renderGestures() : v.render(sceneKey, s.env);
+  document.getElementById('railDb').style.display = (sceneKey === 'typed') ? 'none' : 'flex';
+  /* C opens a third pane, so the rail grows a row — the title is re-derived
+     on every send (#109), which is why it is written here and not stored */
+  document.getElementById('railThird').innerHTML =
+    (v.key === 'C' && sceneKey !== 'draft' && sceneKey !== 'refused')
+      ? '<div style="display:flex;align-items:center;gap:11px;padding:9px 12px;">' +
+          '<div style="width:2px;height:14px;flex-shrink:0;"></div>' +
+          '<div style="font-size:12px;color:rgba(232,236,246,0.70);flex-grow:1;">billing · confirm · reply</div>' +
+          '<div class="micro" style="color:rgba(232,236,246,0.35);">api</div>' +
+        '</div>'
+      : '';
+
+  document.getElementById('vname').textContent = v.name;
+  document.getElementById('claim').textContent = gesture
+    ? 'NOT part of the A / B / C choice. How a bound value is MADE is #117\'s (blocked behind #116); the three variants disagree about the response, not about this. Drawn to be argued with. All four carry (pane, row, column) → (field, position) and dispatch one enumerated bind. G1–G3 disagree about which end starts the gesture; G4 starts at both, and is the only one in which a hole has a name before anything fills it.'
+    : v.claim;
+  document.getElementById('corePrompt').textContent = s.prompt;
+  document.getElementById('scenes').innerHTML = SCENES.map((sc,i) =>
+    '<button class="' + (i === si ? 'on' : '') + '" data-i="' + i + '">' + sc.label + '</button>').join('');
+  [...document.querySelectorAll('#scenes button')].forEach(b =>
+    b.onclick = () => { si = +b.dataset.i; draw(); });
+
+  const url = new URL(location.href);
+  url.searchParams.set('variant', v.key);
+  url.searchParams.set('scene', s.key);
+  history.replaceState(null, '', url);
+}
+
+document.getElementById('prev').onclick = () => { vi = (vi + VARIANTS.length - 1) % VARIANTS.length; draw(); };
+document.getElementById('next').onclick = () => { vi = (vi + 1) % VARIANTS.length; draw(); };
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft')  { vi = (vi + VARIANTS.length - 1) % VARIANTS.length; draw(); }
+  if (e.key === 'ArrowRight') { vi = (vi + 1) % VARIANTS.length; draw(); }
+  if (/^[1-9]$/.test(e.key))  { si = +e.key - 1; draw(); }
+});
+
+/* the in-flight counter ticks because time passes. It is not a progress bar:
+   wakil-http knows nothing about how far along a request is, and §9 already
+   rules that this project draws a thought thread rather than a bar. */
+setInterval(() => {
+  elapsed += 0.1;
+  const t = document.getElementById('tick');
+  if (t) t.textContent = elapsed.toFixed(1) + 's';
+}, 100);
+
+(function boot() {
+  const p = new URLSearchParams(location.search);
+  const v = VARIANTS.findIndex(x => x.key === (p.get('variant') || 'A'));
+  const s = SCENES.findIndex(x => x.key === (p.get('scene') || 'draft'));
+  if (v >= 0) vi = v;
+  if (s >= 0) si = s;
+  draw();
+})();
+</script>
+</body>
+</html>

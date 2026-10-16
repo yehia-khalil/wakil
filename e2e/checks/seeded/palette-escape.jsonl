@@ -1,0 +1,21 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"keys":"newpane"}}
+{"expect":{"tree":"contains","text":"Value: newpane"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"PANE KIND"}}
+{"do":{"keys":"git"}}
+{"expect":{"tree":"contains","text":"Value: git"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"expect":{"tree":"contains","text":"Value: newpane"}}
+{"expect":{"tree":"absent","text":"PANE KIND"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"RUN A COMMAND"}}
+{"do":{"keys":"echo palette-escaped"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"palette-escaped"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}

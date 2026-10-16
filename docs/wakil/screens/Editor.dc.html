@@ -1,0 +1,323 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #e8ecf6; text-decoration: underline; } a:hover { color: #ffffff; }
+
+    .void { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.14;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 96% 118% at 50% 50%, rgba(0,0,0,0) 34%, rgba(0,0,0,0.31) 100%);
+    }
+
+    .slab {
+      background: #0e1019; border-radius: 10px;
+      box-shadow:
+        0 8px 36px rgba(0,0,0,0.55),
+        inset 0 0.5px 0 rgba(255,255,255,0.10),
+        inset 0 -0.5px 0 rgba(255,255,255,0.03),
+        inset 0.5px 0 0 rgba(255,255,255,0.06),
+        inset -0.5px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .micro {
+      font-size: 9px; font-weight: 500; letter-spacing: 1.7px;
+      text-transform: uppercase; color: rgba(232,236,246,0.52);
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chip {
+      font-size: 8.5px; font-weight: 500; letter-spacing: 1.6px;
+      text-transform: uppercase; padding: 3px 7px; border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    /* Tabs in the rail's language, exactly as the browser pane draws them —
+       §11:272 grants the editor ⌘T by name, and §1's ban is on WINDOW chrome. */
+    .tab {
+      display: flex; align-items: center; gap: 9px; height: 30px;
+      padding: 0 11px 0 9px; border-radius: 5px; cursor: pointer; min-width: 0;
+      background: rgba(232,236,246,0); transition: background 240ms ease-out;
+    }
+    .tab:hover { background: rgba(232,236,246,0.055); }
+    .tab.on { background: rgba(232,236,246,0.06); }
+    .tab .tick { width: 2px; height: 15px; border-radius: 1px; flex-shrink: 0; background: transparent; }
+    .tab.on .tick { background: #9e82ff; box-shadow: 0 0 7px rgba(158,130,255,0.70); }
+    .tab .ttl {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11.5px; color: rgba(232,236,246,0.62);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tab.on .ttl { color: #e8ecf6; }
+    .tab .dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(232,236,246,0.52); flex-shrink: 0; }
+
+    /* The tree is a VIEW INSIDE THE EDITOR, not a pane and not an app sidebar
+       (§11) — the same scoping that makes the tab strip legal. It is collapsed
+       with ⌘B and §11 says outright that ⌘P quick-open is the faster path, so
+       this is the orientation tool, not the navigation tool. Top-level entries
+       are the PROJECT'S ROOTS, which is the only reason a tree earns its place
+       here at all: no other surface shows three repositories as one workspace. */
+    .trow {
+      display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 10px;
+      border-radius: 4px; cursor: pointer; min-width: 0;
+      background: rgba(232,236,246,0); transition: background 240ms ease-out;
+    }
+    .trow:hover { background: rgba(232,236,246,0.05); }
+    .trow.on { background: rgba(232,236,246,0.07); }
+    .tname {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 11.5px; color: rgba(232,236,246,0.72);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .trow.on .tname { color: #e8ecf6; }
+
+    .code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums; font-size: 12.5px; line-height: 21px;
+      white-space: pre; color: rgba(232,236,246,0.92);
+    }
+    .ln {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-variant-numeric: tabular-nums; font-size: 11px; line-height: 21px;
+      color: rgba(232,236,246,0.32); text-align: right; width: 34px; flex-shrink: 0;
+    }
+    /* Change marks. §11 has these "under consideration", and they are drawn as
+       stepped white rather than the git convention: green and red are §5's
+       healthy and FAILED, and an added line is neither. */
+    .gut { width: 2px; border-radius: 1px; flex-shrink: 0; margin: 0 12px 0 8px; }
+
+    /* GHOST TEXT — tier 3, and the reason Decision 17 chose a native editor.
+       It is not dimmed autocomplete: the suggestion is drawn FROM THE ACTIVE
+       ENVIRONMENT'S SCHEMA, so it knows `confirmed_at` exists on staging's
+       bookings table. Nothing generic can do that, and the provenance line is
+       what makes the difference visible rather than merely true. */
+    .ghost { color: rgba(232,236,246,0.34); }
+  </style>
+</helmet>
+
+<div class="void" style="background: {{voidBackground}};">
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <div style="position: absolute; left: 44px; top: 132px; width: 220px; transform: scale(0.94); transform-origin: left top; opacity: 0.30; filter: blur(1.4px); display: flex; flex-direction: column; gap: 2px;">
+    <div style="display: flex; align-items: center; gap: 11px; padding: 9px 12px;">
+      <div style="width: 2px; height: 14px; border-radius: 1px; background: #9e82ff; box-shadow: 0 0 7px rgba(158,130,255,0.75); flex-shrink: 0;"></div>
+      <div style="font-size: 12px; color: #e8ecf6; flex-grow: 1;">confirm.go</div>
+      <div class="micro" style="color: rgba(232,236,246,0.35);">editor</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 11px; padding: 9px 12px;">
+      <div style="width: 2px; height: 14px; flex-shrink: 0;"></div>
+      <div style="font-size: 12px; color: rgba(232,236,246,0.70); flex-grow: 1;">bookings</div>
+      <div class="micro" style="color: rgba(232,236,246,0.35);">db</div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 296px; top: 56px; display: flex; align-items: baseline; gap: 15px;">
+    <div style="font-size: 17px; color: #e8ecf6;">Initech Labs</div>
+    <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.50);">wakil-acceptance</div>
+    <div class="chip" style="color: {{envColour}}; background: {{envTint}};">{{envLabel}}</div>
+  </div>
+
+  <div class="slab" style="position: absolute; left: 296px; top: 118px; width: 1048px; height: 606px; display: flex; flex-direction: column; padding: 16px 0 0;">
+
+    <div style="display: flex; align-items: center; gap: 4px; padding: 0 16px 10px;">
+      <div class="micro" style="flex-shrink: 0; padding: 0 10px 0 4px;">Editor</div>
+      <div class="tab on" style="width: 172px;">
+        <div class="tick"></div>
+        <div class="ttl" style="flex-grow: 1;">confirm.go</div>
+        <div class="dot"></div>
+      </div>
+      <div class="tab" style="width: 168px;">
+        <div class="tick"></div>
+        <div class="ttl" style="flex-grow: 1;">dbresolve.go</div>
+      </div>
+      <div class="tab" style="width: 158px;">
+        <div class="tick"></div>
+        <div class="ttl" style="flex-grow: 1;">config.go</div>
+      </div>
+      <div style="flex-grow: 1;"></div>
+      <div class="micro" style="flex-shrink: 0; color: rgba(232,236,246,0.52);">⌘B tree · ⌘P open · ⌘T</div>
+    </div>
+
+    <div style="display: flex; flex-grow: 1; min-height: 0;">
+
+      <div style="width: 214px; flex-shrink: 0; padding: 0 8px 0 14px; overflow-y: auto;">
+        <div class="micro" style="padding: 4px 10px 8px; color: rgba(232,236,246,0.52);">3 roots</div>
+        <div class="trow"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.52)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M6 3.5L10.5 8 6 12.5"/></svg><div class="tname" style="flex-grow: 1;">web</div></div>
+        <div class="trow"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.52)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M6 3.5L10.5 8 6 12.5"/></svg><div class="tname" style="flex-grow: 1;">infra</div></div>
+        <div class="trow"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.72)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate(90deg);"><path d="M6 3.5L10.5 8 6 12.5"/></svg><div class="tname" style="flex-grow: 1; color: #e8ecf6;">api</div></div>
+        <div class="trow" style="padding-left: 26px;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.72)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; transform: rotate(90deg);"><path d="M6 3.5L10.5 8 6 12.5"/></svg><div class="tname" style="flex-grow: 1;">internal</div></div>
+        <div class="trow on" style="padding-left: 42px;"><div class="tname" style="flex-grow: 1;">confirm.go</div></div>
+        <div class="trow" style="padding-left: 42px;"><div class="tname" style="flex-grow: 1;">dbresolve.go</div></div>
+        <div class="trow" style="padding-left: 42px;"><div class="tname" style="flex-grow: 1;">config.go</div></div>
+        <div class="trow" style="padding-left: 42px;"><div class="tname" style="flex-grow: 1;">keychain.go</div></div>
+        <div class="trow" style="padding-left: 26px;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="rgba(232,236,246,0.52)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M6 3.5L10.5 8 6 12.5"/></svg><div class="tname" style="flex-grow: 1;">cmd</div></div>
+      </div>
+
+      <div style="flex-grow: 1; min-width: 0; padding: 0 20px 0 6px; overflow: hidden;">
+        <div style="display: flex;">
+          <div style="display: flex; flex-direction: column;">
+            <div class="ln">38</div><div class="ln">39</div><div class="ln">40</div><div class="ln">41</div><div class="ln">42</div><div class="ln">43</div><div class="ln">44</div><div class="ln">45</div><div class="ln">46</div><div class="ln">47</div><div class="ln">48</div><div class="ln">49</div>
+          </div>
+          <div style="display: flex; flex-direction: column;">
+            <div class="gut" style="height: 21px; background: transparent;"></div>
+            <div class="gut" style="height: 21px; background: transparent;"></div>
+            <div class="gut" style="height: 21px; background: rgba(232,236,246,0.42);"></div>
+            <div class="gut" style="height: 21px; background: rgba(232,236,246,0.42);"></div>
+            <div class="gut" style="height: 21px; background: transparent;"></div>
+            <div class="gut" style="height: 21px; background: transparent;"></div>
+            <div class="gut" style="height: 21px; background: transparent;"></div>
+            <div class="gut" style="height: 21px; background: rgba(232,236,246,0.62);"></div>
+            <div class="gut" style="height: 21px; background: rgba(232,236,246,0.62);"></div>
+            <div class="gut" style="height: 21px; background: transparent;"></div>
+            <div class="gut" style="height: 21px; background: transparent;"></div>
+            <div class="gut" style="height: 21px; background: transparent;"></div>
+          </div>
+          <div class="code" style="min-width: 0; overflow: hidden;"><span style="color: {{kw}};">func</span> confirmBooking(ctx context.Context, id <span style="color: {{kw}};">string</span>) <span style="color: {{kw}};">error</span> {
+	conn, err := wakilcore.OpenDatabase(ctx, <span style="color: {{str}};">"bookings"</span>)
+	<span style="color: {{kw}};">if</span> err != <span style="color: {{kw}};">nil</span> {
+		<span style="color: {{kw}};">return</span> fmt.Errorf(<span style="color: {{str}};">"open bookings: %w"</span>, err)
+	}
+	<span style="color: {{kw}};">defer</span> conn.Close()
+
+	row, err := conn.QueryRow(ctx, confirmQuery, id)
+	<span style="color: {{kw}};">if</span> err != <span style="color: {{kw}};">nil</span> {
+		<span style="color: {{kw}};">return</span> err
+	}
+	<span style="color: {{kw}};">if</span> row.<span class="ghost">confirmed_at != nil { return ErrAlreadyConfirmed }</span></div>
+        </div>
+
+        <!-- The completion's SOURCE is the point, not the completion. -->
+        <div style="display: flex; align-items: center; gap: 12px; padding: 12px 0 0 46px;">
+          <div class="chip" style="color: #9e82ff; background: rgba(124,92,255,0.14);">Ghost</div>
+          <div class="mono" style="font-size: 11px; color: rgba(232,236,246,0.72);">column confirmed_at · bookings · staging schema</div>
+          <div class="micro" style="color: rgba(232,236,246,0.52);">⇥ accept</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 16px; padding: 14px 20px 16px;">
+      <div class="mono micro" style="letter-spacing: 1.2px;">go</div>
+      <div class="mono micro" style="letter-spacing: 1.2px;">gopls · tier 2</div>
+      <div class="mono micro" style="letter-spacing: 1.2px;">ln 49 · col 9</div>
+      <div class="mono micro" style="letter-spacing: 1.2px;">api / internal</div>
+      <div style="flex-grow: 1;"></div>
+      <div class="micro" style="color: rgba(232,236,246,0.52);">{{syntaxNote}}</div>
+    </div>
+  </div>
+
+  <!-- §11's dual-drive exception, drawn. The TEXT SURFACE cannot be enumerated
+       — there is no action for "type a semicolon" — but everything around it
+       can, and §11's own examples are semantic: "rename to bookingId", "open
+       the confirm method". So the agent operates this pane through refactors
+       and navigations that already have names, and the buffer is the one place
+       it types nothing. A rename in flight says how far it reaches BEFORE it
+       lands, because across three roots that is not guessable. -->
+  <div style="position: absolute; left: 88px; bottom: 132px; width: 760px; display: flex; flex-direction: column; gap: 11px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="width: 5px; height: 5px; border-radius: 50%; background: rgba(139,224,200,0.55); flex-shrink: 0;"></div>
+      <div style="font-size: 13px; color: rgba(139,224,200,0.62);">read the confirm handler and its callers</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="width: 5px; height: 5px; border-radius: 50%; background: #9e82ff; flex-shrink: 0;"></div>
+      <div style="font-size: 13px; color: rgba(232,236,246,0.92);">rename bookingID → bookingId · 14 occurrences · 3 files · 2 roots</div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 88px; right: 88px; bottom: 74px; display: flex; align-items: center; justify-content: space-between; gap: 28px;">
+    <div style="display: flex; align-items: center; gap: 15px; flex-grow: 1;">
+      <div style="width: 1.5px; height: 18px; border-radius: 1px; background: #9e82ff; flex-shrink: 0;"></div>
+      <div style="font-size: 16px; color: rgba(232,236,246,0.50);">rename bookingID to bookingId everywhere</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 24px;">
+      <div class="micro" style="color: rgba(232,236,246,0.50);">Hold ⌥ to speak</div>
+      <div class="micro" style="color: rgba(232,236,246,0.50);">⌘P open</div>
+      <div class="micro" style="color: rgba(232,236,246,0.50);">⌘K actions</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"syntax":{"editor":"enum","options":["monochrome","two hues"],"default":"monochrome","section":"Editor"},"env":{"editor":"enum","options":["local","staging","production"],"default":"staging","section":"Environment"},"$preview":{"width":1440,"height":900}}'>
+function rgba(hex, a) {
+  var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
+function bleed(hex, cx, cy, sigma, peak) {
+  function s(k) { return rgba(hex, Math.round(peak * k * 10000) / 10000); }
+  return 'radial-gradient(circle ' + Math.round(2.4 * sigma) + 'px at ' + cx + '% ' + cy + '%, ' +
+    s(1) + ' 0%, ' + s(0.368) + ' 41.7%, ' + s(0.14) + ' 58.3%, ' +
+    s(0.039) + ' 75%, ' + s(0.008) + ' 91.7%, ' + rgba(hex, 0) + ' 100%)';
+}
+
+var FIELD = 'linear-gradient(180deg, #030408 0%, #070812 100%)';
+
+function room(env) {
+  var prod = env === 'production';
+  var a = prod ? '#e85c5c' : '#7c5cff';
+  var b = prod ? '#e85c5c' : '#4fb9e8';
+  return {
+    background: [
+      bleed(b, 110, -10, 900 / Math.sqrt(4.0), 0.38 * 0.61),
+      bleed(a, 50, 118, 900 / Math.sqrt(3.2), 0.55 * 0.61),
+      FIELD
+    ].join(', '),
+    colour: prod ? '#e85c5c' : '#8be0c8',
+    tint: prod ? rgba('#e85c5c', 0.13) : rgba('#8be0c8', 0.12),
+    label: prod ? 'Production' : (env === 'local' ? 'Local' : 'Staging')
+  };
+}
+
+class Component extends DCLogic {
+  renderVals() {
+    var r = room(this.props.env || 'staging');
+
+    // §5 IS ABSOLUTE AND SYNTAX HIGHLIGHTING BREAKS IT. "Text is cool white,
+    // stepped down by OPACITY, never by a different hue", and the three
+    // reserved hues are "never decorative, anywhere" — a keyword is not
+    // healthy, pending or production. So MONOCHROME is what the rule literally
+    // produces: the same face, the same colour, separated by opacity alone,
+    // and it reads better than it sounds because a fixed-width grid already
+    // carries most of the structure.
+    // TWO HUES is the alternative, and it needs §5 amended rather than
+    // stretched: it spends the luminance family on token type, which is
+    // exactly "luminance is decorative". It is offered so the cost can be
+    // seen rather than argued about.
+    var hued = (this.props.syntax || 'monochrome') === 'two hues';
+    return {
+      voidBackground: r.background,
+      envColour: r.colour,
+      envTint: r.tint,
+      envLabel: r.label,
+      kw: hued ? '#9e82ff' : 'rgba(232,236,246,0.92)',
+      str: hued ? '#4fb9e8' : 'rgba(232,236,246,0.62)',
+      syntaxNote: hued
+        ? 'Two hues · needs a §5 exception'
+        : 'Monochrome · opacity only, per §5'
+    };
+  }
+}
+</script>
+</body>
+</html>

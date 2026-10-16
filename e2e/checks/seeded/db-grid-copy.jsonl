@@ -1,0 +1,23 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"promptRow","present":true}}
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"dispatch":{"action":"db_run_query","params":{"pane":"db-2","database":"bookings","query":"SELECT * FROM bookings ORDER BY id"}}}
+{"expect":{"pane":"db-2","field":"rowCount","equals":"2"}}
+{"dispatch":{"action":"pane_select_cell","params":{"pane":"db-2","row":0,"column":"booking_id"}}}
+{"expect":{"pane":"db-2","field":"selection.anchorColumn","equals":"booking_id"}}
+{"do":{"click":"rail.db-2"}}
+{"do":{"hotkey":"cmd+c"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"pbpaste | tr '\\t\\n' '|~'; echo"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"[\"BK-2026-8842\""}}
+{"dispatch":{"action":"pane_select_rows","params":{"pane":"db-2","rows":[0,1],"anchor":0,"column":"booking_id"}}}
+{"expect":{"pane":"db-2","field":"selection.rows","equals":"[0,1]"}}
+{"do":{"click":"rail.db-2"}}
+{"do":{"hotkey":"cmd+c"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"pbpaste | tr '\\t\\n' '|~'; echo"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"id|booking_id|status~8842|BK-2026-8842|held~8843|BK-2026-8843|confirmed"}}

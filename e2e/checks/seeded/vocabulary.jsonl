@@ -1,0 +1,13 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-1","field":"shell","equals":"zsh"}}
+{"do":{"type":{"into":"window.composer","text":"open the customers table"}}}
+{"expect":{"tree":"contains","text":"open the customers table"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"new terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"parity":{"action":"pane_focus","params":{"id":"terminal-1"},"click":"rail.terminal-1","assert":"read_layout"}}

@@ -1,0 +1,16 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"cat"}}
+{"do":{"press":"Return"}}
+{"do":{"keys":"held-by-cat"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"grid","contains":"held-by-cat"}}
+{"expect":{"pane":"terminal-1","field":"blocks","equals":"[]"}}
+{"do":{"hotkey":"ctrl+c"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].command","equals":"cat"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"130"}}
+{"do":{"keys":"echo back-at-the-prompt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].command","equals":"echo back-at-the-prompt"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"back-at-the-prompt"}}

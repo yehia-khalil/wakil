@@ -1,0 +1,3 @@
+{"expect":{"tree":"contains","text":"ORGANISATION"}}
+{"expect":{"tree":"contains","text":"Wakil holds one organisation at a time"}}
+{"expect":{"tree":"contains","text":"NO ORGANISATION IS OPEN · NOTHING BEHIND THIS PLANE"}}

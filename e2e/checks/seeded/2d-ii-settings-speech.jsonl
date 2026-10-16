@@ -1,0 +1,16 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"SPEECH"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","speechProvider":"whisper"}}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"unknown engine 'whisper', using Apple"}}
+{"parity":{"action":"ctx_update_org","params":{"id":"e2e-fixture","speechProvider":"apple"},"click":"settings.org.speechProvider.apple","assert":"tree"}}
+{"expect":{"tree":"absent","text":"unknown engine"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","speechProvider":"whisper"}}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"unknown engine 'whisper', using Apple"}}
+{"do":{"click":"settings.org.speechProvider.apple"}}
+{"expect":{"tree":"absent","text":"unknown engine"}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"SPEECH"}}
+{"expect":{"tree":"absent","text":"unknown engine"}}

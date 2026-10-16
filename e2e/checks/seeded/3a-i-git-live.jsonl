@@ -1,0 +1,41 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"do":{"click":"landing.row.open:git"}}
+{"expect":{"pane":"git-1","field":"kind","equals":"git"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[1].group","equals":"changed"}}
+{"expect":{"tree":"absent","text":"?, fresh"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"keys":"printf 'new\\n' > ../e2e-api/fresh"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[3].path","equals":"fresh"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[3].group","equals":"untracked"}}
+{"expect":{"tree":"contains","text":"?, fresh"}}
+{"dispatch":{"action":"git_select","params":{"pane":"git-1","root":"{fixtureRoot}/e2e-api","path":"app.txt","group":"changed"}}}
+{"expect":{"pane":"git-1","field":"folded","equals":"true"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-api add app.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"git-1","field":"roots[1].files[1].path","equals":"BookingController.php"}}
+{"expect":{"pane":"git-1","field":"selection.path","equals":"app.txt"}}
+{"expect":{"pane":"git-1","field":"selection.group","equals":"staged"}}
+{"expect":{"pane":"git-1","field":"folded","equals":"true"}}
+{"dispatch":{"action":"git_select","params":{"pane":"git-1","root":"{fixtureRoot}/e2e-portal","path":"index.txt","group":"changed"}}}
+{"expect":{"pane":"git-1","field":"selection.path","equals":"index.txt"}}
+{"expect":{"pane":"git-1","field":"inView","equals":"null"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal checkout -- index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"git-1","field":"roots[2].files","equals":"[]"}}
+{"expect":{"pane":"git-1","field":"folded","equals":"false"}}
+{"expect":{"pane":"git-1","field":"selection","equals":"null"}}
+{"expect":{"pane":"git-1","field":"inView","contains":"/e2e-portal"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}

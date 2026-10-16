@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/db-query-line-agent-replaces.jsonl",
+  "baseCommit": "3c9c923b17ca8bf5551c011519ce326919bbf282",
+  "provedAt": "2026-10-07T12:58:29.298556Z",
+  "checkBlob": "4e826deb5f6bec292e9450fda1d2275c48168fb0"
+}

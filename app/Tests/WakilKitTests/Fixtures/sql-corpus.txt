@@ -1,0 +1,75 @@
+DELETE FROM customers
+DELETE FROM customers WHERE id=43
+DELETE FROM customers; DROP TABLE customers
+DELETE FROM events WHERE id = 1
+DELETE FROM events WHERE id=1
+DELETE FROM orders
+DELETE FROM orders WHERE created_at < '2020-01-01'
+DELETE FROM sessions
+DELETE FROM t -- WHERE id=1
+DELETE FROM t */
+DELETE FROM t /* WHERE id=1 */
+DELETE FROM t WHERE id = 1
+DELETE FROM t WHERE id=1
+DELETE FROM t WHERE id=2
+DELETE FROM t WHERE id=2;
+DELETE FROM t; DROP TABLE u
+INSERT INTO bookings VALUES (
+INSERT INTO customers (id, name) VALUES (?, ?)
+INSERT INTO customers (id,name) VALUES (99,'Hacker')
+INSERT INTO customers VALUES (?,?)
+INSERT INTO customers VALUES (42,'Layla')
+INSERT INTO customers VALUES (43,'Sara')
+INSERT INTO customers VALUES (99,'Hacker')
+INSERT INTO events VALUES (1, 'a')
+INSERT INTO t SELECT * FROM u
+INSERT INTO t SELECT * FROM u INTO OUTFILE '/tmp/x'
+INSERT INTO t VALUES (1,'a')
+INSERT INTO t VALUES (1)
+INSERT INTO t VALUES (1); DROP TABLE u
+SELECT ... INTO OUTFILE '/x'
+SELECT ... INTO OUTFILE/DUMPFILE
+SELECT '-- ' , x FROM t WHERE y = 1 ; DROP TABLE t
+SELECT '-- not a comment' AS v
+SELECT '/*' ; DROP TABLE t  
+SELECT '/*' ; DROP TABLE t -- */
+SELECT '/*' AS v
+SELECT 'a\' -- ' INTO OUTFILE '/var/lib/mysql-files/x'
+SELECT 'a\' , 'b  
+SELECT 'a\' , 'b -- c'
+SELECT 'a\' , 'b -- c' ; DROP TABLE t
+SELECT 'DELETE FROM t'
+SELECT 'no # here' FROM t -- a note about DELETE
+SELECT @@secure_file_priv
+SELECT @@SESSION.sql_mode
+SELECT @@session.transaction_read_only
+SELECT * FROM  LIMIT 0
+SELECT * FROM  LIMIT 0\
+SELECT * FROM (EXPLAIN ...) AS wakil_page
+SELECT * FROM (SELECT 1;) AS wakil_page
+SELECT * FROM (SHOW TABLES) AS wakil_page
+SELECT * FROM `delete`
+SELECT * FROM `events`
+SELECT * FROM <quoted name> LIMIT 0
+SELECT * FROM bookings ORDER BY id
+select * from customers
+SELECT * FROM customers   WHERE id = 1
+SELECT * FROM customers /* a note */ WHERE id = 1
+SELECT * FROM edit_bit WHERE id = 1
+SELECT * FROM empty
+SELECT * FROM ev
+select * from events
+SELECT * FROM events
+SELECT * FROM events -- logins only
+SELECT * FROM events -- trailing note
+SELECT * FROM events ORDER BY id
+SELECT * FROM events should be editable
+SELECT * FROM events WHERE id = 1
+SELECT * FROM nullkey
+SELECT * FROM t ; DROP TABLE u; -- LIMIT 0
+SELECT * FROM t WHERE action = 'DELETE'
+SELECT `order`, "user" FROM t WHERE note = 'it''s' AND path = 'a\'b' -- trailing
+SELECT * FROM t # mysql comment
+SELECT /* block */ id FROM t
+SELECT 1.5e-3, 42, .5 FROM dual
+SELECT 'unterminated

@@ -1,0 +1,36 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"kept through a failure"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"do":{"hotkey":"cmd+s"}}
+{"expect":{"tree":"contains","text":"Save as (a path inside the project)"}}
+{"expect":{"tree":"contains","text":"e2e-project/"}}
+{"do":{"keys":"../outside.txt"}}
+{"expect":{"tree":"contains","text":"e2e-project/../outside.txt"}}
+{"do":{"click":"editor.saveAs.save"}}
+{"expect":{"tree":"contains","text":"is outside the active project's roots; editor reads and writes are confined to them (Invariant 6, Decision 36)"}}
+{"expect":{"tree":"contains","text":"e2e-project/../outside.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"tree":"contains","text":"e2e-project/../outside.txt"}}
+{"expect":{"tree":"contains","text":"Save as (a path inside the project)"}}
+{"do":{"focus":"editor.saveAs.field"}}
+{"do":{"keys":"-kept"}}
+{"expect":{"tree":"contains","text":"e2e-project/../outside.txt-kept"}}
+{"do":{"click":"editor.saveAs.cancel"}}
+{"expect":{"tree":"absent","text":"Save as (a path inside the project)"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"hotkey":"cmd+s"}}
+{"expect":{"tree":"contains","text":"Save as (a path inside the project)"}}
+{"expect":{"tree":"absent","text":"../outside.txt"}}
+{"do":{"keys":"parity.txt"}}
+{"expect":{"tree":"contains","text":"e2e-project/parity.txt"}}
+{"parity":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/e2e-project/parity.txt"},"click":"editor.saveAs.save","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-project/parity.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"null"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"expect":{"tree":"absent","text":"Save as (a path inside the project)"}}

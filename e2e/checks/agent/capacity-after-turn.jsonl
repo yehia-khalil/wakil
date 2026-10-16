@@ -1,0 +1,10 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"expect":{"tree":"contains","text":"ACCOUNT"}}
+{"expect":{"tree":"contains","text":"5h 12% · week 59%"}}
+{"do":{"type":{"into":"window.composer","text":"report my capacity at twenty-nine percent"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"capacity reported for this turn"}}
+{"expect":{"tree":"contains","text":"5h 29% · week 82%"}}
+{"expect":{"tree":"absent","text":"5h 12%"}}
+{"do":{"keys":"a draft after the reading"}}
+{"expect":{"tree":"contains","text":"a draft after the reading"}}

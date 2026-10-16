@@ -1,0 +1,41 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"do":{"click":"settings.tree.projectEditor.e2e-git"}}
+{"expect":{"tree":"contains","text":"HEAVY FOLDERS"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].name","equals":"e2e-git"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"vendor"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[1]","equals":"node_modules"}}
+{"do":{"click":"settings.projectEditor.heavy.add"}}
+{"do":{"keys":".git"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":".git is always heavy — it needs no row"}}
+{"expect":{"tree":"contains","text":"Value: .git"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[2]","present":false}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"vendor"}}
+{"do":{"focus":"settings.projectEditor.heavy.new"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"a/b"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"heavy folder \"a/b\" is a path — give a folder name; it is matched at any depth"}}
+{"expect":{"tree":"contains","text":"Value: a/b"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[2]","present":false}}
+{"do":{"focus":"settings.projectEditor.heavy.new"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"vendor"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"heavy folder \"vendor\" is listed twice"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[2]","present":false}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"vendor"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[1]","equals":"node_modules"}}
+{"dispatch":{"action":"ctx_set_project_editor_settings","params":{"projectPath":"{fixtureRoot}/e2e-git/.wakil/project.json","heavyFolders":[".git"]},"refuses":".git is always heavy — it needs no row"}}
+{"dispatch":{"action":"ctx_set_project_editor_settings","params":{"projectPath":"{fixtureRoot}/e2e-git/.wakil/project.json","heavyFolders":["dist","dist"]},"refuses":"heavy folder \"dist\" is listed twice"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"vendor"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[1]","equals":"node_modules"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[2]","present":false}}
+{"do":{"focus":"settings.projectEditor.heavy.new"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"dist"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[2]","equals":"dist"}}
+{"expect":{"tree":"absent","text":"is listed twice"}}
+{"expect":{"tree":"contains","text":"Value: dist"}}

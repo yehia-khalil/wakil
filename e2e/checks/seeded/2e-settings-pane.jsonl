@@ -1,0 +1,16 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"e2e-provider"}}
+{"expect":{"tree":"contains","text":"ACCOUNT"}}
+{"expect":{"tree":"contains","text":"CREDENTIAL"}}
+{"expect":{"tree":"contains","text":"SIGN-IN"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"DISPLAY NAME"}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"nothing here is cached"}}
+{"dispatch":{"action":"ctx_config_tree","params":{}}}
+{"expect":{"tree":"contains","text":"e2e-project"}}
+{"dispatch":{"action":"settings_open","params":{}}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}

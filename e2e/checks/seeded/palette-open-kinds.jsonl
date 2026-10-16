@@ -1,0 +1,29 @@
+{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"database"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:db"}}
+{"expect":{"pane":"db-1","field":"kind","equals":"db"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"terminal"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"expect":{"pane":"terminal-2","field":"shell","equals":"zsh"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"api client"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:api"}}
+{"expect":{"pane":"api-3","field":"kind","equals":"api"}}
+{"expect":{"pane":"api-3","field":"entry","equals":""}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"new git"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"git-4","field":"kind","equals":"git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}

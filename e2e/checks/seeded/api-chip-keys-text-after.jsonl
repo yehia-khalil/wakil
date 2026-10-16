@@ -1,0 +1,22 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"post","path":[{"literal":"/a/"},{"slot":"x"},{"literal":"/b"}],"body":[{"literal":"[1, "},{"slot":"y"},{"literal":"2]"}]}}}
+{"do":{"focus":"api.path"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Backspace"}}
+{"expect":{"pane":"api-1","field":"request.path[1]","present":false}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/a//b"}}
+{"do":{"keys":"id"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/a/id/b"}}
+{"do":{"focus":"api.body"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Left"}}
+{"do":{"press":"Backspace"}}
+{"expect":{"pane":"api-1","field":"request.body[1]","present":false}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"[1, 2]"}}
+{"do":{"click":"api.body.hole"}}
+{"do":{"type":{"into":"api.body.hole.name","text":"h"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"api-1","field":"request.body[0].literal","equals":"[1, "}}
+{"expect":{"pane":"api-1","field":"request.body[1].slot","equals":"h"}}
+{"expect":{"pane":"api-1","field":"request.body[2].literal","equals":"2]"}}

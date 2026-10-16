@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/capacity-low-reading.jsonl",
+  "baseCommit": "1402c099d411b089307bc11a7d330405e5ec4d31",
+  "provedAt": "2026-10-11T13:50:31.228681Z",
+  "checkBlob": "2c574b506f2a390a67810539b9ba6b510dd2a9f9"
+}

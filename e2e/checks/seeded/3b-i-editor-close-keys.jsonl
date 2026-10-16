@@ -1,0 +1,36 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].scratch","equals":"2"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"not yet saved"}}}
+{"expect":{"pane":"editor-1","field":"tabs[1].dirty","equals":"true"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"tree":"contains","text":"Save changes to Untitled-2?"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].dirty","equals":"true"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"Save changes to Untitled-2?"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].dirty","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"tree":"contains","text":"Save changes to Untitled-2?"}}
+{"do":{"click":"editor.unsaved.cancel"}}
+{"expect":{"tree":"absent","text":"Save changes to Untitled-2?"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].scratch","equals":"2"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].dirty","equals":"true"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"tree":"contains","text":"Save changes to Untitled-2?"}}
+{"do":{"click":"editor.unsaved.dontSave"}}
+{"expect":{"tree":"absent","text":"Save changes to Untitled-2?"}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_close\""}}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"pane":"editor-1","field":"tabs","equals":"[]"}}
+{"expect":{"tree":"absent","text":"Save changes to Untitled-1?"}}
+{"expect":{"tree":"contains","text":"⌘P to open a file · ⌘T for a scratch tab"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"journal":{"contains":"\"action\":\"pane_close\""}}}
+{"expect":{"tree":"absent","text":"⌘P to open a file · ⌘T for a scratch tab"}}

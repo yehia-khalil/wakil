@@ -1,0 +1,14 @@
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","path":[{"literal":"/v1"}]}}}
+{"do":{"focus":"api.path"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","path":[{"literal":"/agent"}]},"refuses":"the operator is editing Path"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","query":[{"name":"a","value":[]}]},"refuses":"the operator is editing Query"}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/v1"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","method":"post"}}}
+{"expect":{"pane":"api-1","field":"request.method","equals":"POST"}}
+{"do":{"focus":"api.body"}}
+{"do":{"click":"api.method.PUT"}}
+{"expect":{"pane":"api-1","field":"request.method","equals":"PUT"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","path":[{"literal":"/agent"}]}}}
+{"expect":{"pane":"api-1","field":"request.path[0].literal","equals":"/agent"}}
+{"dispatch":{"action":"api_set_request","params":{"pane":"api-1","body":[{"literal":"{}"}]},"refuses":"the operator is editing Body"}}

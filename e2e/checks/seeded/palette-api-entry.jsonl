@@ -1,0 +1,12 @@
+{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"catalog api"}}
+{"expect":{"tree":"contains","text":"Value: catalog api"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"api-1","field":"kind","equals":"api"}}
+{"expect":{"pane":"api-1","field":"entry","equals":"catalog"}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog.e2e-fixture.invalid"}}
+{"expect":{"journal":{"contains":"\"params\":{\"entry\":\"catalog\"}"}}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
