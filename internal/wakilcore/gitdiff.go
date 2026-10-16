@@ -25,6 +25,9 @@ type GitShowResult struct {
 	Binary    bool   `json:"binary"`
 	Bytes     int    `json:"bytes"` // true size
 	Truncated bool   `json:"truncated"`
+	// Absent: the file is not at this revision (untracked at index, added at HEAD), so its text
+	// is empty without being an empty file. A baseline must not read it as one.
+	Absent bool `json:"absent"`
 }
 
 // GitDiff returns the diff for a file at a given side (staged or changed).
@@ -89,7 +92,7 @@ func GitShow(ctx context.Context, g *GitRunner, path, rev string) (GitShowResult
 		if (rev != "worktree") && (strings.Contains(err.Error(), "exists on disk, but not in") ||
 			strings.Contains(err.Error(), "does not exist in") ||
 			strings.Contains(err.Error(), "does not exist (neither on disk")) {
-			return GitShowResult{}, nil
+			return GitShowResult{Absent: true}, nil
 		}
 		return GitShowResult{}, err
 	}

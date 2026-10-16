@@ -390,7 +390,9 @@ struct EditorPane: View {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("editor.tab.\(index)")
         .accessibilityAction { focusTab(index) }
-        .accessibilityAddTraits(on ? .isSelected : [])
+        // Text, as a Changes row is: as a button its title never reached the tree (AXDescription only).
+        .accessibilityRemoveTraits(.isButton)
+        .accessibilityAddTraits(on ? [.isStaticText, .isSelected] : .isStaticText)
     }
 
     private func focusTab(_ index: Int) {

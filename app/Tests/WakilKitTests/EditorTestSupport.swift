@@ -299,9 +299,12 @@ struct EditorFixture {
     /// tab has returned (final review 2), so a test reads it only once it is there. Callers carry
     /// `.timeLimit`.
     func baselineLands(_ path: String, _ baseline: String?) async {
-        while await snapshot().tabs.first(where: { $0.path == path })?.baseline != baseline {
+        // Ends on the suite's time limit too, as a failure: `try?` alone swallowed the cancellation
+        // and a baseline that never landed spun forever.
+        while await snapshot().tabs.first(where: { $0.path == path })?.baseline != baseline, !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(1))
         }
+        #expect(await snapshot().tabs.first(where: { $0.path == path })?.baseline == baseline)
     }
 }
 

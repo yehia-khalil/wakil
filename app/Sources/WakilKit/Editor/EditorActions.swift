@@ -407,7 +407,8 @@ public func registerEditorActions(
         return Task {
             let base: String?
             switch try? await filesTool(git, "git_show", ["root": .string(root), "path": .string(rel), "rev": .string("index")]) {
-            case .ok(let o)? where o["binary"] != .bool(true) && o["truncated"] != .bool(true):
+            case .ok(let o)? where o["binary"] != .bool(true) && o["truncated"] != .bool(true)
+                                   && o["absent"] != .bool(true):   // untracked: no baseline, not an empty one
                 if case .string(let t)? = o["text"] { base = t } else { base = nil }
             default:
                 base = nil

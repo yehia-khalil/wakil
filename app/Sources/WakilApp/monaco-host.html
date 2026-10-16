@@ -260,7 +260,11 @@
       applying = true;
       // The whole selection, not only the caret: a select the agent made must survive a reload.
       const sel = key === current ? ed.getSelection() : null, top = key === current ? ed.getScrollTop() : 0;
+      // Its own undo step: Monaco merges back-to-back pushEditOperations into one, so ⌘Z after two
+      // applies (an agent edit, then a Revert) undid both (3b-iii Cover).
+      m.pushStackElement();
       m.pushEditOperations([], [{ range: m.getFullModelRange(), text: text }], function () { return null; });
+      m.pushStackElement();
       if (sel) { ed.setSelection(sel); ed.setScrollTop(top); }
       applying = false;
       // One report of where the apply left the view (Monaco clamps to a shorter text).
@@ -282,7 +286,9 @@
         replaceWhole(key, after);
       } else {
         applying = true;
+        m.pushStackElement();   // its own undo step, as replaceWhole's
         m.pushEditOperations([], [{ range: new monaco.Range(sl, sc, el, ec), text: text }], function () { return null; });
+        m.pushStackElement();
         applying = false;
         if (m.getValue() !== after) replaceWhole(key, after);
         else if (key === current) report();

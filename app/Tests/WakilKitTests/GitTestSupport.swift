@@ -14,6 +14,7 @@ actor FakeGit: ToolCaller {
     var shows: [String: String] = [:]           // "root|path|rev" -> text
     var calls: [String] = []
     var showErrors: [String: String] = [:]      // "root|path|rev" -> isError text
+    var absentShows: Set<String> = []           // "root|path|rev" git_show answers `absent` for
     var slowShow = false
     /// `slowStatus` parks every `git_status` under its call number (0, 1, …) until
     /// `releaseStatus(_:)`. The reply is taken when the call arrives, so a parked read
@@ -40,6 +41,7 @@ actor FakeGit: ToolCaller {
     func setSlowShow(_ slow: Bool) { slowShow = slow }
     func setSlowStatus(_ slow: Bool) { slowStatus = slow }
     func set(showError key: String, _ text: String) { showErrors[key] = text }
+    func set(showAbsent key: String) { absentShows.insert(key) }
     func releaseStatus(_ call: Int) {
         statusReleased.insert(call)
         statusParked.removeValue(forKey: call)?.resume()
@@ -117,6 +119,7 @@ actor FakeGit: ToolCaller {
             return .object(["structuredContent": .object([
                 "text": .string(shows[key] ?? ""), "binary": .bool(false),
                 "bytes": .integer(Int64((shows[key] ?? "").utf8.count)), "truncated": .bool(false),
+                "absent": .bool(absentShows.contains(key)),
             ])])
         default:
             return .object([:])

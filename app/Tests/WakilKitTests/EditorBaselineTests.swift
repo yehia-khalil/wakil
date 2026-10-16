@@ -26,6 +26,19 @@ import Testing
         await f.baselineLands("/p/api/n", nil)
     }
 
+    /// wakil-git answers an untracked file's index side with empty text and `absent`, not an error;
+    /// read as an empty file, every line was marked added (3b-iii Cover).
+    @Test func aFileAbsentFromTheIndexHasNoBaseline() async throws {
+        let f = try await changesFixture()
+        await f.files.put("/p/api/n", "untracked\n")
+        await f.git.set(showAbsent: "/p/api|n|index")
+        await f.git.setSlowShow(true)
+        try await f.dispatch("editor_open", ["path": .string("/p/api/n")])
+        await f.panes.updateEditor(paneId: f.pane) { s in s.tabs[0].baseline = "stand-in" }
+        await f.git.release()
+        await f.baselineLands("/p/api/n", nil)
+    }
+
     @Test func aReadOnlyTabAndAScratchTabFetchNoBaseline() async throws {
         let f = try await changesFixture()
         await f.files.putOverCap("/p/api/big.go", size: 3_000_000)

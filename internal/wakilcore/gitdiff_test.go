@@ -76,8 +76,20 @@ func TestShowAddedFileAtHEAD(t *testing.T) {
 	gitIn(t, repo, "add", "new.txt")
 	g, _ := NewGitRunner(repo, []string{repo})
 	r, err := GitShow(context.Background(), g, "new.txt", "HEAD")
-	if err != nil || r.Text != "" {
-		t.Errorf("added file at HEAD: text=%q, err=%v", r.Text, err)
+	if err != nil || r.Text != "" || !r.Absent {
+		t.Errorf("added file at HEAD: text=%q, absent=%v, err=%v", r.Text, r.Absent, err)
+	}
+}
+
+// An empty file in the index is present, so a baseline reads it as empty rather than as none.
+func TestShowEmptyFileAtIndexIsNotAbsent(t *testing.T) {
+	repo := gitTestRepo(t)
+	os.WriteFile(filepath.Join(repo, "empty.txt"), nil, 0o644)
+	gitIn(t, repo, "add", "empty.txt")
+	g, _ := NewGitRunner(repo, []string{repo})
+	r, err := GitShow(context.Background(), g, "empty.txt", "index")
+	if err != nil || r.Text != "" || r.Absent {
+		t.Errorf("empty file at index: text=%q, absent=%v, err=%v", r.Text, r.Absent, err)
 	}
 }
 
@@ -86,8 +98,8 @@ func TestShowUntrackedFileAtIndex(t *testing.T) {
 	os.WriteFile(filepath.Join(repo, "u.txt"), []byte("untracked\n"), 0o644)
 	g, _ := NewGitRunner(repo, []string{repo})
 	r, err := GitShow(context.Background(), g, "u.txt", "index")
-	if err != nil || r.Text != "" {
-		t.Errorf("untracked file at index: text=%q, err=%v", r.Text, err)
+	if err != nil || r.Text != "" || !r.Absent {
+		t.Errorf("untracked file at index: text=%q, absent=%v, err=%v", r.Text, r.Absent, err)
 	}
 }
 

@@ -353,6 +353,9 @@ struct EditorColumn: View {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("editor.changes.root:\(root.name)")
         .accessibilityAction { toggleRoot(root.root, closed: closed) }
+        // Text, as a row is: as a button its line never reached the tree (AXDescription only).
+        .accessibilityRemoveTraits(.isButton)
+        .accessibilityAddTraits(.isStaticText)
         if let detail = gitRootErrorDetail(root) {
             Text(detail)
                 .font(.system(size: 11, design: .monospaced))
