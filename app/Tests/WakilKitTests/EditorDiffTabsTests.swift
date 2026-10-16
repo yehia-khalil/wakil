@@ -22,6 +22,26 @@ private func select(_ f: EditorFixture, _ root: String, _ path: String, _ group:
         #expect(editorTabTitles(s.tabs) == ["b.go (Changes)"])
     }
 
+    // Final review 4: a diff tab has no buffer, so a find there would answer a false "0 matches".
+    @Test func findOnADiffTabIsRefused() async throws {
+        let f = try await changesFixture()
+        await f.git.set(show: "/p/api|b.go|worktree", "needle\n")
+        try await select(f, "/p/api", "b.go", "changed")
+        await #expect(throws: EditorActionError.diffTab(action: "editor_find")) {
+            try await f.dispatch("editor_find", ["query": .string("needle")])
+        }
+        #expect(await f.snapshot().find == nil)
+    }
+
+    // Final review 6: the read-only refusal names the tab, as editor_save's does, not an empty path.
+    @Test func replaceRangeOnADiffTabNamesTheTab() async throws {
+        let f = try await changesFixture()
+        try await select(f, "/p/api", "b.go", "changed")
+        await #expect(throws: EditorActionError.readOnly(action: "editor_replace_range", path: "b.go (Changes)", notice: nil)) {
+            try await f.dispatch("editor_replace_range", ["range": range(1, 1, 1, 1), "text": .string("x")])
+        }
+    }
+
     @Test func theSameFilesTwoGroupsAreTwoTabs() async throws {
         let f = try await changesFixture()
         await f.git.set(status: "/p/api", files: [("x.go", "staged", "M"), ("x.go", "changed", "M")])

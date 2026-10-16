@@ -23,6 +23,8 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
     case noChange(line: Int)
     /// `editor_peek_step` with no peek open.
     case noPeek(action: String)
+    /// An action that reads a buffer, on a Changes diff tab, which has none (`editor_find`).
+    case diffTab(action: String)
     /// `editor_replace_range` whose `expect` is no longer the text in its range: nothing is replaced.
     case staleRange(action: String, path: String)
 
@@ -49,6 +51,9 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
             "\(action): the active tab has no change marks (it is untracked, outside a repository, a scratch or read-only tab, or a diff)"
         case .noChange(let line): "editor_peek: line \(line) has no change mark"
         case .noPeek(let action): "\(action): no peek is open; open one with editor_peek on a marked line"
+        case .diffTab(let action):
+            "\(action): the active tab is a Changes diff, which has no buffer to search; open its file "
+                + "(editor_open_file, ⌘⏎) and find there"
         case .staleRange(let action, let path):
             "\(action): the text in range of \((path as NSString).lastPathComponent) is no longer what expect says "
                 + "(the buffer changed since the range was read), so nothing was replaced; read the pane again "
@@ -749,7 +754,7 @@ public func registerEditorActions(
             let expect = optionalString(params, "expect")
             let outcome = await panes.updateEditor(paneId: pane) { s -> EditorReplaceOutcome in
                 guard let i = editorTabIndex(s, path: path) else { return .noTab }
-                if s.tabs[i].readOnly { return .readOnly(s.tabs[i].path ?? "", s.tabs[i].notice) }
+                if s.tabs[i].readOnly { return .readOnly(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0], s.tabs[i].notice) }
                 // Checked in the same turn as the write, so nothing can change the range in between.
                 if let expect, editorText(s.tabs[i].text, in: r) != expect {
                     return .stale(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0])
@@ -1335,6 +1340,7 @@ public func registerEditorActions(
             }
             let snap = await panes.editorSnapshot(paneId: pane)
             guard let i = editorTabIndex(snap, path: nil) else { throw EditorActionError.noTab(action: "editor_find") }
+            if case .diff = snap.tabs[i].subject { throw EditorActionError.diffTab(action: "editor_find") }
             let c = flag(params, "case"), w = flag(params, "word"), r = flag(params, "regex")
             let matches = try editorFindMatches(snap.tabs[i].text, query: query, caseSensitive: c, wholeWord: w, regex: r)
             await panes.updateEditor(paneId: pane) { s in
