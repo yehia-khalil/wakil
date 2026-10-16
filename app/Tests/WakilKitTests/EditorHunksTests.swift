@@ -65,3 +65,26 @@ private let cases: [HunkCase] = [
         #expect(!editorHunks(base: "x\n", text: atCap).isEmpty)
     }
 }
+
+// Final review 5: one render asks for the active tab's hunks several times (the peek's view, its
+// captured keys, what was rendered). The memo diffs a (baseline, text) pair once.
+@Test func theHunksMemoDiffsAPairOnceAndAgainOnlyWhenItChanges() {
+    let memo = EditorHunksMemo()
+    var runs = 0
+    func hunks(_ base: String, _ text: String) -> [EditorHunk] {
+        memo.hunks(base: base, text: text) { b, t in runs += 1; return editorHunksUncached(base: b, text: t) }
+    }
+    let first = hunks("a\nb\nc\n", "a\nB\nc\n")
+    #expect(hunks("a\nb\nc\n", "a\nB\nc\n") == first)
+    #expect(runs == 1)
+    #expect(first == [EditorHunk(kind: .changed, newStart: 2, newCount: 1, oldLines: ["b"])])
+    let other = hunks("a\nb\nc\n", "a\nb\nc\nd\n")
+    #expect(runs == 2 && other == [EditorHunk(kind: .added, newStart: 4, newCount: 1, oldLines: [])])
+}
+
+@Test func theSharedHunksAreTheUncachedOnesEveryTime() {
+    let base = "a\nb\nc\nd\n", text = "a\nX\nc\n"
+    #expect(editorHunks(base: base, text: text) == editorHunksUncached(base: base, text: text))
+    #expect(editorHunks(base: base, text: text) == editorHunksUncached(base: base, text: text))
+    #expect(editorHunks(base: base, text: "a\nb\nc\nd\n").isEmpty)
+}

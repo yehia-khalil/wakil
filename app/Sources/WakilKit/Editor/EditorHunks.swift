@@ -46,7 +46,34 @@ public let editorHunksLineCap = 10_000
 
 /// `text`'s hunks against `base`, in line order. Adjacent removals and insertions are one hunk.
 /// Empty when either side is over `editorHunksLineCap` lines.
+///
+/// Memoised for the last pair asked (`EditorHunksMemo`): one render asks for the active tab's
+/// hunks several times on the main thread (its peek's view, the keys the page takes, what was
+/// rendered), and each diff can cost up to ~1.3 s at the cap, so a pair is diffed once.
 public func editorHunks(base: String, text: String) -> [EditorHunk] {
+    editorHunksShared.hunks(base: base, text: text, compute: editorHunksUncached)
+}
+
+private let editorHunksShared = EditorHunksMemo()
+
+/// A one-entry memo of `editorHunks`, keyed on the (baseline, text) pair, behind a lock: the marks
+/// diff runs off the main actor while the render asks on it. The diff itself runs outside the lock,
+/// so a slow one never blocks a caller with a different pair. Unchanged strings compare by storage,
+/// so a hit costs no more than the lookup.
+final class EditorHunksMemo: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last: (base: String, text: String, hunks: [EditorHunk])?
+
+    func hunks(base: String, text: String, compute: (String, String) -> [EditorHunk]) -> [EditorHunk] {
+        if let hit = lock.withLock({ last.flatMap { $0.base == base && $0.text == text ? $0.hunks : nil } }) { return hit }
+        let hunks = compute(base, text)
+        lock.withLock { last = (base, text, hunks) }
+        return hunks
+    }
+}
+
+/// `editorHunks` without the memo: the diff itself.
+func editorHunksUncached(base: String, text: String) -> [EditorHunk] {
     let old = editorHunkLines(base), new = editorHunkLines(text)
     guard old.count <= editorHunksLineCap, new.count <= editorHunksLineCap else { return [] }
     var removed = Set<Int>(), inserted = Set<Int>()
