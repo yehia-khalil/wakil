@@ -47,6 +47,21 @@ actor FakeGit: ToolCaller {
     private func parkStatus(_ call: Int, _ c: CheckedContinuation<Void, Never>) {
         if statusReleased.contains(call) { c.resume() } else { statusParked[call] = c }
     }
+    /// `indexedShow` parks every `git_show` under its call number (0, 1, … from the moment it is turned
+    /// on) until `releaseShow(_:)`, taking the reply when the call arrives. It lets a test land two shows
+    /// of the SAME path in either order.
+    private var indexedShow = false
+    private var showCount = 0
+    private var showParked: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var showReleased: Set<Int> = []
+    func setIndexedShow(_ on: Bool) { indexedShow = on; showCount = 0; showReleased = [] }
+    func releaseShow(_ call: Int) {
+        showReleased.insert(call)
+        showParked.removeValue(forKey: call)?.resume()
+    }
+    private func parkShow(_ call: Int, _ c: CheckedContinuation<Void, Never>) {
+        if showReleased.contains(call) { c.resume() } else { showParked[call] = c }
+    }
     func release() {
         released = true
         parked.forEach { $0.c.resume() }
@@ -79,6 +94,18 @@ actor FakeGit: ToolCaller {
             try Task.checkCancellation()
             return reply
         case "git_show":
+            if indexedShow {
+                let call = showCount
+                showCount += 1
+                let key = "\(root)|\(path)|\(optionalString(arguments, "rev") ?? "")"
+                let text = shows[key] ?? ""
+                await withCheckedContinuation { c in Task { self.parkShow(call, c) } }
+                try Task.checkCancellation()
+                return .object(["structuredContent": .object([
+                    "text": .string(text), "binary": .bool(false),
+                    "bytes": .integer(Int64(text.utf8.count)), "truncated": .bool(false),
+                ])])
+            }
             if slowShow { await withCheckedContinuation { c in Task { self.park(path, c) } } }
             try Task.checkCancellation()
             let key = "\(root)|\(path)|\(optionalString(arguments, "rev") ?? "")"

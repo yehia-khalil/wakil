@@ -815,8 +815,12 @@ final class EditorHost {
         let base = t.readOnly ? nil : t.baseline, text = t.text
         marksTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            // The diff runs off the main actor (it is capped, but still not free).
+            let marks = await Task.detached(priority: .userInitiated) {
+                base.map { editorGutterMarks(editorHunks(base: $0, text: text)) } ?? []
+            }.value
             guard !Task.isCancelled, let self, let renderer = self.renderer else { return }
-            let marks = base.map { editorGutterMarks(editorHunks(base: $0, text: text)) } ?? []
             guard self.marksSent[key] != marks else { return }
             self.marksSent[key] = marks
             renderer.setMarks(key: key, marks: marks)

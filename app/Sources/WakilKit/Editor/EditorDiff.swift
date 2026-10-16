@@ -108,6 +108,22 @@ func editorDiffGroupTitle(_ g: GitGroup) -> String {
 ///
 /// **Synchronous, behind a lock, so it can be called inside `PaneStore.updateEditor`** — the turn
 /// that writes the tab also starts the fetch that owns it (as 3a-i's Git pane did, for the same reason).
+/// Which baseline fetch for a (pane, path) is the newest: a reply applies only if its generation is
+/// still the latest, so an older reply landing late never overwrites a newer one. Synchronous, behind
+/// a lock, taken before any await.
+final class EditorBaselineGenerations: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latest: [String: Int] = [:]
+    private var counter = 0
+
+    func next(_ pane: String, _ path: String) -> Int {
+        lock.withLock { counter += 1; latest["\(pane)\u{0}\(path)"] = counter; return counter }
+    }
+    func isLatest(_ pane: String, _ path: String, _ gen: Int) -> Bool {
+        lock.withLock { latest["\(pane)\u{0}\(path)"] == gen }
+    }
+}
+
 final class EditorDiffFlights: @unchecked Sendable {
     private let lock = NSLock()
     private var flights: [String: [String: Task<Void, Never>]] = [:]   // pane -> tab key -> fetch

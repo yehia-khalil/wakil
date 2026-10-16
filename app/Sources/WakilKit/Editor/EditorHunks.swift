@@ -39,9 +39,16 @@ public struct EditorHunk: Sendable, Equatable {
     }
 }
 
+/// The most lines either side of a comparison may have. `CollectionDifference` costs about O(N·D),
+/// and measured with every line differing 10,000 lines take about 1.3 s (40,000 would take ~20 s), so
+/// a longer file gets no marks and no peek rather than a stalled editor.
+public let editorHunksLineCap = 10_000
+
 /// `text`'s hunks against `base`, in line order. Adjacent removals and insertions are one hunk.
+/// Empty when either side is over `editorHunksLineCap` lines.
 public func editorHunks(base: String, text: String) -> [EditorHunk] {
     let old = editorHunkLines(base), new = editorHunkLines(text)
+    guard old.count <= editorHunksLineCap, new.count <= editorHunksLineCap else { return [] }
     var removed = Set<Int>(), inserted = Set<Int>()
     for change in new.difference(from: old) {
         switch change {

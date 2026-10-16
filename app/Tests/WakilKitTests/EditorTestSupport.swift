@@ -19,7 +19,7 @@ actor FakeFiles: ToolCaller {
     private var parked: [CheckedContinuation<Void, Never>] = []
     private var clock: Int64 = 100
 
-    func put(_ path: String, _ text: String) { clock += 1; disk[path] = (text, clock) }
+    func put(_ path: String, _ text: String) { clock += 1; disk[path] = (text, clock); overCap[path] = nil }
     func remove(_ path: String) { disk[path] = nil }
     func setListing(_ root: String, _ files: [String]) { listing[root] = files }
     func setListError(_ root: String, _ text: String) { listErrors[root] = text }

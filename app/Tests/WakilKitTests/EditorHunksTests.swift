@@ -55,4 +55,13 @@ private let cases: [HunkCase] = [
         #expect(editorHunkIndex(at: 6, in: hunks) == 1, "a deletion's triangle sits on the line above it")
         #expect(editorHunkIndex(at: 5, in: hunks) == nil)
     }
+
+    @Test func aSideOverTheLineCapGivesNoHunks() {
+        let long = (0...editorHunksLineCap).map { "l\($0)" }.joined(separator: "\n") + "\n"   // 10,001 lines
+        #expect(editorHunkLines(long).count == editorHunksLineCap + 1)
+        #expect(editorHunks(base: "x\n", text: long).isEmpty)
+        #expect(editorHunks(base: long, text: "x\n").isEmpty)
+        let atCap = (1...editorHunksLineCap).map { "l\($0)" }.joined(separator: "\n") + "\n"
+        #expect(!editorHunks(base: "x\n", text: atCap).isEmpty)
+    }
 }

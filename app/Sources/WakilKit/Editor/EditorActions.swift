@@ -145,6 +145,7 @@ func editorAfterDiskRead(_ tab: EditorTab, read: EditorTab) -> EditorTab {
     if read.mtime == tab.mtime && tab.diskState != .deleted { return tab }
     t.mtime = read.mtime
     t.readOnly = read.readOnly
+    if t.readOnly { t.baseline = nil }       // a read-only tab has no marks
     t.notice = read.notice ?? (tab.notice == nil ? nil : tab.notice)
     if read.text == tab.text {
         t.savedText = read.text
@@ -301,6 +302,7 @@ public func registerEditorActions(
     // The diff tabs (3b-iii). Local functions are visible only to what is declared after them, so these
     // sit above every action that uses them.
     let diffFlights = EditorDiffFlights()
+    let baselineGenerations = EditorBaselineGenerations()
     await panes.onDrop { pane in diffFlights.drop(pane) }
 
     /// Fetches `subject`'s two sides into its tab, as that tab's one flight. Called only inside the
@@ -367,6 +369,7 @@ public func registerEditorActions(
     /// by the time it lands is left alone.
     @Sendable func fetchBaseline(_ pane: String, path: String, root: String) async {
         guard let git = gitStatus?.git, path.hasPrefix(root + "/") else { return }
+        let gen = baselineGenerations.next(pane, path)     // before any await: call order is start order
         let rel = String(path.dropFirst(root.count + 1))
         let base: String?
         switch try? await filesTool(git, "git_show", ["root": .string(root), "path": .string(rel), "rev": .string("index")]) {
@@ -377,6 +380,7 @@ public func registerEditorActions(
         }
         if Task.isCancelled { return }
         await panes.updateEditor(paneId: pane) { s in
+            guard baselineGenerations.isLatest(pane, path, gen) else { return }
             for i in s.tabs.indices where s.tabs[i].path == path && !s.tabs[i].readOnly { s.tabs[i].baseline = base }
         }
     }
@@ -834,6 +838,7 @@ public func registerEditorActions(
             guard let at = editorTabIndex(snap, path: tabPath(params)) else { throw EditorActionError.noTab(action: "editor_reload") }
             guard let path = snap.tabs[at].path else { throw EditorActionError.notAFile(action: "editor_reload") }
             let reread = try await read(path, action: "editor_reload")
+            let wasReadOnly = snap.tabs[at].readOnly
             await panes.updateEditor(paneId: pane) { s in
                 guard let i = s.tabs.firstIndex(where: { $0.path == path }) else { return }
                 var fresh = reread
@@ -845,8 +850,11 @@ public func registerEditorActions(
                 // The agent-edit serial never goes back: a page post made before the last agent edit
                 // must still be dropped after a reload (`editorBufferDidChange`'s basis).
                 fresh.lastAgentEdit = s.tabs[i].lastAgentEdit
-                fresh.baseline = s.tabs[i].baseline
+                fresh.baseline = fresh.readOnly ? nil : s.tabs[i].baseline
                 s.tabs[i] = fresh
+            }
+            if wasReadOnly, !reread.readOnly, case .file(_, let root) = snap.tabs[at].subject {
+                await fetchBaseline(pane, path: path, root: root)     // now writable: it can have marks
             }
             return await reply(pane)
         }))
@@ -889,6 +897,7 @@ public func registerEditorActions(
                     if let fresh = try? await read(path, action: "editor_refresh") { reads[path] = (fresh, tab.mtime) }
                 }
                 let collected = reads
+                let wasReadOnly = Set(tabs.filter(\.readOnly).compactMap(\.path))
                 await panes.updateEditor(paneId: pane) { s in
                     for i in s.tabs.indices {
                         guard let p = s.tabs[i].path, let (fresh, basis) = collected[p],
@@ -905,6 +914,10 @@ public func registerEditorActions(
                         return changedPaths.contains { file == $0 || file.hasPrefix($0 + "/") }
                     }
                     if hit { s.search.changedSince = true }
+                }
+                // A tab that turned writable (it was over the cap) gets its baseline now.
+                for t in await panes.editorSnapshot(paneId: pane).tabs where !t.readOnly {
+                    if case .file(let p, let r) = t.subject, wasReadOnly.contains(p) { await fetchBaseline(pane, path: p, root: r) }
                 }
             }
             if what != "files" { await refreshGit(pane, root: only) }
