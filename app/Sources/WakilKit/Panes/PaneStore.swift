@@ -239,11 +239,12 @@ public actor PaneStore {
         dropObservers.forEach { $0(paneId) }
     }
 
-    /// Who is told a pane was dropped — the git actions, whose flights for it must stop.
+    /// Who is told a pane was dropped — the editor actions, whose diff-tab fetches for it must stop.
     private var dropObservers: [@Sendable (String) -> Void] = []
 
     /// Calls `observer` with the pane id each time `drop(paneId:)` runs, after its contents
-    /// are gone. For work a pane owns outside this store (the git pane's diff in flight).
+    /// are gone. For work a pane owns outside this store (an editor pane's diff-tab fetches in
+    /// flight, `EditorDiffFlights`).
     public func onDrop(_ observer: @escaping @Sendable (String) -> Void) {
         dropObservers.append(observer)
     }

@@ -33,8 +33,9 @@ Who launches what:
 - **The agent's `claude` CLI** starts the servers in `agentFacingServers` (`wakil-pm`,
   `wakil-recall`, `wakil-git`) plus the `wakil` shim, from the JSON `agentMCPConfigJSON` builds
   (`app/Sources/WakilKit/App/AgentMCPConfig.swift`). Each gets `WAKIL_ORG` and `WAKIL_PROVIDER`.
-- **`wakil-git` is started by both**: the window's copy serves the git pane's actions, and the
-  harness's copy answers the agent's direct reads. They never share a process.
+- **`wakil-git` is started by both**: the window's copy serves the window's `GitStatus` and the
+  editor's diff tabs and gutter baselines, and the harness's copy answers the agent's direct reads.
+  They never share a process.
 - `scripts/register-provider.sh` registers six servers (all but `wakil`) into one provider's own
   Claude config dir with `claude mcp add`, for sessions outside the window. It is an operator step.
 

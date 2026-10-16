@@ -3987,13 +3987,12 @@ public final class WindowModel {
             // running watch already keeps: nothing to read.
             break
         case .started:
-            // **A watch that starts reads first** (fix round 1, I1). The roots changed, so what
-            // the editor panes show is either nothing yet or the state as of some earlier moment —
-            // a project left and come back to keeps its canvas in memory and runs no restore,
-            // so anything changed meanwhile would wait for the next file event. The watcher only
-            // reports changes from now on; this read covers everything before it.
-            // **A watch that starts reads first** — now once for the window. The panes list every
-            // root loading before the read, and take what it found after.
+            // **A watch that starts reads first** (fix round 1, I1), once for the window. The roots
+            // changed, so what the editor panes show is either nothing yet or the state as of some
+            // earlier moment — a project left and come back to keeps its canvas in memory and runs
+            // no restore, so anything changed meanwhile would wait for the next file event. The
+            // watcher only reports changes from now on; this read covers everything before it. The
+            // panes list every root loading before the read, and take what it found after.
             await readStatus(only: nil)
         case .stopped:
             await gitStatus?.reset()
@@ -4063,7 +4062,8 @@ public final class WindowModel {
     /// **Straight to the registry, not through `dispatch(_:_:)`**, which clears `status` on
     /// success — a file saved in an editor would wipe a refusal the operator has not read
     /// yet. It is still the one dispatch path, journalled as every refresh is; a failure is
-    /// already in the pane, under the root that failed (Interaction Rule 8).
+    /// already in the window's status, under the root that failed, and the Changes view shows it
+    /// on that root's line (Interaction Rule 8).
     private func gitRootChanged(_ root: String) async {
         guard gitRootPaths.contains(root) else { return }   // a wake from a project just left
         await readStatus(only: root)

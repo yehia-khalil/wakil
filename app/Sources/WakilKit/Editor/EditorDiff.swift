@@ -103,14 +103,9 @@ func editorDiffGroupTitle(_ g: GitGroup) -> String {
     }
 }
 
-/// One diff fetch per diff tab of each pane: a new fetch for a tab cancels its last, and a tab's
-/// fetch is cancelled when its tab is replaced (Rules 4, 5).
-///
-/// **Synchronous, behind a lock, so it can be called inside `PaneStore.updateEditor`** — the turn
-/// that writes the tab also starts the fetch that owns it (as 3a-i's Git pane did, for the same reason).
 /// Which baseline fetch for a (pane, path) is the newest: a reply applies only if its generation is
 /// still the latest, so an older reply landing late never overwrites a newer one. Synchronous, behind
-/// a lock, taken before any await.
+/// a lock, taken when the fetch starts, before any await.
 final class EditorBaselineGenerations: @unchecked Sendable {
     private let lock = NSLock()
     private var latest: [String: Int] = [:]
@@ -124,6 +119,12 @@ final class EditorBaselineGenerations: @unchecked Sendable {
     }
 }
 
+/// One diff fetch per diff tab of each pane: a new fetch for a tab cancels its last, and a tab's
+/// fetch is cancelled when its tab is replaced (Rules 4, 5), or every one of a pane's when the pane
+/// is dropped (`PaneStore.onDrop`).
+///
+/// **Synchronous, behind a lock, so it can be called inside `PaneStore.updateEditor`** — the turn
+/// that writes the tab also starts the fetch that owns it (as 3a-i's Git pane did, for the same reason).
 final class EditorDiffFlights: @unchecked Sendable {
     private let lock = NSLock()
     private var flights: [String: [String: Task<Void, Never>]] = [:]   // pane -> tab key -> fetch
