@@ -872,7 +872,8 @@ final class EditorHost {
     /// Shows `original` ↔ `modified` in the diff editor as Compare (R2), outside the tab render.
     func showCompare(original: String, modified: String, language: String) {
         comparing = true
-        renderer?.showDiff(key: "compare", original: original, modified: modified, language: language)
+        renderer?.showDiff(key: "compare", original: original, modified: modified, language: language,
+                           cursor: EditorPosition(line: 1, column: 1), scrollTop: 0)
         active = nil   // when Compare ends, the active tab is shown again, as a switch would show it
     }
 

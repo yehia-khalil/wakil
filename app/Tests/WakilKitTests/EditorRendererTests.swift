@@ -228,7 +228,9 @@ private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRender
     func find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool) {
         calls.append("find \(key) \(query) \(caseSensitive) \(wholeWord) \(regex)")
     }
-    func showDiff(key: String, original: String, modified: String, language: String) { calls.append("diff \(key)") }
+    func showDiff(key: String, original: String, modified: String, language: String, cursor: EditorPosition, scrollTop: Double) {
+        calls.append("diff \(key) \(cursor.line):\(cursor.column) \(scrollTop)")
+    }
     func captureKeys(_ keys: [String]) { calls.append("keys \(keys)") }
     func showPeek(key: String, _ peek: EditorPeekView?) { calls.append("peek \(key) \(peek?.title ?? "nil")") }
 }
@@ -257,7 +259,8 @@ private func loaded(_ o: String, _ m: String) -> GitDiffState {
 @Test func aDiffTabIsShownInTheDiffEditorAndNeverAsAModel() {
     let s = EditorSnapshot(tabs: [diffTab(loaded("a\n", "b\n"))], active: 0)
     let steps = editorRenderSteps(rendered: [:], active: nil, snapshot: s)
-    #expect(steps == [.diff(key: "diff:changed:/p/api/b.go", original: "a\n", modified: "b\n", language: "go")])
+    #expect(steps == [.diff(key: "diff:changed:/p/api/b.go", original: "a\n", modified: "b\n", language: "go",
+                            cursor: EditorPosition(line: 1, column: 1), scrollTop: 0)])
 }
 
 @Test func theSameDiffReDeliveredIsNoStep() {
@@ -272,7 +275,8 @@ private func loaded(_ o: String, _ m: String) -> GitDiffState {
     var d = loaded("", ""); d.loading = true
     let s = EditorSnapshot(tabs: [diffTab(d)], active: 0)
     #expect(editorRenderSteps(rendered: [:], active: nil, snapshot: s)
-        == [.diff(key: "diff:changed:/p/api/b.go", original: "", modified: "", language: "plaintext")])
+        == [.diff(key: "diff:changed:/p/api/b.go", original: "", modified: "", language: "plaintext",
+                  cursor: EditorPosition(line: 1, column: 1), scrollTop: 0)])
 }
 
 @Test func aRefreshLoadingTheShownDiffKeepsIt() {
@@ -286,7 +290,8 @@ private func loaded(_ o: String, _ m: String) -> GitDiffState {
     var d = loaded("x", "y"); d.binary = true
     let s = EditorSnapshot(tabs: [diffTab(d)], active: 0)
     #expect(editorRenderSteps(rendered: [:], active: nil, snapshot: s)
-        == [.diff(key: "diff:changed:/p/api/b.go", original: "", modified: "", language: "go")])
+        == [.diff(key: "diff:changed:/p/api/b.go", original: "", modified: "", language: "go",
+                  cursor: EditorPosition(line: 1, column: 1), scrollTop: 0)])
 }
 
 @Test func leavingADiffForAFileTabShowsTheModelAgain() {
@@ -296,6 +301,47 @@ private func loaded(_ o: String, _ m: String) -> GitDiffState {
     var onFile = s; onFile.active = 1
     let steps = editorRenderSteps(rendered: r, active: "diff:changed:/p/api/b.go", snapshot: onFile)
     #expect(steps.first == .show(key: "file:/p/api/a.go", text: "x", language: "go", readOnly: false))
+}
+
+// Final review 1: a diff tab shown again after a switch lands where the operator left it — its
+// cursor (⌘⏎ opens the file at that line) and its scroll, as the store holds them from its reports.
+@Test func aDiffTabShownAgainAfterASwitchCarriesItsCursorAndScroll() {
+    var d = diffTab(loaded("a\nb\nc\n", "a\nB\nc\n"))
+    d.cursor = EditorPosition(line: 3, column: 2)
+    d.scrollTop = 120
+    let file = EditorTab.file(path: "/p/api/a.go", root: "/p/api", text: "x", mtime: 1, language: "go")
+    let s = EditorSnapshot(tabs: [d, file], active: 1)
+    let r = editorRenderedAfter(editorRenderSteps(rendered: [:], active: nil, snapshot: s), rendered: [:], snapshot: s)
+    var back = s; back.active = 0
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/api/a.go", snapshot: back)
+        == [.diff(key: "diff:changed:/p/api/b.go", original: "a\nb\nc\n", modified: "a\nB\nc\n", language: "go",
+                  cursor: EditorPosition(line: 3, column: 2), scrollTop: 120)])
+}
+
+// A diff refreshing while its tab was away is shown again with the texts it last showed, never a
+// blank that would put its cursor back at 1:1 before the new texts land.
+@Test func aDiffTabShownAgainWhileItRefreshesShowsItsLastDiff() {
+    var d = diffTab(loaded("a\n", "b\n"))
+    d.cursor = EditorPosition(line: 1, column: 2)
+    d.scrollTop = 40
+    let file = EditorTab.file(path: "/p/api/a.go", root: "/p/api", text: "x", mtime: 1, language: "go")
+    let s = EditorSnapshot(tabs: [d, file], active: 0)
+    var r = editorRenderedAfter(editorRenderSteps(rendered: [:], active: nil, snapshot: s), rendered: [:], snapshot: s)
+    var away = s; away.active = 1
+    r = editorRenderedAfter(editorRenderSteps(rendered: r, active: "diff:changed:/p/api/b.go", snapshot: away), rendered: r, snapshot: away)
+    var back = s; back.tabs[0].diffState?.loading = true
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/api/a.go", snapshot: back)
+        == [.diff(key: "diff:changed:/p/api/b.go", original: "a\n", modified: "b\n", language: "go",
+                  cursor: EditorPosition(line: 1, column: 2), scrollTop: 40)])
+}
+
+@MainActor @Test func aDiffStepReachesTheRendererWithItsCursorAndScroll() {
+    var d = diffTab(loaded("a\n", "b\n"))
+    d.cursor = EditorPosition(line: 1, column: 2)
+    d.scrollTop = 18
+    let rec = RecordingRenderer()
+    editorApply(editorRenderSteps(rendered: [:], active: nil, snapshot: EditorSnapshot(tabs: [d], active: 0)), to: rec)
+    #expect(rec.calls == ["diff diff:changed:/p/api/b.go 1:2 18.0"])
 }
 
 @Test func thePageTakesOnlyTheKeysAnOpenPeekOrCompareNeeds() {

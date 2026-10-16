@@ -155,6 +155,17 @@ private func select(_ f: EditorFixture, _ root: String, _ path: String, _ group:
         #expect(s.tabs[s.active!].path == "/p/api/b.go" && s.tabs[s.active!].cursor.line == 3)
     }
 
+    // Final review 1: the diff's report carries its visible lines, so its scroll is kept with its cursor.
+    @Test func aDiffTabKeepsTheCursorAndScrollItsViewReports() async throws {
+        let f = try await changesFixture()
+        try await select(f, "/p/api", "b.go", "changed")
+        let subject = await f.snapshot().tabs[0].subject
+        await f.panes.editorViewDidReport(paneId: f.pane, subject: subject, cursor: EditorPosition(line: 7, column: 4),
+                                          selection: nil, visibleRange: 5...30, scrollTop: 96)
+        let t = await f.snapshot().tabs[0]
+        #expect(t.cursor == EditorPosition(line: 7, column: 4) && t.scrollTop == 96 && t.visibleRange == 5...30)
+    }
+
     @Test func openFileIsRefusedOnADeletedFilesDiff() async throws {
         let f = try await changesFixture()
         await f.git.set(status: "/p/api", files: [("b.go", "changed", "D")])

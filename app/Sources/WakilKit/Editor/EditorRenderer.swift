@@ -24,8 +24,9 @@ import Foundation
     func find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool)
     /// Show a two-sided inline diff (a diff tab, or Compare) in the pane's diff editor, the code editor
     /// hidden until the next `showModel`. `key` names what is shown: the same key shown again keeps
-    /// its scroll (a refresh, Rule 6).
-    func showDiff(key: String, original: String, modified: String, language: String)
+    /// its own cursor and scroll (a refresh, Rule 6); another key lands at `cursor` (clamped to the
+    /// text) and `scrollTop` — the tab's, as its view last reported them — and reports once under it.
+    func showDiff(key: String, original: String, modified: String, language: String, cursor: EditorPosition, scrollTop: Double)
     /// The keys the page takes from Monaco and posts back (`editorCapturedKeys`). Told only on a change.
     func captureKeys(_ keys: [String])
     /// Show `peek` under its hunk in `key`'s model as a view zone, or remove it (nil). One per pane.
@@ -67,7 +68,7 @@ public enum EditorRenderStep: Sendable, Equatable {
     case scroll(key: String, top: Double)
     case dispose(key: String)
     case find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool)
-    case diff(key: String, original: String, modified: String, language: String)
+    case diff(key: String, original: String, modified: String, language: String, cursor: EditorPosition, scrollTop: Double)
     case peek(key: String, EditorPeekView?)
 }
 
@@ -93,15 +94,22 @@ public func editorRenderSteps(rendered: [String: EditorRendered], active: String
             let r = rendered[key]
             if d.loading {
                 // A refresh keeps the shown diff; a diff never shown yet shows nothing, so the last
-                // file's diff never sits under this one's name (3a-i).
-                if key != active || r == nil {
-                    steps.append(.diff(key: key, original: "", modified: "", language: "plaintext"))
+                // file's diff never sits under this one's name (3a-i). One shown before and switched
+                // back to mid-refresh shows what it last showed, at its own cursor and scroll: a blank
+                // would clamp them to the top before the new texts land (final review 1).
+                if let r, key != active {
+                    steps.append(.diff(key: key, original: r.original ?? "", modified: r.text, language: r.language,
+                                       cursor: t.cursor, scrollTop: t.scrollTop))
+                } else if r == nil {
+                    steps.append(.diff(key: key, original: "", modified: "", language: "plaintext",
+                                       cursor: t.cursor, scrollTop: t.scrollTop))
                 }
             } else {
                 let empty = d.error != nil || d.binary
                 let o = empty ? "" : d.original, m = empty ? "" : d.modified
                 if key != active || r?.original != o || r?.text != m {
-                    steps.append(.diff(key: key, original: o, modified: m, language: t.language))
+                    steps.append(.diff(key: key, original: o, modified: m, language: t.language,
+                                       cursor: t.cursor, scrollTop: t.scrollTop))
                 }
             }
         } else if let r = rendered[key] {
@@ -149,7 +157,7 @@ public func editorRenderedAfter(_ steps: [EditorRenderStep], rendered: [String: 
         let t = snapshot.tabs[i]
         let key = editorTabKey(t)
         if t.diffState != nil {
-            for case .diff(let k, let o, let m, let language) in steps where k == key {
+            for case .diff(let k, let o, let m, let language, _, _) in steps where k == key {
                 out[key] = EditorRendered(text: m, language: language, readOnly: true, agentSerial: 0,
                                           cursor: t.cursor, selection: nil, original: o)
             }
@@ -198,8 +206,8 @@ public func editorFindShownSeed(_ snapshot: EditorSnapshot) -> Int {
         case .dispose(let key): renderer.disposeModel(key: key)
         case .find(let key, let query, let caseSensitive, let wholeWord, let regex):
             renderer.find(key: key, query: query, caseSensitive: caseSensitive, wholeWord: wholeWord, regex: regex)
-        case .diff(let key, let o, let m, let language):
-            renderer.showDiff(key: key, original: o, modified: m, language: language)
+        case .diff(let key, let o, let m, let language, let cursor, let top):
+            renderer.showDiff(key: key, original: o, modified: m, language: language, cursor: cursor, scrollTop: top)
         case .peek(let key, let p): renderer.showPeek(key: key, p)
         }
     }

@@ -105,8 +105,9 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
 
     func focus() { run("wakilFocus()") }
 
-    func showDiff(key: String, original: String, modified: String, language: String) {
-        run("wakilShowDiff(\([key, original, modified, language].map(Self.jsString).joined(separator: ",")))")
+    func showDiff(key: String, original: String, modified: String, language: String, cursor: EditorPosition, scrollTop: Double) {
+        let texts = [key, original, modified, language].map(Self.jsString).joined(separator: ",")
+        run("wakilShowDiff(\(texts),\(cursor.line),\(cursor.column),\(scrollTop.isFinite ? scrollTop : 0))")
     }
 
     func showPeek(key: String, _ p: EditorPeekView?) {
