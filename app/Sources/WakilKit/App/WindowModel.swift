@@ -4336,6 +4336,19 @@ public final class WindowModel {
         dragCandidate = nil
     }
 
+    /// ⌘⏎ (R10): in a focused editor pane whose active tab is a diff that may open its file, opens it
+    /// (`editor_open_file`); anywhere else, Maximize Pane as before.
+    public func commandReturn() async {
+        guard let id = layoutSnapshot.focusedId else { return }
+        if let pane = focusedEditor, editorCommandReturnOpensFile(editor(pane), roots: gitRoots) {
+            _ = await dispatch("editor_open_file", .object(["pane": .string(pane)]))
+            await refreshLayout()
+            await refreshPanes()
+            return
+        }
+        await toggleMaximize(id: id)
+    }
+
     public func toggleMaximize(id: String) async {
         if layoutSnapshot.maximizedId == id {
             await dispatchLayout("pane_restore", .object([:]))
@@ -4433,10 +4446,7 @@ public final class WindowModel {
         }
         // No discard: a keystroke landing between the check and the close is refused, never dropped.
         var params: [String: JSONValue] = ["pane": .string(pane)]
-        switch subject {
-        case .file(let path, _): params["path"] = .string(path)
-        case .scratch(let n): params["scratch"] = .integer(Int64(n))
-        }
+        params.merge(editorTabParams(subject)) { $1 }
         _ = await dispatch("editor_close", .object(params))
         await refreshLayout()
         await refreshPanes()
@@ -4685,10 +4695,7 @@ public final class WindowModel {
             // tab already gone closes nothing.
             guard editor(pane)?.tabs.contains(where: { $0.subject == subject }) == true else { break }
             var params: [String: JSONValue] = ["pane": .string(pane), "discard": .bool(true)]
-            switch subject {
-            case .file(let path, _): params["path"] = .string(path)
-            case .scratch(let n): params["scratch"] = .integer(Int64(n))
-            }
+            params.merge(editorTabParams(subject)) { $1 }
             _ = await dispatch("editor_close", .object(params))
         case .closePane(let pane):
             // `discard`: the operator chose; `pane_close` refuses dirty tabs without it.

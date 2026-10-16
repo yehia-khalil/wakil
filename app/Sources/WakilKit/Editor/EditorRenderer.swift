@@ -60,6 +60,7 @@ public func editorTabKey(_ tab: EditorTab) -> String {
     switch tab.subject {
     case .file(let path, _): "file:\(path)"
     case .scratch(let n): "scratch:\(n)"
+    case .diff(let root, let path, let group): "diff:\(group.rawValue):\(root)/\(path)"
     }
 }
 

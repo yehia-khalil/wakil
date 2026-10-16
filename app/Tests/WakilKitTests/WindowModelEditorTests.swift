@@ -133,6 +133,28 @@ func editorWindowWithFiles(
         }
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func cmdReturnOnADiffOpensItsFileAndElsewhereMaximizes() async throws {
+        let w = await editorWindowFull(roots: ["/p/api", "/p/portal"])
+        await w.git.set(status: "/p/api", files: [("a.go", "changed", "M")])
+        await w.files.put("/p/api/a.go", "1\n2\n")
+        await w.model.refreshContext()
+        await w.model.openPane(kind: "editor")
+        let pane = try #require(w.model.layoutSnapshot.panes.first { $0.kind == "editor" }?.id)
+        await w.gitWatcher.fire("/p/api")
+        await w.model.dispatchFromSurface("editor_changes_select", .object([
+            "pane": .string(pane), "root": .string("/p/api"), "path": .string("a.go"), "group": .string("changed")]))
+        #expect(w.model.editor(pane)?.tabs.first?.subject == .diff(root: "/p/api", path: "a.go", group: .changed))
+        await w.model.commandReturn()
+        let s = try #require(w.model.editor(pane))
+        #expect(s.tabs.count == 2 && s.tabs[s.active!].path == "/p/api/a.go")
+        #expect(w.model.layoutSnapshot.maximizedId == nil)
+        await w.model.dispatchFromSurface("editor_new_scratch", .object(["pane": .string(pane)]))
+        #expect(w.model.editor(pane)?.tabs[w.model.editor(pane)!.active!].isScratch == true)
+        await w.model.commandReturn()
+        #expect(w.model.layoutSnapshot.maximizedId == pane)
+    }
+
     @Test func cmdBShowsTheFocusedEditorsFilesAndAgainHidesThem() async throws {
         let (model, _, _) = await editorWindowParts(roots: ["/p/api", "/p/portal"])
         await model.refreshContext()

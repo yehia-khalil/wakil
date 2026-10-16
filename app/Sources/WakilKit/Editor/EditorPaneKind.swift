@@ -23,12 +23,22 @@ enum EditorPaneKind: PaneKind {
             switch tab.subject {
             case .file(let p, let r): path = .string(p); root = .string(r)
             case .scratch(let n): scratch = .number(Double(n))
+            case .diff: break
+            }
+            var diff: JSONValue = .null
+            if case .diff(let r, let p, let g) = tab.subject, let d = tab.diffState {
+                diff = .object([
+                    "root": .string(r), "path": .string(p), "group": .string(g.rawValue),
+                    "loading": .bool(d.loading), "error": d.error.map { .string($0) } ?? .null,
+                    "binary": .bool(d.binary), "bytes": .number(Double(d.bytes)), "lines": .number(Double(d.lines)),
+                    "truncated": .bool(d.truncated), "no_longer_changed": .bool(d.noLongerChanged),
+                    "language": .string(d.language)])
             }
             return .object([
                 "path": path, "scratch": scratch, "root": root, "language": .string(tab.language),
                 "dirty": .bool(tab.dirty), "disk_state": .string(tab.diskState.rawValue),
                 "notice": tab.notice.map { .string($0) } ?? .null, "saving": .bool(tab.saving),
-                "preview": .bool(tab.preview),
+                "preview": .bool(tab.preview), "diff": diff,
             ])
         })
         o["active"] = s.active.map { .number(Double($0)) } ?? .null

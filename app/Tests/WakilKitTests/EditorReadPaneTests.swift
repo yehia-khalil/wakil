@@ -23,10 +23,10 @@ import Testing
         "tabs": .array([
             .object(["path": .string("/p/api/a.go"), "scratch": .null, "root": .string("/p/api"),
                      "language": .string("go"), "dirty": .bool(true), "disk_state": .string("inSync"),
-                     "notice": .null, "saving": .bool(false), "preview": .bool(false)]),
+                     "notice": .null, "saving": .bool(false), "preview": .bool(false), "diff": .null]),
             .object(["path": .null, "scratch": .number(1), "root": .null,
                      "language": .string("sql"), "dirty": .bool(false), "disk_state": .string("inSync"),
-                     "notice": .null, "saving": .bool(false), "preview": .bool(false)]),
+                     "notice": .null, "saving": .bool(false), "preview": .bool(false), "diff": .null]),
         ]),
         "cursor": .object(["line": .number(2), "column": .number(4)]),
         "selection": .object(["start": .object(["line": .number(2), "column": .number(1)]),

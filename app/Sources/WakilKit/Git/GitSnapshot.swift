@@ -25,9 +25,12 @@ public struct GitDiffState: Sendable, Equatable {
     public var truncated: Bool
     public var error: String?
     public var loading: Bool
+    /// A diff tab's file is no longer in its group (committed, staged, discarded): the tab says so
+    /// and stays open until closed, its last texts kept (3b-iii, Rule 7).
+    public var noLongerChanged: Bool
 
     public init(original: String, modified: String, language: String, binary: Bool, bytes: Int,
-                lines: Int, truncated: Bool, error: String?, loading: Bool) {
+                lines: Int, truncated: Bool, error: String?, loading: Bool, noLongerChanged: Bool = false) {
         self.original = original
         self.modified = modified
         self.language = language
@@ -37,6 +40,12 @@ public struct GitDiffState: Sendable, Equatable {
         self.truncated = truncated
         self.error = error
         self.loading = loading
+        self.noLongerChanged = noLongerChanged
+    }
+
+    static func loading(_ language: String) -> GitDiffState {
+        GitDiffState(original: "", modified: "", language: language, binary: false, bytes: 0, lines: 0,
+                     truncated: false, error: nil, loading: true)
     }
 }
 

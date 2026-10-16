@@ -392,8 +392,9 @@ struct WakilApplication: App {
             // uniquely, and a pane command sits next to the other things
             // that act on what is on screen.
             CommandGroup(after: .windowArrangement) {
+                // In a focused editor pane on a diff tab, ⌘⏎ opens the diff's file instead (3b-iii).
                 Button("Maximize Pane") {
-                    focusedPane { model, id in await model.toggleMaximize(id: id) }
+                    withModel { model in Task { await model.commandReturn() } }
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 // 3b-i: in a focused editor pane ⌘W closes the active tab first, the pane once
