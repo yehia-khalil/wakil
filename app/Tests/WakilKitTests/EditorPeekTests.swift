@@ -65,6 +65,42 @@ private func peekFixture() async throws -> EditorFixture {
         #expect(t.cursor.line == 3, "the cursor follows the peek to the deletion's mark")
     }
 
+    // Final review 3: Revert names the text it saw in its range (`expect`), so a second press, or one
+    // computed from a snapshot older than the buffer, reverts nothing the operator never saw.
+    @Test func revertPassesTheHunksCurrentTextAsItsExpect() async throws {
+        let f = try await peekFixture()
+        try await f.dispatch("editor_peek", ["line": .integer(2)])
+        let r = try #require(editorPeekRevert(await f.snapshot()))
+        #expect(r.expect == "B")
+        try await f.dispatch("editor_replace_range", ["path": .string(r.path), "range": editorRangeParam(r.range),
+                                                      "text": .string(r.text), "expect": .string(r.expect)])
+        #expect(await f.snapshot().tabs[0].text == "a\nb\nc\ne\n")
+    }
+
+    @Test func aStaleExpectIsRefusedAndTheTextIsUnchanged() async throws {
+        let f = try await peekFixture()
+        try await f.dispatch("editor_peek", ["line": .integer(2)])
+        let r = try #require(editorPeekRevert(await f.snapshot()))
+        let subject = await f.snapshot().tabs[0].subject
+        await f.panes.editorBufferDidChange(paneId: f.pane, subject: subject, text: "a\nX\nc\ne\n", basis: 0)
+        await #expect(throws: EditorActionError.staleRange(action: "editor_replace_range", path: "/p/api/b.go")) {
+            try await f.dispatch("editor_replace_range", ["path": .string(r.path), "range": editorRangeParam(r.range),
+                                                          "text": .string(r.text), "expect": .string(r.expect)])
+        }
+        #expect(await f.snapshot().tabs[0].text == "a\nX\nc\ne\n")
+    }
+
+    @Test func aSecondPressOfTheSameRevertRevertsNothingMore() async throws {
+        let f = try await peekFixture()
+        try await f.dispatch("editor_peek", ["line": .integer(2)])
+        let r = try #require(editorPeekRevert(await f.snapshot()))
+        let args: [String: JSONValue] = ["path": .string(r.path), "range": editorRangeParam(r.range),
+                                         "text": .string(r.text), "expect": .string(r.expect)]
+        try await f.dispatch("editor_replace_range", args)
+        await #expect(throws: EditorActionError.self) { try await f.dispatch("editor_replace_range", args) }
+        #expect(await f.snapshot().tabs[0].text == "a\nb\nc\ne\n", "the deletion below was never seen, so it stays")
+    }
+
     @Test func revertingTheLastHunkClosesThePeek() async throws {
         let f = try await changesFixture()
         await f.files.put("/p/api/b.go", "X\n")

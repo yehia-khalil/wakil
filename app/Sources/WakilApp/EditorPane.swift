@@ -461,6 +461,10 @@ struct EditorPane: View {
 
     /// A peek control or key (R13): step, close, or Revert — `editor_replace_range` with the hunk's
     /// old lines, which asks nothing (Rule 1) and is undone with ⌘Z.
+    ///
+    /// Revert passes `expect`, the hunk's new text as this snapshot has it, so the store refuses it
+    /// when the buffer changed since (final review 3); a press while one is still in flight is
+    /// dropped, so a double-click reverts one hunk, not the next one too.
     private func peekOp(_ op: String) {
         Task {
             switch op {
@@ -468,9 +472,11 @@ struct EditorPane: View {
             case "down": await dispatch("editor_peek_step", ["delta": .integer(1)])
             case "close": await dispatch("editor_peek_close", [:])
             case "revert":
-                guard let latest = host.latest, let r = editorPeekRevert(latest) else { return }
+                guard !host.reverting, let latest = host.latest, let r = editorPeekRevert(latest) else { return }
+                host.reverting = true
                 await dispatch("editor_replace_range", ["path": .string(r.path), "range": editorRangeParam(r.range),
-                                                        "text": .string(r.text)])
+                                                        "text": .string(r.text), "expect": .string(r.expect)])
+                host.reverting = false
             default: break
             }
         }
@@ -725,6 +731,8 @@ final class EditorHost {
     /// A mark clicked: (tab subject, line).
     @ObservationIgnored var peekPressed: ((String) -> Void)?
     @ObservationIgnored var markClicked: ((EditorTabSubject, Int) -> Void)?
+    /// A Revert is on its way to the store: another press is dropped until it lands.
+    @ObservationIgnored var reverting = false
     /// Compare is on screen: snapshots are kept (`latest`) but not rendered, or the next one — a
     /// keystroke's echo, a view report — would put the active tab back over Compare.
     @ObservationIgnored private var comparing = false

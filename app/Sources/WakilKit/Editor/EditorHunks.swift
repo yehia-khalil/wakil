@@ -161,14 +161,18 @@ public func editorPeekLineHasMark(_ tab: EditorTab, line: Int) -> Bool {
     return editorHunkIndex(at: line, in: editorHunks(base: base, text: tab.text)) != nil
 }
 
-/// Revert's `editor_replace_range`, for the active tab's open peek: its path, the range and the old lines.
-public func editorPeekRevert(_ s: EditorSnapshot) -> (path: String, range: EditorRange, text: String)? {
+/// Revert's `editor_replace_range`, for the active tab's open peek: its path, the range, the old lines,
+/// and `expect` — the text in the range now, the hunk's new text the operator saw. The store refuses
+/// the edit when the range no longer holds it (a second press, or a buffer changed since this
+/// snapshot), so Revert never reverts a hunk the operator did not see.
+public func editorPeekRevert(_ s: EditorSnapshot) -> (path: String, range: EditorRange, text: String, expect: String)? {
     guard let a = s.active, a < s.tabs.count, let path = s.tabs[a].path, let i = s.tabs[a].peek,
           let base = s.tabs[a].baseline else { return nil }
-    let hunks = editorHunks(base: base, text: s.tabs[a].text)
+    let text = s.tabs[a].text
+    let hunks = editorHunks(base: base, text: text)
     guard hunks.indices.contains(i) else { return nil }
-    let e = editorRevertEdit(hunks[i], text: s.tabs[a].text)
-    return (path, e.range, e.text)
+    let e = editorRevertEdit(hunks[i], text: text)
+    return (path, e.range, e.text, editorText(text, in: e.range))
 }
 
 /// The peek index after `text` changed under it (R12): clamped to the hunks there are, nil when none.

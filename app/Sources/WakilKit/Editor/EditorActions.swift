@@ -23,6 +23,8 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
     case noChange(line: Int)
     /// `editor_peek_step` with no peek open.
     case noPeek(action: String)
+    /// `editor_replace_range` whose `expect` is no longer the text in its range: nothing is replaced.
+    case staleRange(action: String, path: String)
 
     public var description: String {
         switch self {
@@ -47,6 +49,10 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
             "\(action): the active tab has no change marks (it is untracked, outside a repository, a scratch or read-only tab, or a diff)"
         case .noChange(let line): "editor_peek: line \(line) has no change mark"
         case .noPeek(let action): "\(action): no peek is open; open one with editor_peek on a marked line"
+        case .staleRange(let action, let path):
+            "\(action): the text in range of \((path as NSString).lastPathComponent) is no longer what expect says "
+                + "(the buffer changed since the range was read), so nothing was replaced; read the pane again "
+                + "and retry against the text as it is now"
         case .nothingToUndo:
             "editor_replace_undo: this pane has no replace to undo; only its latest replace can be undone, "
                 + "once, while the window is open"
@@ -723,10 +729,14 @@ public func registerEditorActions(
     await registry.register(Action(
         name: "editor_replace_range",
         description: "Replace range ({start,end}, 1-based) of a tab's buffer (path, or the active tab) with "
-            + "text. The change is unsaved; editor_save writes it. Undoable with ⌘Z in the pane.",
+            + "text. The change is unsaved; editor_save writes it. Undoable with ⌘Z in the pane. expect, "
+            + "optional, is the text range holds now: when the buffer no longer has it there (it changed "
+            + "since the range was read), nothing is replaced and the call is refused. The peek's Revert "
+            + "always passes it.",
         kind: .control, audience: .agentReachable,
         schema: schema(["path": .object(["type": .string("string")]), "range": rangeSchema,
-                        "text": .object(["type": .string("string")])], required: ["range", "text"]),
+                        "text": .object(["type": .string("string")]),
+                        "expect": .object(["type": .string("string")])], required: ["range", "text"]),
         handler: { params in
             let pane = try await editorPane(params, action: "editor_replace_range")
             guard let r = editorRange(jsonObject(params)?["range"]) else {
@@ -736,9 +746,14 @@ public func registerEditorActions(
                 throw StandardActionError.missingParam(action: "editor_replace_range", param: "text")
             }
             let path = tabPath(params)
+            let expect = optionalString(params, "expect")
             let outcome = await panes.updateEditor(paneId: pane) { s -> EditorReplaceOutcome in
                 guard let i = editorTabIndex(s, path: path) else { return .noTab }
                 if s.tabs[i].readOnly { return .readOnly(s.tabs[i].path ?? "", s.tabs[i].notice) }
+                // Checked in the same turn as the write, so nothing can change the range in between.
+                if let expect, editorText(s.tabs[i].text, in: r) != expect {
+                    return .stale(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0])
+                }
                 s.tabs[i].text = editorReplacing(s.tabs[i].text, r, with: text)
                 if s.tabs[i].peek != nil {
                     // The peek moves with the cursor, as editor_peek_step does (R12).
@@ -759,6 +774,7 @@ public func registerEditorActions(
             switch outcome {
             case .noTab: throw EditorActionError.noTab(action: "editor_replace_range")
             case .readOnly(let p, let n): throw EditorActionError.readOnly(action: "editor_replace_range", path: p, notice: n)
+            case .stale(let p): throw EditorActionError.staleRange(action: "editor_replace_range", path: p)
             case .replaced: break
             }
             return await reply(pane)
@@ -1792,7 +1808,7 @@ private actor EditorColumnWrites {
 
 private enum EditorCloseOutcome: Sendable { case noTab, unsaved(String), closed }
 private enum EditorPeekOutcome: Sendable { case ok, noTab, noMarks, noChange, noPeek }
-private enum EditorReplaceOutcome: Sendable { case noTab, readOnly(String, String?), replaced }
+private enum EditorReplaceOutcome: Sendable { case noTab, readOnly(String, String?), stale(String), replaced }
 private enum EditorUndoClaim: Sendable { case busy, nothing, claimed([EditorReplaceUndoRecord]) }
 private enum EditorSaveClaim: Sendable {
     case noTab, busy, noScratchPath
