@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-iii-diff-refusals.jsonl",
   "baseCommit": "2dfec0ee0c10361256dd62e7365793e14cb46481",
-  "provedAt": "2026-10-16T19:16:08.828374Z",
+  "provedAt": "2026-10-16T20:59:37.504574Z",
   "checkBlob": "439b33b3761126fab48e0f547141fce5034acf2f"
 }
