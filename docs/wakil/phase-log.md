@@ -3295,3 +3295,33 @@ The operator walked it on this Mac and **all ten steps pass**. 3a-ii (stage, com
 - **Pre-existing, filed:** the terminal pane cannot paste or edit a selection (#365).
 - The runbook's §2–§3 residue: cold-cache Monaco load, watcher refreshes journalled as `ui`, a
   pruned linked worktree, and the visual rulings.
+
+## 2026-10-16 — 3b-iii walked: the Changes view, diff tabs, gutter marks and the peek
+
+**3b-iii folds the 3a-i Git pane into the editor.** Its list is the editor's Changes view (⌘⇧G),
+each changed file opens as a read-only diff tab, a tracked file carries change marks in its
+gutter against the index, and a peek on a mark shows the change and reverts it as an undoable
+buffer edit. Nothing writes to git (Decision 40). A saved Git pane migrates to an editor pane on
+Changes. Design in `docs/superpowers/specs/2026-10-15-3b-iii-changes-view-design.md`; walk in
+`phase-3b-iii-acceptance.md`. Shipped as stack #12, PRs #5–#11 and #13.
+
+The operator walked it on this Mac, under `personal`, and **all ten steps pass**.
+
+### What review, Cover and the walk found that no unit test could
+
+| Found at | Defect | Fixed in |
+|---|---|---|
+| final review | ⌘⏎ in a diff tab opened the wrong line after a swap; open and restore waited on git; a double Revert applied a stale range | `-7-review-fixes` |
+| Cover | a diff tab and a Changes header reached the accessibility tree as nameless buttons | `3dc72d8` |
+| Cover | an untracked file was marked all-added: `git_show` answered its index side as an empty file (it now says `absent`) | `3dc72d8` |
+| Cover | ⌘Z after an agent edit and a Revert undid both: Monaco merged the two edits into one undo step | `3dc72d8` |
+| walk | a click on a Changes row waited out the double-click interval before opening | `4b6b699` |
+| walk | the peek's ↑ ↓ Revert × took no clicks: a view zone sits under Monaco's text layer | `4b6b699` |
+
+### What the walk left unestablished
+
+- The runbook's §2–§3 residue: colours, the peek's buttons by the harness (HTML in the web view),
+  double-click to pin, and the half-second refresh, all walk-only.
+- **Pre-existing, not 3b-iii's:** `api-bound-locks.jsonl` fails intermittently, on main too (3 of
+  4 runs on 2026-10-16); `3b-i-editor-unsaved-save.jsonl` lost its app once with no crash report.
+- North-star §8 has no Phase 3b rows, so 3b-iii's `Met` is recorded here and in the runbook.

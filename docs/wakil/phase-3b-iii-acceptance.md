@@ -3,7 +3,8 @@
 **Spec:** [`2026-10-15-3b-iii-changes-view-design.md`](../superpowers/specs/2026-10-15-3b-iii-changes-view-design.md) ·
 **Plan:** [`2026-10-16-3b-iii-changes-view.md`](../superpowers/plans/2026-10-16-3b-iii-changes-view.md)
 
-**Not yet walked.**
+**Walked by the operator 2026-10-16 — all ten steps pass**, under the `personal` organisation
+(this Mac has no initech or umbrella), on the 3b-iii worktree build with the two fixes the walk found (`phase-log.md`, 2026-10-16).
 
 The exit criterion, from the spec: see what changed without leaving the editor — the Git pane's
 Changes in the editor's left column, each changed file a read-only diff tab, marks in the gutter of
@@ -72,18 +73,18 @@ active with the project switcher (⌘P, choose `walk-changes`). Registering does
 
 Walk in order, on the project `walk-changes` from §0, in an organisation where the agent answers.
 
-| # | Do | Expect |
-|---|---|---|
-| 1 | Launch onto a layout saved with a Git pane. To make one: with `walk-changes` active, open an editor pane, then quit (the project's seed file exists only once its arrangement has been saved). Run `ORG=initech; f=~/.wakil/layouts/$ORG/walk-changes.json; cp "$f" "$f.bak"; jq '.panes \|= map(if .kind=="editor" then .kind="git" \| .title="Git" \| del(.editorTabs, .editorColumn) else . end)' "$f.bak" > "$f"` (or `ORG=umbrella`; the pane keeps its id, as the migration does, so no snap-graph edge loses its pane), then relaunch and make `walk-changes` active | The pane is the editor, in the same place, its column on Changes |
-| 2 | ⌘⇧G three times from an editor on Files | Changes, then hidden, then Changes again; the keyboard is in the list each time it shows |
-| 3 | Look at the Changes view | Headers `api · main · …`, `docs · not a git repository`; letters green / amber / muted, **no red**; a rename reads `old → new` |
-| 4 | Click the `src/routes.ts` row under `portal`. In a terminal pane, `git -C /tmp/walk-changes/portal add src/routes.ts`, then `git -C /tmp/walk-changes/portal -c user.name=walk -c user.email=walk@example.com commit -qm walk` | The row moves to Staged within about half a second, then leaves; the highlight moves to its neighbour, not the top |
-| 5 | Click a row, then another; double-click a third | One preview tab replaced, then a pinned tab beside it; additions green, deletions muted, inline |
-| 6 | In a diff tab, put the cursor on a line and press ⌘⏎ | The file opens as a tab at that line, the diff tab still open; on a scratch tab ⌘⏎ maximizes as before |
-| 7 | Type in a tracked file | An amber bar beside the changed line within a moment; a deleted line leaves a muted triangle between two lines |
-| 8 | Click a mark; press ↓, then Revert, then ⌘Z | The peek reads `1 of N changes · ↑ ↓ · Revert · ×`; Revert undoes that change in the buffer (tab dirty, file untouched); ⌘Z brings it back |
-| 9 | Esc in the peek; then type | The peek closes and the cursor stays; typing with the peek open closes it, the marks stay |
-| 10 | The Files tree | `M` beside the changed file, `?` beside the untracked one, folders untinted, ignored files still dimmed |
+| # | Do | Expect | Walked |
+|---|---|---|---|
+| 1 | Launch onto a layout saved with a Git pane. To make one: with `walk-changes` active, open an editor pane, then quit (the project's seed file exists only once its arrangement has been saved). Run `ORG=initech; f=~/.wakil/layouts/$ORG/walk-changes.json; cp "$f" "$f.bak"; jq '.panes \|= map(if .kind=="editor" then .kind="git" \| .title="Git" \| del(.editorTabs, .editorColumn) else . end)' "$f.bak" > "$f"` (or `ORG=umbrella`; the pane keeps its id, as the migration does, so no snap-graph edge loses its pane), then relaunch and make `walk-changes` active | The pane is the editor, in the same place, its column on Changes | ☑ 2026-10-16 |
+| 2 | ⌘⇧G three times from an editor on Files | Changes, then hidden, then Changes again; the keyboard is in the list each time it shows | ☑ 2026-10-16 |
+| 3 | Look at the Changes view | Headers `api · main · …`, `docs · not a git repository`; letters green / amber / muted, **no red**; a rename reads `old → new` | ☑ 2026-10-16 |
+| 4 | Click the `src/routes.ts` row under `portal`. In a terminal pane, `git -C /tmp/walk-changes/portal add src/routes.ts`, then `git -C /tmp/walk-changes/portal -c user.name=walk -c user.email=walk@example.com commit -qm walk` | The row moves to Staged within about half a second, then leaves; the highlight moves to its neighbour, not the top | ☑ 2026-10-16 |
+| 5 | Click a row, then another; double-click a third | One preview tab replaced, then a pinned tab beside it; additions green, deletions muted, inline | ☑ 2026-10-16 |
+| 6 | In a diff tab, put the cursor on a line and press ⌘⏎ | The file opens as a tab at that line, the diff tab still open; on a scratch tab ⌘⏎ maximizes as before | ☑ 2026-10-16 |
+| 7 | Type in a tracked file | An amber bar beside the changed line within a moment; a deleted line leaves a muted triangle between two lines | ☑ 2026-10-16 |
+| 8 | Click a mark; press ↓, then Revert, then ⌘Z | The peek reads `1 of N changes · ↑ ↓ · Revert · ×`; Revert undoes that change in the buffer (tab dirty, file untouched); ⌘Z brings it back | ☑ 2026-10-16 |
+| 9 | Esc in the peek; then type | The peek closes and the cursor stays; typing with the peek open closes it, the marks stay | ☑ 2026-10-16 |
+| 10 | The Files tree | `M` beside the changed file, `?` beside the untracked one, folders untinted, ignored files still dimmed | ☑ 2026-10-16 |
 
 ## 2. Residue — what the walk cannot establish
 
