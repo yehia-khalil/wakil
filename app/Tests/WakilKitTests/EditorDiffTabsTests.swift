@@ -189,4 +189,57 @@ private func select(_ f: EditorFixture, _ root: String, _ path: String, _ group:
         #expect(!editorCommandReturnOpensFile(EditorSnapshot(tabs: [.scratch(number: 1, language: "plaintext")], active: 0), roots: []))
         #expect(!editorCommandReturnOpensFile(nil, roots: []))
     }
+
+    // Fix round 1, finding 1: the refusal names the action that was called.
+    @Test func openFileNamesItselfWhenTheFileCannotBeRead() async throws {
+        let f = try await changesFixture()
+        try await select(f, "/p/api", "../../etc/x", "changed")   // its file lies outside the roots
+        do {
+            try await f.dispatch("editor_open_file")
+            Issue.record("expected a refusal")
+        } catch {
+            #expect(String(describing: error).hasPrefix("editor_open_file"), "\(error)")
+        }
+    }
+
+    // Finding 2: a root whose status failed knows nothing about its files.
+    @Test func anErroredRootDoesNotMarkAnOpenDiffNoLongerChanged() async throws {
+        let f = try await changesFixture()
+        try await select(f, "/p/api", "b.go", "changed", pin: true)
+        await f.git.clearStatus("/p/api")
+        await f.status.refresh(only: "/p/api")
+        try await f.dispatch("editor_refresh", ["root": .string("/p/api"), "what": .string("git")])
+        let d = try #require(await f.snapshot().tabs.first?.diffState)
+        #expect(!d.noLongerChanged && !d.loading)
+    }
+
+    @Test func selectingInAnErroredRootDoesNotReadNoLongerChanged() async throws {
+        let f = try await changesFixture()
+        await f.git.clearStatus("/p/api")
+        await f.status.refresh(only: "/p/api")
+        try await select(f, "/p/api", "b.go", "changed")
+        let d = try #require(await f.snapshot().tabs.first?.diffState)
+        #expect(!d.noLongerChanged && !d.loading)
+        #expect(await f.git.calls.contains { $0.hasPrefix("git_show /p/api b.go") })
+    }
+
+    // Finding 3: no git client, Loading still resolves.
+    @Test func withNoGitClientADiffTabResolvesToAnError() async throws {
+        let base = try await editorFixture()
+        let status = GitStatus(git: nil, roots: { ["/p/api", "/p/web"] })
+        let registry = ActionRegistry(
+            journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "t")
+        await registerEditorActions(into: registry, panes: base.panes, layout: base.layout, files: base.files,
+                                    fileLists: nil, gitStatus: status, roots: { ["/p/api", "/p/web"] })
+        let f = EditorFixture(registry: registry, panes: base.panes, layout: base.layout, files: base.files,
+                              pane: base.pane, git: base.git, status: status)
+        await status.refresh()
+        let want = StandardActionError.missingClient(action: "git_show", role: "git").description
+        try await select(f, "/p/api", "b.go", "changed", pin: true)
+        var d = try #require(await f.snapshot().tabs.first?.diffState)
+        #expect(!d.loading && d.error == want)
+        try await f.dispatch("editor_refresh", ["root": .string("/p/api"), "what": .string("git")])
+        d = try #require(await f.snapshot().tabs.first?.diffState)
+        #expect(!d.loading && d.error == want)
+    }
 }

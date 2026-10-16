@@ -307,14 +307,27 @@ public func registerEditorActions(
     /// `updateEditor` turn that wrote the tab (see `EditorDiffFlights`). A reply that lands after its
     /// tab is gone, or after a newer fetch for it began, writes nothing.
     @Sendable func fetchDiff(_ pane: String, _ subject: EditorTabSubject, status: String?) -> Task<Void, Never>? {
-        guard case .diff(let root, let path, let group) = subject, let git = gitStatus?.git else { return nil }
-        let revs = editorDiffRevs(group, status: status)
+        guard case .diff(let root, let path, let group) = subject else { return nil }
         let language = editorLanguage(forPath: path)
+        let key = "diff:\(group.rawValue):\(root)/\(path)"
+        guard let git = gitStatus?.git else {
+            // No git client: Loading must still resolve (Rules 4, 8), into the error that names what is missing.
+            let text = StandardActionError.missingClient(action: "git_show", role: "git").description
+            return diffFlights.start(pane, key: key) {
+                await panes.updateEditor(paneId: pane) { s in
+                    guard let i = s.tabs.firstIndex(where: { $0.subject == subject }) else { return }
+                    s.tabs[i].diffState = GitDiffState(
+                        original: "", modified: "", language: language, binary: false, bytes: 0, lines: 0,
+                        truncated: false, error: text, loading: false,
+                        noLongerChanged: s.tabs[i].diffState?.noLongerChanged ?? false)
+                }
+            }
+        }
+        let revs = editorDiffRevs(group, status: status)
         @Sendable func side(_ rev: String?) async throws -> FilesOutcome {
             guard let rev else { return .ok([:]) }
             return try await filesTool(git, "git_show", ["root": .string(root), "path": .string(path), "rev": .string(rev)])
         }
-        let key = "diff:\(group.rawValue):\(root)/\(path)"
         return diffFlights.start(pane, key: key) {
             let outcome: (FilesOutcome, FilesOutcome)
             do {
@@ -352,7 +365,7 @@ public func registerEditorActions(
     /// Opens `path` in `pane` — focusing its tab if open — with the cursor at `at` and `selection`, as a
     /// preview when asked (3b-ii). `editor_open`'s body, shared with `editor_open_file`.
     @Sendable func openFile(_ pane: String, path: String, at line: EditorPosition?, selection: EditorRange?,
-                            preview: Bool) async throws {
+                            preview: Bool, action: String) async throws {
         @Sendable func place(_ t: inout EditorTab) {
             guard let line else { return }
             t.cursor = selection?.end ?? line
@@ -367,7 +380,7 @@ public func registerEditorActions(
             return true
         }
         if !focused {
-            var fresh = try await read(path, action: "editor_open")
+            var fresh = try await read(path, action: action)
             place(&fresh)
             let tab = fresh
             await panes.updateEditor(paneId: pane, create: true) { s in
@@ -397,7 +410,7 @@ public func registerEditorActions(
         let subject = EditorTabSubject.diff(root: row.root, path: row.path, group: group)
         let status = await gitStatus?.roots ?? []
         let file = editorChangesFile(row, in: status)
-        let listed = status.first { $0.root == row.root }.map { !($0.loading && $0.files.isEmpty) } ?? false
+        let listed = status.first { $0.root == row.root }.map(editorRootIsKnown) ?? false
         let gone = listed && file == nil
         let flight: Task<Void, Never>? = await panes.updateEditor(paneId: pane, create: true) { s in
             if let i = s.tabs.firstIndex(where: { $0.subject == subject }) {
@@ -437,7 +450,7 @@ public func registerEditorActions(
             var started: [Task<Void, Never>] = []
             for i in s.tabs.indices {
                 guard case .diff(let r, let p, let g) = s.tabs[i].subject, root == nil || r == root,
-                      status.contains(where: { $0.root == r }) else { continue }
+                      status.contains(where: { $0.root == r && editorRootIsKnown($0) }) else { continue }
                 let row = EditorChangesRow(root: r, path: p, group: g.rawValue)
                 guard let file = editorChangesFile(row, in: status) else {
                     s.tabs[i].diffState?.noLongerChanged = true
@@ -493,7 +506,7 @@ public func registerEditorActions(
                 }
             }
             let preview = jsonObject(params)?["preview"] == .bool(true)
-            try await openFile(pane, path: path, at: line, selection: selection, preview: preview)
+            try await openFile(pane, path: path, at: line, selection: selection, preview: preview, action: "editor_open")
             return await reply(pane)
         }))
 
@@ -516,7 +529,7 @@ public func registerEditorActions(
                 throw EditorActionError.fileGone(path: full)
             }
             try await openFile(pane, path: full, at: EditorPosition(line: snap.tabs[i].cursor.line, column: 1),
-                               selection: nil, preview: false)
+                               selection: nil, preview: false, action: "editor_open_file")
             return await reply(pane)
         }))
 
@@ -1645,4 +1658,10 @@ private extension Optional {
         guard let self else { return nil }
         return try await f(self)
     }
+}
+
+/// Whether a root's status says what is changed in it. An errored root, or one still loading its
+/// first read, says nothing: a file missing from it is unknown, not "no longer changed".
+private func editorRootIsKnown(_ r: GitRootState) -> Bool {
+    r.error == nil && !(r.loading && r.files.isEmpty)
 }
