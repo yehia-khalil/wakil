@@ -11,6 +11,7 @@
 {"expect":{"frame":"editor.tree.status:e2e-api/notes","inside":"editor.tree.row:e2e-api/notes","maxWidth":24}}
 {"expect":{"frame":"editor.tree.status:e2e-api/BookingController.php","inside":"editor.tree.row:e2e-api/BookingController.php","maxWidth":24}}
 {"do":{"click":"editor.tree.row:e2e-portal"}}
+{"expect":{"pane":"editor-1","field":"column.open","contains":"/e2e-portal"}}
 {"expect":{"frame":"editor.tree.status:e2e-portal/index.txt","inside":"editor.tree.row:e2e-portal/index.txt","maxWidth":24}}
 {"do":{"resize":{"width":1000,"height":888}}}
 {"expect":{"frame":"editor.tree.status:e2e-api/BookingController.php","inside":"editor.column","maxWidth":24}}

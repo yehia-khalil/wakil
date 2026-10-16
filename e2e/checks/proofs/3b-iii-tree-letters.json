@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-iii-tree-letters.jsonl",
+  "baseCommit": "2dfec0ee0c10361256dd62e7365793e14cb46481",
+  "provedAt": "2026-10-16T19:16:08.828374Z",
+  "checkBlob": "b1e5801c527890014afd49781ecc63cf74255f19"
+}
