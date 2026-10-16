@@ -51,9 +51,10 @@ private func openA(_ f: EditorFixture, _ text: String = "a") async throws {
     #expect(await f.files.text(of: "/p/api/a.go") == "keep me" && t.diskState == .inSync)
 }
 
-@Test func anUnchangedMtimeChangesNothing() async throws {
+@Test(.timeLimit(.minutes(1))) func anUnchangedMtimeChangesNothing() async throws {
     let f = try await editorFixture()
     try await openA(f)
+    await f.baselineLands("/p/api/a.go", "")   // the open's fetch lands after it returns (3b-iii final review 2)
     let before = await f.snapshot()
     try await f.dispatch("editor_refresh", origin: .ui)
     #expect(await f.snapshot() == before)

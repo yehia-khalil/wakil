@@ -13,20 +13,23 @@ extension PaneStore {
     ) -> T {
         var s = editorSnapshot(paneId: paneId)
         let before = (column: s.column, inFlight: s.search.inFlight, replacing: s.search.replace.inFlight,
-                      undoing: s.search.replace.undoing)
+                      undoing: s.search.replace.undoing, baselines: s.tabs.map(\.baseline))
         let result = change(&s)
         if holdsContents(paneId: paneId) || create {
             setContents(EditorPaneKind.self, paneId, s)
             // A replace or its undo starting and ending inside its own dispatch too (the tick and
-            // Cancel, Rule 5), as for search.
+            // Cancel, Rule 5), as for search. And a baseline landing (3b-iii final review 2): its
+            // fetch outlives the action that started it, so no dispatch boundary would redraw marks.
             if s.column != before.column || s.search.inFlight != before.inFlight
                 || s.search.replace.inFlight != before.replacing
-                || s.search.replace.undoing != before.undoing { publishEditorChange(paneId) }
+                || s.search.replace.undoing != before.undoing
+                || s.tabs.map(\.baseline) != before.baselines { publishEditorChange(paneId) }
         }
         return result
     }
 
-    /// The id of every editor pane whose column or search-in-flight changes (final review C1).
+    /// The id of every editor pane whose column, search-in-flight or a tab's baseline changes (final
+    /// review C1; 3b-iii final review 2 for the baseline).
     ///
     /// **Why the store, as `apiFlights()`.** The window redraws when a dispatch finishes, and
     /// `editor_search`, `editor_tree_expand` and `editor_tree` set their state, then await a tool

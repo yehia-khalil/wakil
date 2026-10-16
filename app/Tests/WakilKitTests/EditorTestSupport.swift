@@ -294,6 +294,15 @@ struct EditorFixture {
                                            environment: environment, confirmation: nil)
     }
     func snapshot() async -> EditorSnapshot { await panes.editorSnapshot(paneId: pane) }
+
+    /// Waits until `path`'s tab holds `baseline`. A baseline lands after the action that opened the
+    /// tab has returned (final review 2), so a test reads it only once it is there. Callers carry
+    /// `.timeLimit`.
+    func baselineLands(_ path: String, _ baseline: String?) async {
+        while await snapshot().tabs.first(where: { $0.path == path })?.baseline != baseline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+    }
 }
 
 func editorFixture(roots: [String] = ["/p/api", "/p/web"]) async throws -> EditorFixture {

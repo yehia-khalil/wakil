@@ -8,10 +8,11 @@ private func peekFixture() async throws -> EditorFixture {
     await f.files.put("/p/api/b.go", "a\nB\nc\ne\n")
     await f.git.set(show: "/p/api|b.go|index", "a\nb\nc\nd\ne\n")
     try await f.dispatch("editor_open", ["path": .string("/p/api/b.go")])
+    await f.baselineLands("/p/api/b.go", "a\nb\nc\nd\ne\n")
     return f
 }
 
-@Suite struct EditorPeekTests {
+@Suite(.timeLimit(.minutes(1))) struct EditorPeekTests {
     @Test func aMarksLineOpensThePeekOnItsHunkAndMovesTheCursorThere() async throws {
         let f = try await peekFixture()
         try await f.dispatch("editor_peek", ["line": .integer(3)])     // the deletion's triangle, under line 3
@@ -69,6 +70,7 @@ private func peekFixture() async throws -> EditorFixture {
         await f.files.put("/p/api/b.go", "X\n")
         await f.git.set(show: "/p/api|b.go|index", "x\n")
         try await f.dispatch("editor_open", ["path": .string("/p/api/b.go")])
+        await f.baselineLands("/p/api/b.go", "x\n")
         try await f.dispatch("editor_peek", ["line": .integer(1)])
         let r = try #require(editorPeekRevert(await f.snapshot()))
         try await f.dispatch("editor_replace_range", ["path": .string(r.path), "range": editorRangeParam(r.range),

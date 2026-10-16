@@ -380,26 +380,34 @@ public func registerEditorActions(
         }
     }
 
-    /// The index text of `path` (in `root`) into every tab of `pane` showing it, or nil there when git
-    /// cannot show it (untracked, not a repository, binary, cut at the cap). A tab gone or read-only
-    /// by the time it lands is left alone.
-    @Sendable func fetchBaseline(_ pane: String, path: String, root: String) async {
-        guard let git = gitStatus?.git, path.hasPrefix(root + "/") else { return }
-        let gen = baselineGenerations.next(pane, path)     // before any await: call order is start order
+    /// Starts fetching the index text of `path` (in `root`) into every tab of `pane` showing it, or nil
+    /// there when git cannot show it (untracked, not a repository, binary, cut at the cap). A tab gone
+    /// or read-only by the time it lands is left alone.
+    ///
+    /// **Started, not awaited, by the actions that open or reload a tab** (final review 2): a baseline
+    /// is best-effort, and a `git_show` that takes its 10 s timeout must not hold up the open (Rule 8).
+    /// The generation is taken here, synchronously, so call order is still start order and a late
+    /// reply never overwrites a newer one; the write wakes the window (`PaneStore.updateEditor`).
+    @discardableResult
+    @Sendable func startBaseline(_ pane: String, path: String, root: String) -> Task<Void, Never>? {
+        guard let git = gitStatus?.git, path.hasPrefix(root + "/") else { return nil }
+        let gen = baselineGenerations.next(pane, path)
         let rel = String(path.dropFirst(root.count + 1))
-        let base: String?
-        switch try? await filesTool(git, "git_show", ["root": .string(root), "path": .string(rel), "rev": .string("index")]) {
-        case .ok(let o)? where o["binary"] != .bool(true) && o["truncated"] != .bool(true):
-            if case .string(let t)? = o["text"] { base = t } else { base = nil }
-        default:
-            base = nil
-        }
-        if Task.isCancelled { return }
-        await panes.updateEditor(paneId: pane) { s in
-            guard baselineGenerations.isLatest(pane, path, gen) else { return }
-            for i in s.tabs.indices where s.tabs[i].path == path && !s.tabs[i].readOnly {
-                s.tabs[i].baseline = base
-                s.tabs[i].peek = editorPeekClamped(s.tabs[i].peek, baseline: base, text: s.tabs[i].text)
+        return Task {
+            let base: String?
+            switch try? await filesTool(git, "git_show", ["root": .string(root), "path": .string(rel), "rev": .string("index")]) {
+            case .ok(let o)? where o["binary"] != .bool(true) && o["truncated"] != .bool(true):
+                if case .string(let t)? = o["text"] { base = t } else { base = nil }
+            default:
+                base = nil
+            }
+            if Task.isCancelled { return }
+            await panes.updateEditor(paneId: pane) { s in
+                guard baselineGenerations.isLatest(pane, path, gen) else { return }
+                for i in s.tabs.indices where s.tabs[i].path == path && !s.tabs[i].readOnly {
+                    s.tabs[i].baseline = base
+                    s.tabs[i].peek = editorPeekClamped(s.tabs[i].peek, baseline: base, text: s.tabs[i].text)
+                }
             }
         }
     }
@@ -440,7 +448,7 @@ public func registerEditorActions(
                 }
             }
             if !tab.readOnly, case .file(_, let root) = tab.subject {
-                await fetchBaseline(pane, path: tab.path ?? path, root: root)
+                startBaseline(pane, path: tab.path ?? path, root: root)
             }
         }
         await persist(pane)
@@ -513,9 +521,9 @@ public func registerEditorActions(
             guard case .file(let p, let r) = t.subject, root == nil || r == root, !t.readOnly else { return nil }
             return (p, r)
         }
-        await withTaskGroup(of: Void.self) { group in
-            for t in fileTabs { group.addTask { await fetchBaseline(pane, path: t.path, root: t.root) } }
-        }
+        // The git refresh's own work: awaited here, unlike an open's (the action IS the git state).
+        let baselines = fileTabs.compactMap { startBaseline(pane, path: $0.path, root: $0.root) }
+        for b in baselines { await b.value }
     }
 
     func schema(_ properties: [String: JSONValue], required: [String] = []) -> JSONValue {
@@ -957,7 +965,7 @@ public func registerEditorActions(
                 s.tabs[i] = fresh
             }
             if wasReadOnly, !reread.readOnly, case .file(_, let root) = snap.tabs[at].subject {
-                await fetchBaseline(pane, path: path, root: root)     // now writable: it can have marks
+                startBaseline(pane, path: path, root: root)     // now writable: it can have marks
             }
             return await reply(pane)
         }))
@@ -1020,7 +1028,7 @@ public func registerEditorActions(
                 }
                 // A tab that turned writable (it was over the cap) gets its baseline now.
                 for t in await panes.editorSnapshot(paneId: pane).tabs where !t.readOnly {
-                    if case .file(let p, let r) = t.subject, wasReadOnly.contains(p) { await fetchBaseline(pane, path: p, root: r) }
+                    if case .file(let p, let r) = t.subject, wasReadOnly.contains(p) { startBaseline(pane, path: p, root: r) }
                 }
             }
             if what != "files" { await refreshGit(pane, root: only) }
@@ -1064,7 +1072,7 @@ public func registerEditorActions(
                 if !hadActive, s.tabs.count > firstNew { s.active = firstNew }
             }
             for tab in additions where !tab.readOnly {
-                if case .file(let p, let r) = tab.subject { await fetchBaseline(pane, path: p, root: r) }
+                if case .file(let p, let r) = tab.subject { startBaseline(pane, path: p, root: r) }
             }
             if await layout?.editorColumn(id: pane) != nil {
                 // Pruned only against listings that succeeded: a root whose listing failed keeps
