@@ -387,8 +387,9 @@ struct EditorColumn: View {
         .background(on ? EditorPaneStyle.lifted : .clear, in: RoundedRectangle(cornerRadius: 4))
         .overlay(alignment: .leading) { if on { Rectangle().fill(EditorPaneStyle.violet).frame(width: 2) } }
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) { selectChange(ref, pin: true) }
-        .onTapGesture { selectChange(ref, pin: false) }
+        // One tap gesture reading the click count, as the tree's and the tabs': a `count: 2` gesture
+        // beside it held every single click for the double-click interval (3b-iii walk).
+        .onTapGesture { selectChange(ref, pin: NSApp.currentEvent?.clickCount ?? 1 >= 2) }
         .id(ref)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):\(row.group.rawValue)")

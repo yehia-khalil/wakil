@@ -215,8 +215,21 @@
     ed.onDidScrollChange(function (e) { if (e.scrollTopChanged) report(); });
     // 3b-iii: the peek — one view zone under a hunk, its old lines muted over its new ones in green.
     // Its buttons post back; the app dispatches (editor_peek_step / _close, and Revert's edit).
-    let peekZone = null;
-    function dropPeek(acc) { if (peekZone !== null) { acc.removeZone(peekZone); peekZone = null; } }
+    // The zone only makes room; the peek itself is an overlay widget laid over it, as Monaco's own
+    // peek is. Content inside a view zone sits under the text layer, so its buttons never got a
+    // click (3b-iii walk).
+    let peekZone = null, peekWidget = null;
+    function dropPeek(acc) {
+      if (peekZone !== null) { acc.removeZone(peekZone); peekZone = null; }
+      if (peekWidget !== null) { ed.removeOverlayWidget(peekWidget); peekWidget = null; }
+    }
+    function placePeek() {
+      if (peekWidget === null) return;
+      const l = ed.getLayoutInfo(), n = peekWidget.getDomNode();
+      n.style.left = l.contentLeft + 'px';
+      n.style.width = Math.max(0, l.contentWidth - l.verticalScrollbarWidth) + 'px';
+    }
+    ed.onDidLayoutChange(placePeek);
     window.wakilPeek = function (key, p) {
       ed.changeViewZones(function (acc) {
         dropPeek(acc);
@@ -235,7 +248,17 @@
         node.appendChild(head);
         p.old.forEach(function (l) { const d = document.createElement('div'); d.className = 'wakil-peek-old'; d.textContent = l; node.appendChild(d); });
         p.new.forEach(function (l) { const d = document.createElement('div'); d.className = 'wakil-peek-new'; d.textContent = l; node.appendChild(d); });
-        peekZone = acc.addZone({ afterLineNumber: p.afterLine, heightInLines: 1 + p.old.length + p.new.length, domNode: node });
+        node.style.position = 'absolute';
+        peekWidget = { getId: function () { return 'wakil.peek'; }, getDomNode: function () { return node; },
+                       getPosition: function () { return null; } };
+        ed.addOverlayWidget(peekWidget);
+        placePeek();
+        peekZone = acc.addZone({
+          afterLineNumber: p.afterLine, heightInLines: 1 + p.old.length + p.new.length,
+          domNode: document.createElement('div'),
+          onDomNodeTop: function (top) { node.style.top = top + 'px'; },
+          onComputedHeight: function (h) { node.style.height = h + 'px'; },
+        });
       });
       if (p && key === current) ed.revealLinesInCenterIfOutsideViewport(Math.max(p.afterLine, 1), p.afterLine + 1 + p.old.length + p.new.length);
     };
