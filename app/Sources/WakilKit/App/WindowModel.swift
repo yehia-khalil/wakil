@@ -613,6 +613,13 @@ public final class WindowModel {
     /// that open no editor; production passes the wiring's, and the public initialiser has no default.
     /// Watched exactly while `editorWatcher` watches (`syncEditorWatcher`); a wake invalidates it.
     private let fileLists: EditorFileLists?
+    /// The window's git status (3b-iii): one `git_status` per root per wake, shared by every pane that
+    /// shows git. No default, for `rootWatcher`'s reason (`wakil-never-wired-parameters`): production
+    /// passes `wiring.gitStatus`, the one the actions were registered with; a test that shows no git
+    /// says `nil` out loud.
+    private let gitStatus: GitStatus?
+    /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
+    public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
     public private(set) var editorFiles: EditorFileListsState = .empty
     /// The provider this window's session currently runs under, from
@@ -849,6 +856,9 @@ public final class WindowModel {
         // 3b-ii. Defaulted to nil here for `rootWatcher`'s reason; the public initialiser
         // production calls takes it with no default.
         fileLists: EditorFileLists? = nil,
+        // 3b-iii. Defaulted to nil here for `rootWatcher`'s reason; the public initialiser
+        // production calls takes it with no default.
+        gitStatus: GitStatus? = nil,
         // The palette's direct reads. Defaulted to none here for `rootWatcher`'s reason; the
         // public initialiser production calls takes it with no default.
         paletteClients: PaletteClients = PaletteClients(),
@@ -876,6 +886,7 @@ public final class WindowModel {
         self.gitWatcher = rootWatcher.map { GitRootWatcher(watcher: $0) }
         self.editorWatcher = editorRootWatcher.map { GitRootWatcher(watcher: $0) }
         self.fileLists = fileLists
+        self.gitStatus = gitStatus
         self.providerId = providerId
         self.lookupFactory = lookupFactory
         // `organization` is still `""` at this point — it is learned
@@ -1297,6 +1308,10 @@ public final class WindowModel {
         // that never lists, with nothing failing. Production passes `wiring.fileLists`; a test
         // that opens no editor says `nil` out loud.
         fileLists: EditorFileLists?,
+        // 3b-iii. No default, for `rootWatcher`'s reason: a window with no status shows no git,
+        // with nothing failing. Production passes `wiring.gitStatus`; a test that shows no git says
+        // `nil` out loud.
+        gitStatus: GitStatus?,
         // The palette's direct reads (`PaletteClients`). No default, for `rootWatcher`'s
         // reason: production passes the wiring's clients, and a test with no palette says
         // `PaletteClients()` out loud.
@@ -1316,6 +1331,7 @@ public final class WindowModel {
             rootWatcher: rootWatcher,
             editorRootWatcher: editorRootWatcher,
             fileLists: fileLists,
+            gitStatus: gitStatus,
             paletteClients: paletteClients,
             environment: "")
     }
@@ -1442,6 +1458,7 @@ public final class WindowModel {
             rootWatcher: nil,
             editorRootWatcher: nil,
             fileLists: nil,
+            gitStatus: nil,
             paletteClients: PaletteClients())
         model.setOrganizationForTesting(organization)
         shellContext.use { [weak model] in
@@ -2046,6 +2063,8 @@ public final class WindowModel {
         await terminals.shutdownAll(runStream: .keepOpen)
         // No pane and no root survive the switch, so nothing of the outgoing org's is
         // watched past it.
+        await gitStatus?.reset()
+        gitRoots = []
         await syncGitWatcher()
         await syncEditorWatcher()
     }
@@ -3581,6 +3600,7 @@ public final class WindowModel {
         }
         tables = next
         editables = nextEditables
+        gitRoots = await gitStatus?.roots ?? []
         // The dictionary itself changes only when a pane opens or closes.
         let open = Set(layoutPanes.map(\.id))
         if Set(paneCells.keys) != open {
@@ -3956,8 +3976,10 @@ public final class WindowModel {
             && layoutScope == LayoutScope(
                 organization: organization, project: project, lineageRoot: lineageRoot)
         guard canvasIsCurrent || roots.isEmpty else { return }
-        let hasGitPane = layoutSnapshot.panes.contains { PaneKinds.is($0.kind, GitPaneKind.self) }
-        let wanted = hasGitPane ? roots : []
+        let showsGit = layoutSnapshot.panes.contains {
+            PaneKinds.is($0.kind, GitPaneKind.self) || PaneKinds.is($0.kind, EditorPaneKind.self)
+        }
+        let wanted = showsGit ? roots : []
         let changed: @Sendable (String) async -> Void = { [weak self] root in
             await self?.gitRootChanged(root)
         }
@@ -3974,9 +3996,12 @@ public final class WindowModel {
             // a project left and come back to keeps its canvas in memory and runs no restore,
             // so anything changed meanwhile would wait for the next file event. The watcher only
             // reports changes from now on; this read covers everything before it.
+            // **A watch that starts reads first** — now once for the window.
+            await gitStatus?.refresh()
             await refreshGitPanes(root: nil)
         case .stopped:
-            break
+            await gitStatus?.reset()
+            gitRoots = []
         }
     }
 
@@ -4043,6 +4068,8 @@ public final class WindowModel {
     /// already in the pane, under the root that failed (Interaction Rule 8).
     private func gitRootChanged(_ root: String) async {
         guard gitRootPaths.contains(root) else { return }   // a wake from a project just left
+        gitRoots = gitRoots.map { var r = $0; if r.root == root { r.loading = true }; return r }
+        await gitStatus?.refresh(only: root)
         await refreshGitPanes(root: root)
     }
 
@@ -4052,8 +4079,10 @@ public final class WindowModel {
         var refreshed = false
         for pane in layoutSnapshot.panes where PaneKinds.is(pane.kind, GitPaneKind.self) {
             guard await panes.gitSnapshot(paneId: pane.id).roots.isEmpty else { continue }
+            var params: [String: JSONValue] = ["pane": .string(pane.id)]
+            if gitStatus != nil { params["read"] = .bool(false) }
             _ = try? await registry.dispatch(
-                name: "git_refresh", params: .object(["pane": .string(pane.id)]),
+                name: "git_refresh", params: .object(params),
                 origin: .ui, environment: environment, confirmation: nil)
             refreshed = true
         }
@@ -4065,6 +4094,7 @@ public final class WindowModel {
         for pane in layoutSnapshot.panes where PaneKinds.is(pane.kind, GitPaneKind.self) {
             var params: [String: JSONValue] = ["pane": .string(pane.id)]
             if let root { params["root"] = .string(root) }
+            if gitStatus != nil { params["read"] = .bool(false) }
             _ = try? await registry.dispatch(
                 name: "git_refresh", params: .object(params),
                 origin: .ui, environment: environment, confirmation: nil)

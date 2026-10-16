@@ -27,8 +27,8 @@ private func gitFixture() async throws -> GitFixture {
     let git = FakeGit()
     await git.set(status: "/p/api", files: [("a.php", "changed", "M"), ("b", "changed", "M"), ("c", "changed", "M")])
     await git.set(status: "/p/portal", files: [("x.vue", "untracked", "?")])
-    await registerGitActions(into: registry, panes: panes, layout: layout, git: git,
-                             roots: { ["/p/api", "/p/portal"] })
+    await registerGitActions(into: registry, panes: panes, layout: layout,
+                             status: GitStatus(git: git, roots: { ["/p/api", "/p/portal"] }))
     return GitFixture(registry: registry, panes: panes, pane: pane, git: git)
 }
 
@@ -162,7 +162,8 @@ func selectingAnotherFileCancelsTheDiffInFlight() async throws {
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
     let (layout, panes, pane) = await openGitPane()
-    await registerGitActions(into: registry, panes: panes, layout: layout, git: nil, roots: { ["/p/api"] })
+    await registerGitActions(into: registry, panes: panes, layout: layout,
+                             status: GitStatus(git: nil, roots: { ["/p/api"] }))
     let calls: [(String, [String: JSONValue])] = [
         ("git_refresh", [:]),
         ("git_select", select("/p/api", "a.php", "changed")),
@@ -218,9 +219,8 @@ func rootsShowLoadingWhileARefreshIsInFlight() async throws {
     await f.git.setSlowStatus(true)
     let refresh = Task { try await f.dispatch("git_refresh") }
     #expect(await apiEventually { await f.git.statusCount == 2 })
-    let mid = await f.snapshot()
-    #expect(mid.roots.map(\.root) == ["/p/api", "/p/portal"])
-    #expect(mid.roots.allSatisfy { $0.loading })
+    // 3b-iii: the mid-read assertion on the pane is gone — the window's `GitStatus` holds the
+    // loading roots now, and the pane adopts them when the read lands (GitStatusTests).
     await f.git.releaseStatus(0)
     await f.git.releaseStatus(1)
     _ = try await refresh.value
@@ -244,13 +244,11 @@ func anOlderRefreshNeverOverwritesANewerOne() async throws {
     // The older reply first: dropped, and the root is still loading for the newer read.
     await f.git.releaseStatus(0)
     _ = try await older.value
-    var s = await f.snapshot()
-    #expect(s.roots[0].files.isEmpty)
-    #expect(s.roots[0].loading == true)
-
+    // 3b-iii: the assertion on the pane mid-read (still loading for the newer read) is gone; the
+    // status holds that state now (GitStatusTests.aReadSupersededByANewerOneLandsNothing).
     await f.git.releaseStatus(1)
     _ = try await newer.value
-    s = await f.snapshot()
+    let s = await f.snapshot()
     #expect(s.roots[0].files.map(\.path) == ["new"])
     #expect(s.roots[0].loading == false)
 }
@@ -364,7 +362,8 @@ func aDiffLandingAfterItsPaneClosedLeavesNoEntry() async throws {
     let git = FakeGit()
     await git.set(status: "/p/api", files: [("a.php", "changed", "M")])
     await registerLayoutActions(into: registry, layout: layout, panes: panes)
-    await registerGitActions(into: registry, panes: panes, layout: layout, git: git, roots: { ["/p/api"] })
+    await registerGitActions(into: registry, panes: panes, layout: layout,
+                             status: GitStatus(git: git, roots: { ["/p/api"] }))
     func dispatch(_ name: String, _ params: [String: JSONValue]) async throws {
         _ = try await registry.dispatch(
             name: name, params: .object(params), origin: .agent, environment: "staging", confirmation: nil)
@@ -383,12 +382,12 @@ func aDiffLandingAfterItsPaneClosedLeavesNoEntry() async throws {
     #expect(await panes.holdsContents(paneId: pane) == false, "the late diff brought the pane back")
 }
 
-/// Closing a pane drops its flights: the diff in flight is cancelled and its reads forgotten.
+/// Closing a pane drops its flight: the diff in flight is cancelled. (3b-iii: the reads'
+/// generations moved to `GitStatus`, and `GitStatusTests.aReadSupersededByANewerOneLandsNothing`
+/// pins them.)
 @Test func droppingAPaneCancelsItsFlights() async {
     let flights = GitFlights()
     let task = flights.startDiff("git-1") { try? await Task.sleep(for: .seconds(30)) }
-    let generation = flights.beginRead("git-1", roots: ["/p/api"])
     flights.drop("git-1")
     #expect(task.isCancelled)
-    #expect(!flights.isLatestRead("git-1", root: "/p/api", generation: generation))
 }

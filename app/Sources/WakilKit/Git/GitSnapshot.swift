@@ -1,51 +1,5 @@
 import Foundation
 
-/// Which list a changed file sits in: what is staged, what is changed in the
-/// working tree, or what git does not track yet.
-public enum GitGroup: String, Sendable, Codable, CaseIterable { case staged, changed, untracked }
-
-/// One file in one group of one root's status.
-public struct GitFileRow: Sendable, Equatable, Hashable {
-    public var path: String
-    public var origPath: String?
-    public var group: GitGroup
-    public var status: String
-
-    public init(path: String, origPath: String?, group: GitGroup, status: String) {
-        self.path = path
-        self.origPath = origPath
-        self.group = group
-        self.status = status
-    }
-}
-
-/// One root's `git status`, or the reason it could not be read. A root that
-/// failed carries its own `error`; it never hides a sibling.
-public struct GitRootState: Sendable, Equatable {
-    public var root: String           // absolute
-    public var name: String           // last path component
-    public var branch: String         // "" when detached
-    public var detached: String       // short SHA or ""
-    public var ahead: Int
-    public var behind: Int
-    public var files: [GitFileRow]    // already in group, then path order
-    public var error: String?         // whole text; "not a git repository" for a non-repo
-    public var loading: Bool
-
-    public init(root: String, name: String, branch: String, detached: String, ahead: Int,
-                behind: Int, files: [GitFileRow], error: String?, loading: Bool) {
-        self.root = root
-        self.name = name
-        self.branch = branch
-        self.detached = detached
-        self.ahead = ahead
-        self.behind = behind
-        self.files = files
-        self.error = error
-        self.loading = loading
-    }
-}
-
 /// The file the operator has open, in the root and group it was picked from.
 public struct GitSelection: Sendable, Equatable, Hashable {
     public var root: String

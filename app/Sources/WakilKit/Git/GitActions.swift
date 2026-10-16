@@ -1,7 +1,6 @@
 import Foundation
 
-/// What a git pane has in flight: its one diff fetch, and which `git_status` read of each
-/// root is the latest.
+/// What a git pane has in flight: its one diff fetch.
 ///
 /// **Synchronous, behind a lock, so it can be called inside `PaneStore.updateGit`.** The
 /// diff flight is started in the same actor turn that writes the selection it is for, so
@@ -9,13 +8,10 @@ import Foundation
 /// (Interaction Rules 4 and 5). Started anywhere later, two selects — or a select and a
 /// refresh's reselect — could write in one order and start in the other: the older
 /// flight cancels the newer, then fails its own selection check, and the diff loads
-/// forever. A read's generation is taken in the turn that marks its roots loading, for
-/// the same reason. `Mutex` would say this better, but it needs macOS 15.
+/// forever. `Mutex` would say this better, but it needs macOS 15.
 final class GitFlights: @unchecked Sendable {
     private let lock = NSLock()
     private var diffs: [String: Task<Void, Never>] = [:]
-    private var reads: [String: [String: Int]] = [:]   // pane -> root -> latest generation
-    private var generation = 0
 
     /// Cancels the pane's diff flight and starts `body` as its new one.
     func startDiff(_ pane: String, _ body: @escaping @Sendable () async -> Void) -> Task<Void, Never> {
@@ -27,29 +23,13 @@ final class GitFlights: @unchecked Sendable {
         }
     }
 
-    /// Forgets `pane`: cancels its diff in flight and its reads' generations. Called when
+    /// Forgets `pane`: cancels its diff in flight. Called when
     /// the pane closes (`PaneStore.drop` → `onDrop`), so nothing of a closed pane keeps
     /// running or is held.
     func drop(_ pane: String) {
         lock.withLock {
             diffs.removeValue(forKey: pane)?.cancel()
-            reads[pane] = nil
         }
-    }
-
-    /// A new read of `roots`, superseding any older read of them still in flight.
-    func beginRead(_ pane: String, roots: [String]) -> Int {
-        lock.withLock {
-            generation += 1
-            for r in roots { reads[pane, default: [:]][r] = generation }
-            return generation
-        }
-    }
-
-    /// Whether `generation` is still the latest read of `root` — the only read allowed to
-    /// write the root or clear its `loading`.
-    func isLatestRead(_ pane: String, root: String, generation: Int) -> Bool {
-        lock.withLock { reads[pane]?[root] == generation }
     }
 }
 
@@ -69,25 +49,6 @@ func gitLanguage(for path: String) -> String {
     case "yml", "yaml": "yaml"
     case "css": "css"
     default: "plaintext"
-    }
-}
-
-/// Errors the git actions raise for reasons of their own.
-public enum GitActionError: Error, Sendable, Equatable, CustomStringConvertible {
-    /// `root` is not one of the active project's roots. The pane lists only those, and
-    /// wakil-git refuses anything else anyway; refusing here names the roots there are.
-    case notAProjectRoot(action: String, root: String, roots: [String])
-    /// `group` is not staged, changed or untracked.
-    case unknownGroup(action: String, group: String)
-
-    public var description: String {
-        switch self {
-        case .notAProjectRoot(let action, let root, let roots):
-            return "\(action): \(root) is not a root of the active project (roots: "
-                + roots.joined(separator: ", ") + ")"
-        case .unknownGroup(let action, let group):
-            return "\(action): group must be staged, changed or untracked, not \"\(group)\""
-        }
     }
 }
 
@@ -121,62 +82,6 @@ private func gitTool(_ git: any ToolCaller, _ name: String, _ arguments: [String
     return .ok(content)
 }
 
-private func string(_ o: [String: JSONValue], _ key: String) -> String {
-    if case .string(let s)? = o[key] { return s }
-    return ""
-}
-
-private func gitGroupRank(_ name: String) -> Int {
-    switch GitGroup(rawValue: name) {
-    case .staged?: 0
-    case .changed?: 1
-    case .untracked?, nil: 2
-    }
-}
-
-/// A root's `git_status`, decoded — or, when the call failed, the root with no files and
-/// the failure's whole text as its `error`. A row in a group this build does not know is
-/// dropped rather than guessed into one.
-func gitRootState(root: String, result: Result<JSONValue, Error>) -> GitRootState {
-    let name = (root as NSString).lastPathComponent
-    func failed(_ text: String) -> GitRootState {
-        GitRootState(root: root, name: name, branch: "", detached: "", ahead: 0, behind: 0,
-                     files: [], error: text, loading: false)
-    }
-    let obj: [String: JSONValue]
-    switch result {
-    case .failure(let error):
-        return failed(String(describing: error))
-    case .success(.object(let o)):
-        obj = o
-    case .success:
-        return failed("git_status answered with no object")
-    }
-    if case .bool(true)? = obj["isError"] {
-        return failed(mcpErrorText(from: obj) ?? "git_status failed with no message")
-    }
-    guard case .object(let s)? = obj["structuredContent"] else {
-        return failed("git_status answered with no structuredContent")
-    }
-    var files: [GitFileRow] = []
-    if case .array(let rows)? = s["files"] {
-        for case .object(let row) in rows {
-            guard let g = GitGroup(rawValue: string(row, "group")) else { continue }
-            let orig = string(row, "origPath")
-            files.append(GitFileRow(path: string(row, "path"), origPath: orig.isEmpty ? nil : orig,
-                                    group: g, status: string(row, "status")))
-        }
-    }
-    files.sort { a, b in
-        let ga = gitGroupRank(a.group.rawValue), gb = gitGroupRank(b.group.rawValue)
-        if ga != gb { return ga < gb }
-        return a.path.utf8.lexicographicallyPrecedes(b.path.utf8)
-    }
-    return GitRootState(root: root, name: name, branch: string(s, "branch"), detached: string(s, "detached"),
-                        ahead: s["ahead"]?.intValue ?? 0, behind: s["behind"]?.intValue ?? 0,
-                        files: files, error: nil, loading: false)
-}
-
 /// The revisions a diff compares, by group: staged is HEAD against the index, changed is
 /// the index against the working tree, and an untracked file has no original at all.
 ///
@@ -191,12 +96,6 @@ func gitDiffRevs(_ group: GitGroup, status: String?) -> (original: String?, modi
     case .changed: return ("index", "worktree")
     case .untracked: return (nil, "worktree")
     }
-}
-
-/// A root no refresh has read yet: listed in its place, empty, and loading.
-private func gitPendingRoot(_ root: String) -> GitRootState {
-    GitRootState(root: root, name: (root as NSString).lastPathComponent, branch: "", detached: "",
-                 ahead: 0, behind: 0, files: [], error: nil, loading: true)
 }
 
 private func gitPane(_ params: JSONValue, action: String, layout: LayoutStore?) async throws -> String {
@@ -241,9 +140,9 @@ public func registerGitActions(
     into registry: ActionRegistry,
     panes: PaneStore,
     layout: LayoutStore?,
-    git: (any ToolCaller)?,
-    roots: @escaping @Sendable () async -> [String]
+    status: GitStatus
 ) async {
+    let git = status.git
     let flights = GitFlights()
     await panes.onDrop { pane in flights.drop(pane) }
 
@@ -280,7 +179,7 @@ public func registerGitActions(
                     s.diff = GitDiffState(original: "", modified: "", language: language, binary: false,
                                           bytes: 0, lines: 0, truncated: false, error: text, loading: false)
                 case (.ok(let o), .ok(let m)):
-                    let original = string(o, "text"), modified = string(m, "text")
+                    let original = gitString(o, "text"), modified = gitString(m, "text")
                     func lines(_ t: String) -> Int {
                         t.isEmpty ? 0 : t.split(separator: "\n", omittingEmptySubsequences: false).count
                     }
@@ -322,59 +221,13 @@ public func registerGitActions(
         await flight?.value
     }
 
-    /// Reads `only`, or every root, and lands each root that this is still the latest read
-    /// of. A read a newer one superseded is dropped whole — its list and its `loading` —
-    /// so a slow old reply can neither show a stale list nor end the newer read's loading.
-    /// A read cut short by cancellation writes no error; its root keeps what it showed.
-    @Sendable func refresh(_ pane: String, only: String?, _ git: any ToolCaller) async {
-        let all = await roots()
-        let targets = only.map { [$0] } ?? all
-        // Every root in project order, the ones being read marked loading.
-        let generation = await panes.updateGit(paneId: pane, create: true) { s in
-            let known = Dictionary(s.roots.map { ($0.root, $0) }, uniquingKeysWith: { a, _ in a })
-            s.roots = all.map { r in
-                var state = known[r] ?? gitPendingRoot(r)
-                if targets.contains(r) { state.loading = true }
-                return state
-            }
-            return flights.beginRead(pane, roots: targets)
-        }
-        let read = await withTaskGroup(of: (String, GitRootState?).self) { group in
-            for r in targets {
-                group.addTask {
-                    let result: Result<JSONValue, Error>
-                    do {
-                        result = .success(try await git.callTool(
-                            name: "git_status", arguments: .object(["root": .string(r)]),
-                            timeout: MCPClient.readReplyTimeout))
-                    } catch {
-                        result = .failure(error)
-                    }
-                    if Task.isCancelled { return (r, nil) }
-                    if case .failure(let error) = result, error is CancellationError { return (r, nil) }
-                    return (r, gitRootState(root: r, result: result))
-                }
-            }
-            var states: [String: GitRootState?] = [:]
-            for await (r, state) in group { states[r] = state }
-            return states
-        }
-        let reload: Task<Void, Never>? = await panes.updateGit(paneId: pane) { s in
+    /// Takes the window's status as it now is into the pane, and moves the selection per Rule 6.
+    @Sendable func adopt(_ pane: String, _ git: any ToolCaller) async {
+        let fresh = await status.roots
+        let reload: Task<Void, Never>? = await panes.updateGit(paneId: pane, create: true) { s in
             let before = s.roots
-            var landed = false
-            s.roots = s.roots.map { state in
-                guard let outcome = read[state.root],
-                      flights.isLatestRead(pane, root: state.root, generation: generation)
-                else { return state }
-                guard let fresh = outcome else {
-                    var kept = state
-                    kept.loading = false
-                    return kept
-                }
-                landed = true
-                return fresh
-            }
-            guard landed, let selection = s.selection else { return nil }
+            s.roots = fresh
+            guard fresh != before, let selection = s.selection else { return nil }
             switch gitReselect(selection, before: before, after: s.roots) {
             case .keep(let next), .moved(let next):
                 s.selection = next
@@ -399,24 +252,27 @@ public func registerGitActions(
     await registry.register(Action(
         name: "git_refresh",
         description: "Re-read git status for the git pane: one root (root, an absolute path that "
-            + "is one of the active project's roots) or, naming none, every root. Each root is "
-            + "read on its own; one that fails shows its error and hides nothing else. The "
+            + "is one of the active project's roots) or, naming none, every root. With read false, "
+            + "takes the window's status as it already is (the window read it on a file event). "
+            + "Each root is read on its own; one that fails shows its error and hides nothing else. The "
             + "selection stays on its file, follows it to another group, or moves to the row "
             + "that took its place; its diff is read again. Returns the pane's snapshot.",
         kind: .read,
         audience: .agentReachable,
-        schema: gitSchema(["root": .object(["type": .string("string")])], required: []),
+        schema: gitSchema(["root": .object(["type": .string("string")]),
+                           "read": .object(["type": .string("boolean")])], required: []),
         handler: { params in
             let pane = try await gitPane(params, action: "git_refresh", layout: layout)
             let git = try requireGit("git_refresh")
             let only = optionalString(params, "root")
             if let only {
-                let all = await roots()
+                let all = await status.projectRoots()
                 guard all.contains(only) else {
                     throw GitActionError.notAProjectRoot(action: "git_refresh", root: only, roots: all)
                 }
             }
-            await refresh(pane, only: only, git)
+            if case .object(let o) = params, o["read"] == .bool(false) {} else { await status.refresh(only: only) }
+            await adopt(pane, git)
             return await snapshot(pane)
         }))
 
@@ -448,7 +304,7 @@ public func registerGitActions(
             guard let group = GitGroup(rawValue: named) else {
                 throw GitActionError.unknownGroup(action: "git_select", group: named)
             }
-            let all = await roots()
+            let all = await status.projectRoots()
             guard all.contains(root) else {
                 throw GitActionError.notAProjectRoot(action: "git_select", root: root, roots: all)
             }

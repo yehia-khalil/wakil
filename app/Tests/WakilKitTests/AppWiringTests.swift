@@ -801,9 +801,26 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in FailingLookupForWiringTests() },
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
-        fileLists: wiring.fileLists, paletteClients: PaletteClients())
+        fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
+        paletteClients: PaletteClients())
     let held = try #require(model.rootWatcherForTesting as? FSEventsRootWatcher)
     #expect(held === (wiring.rootWatcher as? FSEventsRootWatcher))
+}
+
+/// 3b-iii: the status the window shows and the actions read is built over the wiring's own `wakil-git`.
+@MainActor
+@Test func theStatusIsTheOneTheActionsRead() async throws {
+    let binDir = repoRoot().appendingPathComponent("bin")
+    try #require(
+        FileManager.default.isExecutableFile(atPath: binDir.appendingPathComponent("wakil-git").path),
+        "run `make build` first — wakil-git missing")
+    let wiring = await WakilWiring.build(
+        journalDirectory: try scratch(), sessionId: "s1",
+        environment: ["HOME": try scratch().path, "PATH": "/usr/bin:/bin", "WAKIL_BIN_DIR": binDir.path])
+    defer { shutdownSynchronously(wiring) }
+    let client = try #require(wiring.gitClient, "\(wiring.diagnostics)")
+    let held = try #require(wiring.gitStatus.git as? MCPClient)
+    #expect(held === client)
 }
 
 /// 3b-ii: the wiring builds one `EditorFileLists` over `wakil-files` whenever the client is up,
@@ -830,7 +847,8 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in FailingLookupForWiringTests() },
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
-        fileLists: wiring.fileLists, paletteClients: PaletteClients())
+        fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
+        paletteClients: PaletteClients())
     #expect(model.fileListsForTesting === lists)
 
     let emptyBin = try scratch()

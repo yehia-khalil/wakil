@@ -29,7 +29,7 @@ import Testing
             harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
             rootPath: "/tmp", providerId: "",
             lookupFactory: { _ in EditorWindowLookup() },
-            rootWatcher: nil, editorRootWatcher: RecordingRootWatcher(), fileLists: nil, paletteClients: PaletteClients(files: files))
+            rootWatcher: nil, editorRootWatcher: RecordingRootWatcher(), fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(files: files))
         await registerEditorActions(
             into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
             roots: { [weak model] in await model?.gitRootPaths ?? [] })

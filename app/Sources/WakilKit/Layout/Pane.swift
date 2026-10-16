@@ -354,7 +354,17 @@ public struct EditorSavedTab: Sendable, Equatable, Codable {
     }
 }
 
-public enum EditorColumnView: String, Sendable, Equatable, Codable { case files, search }
+public enum EditorColumnView: String, Sendable, Equatable, Codable {
+    case files, search
+
+    /// **An unknown view decodes as `.files`** (3b-iii, R1): a layout written by a later build keeps
+    /// its column, and `LayoutSnapshot.editorColumnDefault` — decoded with `try` — does not take the
+    /// whole file down with it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = EditorColumnView(rawValue: raw) ?? .files
+    }
+}
 
 /// An editor pane's left column as a layout keeps it (3b-ii). `open` holds absolute paths.
 public struct EditorColumnState: Sendable, Equatable, Codable {

@@ -116,6 +116,9 @@ private let orgDerived: Set<String> = [
     // 3b-ii PR 7: the trees' mirror of the file list — the outgoing project's listings. Emptied
     // (WindowModelEditorTests.anOrgSwitchEmptiesTheTreesAndTheirList).
     "editorFiles",
+    // 3b-iii PR 1: the window's mirror of the git status, the outgoing org's roots. Reset in the
+    // same place as `gitStatus` (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
+    "gitRoots",
     // 3b-ii final review: ⌘B / ⌘⇧F's pending request for the keyboard names an outgoing pane id
     // the next org reuses; carried over, it would move the keyboard in another organisation
     // (Rule 6). Cleared (WindowModelEditorTests.anOrgSwitchClearsAPendingColumnFocusRequest).
@@ -312,6 +315,9 @@ private let orgDerivedBehindAReference: Set<String> = [
     // finds no roots and calls `setWatching(false)` on it, emptying it
     // (WindowModelEditorTests.anOrgSwitchEmptiesTheTreesAndTheirList).
     "fileLists",
+    // 3b-iii PR 1: one for the window's life (the wiring's), its CONTENTS the outgoing org's status.
+    // `invalidateForOrgChange` resets it (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
+    "gitStatus",
     "panes", "layout", "terminals",
     // 2e (#202). `providerLoginSession` is exactly the shape this third
     // bucket was created for: the reference is stable — every login goes

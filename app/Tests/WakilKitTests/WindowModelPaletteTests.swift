@@ -144,6 +144,11 @@ private func paletteWindow(
     await git.set(status: "/p/portal", files: [])
     await registerLayoutActions(into: registry, layout: layout, panes: panes)
     await register(registry, panes, layout)
+    // The window's one status, read by the window and the actions alike (3b-iii) — the production
+    // arrangement. A window with no status makes each pane read for itself, and a pane still
+    // waiting on its first read then reads again on every dispatch.
+    let box = RootsBox()
+    let status = GitStatus(git: git, roots: { await box.model?.gitRootPaths ?? [] })
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout,
         context: ContextStore(client: context),
@@ -151,11 +156,11 @@ private func paletteWindow(
         rootPath: "/tmp", providerId: "main",
         lookupFactory: { _ in PaletteLookup() },
         rootWatcher: RecordingRootWatcher(),
+        gitStatus: status,
         paletteClients: PaletteClients(database: db, http: http, git: git, files: files),
         environment: environment)
-    await registerGitActions(
-        into: registry, panes: panes, layout: layout, git: git,
-        roots: { [weak model] in await model?.gitRootPaths ?? [] })
+    box.model = model
+    await registerGitActions(into: registry, panes: panes, layout: layout, status: status)
     return PaletteWindow(model: model, registry: registry, panes: panes, layout: layout, git: git,
                          context: context)
 }
@@ -924,7 +929,6 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         _ = await w.model.paletteRootEntries(mode: .open) { _ in }
         await w.git.setSlowStatus(true)
         w.model.paletteOpened()
-
         let run = Task {
             await w.model.performPalette(.run(.openGitAndSelect(root: "/p/api", path: "a.txt", group: "changed")))
         }

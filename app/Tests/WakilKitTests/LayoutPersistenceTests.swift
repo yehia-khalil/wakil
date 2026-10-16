@@ -596,3 +596,19 @@ private func conversation(_ organization: String, _ project: String, _ root: Str
     #expect(scope("acme", "widgets") != scope("acme", "gadgets"))
     #expect(scope("acme", "widgets") != fromOne)
 }
+
+// 3b-iii, R1: a column view this build does not know decodes as `.files`.
+@Test func anUnknownColumnViewDecodesAsFiles() throws {
+    let json = #"{"shown":true,"view":"timeline","width":240,"open":[]}"#
+    let c = try JSONDecoder().decode(EditorColumnState.self, from: Data(json.utf8))
+    #expect(c.view == .files && c.shown)
+}
+
+@Test func aLayoutWhoseDefaultColumnIsOnAnUnknownViewStillLoads() throws {
+    let empty = try JSONEncoder().encode(LayoutSnapshot(panes: [], graph: SnapGraph()))
+    var object = try #require(JSONSerialization.jsonObject(with: empty) as? [String: Any])
+    object["editorColumnDefault"] = ["shown": true, "view": "timeline", "width": 300, "open": [String]()] as [String: Any]
+    let json = try JSONSerialization.data(withJSONObject: object)
+    let s = try JSONDecoder().decode(LayoutSnapshot.self, from: json)
+    #expect(s.editorColumnDefault?.view == .files && s.editorColumnDefault?.width == 300)
+}

@@ -74,6 +74,9 @@ public struct WakilWiring: Sendable {
     /// `WindowSession.start` hands it to the window, which starts and stops it as git panes
     /// open and close, and `shutdown` stops it.
     public let rootWatcher: any RootWatcher
+    /// The window's git status (3b-iii). One per assembly; the window, the actions and `GitSource`
+    /// share it.
+    public let gitStatus: GitStatus
     /// The editor panes' own watch (3b-i), separate from the git one so each starts and stops
     /// with its own panes. Handed to the window by `WindowSession.start`; `shutdown` stops it.
     public let editorRootWatcher: any RootWatcher
@@ -356,9 +359,8 @@ public struct WakilWiring: Sendable {
         // 3a-i. The roots are asked live, like the shell context above: the window's once
         // there is one, `wakil-ctx`'s until then.
         let gitRoots = GitRootsSource(context: contextClient)
-        await registerGitActions(
-            into: registry, panes: panes, layout: layout, git: gitClient,
-            roots: { await gitRoots.current() })
+        let gitStatus = GitStatus(git: gitClient, roots: { await gitRoots.current() })
+        await registerGitActions(into: registry, panes: panes, layout: layout, status: gitStatus)
         await registerEditorActions(
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? filesClient, fileLists: fileLists,
@@ -421,6 +423,7 @@ public struct WakilWiring: Sendable {
             filesClient: filesClient,
             fileLists: fileLists,
             rootWatcher: FSEventsRootWatcher(),
+            gitStatus: gitStatus,
             editorRootWatcher: FSEventsRootWatcher(),
             gitRoots: gitRoots,
             confirmations: ConfirmationBroker(),

@@ -31,7 +31,7 @@ func editorWindowParts(
         harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in EditorWindowLookup() },
-        rootWatcher: nil, editorRootWatcher: watcher, fileLists: fileLists,
+        rootWatcher: nil, editorRootWatcher: watcher, fileLists: fileLists, gitStatus: nil,
         paletteClients: PaletteClients(files: fileLists))
     await registerEditorActions(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
