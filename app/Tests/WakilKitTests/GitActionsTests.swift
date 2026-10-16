@@ -219,8 +219,11 @@ func rootsShowLoadingWhileARefreshIsInFlight() async throws {
     await f.git.setSlowStatus(true)
     let refresh = Task { try await f.dispatch("git_refresh") }
     #expect(await apiEventually { await f.git.statusCount == 2 })
-    // 3b-iii: the mid-read assertion on the pane is gone — the window's `GitStatus` holds the
-    // loading roots now, and the pane adopts them when the read lands (GitStatusTests).
+    // 3b-iii: the pane lists its roots loading before the read (the status's `begin`, adopted),
+    // as it did before; GitStatusTests.aParkedReadShowsEveryRootLoading pins the status itself.
+    let mid = await f.snapshot()
+    #expect(mid.roots.map(\.root) == ["/p/api", "/p/portal"])
+    #expect(mid.roots.allSatisfy { $0.loading })
     await f.git.releaseStatus(0)
     await f.git.releaseStatus(1)
     _ = try await refresh.value
@@ -244,11 +247,15 @@ func anOlderRefreshNeverOverwritesANewerOne() async throws {
     // The older reply first: dropped, and the root is still loading for the newer read.
     await f.git.releaseStatus(0)
     _ = try await older.value
-    // 3b-iii: the assertion on the pane mid-read (still loading for the newer read) is gone; the
-    // status holds that state now (GitStatusTests.aReadSupersededByANewerOneLandsNothing).
+    // 3b-iii: the status owns the rule (GitStatusTests.anOlderReadReleasedFirstLandsNothingAndLoadingStays);
+    // the pane adopts it, so it holds here too.
+    var s = await f.snapshot()
+    #expect(s.roots[0].files.isEmpty)
+    #expect(s.roots[0].loading == true)
+
     await f.git.releaseStatus(1)
     _ = try await newer.value
-    let s = await f.snapshot()
+    s = await f.snapshot()
     #expect(s.roots[0].files.map(\.path) == ["new"])
     #expect(s.roots[0].loading == false)
 }
@@ -383,11 +390,39 @@ func aDiffLandingAfterItsPaneClosedLeavesNoEntry() async throws {
 }
 
 /// Closing a pane drops its flight: the diff in flight is cancelled. (3b-iii: the reads'
-/// generations moved to `GitStatus`, and `GitStatusTests.aReadSupersededByANewerOneLandsNothing`
-/// pins them.)
+/// generations moved to `GitStatus`; `GitStatusTests.anOlderReadReleasedFirstLandsNothingAndLoadingStays`
+/// and `aReadSupersededByANewerOneLandsNothing` pin them.)
 @Test func droppingAPaneCancelsItsFlights() async {
     let flights = GitFlights()
     let task = flights.startDiff("git-1") { try? await Task.sleep(for: .seconds(30)) }
     flights.drop("git-1")
     #expect(task.isCancelled)
+}
+
+/// Fix round 1, item 1 (final review item 8's rule): a refresh whose read lands after its pane
+/// closed leaves no entry — only the write before the read may create one.
+@Test(.timeLimit(.minutes(1)))
+func aRefreshLandingAfterItsPaneClosedLeavesNoEntry() async throws {
+    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
+    let (layout, panes, pane) = await openGitPane()
+    let git = FakeGit()
+    await git.set(status: "/p/api", files: [("a.php", "changed", "M")])
+    await registerLayoutActions(into: registry, layout: layout, panes: panes)
+    await registerGitActions(into: registry, panes: panes, layout: layout,
+                             status: GitStatus(git: git, roots: { ["/p/api"] }))
+    func dispatch(_ name: String, _ params: [String: JSONValue]) async throws {
+        _ = try await registry.dispatch(
+            name: name, params: .object(params), origin: .agent, environment: "staging", confirmation: nil)
+    }
+    await git.setSlowStatus(true)
+    let refreshing = Task { try await dispatch("git_refresh", ["pane": .string(pane)]) }
+    #expect(await apiEventually { await git.statusCount == 1 })
+    #expect(await panes.holdsContents(paneId: pane), "the pre-read write listed the root")
+    try await dispatch("pane_close", ["id": .string(pane)])
+    #expect(await panes.holdsContents(paneId: pane) == false)
+    await git.releaseStatus(0)
+    _ = try? await refreshing.value
+    #expect(await panes.holdsContents(paneId: pane) == false, "the late read brought the pane back")
 }

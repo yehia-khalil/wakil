@@ -156,9 +156,22 @@ public actor GitStatus {
     /// The active project's roots, asked live (the window's, else `wakil-ctx`'s).
     public func projectRoots() async -> [String] { await roots_() }
 
-    /// Reads `only`, or every root. Roots the project no longer has are dropped, and roots it gained
-    /// are listed loading; a root outside the project reads nothing.
+    /// A read begun and not yet finished: the roots it reads and its generation.
+    struct Ticket: Sendable {
+        let targets: [String]
+        let generation: Int
+    }
+
+    /// Reads `only`, or every root: `begin`, then `finish`.
     public func refresh(only: String? = nil) async {
+        await finish(begin(only: only))
+    }
+
+    /// **The first half of a read, published before the read is awaited.** Roots the project no
+    /// longer has are dropped, roots it gained are listed loading, the ones about to be read are
+    /// marked loading, and a root outside the project reads nothing. A caller adopts `roots` between
+    /// `begin` and `finish`, so a pane shows every root loading while the read runs.
+    func begin(only: String? = nil) async -> Ticket {
         let all = await roots_()
         let targets = only.map { all.contains($0) ? [$0] : [] } ?? all
         let known = Dictionary(roots.map { ($0.root, $0) }, uniquingKeysWith: { a, _ in a })
@@ -168,11 +181,15 @@ public actor GitStatus {
             return state
         }
         generation += 1
-        let mine = generation
-        for r in targets { latest[r] = mine }
-        let read = await gitReadStatus(git, roots: targets)
+        for r in targets { latest[r] = generation }
+        return Ticket(targets: targets, generation: generation)
+    }
+
+    /// The second half: reads the ticket's roots and lands each one this is still the latest read of.
+    func finish(_ ticket: Ticket) async {
+        let read = await gitReadStatus(git, roots: ticket.targets)
         roots = roots.map { state in
-            guard let outcome = read[state.root], latest[state.root] == mine else { return state }
+            guard let outcome = read[state.root], latest[state.root] == ticket.generation else { return state }
             guard let fresh = outcome else {
                 var kept = state
                 kept.loading = false

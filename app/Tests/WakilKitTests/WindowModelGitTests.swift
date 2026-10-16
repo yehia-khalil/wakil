@@ -282,4 +282,40 @@ private func openGitPanes(_ model: WindowModel) async -> [String] {
         await model.invalidateForOrgChange()
         #expect(model.gitRoots.isEmpty)
     }
+
+    // Fix round 1, item 2: a newly opened Git pane lists every root loading while the first read is
+    // parked, as it did before the window shared one status — not "No project roots to read".
+    @Test func aNewGitPaneListsEveryRootLoadingWhileTheFirstReadIsParked() async throws {
+        let (model, _, git, _) = await gitWindow()
+        await model.refreshContext()
+        await git.setSlowStatus(true)
+        let opening = Task { await model.openPane(kind: "git") }
+        while await git.statusCount < 2 { await Task.yield() }
+        let pane = try #require(await openGitPanes(model).first)
+        #expect(await apiEventually {
+            model.git(pane)?.roots.map(\.root) == ["/p/api", "/p/portal"]
+                && model.git(pane)?.roots.allSatisfy { $0.loading } == true
+        }, "the pane showed no roots loading while the read was parked")
+        for call in 0..<8 { await git.releaseStatus(call) }
+        _ = await opening.value
+        #expect(model.git(pane)?.roots.allSatisfy { !$0.loading } == true)
+    }
+
+    // And on a wake: the panes carry the loading mark too, not only the window's mirror.
+    @Test func aWakeMarksTheRootLoadingInEveryGitPaneWhileItReads() async throws {
+        let (model, watcher, git, _) = await gitWindow()
+        await model.refreshContext()
+        await model.openPane(kind: "git")
+        let pane = try #require(await openGitPanes(model).first)
+        await git.setSlowStatus(true)
+        let before = await git.statusCount
+        let wake = Task { await watcher.fire("/p/api") }
+        while await git.statusCount < before + 1 { await Task.yield() }
+        #expect(await apiEventually {
+            model.git(pane)?.roots.first { $0.root == "/p/api" }?.loading == true
+        }, "the pane showed no loading mark on the wake")
+        for call in 0..<(before + 8) { await git.releaseStatus(call) }
+        await wake.value
+        #expect(model.git(pane)?.roots.allSatisfy { !$0.loading } == true)
+    }
 }

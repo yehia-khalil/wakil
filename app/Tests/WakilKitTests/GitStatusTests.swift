@@ -66,4 +66,47 @@ import Testing
         await status.reset()
         #expect(await status.roots.isEmpty)
     }
+
+    // Fix round 1, item 3 (a): while a read is parked, every root of it shows loading.
+    @Test func aParkedReadShowsEveryRootLoading() async {
+        let git = FakeGit()
+        for r in ["/p/api", "/p/web"] { await git.set(status: r, files: [("x", "changed", "M")]) }
+        await git.setSlowStatus(true)
+        let status = GitStatus(git: git, roots: { ["/p/api", "/p/web"] })
+        let read = Task { await status.refresh() }
+        while await git.statusCount < 2 { await Task.yield() }
+        let mid = await status.roots
+        #expect(mid.map(\.root) == ["/p/api", "/p/web"])
+        #expect(mid.allSatisfy { $0.loading })
+        await git.releaseStatus(0)
+        await git.releaseStatus(1)
+        await read.value
+        #expect(await status.roots.allSatisfy { !$0.loading })
+    }
+
+    // Fix round 1, item 3 (b): the older read released first lands nothing and the root stays loading
+    // for the newer read, which then lands its files and ends the loading.
+    @Test func anOlderReadReleasedFirstLandsNothingAndLoadingStays() async {
+        let git = FakeGit()
+        await git.set(status: "/p/api", files: [("old", "changed", "M")])
+        await git.setSlowStatus(true)
+        let status = GitStatus(git: git, roots: { ["/p/api"] })
+        let first = Task { await status.refresh() }
+        while await git.statusCount < 1 { await Task.yield() }
+        await git.set(status: "/p/api", files: [("new", "changed", "M")])
+        let second = Task { await status.refresh() }
+        while await git.statusCount < 2 { await Task.yield() }
+
+        await git.releaseStatus(0)
+        await first.value
+        let mid = await status.roots
+        #expect(mid[0].files.isEmpty)
+        #expect(mid[0].loading == true)
+
+        await git.releaseStatus(1)
+        await second.value
+        let done = await status.roots
+        #expect(done[0].files.map(\.path) == ["new"])
+        #expect(done[0].loading == false)
+    }
 }

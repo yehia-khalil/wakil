@@ -221,13 +221,18 @@ public func registerGitActions(
         await flight?.value
     }
 
-    /// Takes the window's status as it now is into the pane, and moves the selection per Rule 6.
-    @Sendable func adopt(_ pane: String, _ git: any ToolCaller) async {
+    /// Takes the window's status as it now is into the pane. **Only a write made before any await
+    /// may create the pane's entry** (final review item 8): `create` is true for the write before a
+    /// read, and false for the one after it, so a pane closed while the read was parked is not
+    /// brought back. A status still loading only lists its roots; once it has landed the selection
+    /// moves per Rule 6 and its diff is read again.
+    @Sendable func adopt(_ pane: String, _ git: any ToolCaller, create: Bool) async {
         let fresh = await status.roots
-        let reload: Task<Void, Never>? = await panes.updateGit(paneId: pane, create: true) { s in
+        let landed = !fresh.contains { $0.loading }
+        let reload: Task<Void, Never>? = await panes.updateGit(paneId: pane, create: create) { s in
             let before = s.roots
             s.roots = fresh
-            guard fresh != before, let selection = s.selection else { return nil }
+            guard landed, fresh != before, let selection = s.selection else { return nil }
             switch gitReselect(selection, before: before, after: s.roots) {
             case .keep(let next), .moved(let next):
                 s.selection = next
@@ -271,8 +276,15 @@ public func registerGitActions(
                     throw GitActionError.notAProjectRoot(action: "git_refresh", root: only, roots: all)
                 }
             }
-            if case .object(let o) = params, o["read"] == .bool(false) {} else { await status.refresh(only: only) }
-            await adopt(pane, git)
+            if case .object(let o) = params, o["read"] == .bool(false) {
+                // The window read it (or is reading it): take what it holds, loading or landed.
+                await adopt(pane, git, create: true)
+            } else {
+                let ticket = await status.begin(only: only)
+                await adopt(pane, git, create: true)     // every root listed, loading, before the read
+                await status.finish(ticket)
+                await adopt(pane, git, create: false)    // after a read that may have been slow
+            }
             return await snapshot(pane)
         }))
 

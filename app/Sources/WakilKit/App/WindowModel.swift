@@ -3996,9 +3996,9 @@ public final class WindowModel {
             // a project left and come back to keeps its canvas in memory and runs no restore,
             // so anything changed meanwhile would wait for the next file event. The watcher only
             // reports changes from now on; this read covers everything before it.
-            // **A watch that starts reads first** — now once for the window.
-            await gitStatus?.refresh()
-            await refreshGitPanes(root: nil)
+            // **A watch that starts reads first** — now once for the window. The panes list every
+            // root loading before the read, and take what it found after.
+            await readStatus(only: nil)
         case .stopped:
             await gitStatus?.reset()
             gitRoots = []
@@ -4068,8 +4068,22 @@ public final class WindowModel {
     /// already in the pane, under the root that failed (Interaction Rule 8).
     private func gitRootChanged(_ root: String) async {
         guard gitRootPaths.contains(root) else { return }   // a wake from a project just left
-        gitRoots = gitRoots.map { var r = $0; if r.root == root { r.loading = true }; return r }
-        await gitStatus?.refresh(only: root)
+        await readStatus(only: root)
+    }
+
+    /// One read of the window's status, for `only` or every root, shown as it happens: the status
+    /// marks its roots loading and the git panes list them so (and the window's mirror), then the
+    /// read is awaited and the panes take what it found. Without a status the panes read for
+    /// themselves.
+    private func readStatus(only root: String?) async {
+        guard let gitStatus else {
+            await refreshGitPanes(root: root)
+            return
+        }
+        let ticket = await gitStatus.begin(only: root)
+        gitRoots = await gitStatus.roots
+        await refreshGitPanes(root: root)
+        await gitStatus.finish(ticket)
         await refreshGitPanes(root: root)
     }
 
