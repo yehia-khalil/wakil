@@ -355,7 +355,7 @@ public struct EditorSavedTab: Sendable, Equatable, Codable {
 }
 
 public enum EditorColumnView: String, Sendable, Equatable, Codable {
-    case files, search
+    case files, search, changes
 
     /// **An unknown view decodes as `.files`** (3b-iii, R1): a layout written by a later build keeps
     /// its column, and `LayoutSnapshot.editorColumnDefault` — decoded with `try` — does not take the
@@ -366,18 +366,51 @@ public enum EditorColumnView: String, Sendable, Equatable, Codable {
     }
 }
 
+/// One row of the editor's Changes view (3b-iii): a file in one group of one root. `group` is a
+/// `GitGroup` raw value, spelt out because `Layout/` may not use `Git/`.
+public struct EditorChangesRow: Sendable, Equatable, Hashable, Codable {
+    public var root: String
+    public var path: String
+    public var group: String
+    public init(root: String, path: String, group: String) {
+        self.root = root
+        self.path = path
+        self.group = group
+    }
+}
+
 /// An editor pane's left column as a layout keeps it (3b-ii). `open` holds absolute paths.
 public struct EditorColumnState: Sendable, Equatable, Codable {
     public var shown: Bool
     public var view: EditorColumnView
     public var width: Double
     public var open: [String]
+    /// Roots collapsed in the Changes view (3b-iii): per pane, apart from `open` (Decision 37).
+    public var changesClosed: Set<String>
+    /// The Changes view's highlighted row; nil before one is chosen.
+    public var changesHighlight: EditorChangesRow?
     public static let initial = EditorColumnState(shown: false, view: .files, width: 240, open: [])
-    public init(shown: Bool, view: EditorColumnView, width: Double, open: [String]) {
+    public init(shown: Bool, view: EditorColumnView, width: Double, open: [String],
+                changesClosed: Set<String> = [], changesHighlight: EditorChangesRow? = nil) {
         self.shown = shown
         self.view = view
         self.width = width
         self.open = open
+        self.changesClosed = changesClosed
+        self.changesHighlight = changesHighlight
+    }
+
+    private enum CodingKeys: String, CodingKey { case shown, view, width, open, changesClosed, changesHighlight }
+
+    /// A column saved before 3b-iii has neither Changes field: they decode as empty, not as a failure.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        shown = try c.decode(Bool.self, forKey: .shown)
+        view = try c.decode(EditorColumnView.self, forKey: .view)
+        width = try c.decode(Double.self, forKey: .width)
+        open = try c.decode([String].self, forKey: .open)
+        changesClosed = (try? c.decodeIfPresent(Set<String>.self, forKey: .changesClosed)) ?? []
+        changesHighlight = (try? c.decodeIfPresent(EditorChangesRow.self, forKey: .changesHighlight)) ?? nil
     }
 }
 

@@ -198,7 +198,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         await fakeFiles.setListing("/p/api", ["a.go"])
         let w = await paletteWindow(files: fakeFiles) { registry, panes, layout in
             await registerEditorActions(into: registry, panes: panes, layout: layout, files: fakeFiles, fileLists: nil,
-                                        roots: { ["/p/api", "/p/portal"] })
+                                        gitStatus: nil, roots: { ["/p/api", "/p/portal"] })
         }
         await w.model.refreshContext()
         func resourceKinds() async -> [String] {
@@ -224,7 +224,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         await fakeFiles.setListing("/p/api", ["a.go"])
         let w = await paletteWindow(files: fakeFiles) { registry, panes, layout in
             await registerEditorActions(into: registry, panes: panes, layout: layout, files: fakeFiles, fileLists: nil,
-                                        roots: { ["/p/api", "/p/portal"] })
+                                        gitStatus: nil, roots: { ["/p/api", "/p/portal"] })
         }
         await w.model.refreshContext()
         let rows = await w.model.paletteRootEntries(mode: .open) { _ in }
@@ -967,6 +967,8 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
 private let registeredBeforeThePalette: Set<String> = [
     "editor_refresh",
     "editor_tree", "editor_tree_expand", "editor_tree_collapse", "editor_tree_reveal", "editor_move_tab",
+    // 3b-iii: the Changes view's four, all agent-reachable.
+    "editor_changes_select", "editor_changes_step", "editor_changes_collapse", "editor_changes_expand",
     "editor_find", "editor_search", "files_search",
     "editor_open", "editor_new_scratch", "editor_focus_tab", "editor_close", "editor_goto", "editor_select", "editor_set_language", "editor_replace_range", "editor_save", "editor_reload", "editor_restore", "editor_replace", "editor_replace_undo",
     "api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_render_curl", "api_reopen",
@@ -997,6 +999,8 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__ctx_editor_settings",
     "mcp__wakil__editor_tree", "mcp__wakil__editor_tree_expand", "mcp__wakil__editor_tree_collapse",
     "mcp__wakil__editor_move_tab", "mcp__wakil__editor_tree_reveal",
+    "mcp__wakil__editor_changes_select", "mcp__wakil__editor_changes_step",
+    "mcp__wakil__editor_changes_collapse", "mcp__wakil__editor_changes_expand",
     "mcp__wakil__editor_find", "mcp__wakil__editor_search", "mcp__wakil__files_search",
     "mcp__wakil__editor_open", "mcp__wakil__editor_new_scratch", "mcp__wakil__editor_focus_tab", "mcp__wakil__editor_close", "mcp__wakil__editor_goto", "mcp__wakil__editor_select", "mcp__wakil__editor_set_language", "mcp__wakil__editor_replace_range", "mcp__wakil__editor_reload", "mcp__wakil__editor_restore",
     "mcp__wakil-git", "mcp__wakil-pm", "mcp__wakil-recall",

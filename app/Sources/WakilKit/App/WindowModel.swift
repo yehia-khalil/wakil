@@ -4049,7 +4049,8 @@ public final class WindowModel {
                 await self?.mirrorEditorFiles()
             }
         }
-        var params: [String: JSONValue] = ["root": .string(root)]
+        // The file watcher never reads git (R5): the git watcher's wake does, once, for the window.
+        var params: [String: JSONValue] = ["root": .string(root), "what": .string("files")]
         if let paths { params["paths"] = .array(paths.map { .string($0) }) }
         for pane in layoutSnapshot.panes where PaneKinds.is(pane.kind, EditorPaneKind.self) {
             params["pane"] = .string(pane.id)
@@ -4085,6 +4086,16 @@ public final class WindowModel {
         await refreshGitPanes(root: root)
         await gitStatus.finish(ticket)
         await refreshGitPanes(root: root)
+        // The editor panes' git state (the Changes highlight, and later their diff tabs and gutter
+        // baselines) against the status just read: `what: git` reads nothing itself.
+        for pane in layoutSnapshot.panes where PaneKinds.is(pane.kind, EditorPaneKind.self) {
+            var params: [String: JSONValue] = ["pane": .string(pane.id), "what": .string("git")]
+            if let root { params["root"] = .string(root) }
+            _ = try? await registry.dispatch(
+                name: "editor_refresh", params: .object(params),
+                origin: .ui, environment: environment, confirmation: nil)
+        }
+        await refreshPanes()
     }
 
     /// `git_refresh` in every open git pane whose snapshot holds no roots yet — one no read

@@ -612,3 +612,16 @@ private func conversation(_ organization: String, _ project: String, _ root: Str
     let s = try JSONDecoder().decode(LayoutSnapshot.self, from: json)
     #expect(s.editorColumnDefault?.view == .files && s.editorColumnDefault?.width == 300)
 }
+
+// 3b-iii: the Changes view's column state.
+@Test func aColumnSavedBefore3biiiDecodesWithNoChangesState() throws {
+    let json = #"{"shown":true,"view":"search","width":240,"open":["/p/api"]}"#
+    let c = try JSONDecoder().decode(EditorColumnState.self, from: Data(json.utf8))
+    #expect(c.changesClosed.isEmpty && c.changesHighlight == nil && c.open == ["/p/api"])
+}
+
+@Test func theChangesStateRoundTrips() throws {
+    let c = EditorColumnState(shown: true, view: .changes, width: 260, open: [], changesClosed: ["/p/web"],
+                              changesHighlight: EditorChangesRow(root: "/p/api", path: "a.go", group: "staged"))
+    #expect(try JSONDecoder().decode(EditorColumnState.self, from: JSONEncoder().encode(c)) == c)
+}

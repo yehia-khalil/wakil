@@ -32,7 +32,7 @@ import Testing
             rootWatcher: nil, editorRootWatcher: RecordingRootWatcher(), fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(files: files))
         await registerEditorActions(
             into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
-            roots: { [weak model] in await model?.gitRootPaths ?? [] })
+            gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })
         await model.refreshContext()
         return Window(model: model, panes: panes, layout: layout, files: files)
     }

@@ -37,6 +37,8 @@ struct EditorPane: View {
     let roots: [String]
     /// The window's one file list per root (`WindowModel.editorFiles`).
     let files: EditorFileListsState
+    /// The window's git status, as the Changes view and the tree's letters draw it (3b-iii).
+    let gitRoots: [GitRootState]
     /// The column a pane that never set its own starts from.
     let columnDefault: EditorColumnState
     /// Monaco's find bar reporting its query, switches and count (the view-report path).
@@ -113,6 +115,7 @@ struct EditorPane: View {
             HStack(spacing: 0) {
                 if column.shown {
                     EditorColumn(column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
+                                 gitRoots: gitRoots,
                                  search: snapshot.search, paneWidth: geo.size.width, dispatch: dispatch,
                                  canReveal: activeTab?.path != nil,
                                  reveal: { Task { await revealInTree() } },
@@ -259,7 +262,7 @@ struct EditorPane: View {
                 .foregroundStyle(EditorPaneStyle.text)
                 .opacity(column.shown ? 0.9 : 0.5)
                 .padding(.leading, 10)
-                .help("Files ⌘B · Search ⌘⇧F")
+                .help("Files ⌘B · Search ⌘⇧F · Changes ⌘⇧G")
                 .accessibilityIdentifier("editor.column.toggle")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
@@ -903,4 +906,14 @@ enum EditorPaneStyle {
     static let amber = Color(TerminalPalette.amber)
     /// §5's violet `#7c5cff`: the column's selected row and a search switch that is on.
     static let violet = Color(VoidPalette.violet)
+    static let lifted = Color(red: 0x1c / 255, green: 0x20 / 255, blue: 0x30 / 255)
+
+    /// §5: amber for a change, green for an addition, a deletion muted — never red (3a-i's tones).
+    static func tone(_ t: GitStatusTone) -> Color {
+        switch t {
+        case .modified: amber
+        case .added: Color(TerminalPalette.green)
+        case .muted: text.opacity(0.45)
+        }
+    }
 }

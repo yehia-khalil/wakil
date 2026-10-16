@@ -282,6 +282,8 @@ struct EditorFixture {
     let layout: LayoutStore
     let files: FakeFiles
     var pane: String
+    let git: FakeGit
+    let status: GitStatus
 
     @discardableResult
     func dispatch(_ name: String, _ params: [String: JSONValue] = [:], origin: ActionOrigin = .agent,
@@ -302,9 +304,12 @@ func editorFixture(roots: [String] = ["/p/api", "/p/web"]) async throws -> Edito
     let pane = await layout.open(kind: "editor", title: "Editor").id
     let panes = PaneStore(kinds: PaneKinds.standard)
     let files = FakeFiles()
+    let git = FakeGit()
+    let status = GitStatus(git: git, roots: { await files.fixtureRoots() ?? roots })
     await registerEditorActions(into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
-                                roots: { await files.fixtureRoots() ?? roots })
-    return EditorFixture(registry: registry, panes: panes, layout: layout, files: files, pane: pane)
+                                gitStatus: status, roots: { await files.fixtureRoots() ?? roots })
+    return EditorFixture(registry: registry, panes: panes, layout: layout, files: files, pane: pane,
+                         git: git, status: status)
 }
 
 func range(_ l1: Int, _ c1: Int, _ l2: Int, _ c2: Int) -> JSONValue {

@@ -8,35 +8,59 @@ struct EditorWindowLookup: ProviderCredentialsLookup {
     }
 }
 
+/// Everything `editorWindowParts` builds, with the window's git status over a `FakeGit` and a
+/// `RecordingRootWatcher` for each of the git and editor watches (3b-iii).
+struct EditorWindowParts {
+    let model: WindowModel
+    let editorWatcher: RecordingRootWatcher
+    let gitWatcher: RecordingRootWatcher
+    let files: FakeFiles
+    let git: FakeGit
+}
+
 /// A window with an editor watcher, over `GitRootsContext`'s project and roots, its registry
 /// holding the editor actions over one `EditorFileLists` on a `FakeFiles`, shared with the
-/// window and the palette as the wiring shares it.
+/// window and the palette as the wiring shares it. Its git status is one `GitStatus` over a
+/// `FakeGit`, passed to the window and to the editor actions alike.
 @MainActor
-func editorWindowParts(
+func editorWindowFull(
     roots: [String], persistence: LayoutPersistence? = nil, context: GitRootsContext? = nil
-) async -> (WindowModel, RecordingRootWatcher, FakeFiles) {
+) async -> EditorWindowParts {
     let registry = ActionRegistry(
         journalDirectory: testScratchRoot.appendingPathComponent("editor-window-\(UUID().uuidString)"),
         sessionId: "editor-window")
     let panes = PaneStore()
     let layout = LayoutStore()
     let watcher = RecordingRootWatcher()
+    let gitWatcher = RecordingRootWatcher()
     let files = FakeFiles()
+    let git = FakeGit()
     let fileLists = EditorFileLists(files: files)
     await registerLayoutActions(
         into: registry, layout: layout, panes: panes, unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
+    let box = RootsBox()
+    let status = GitStatus(git: git, roots: { await box.model?.gitRootPaths ?? [] })
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: persistence,
         context: ContextStore(client: context ?? GitRootsContext(roots: roots)),
         harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in EditorWindowLookup() },
-        rootWatcher: nil, editorRootWatcher: watcher, fileLists: fileLists, gitStatus: nil,
+        rootWatcher: gitWatcher, editorRootWatcher: watcher, fileLists: fileLists, gitStatus: status,
         paletteClients: PaletteClients(files: fileLists))
+    box.model = model
     await registerEditorActions(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
-        roots: { [weak model] in await model?.gitRootPaths ?? [] })
-    return (model, watcher, files)
+        gitStatus: status, roots: { [weak model] in await model?.gitRootPaths ?? [] })
+    return EditorWindowParts(model: model, editorWatcher: watcher, gitWatcher: gitWatcher, files: files, git: git)
+}
+
+@MainActor
+func editorWindowParts(
+    roots: [String], persistence: LayoutPersistence? = nil, context: GitRootsContext? = nil
+) async -> (WindowModel, RecordingRootWatcher, FakeFiles) {
+    let w = await editorWindowFull(roots: roots, persistence: persistence, context: context)
+    return (w.model, w.editorWatcher, w.files)
 }
 
 @MainActor
@@ -56,6 +80,33 @@ func editorWindowWithFiles(
 }
 
 @Suite @MainActor struct WindowModelEditorTests {
+    @Test func cmdShiftGTogglesTheChangesViewOnCmdBsTerms() async throws {
+        let (model, _, _) = await editorWindowParts(roots: ["/p/api", "/p/portal"])
+        await model.refreshContext()
+        await model.openPane(kind: "editor")
+        await model.toggleEditorColumn(.changes)
+        let pane = try #require(model.layoutSnapshot.panes.first { $0.kind == "editor" }?.id)
+        #expect(model.editor(pane)?.column?.view == .changes && model.editor(pane)?.column?.shown == true)
+        await model.toggleEditorColumn(.files)
+        #expect(model.editor(pane)?.column?.view == .files)
+        await model.toggleEditorColumn(.changes)
+        await model.toggleEditorColumn(.changes)
+        #expect(model.editor(pane)?.column?.shown == false)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func aGitWakeReachesEveryEditorPaneOnceAndTheFileWakeReadsNoGit() async throws {
+        let w = await editorWindowFull(roots: ["/p/api", "/p/portal"])
+        await w.model.refreshContext()
+        await w.model.openPane(kind: "editor")
+        await w.model.openPane(kind: "editor")
+        let before = await w.git.statusCount
+        await w.gitWatcher.fire("/p/api")
+        #expect(await w.git.statusCount == before + 1)
+        await w.editorWatcher.fire("/p/api", paths: ["/p/api/a.go"])
+        #expect(await w.git.statusCount == before + 1, "the file watcher reads no git")
+    }
+
     @Test func cmdBShowsTheFocusedEditorsFilesAndAgainHidesThem() async throws {
         let (model, _, _) = await editorWindowParts(roots: ["/p/api", "/p/portal"])
         await model.refreshContext()

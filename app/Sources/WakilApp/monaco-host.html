@@ -215,16 +215,17 @@
         // event would ever report it again.
         reportFind();
       };
-      // ⌘S, ⌘T, ⌘W, ⌘P, ⌘K, ⌘B, ⌘⏎ (Maximize Pane) and ⌘⇧F are the window's menu commands:
+      // ⌘S, ⌘T, ⌘W, ⌘P, ⌘K, ⌘B, ⌘⏎ (Maximize Pane), ⌘⇧F and ⌘⇧G are the window's menu commands:
       // un-prevented, so WebKit hands them back; Monaco's own ⌘⏎ (insert line below) gives way.
-      // Monaco keeps ⌘F, ⌘G and ⌥⌘F (its find bar). By physical key (`code`), not `key`: on an
+      // Monaco keeps ⌘F, ⌘G and ⌥⌘F (its find bar); its Find Previous keeps ⇧⏎ in the bar. By physical key (`code`), not `key`: on an
       // Arabic layout ⌘K arrives as 'ك'. The plain keys pass only unshifted (⌘⇧⏎ stays Monaco's):
       // no menu command uses ⇧ with them today, and one that does needs its own entry here.
       window.addEventListener('keydown', function (e) {
         if (!e.metaKey || e.ctrlKey || e.altKey) return;
         const plain = ['KeyS', 'KeyT', 'KeyW', 'KeyP', 'KeyK', 'KeyB', 'Enter'].indexOf(e.code) >= 0 && !e.shiftKey;
         const searchFiles = e.code === 'KeyF' && e.shiftKey;
-        if (plain || searchFiles) { e.stopPropagation(); }
+        const changes = e.code === 'KeyG' && e.shiftKey;   // ⌘⇧G is the window's Changes view (3b-iii)
+        if (plain || searchFiles || changes) { e.stopPropagation(); }
       }, true);
       post({ type: 'ready' });
       return;

@@ -364,7 +364,7 @@ public struct WakilWiring: Sendable {
         await registerEditorActions(
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? filesClient, fileLists: fileLists,
-            roots: { await gitRoots.current() })
+            gitStatus: gitStatus, roots: { await gitRoots.current() })
 
         // Provider capacity: the record path and the one read every surface uses.
         await registerCapacityActions(into: registry, context: contextClient)

@@ -164,6 +164,7 @@ public func registerEditorActions(
     layout: LayoutStore?,
     files: (any ToolCaller)?,
     fileLists: EditorFileLists?,
+    gitStatus: GitStatus?,
     roots: @escaping @Sendable () async -> [String]
 ) async {
     @Sendable func requireFiles(_ action: String) throws -> any ToolCaller {
@@ -237,6 +238,36 @@ public func registerEditorActions(
             if !onlyIfChanged || c != before { await setColumn(pane, c, asDefault: asDefault) }
             return c
         }
+    }
+
+    /// The pane's git state after the window's status changed under `root` (or every root): the
+    /// Changes highlight moves per Rule 6. Tasks 3 and 6 add the diff tabs and the baselines.
+    @Sendable func refreshGit(_ pane: String, root: String?) async {
+        let status = await gitStatus?.roots ?? []
+        await updateColumn(pane, onlyIfChanged: true, asDefault: false) { c in
+            c.changesHighlight = editorChangesResolve(c.changesHighlight, roots: status)
+        }
+    }
+
+    /// `root`, `path` and `group` as a Changes row, refused as 3a-i refused them: a missing param, a
+    /// group that is not staged, changed or untracked, or a root outside the project (naming the roots).
+    @Sendable func changesRow(_ params: JSONValue, action: String) async throws -> EditorChangesRow {
+        for key in ["root", "path", "group"] where optionalString(params, key) == nil {
+            throw StandardActionError.missingParam(action: action, param: key)
+        }
+        let root = optionalString(params, "root")!, path = optionalString(params, "path")!
+        let group = optionalString(params, "group")!
+        guard GitGroup(rawValue: group) != nil else { throw GitActionError.unknownGroup(action: action, group: group) }
+        let all = await roots()
+        guard all.contains(root) else { throw GitActionError.notAProjectRoot(action: action, root: root, roots: all) }
+        return EditorChangesRow(root: root, path: path, group: group)
+    }
+
+    @Sendable func projectRoot(_ params: JSONValue, action: String) async throws -> String {
+        guard let root = optionalString(params, "root") else { throw StandardActionError.missingParam(action: action, param: "root") }
+        let all = await roots()
+        guard all.contains(root) else { throw GitActionError.notAProjectRoot(action: action, root: root, roots: all) }
+        return root
     }
 
     /// The root holding `path`, and `path` relative to it; refused outside the roots (Rule 7's one refusal).
@@ -629,43 +660,57 @@ public func registerEditorActions(
             + "unsaved edits reloads in place; one with edits keeps them and is marked changed on disk; a "
             + "missing file is marked deleted. Search results are marked changed since when paths (absolute: "
             + "files, or folders holding them) names one of their files; without paths, any under root. "
-            + "The file watcher dispatches this with the paths that changed.",
+            + "The file watcher dispatches this with the paths that changed. "
+            + "what: all (the default) also re-reads git status first, then the pane's git state (the Changes "
+            + "highlight, its diff tabs and its tabs' gutter baselines); files only the files (the file "
+            + "watcher's); git only the pane's git state, against the status as it is (the git watcher's, "
+            + "which has just read it).",
         kind: .read, audience: .agentReachable,
         schema: schema(["root": .object(["type": .string("string")]),
-                        "paths": .object(["type": .string("array"), "items": .object(["type": .string("string")])])]),
+                        "paths": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+                        "what": .object(["type": .string("string"),
+                                         "enum": .array([.string("all"), .string("files"), .string("git")])])]),
         handler: { params in
             let pane = try await editorPane(params, action: "editor_refresh")
             let only = optionalString(params, "root")
+            let what = optionalString(params, "what") ?? "all"
+            guard ["all", "files", "git"].contains(what) else {
+                throw EditorFilesError(description: "editor_refresh: what must be all, files or git, not \"\(what)\"")
+            }
+            if what == "all" { await gitStatus?.refresh(only: only) }
             let changedPaths: [String]? = {
                 guard case .array(let items)? = jsonObject(params)?["paths"] else { return nil }
                 return items.compactMap { if case .string(let p) = $0 { (p as NSString).standardizingPath } else { nil } }
             }()
-            let tabs = await panes.editorSnapshot(paneId: pane).tabs
-            // Each read is kept with the mtime the tab had when it began: a save that lands while
-            // the read is in flight leaves the read stale, and applying it would rewind the tab.
-            var reads: [String: (fresh: EditorTab, basis: Int64)] = [:]
-            for tab in tabs {
-                guard case .file(let path, let r) = tab.subject, only == nil || r == only else { continue }
-                if let fresh = try? await read(path, action: "editor_refresh") { reads[path] = (fresh, tab.mtime) }
-            }
-            let collected = reads
-            await panes.updateEditor(paneId: pane) { s in
-                for i in s.tabs.indices {
-                    guard let p = s.tabs[i].path, let (fresh, basis) = collected[p],
-                          !s.tabs[i].saving, s.tabs[i].mtime == basis else { continue }
-                    s.tabs[i] = editorAfterDiskRead(s.tabs[i], read: fresh)
+            if what != "git" {
+                let tabs = await panes.editorSnapshot(paneId: pane).tabs
+                // Each read is kept with the mtime the tab had when it began: a save that lands while
+                // the read is in flight leaves the read stale, and applying it would rewind the tab.
+                var reads: [String: (fresh: EditorTab, basis: Int64)] = [:]
+                for tab in tabs {
+                    guard case .file(let path, let r) = tab.subject, only == nil || r == only else { continue }
+                    if let fresh = try? await read(path, action: "editor_refresh") { reads[path] = (fresh, tab.mtime) }
                 }
-                // Spec: an event on a path in the results (final review I4). A path is a file or a
-                // folder FSEvents asks to rescan, so a result at or under it counts. Without paths
-                // (an agent's refresh), every result under the root counts, erring toward Re-run.
-                let hit = s.search.results.contains { r in
-                    guard only == nil || r.root == only else { return false }
-                    guard let changedPaths else { return true }
-                    let file = r.root + "/" + r.path
-                    return changedPaths.contains { file == $0 || file.hasPrefix($0 + "/") }
+                let collected = reads
+                await panes.updateEditor(paneId: pane) { s in
+                    for i in s.tabs.indices {
+                        guard let p = s.tabs[i].path, let (fresh, basis) = collected[p],
+                              !s.tabs[i].saving, s.tabs[i].mtime == basis else { continue }
+                        s.tabs[i] = editorAfterDiskRead(s.tabs[i], read: fresh)
+                    }
+                    // Spec: an event on a path in the results (final review I4). A path is a file or a
+                    // folder FSEvents asks to rescan, so a result at or under it counts. Without paths
+                    // (an agent's refresh), every result under the root counts, erring toward Re-run.
+                    let hit = s.search.results.contains { r in
+                        guard only == nil || r.root == only else { return false }
+                        guard let changedPaths else { return true }
+                        let file = r.root + "/" + r.path
+                        return changedPaths.contains { file == $0 || file.hasPrefix($0 + "/") }
+                    }
+                    if hit { s.search.changedSince = true }
                 }
-                if hit { s.search.changedSince = true }
             }
+            if what != "files" { await refreshGit(pane, root: only) }
             return await reply(pane)
         }))
 
@@ -731,13 +776,13 @@ public func registerEditorActions(
 
     await registry.register(Action(
         name: "editor_tree",
-        description: "Show or hide an editor pane's left column (shown), switch its view (files or search), "
+        description: "Show or hide an editor pane's left column (shown), switch its view (files, search or changes — the project's git changes, 3b-iii), "
             + "or set its width (points; clamped by the view). With no pane, the focused or first editor pane, or "
             + "a new one. A pane that never set its column starts from the one last left in any editor pane. "
             + "Shown on files, it lists every root.",
         kind: .control, audience: .agentReachable,
         schema: schema(["shown": .object(["type": .string("boolean")]),
-                        "view": .object(["type": .string("string"), "enum": .array([.string("files"), .string("search")])]),
+                        "view": .object(["type": .string("string"), "enum": .array([.string("files"), .string("search"), .string("changes")])]),
                         "width": .object(["type": .string("number")])]),
         handler: { params in
             let pane = try await editorPane(params, action: "editor_tree")
@@ -864,6 +909,64 @@ public func registerEditorActions(
             await persist(pane)
             return await reply(pane)
         }))
+
+    let groupSchema: JSONValue = .object(["type": .string("string"),
+                                          "enum": .array(GitGroup.allCases.map { .string($0.rawValue) })])
+
+    await registry.register(Action(
+        name: "editor_changes_select",
+        description: "Highlight one changed file in an editor pane's Changes view: root (absolute, one of the "
+            + "active project's roots), path (relative to root) and group (staged, changed or untracked — a "
+            + "partly staged file is in two). Returns the pane's state.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["root": .object(["type": .string("string")]), "path": .object(["type": .string("string")]),
+                        "group": groupSchema, "pin": .object(["type": .string("boolean")])],
+                       required: ["root", "path", "group"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_changes_select")
+            let row = try await changesRow(params, action: "editor_changes_select")
+            await updateColumn(pane, asDefault: false) { c in c.changesHighlight = row }
+            return await reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "editor_changes_step",
+        description: "Move an editor pane's Changes highlight delta rows (1 next, -1 previous) through every "
+            + "root's changed files in order — roots in project order, a collapsed root skipped, then staged, "
+            + "changed, untracked — stopping at either end. With nothing highlighted, the first row. Returns "
+            + "the pane's state.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["delta": .object(["type": .string("integer")])], required: ["delta"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_changes_step")
+            guard let delta = jsonObject(params)?["delta"]?.intValue else {
+                throw StandardActionError.missingParam(action: "editor_changes_step", param: "delta")
+            }
+            let status = await gitStatus?.roots ?? []
+            await updateColumn(pane, asDefault: false) { c in
+                c.changesHighlight = editorChangesStep(status, closed: c.changesClosed,
+                                                       from: editorChangesResolve(c.changesHighlight, roots: status), by: delta)
+            }
+            return await reply(pane)
+        }))
+
+    for (name, closing) in [("editor_changes_collapse", true), ("editor_changes_expand", false)] {
+        await registry.register(Action(
+            name: name,
+            description: (closing ? "Collapse" : "Expand") + " one root (root, absolute) in an editor pane's "
+                + "Changes view. Kept per pane, apart from the Files tree's open folders, and saved with the "
+                + "layout. Returns the pane's state.",
+            kind: .control, audience: .agentReachable,
+            schema: schema(["root": .object(["type": .string("string")])], required: ["root"]),
+            handler: { params in
+                let pane = try await editorPane(params, action: name)
+                let root = try await projectRoot(params, action: name)
+                await updateColumn(pane, asDefault: false) { c in
+                    if closing { c.changesClosed.insert(root) } else { c.changesClosed.remove(root) }
+                }
+                return await reply(pane)
+            }))
+    }
 
     let flags: [String: JSONValue] = ["query": .object(["type": .string("string")]),
                                       "case": .object(["type": .string("boolean")]),

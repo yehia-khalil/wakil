@@ -42,7 +42,11 @@ enum EditorPaneKind: PaneKind {
         o["selected_text"] = tab.flatMap { t in t.selection.map { .string(editorText(t.text, in: $0)) } } ?? .null
         o["column"] = s.column.map { c in .object([
             "shown": .bool(c.shown), "view": .string(c.view.rawValue), "width": .number(c.width),
-            "open": .array(c.open.map { .string($0) })]) } ?? .null
+            "open": .array(c.open.map { .string($0) }),
+            "changes_closed": .array(c.changesClosed.sorted().map { .string($0) }),
+            "changes_highlight": c.changesHighlight.map { h in
+                .object(["root": .string(h.root), "path": .string(h.path), "group": .string(h.group)]) } ?? .null,
+        ]) } ?? .null
         let f = s.findReport.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.number(Double(r.count)), r.shown) }
             ?? s.find.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.null, true) }
         o["find"] = f.map { q, c, w, r, count, shown in .object([

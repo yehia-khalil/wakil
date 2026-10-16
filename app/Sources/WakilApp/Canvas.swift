@@ -471,6 +471,7 @@ extension WakilWindow {
                     firstRoot: model.gitRootPaths.first ?? "",
                     roots: model.gitRootPaths,
                     files: model.editorFiles,
+                    gitRoots: model.gitRoots,
                     columnDefault: model.editorColumnDefault,
                     findReported: { report in await model.editorFindDidReport(pane: pane.id, report: report) },
                     columnFocusRequest: model.editorColumnFocusRequest.flatMap { $0.pane == pane.id ? $0 : nil },
