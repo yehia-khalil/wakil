@@ -137,7 +137,7 @@ func editorTab(fromRead o: [String: JSONValue], path: String, root: String) -> E
 /// What a tab becomes after re-reading its file (spec, Data flow: disk changes). `read` is the tab
 /// a fresh `files_read` made. The operator's cursor, scroll, language and view are always kept.
 func editorAfterDiskRead(_ tab: EditorTab, read: EditorTab) -> EditorTab {
-    var t = tab
+    var t = tab        // keeps `baseline` (the index text is not the disk's)
     if read.diskState == .deleted {
         t.diskState = .deleted
         return t
@@ -362,6 +362,25 @@ public func registerEditorActions(
         }
     }
 
+    /// The index text of `path` (in `root`) into every tab of `pane` showing it, or nil there when git
+    /// cannot show it (untracked, not a repository, binary, cut at the cap). A tab gone or read-only
+    /// by the time it lands is left alone.
+    @Sendable func fetchBaseline(_ pane: String, path: String, root: String) async {
+        guard let git = gitStatus?.git, path.hasPrefix(root + "/") else { return }
+        let rel = String(path.dropFirst(root.count + 1))
+        let base: String?
+        switch try? await filesTool(git, "git_show", ["root": .string(root), "path": .string(rel), "rev": .string("index")]) {
+        case .ok(let o)? where o["binary"] != .bool(true) && o["truncated"] != .bool(true):
+            if case .string(let t)? = o["text"] { base = t } else { base = nil }
+        default:
+            base = nil
+        }
+        if Task.isCancelled { return }
+        await panes.updateEditor(paneId: pane) { s in
+            for i in s.tabs.indices where s.tabs[i].path == path && !s.tabs[i].readOnly { s.tabs[i].baseline = base }
+        }
+    }
+
     /// Opens `path` in `pane` — focusing its tab if open — with the cursor at `at` and `selection`, as a
     /// preview when asked (3b-ii). `editor_open`'s body, shared with `editor_open_file`.
     @Sendable func openFile(_ pane: String, path: String, at line: EditorPosition?, selection: EditorRange?,
@@ -396,6 +415,9 @@ public func registerEditorActions(
                     s.tabs.append(t)
                     s.active = s.tabs.count - 1
                 }
+            }
+            if !tab.readOnly, case .file(_, let root) = tab.subject {
+                await fetchBaseline(pane, path: tab.path ?? path, root: root)
             }
         }
         await persist(pane)
@@ -437,8 +459,8 @@ public func registerEditorActions(
     }
 
     /// The pane's git state after the window's status changed under `root` (or every root): the
-    /// Changes highlight moves per Rule 6, and every diff tab under the root re-reads. Task 6 adds
-    /// the baselines.
+    /// Changes highlight moves per Rule 6, and every diff tab under the root re-reads. Every file tab
+    /// under it re-fetches its baseline (3b-iii).
     @Sendable func refreshGit(_ pane: String, root: String?) async {
         let status = await gitStatus?.roots ?? []
         await updateColumn(pane, onlyIfChanged: true, asDefault: false) { c in
@@ -464,6 +486,13 @@ public func registerEditorActions(
             return started
         }
         for f in flights { await f.value }
+        let fileTabs: [(path: String, root: String)] = await panes.editorSnapshot(paneId: pane).tabs.compactMap { t in
+            guard case .file(let p, let r) = t.subject, root == nil || r == root, !t.readOnly else { return nil }
+            return (p, r)
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for t in fileTabs { group.addTask { await fetchBaseline(pane, path: t.path, root: t.root) } }
+        }
     }
 
     func schema(_ properties: [String: JSONValue], required: [String] = []) -> JSONValue {
@@ -816,6 +845,7 @@ public func registerEditorActions(
                 // The agent-edit serial never goes back: a page post made before the last agent edit
                 // must still be dropped after a reload (`editorBufferDidChange`'s basis).
                 fresh.lastAgentEdit = s.tabs[i].lastAgentEdit
+                fresh.baseline = s.tabs[i].baseline
                 s.tabs[i] = fresh
             }
             return await reply(pane)
@@ -916,6 +946,9 @@ public func registerEditorActions(
                 let firstNew = s.tabs.count
                 for tab in additions where !s.tabs.contains(where: { $0.path == tab.path }) { s.tabs.append(tab) }
                 if !hadActive, s.tabs.count > firstNew { s.active = firstNew }
+            }
+            for tab in additions where !tab.readOnly {
+                if case .file(let p, let r) = tab.subject { await fetchBaseline(pane, path: p, root: r) }
             }
             if await layout?.editorColumn(id: pane) != nil {
                 // Pruned only against listings that succeeded: a root whose listing failed keeps

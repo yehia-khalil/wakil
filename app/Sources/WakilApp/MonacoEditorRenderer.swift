@@ -22,6 +22,8 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     var onView: ((String, EditorPosition, EditorRange?, ClosedRange<Int>?, Double) -> Void)?
     /// Monaco's find bar: its query, switches, match count and whether it is open, on every change.
     var onFind: ((EditorFindReport) -> Void)?
+    /// A mark clicked in `key`'s gutter, on `line`.
+    var onMark: ((String, Int) -> Void)?
     /// One line per page diagnostic and per failed `evaluateJavaScript`.
     var onLog: ((String) -> Void)?
     /// A key the page took from Monaco (`captureKeys`): "up", "down" or "escape".
@@ -115,6 +117,11 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     /// the page's posts carry it only once the edit is in the model.
     func setBasis(key: String, serial: Int) { run("wakilSetBasis(\(Self.js(key)),\(serial))") }
 
+    func setMarks(key: String, marks: [EditorGutterMark]) {
+        let list = marks.map { "{kind:\(Self.jsString($0.kind.rawValue)),start:\($0.start),end:\($0.end)}" }
+        run("wakilSetMarks(\(Self.jsString(key)),[\(list.joined(separator: ","))])")
+    }
+
     /// The settings' options (3b-v). Queued until the page is ready, like every other call.
     func setOptions(_ o: EditorViewOptions) {
         run("wakilSetOptions({fontSize:\(o.fontSize),wordWrap:\(o.wordWrap),tabSize:\(o.tabSize),insertSpaces:\(o.insertSpaces)})")
@@ -183,6 +190,8 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
             onView?(key, cursor, selection, visible, top)
         case "key":
             if let key = body["key"] as? String { onKey?(key) }
+        case "mark":
+            if let key = body["key"] as? String, let line = Self.int(body["line"]) { onMark?(key, line) }
         case "find":
             onFind?(EditorFindReport(query: body["query"] as? String ?? "",
                                      caseSensitive: (body["matchCase"] as? NSNumber)?.boolValue ?? false,

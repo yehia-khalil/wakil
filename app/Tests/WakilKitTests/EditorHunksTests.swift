@@ -1,0 +1,58 @@
+import Testing
+@testable import WakilKit
+
+struct HunkCase: Sendable, CustomStringConvertible {
+    let name: String, base: String, text: String, hunks: [EditorHunk]
+    var description: String { name }
+}
+private func h(_ k: EditorHunk.Kind, _ start: Int, _ count: Int, _ old: [String] = []) -> EditorHunk {
+    EditorHunk(kind: k, newStart: start, newCount: count, oldLines: old)
+}
+
+private let cases: [HunkCase] = [
+    HunkCase(name: "an added line", base: "a\nc\n", text: "a\nb\nc\n", hunks: [h(.added, 2, 1)]),
+    HunkCase(name: "a changed line", base: "a\nb\nc\n", text: "a\nB\nc\n", hunks: [h(.changed, 2, 1, ["b"])]),
+    HunkCase(name: "a deleted line", base: "a\nb\nc\n", text: "a\nc\n", hunks: [h(.deleted, 2, 0, ["b"])]),
+    HunkCase(name: "a deletion at the end", base: "a\nb\n", text: "a\n", hunks: [h(.deleted, 2, 0, ["b"])]),
+    HunkCase(name: "a deletion at the start", base: "a\nb\n", text: "b\n", hunks: [h(.deleted, 1, 0, ["a"])]),
+    HunkCase(name: "a missing final newline (R9)", base: "a\nb\n", text: "a\nb", hunks: []),
+    HunkCase(name: "CRLF", base: "a\r\nb\r\n", text: "a\r\nB\r\n", hunks: [h(.changed, 2, 1, ["b\r"])]),
+    HunkCase(name: "an empty base", base: "", text: "x\ny\n", hunks: [h(.added, 1, 2)]),
+    HunkCase(name: "an empty text", base: "x\ny\n", text: "", hunks: [h(.deleted, 1, 0, ["x", "y"])]),
+    HunkCase(name: "identical texts", base: "a\nb\n", text: "a\nb\n", hunks: []),
+    HunkCase(name: "two hunks, one unchanged line apart", base: "a\nb\nc\n", text: "A\nb\nC\nd\n",
+         hunks: [h(.changed, 1, 1, ["a"]), h(.changed, 3, 2, ["c"])]),
+    HunkCase(name: "added at the end with no final newline", base: "a", text: "a\nb", hunks: [h(.added, 2, 1)]),
+    HunkCase(name: "deleted at the end with no final newline", base: "a\nb", text: "a", hunks: [h(.deleted, 2, 0, ["b"])]),
+]
+
+@Suite struct EditorHunksTests {
+    @Test(arguments: cases) func hunksAreGroupedAsTheSpecReadsThem(_ c: HunkCase) {
+        #expect(editorHunks(base: c.base, text: c.text) == c.hunks)
+    }
+
+    // Review Focus 3: Revert puts the exact base text back — every hunk, last first.
+    @Test(arguments: cases) func revertRestoresTheBaseText(_ c: HunkCase) {
+        guard !c.hunks.isEmpty else { return }
+        var text = c.text
+        for hunk in editorHunks(base: c.base, text: c.text).reversed() {
+            let e = editorRevertEdit(hunk, text: text)
+            text = editorReplacing(text, e.range, with: e.text)
+        }
+        #expect(text == c.base)
+    }
+
+    @Test func marksSitOnTheirLinesAndADeletionBetweenTwo() {
+        let hunks = [h(.added, 2, 2), h(.changed, 5, 1, ["x"]), h(.deleted, 7, 0, ["y"]), h(.deleted, 1, 0, ["z"])]
+        #expect(editorGutterMarks(hunks) == [
+            EditorGutterMark(kind: .added, start: 2, end: 3), EditorGutterMark(kind: .changed, start: 5, end: 5),
+            EditorGutterMark(kind: .deletedBelow, start: 6, end: 6), EditorGutterMark(kind: .deletedAbove, start: 1, end: 1)])
+    }
+
+    @Test func aLineFindsTheHunkWhoseMarkItCarries() {
+        let hunks = [h(.added, 2, 2), h(.deleted, 7, 0, ["y"])]
+        #expect(editorHunkIndex(at: 3, in: hunks) == 0)
+        #expect(editorHunkIndex(at: 6, in: hunks) == 1, "a deletion's triangle sits on the line above it")
+        #expect(editorHunkIndex(at: 5, in: hunks) == nil)
+    }
+}

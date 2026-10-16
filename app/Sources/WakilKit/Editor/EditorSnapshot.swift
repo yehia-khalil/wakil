@@ -58,12 +58,16 @@ public struct EditorTab: Sendable, Equatable {
     public var dirty: Bool { text != savedText }
     /// A diff tab's two sides; nil for every other tab.
     public var diffState: GitDiffState?
+    /// The file's index text (3b-iii), which its gutter marks compare against. nil means no marks:
+    /// untracked, outside a repository, scratch, read-only, or not fetched yet.
+    public var baseline: String?
 
     public init(
         subject: EditorTabSubject, text: String, savedText: String, language: String,
         diskState: EditorDiskState, mtime: Int64, cursor: EditorPosition, selection: EditorRange?,
         visibleRange: ClosedRange<Int>?, scrollTop: Double, notice: String?, readOnly: Bool,
-        saving: Bool, edits: Int, lastAgentEdit: EditorAgentEdit?, preview: Bool = false, diffState: GitDiffState? = nil
+        saving: Bool, edits: Int, lastAgentEdit: EditorAgentEdit?, preview: Bool = false, diffState: GitDiffState? = nil,
+        baseline: String? = nil
     ) {
         self.subject = subject
         self.text = text
@@ -82,6 +86,7 @@ public struct EditorTab: Sendable, Equatable {
         self.lastAgentEdit = lastAgentEdit
         self.preview = preview
         self.diffState = diffState
+        self.baseline = baseline
     }
 }
 

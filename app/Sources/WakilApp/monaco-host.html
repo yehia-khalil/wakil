@@ -1,7 +1,14 @@
 <!doctype html>
 <html><head><meta charset="utf-8">
 <style>html,body,#d{margin:0;height:100%;background:#0b0d14}
-#dd{position:absolute;inset:0;display:none;background:#0b0d14}</style></head>
+#dd{position:absolute;inset:0;display:none;background:#0b0d14}
+.wakil-mark-added{border-left:3px solid #8be0c8;margin-left:4px}
+.wakil-mark-changed{border-left:3px solid #e8b45a;margin-left:4px}
+.wakil-mark-deletedBelow,.wakil-mark-deletedAbove{position:relative}
+.wakil-mark-deletedBelow::after,.wakil-mark-deletedAbove::after{content:'';position:absolute;left:3px;border:4px solid transparent;border-left-color:rgba(232,236,246,.45)}
+.wakil-mark-deletedBelow::after{bottom:-4px}
+.wakil-mark-deletedAbove::after{top:-4px}
+</style></head>
 <body><div id="d"></div>
 <script>
   // Diagnostics: errors and warnings from the page
@@ -80,7 +87,7 @@
     const post = function (m) { window.webkit.messageHandlers.wakil.postMessage(m); };
     const ed = monaco.editor.create(document.getElementById('d'), {
       theme: 'wakil', automaticLayout: true, minimap: { enabled: false },
-      fontFamily: 'Menlo, monospace', fontSize: 12, model: null
+      fontFamily: 'Menlo, monospace', fontSize: 12, model: null, lineDecorationsWidth: 10
     });
     // 3b-iii: the pane's diff editor, in the same page as the code editor — a diff tab and Compare
     // show here. The active tab chooses which is visible; no second page is ever loaded.
@@ -230,7 +237,21 @@
     };
     window.wakilSetScrollTop = function (key, top) { if (key === current) ed.setScrollTop(top); };
     window.wakilSetBasis = function (key, serial) { basis[key] = serial; };
-    window.wakilDispose = function (key) { if (models[key]) { models[key].dispose(); delete models[key]; } delete basis[key]; if (current === key) current = null; };
+    // 3b-iii: the gutter's change marks, as line decorations per model (WakilKit computes them).
+    const marks = {};   // key -> decoration ids
+    window.wakilSetMarks = function (key, list) {
+      const m = models[key]; if (!m) return;
+      marks[key] = m.deltaDecorations(marks[key] || [], list.map(function (x) {
+        return { range: new monaco.Range(x.start, 1, x.end, 1),
+                 options: { isWholeLine: true, linesDecorationsClassName: 'wakil-mark-' + x.kind } };
+      }));
+    };
+    // A click on a mark opens the peek on its hunk (editor_peek).
+    ed.onMouseDown(function (e) {
+      if (!current || !e.target || e.target.type !== monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS) return;
+      post({ type: 'mark', key: current, line: e.target.position.lineNumber });
+    });
+    window.wakilDispose = function (key) { if (models[key]) { models[key].dispose(); delete models[key]; } delete basis[key]; delete marks[key]; if (current === key) current = null; };
     window.wakilFocus = function () { if (diffKey) dme.focus(); else ed.focus(); };
     // Monaco's find bar (3b-ii). Its state — query, switches, count, open — goes back to the app on
     // every change, as the cursor's does: the pane's find record and read_pane's `find` read it.

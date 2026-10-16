@@ -32,6 +32,7 @@ import Testing
         "selection": .object(["start": .object(["line": .number(2), "column": .number(1)]),
                               "end": .object(["line": .number(2), "column": .number(3)])]),
         "visible_range": .object(["first": .number(2), "last": .number(3)]),
+        "hunks": .null,
         "visible_text": .string("l2 edited\nl3"),
         "selected_text": .string("l2"),
         "column": .null,

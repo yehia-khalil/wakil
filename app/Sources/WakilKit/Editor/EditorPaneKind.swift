@@ -48,6 +48,10 @@ enum EditorPaneKind: PaneKind {
         o["visible_range"] = tab?.visibleRange.map {
             .object(["first": .number(Double($0.lowerBound)), "last": .number(Double($0.upperBound))])
         } ?? .null
+        o["hunks"] = tab.flatMap { t in t.baseline.map { base in
+            .array(editorHunks(base: base, text: t.text).map { h in
+                .object(["kind": .string(h.kind.rawValue), "line": .number(Double(h.newStart)),
+                         "count": .number(Double(h.newCount))]) }) } } ?? .null
         o["visible_text"] = tab.flatMap { t in t.visibleRange.map { .string(editorLines(t.text, $0)) } } ?? .null
         o["selected_text"] = tab.flatMap { t in t.selection.map { .string(editorText(t.text, in: $0)) } } ?? .null
         o["column"] = s.column.map { c in .object([

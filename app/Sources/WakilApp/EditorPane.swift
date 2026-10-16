@@ -687,6 +687,11 @@ final class EditorHost {
     @ObservationIgnored private var latest: EditorSnapshot?
     /// The pane's key handler for keys the page took (`captureKeys`), re-handed by the view.
     @ObservationIgnored var onKey: ((String) -> Void)?
+    /// The marks last sent, per key: an unchanged set is not sent again.
+    @ObservationIgnored private var marksSent: [String: [EditorGutterMark]] = [:]
+    @ObservationIgnored private var marksTask: Task<Void, Never>?
+    /// A mark clicked: (tab subject, line).
+    @ObservationIgnored var markClicked: ((EditorTabSubject, Int) -> Void)?
     /// Compare is on screen: snapshots are kept (`latest`) but not rendered, or the next one — a
     /// keystroke's echo, a view report — would put the active tab back over Compare.
     @ObservationIgnored private var comparing = false
@@ -749,6 +754,10 @@ final class EditorHost {
             }
         }
         made.onKey = { [weak self] key in self?.onKey?(key) }
+        made.onMark = { [weak self] key, line in
+            guard let self, let s = self.subjects[key] else { return }
+            self.markClicked?(s, line)
+        }
         made.onFind = { [weak self] report in
             guard let send = self?.findReported else { return }
             Task { @MainActor in await send(report) }
@@ -785,6 +794,7 @@ final class EditorHost {
         let found = findShown ?? editorFindShownSeed(shown)
         let steps = editorRenderSteps(rendered: rendered, active: activeKey, snapshot: shown, findShown: found)
         editorApply(steps, to: renderer)
+        for case .dispose(let k) in steps { marksSent[k] = nil }
         rendered = editorRenderedAfter(steps, rendered: rendered, snapshot: shown)
         findShown = editorFindShownAfter(steps, findShown: found, snapshot: shown)
         active = shown.active.flatMap { $0 < shown.tabs.count ? editorTabKey(shown.tabs[$0]) : nil }
@@ -793,6 +803,23 @@ final class EditorHost {
         if let key = active, let serial = rendered[key]?.agentSerial, basisSent[key] != serial {
             basisSent[key] = serial
             renderer.setBasis(key: key, serial: serial)
+        }
+        scheduleMarks(shown)
+    }
+
+    /// The active file tab's marks, 150 ms after its text or baseline last changed. No baseline, no marks.
+    private func scheduleMarks(_ snapshot: EditorSnapshot) {
+        marksTask?.cancel()
+        guard let i = snapshot.active, i < snapshot.tabs.count, snapshot.tabs[i].diffState == nil else { return }
+        let t = snapshot.tabs[i], key = editorTabKey(t)
+        let base = t.readOnly ? nil : t.baseline, text = t.text
+        marksTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, let self, let renderer = self.renderer else { return }
+            let marks = base.map { editorGutterMarks(editorHunks(base: $0, text: text)) } ?? []
+            guard self.marksSent[key] != marks else { return }
+            self.marksSent[key] = marks
+            renderer.setMarks(key: key, marks: marks)
         }
     }
 
