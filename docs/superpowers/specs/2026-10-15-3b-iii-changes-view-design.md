@@ -1,7 +1,7 @@
 # 3b-iii: the Changes view — the Git pane folded into the editor — and gutter change marks
 
 **Date:** 2026-10-15
-**Status:** design approved by the operator 2026-10-15, section by section; amended 2026-10-16 (rulings R1–R14 and the build's B1–B6, at the end)
+**Status:** design approved by the operator 2026-10-15, section by section; amended 2026-10-16 (rulings R1–R14, the build's B1–B6 and the final review's B8, at the end)
 **Sub-phase:** 3b-iii, which follows 3b-ii-b (yehia-khalil/rafiq#421–#427, main 7c151c3d, archived). It waits on nothing.
 Decision 36 (the fold) and Decision 37 (Changes' root groups collapse per pane) are its starting
 point.
@@ -87,6 +87,9 @@ In a file tab whose file is tracked in a repository:
   marks and no peek. The marks are computed off the main thread. The line diff costs about
   O(N·D), and a 10,000-line file where every line differs measured 1.3 s.
 - A click on blank gutter space, where that line has no mark, opens nothing and shows no error.
+- **Line endings (known, accepted for 3b-iii; B8).** Under `core.autocrlf` or an `eol` attribute
+  the index text is LF while the buffer is CRLF, so every line shows as changed although
+  `git diff` shows nothing.
 
 ### 4. The peek
 
@@ -358,3 +361,7 @@ The rulings R1–R14 of the plan, each with its reason. The body above is edited
   split joins CRLF into one character, and Revert would then not restore the line ending.)
 - **B6. ⌘P and a changed file.** A ⌘P changed file with no editor pane opens one (entering the
   conversation as other palette opens do), and focuses the editor pane it used (Rule 6).
+- **B8. Line endings the index does not hold** (final review, 2026-10-16). Under `core.autocrlf` or
+  an `eol` attribute, the index text is LF while the buffer is CRLF, so every line shows as changed
+  (marks, the peek, `read_pane`'s hunks) although `git diff` shows nothing. Known and accepted for
+  3b-iii: the baseline is `git_show`'s index text as stored, with no smudge filter applied.
