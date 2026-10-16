@@ -19,15 +19,18 @@ planning (R1–R14) and the build (B1–B6) are the spec's 2026-10-16 amendment.
 
 A project's roots are the `"roots"` array of its `project.json`, read at launch and on a project
 switch, not live. Run this in the repo root, on this Mac, after `make build` and `make app-bundle`.
-It is safe to re-run. Set `ORG` to one you have registered (`./bin/wakil org list`).
+It is safe to re-run, and safe to paste into an interactive shell: it runs in a subshell, so `set -e`
+and the git config it exports do not stay. Set `ORG` to one you have registered
+(`./bin/wakil org list`). The path is the main checkout; a worktree's path works the same way.
 
 ```bash
+(
 set -e
 ORG=initech   # the org to walk under; initech or umbrella
-cd /Users/operator/Desktop/scripts/wakil
+cd /Users/yehia/Desktop/scripts/wakil-public
 rm -rf /tmp/walk-changes /tmp/walk-changes-project
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
-G="git -c user.name=walk -c user.email=walk@example.com"
+g() { git -c user.name=walk -c user.email=walk@example.com "$@"; }
 mkdir -p /tmp/walk-changes/api /tmp/walk-changes/portal /tmp/walk-changes/docs /tmp/walk-changes-project
 cd /tmp/walk-changes/api && git init -q -b main
 printf '.env\n' > .gitignore; echo 'token=walk' > .env
@@ -36,7 +39,7 @@ echo 'class User {}' > app/Models/User.php
 for i in $(seq 1 20); do echo "// line $i"; done > app/Http/BookingController.php
 echo 'old name body' > app/Models/Legacy.php
 echo 'gone soon' > app/Models/Obsolete.php
-$G add . && $G commit -qm init
+git add . && g commit -qm init
 # a staged-and-changed file: one hunk staged, a second left in the working tree
 sed -i.bak 's#^// line 3$#// line 3 staged#' app/Http/BookingController.php && rm app/Http/BookingController.php.bak
 git add app/Http/BookingController.php
@@ -46,22 +49,23 @@ rm app/Models/Obsolete.php                          # deleted in the working tre
 git mv app/Models/Legacy.php app/Models/Modern.php  # a rename, staged
 cd /tmp/walk-changes/portal && git init -q -b main
 mkdir -p src && echo 'const a = 1;' > src/routes.ts
-git add . && $G commit -qm init
+git add . && g commit -qm init
 echo 'const a = 2;' > src/routes.ts
 echo 'plain notes, no repository' > /tmp/walk-changes/docs/README.txt
 cat > /tmp/walk-changes-project/project.json <<J
 {"name":"walk-changes","org":"$ORG","roots":[{"path":"/tmp/walk-changes/api"},{"path":"/tmp/walk-changes/portal"},{"path":"/tmp/walk-changes/docs"}],"scopes":{},"environments":{}}
 J
-cd /Users/operator/Desktop/scripts/wakil
+cd /Users/yehia/Desktop/scripts/wakil-public
 ./bin/wakil project rm walk-changes --org "$ORG" || true
 ./bin/wakil project add walk-changes --path /tmp/walk-changes-project/project.json --org "$ORG"
+)
 ```
 
 `api` holds `BookingController.php` staged and changed (two lines, one in each group), `Notes.php`
 untracked, `Obsolete.php` deleted, and `Legacy.php` renamed to `Modern.php`; `.env` is gitignored.
 `portal` holds one change, `src/routes.ts`. `docs` is not a repository.
 
-Launch `WAKIL_ORG=initech app/Wakil.app/Contents/MacOS/Wakil` (or `umbrella`), then make the project
+Launch it with `cd /Users/yehia/Desktop/scripts/wakil-public && ORG=initech && WAKIL_ORG=$ORG app/Wakil.app/Contents/MacOS/Wakil` (`ORG=umbrella` for the other), then make the project
 active with the project switcher (⌘P, choose `walk-changes`). Registering does not select it.
 
 ## 1. The walk
@@ -70,10 +74,10 @@ Walk in order, on the project `walk-changes` from §0, in an organisation where 
 
 | # | Do | Expect |
 |---|---|---|
-| 1 | Launch onto a layout saved with a Git pane. To make one: with `walk-changes` active, open an editor pane, quit, then run `f=$(ls -t ~/.wakil/layouts/initech/conversations/*.json ~/.wakil/layouts/initech/walk-changes.json 2>/dev/null \| head -1); cp "$f" "$f.bak"; jq '.panes \|= map(if .kind=="editor" then .kind="git" \| .id="git-1" \| .title="Git" \| del(.editorColumn) else . end)' "$f.bak" > "$f"`, and relaunch | The pane is the editor, in the same place, its column on Changes |
+| 1 | Launch onto a layout saved with a Git pane. To make one: with `walk-changes` active, open an editor pane, then quit (the project's seed file exists only once its arrangement has been saved). Run `ORG=initech; f=~/.wakil/layouts/$ORG/walk-changes.json; cp "$f" "$f.bak"; jq '.panes \|= map(if .kind=="editor" then .kind="git" \| .id="git-1" \| .title="Git" \| del(.editorTabs, .editorColumn) else . end)' "$f.bak" > "$f"`, then relaunch and make `walk-changes` active | The pane is the editor, in the same place, its column on Changes |
 | 2 | ⌘⇧G three times from an editor on Files | Changes, then hidden, then Changes again; the keyboard is in the list each time it shows |
 | 3 | Look at the Changes view | Headers `api · main · …`, `docs · not a git repository`; letters green / amber / muted, **no red**; a rename reads `old → new` |
-| 4 | In a terminal pane, `git -C /tmp/walk-changes/portal add src/routes.ts`, then `git -C /tmp/walk-changes/portal -c user.name=walk -c user.email=walk@example.com commit -qm walk` | The row moves to Staged within about half a second, then leaves; the highlight moves to its neighbour, not the top |
+| 4 | Click the `src/routes.ts` row under `portal`. In a terminal pane, `git -C /tmp/walk-changes/portal add src/routes.ts`, then `git -C /tmp/walk-changes/portal -c user.name=walk -c user.email=walk@example.com commit -qm walk` | The row moves to Staged within about half a second, then leaves; the highlight moves to its neighbour, not the top |
 | 5 | Click a row, then another; double-click a third | One preview tab replaced, then a pinned tab beside it; additions green, deletions muted, inline |
 | 6 | In a diff tab, put the cursor on a line and press ⌘⏎ | The file opens as a tab at that line, the diff tab still open; on a scratch tab ⌘⏎ maximizes as before |
 | 7 | Type in a tracked file | An amber bar beside the changed line within a moment; a deleted line leaves a muted triangle between two lines |
