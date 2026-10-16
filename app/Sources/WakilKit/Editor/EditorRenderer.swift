@@ -165,8 +165,8 @@ public func editorRenderedAfter(_ steps: [EditorRenderStep], rendered: [String: 
 /// The keys the page takes from Monaco (R13): up, down and Esc while the peek is open, Esc while
 /// Compare is. Nothing else, so Monaco keeps every other key.
 public func editorCapturedKeys(comparing: Bool, peek: Bool) -> [String] {
-    if peek { return ["up", "down", "escape"] }
-    return comparing ? ["escape"] : []
+    if comparing { return ["escape"] }
+    return peek ? ["up", "down", "escape"] : []
 }
 
 /// The pane's find serial after `steps`: the snapshot's once its `.find` step was applied.

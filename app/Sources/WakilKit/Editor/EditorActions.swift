@@ -397,7 +397,10 @@ public func registerEditorActions(
         if Task.isCancelled { return }
         await panes.updateEditor(paneId: pane) { s in
             guard baselineGenerations.isLatest(pane, path, gen) else { return }
-            for i in s.tabs.indices where s.tabs[i].path == path && !s.tabs[i].readOnly { s.tabs[i].baseline = base }
+            for i in s.tabs.indices where s.tabs[i].path == path && !s.tabs[i].readOnly {
+                s.tabs[i].baseline = base
+                s.tabs[i].peek = editorPeekClamped(s.tabs[i].peek, baseline: base, text: s.tabs[i].text)
+            }
         }
     }
 
@@ -729,7 +732,16 @@ public func registerEditorActions(
                 guard let i = editorTabIndex(s, path: path) else { return .noTab }
                 if s.tabs[i].readOnly { return .readOnly(s.tabs[i].path ?? "", s.tabs[i].notice) }
                 s.tabs[i].text = editorReplacing(s.tabs[i].text, r, with: text)
-                s.tabs[i].peek = editorPeekClamped(s.tabs[i].peek, baseline: s.tabs[i].baseline, text: s.tabs[i].text)
+                if s.tabs[i].peek != nil {
+                    // The peek moves with the cursor, as editor_peek_step does (R12).
+                    let p = editorPeekClamped(s.tabs[i].peek, baseline: s.tabs[i].baseline, text: s.tabs[i].text)
+                    s.tabs[i].peek = p
+                    if let p, let base = s.tabs[i].baseline {
+                        let marks = editorGutterMarks(editorHunks(base: base, text: s.tabs[i].text))
+                        s.tabs[i].cursor = EditorPosition(line: marks[p].start, column: 1)
+                        s.tabs[i].selection = nil
+                    }
+                }
                 s.tabs[i].edits += 1
                 s.tabs[i].preview = false   // an edit keeps a preview tab (spec)
                 let serial = (s.tabs[i].lastAgentEdit?.serial ?? 0) + 1

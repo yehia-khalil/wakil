@@ -302,6 +302,7 @@ private func loaded(_ o: String, _ m: String) -> GitDiffState {
     #expect(editorCapturedKeys(comparing: false, peek: false) == [])
     #expect(editorCapturedKeys(comparing: true, peek: false) == ["escape"])
     #expect(editorCapturedKeys(comparing: false, peek: true) == ["up", "down", "escape"])
+    #expect(editorCapturedKeys(comparing: true, peek: true) == ["escape"], "Compare owns the keys (R13)")
 }
 
 @Test func anOpenPeekIsAStepAndShowingAnotherTabDropsIt() {

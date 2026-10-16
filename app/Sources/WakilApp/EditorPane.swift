@@ -128,14 +128,16 @@ struct EditorPane: View {
             host.setOptions(o)
         }
         // The keys the page takes follow the pane's state (R13): the peek's, or Compare's Esc.
-        .onChange(of: editorCapturedKeys(comparing: comparing != nil, peek: activeTab?.peek != nil), initial: true) { _, keys in
+        .onChange(of: editorCapturedKeys(comparing: comparing != nil, peek: comparing == nil && activeTab.flatMap(editorPeekView) != nil), initial: true) { _, keys in
             host.renderer?.captureKeys(keys)
         }
         .task {
+            // These closures live as long as the host, so they read `host.latest` (the newest snapshot
+            // handed in), never `snapshot`, which is this struct's copy from first appearance.
             // A click anywhere in the gutter strip posts, marked or not: only a marked line opens a
             // peek, so a click on none never dispatches a refusal the operator did not cause.
             host.markClicked = { subject, line in
-                guard let tab = snapshot.tabs.first(where: { $0.subject == subject }),
+                guard let tab = host.latest?.tabs.first(where: { $0.subject == subject }),
                       editorPeekLineHasMark(tab, line: line) else { return }
                 Task { await dispatch("editor_peek", ["line": .integer(Int64(line))]) }
             }
@@ -466,7 +468,7 @@ struct EditorPane: View {
             case "down": await dispatch("editor_peek_step", ["delta": .integer(1)])
             case "close": await dispatch("editor_peek_close", [:])
             case "revert":
-                guard let r = editorPeekRevert(snapshot) else { return }
+                guard let latest = host.latest, let r = editorPeekRevert(latest) else { return }
                 await dispatch("editor_replace_range", ["path": .string(r.path), "range": editorRangeParam(r.range),
                                                         "text": .string(r.text)])
             default: break
@@ -714,7 +716,7 @@ final class EditorHost {
     @ObservationIgnored private var starting = false
     /// The newest snapshot handed in. One that lands while the renderer is still being made
     /// (a new pane's first tab) is applied when it exists, not dropped.
-    @ObservationIgnored private var latest: EditorSnapshot?
+    @ObservationIgnored private(set) var latest: EditorSnapshot?
     /// The pane's key handler for keys the page took (`captureKeys`), re-handed by the view.
     @ObservationIgnored var onKey: ((String) -> Void)?
     /// The marks last sent, per key: an unchanged set is not sent again.

@@ -61,6 +61,7 @@ private func peekFixture() async throws -> EditorFixture {
         #expect(await f.files.text(of: "/p/api/b.go") == "a\nB\nc\ne\n", "nothing is saved until ⌘S")
         #expect(t.peek == 0, "the deletion, the next hunk, now holds index 0")
         #expect(editorPeekView(t)?.old == ["d"])
+        #expect(t.cursor.line == 3, "the cursor follows the peek to the deletion's mark")
     }
 
     @Test func revertingTheLastHunkClosesThePeek() async throws {
@@ -112,6 +113,16 @@ private func peekFixture() async throws -> EditorFixture {
         #expect(!editorPeekLineHasMark(bare, line: 2))
         var ro = t; ro.readOnly = true
         #expect(!editorPeekLineHasMark(ro, line: 2))
+    }
+
+    // A git wake can bring a baseline equal to the text (the change was staged): no hunks, no peek.
+    @Test func aBaselineThatNoLongerDiffersClosesThePeek() async throws {
+        let f = try await peekFixture()
+        try await f.dispatch("editor_peek", ["line": .integer(2)])
+        await f.git.set(show: "/p/api|b.go|index", "a\nB\nc\ne\n")
+        try await f.dispatch("editor_refresh", ["root": .string("/p/api"), "what": .string("git")])
+        let t = await f.snapshot().tabs[0]
+        #expect(t.baseline == "a\nB\nc\ne\n" && t.peek == nil)
     }
 
     @Test func aPeekIsClampedWhenTheTextChangesUnderIt() {
