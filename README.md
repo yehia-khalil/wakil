@@ -78,3 +78,7 @@ outside that adapter knows which agent it is.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Where code goes, recipes, and the tests each change needs |
 | [`PRODUCT.md`](PRODUCT.md) | Users, brand and the interaction rules every control follows |
 | [`docs/agents/workflow.md`](docs/agents/workflow.md) | How work moves from design to a merged change |
+
+## License
+
+[MIT](LICENSE). Bundled third-party code keeps its own license, such as Monaco in `app/Resources/monaco/`.
