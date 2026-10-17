@@ -3847,6 +3847,27 @@ public final class WindowModel {
         return outcome
     }
 
+    /// 3b-iv: a surface call whose refusal belongs to the control that made it — the editor
+    /// tree's name field shows it under itself, whole (Rule 8), and keeps the typed text.
+    ///
+    /// **A sibling of `dispatchFromSurface`, on `bindFromSurface`'s terms**: the same
+    /// `registry.dispatch` with `origin: .ui` (Invariant 2), a success clears `status`, a
+    /// refusal is thrown to the caller and not put on `status`, and `refreshPanes()` runs
+    /// either way. No confirmation is parked: its callers' actions are priced *allow*.
+    @discardableResult
+    public func dispatchFromSurfaceThrowing(_ name: String, _ params: JSONValue) async throws -> JSONValue {
+        do {
+            let result = try await registry.dispatch(
+                name: name, params: params, origin: .ui, environment: environment, confirmation: nil)
+            status = ""
+            await refreshPanes()
+            return result
+        } catch {
+            await refreshPanes()
+            throw error
+        }
+    }
+
     // MARK: - Layout
 
     /// Re-reads the active project's arrangement out of `LayoutStore` —

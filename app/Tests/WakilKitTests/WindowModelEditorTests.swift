@@ -83,6 +83,29 @@ func editorWindowWithFiles(
 }
 
 @Suite @MainActor struct WindowModelEditorTests {
+    // 3b-iv: the tree's name field gets its refusal whole, thrown to it — not on the window's
+    // status line — and a success lands as `dispatchFromSurface`'s does.
+    @Test func aThrowingSurfaceCallHandsItsRefusalToTheCallerNotTheStatusLine() async throws {
+        let (model, files) = await editorWindowWithFiles()
+        await model.refreshContext()
+        await model.openPane(kind: "editor")
+        let pane = try #require(model.layoutSnapshot.panes.first { $0.kind == "editor" }?.id)
+        await files.put("/p/api/a.go", "a")
+        do {
+            try await model.dispatchFromSurfaceThrowing("editor_create", .object([
+                "pane": .string(pane), "path": .string("/p/api/a.go"), "kind": .string("file")]))
+            Issue.record("created over a file")
+        } catch {
+            #expect(String(describing: error).contains("/p/api/a.go already exists"))
+        }
+        #expect(model.status == "", "the refusal is the caller's to show")
+        let made = try await model.dispatchFromSurfaceThrowing("editor_create", .object([
+            "pane": .string(pane), "path": .string("/p/api/n.go"), "kind": .string("file")]))
+        guard case .object(let o) = made else { Issue.record("no reply object"); return }
+        #expect(o["made"] == .string("/p/api/n.go"))
+        #expect(model.editor(pane)?.tabs.map(\.path) == ["/p/api/n.go"], "the panes are re-read")
+    }
+
     @Test func cmdShiftGTogglesTheChangesViewOnCmdBsTerms() async throws {
         let (model, _, _) = await editorWindowParts(roots: ["/p/api", "/p/portal"])
         await model.refreshContext()

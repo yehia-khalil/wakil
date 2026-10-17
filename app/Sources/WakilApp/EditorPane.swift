@@ -19,6 +19,9 @@ struct EditorPane: View {
     let pane: Pane
     /// One `editor_*` action on THIS pane (Canvas folds `pane` in), awaited.
     let dispatch: (String, [String: JSONValue]) async -> Void
+    /// The same call, its refusal thrown to the control that made it instead of the status line
+    /// (3b-iv: the tree's name field shows it under itself, Rule 8).
+    let dispatchThrowing: (String, [String: JSONValue]) async throws -> Void
     /// The operator's text for a tab — by its subject, never its position (final review I1) — with
     /// the agent-edit serial the page had applied.
     let bufferChanged: (EditorTabSubject, String, Int) async -> Void
@@ -115,6 +118,7 @@ struct EditorPane: View {
                     EditorColumn(column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
                                  gitRoots: gitRoots,
                                  search: snapshot.search, paneWidth: geo.size.width, dispatch: dispatch,
+                                 dispatchThrowing: dispatchThrowing,
                                  canReveal: activeTab?.path != nil,
                                  reveal: { Task { await revealInTree() } },
                                  selected: $treeSelected, selectedResult: $resultSelected,
