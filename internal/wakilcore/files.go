@@ -206,7 +206,8 @@ func gitListHeavy(ctx context.Context, dir string, names []string) ([]string, er
 }
 
 // gitListEmpty answers the repository's untracked folders that hold no file git lists: `--directory`
-// reports such a folder as one "name/" entry; one holding a listed file is dropped by the caller.
+// reports such a folder as one "name/" entry, collapsed to its top, even when it holds files; the
+// caller walks each for the folders inside that have no entry (addEmptyUnder).
 func gitListEmpty(ctx context.Context, dir string) ([]string, error) {
 	lines, err := gitLines(ctx, dir, "ls-files", "-z", "--others", "--exclude-standard", "--directory")
 	if err != nil {
@@ -219,6 +220,31 @@ func gitListEmpty(ctx context.Context, dir string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// addEmptyUnder adds every folder in d, an untracked folder git collapsed to one "d/" entry
+// ("made/deeper" comes back as "made/"), that holds no entry, d itself included; it skips
+// nested repositories and heavy folders as the walk does.
+func (w *walked) addEmptyUnder(real, d string) {
+	top := filepath.Join(real, filepath.FromSlash(d))
+	_ = filepath.WalkDir(top, func(p string, e fs.DirEntry, err error) error {
+		if err != nil || !e.IsDir() {
+			return nil
+		}
+		if p != top {
+			if w.isHeavy(e.Name()) || skippedDirs[e.Name()] {
+				return filepath.SkipDir
+			}
+			if _, serr := os.Lstat(filepath.Join(p, ".git")); serr == nil {
+				return filepath.SkipDir
+			}
+		}
+		if entries, rerr := os.ReadDir(p); rerr == nil && len(entries) == 0 {
+			rel, _ := filepath.Rel(real, p)
+			w.empty = append(w.empty, filepath.ToSlash(rel))
+		}
+		return nil
+	})
 }
 
 // walked is one listing in progress. heavyNames is the heavy folder names, .git first (3b-v part 2:
@@ -401,10 +427,9 @@ func ListFiles(ctx context.Context, root string, roots []string, heavy []string)
 		w.addTracked(ctx, real, "", files)
 		w.addIgnoredOf(real, "", ignored)
 		if empty, eerr := gitListEmpty(ctx, real); eerr == nil {
+			// d itself is reported only when it has no entry, so never when it holds a listed file.
 			for _, d := range empty {
-				if !slices.ContainsFunc(w.files, func(f string) bool { return strings.HasPrefix(f, d+"/") }) {
-					w.empty = append(w.empty, d)
-				}
+				w.addEmptyUnder(real, d)
 			}
 		}
 		if cerr := ctx.Err(); cerr != nil {
