@@ -1,0 +1,17 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"expect":{"tree":"contains","text":"README.md"}}
+{"do":{"click":"editor.tree.row:e2e-api/notes"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-api/notes"}}
+{"expect":{"focus":"editor.column"}}
+{"do":{"hotkey":"cmd+backspace"}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_trash\""}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"editor-1","field":"column.open","contains":"/e2e-portal\""}}
+{"dispatch":{"action":"editor_trash","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/notes"},"refuses":"/e2e-api/notes does not exist"}}

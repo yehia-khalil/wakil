@@ -1,0 +1,40 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"expect":{"tree":"contains","text":"README.md"}}
+{"do":{"click":"editor.tree.add:e2e-api"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"editor.tree.name"}}
+{"do":{"keys":"README.md"}}
+{"do":{"click":"editor.column.files"}}
+{"expect":{"tree":"contains","text":"/e2e-api/README.md already exists"}}
+{"expect":{"frame":"editor.tree.name.error","inside":"editor.column"}}
+{"expect":{"focus":"editor.column"}}
+{"do":{"keys":"n"}}
+{"do":{"press":"Up"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-api/app.txt"}}
+{"expect":{"tree":"contains","text":"/e2e-api/README.md already exists"}}
+{"do":{"focus":"editor.tree.name"}}
+{"do":{"press":"Right"}}
+{"do":{"keys":"x"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].path","contains":"/e2e-api/README.mdx"}}
+{"expect":{"tree":"absent","text":"already exists"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"do":{"click":"editor.tree.add:e2e-api"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"do":{"keys":"app.txt"}}
+{"do":{"click":"editor.column.files"}}
+{"expect":{"tree":"contains","text":"/e2e-api/app.txt already exists"}}
+{"expect":{"focus":"editor.column"}}
+{"do":{"keys":"n"}}
+{"do":{"hotkey":"cmd+backspace"}}
+{"dispatch":{"action":"editor_trash","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/notes"},"refuses":"/e2e-api/notes does not exist"}}

@@ -1,0 +1,42 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"expect":{"tree":"contains","text":"README.md"}}
+{"do":{"click":"editor.tree.add:e2e-api"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"editor.tree.name"}}
+{"do":{"type":{"into":"editor.tree.name","text":"made.txt"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-api/made.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].preview","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_create\""}}}
+{"do":{"keys":"typed"}}
+{"expect":{"pane":"editor-1","field":"visible_text","equals":"typed"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/made.txt","discard":true}}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
+{"do":{"click":"editor.tree.row:e2e-api/made.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-api/made.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[2]","present":false}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"do":{"click":"editor.tree.add:e2e-api"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"editor.tree.name"}}
+{"do":{"keys":"nope.txt"}}
+{"do":{"press":"Escape"}}
+{"expect":{"focus":"editor.column"}}
+{"dispatch":{"action":"editor_trash","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/nope.txt"},"refuses":"/e2e-api/nope.txt does not exist"}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/deep/agent-made.txt","kind":"file"}}}
+{"expect":{"pane":"editor-1","field":"tabs[2].path","contains":"/e2e-api/deep/agent-made.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].preview","equals":"false"}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/README.md","kind":"file"},"refuses":"/e2e-api/README.md already exists"}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-1","path":"{fixtureRoot}/escaped-create.txt","kind":"file"},"refuses":"is outside the active project's roots"}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/x.txt","kind":"link"},"refuses":"kind must be \"file\" or \"dir\""}}

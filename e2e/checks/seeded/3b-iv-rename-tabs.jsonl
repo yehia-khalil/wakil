@@ -1,0 +1,45 @@
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/box/one.txt","kind":"file"}}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/box/two.txt","kind":"file"}}}
+{"expect":{"pane":"editor-1","field":"tabs[2].path","contains":"/e2e-project/box/two.txt"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"editor"}}}
+{"expect":{"pane":"editor-2","field":"kind","equals":"editor"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/box/two.txt","preview":false}}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-2","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"two edits"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_tree","params":{"pane":"editor-1","shown":true,"view":"files"}}}
+{"dispatch":{"action":"editor_tree_expand","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/box"}}}
+{"expect":{"pane":"editor-1","field":"column.open","contains":"/e2e-project/box\""}}
+{"dispatch":{"action":"editor_focus_tab","params":{"pane":"editor-1","index":1}}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"keys":"abc"}}
+{"expect":{"pane":"editor-1","field":"visible_text","equals":"abc"}}
+{"dispatch":{"action":"editor_rename","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/box","to":"{fixtureRoot}/e2e-project/crate"}}}
+{"do":{"keys":"def"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-project/crate/one.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].path","contains":"/e2e-project/crate/two.txt"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"/e2e-project/crate/two.txt"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"column.open","contains":"/e2e-project/crate\""}}
+{"expect":{"frame":"editor.tree.row:e2e-project/crate/one.txt","maxHeight":30}}
+{"expect":{"pane":"editor-1","field":"visible_text","equals":"abcdef"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_rename\""}}}
+{"dispatch":{"action":"editor_rename","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/crate/one.txt","to":"{fixtureRoot}/e2e-project/crate/uno.txt"}}}
+{"do":{"keys":"ghi"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-project/crate/uno.txt"}}
+{"expect":{"pane":"editor-1","field":"visible_text","equals":"abcdefghi"}}
+{"do":{"hotkey":"cmd+s"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].dirty","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].disk_state","equals":"inSync"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/crate/uno.txt"}}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/crate/uno.txt"}}}
+{"expect":{"pane":"editor-1","field":"visible_text","equals":"abcdefghi"}}
+{"do":{"click":"rail.editor-2"}}
+{"do":{"hotkey":"cmd+z"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"false"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"/e2e-project/crate/two.txt"}}
+{"dispatch":{"action":"editor_rename","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/crate/two.txt","to":"{fixtureRoot}/e2e-project/crate/uno.txt"},"refuses":"/e2e-project/crate/uno.txt already exists"}}
+{"dispatch":{"action":"editor_rename","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/crate","to":"{fixtureRoot}/e2e-project/crate/inner"},"refuses":"into itself"}}
+{"dispatch":{"action":"editor_rename","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project","to":"{fixtureRoot}/e2e-project/moved-root"},"refuses":"is a root of the active project; a root is not moved or trashed"}}
+{"dispatch":{"action":"editor_rename","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-project/crate/uno.txt","to":"{fixtureRoot}/escaped-rename.txt"},"refuses":"is outside the active project's roots"}}
