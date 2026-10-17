@@ -186,3 +186,17 @@ Three tools beside `files_write`, each confined to the active project's roots:
 ## Open questions
 
 None.
+
+## Amendment — 2026-10-17, while planning and building
+
+- **R1.** `files_list` reports empty folders (`empty`): git lists files, never folders, so a new
+  folder would not show.
+- **R2.** A renamed tab's Monaco model is re-keyed, not reopened, so undo history survives.
+- **R3.** A move across volumes is refused (EXDEV), not done as copy-then-delete.
+- **R4.** Renaming to the same name is ignored (Rule 7).
+- **R5.** A tab keeps its last four former keys (`formerKeys`), so a double rename before a render
+  still finds its model, and a stale key never picks the wrong active tab.
+- The name field takes focus back after a refused commit only when the commit came from Enter;
+  after a click away it keeps the error and the typed text without taking focus (Rule 6).
+- Refusals reach the name field through a new rethrowing `WindowModel.dispatchFromSurfaceThrowing`
+  beside `bindFromSurface` (Rule 8: the field shows the refusal whole).
