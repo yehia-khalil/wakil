@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-iv-name-refused.jsonl",
   "baseCommit": "a2a8b3fc90506ed554bcbb2e7888f9daa31d0f99",
-  "provedAt": "2026-10-17T16:11:26.311424Z",
-  "checkBlob": "9ad4e2d3a68f3a0ce2b5e630dee0c6ac9a0f2abc"
+  "provedAt": "2026-10-17T18:12:06.731367Z",
+  "checkBlob": "591325166cbeb0cbcac19b67d38df4d6dbda8d63"
 }
