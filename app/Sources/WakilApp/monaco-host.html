@@ -340,6 +340,11 @@
       post({ type: 'mark', key: current, line: e.target.position.lineNumber });
     });
     window.wakilDispose = function (key) { if (models[key]) { models[key].dispose(); delete models[key]; } delete basis[key]; delete marks[key]; if (current === key) current = null; };
+    // A renamed tab (3b-iv R2): its model, undo history and marks move to the new key.
+    window.wakilRekey = function (from, to) {
+      [models, basis, marks].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
+      if (current === from) current = to;
+    };
     window.wakilFocus = function () { if (diffKey) dme.focus(); else ed.focus(); };
     // Monaco's find bar (3b-ii). Its state — query, switches, count, open — goes back to the app on
     // every change, as the cursor's does: the pane's find record and read_pane's `find` read it.

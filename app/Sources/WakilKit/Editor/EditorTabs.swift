@@ -177,7 +177,7 @@ public func editorRepointTabs(_ tabs: [EditorTab], from: String, to: String, roo
         case .file(let path, _) where editorAtOrUnder(path, from):
             var n = t
             let moved = to + path.dropFirst(from.count)
-            n.formerKey = editorTabKey(t)
+            n.formerKeys = Array((t.formerKeys + [editorTabKey(t)]).suffix(4))
             n.subject = .file(path: moved, root: root)
             if t.language == editorLanguage(forPath: path) { n.language = editorLanguage(forPath: moved) }
             return n
@@ -213,7 +213,8 @@ public func editorActiveAfter(_ old: [EditorTab], active: Int?, new: [EditorTab]
     guard !new.isEmpty else { return nil }
     guard let a = active, a < old.count else { return active.map { min($0, new.count - 1) } }
     func survives(_ o: EditorTab, as n: EditorTab) -> Bool {
-        editorTabKey(n) == editorTabKey(o) || n.formerKey == editorTabKey(o)
+        let key = editorTabKey(o)
+        return editorTabKey(n) == key || (!new.contains { editorTabKey($0) == key } && n.formerKeys.contains(key))
     }
     if let i = new.firstIndex(where: { survives(old[a], as: $0) }) { return i }
     // Survivors before the active one keep their order, so its neighbour sits at the same index.

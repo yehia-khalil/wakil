@@ -224,6 +224,7 @@ private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRender
     func reveal(key: String, cursor: EditorPosition, selection: EditorRange?) { calls.append("reveal \(key)") }
     func setScrollTop(key: String, top: Double) { calls.append("scroll \(key)") }
     func disposeModel(key: String) { calls.append("dispose \(key)") }
+    func rekeyModel(from: String, to: String) { calls.append("rekey \(from) \(to)") }
     func focus() { calls.append("focus") }
     func find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool) {
         calls.append("find \(key) \(query) \(caseSensitive) \(wholeWord) \(regex)")
@@ -362,4 +363,45 @@ private func loaded(_ o: String, _ m: String) -> GitDiffState {
     #expect(!editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: s).contains { if case .peek = $0 { true } else { false } })
     var closed = s; closed.tabs[0].peek = nil
     #expect(editorRenderSteps(rendered: r, active: "file:/p/a.go", snapshot: closed) == [.peek(key: "file:/p/a.go", nil)])
+}
+
+// MARK: - Renamed tabs (3b-iv)
+
+private func renderedModel(_ t: EditorTab) -> EditorRendered {
+    EditorRendered(text: "x", language: "go", readOnly: false, agentSerial: 0, cursor: t.cursor, selection: nil)
+}
+
+@Test func aRenamedTabMovesItsModelInsteadOfShowingANewOne() {
+    var t = EditorTab.file(path: "/p/api/b.go", root: "/p/api", text: "x", mtime: 1, language: "go")
+    t.formerKeys = ["file:/p/api/a.go"]
+    let rendered = ["file:/p/api/a.go": renderedModel(t)]
+    let snap = EditorSnapshot(tabs: [t], active: 0)
+    let steps = editorRenderSteps(rendered: rendered, active: "file:/p/api/a.go", snapshot: snap)
+    #expect(steps.first == .rekey(from: "file:/p/api/a.go", to: "file:/p/api/b.go"))
+    #expect(!steps.contains(.dispose(key: "file:/p/api/a.go")))
+    #expect(!steps.contains { if case .show = $0 { true } else { false } })
+    let after = editorRenderedAfter(steps, rendered: rendered, snapshot: snap)
+    #expect(after["file:/p/api/a.go"] == nil && after["file:/p/api/b.go"] != nil)
+}
+
+@Test func aFormerKeyAlreadyMovedIsNotMovedAgain() {
+    var t = EditorTab.file(path: "/p/api/b.go", root: "/p/api", text: "x", mtime: 1, language: "go")
+    t.formerKeys = ["file:/p/api/a.go"]
+    let rendered = ["file:/p/api/b.go": renderedModel(t)]
+    let steps = editorRenderSteps(rendered: rendered, active: "file:/p/api/b.go", snapshot: EditorSnapshot(tabs: [t], active: 0))
+    #expect(!steps.contains { if case .rekey = $0 { true } else { false } })
+}
+
+@Test func aDoubleRenameBeforeARenderMovesFromTheKeyTheRendererHolds() {
+    var t = EditorTab.file(path: "/p/api/c.go", root: "/p/api", text: "x", mtime: 1, language: "go")
+    t.formerKeys = ["file:/p/api/a.go", "file:/p/api/b.go"]
+    let rendered = ["file:/p/api/a.go": renderedModel(t)]
+    let steps = editorRenderSteps(rendered: rendered, active: "file:/p/api/a.go", snapshot: EditorSnapshot(tabs: [t], active: 0))
+    #expect(steps.first == .rekey(from: "file:/p/api/a.go", to: "file:/p/api/c.go"))
+}
+
+@MainActor @Test func aRekeyStepReachesTheRenderer() {
+    let r = RecordingRenderer()
+    editorApply([.rekey(from: "file:/p/a", to: "file:/p/b")], to: r)
+    #expect(r.calls == ["rekey file:/p/a file:/p/b"])
 }

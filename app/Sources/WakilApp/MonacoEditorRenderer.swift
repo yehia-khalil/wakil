@@ -102,6 +102,7 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     func setScrollTop(key: String, top: Double) { run("wakilSetScrollTop(\(Self.js(key)),\(top.isFinite ? top : 0))") }
 
     func disposeModel(key: String) { run("wakilDispose(\(Self.js(key)))") }
+    func rekeyModel(from: String, to: String) { run("wakilRekey(\(Self.js(from)),\(Self.js(to)))") }
 
     func focus() { run("wakilFocus()") }
 

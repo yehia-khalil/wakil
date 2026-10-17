@@ -19,6 +19,8 @@ import Foundation
     func reveal(key: String, cursor: EditorPosition, selection: EditorRange?)
     func setScrollTop(key: String, top: Double)
     func disposeModel(key: String)
+    /// Move from's model, undo history and marks to to (a renamed tab, 3b-iv R2).
+    func rekeyModel(from: String, to: String)
     func focus()
     /// Open Monaco's find bar on `key`'s model with the query and its switches (`editor_find`).
     func find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool)
@@ -67,6 +69,7 @@ public enum EditorRenderStep: Sendable, Equatable {
     case reveal(key: String, cursor: EditorPosition, selection: EditorRange?)
     case scroll(key: String, top: Double)
     case dispose(key: String)
+    case rekey(from: String, to: String)
     case find(key: String, query: String, caseSensitive: Bool, wholeWord: Bool, regex: Bool)
     case diff(key: String, original: String, modified: String, language: String, cursor: EditorPosition, scrollTop: Double)
     case peek(key: String, EditorPeekView?)
@@ -87,6 +90,16 @@ public func editorRenderSteps(rendered: [String: EditorRendered], active: String
                               findShown: Int = 0) -> [EditorRenderStep]
 {
     var steps: [EditorRenderStep] = []
+    var rendered = rendered, active = active
+    // A renamed tab moves its model (R2); the newest former key the renderer holds is the one it knows.
+    for t in snapshot.tabs {
+        let key = editorTabKey(t)
+        guard rendered[key] == nil, let f = t.formerKeys.last(where: { rendered[$0] != nil }) else { continue }
+        steps.append(.rekey(from: f, to: key))
+        rendered[key] = rendered[f]
+        rendered[f] = nil
+        if active == f { active = key }
+    }
     let keys = Set(snapshot.tabs.map(editorTabKey))
     if let i = snapshot.active, i < snapshot.tabs.count {
         let t = snapshot.tabs[i], key = editorTabKey(t)
@@ -152,6 +165,7 @@ public func editorRenderSteps(rendered: [String: EditorRendered], active: String
 public func editorRenderedAfter(_ steps: [EditorRenderStep], rendered: [String: EditorRendered],
                                 snapshot: EditorSnapshot) -> [String: EditorRendered] {
     var out = rendered
+    for case .rekey(let f, let k) in steps { out[k] = out[f]; out[f] = nil }
     for step in steps { if case .dispose(let key) = step { out[key] = nil } }
     if let i = snapshot.active, i < snapshot.tabs.count {
         let t = snapshot.tabs[i]
@@ -204,6 +218,7 @@ public func editorFindShownSeed(_ snapshot: EditorSnapshot) -> Int {
             renderer.reveal(key: key, cursor: cursor, selection: selection)
         case .scroll(let key, let top): renderer.setScrollTop(key: key, top: top)
         case .dispose(let key): renderer.disposeModel(key: key)
+        case .rekey(let f, let k): renderer.rekeyModel(from: f, to: k)
         case .find(let key, let query, let caseSensitive, let wholeWord, let regex):
             renderer.find(key: key, query: query, caseSensitive: caseSensitive, wholeWord: wholeWord, regex: regex)
         case .diff(let key, let o, let m, let language, let cursor, let top):

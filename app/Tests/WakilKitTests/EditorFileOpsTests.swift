@@ -11,7 +11,7 @@ private func tab(_ path: String, text: String = "t", saved: String = "t") -> Edi
 @Test func repointMovesAFileTabAndRemembersItsKey() {
     let out = editorRepointTabs([tab("/p/api/a.go")], from: "/p/api/a.go", to: "/p/api/b.go", root: "/p/api")
     #expect(out[0].path == "/p/api/b.go")
-    #expect(out[0].formerKey == "file:/p/api/a.go")
+    #expect(out[0].formerKeys == ["file:/p/api/a.go"])
 }
 
 @Test func repointMovesEveryTabUnderAFolderAndKeepsEdits() {
@@ -19,7 +19,9 @@ private func tab(_ path: String, text: String = "t", saved: String = "t") -> Edi
     let out = editorRepointTabs(tabs, from: "/p/api/d", to: "/p/web/z", root: "/p/web")
     #expect(out.map(\.path) == ["/p/web/z/x.go", "/p/api/dx.go", "/p/web/z/e/y.go"])
     #expect(out[0].text == "dirty" && out[0].dirty)
-    if case .file(_, let root) = out[0].subject { #expect(root == "/p/web") }
+    var root0: String?
+    if case .file(_, let root) = out[0].subject { root0 = root }
+    #expect(root0 == "/p/web")
 }
 
 @Test func repointRelabelsTheLanguageOnlyWhenItWasDerived() {
@@ -59,4 +61,20 @@ private func tab(_ path: String, text: String = "t", saved: String = "t") -> Edi
     #expect(editorRenameTarget(of: "/p/api/d/a.go", typed: "sub/b.go") == "/p/api/d/sub/b.go")
     #expect(editorRenameTarget(of: "/p/api/d/a.go", typed: "../b.go") == "/p/api/b.go")
     #expect(editorRenameTarget(of: "/p/api/d/a.go", typed: "/b.go") == "/p/api/d/b.go")
+}
+
+@Test func aDoubleRepointKeepsBothFormerKeysOldestFirst() {
+    let once = editorRepointTabs([tab("/p/api/a.go")], from: "/p/api/a.go", to: "/p/api/b.go", root: "/p/api")
+    let twice = editorRepointTabs(once, from: "/p/api/b.go", to: "/p/api/c.go", root: "/p/api")
+    #expect(twice[0].formerKeys == ["file:/p/api/a.go", "file:/p/api/b.go"])
+}
+
+@Test func activeAfterIgnoresAFormerKeyWhoseOldTabStillExists() {
+    // old: a.go and b.go; a.go renamed to c.go then b.go renamed to a.go would leave stale keys, but a
+    // tab whose own key is still in `new` is matched by that key only.
+    let old = [tab("/p/api/a.go"), tab("/p/api/b.go")]
+    var moved = tab("/p/api/c.go")
+    moved.formerKeys = ["file:/p/api/b.go"]
+    let new = [tab("/p/api/b.go"), moved]
+    #expect(editorActiveAfter(old, active: 1, new: new) == 0)
 }
