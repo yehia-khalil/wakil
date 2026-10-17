@@ -170,12 +170,11 @@ struct EditorPane: View {
             // Compare shows one file's disk against its buffer; it closes when that tab goes.
             if let c = comparing, !now.tabs.contains(where: { $0.path == c.path }) { closeCompare() }
             // Rule 3: a tab that newly comes to the front of the focused pane (⌘T, ⌘P, a tab
-            // click) takes the keyboard, as a new pane does. A preview tab is browsing (the tree's
-            // or Search's single click, ↑↓ and Return): the keyboard stays in the column.
-            let wasActive = old.active.flatMap { old.tabs.indices.contains($0) ? old.tabs[$0].subject : nil }
-            let isActive = now.active.flatMap { now.tabs.indices.contains($0) ? now.tabs[$0].subject : nil }
-            let preview = now.active.map { now.tabs.indices.contains($0) && now.tabs[$0].preview } ?? false
-            if isActive != nil, isActive != wasActive, !preview, isFocusedPane, !saveAsRequested, comparing == nil {
+            // click, New File) takes the keyboard, as a new pane does. A preview tab is browsing (the
+            // tree's or Search's single click, ↑↓ and Return): the keyboard stays in the column. A tab
+            // forward only because the front one went (⌘⌫, the agent's trash or close) did not
+            // arrive: the keyboard stays where the operator was (Rule 6). `editorFrontTabArrived`.
+            if editorFrontTabArrived(old: old, now: now), isFocusedPane, !saveAsRequested, comparing == nil {
                 host.focus()
             }
         }

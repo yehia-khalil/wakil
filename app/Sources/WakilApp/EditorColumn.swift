@@ -493,13 +493,18 @@ struct EditorColumn: View {
         // The name field has the keyboard: arrows and type-ahead do not move the selection under it.
         // A refused edit left open after a click away does not: the tree keeps its keys meanwhile.
         guard !nameFocused else { return .ignored }
-        // ⌘⌫ and F2 (3b-iv). SwiftUI has no `KeyEquivalent` for F2, so its character is matched
-        // (`NSF2FunctionKey`).
-        if press.key == .delete, press.modifiers == .command, let row = rows.first(where: { $0.id == selected }) {
-            trash(row); return .handled
-        }
-        if press.characters == "\u{F705}", let row = rows.first(where: { $0.id == selected }) {
-            startRename(row); return .handled
+        // ⌘⌫ and F2 (3b-iv), matched by character (`editorTreeKeyCommand`): the Delete key sends
+        // U+007F, which `KeyEquivalent.delete` (U+0008) never matched, and F2 has no `KeyEquivalent`.
+        let chord = press.modifiers.intersection([.command, .control, .option, .shift])
+        let characters = press.characters.isEmpty ? String(press.key.character) : press.characters
+        if let command = editorTreeKeyCommand(characters: characters, command: chord.contains(.command),
+                                              otherChord: !chord.subtracting(.command).isEmpty),
+           let row = rows.first(where: { $0.id == selected }) {
+            switch command {
+            case .trash: trash(row)
+            case .rename: startRename(row)
+            }
+            return .handled
         }
         guard !isChord(press) else { return .ignored }
         switch press.key {
