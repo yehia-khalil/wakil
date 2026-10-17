@@ -68,6 +68,9 @@ struct EditorColumn: View {
     @FocusState private var nameFocused: Bool
     /// The row under the pointer: a root shows its **+** while hovered or selected.
     @State private var hovered: String?
+    /// Bumped by every row the operator picks (`activate`): a commit in flight moves the selection
+    /// to its new path only if no pick came after it started (Rule 6).
+    @State private var picks = 0
 
     /// The name a row's root goes by in identifiers: `editor.tree.row:<root name>/<relative>`.
     private func rootName(_ row: EditorTreeRow) -> String { (row.root as NSString).lastPathComponent }
@@ -187,12 +190,13 @@ struct EditorColumn: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(rows) { row in
                         if nameEdit == .rename(path: row.id) {
-                            nameField(depth: row.depth, placeholder: row.name).id(row.id)
+                            nameField(.rename(path: row.id), depth: row.depth, placeholder: row.name).id(row.id)
                         } else {
                             treeRow(row).id(row.id)
                         }
                         if case .create(row.id, let kind) = nameEdit {
-                            nameField(depth: row.depth + 1, placeholder: kind == "dir" ? "folder name" : "file name")
+                            nameField(.create(folder: row.id, kind: kind), depth: row.depth + 1,
+                                      placeholder: kind == "dir" ? "folder name" : "file name")
                         }
                     }
                     ForEach(pendingRoots, id: \.self) { root in
@@ -469,6 +473,7 @@ struct EditorColumn: View {
     private func activate(_ row: EditorTreeRow, keep: Bool = false) {
         guard row.kind != .note else { return }
         selected = row.id
+        picks += 1
         treeFocused = true
         switch row.kind {
         case .file:
@@ -536,7 +541,17 @@ struct EditorColumn: View {
     // `editorRenameTarget`'s, the selection after a trash is `editorTreeSelection`'s (the column's
     // `.onChange(of: rows)`), and every change is one `editor_*` action.
 
+    /// Starting an edit while one is open (the menus stay live, and a right-click does not move the
+    /// keyboard) commits the open one first, so its text is never dropped (Rule 2); while one is in
+    /// flight the new start is ignored (Rule 5).
+    private func mayStartEdit() -> Bool {
+        guard !nameBusy else { return false }
+        if nameEdit != nil { commitName() }
+        return true
+    }
+
     private func startCreate(in folder: String, kind: String) {
+        guard mayStartEdit() else { return }
         nameText = ""; nameError = nil
         nameEdit = .create(folder: folder, kind: kind)
         // The field sits among the folder's children, so a closed folder opens first.
@@ -547,6 +562,7 @@ struct EditorColumn: View {
 
     private func startRename(_ row: EditorTreeRow) {
         guard row.kind == .file || row.kind == .folder || row.kind == .repo else { return }
+        guard mayStartEdit() else { return }
         nameText = row.name; nameError = nil
         nameEdit = .rename(path: row.id)
     }
@@ -558,34 +574,56 @@ struct EditorColumn: View {
         Task { await dispatch("editor_trash", ["path": .string(row.id)]) }
     }
 
-    /// Rule 2: focus leaving commits, Enter is a shortcut (`refocus` gives the tree the keyboard back,
-    /// as Esc does). Rule 5: a second commit while one is in flight is dropped. Rule 8: a refusal
-    /// stays under the field, whole, with the text kept.
+    /// Rule 2: focus leaving commits, Enter is a shortcut (`refocus`: Enter gives the tree the keyboard
+    /// back, as Esc does, and on a refusal keeps it in the field). Rule 5: a second commit while one is
+    /// in flight is dropped. Rule 8: a refusal stays under the field, whole, with the text kept.
+    /// Rule 6: a commit from focus loss never takes the keyboard back, and the selection follows the
+    /// new path only if it was on the edited row (the folder, for a create) and the operator has
+    /// picked no row since.
     private func commitName(refocus: Bool = false) {
         guard let edit = nameEdit, !nameBusy else { return }
         let typed = nameText.trimmingCharacters(in: .whitespaces)
         guard !typed.isEmpty else { cancelName(refocus: refocus); return }
+        let picksAtStart = picks
         nameBusy = true
         Task {
             do {
+                let moveTo: String?
                 switch edit {
                 case .create(let folder, let kind):
                     // The placeholder name is dropped: the target resolves against `folder` itself.
                     let path = editorRenameTarget(of: folder + "/_", typed: typed)
+                    let onFolder = selected == folder
                     try await dispatchThrowing("editor_create", ["path": .string(path), "kind": .string(kind)])
-                    if kind == "dir" { selected = path }
+                    moveTo = kind == "dir" && onFolder ? path : nil
                 case .rename(let path):
                     let to = editorRenameTarget(of: path, typed: typed)
+                    let onRow = selected == path
                     try await dispatchThrowing("editor_rename", ["path": .string(path), "to": .string(to)])
-                    selected = to
+                    moveTo = onRow ? to : nil
                 }
-                nameBusy = false; nameEdit = nil; nameError = nil
-                if refocus { treeFocused = true }
-            } catch {
-                // Enabled again before the keyboard goes back: a disabled field cannot take it.
+                // The column's `.onChange(of: rows)` may have moved the selection off the old path
+                // meanwhile; only a pick by the operator keeps the new path from taking it.
+                if let moveTo, picks == picksAtStart { selected = moveTo }
                 nameBusy = false
+                if nameEdit == edit {
+                    nameEdit = nil; nameError = nil
+                    if refocus { treeFocused = true }
+                } else if nameEdit != nil {
+                    // An edit started while this one landed: its field was disabled when it appeared.
+                    focusNameField()
+                }
+            } catch {
+                nameBusy = false
+                if nameEdit != edit {
+                    // Superseded by an edit started from a menu (which typed nothing yet: the field
+                    // was disabled): the refused one comes back with its text and its error.
+                    nameEdit = edit
+                    nameText = typed
+                }
                 nameError = String(describing: error)
-                nameFocused = true
+                // Enabled again first: a disabled field cannot take the keyboard.
+                if refocus { nameFocused = true }
             }
         }
     }
@@ -608,7 +646,9 @@ struct EditorColumn: View {
         if !now.contains(where: { $0.id == id }) { cancelName(refocus: false) }
     }
 
-    private func nameField(depth: Int, placeholder: String) -> some View {
+    /// `edit` is the edit this field was drawn for: its blur commits that edit only, never one started
+    /// from a menu as it went (Rule 2).
+    private func nameField(_ edit: NameEdit, depth: Int, placeholder: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             TextField(placeholder, text: $nameText)
                 .textFieldStyle(.plain)
@@ -618,12 +658,9 @@ struct EditorColumn: View {
                 .disabled(nameBusy)
                 .onSubmit { commitName(refocus: true) }
                 .onKeyPress(.escape) { cancelName(); return .handled }
-                .onChange(of: nameFocused) { _, now in if !now, nameEdit != nil { commitName() } }
+                .onChange(of: nameFocused) { _, now in if !now, nameEdit == edit { commitName() } }
                 // Rule 3: the field arrives focused. Rule 9: a rename preselects the stem only.
-                .onAppear {
-                    nameFocused = true
-                    if case .rename = nameEdit { selectStem() }
-                }
+                .onAppear(perform: focusNameField)
                 .accessibilityIdentifier("editor.tree.name")
             if let nameError {
                 Text(nameError)
@@ -635,6 +672,11 @@ struct EditorColumn: View {
             }
         }
         .padding(.leading, 6 + CGFloat(depth * 12)).padding(.trailing, 6).padding(.vertical, 2)
+    }
+
+    private func focusNameField() {
+        nameFocused = true
+        if case .rename = nameEdit { selectStem() }
     }
 
     /// Selects the name before its last `.` in the field editor (the whole name when there is no
