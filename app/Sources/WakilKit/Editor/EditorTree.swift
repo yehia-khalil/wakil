@@ -7,16 +7,19 @@ public struct EditorRootListing: Sendable, Equatable {
     public var ignored: [String]
     public var heavy: [String]
     public var repos: [String]
+    /// Folders holding nothing (3b-iv), relative: a created folder has no file to list it by.
+    public var empty: [String]
     public var truncated: Bool
     public var error: String?
 
     public init(root: String, files: [String], ignored: [String], heavy: [String], repos: [String],
-                truncated: Bool, error: String?) {
+                truncated: Bool, error: String?, empty: [String] = []) {
         self.root = root
         self.files = files
         self.ignored = ignored
         self.heavy = heavy
         self.repos = repos
+        self.empty = empty
         self.truncated = truncated
         self.error = error
     }
@@ -28,7 +31,8 @@ public struct EditorRootListing: Sendable, Equatable {
             return items.compactMap { if case .string(let s) = $0 { return s } else { return nil } }
         }
         self.init(root: root, files: strings("files"), ignored: strings("ignored"), heavy: strings("heavy"),
-                  repos: strings("repos"), truncated: content["truncated"] == .bool(true), error: nil)
+                  repos: strings("repos"), truncated: content["truncated"] == .bool(true), error: nil,
+                  empty: strings("empty"))
     }
 
     public static func failed(root: String, _ error: String) -> EditorRootListing {
@@ -105,6 +109,7 @@ public func editorTreeRows(_ listings: [EditorRootListing], open: Set<String>,
         for f in l.files { insert(f, into: trie) }
         if showIgnored { for f in l.ignored { insert(f, into: trie, ignored: true) } }
         for h in l.heavy { insert(h, into: trie, dir: true, heavy: true) }
+        for e in l.empty { insert(e, into: trie, dir: true) }   // a folder node with nothing under it
         for r in l.repos { insert(r, into: trie, dir: true) }   // a node even when it lists nothing
         let repos = Set(l.repos)
         func emit(_ node: TreeNode, prefix: String, depth: Int, dimmed: Bool) {

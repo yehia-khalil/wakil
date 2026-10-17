@@ -154,3 +154,12 @@ private func names(_ rows: [EditorTreeRow]) -> [String] {
     let after = editorTreeRows([l], open: ["/p/api"], dirs: [:], loading: [], dirErrors: [:], showIgnored: false)
     #expect(editorTreeSelection(after: "/p/api/.env", previous: before, now: after) == "/p/api/a.go")
 }
+
+@Test func anEmptyFolderIsAFolderRow() {
+    var l = EditorRootListing(root: "/p/api", files: ["a.go"], ignored: [], heavy: [], repos: [], truncated: false, error: nil)
+    l.empty = ["made"]
+    let rows = editorTreeRows([l], open: ["/p/api"], dirs: [:], loading: [], dirErrors: [:])
+    let made = rows.first { $0.id == "/p/api/made" }
+    #expect(made?.kind == .folder && made?.open == false)
+    #expect(rows.firstIndex { $0.id == "/p/api/made" }! < rows.firstIndex { $0.id == "/p/api/a.go" }!)   // folders first
+}

@@ -63,13 +63,15 @@ public struct EditorTab: Sendable, Equatable {
     public var baseline: String?
     /// The hunk the peek shows (3b-iii); nil when closed.
     public var peek: Int?
+    /// The key this tab was rendered under before a rename (3b-iv ruling R2): the renderer moves its model once.
+    public var formerKey: String?
 
     public init(
         subject: EditorTabSubject, text: String, savedText: String, language: String,
         diskState: EditorDiskState, mtime: Int64, cursor: EditorPosition, selection: EditorRange?,
         visibleRange: ClosedRange<Int>?, scrollTop: Double, notice: String?, readOnly: Bool,
         saving: Bool, edits: Int, lastAgentEdit: EditorAgentEdit?, preview: Bool = false, diffState: GitDiffState? = nil,
-        baseline: String? = nil, peek: Int? = nil
+        baseline: String? = nil, peek: Int? = nil, formerKey: String? = nil
     ) {
         self.subject = subject
         self.text = text
@@ -90,6 +92,7 @@ public struct EditorTab: Sendable, Equatable {
         self.diffState = diffState
         self.baseline = baseline
         self.peek = peek
+        self.formerKey = formerKey
     }
 }
 
