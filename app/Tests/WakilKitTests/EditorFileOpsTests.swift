@@ -186,3 +186,19 @@ private func tab(_ path: String, text: String = "t", saved: String = "t") -> Edi
     try await f.dispatch("editor_rename", ["path": .string("/p/api/a.go"), "to": .string("/p/api/b.go")])
     #expect(await f.panes.editorSnapshot(in: home, paneId: f.pane).tabs[0].path == "/p/api/b.go")
 }
+
+// Ruling R4: a rename to the same name changes nothing — no move, no tab re-pointed, no diff tab closed.
+@Test func aSameNameRenameChangesNothing() async throws {
+    let f = try await changesFixture()
+    await f.files.put("/p/api/a.go", "v0")
+    try await f.dispatch("editor_open", ["path": .string("/p/api/a.go")])
+    try await f.dispatch("editor_changes_select", ["root": .string("/p/api"), "path": .string("a.go"),
+                                                  "group": .string("changed"), "pin": .bool(true)])
+    let before = await f.snapshot().tabs
+    #expect(before.count == 2)
+    try await f.dispatch("editor_rename", ["path": .string("/p/api/a.go"), "to": .string("/p/api/a.go")])
+    let after = await f.snapshot().tabs
+    #expect(after.map(\.subject) == before.map(\.subject))
+    #expect(after.allSatisfy { $0.formerKeys.isEmpty })
+    #expect(await !f.files.calls.contains { $0.hasPrefix("files_move") })
+}

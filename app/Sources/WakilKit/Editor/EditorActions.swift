@@ -1035,6 +1035,14 @@ public func registerEditorActions(
             }
             let from = try await confine(rawFrom, action: "editor_rename")
             let to = try await confine(rawTo, action: "editor_rename")
+            // Ruling R4: the same name changes nothing — no move, no tab re-pointed, no diff tab closed.
+            @Sendable func answer() async -> JSONValue {
+                guard case .object(var o) = await reply(pane) else { return .null }
+                o["from"] = .string(from.path)
+                o["to"] = .string(to.path)
+                return .object(o)
+            }
+            if from.path == to.path { return await answer() }
             switch try await filesTool(try requireFiles("editor_rename"), "files_move",
                                        ["from": .string(from.path), "to": .string(to.path)]) {
             case .failed(let text): throw EditorFilesError(description: text)
@@ -1049,10 +1057,7 @@ public func registerEditorActions(
             }
             _ = await fileLists?.invalidate(root: from.root)
             if to.root != from.root { _ = await fileLists?.invalidate(root: to.root) }
-            guard case .object(var o) = await reply(pane) else { return .null }
-            o["from"] = .string(from.path)
-            o["to"] = .string(to.path)
-            return .object(o)
+            return await answer()
         },
         price: (production: .allow, otherwise: .allow)))
 
