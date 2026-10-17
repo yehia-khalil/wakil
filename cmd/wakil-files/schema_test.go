@@ -7,5 +7,5 @@ import (
 )
 
 func TestOutputSchemasAreObjects(t *testing.T) {
-	mcpxtest.AssertObjectOutputSchemas(t, newServer(), []string{"files_list", "files_list_dir", "files_search", "files_replace_text", "files_replace", "files_read", "files_write"})
+	mcpxtest.AssertObjectOutputSchemas(t, newServer(), []string{"files_list", "files_list_dir", "files_search", "files_replace_text", "files_replace", "files_read", "files_write", "files_create", "files_move", "files_trash"})
 }

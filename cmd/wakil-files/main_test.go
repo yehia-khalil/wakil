@@ -209,3 +209,23 @@ func TestFilesReplaceIsServedAndConfined(t *testing.T) {
 		t.Fatalf("outside the roots: %+v", res.Content)
 	}
 }
+
+func TestFilesCreateMoveAreServedAndConfined(t *testing.T) {
+	pdir := setupProject(t, `"dev":{"databases":[]}`, "")
+	p := filepath.Join(pdir, "n", "a.go")
+	if res, out := callFiles(t, "files_create", map[string]any{"path": p, "kind": "file"}); res.IsError || out["kind"] != "file" {
+		t.Fatalf("create %+v %v", res.Content, out)
+	}
+	q := filepath.Join(pdir, "n", "b.go")
+	if res, out := callFiles(t, "files_move", map[string]any{"from": p, "to": q}); res.IsError || out["kind"] != "file" {
+		t.Fatalf("move %+v %v", res.Content, out)
+	}
+	res, _ := callFiles(t, "files_move", map[string]any{"from": q, "to": "/tmp/escaped.go"})
+	if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "Invariant 6") {
+		t.Fatalf("move outside not refused by the invariant: %+v", res.Content)
+	}
+	res, _ = callFiles(t, "files_trash", map[string]any{"path": pdir})
+	if !res.IsError {
+		t.Fatal("trashed the root")
+	}
+}

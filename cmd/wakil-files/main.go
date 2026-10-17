@@ -52,6 +52,17 @@ type writeArg struct {
 	Text   string `json:"text" jsonschema:"the whole new contents, written as given (line endings kept)"`
 	Create bool   `json:"create" jsonschema:"true to create the file (and missing folders inside the root) if absent"`
 }
+type createArg struct {
+	Path string `json:"path" jsonschema:"absolute path of the new file or folder, inside one of the active project's roots"`
+	Kind string `json:"kind" jsonschema:"file or dir"`
+}
+type moveArg struct {
+	From string `json:"from" jsonschema:"absolute path of the file or folder to move, inside the roots"`
+	To   string `json:"to" jsonschema:"its new absolute path, inside the roots"`
+}
+type trashArg struct {
+	Path string `json:"path" jsonschema:"absolute path of the file or folder to move to the Trash, inside the roots"`
+}
 
 // project answers the active project's roots and its heavy folder names (.git, then the
 // project's list — 3b-v part 2), or the tool error saying why there are none.
@@ -147,7 +158,7 @@ func newServer() *mcp.Server {
 			return nil, r, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "files_write", Description: "Writes one file's whole text, atomically. create false refuses a missing file. Confined to the active project's roots (Invariant 6, Decision 36); delete and rename are not offered."},
+	mcp.AddTool(s, &mcp.Tool{Name: "files_write", Description: "Writes one file's whole text, atomically. create false refuses a missing file. Confined to the active project's roots (Invariant 6, Decision 36). Rename, move and delete are files_move and files_trash."},
 		func(_ context.Context, _ *mcp.CallToolRequest, a writeArg) (*mcp.CallToolResult, wakilcore.FileWritten, error) {
 			rs, fail := roots()
 			if fail != nil {
@@ -158,6 +169,42 @@ func newServer() *mcp.Server {
 				return mcpx.ToolErr("wakil-files", err), wakilcore.FileWritten{}, nil
 			}
 			return nil, w, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "files_create", Description: "Makes an empty file or a folder (kind file or dir), and missing folders above it. An existing name is refused, never overwritten. Confined to the active project's roots (Invariant 6, Decision 41)."},
+		func(_ context.Context, _ *mcp.CallToolRequest, a createArg) (*mcp.CallToolResult, wakilcore.FileEntry, error) {
+			rs, fail := roots()
+			if fail != nil {
+				return fail, wakilcore.FileEntry{}, nil
+			}
+			e, err := wakilcore.CreateEntry(a.Path, a.Kind, rs)
+			if err != nil {
+				return mcpx.ToolErr("wakil-files", err), wakilcore.FileEntry{}, nil
+			}
+			return nil, e, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "files_move", Description: "Renames or moves a file or folder (a link as itself), making missing folders above to. An existing to is refused; a case-only rename works; the same name is ignored; a root is never moved; a move across volumes is refused. Confined to the active project's roots (Invariant 6, Decision 41)."},
+		func(_ context.Context, _ *mcp.CallToolRequest, a moveArg) (*mcp.CallToolResult, wakilcore.FileMoved, error) {
+			rs, fail := roots()
+			if fail != nil {
+				return fail, wakilcore.FileMoved{}, nil
+			}
+			m, err := wakilcore.MoveEntry(a.From, a.To, rs)
+			if err != nil {
+				return mcpx.ToolErr("wakil-files", err), wakilcore.FileMoved{}, nil
+			}
+			return nil, m, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "files_trash", Description: "Moves a file or folder (a link as itself) to the user's Trash, where Finder's Put Back restores it; needs macOS 15's /usr/bin/trash. A root is never trashed. Confined to the active project's roots (Invariant 6, Decision 41)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a trashArg) (*mcp.CallToolResult, wakilcore.FileEntry, error) {
+			rs, fail := roots()
+			if fail != nil {
+				return fail, wakilcore.FileEntry{}, nil
+			}
+			e, err := wakilcore.TrashEntry(ctx, a.Path, rs)
+			if err != nil {
+				return mcpx.ToolErr("wakil-files", err), wakilcore.FileEntry{}, nil
+			}
+			return nil, e, nil
 		})
 	return s
 }
