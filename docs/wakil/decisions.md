@@ -1204,8 +1204,9 @@ Each entry: the call, why, and what would change our mind.
     (inside Wakil sessions the bridge denies it, so `editor_save` is that write), so an editor write
     adds no reach beyond what a bare harness has — the argument that settled the terminal. Gating it would add friction and no
     safety. **Still refused:** any path outside the roots (after resolving symlinks), file delete,
-    rename and move; each would earn in on its own. *(Earned in 2026-10-17, Decision 41.)* Mechanism: `wakil-files` (`files_write`), confined
-    by `wakilcore.ConfineFilePath`; `editor_save` declares the price.
+    rename and move; each would earn in on its own. *(Earned in 2026-10-17, Decision 41.)*
+    Mechanism: `wakil-files` (`files_write`), confined by `wakilcore.ConfineFilePath`;
+    `editor_save` declares the price.
     **The Git pane folds into the editor** (sub-phase 3b-iii): the editor's left column has *Files* and
     *Changes*; a changed file's diff opens as an editor tab. This revises Decision 17's *"Git is a
     separate dual-driven pane"*: git stays project-level across roots, and so does the editor (its tree
