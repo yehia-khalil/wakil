@@ -490,8 +490,9 @@ struct EditorColumn: View {
     }
 
     private func treeKey(_ press: KeyPress) -> KeyPress.Result {
-        // The name field is open: arrows and type-ahead do not move the selection under it.
-        guard nameEdit == nil else { return .ignored }
+        // The name field has the keyboard: arrows and type-ahead do not move the selection under it.
+        // A refused edit left open after a click away does not: the tree keeps its keys meanwhile.
+        guard !nameFocused else { return .ignored }
         // ⌘⌫ and F2 (3b-iv). SwiftUI has no `KeyEquivalent` for F2, so its character is matched
         // (`NSF2FunctionKey`).
         if press.key == .delete, press.modifiers == .command, let row = rows.first(where: { $0.id == selected }) {
