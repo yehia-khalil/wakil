@@ -2,7 +2,7 @@ import AppKit
 import WakilKit
 import SwiftUI
 
-/// The editor's left column (3b-ii): Files or Search. It decides nothing — rows, steps, selection and
+/// The editor's left column (3b-ii): Files, Search or Changes (3b-iii). It decides nothing — rows, steps, selection and
 /// width come from WakilKit's tested functions; every change is an `editor_*` action through `dispatch`.
 /// Its own state is the query being typed, the type-ahead prefix and the live drag width. The selected
 /// row and result are the pane's (`EditorPane`), so they outlive the column being hidden (Rule 6).
@@ -12,6 +12,8 @@ struct EditorColumn: View {
     let rows: [EditorTreeRow]
     /// Roots whose list has not arrived yet: drawn as loading (Rule 5).
     let pendingRoots: [String]
+    /// The window's git status (3b-iii): the Changes view's rows and the tree's status letters.
+    let gitRoots: [GitRootState]
     let search: EditorSearchState
     let paneWidth: CGFloat
     let dispatch: (String, [String: JSONValue]) async -> Void
@@ -43,6 +45,7 @@ struct EditorColumn: View {
     @FocusState private var queryFocused: Bool
     @FocusState private var treeFocused: Bool
     @FocusState private var resultsFocused: Bool
+    @FocusState private var changesFocused: Bool
     @State private var replaceText = ""
     @State private var replaceDebounce = EditorDebounce(delay: .milliseconds(250))
     /// The field's text this column last sent (or took from the store), as `sent` is for the query.
@@ -65,7 +68,11 @@ struct EditorColumn: View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 header
-                if column.view == .files { tree } else { searchView }
+                switch column.view {
+                case .files: tree
+                case .search: searchView
+                case .changes: changesView
+                }
             }
             .frame(width: dragWidth ?? editorColumnWidth(column.width, paneWidth: paneWidth))
             edge
@@ -78,7 +85,7 @@ struct EditorColumn: View {
         .onAppear { takeWantedKeyboard(dropOther: true); takeReveal(rows) }
         .onChange(of: column.view) { _, _ in takeWantedKeyboard(dropOther: true) }
         .onChange(of: focusWanted) { _, _ in takeWantedKeyboard(dropOther: false) }
-        .onChange(of: queryFocused || treeFocused || resultsFocused) { _, now in hasKeyboard = now }
+        .onChange(of: queryFocused || treeFocused || resultsFocused || changesFocused) { _, now in hasKeyboard = now }
         .onChange(of: rows) { old, now in
             selected = editorTreeSelection(after: selected, previous: old, now: now)
             takeReveal(now)
@@ -102,7 +109,13 @@ struct EditorColumn: View {
         }
         focusWanted = nil
         // A turn later: the view that just switched in is in the window by then.
-        Task { @MainActor in if wanted == .search { queryFocused = true } else { treeFocused = true } }
+        Task { @MainActor in
+            switch wanted {
+            case .search: queryFocused = true
+            case .changes: changesFocused = true
+            case .files: treeFocused = true
+            }
+        }
     }
 
     private var header: some View {
@@ -119,6 +132,12 @@ struct EditorColumn: View {
             }
                 .buttonStyle(.plain).opacity(column.view == .search ? 1 : 0.5)
                 .accessibilityIdentifier("editor.column.search")
+            Button("Changes") {
+                focusWanted = .changes
+                Task { await dispatch("editor_tree", ["view": .string("changes"), "shown": .bool(true)]) }
+            }
+                .buttonStyle(.plain).opacity(column.view == .changes ? 1 : 0.5)
+                .accessibilityIdentifier("editor.column.changes")
             Spacer()
             if column.view == .files {
                 Button(action: reveal) { Image(systemName: "scope").font(.system(size: 11)) }
@@ -241,7 +260,9 @@ struct EditorColumn: View {
     }
 
     private func rowLabel(_ row: EditorTreeRow) -> some View {
-        HStack(spacing: 5) {
+        // Hoisted for the identifier harvest, as in `treeRow`.
+        let path = rowPath(row)
+        return HStack(spacing: 5) {
             if row.loading { EditorBusyTick(label: "loading", identifier: "editor.tree.loading") }
             switch row.kind {
             case .root, .repo, .folder:
@@ -260,10 +281,142 @@ struct EditorColumn: View {
                       : .system(size: 11.5, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if row.kind == .file,
+               let letter = editorTreeStatus(root: row.root, relative: row.relative, roots: gitRoots) {
+                Spacer(minLength: 6)
+                Text(letter)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(EditorPaneStyle.tone(gitStatusTone(letter)))
+                    // The row's git status letter (3b-iii), named so it can be found per row: the
+                    // tree reads it as a bare "M" or "?" beside the name.
+                    .accessibilityIdentifier("editor.tree.status:\(path)")
+            }
         }
         .foregroundStyle(EditorPaneStyle.text.opacity(row.kind == .root ? 0.62 : 0.86))
         .opacity(row.dimmed ? 0.45 : 1)
         .frame(height: row.kind == .root ? 20 : 18)
+    }
+
+    // MARK: - Changes (3b-iii)
+
+    private var changesRows: [EditorChangesRow] { editorChangesRows(gitRoots, closed: column.changesClosed) }
+    private var changesHighlight: EditorChangesRow? { editorChangesResolve(column.changesHighlight, roots: gitRoots) }
+
+    private var changesView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    if gitRoots.isEmpty {
+                        Text("No project roots to read")
+                            .font(.system(size: 12)).foregroundStyle(EditorPaneStyle.text.opacity(0.46))
+                    }
+                    ForEach(gitRoots, id: \.root) { root in
+                        changesHeader(root)
+                        if !column.changesClosed.contains(root.root) {
+                            ForEach(gitListSections(root), id: \.group) { section in
+                                Text(gitGroupLabel(section.group))
+                                    .font(.system(size: 9, weight: .medium)).tracking(1.7)
+                                    .foregroundStyle(EditorPaneStyle.text.opacity(0.45))
+                                    .padding(.top, 6).padding(.leading, 6)
+                                ForEach(section.rows, id: \.self) { changesRow($0, root: root) }
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .focusable()
+            .focused($changesFocused)
+            .focusEffectDisabled()
+            .onKeyPress(phases: .down) { press in changesKey(press) }
+            .onChange(of: changesHighlight) { _, now in
+                if let now { withAnimation(.easeOut(duration: 0.16)) { proxy.scrollTo(now) } }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func changesHeader(_ root: GitRootState) -> some View {
+        let closed = column.changesClosed.contains(root.root)
+        HStack(spacing: 6) {
+            Image(systemName: closed ? "chevron.right" : "chevron.down").font(.system(size: 9))
+            if root.loading { EditorBusyTick(label: "loading", identifier: "editor.changes.loading") }
+            Text(gitRootLine(root))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.62))
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .padding(.top, 10).padding(.leading, 8)
+        .contentShape(Rectangle())
+        .onTapGesture { toggleRoot(root.root, closed: closed) }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("editor.changes.root:\(root.name)")
+        .accessibilityAction { toggleRoot(root.root, closed: closed) }
+        // Text, as a row is: as a button its line never reached the tree (AXDescription only).
+        .accessibilityRemoveTraits(.isButton)
+        .accessibilityAddTraits(.isStaticText)
+        if let detail = gitRootErrorDetail(root) {
+            Text(detail)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                .padding(.leading, 8)
+                .accessibilityIdentifier("editor.changes.rootError:\(root.name)")
+        }
+    }
+
+    private func toggleRoot(_ root: String, closed: Bool) {
+        Task { await dispatch(closed ? "editor_changes_expand" : "editor_changes_collapse", ["root": .string(root)]) }
+    }
+
+    private func changesRow(_ row: GitFileRow, root: GitRootState) -> some View {
+        let ref = EditorChangesRow(root: root.root, path: row.path, group: row.group.rawValue)
+        let on = ref == changesHighlight
+        return HStack(spacing: 0) {
+            Text(row.status)
+                .foregroundStyle(EditorPaneStyle.tone(gitStatusTone(row.status)))
+                .frame(width: 18, alignment: .leading)
+            Text(gitRowLabel(row))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .font(.system(size: 12, design: .monospaced))
+        .padding(.vertical, 2).padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(on ? EditorPaneStyle.lifted : .clear, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(alignment: .leading) { if on { Rectangle().fill(EditorPaneStyle.violet).frame(width: 2) } }
+        .contentShape(Rectangle())
+        // One tap gesture reading the click count, as the tree's and the tabs': a `count: 2` gesture
+        // beside it held every single click for the double-click interval (3b-iii walk).
+        .onTapGesture { selectChange(ref, pin: NSApp.currentEvent?.clickCount ?? 1 >= 2) }
+        .id(ref)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):\(row.group.rawValue)")
+        .accessibilityAction { selectChange(ref, pin: false) }
+        .accessibilityRemoveTraits(.isButton)
+        .accessibilityAddTraits(on ? [.isStaticText, .isSelected] : .isStaticText)
+    }
+
+    private func selectChange(_ ref: EditorChangesRow, pin: Bool) {
+        changesFocused = true
+        var p: [String: JSONValue] = ["root": .string(ref.root), "path": .string(ref.path), "group": .string(ref.group)]
+        if pin { p["pin"] = .bool(true) }
+        Task { await dispatch("editor_changes_select", p) }
+    }
+
+    /// ↑↓ step (and open, from Task 3); Return opens the highlighted row. Chords and other keys pass.
+    private func changesKey(_ press: KeyPress) -> KeyPress.Result {
+        guard !isChord(press) else { return .ignored }
+        switch press.key {
+        case .upArrow: Task { await dispatch("editor_changes_step", ["delta": .integer(-1)]) }
+        case .downArrow: Task { await dispatch("editor_changes_step", ["delta": .integer(1)]) }
+        case .return:
+            guard let h = changesHighlight else { return .ignored }
+            selectChange(h, pin: false)
+        default: return .ignored
+        }
+        return .handled
     }
 
     private func activate(_ row: EditorTreeRow, keep: Bool = false) {

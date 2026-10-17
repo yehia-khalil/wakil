@@ -33,15 +33,14 @@ Command -> Panes
 Command -> Registry
 Context -> MCP
 Editor -> Context
+Editor -> Git
 Editor -> Layout
 Editor -> MCP
 Editor -> Panes
 Editor -> Registry
 Git -> Context
 Git -> Identifiers
-Git -> Layout
 Git -> MCP
-Git -> Panes
 Git -> Registry
 Harness -> MCP
 Identifiers -> Context

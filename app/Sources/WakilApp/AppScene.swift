@@ -392,8 +392,9 @@ struct WakilApplication: App {
             // uniquely, and a pane command sits next to the other things
             // that act on what is on screen.
             CommandGroup(after: .windowArrangement) {
+                // In a focused editor pane on a diff tab, ⌘⏎ opens the diff's file instead (3b-iii).
                 Button("Maximize Pane") {
-                    focusedPane { model, id in await model.toggleMaximize(id: id) }
+                    withModel { model in Task { await model.commandReturn() } }
                 }
                 .keyboardShortcut(.return, modifiers: .command)
                 // 3b-i: in a focused editor pane ⌘W closes the active tab first, the pane once
@@ -418,6 +419,11 @@ struct WakilApplication: App {
                     withModel { model in Task { await model.toggleEditorColumn(.search) } }
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
+                // 3b-iii. ⌘⇧G shows or hides the focused editor's Changes, on ⌘B's terms.
+                Button("Show Changes") {
+                    withModel { model in Task { await model.toggleEditorColumn(.changes) } }
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
                 // 3b-i. ⌘S saves the focused editor's active tab; a scratch tab asks for a path.
                 Button("Save") {
                     focusedPane { model, _ in await model.saveFocusedEditor() }
@@ -428,7 +434,7 @@ struct WakilApplication: App {
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
                 // Task 14: ⌘⇧O opens the org plane. Verified free — the
-                // window binds ⌘↩, ⌘W, ⌘T, ⌘B, ⌘⇧F, ⌘S, ⌘⇧D, ⌘P and ⌘K here — and, unlike the two pane commands
+                // window binds ⌘↩, ⌘W, ⌘T, ⌘B, ⌘⇧F, ⌘⇧G, ⌘S, ⌘⇧D, ⌘P and ⌘K here — and, unlike the two pane commands
                 // above, this needs no focused pane: it must work from an
                 // org-less window with no canvas and nothing focused at
                 // all, which is exactly the state ⌘⇧O also opens into on

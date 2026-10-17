@@ -33,7 +33,7 @@ Three paths through the code, one hop per line. Swift paths are under `app/Sourc
     each pane's snapshot in its own `PaneSnapshotCell` in `paneCells`. For `pane_sort` and `db_*`,
     `refreshLayout()` follows.
 12. **The pane's view redraws** from the `@Observable` state it read (`model.table(pane.id)` here;
-    `model.terminal(_:)`, `api(_:)`, `git(_:)` or `editor(_:)` for the other kinds, each one pane's cell).
+    `model.terminal(_:)`, `api(_:)` or `editor(_:)` for the other kinds, each one pane's cell).
 
 On `needsConfirmation` at step 5, `dispatch` calls `parkAndAwait`, which parks a `PendingMutation`
 in the `ConfirmationBroker`. The `ConfirmationPlane` shows it; `confirmPending(typed: "confirm")`
@@ -83,7 +83,9 @@ approves and the action is dispatched again with `confirmation: "confirm"`.
    context, production flags (in the registry too), session, settings, accounts, login state, pane
    snapshots, query-line state, layout scope, thread, harness, pending confirmation, and the palette;
    then `layout.clearAllScopes()`, `panes.clearAllScopes()`,
-   `terminals.shutdownAll(runStream: .keepOpen)` and `syncGitWatcher()`. See
+   `terminals.shutdownAll(runStream: .keepOpen)` and `syncGitWatcher()` (the git watch runs while an
+   editor pane is open, 3b-iii; with the canvas cleared it stops, and the window's status and its
+   `gitRoots` mirror are emptied). See
    [state.md](state.md).
 5. **`orgSwitcher(org)`**, which is **`WakilWiring.switchOrg(to:)`**, stops and restarts each
    Wakil-owned client under the new `WAKIL_ORG` with no provider. Any client that does not come back

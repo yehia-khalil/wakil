@@ -11,10 +11,10 @@ convention. Direction approved 2026-09-03.
 
 1. **Futurism through absence, not addition.** No window chrome, borders, sidebars, or
    tab bars. What makes it read as future is what has been removed.
-   Two sidebars are sanctioned, both inside a pane: the Git pane's column of file names
-   (§11), which appears only when the pane is wide enough, and the editor's left column
-   (3b-ii, §11), which is shown and hidden only by the operator or the agent — ⌘B, ⌘⇧F,
-   its toggle, `editor_tree` — and never by width.
+   One sidebar is sanctioned, inside a pane: the editor's left column (3b-ii, §11), which is
+   shown and hidden only by the operator or the agent — ⌘B, ⌘⇧F, ⌘⇧G, its toggle,
+   `editor_tree` — and never by width. (It was the second of two until 3b-iii folded the Git
+   pane, and its width-gated column of file names, into the editor: Decision 40.)
 2. **Light is information.** Luminance is never decorative. If something glows, it is
    alive, active, or asking for attention.
 3. **One luminous surface.** The room is the only genuinely luminous thing — and it is
@@ -417,8 +417,8 @@ Every pane is dual-driven (Invariant 2) except the editor's text surface. Some p
 
 | Pane | Multi-tab? | Notes |
 |------|-----------|-------|
-| **Editor** | Yes (files, ⌘T) | Native, Monaco-based — see below. The one partial exception to dual-drive. ⌘T opens a scratch tab; files open from ⌘P (Resources) or the left column (⌘B, 3b-ii). Unsaved edits ask before anything drops them. |
-| **Git** | No | Dedicated, multi-root. Changes grouped by root; the diff is drawn by the Monaco host 3a-i built, which the editor will reuse; a drilled-in diff folds the list into a spine of status marks — or, in a pane at least 900 pt wide, a 240 pt column of file names (same roots, group labels, click and ↑↓; the selection outlined in violet; long names truncated in the middle). That column is the first of §1's two sanctioned sidebars: it appears only when there is room, and the spine is the default. Click-to-open into the editor arrives with the editor. Dual-driven. Folds into the editor as its Changes view in 3b-iii (Decision 36). |
+| **Editor** | Yes (files, ⌘T) | Native, Monaco-based — see below. The one partial exception to dual-drive. ⌘T opens a scratch tab; files open from ⌘P (Resources) or the left column (⌘B, 3b-ii). Unsaved edits ask before anything drops them. A file in a repository shows gutter marks against the index — a green bar for added lines, amber for changed, a muted triangle where lines were deleted — and a click on one opens the peek: the change's old lines over its new, with ↑ ↓, Revert (an undoable buffer edit) and ×. The Files tree shows a changed file's status letter. |
+| **Git** | No | Folded into the editor (3b-iii, Decision 40): the editor's left column's **Changes** view (⌘⇧G) — one header per root, Staged / Changes / Untracked, status letters in §5's tones — opens read-only inline diff tabs in the editor. No pane of its own. |
 | **Browser** | Yes (⌘T) | Embedded web view; agent can read the active tab. |
 | **Terminal** | No | One shell, on one PTY, opened **at a path** — not per-root. A second shell is a second pane, exactly as for the database pane below; §10's canvas is what running two of them is for. **Corrected 2026-09-16** — this row read *"Yes (sessions) · Per-root shells"*, and both halves were wrong. `Terminal.dc.html:127` had forbidden a tab bar all along (§1's first principle names tab bars in what has been removed), and the operator ruled the roots out on the same day: sub-phase 2c-iii. |
 | **Database** | No | The canonical data surface (§8), above it the pane's own query — the database it runs against and the statement, editable, run with Return. A second query is a second pane; §10's canvas is what comparing two of them is for. |
@@ -439,9 +439,9 @@ operates it as actions ("rename to `bookingId`", "open the confirm method") like
 other pane — which embedded VS Code (a black box) cannot. Cost: no extension marketplace,
 no full debugger.
 
-- **The left column** (3b-ii) — a column inside the pane, §1's second sanctioned sidebar,
-  with two views: **Files** (⌘B) and **Search** (⌘⇧F). Nothing hides it at any width; ⌘B,
-  ⌘⇧F, its toggle or the agent show and hide it. Its edge drags from 160 pt to half the
+- **The left column** (3b-ii) — a column inside the pane, §1's one sanctioned sidebar,
+  with three views: **Files** (⌘B), **Search** (⌘⇧F) and **Changes** (⌘⇧G, 3b-iii). Nothing hides it at any width; ⌘B,
+  ⌘⇧F, ⌘⇧G, its toggle or the agent show and hide it. Its edge drags from 160 pt to half the
   pane, and each pane keeps its own column — shown, view, width and open folders — across
   a relaunch; a new pane starts as the last one was left. Only the operator's own keys and
   buttons move the keyboard into it; the agent's actions never do.
@@ -466,6 +466,11 @@ no full debugger.
     in this file* ask nothing (Decision 39): a file open in a tab is edited in its buffer, the rest are
     written, and one line — *Replaced 37 in 12 files · Undo replace* — offers the undo, which leaves
     any file changed since.
+  - **Changes** (3b-iii, Decision 40) — one header per root (`api · main · ↑2 ↓1`, or `docs · not a
+    git repository`; a header collapses its root), then Staged / Changes / Untracked. Rows show the
+    status letter in §5's tones (never red) and the name; a rename reads `old → new`. A click or Return
+    opens a read-only inline diff tab under the preview-tab rule; ⌘⏎ in a diff opens the file at that
+    line. It follows git live, with no refresh control.
   - **Find in file** — Monaco's own find and replace bar (⌘F, ⌥⌘F) in Wakil's colours,
     closed with Esc; the agent opens it with `editor_find`.
   ⌘P stays the faster path to a file whose name you know, and lists ignored files dimmed,
@@ -479,8 +484,8 @@ no full debugger.
      Wakil owns; added on demand starting with PHP/Laravel and TS.
   3. AI ghost-text — powered by the org's Claude account, context-aware (project, schema,
      ticket); v1, and Wakil's edge over generic Copilot.
-- **Change indicators** in the editor gutter (marks + inline diff) are under consideration
-  alongside the Git pane overview — see open items.
+- **Change indicators** in the editor gutter and the peek shipped in 3b-iii (Decision 40); see
+  the Editor row above. A file past 10,000 lines shows no marks.
 
 ## 12. Voice
 
@@ -664,9 +669,9 @@ unassigned any longer.
   23px) shipped this phase and is real code, not just a design intent — but nobody has
   yet worked a full day against it. Validating it against real use before Phase 2
   hardens is still owed.
-- Editor gutter change-indicators + inline diff (vs Git pane only)
-- Commit-history / branch graph in the Git pane (deferred)
-- Side-by-side diff in the Git pane (deferred by 3a-i; inline only)
+- ~~Editor gutter change-indicators + inline diff (vs Git pane only)~~ — settled by 3b-iii (Decision 40)
+- Commit-history / branch graph in the editor's Changes (deferred)
+- Side-by-side diff in the editor's Changes (deferred by 3a-i; inline only)
 - ~~Whether a standalone dual-driven project-explorer pane is ever needed~~ — **settled by
   3b-ii (2026-10-13):** no. The editor's left column (§11) is the explorer, dual-driven
   through `editor_tree`, and ⌘P sits beside it.

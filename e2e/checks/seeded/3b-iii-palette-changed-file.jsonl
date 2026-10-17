@@ -1,0 +1,17 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"expect":{"tree":"contains","text":"CONTINUE · NEWEST FIRST"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"keys":"index changes"}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"pane":"editor-1","field":"kind","equals":"editor"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.group","equals":"changed"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.root","contains":"/e2e-portal"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"index.txt"}}
+{"expect":{"tree":"absent","text":"CONTINUE · NEWEST FIRST"}}
+{"expect":{"tree":"contains","text":"index.txt (Changes)"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_changes_select\""}}}

@@ -23,15 +23,17 @@ import Testing
         "tabs": .array([
             .object(["path": .string("/p/api/a.go"), "scratch": .null, "root": .string("/p/api"),
                      "language": .string("go"), "dirty": .bool(true), "disk_state": .string("inSync"),
-                     "notice": .null, "saving": .bool(false), "preview": .bool(false)]),
+                     "notice": .null, "saving": .bool(false), "preview": .bool(false), "diff": .null]),
             .object(["path": .null, "scratch": .number(1), "root": .null,
                      "language": .string("sql"), "dirty": .bool(false), "disk_state": .string("inSync"),
-                     "notice": .null, "saving": .bool(false), "preview": .bool(false)]),
+                     "notice": .null, "saving": .bool(false), "preview": .bool(false), "diff": .null]),
         ]),
         "cursor": .object(["line": .number(2), "column": .number(4)]),
         "selection": .object(["start": .object(["line": .number(2), "column": .number(1)]),
                               "end": .object(["line": .number(2), "column": .number(3)])]),
         "visible_range": .object(["first": .number(2), "last": .number(3)]),
+        "hunks": .null,
+        "peek": .null,
         "visible_text": .string("l2 edited\nl3"),
         "selected_text": .string("l2"),
         "column": .null,
@@ -48,7 +50,7 @@ import Testing
     let pane = await layout.open(kind: "editor", title: "Editor").id
     let read = await PaneStore(kinds: PaneKinds.standard).readPane(paneId: pane, kind: "editor")
     guard case .object(let o) = read else { Issue.record("not an object"); return }
-    for key in ["active", "tabs", "cursor", "selection", "visible_range", "visible_text", "selected_text", "column", "find", "search"] {
+    for key in ["active", "tabs", "cursor", "selection", "visible_range", "peek", "visible_text", "selected_text", "column", "find", "search"] {
         #expect(o[key] != nil, "missing \(key)")
     }
     #expect(o["tabs"] == .array([]) && o["active"] == .null)

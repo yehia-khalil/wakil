@@ -105,19 +105,16 @@ private let unregisteredKind = "kind-no-build-registers"
     // on relaunch — Invariant 6, lost at startup. Any kind joining this set
     // must edit this line and say why.
     //
-    // **`git` joined in 3a-i, and why that is safe:** its subject is
-    // `git status` per root, a read with no side effect, so re-running it
-    // at launch is how a reopened pane is current. It is not a write.
+    // `git` joined in 3a-i (a read) and left in 3b-iii with its pane kind.
     #expect(PaneKinds.kind(named: "db")?.rerunsSubjectOnRestore == true)
     #expect(PaneKinds.kind(named: "terminal")?.rerunsSubjectOnRestore == false)
     let rerun = Pane.kinds.sorted().filter { PaneKinds.kind(named: $0)?.rerunsSubjectOnRestore == true }
-    #expect(rerun == ["db", "git"],
-            "only db and git (both reads) have their subject re-run at launch; a new kind here is a deliberate, reviewed change, not a consequence of being classified")
+    #expect(rerun == ["db"],
+            "only db (a read) has its subject re-run at launch; a new kind here is a deliberate, reviewed change, not a consequence of being classified")
 }
 
 @Test func onlyReadsRerunOnRestore() {
     #expect(PaneKinds.kind(named: "db")?.rerunsSubjectOnRestore == true)
-    #expect(PaneKinds.kind(named: "git")?.rerunsSubjectOnRestore == true)
     #expect(PaneKinds.kind(named: "api")?.rerunsSubjectOnRestore == false)
     #expect(PaneKinds.kind(named: "terminal")?.rerunsSubjectOnRestore == false)
     #expect(PaneKinds.kind(named: Pane.settingsKind)?.rerunsSubjectOnRestore == false)

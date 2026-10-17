@@ -13,6 +13,20 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
     case alreadyOpen(path: String, tab: String)
     /// `editor_replace_undo` with no replace to undo (the one refusal Rule 7 allows: nothing to override).
     case nothingToUndo
+    /// `editor_open_file` from a tab that is not a Changes diff.
+    case notADiff(action: String)
+    /// `editor_open_file` on a diff whose file is gone from the working tree.
+    case fileGone(path: String)
+    /// The active tab has no change marks: untracked, outside a repository, scratch, read-only, or a diff.
+    case noMarks(action: String)
+    /// `editor_peek` on a line with no mark.
+    case noChange(line: Int)
+    /// `editor_peek_step` with no peek open.
+    case noPeek(action: String)
+    /// An action that reads a buffer, on a Changes diff tab, which has none (`editor_find`).
+    case diffTab(action: String)
+    /// `editor_replace_range` whose `expect` is no longer the text in its range: nothing is replaced.
+    case staleRange(action: String, path: String)
 
     public var description: String {
         switch self {
@@ -30,6 +44,20 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
             "editor_save: \(path) already exists; save with replace true to write over it, or pick another path"
         case .alreadyOpen(let path, let tab):
             "editor_save: \(path) is already open in this pane as tab \(tab); save into that tab, or pick another path"
+        case .notADiff(let action): "\(action): the active tab is not a Changes diff; it opens a diff's file"
+        case .fileGone(let path):
+            "editor_open_file: \(path) is deleted in the working tree, so there is no file to open"
+        case .noMarks(let action):
+            "\(action): the active tab has no change marks (it is untracked, outside a repository, a scratch or read-only tab, or a diff)"
+        case .noChange(let line): "editor_peek: line \(line) has no change mark"
+        case .noPeek(let action): "\(action): no peek is open; open one with editor_peek on a marked line"
+        case .diffTab(let action):
+            "\(action): the active tab is a Changes diff, which has no buffer to search; open its file "
+                + "(editor_open_file, ⌘⏎) and find there"
+        case .staleRange(let action, let path):
+            "\(action): the text in range of \((path as NSString).lastPathComponent) is no longer what expect says "
+                + "(the buffer changed since the range was read), so nothing was replaced; read the pane again "
+                + "and retry against the text as it is now"
         case .nothingToUndo:
             "editor_replace_undo: this pane has no replace to undo; only its latest replace can be undone, "
                 + "once, while the window is open"
@@ -130,7 +158,13 @@ func editorTab(fromRead o: [String: JSONValue], path: String, root: String) -> E
 /// What a tab becomes after re-reading its file (spec, Data flow: disk changes). `read` is the tab
 /// a fresh `files_read` made. The operator's cursor, scroll, language and view are always kept.
 func editorAfterDiskRead(_ tab: EditorTab, read: EditorTab) -> EditorTab {
-    var t = tab
+    var out = editorAfterDiskReadRaw(tab, read: read)
+    out.peek = editorPeekClamped(out.peek, baseline: out.baseline, text: out.text)   // R12; nil when read-only
+    return out
+}
+
+private func editorAfterDiskReadRaw(_ tab: EditorTab, read: EditorTab) -> EditorTab {
+    var t = tab        // keeps `baseline` (the index text is not the disk's)
     if read.diskState == .deleted {
         t.diskState = .deleted
         return t
@@ -138,6 +172,7 @@ func editorAfterDiskRead(_ tab: EditorTab, read: EditorTab) -> EditorTab {
     if read.mtime == tab.mtime && tab.diskState != .deleted { return tab }
     t.mtime = read.mtime
     t.readOnly = read.readOnly
+    if t.readOnly { t.baseline = nil }       // a read-only tab has no marks
     t.notice = read.notice ?? (tab.notice == nil ? nil : tab.notice)
     if read.text == tab.text {
         t.savedText = read.text
@@ -164,6 +199,7 @@ public func registerEditorActions(
     layout: LayoutStore?,
     files: (any ToolCaller)?,
     fileLists: EditorFileLists?,
+    gitStatus: GitStatus?,
     roots: @escaping @Sendable () async -> [String]
 ) async {
     @Sendable func requireFiles(_ action: String) throws -> any ToolCaller {
@@ -239,6 +275,27 @@ public func registerEditorActions(
         }
     }
 
+    /// `root`, `path` and `group` as a Changes row, refused as 3a-i refused them: a missing param, a
+    /// group that is not staged, changed or untracked, or a root outside the project (naming the roots).
+    @Sendable func changesRow(_ params: JSONValue, action: String) async throws -> EditorChangesRow {
+        for key in ["root", "path", "group"] where optionalString(params, key) == nil {
+            throw StandardActionError.missingParam(action: action, param: key)
+        }
+        let root = optionalString(params, "root")!, path = optionalString(params, "path")!
+        let group = optionalString(params, "group")!
+        guard GitGroup(rawValue: group) != nil else { throw GitActionError.unknownGroup(action: action, group: group) }
+        let all = await roots()
+        guard all.contains(root) else { throw GitActionError.notAProjectRoot(action: action, root: root, roots: all) }
+        return EditorChangesRow(root: root, path: path, group: group)
+    }
+
+    @Sendable func projectRoot(_ params: JSONValue, action: String) async throws -> String {
+        guard let root = optionalString(params, "root") else { throw StandardActionError.missingParam(action: action, param: "root") }
+        let all = await roots()
+        guard all.contains(root) else { throw GitActionError.notAProjectRoot(action: action, root: root, roots: all) }
+        return root
+    }
+
     /// The root holding `path`, and `path` relative to it; refused outside the roots (Rule 7's one refusal).
     @Sendable func treePath(_ raw: String, action: String) async throws -> (path: String, root: String, rel: String) {
         let c = try await confine(raw, action: action)
@@ -260,6 +317,226 @@ public func registerEditorActions(
 
     /// The optional `scratch` param: a scratch tab by its number (Untitled-N).
     @Sendable func tabScratch(_ params: JSONValue) -> Int? { jsonObject(params)?["scratch"]?.intValue }
+
+    /// The optional `diff` param ({root, path, group}): a diff tab by its subject.
+    @Sendable func tabDiff(_ params: JSONValue) -> EditorTabSubject? {
+        guard case .object(let d)? = jsonObject(params)?["diff"], case .string(let r)? = d["root"],
+              case .string(let p)? = d["path"], case .string(let g)? = d["group"], let group = GitGroup(rawValue: g)
+        else { return nil }
+        return .diff(root: r, path: p, group: group)
+    }
+
+    // The diff tabs (3b-iii). Local functions are visible only to what is declared after them, so these
+    // sit above every action that uses them.
+    let diffFlights = EditorDiffFlights()
+    let baselineGenerations = EditorBaselineGenerations()
+    await panes.onDrop { pane in diffFlights.drop(pane) }
+
+    /// Fetches `subject`'s two sides into its tab, as that tab's one flight. Called only inside the
+    /// `updateEditor` turn that wrote the tab (see `EditorDiffFlights`). A reply that lands after its
+    /// tab is gone, or after a newer fetch for it began, writes nothing.
+    @Sendable func fetchDiff(_ pane: String, _ subject: EditorTabSubject, status: String?) -> Task<Void, Never>? {
+        guard case .diff(let root, let path, let group) = subject else { return nil }
+        let language = editorLanguage(forPath: path)
+        let key = "diff:\(group.rawValue):\(root)/\(path)"
+        guard let git = gitStatus?.git else {
+            // No git client: Loading must still resolve (Rules 4, 8), into the error that names what is missing.
+            let text = StandardActionError.missingClient(action: "git_show", role: "git").description
+            return diffFlights.start(pane, key: key) {
+                await panes.updateEditor(paneId: pane) { s in
+                    guard let i = s.tabs.firstIndex(where: { $0.subject == subject }) else { return }
+                    s.tabs[i].diffState = GitDiffState(
+                        original: "", modified: "", language: language, binary: false, bytes: 0, lines: 0,
+                        truncated: false, error: text, loading: false,
+                        noLongerChanged: s.tabs[i].diffState?.noLongerChanged ?? false)
+                }
+            }
+        }
+        let revs = editorDiffRevs(group, status: status)
+        @Sendable func side(_ rev: String?) async throws -> FilesOutcome {
+            guard let rev else { return .ok([:]) }
+            return try await filesTool(git, "git_show", ["root": .string(root), "path": .string(path), "rev": .string(rev)])
+        }
+        return diffFlights.start(pane, key: key) {
+            let outcome: (FilesOutcome, FilesOutcome)
+            do {
+                async let o = side(revs.original)
+                async let m = side(revs.modified)
+                outcome = try await (o, m)
+            } catch {
+                return   // cancelled: the fetch that replaced this one owns the tab now
+            }
+            if Task.isCancelled { return }
+            await panes.updateEditor(paneId: pane) { s in
+                guard !Task.isCancelled, let i = s.tabs.firstIndex(where: { $0.subject == subject }) else { return }
+                let gone = s.tabs[i].diffState?.noLongerChanged ?? false
+                switch outcome {
+                case (.failed(let text), _), (_, .failed(let text)):
+                    s.tabs[i].diffState = GitDiffState(original: "", modified: "", language: language, binary: false,
+                                                       bytes: 0, lines: 0, truncated: false, error: text, loading: false,
+                                                       noLongerChanged: gone)
+                case (.ok(let o), .ok(let m)):
+                    func text(_ x: [String: JSONValue]) -> String { if case .string(let t)? = x["text"] { t } else { "" } }
+                    func lines(_ t: String) -> Int { t.isEmpty ? 0 : t.split(separator: "\n", omittingEmptySubsequences: false).count }
+                    let original = text(o), modified = text(m)
+                    s.tabs[i].diffState = GitDiffState(
+                        original: original, modified: modified, language: language,
+                        binary: o["binary"] == .bool(true) || m["binary"] == .bool(true),
+                        bytes: max(o["bytes"]?.intValue ?? 0, m["bytes"]?.intValue ?? 0),   // a deletion's size is its original's
+                        lines: max(lines(original), lines(modified)),
+                        truncated: o["truncated"] == .bool(true) || m["truncated"] == .bool(true),
+                        error: nil, loading: false, noLongerChanged: gone)
+                }
+            }
+        }
+    }
+
+    /// Starts fetching the index text of `path` (in `root`) into every tab of `pane` showing it, or nil
+    /// there when git cannot show it (untracked, not a repository, binary, cut at the cap). A tab gone
+    /// or read-only by the time it lands is left alone.
+    ///
+    /// **Started, not awaited, by the actions that open or reload a tab** (final review 2): a baseline
+    /// is best-effort, and a `git_show` that takes its 10 s timeout must not hold up the open (Rule 8).
+    /// The generation is taken here, synchronously, so call order is still start order and a late
+    /// reply never overwrites a newer one; the write wakes the window (`PaneStore.updateEditor`).
+    @discardableResult
+    @Sendable func startBaseline(_ pane: String, path: String, root: String) -> Task<Void, Never>? {
+        guard let git = gitStatus?.git, path.hasPrefix(root + "/") else { return nil }
+        let gen = baselineGenerations.next(pane, path)
+        let rel = String(path.dropFirst(root.count + 1))
+        return Task {
+            let base: String?
+            switch try? await filesTool(git, "git_show", ["root": .string(root), "path": .string(rel), "rev": .string("index")]) {
+            case .ok(let o)? where o["binary"] != .bool(true) && o["truncated"] != .bool(true)
+                                   && o["absent"] != .bool(true):   // untracked: no baseline, not an empty one
+                if case .string(let t)? = o["text"] { base = t } else { base = nil }
+            default:
+                base = nil
+            }
+            if Task.isCancelled { return }
+            await panes.updateEditor(paneId: pane) { s in
+                guard baselineGenerations.isLatest(pane, path, gen) else { return }
+                for i in s.tabs.indices where s.tabs[i].path == path && !s.tabs[i].readOnly {
+                    s.tabs[i].baseline = base
+                    s.tabs[i].peek = editorPeekClamped(s.tabs[i].peek, baseline: base, text: s.tabs[i].text)
+                }
+            }
+        }
+    }
+
+    /// Opens `path` in `pane` — focusing its tab if open — with the cursor at `at` and `selection`, as a
+    /// preview when asked (3b-ii). `editor_open`'s body, shared with `editor_open_file`.
+    @Sendable func openFile(_ pane: String, path: String, at line: EditorPosition?, selection: EditorRange?,
+                            preview: Bool, action: String) async throws {
+        @Sendable func place(_ t: inout EditorTab) {
+            guard let line else { return }
+            t.cursor = selection?.end ?? line
+            if let selection { t.selection = selection }
+        }
+        let keep = !preview
+        let focused = await panes.updateEditor(paneId: pane, create: true) { s -> Bool in
+            guard let i = s.tabs.firstIndex(where: { $0.path == path }) else { return false }
+            s.active = i
+            place(&s.tabs[i])
+            if keep { s.tabs[i].preview = false }
+            return true
+        }
+        if !focused {
+            var fresh = try await read(path, action: action)
+            place(&fresh)
+            let tab = fresh
+            await panes.updateEditor(paneId: pane, create: true) { s in
+                if let i = s.tabs.firstIndex(where: { $0.path == path }) {
+                    s.active = i
+                } else if preview, let p = s.tabs.firstIndex(where: { $0.preview && !$0.dirty }) {
+                    diffFlights.cancel(pane, key: editorTabKey(s.tabs[p]))
+                    var t = tab; t.preview = true
+                    s.tabs[p] = t
+                    s.active = p
+                } else {
+                    var t = tab; t.preview = preview
+                    s.tabs.append(t)
+                    s.active = s.tabs.count - 1
+                }
+            }
+            if !tab.readOnly, case .file(_, let root) = tab.subject {
+                startBaseline(pane, path: tab.path ?? path, root: root)
+            }
+        }
+        await persist(pane)
+    }
+
+    /// Opens `row`'s diff tab under the preview rule (3b-ii): a tab already open is focused (and
+    /// pinned by `pin`) and not fetched again (Rule 5); otherwise a preview takes the pane's clean
+    /// preview slot, cancelling the fetch of what it held, and a pinned one is added. A row no longer
+    /// in its group opens reading "No longer changed" (Rule 7), fetching nothing.
+    @Sendable func openDiff(_ pane: String, _ row: EditorChangesRow, pin: Bool) async {
+        let group = GitGroup(rawValue: row.group)!
+        let subject = EditorTabSubject.diff(root: row.root, path: row.path, group: group)
+        let status = await gitStatus?.roots ?? []
+        let file = editorChangesFile(row, in: status)
+        let listed = status.first { $0.root == row.root }.map(editorRootIsKnown) ?? false
+        let gone = listed && file == nil
+        let flight: Task<Void, Never>? = await panes.updateEditor(paneId: pane, create: true) { s in
+            if let i = s.tabs.firstIndex(where: { $0.subject == subject }) {
+                s.active = i
+                if pin { s.tabs[i].preview = false }
+                return nil
+            }
+            var tab = EditorTab.diff(root: row.root, path: row.path, group: group)
+            tab.preview = !pin
+            if gone { tab.diffState?.loading = false; tab.diffState?.noLongerChanged = true }
+            if !pin, let p = s.tabs.firstIndex(where: { $0.preview && !$0.dirty }) {
+                diffFlights.cancel(pane, key: editorTabKey(s.tabs[p]))
+                s.tabs[p] = tab
+                s.active = p
+            } else {
+                s.tabs.append(tab)
+                s.active = s.tabs.count - 1
+            }
+            return gone ? nil : fetchDiff(pane, subject, status: file?.status)
+        }
+        await updateColumn(pane, asDefault: false) { c in c.changesHighlight = row }
+        await persist(pane)     // a preview file tab may have been replaced
+        await flight?.value
+    }
+
+    /// The pane's git state after the window's status changed under `root` (or every root): the
+    /// Changes highlight moves per Rule 6, and every diff tab under the root re-reads. Every file tab
+    /// under it re-fetches its baseline (3b-iii).
+    @Sendable func refreshGit(_ pane: String, root: String?) async {
+        let status = await gitStatus?.roots ?? []
+        await updateColumn(pane, onlyIfChanged: true, asDefault: false) { c in
+            c.changesHighlight = editorChangesResolve(c.changesHighlight, roots: status)
+        }
+        // Every open diff tab under the root re-reads, keeping its texts while it loads (no blank flash).
+        // One whose file left its group says so, keeps its texts, and is not fetched (spec, Rule 7).
+        let flights: [Task<Void, Never>] = await panes.updateEditor(paneId: pane) { s in
+            var started: [Task<Void, Never>] = []
+            for i in s.tabs.indices {
+                guard case .diff(let r, let p, let g) = s.tabs[i].subject, root == nil || r == root,
+                      status.contains(where: { $0.root == r && editorRootIsKnown($0) }) else { continue }
+                let row = EditorChangesRow(root: r, path: p, group: g.rawValue)
+                guard let file = editorChangesFile(row, in: status) else {
+                    s.tabs[i].diffState?.noLongerChanged = true
+                    s.tabs[i].diffState?.loading = false
+                    continue
+                }
+                s.tabs[i].diffState?.noLongerChanged = false
+                s.tabs[i].diffState?.loading = true
+                if let t = fetchDiff(pane, s.tabs[i].subject, status: file.status) { started.append(t) }
+            }
+            return started
+        }
+        for f in flights { await f.value }
+        let fileTabs: [(path: String, root: String)] = await panes.editorSnapshot(paneId: pane).tabs.compactMap { t in
+            guard case .file(let p, let r) = t.subject, root == nil || r == root, !t.readOnly else { return nil }
+            return (p, r)
+        }
+        // The git refresh's own work: awaited here, unlike an open's (the action IS the git state).
+        let baselines = fileTabs.compactMap { startBaseline(pane, path: $0.path, root: $0.root) }
+        for b in baselines { await b.value }
+    }
 
     func schema(_ properties: [String: JSONValue], required: [String] = []) -> JSONValue {
         var props = properties
@@ -300,40 +577,31 @@ public func registerEditorActions(
                     EditorRange(start: at, end: EditorPosition(line: at.line, column: $0))
                 }
             }
-            @Sendable func place(_ t: inout EditorTab) {
-                guard let line else { return }
-                t.cursor = selection?.end ?? line
-                if let selection { t.selection = selection }
-            }
             let preview = jsonObject(params)?["preview"] == .bool(true)
-            // Any open that is not a preview (preview false, or left out) keeps a preview tab.
-            let keep = !preview
-            let focused = await panes.updateEditor(paneId: pane, create: true) { s -> Bool in
-                guard let i = s.tabs.firstIndex(where: { $0.path == path }) else { return false }
-                s.active = i
-                place(&s.tabs[i])
-                if keep { s.tabs[i].preview = false }
-                return true
+            try await openFile(pane, path: path, at: line, selection: selection, preview: preview, action: "editor_open")
+            return await reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "editor_open_file",
+        description: "From the editor pane's active diff tab (a Changes diff), open its file as a file tab at "
+            + "the line under the diff's cursor; the diff tab stays open. Refused on a deleted file's diff and "
+            + "on a Staged diff whose file is gone from the working tree. ⌘⏎ in a diff tab. Returns the pane's state.",
+        kind: .control, audience: .agentReachable,
+        schema: schema([:]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_open_file")
+            let snap = await panes.editorSnapshot(paneId: pane)
+            guard let i = editorTabIndex(snap, path: nil) else { throw EditorActionError.noTab(action: "editor_open_file") }
+            guard case .diff(let root, let path, let group) = snap.tabs[i].subject else {
+                throw EditorActionError.notADiff(action: "editor_open_file")
             }
-            if !focused {
-                var fresh = try await read(path, action: "editor_open")
-                place(&fresh)
-                let tab = fresh
-                await panes.updateEditor(paneId: pane, create: true) { s in
-                    if let i = s.tabs.firstIndex(where: { $0.path == path }) {
-                        s.active = i   // opened by a concurrent call while this one read
-                    } else if preview, let p = s.tabs.firstIndex(where: { $0.preview && !$0.dirty }) {
-                        var t = tab; t.preview = true
-                        s.tabs[p] = t          // the clean preview tab is replaced in place
-                        s.active = p
-                    } else {
-                        var t = tab; t.preview = preview
-                        s.tabs.append(t)
-                        s.active = s.tabs.count - 1
-                    }
-                }
+            let full = root + "/" + path
+            guard editorDiffOpensFile(root: root, path: path, group: group, roots: await gitStatus?.roots ?? []) else {
+                throw EditorActionError.fileGone(path: full)
             }
-            await persist(pane)
+            try await openFile(pane, path: full, at: EditorPosition(line: snap.tabs[i].cursor.line, column: 1),
+                               selection: nil, preview: false, action: "editor_open_file")
             return await reply(pane)
         }))
 
@@ -375,19 +643,20 @@ public func registerEditorActions(
 
     await registry.register(Action(
         name: "editor_close",
-        description: "Close a tab (path, or scratch: the N of an Untitled-N tab, or the active tab). A tab "
+        description: "Close a tab (path, or scratch: the N of an Untitled-N tab, or diff: {root, path, group}, a Changes diff tab, or the active tab). A tab "
             + "with unsaved edits closes only with discard true; otherwise this answers that it has unsaved "
             + "edits. Focus moves to a neighbour.",
         kind: .control, audience: .agentReachable,
         schema: schema(["path": .object(["type": .string("string")]), "scratch": .object(["type": .string("integer")]),
+                        "diff": .object(["type": .string("object")]),
                         "discard": .object(["type": .string("boolean")])]),
         handler: { params in
             let pane = try await editorPane(params, action: "editor_close")
-            let path = tabPath(params), scratch = tabScratch(params)
+            let path = tabPath(params), scratch = tabScratch(params), diff = tabDiff(params)
             let discard = jsonObject(params)?["discard"] == .bool(true)
             // Found, checked for unsaved edits and removed in one turn: typing cannot land between.
             let outcome = await panes.updateEditor(paneId: pane) { s -> EditorCloseOutcome in
-                guard let i = editorTabIndex(s, path: path, scratch: scratch) else { return .noTab }
+                guard let i = editorTabIndex(s, path: path, scratch: scratch, diff: diff) else { return .noTab }
                 if s.tabs[i].dirty, !discard { return .unsaved(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0]) }
                 let count = s.tabs.count
                 s.tabs.remove(at: i)
@@ -466,10 +735,14 @@ public func registerEditorActions(
     await registry.register(Action(
         name: "editor_replace_range",
         description: "Replace range ({start,end}, 1-based) of a tab's buffer (path, or the active tab) with "
-            + "text. The change is unsaved; editor_save writes it. Undoable with ⌘Z in the pane.",
+            + "text. The change is unsaved; editor_save writes it. Undoable with ⌘Z in the pane. expect, "
+            + "optional, is the text range holds now: when the buffer no longer has it there (it changed "
+            + "since the range was read), nothing is replaced and the call is refused. The peek's Revert "
+            + "always passes it.",
         kind: .control, audience: .agentReachable,
         schema: schema(["path": .object(["type": .string("string")]), "range": rangeSchema,
-                        "text": .object(["type": .string("string")])], required: ["range", "text"]),
+                        "text": .object(["type": .string("string")]),
+                        "expect": .object(["type": .string("string")])], required: ["range", "text"]),
         handler: { params in
             let pane = try await editorPane(params, action: "editor_replace_range")
             guard let r = editorRange(jsonObject(params)?["range"]) else {
@@ -479,10 +752,25 @@ public func registerEditorActions(
                 throw StandardActionError.missingParam(action: "editor_replace_range", param: "text")
             }
             let path = tabPath(params)
+            let expect = optionalString(params, "expect")
             let outcome = await panes.updateEditor(paneId: pane) { s -> EditorReplaceOutcome in
                 guard let i = editorTabIndex(s, path: path) else { return .noTab }
-                if s.tabs[i].readOnly { return .readOnly(s.tabs[i].path ?? "", s.tabs[i].notice) }
+                if s.tabs[i].readOnly { return .readOnly(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0], s.tabs[i].notice) }
+                // Checked in the same turn as the write, so nothing can change the range in between.
+                if let expect, editorText(s.tabs[i].text, in: r) != expect {
+                    return .stale(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0])
+                }
                 s.tabs[i].text = editorReplacing(s.tabs[i].text, r, with: text)
+                if s.tabs[i].peek != nil {
+                    // The peek moves with the cursor, as editor_peek_step does (R12).
+                    let p = editorPeekClamped(s.tabs[i].peek, baseline: s.tabs[i].baseline, text: s.tabs[i].text)
+                    s.tabs[i].peek = p
+                    if let p, let base = s.tabs[i].baseline {
+                        let marks = editorGutterMarks(editorHunks(base: base, text: s.tabs[i].text))
+                        s.tabs[i].cursor = EditorPosition(line: marks[p].start, column: 1)
+                        s.tabs[i].selection = nil
+                    }
+                }
                 s.tabs[i].edits += 1
                 s.tabs[i].preview = false   // an edit keeps a preview tab (spec)
                 let serial = (s.tabs[i].lastAgentEdit?.serial ?? 0) + 1
@@ -492,7 +780,82 @@ public func registerEditorActions(
             switch outcome {
             case .noTab: throw EditorActionError.noTab(action: "editor_replace_range")
             case .readOnly(let p, let n): throw EditorActionError.readOnly(action: "editor_replace_range", path: p, notice: n)
+            case .stale(let p): throw EditorActionError.staleRange(action: "editor_replace_range", path: p)
             case .replaced: break
+            }
+            return await reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "editor_peek",
+        description: "Open the peek on the change marked at line (1-based) of the editor pane's active file tab: "
+            + "the hunk's old lines over its new ones, under it in the file, with previous / next and Revert. The "
+            + "cursor moves to the hunk. Marks compare the buffer with the file's index text. Returns the pane's state.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["line": .object(["type": .string("integer")])], required: ["line"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_peek")
+            guard let line = jsonObject(params)?["line"]?.intValue else {
+                throw StandardActionError.missingParam(action: "editor_peek", param: "line")
+            }
+            let outcome = await panes.updateEditor(paneId: pane) { s -> EditorPeekOutcome in
+                guard let i = editorTabIndex(s, path: nil) else { return .noTab }
+                guard let base = s.tabs[i].baseline, !s.tabs[i].readOnly else { return .noMarks }
+                let hunks = editorHunks(base: base, text: s.tabs[i].text)
+                guard let h = editorHunkIndex(at: line, in: hunks) else { return .noChange }
+                s.tabs[i].peek = h
+                s.tabs[i].cursor = EditorPosition(line: editorGutterMarks(hunks)[h].start, column: 1)
+                s.tabs[i].selection = nil
+                return .ok
+            }
+            switch outcome {
+            case .noTab: throw EditorActionError.noTab(action: "editor_peek")
+            case .noMarks: throw EditorActionError.noMarks(action: "editor_peek")
+            case .noChange: throw EditorActionError.noChange(line: line)
+            case .noPeek, .ok: break
+            }
+            return await reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "editor_peek_step",
+        description: "Move the open peek delta changes (1 next, -1 previous) through the active tab's changes, "
+            + "stopping at either end; the cursor moves with it. Returns the pane's state.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["delta": .object(["type": .string("integer")])], required: ["delta"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_peek_step")
+            guard let delta = jsonObject(params)?["delta"]?.intValue else {
+                throw StandardActionError.missingParam(action: "editor_peek_step", param: "delta")
+            }
+            let outcome = await panes.updateEditor(paneId: pane) { s -> EditorPeekOutcome in
+                guard let i = editorTabIndex(s, path: nil) else { return .noTab }
+                guard let p = s.tabs[i].peek, let base = s.tabs[i].baseline else { return .noPeek }
+                let hunks = editorHunks(base: base, text: s.tabs[i].text)
+                guard !hunks.isEmpty else { s.tabs[i].peek = nil; return .noPeek }
+                let next = min(max(p + delta, 0), hunks.count - 1)
+                s.tabs[i].peek = next
+                s.tabs[i].cursor = EditorPosition(line: editorGutterMarks(hunks)[next].start, column: 1)
+                s.tabs[i].selection = nil
+                return .ok
+            }
+            switch outcome {
+            case .noTab: throw EditorActionError.noTab(action: "editor_peek_step")
+            case .noPeek, .noMarks, .noChange: throw EditorActionError.noPeek(action: "editor_peek_step")
+            case .ok: break
+            }
+            return await reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "editor_peek_close",
+        description: "Close the active tab's peek; the cursor stays where it is. Nothing to close is not an error.",
+        kind: .control, audience: .agentReachable,
+        schema: schema([:]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_peek_close")
+            await panes.updateEditor(paneId: pane) { s in
+                if let i = editorTabIndex(s, path: nil) { s.tabs[i].peek = nil }
             }
             return await reply(pane)
         }))
@@ -519,7 +882,7 @@ public func registerEditorActions(
             let claim = await panes.updateEditor(paneId: pane) { s -> EditorSaveClaim in
                 guard let i = editorTabIndex(s, path: path) else { return .noTab }
                 let tab = s.tabs[i]
-                if tab.readOnly { return .readOnly(tab.path ?? "", tab.notice) }
+                if tab.readOnly { return .readOnly(tab.path ?? editorTabTitles([tab])[0], tab.notice) }
                 if tab.saving { return .busy }
                 if tab.isScratch, saveAs == nil { return .noScratchPath }
                 // Two tabs never share a subject: a scratch saved onto a path the pane holds is refused.
@@ -549,6 +912,7 @@ public func registerEditorActions(
                 switch subject {
                 case .file(let p, let r): target = (p, r)
                 case .scratch: target = saveAs!
+                case .diff: throw EditorActionError.noTab(action: "editor_save")   // read-only: claimed never
                 }
                 _ = try await confine(target.path, action: "editor_save")
                 // Rule 1: a save-as never writes over an existing file unasked.
@@ -607,6 +971,7 @@ public func registerEditorActions(
             guard let at = editorTabIndex(snap, path: tabPath(params)) else { throw EditorActionError.noTab(action: "editor_reload") }
             guard let path = snap.tabs[at].path else { throw EditorActionError.notAFile(action: "editor_reload") }
             let reread = try await read(path, action: "editor_reload")
+            let wasReadOnly = snap.tabs[at].readOnly
             await panes.updateEditor(paneId: pane) { s in
                 guard let i = s.tabs.firstIndex(where: { $0.path == path }) else { return }
                 var fresh = reread
@@ -618,7 +983,11 @@ public func registerEditorActions(
                 // The agent-edit serial never goes back: a page post made before the last agent edit
                 // must still be dropped after a reload (`editorBufferDidChange`'s basis).
                 fresh.lastAgentEdit = s.tabs[i].lastAgentEdit
+                fresh.baseline = fresh.readOnly ? nil : s.tabs[i].baseline
                 s.tabs[i] = fresh
+            }
+            if wasReadOnly, !reread.readOnly, case .file(_, let root) = snap.tabs[at].subject {
+                startBaseline(pane, path: path, root: root)     // now writable: it can have marks
             }
             return await reply(pane)
         }))
@@ -629,43 +998,62 @@ public func registerEditorActions(
             + "unsaved edits reloads in place; one with edits keeps them and is marked changed on disk; a "
             + "missing file is marked deleted. Search results are marked changed since when paths (absolute: "
             + "files, or folders holding them) names one of their files; without paths, any under root. "
-            + "The file watcher dispatches this with the paths that changed.",
+            + "The file watcher dispatches this with the paths that changed. "
+            + "what: all (the default) also re-reads git status first, then the pane's git state (the Changes "
+            + "highlight, its diff tabs and its tabs' gutter baselines); files only the files (the file "
+            + "watcher's); git only the pane's git state, against the status as it is (the git watcher's, "
+            + "which has just read it).",
         kind: .read, audience: .agentReachable,
         schema: schema(["root": .object(["type": .string("string")]),
-                        "paths": .object(["type": .string("array"), "items": .object(["type": .string("string")])])]),
+                        "paths": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+                        "what": .object(["type": .string("string"),
+                                         "enum": .array([.string("all"), .string("files"), .string("git")])])]),
         handler: { params in
             let pane = try await editorPane(params, action: "editor_refresh")
             let only = optionalString(params, "root")
+            let what = optionalString(params, "what") ?? "all"
+            guard ["all", "files", "git"].contains(what) else {
+                throw EditorFilesError(description: "editor_refresh: what must be all, files or git, not \"\(what)\"")
+            }
+            if what == "all" { await gitStatus?.refresh(only: only) }
             let changedPaths: [String]? = {
                 guard case .array(let items)? = jsonObject(params)?["paths"] else { return nil }
                 return items.compactMap { if case .string(let p) = $0 { (p as NSString).standardizingPath } else { nil } }
             }()
-            let tabs = await panes.editorSnapshot(paneId: pane).tabs
-            // Each read is kept with the mtime the tab had when it began: a save that lands while
-            // the read is in flight leaves the read stale, and applying it would rewind the tab.
-            var reads: [String: (fresh: EditorTab, basis: Int64)] = [:]
-            for tab in tabs {
-                guard case .file(let path, let r) = tab.subject, only == nil || r == only else { continue }
-                if let fresh = try? await read(path, action: "editor_refresh") { reads[path] = (fresh, tab.mtime) }
-            }
-            let collected = reads
-            await panes.updateEditor(paneId: pane) { s in
-                for i in s.tabs.indices {
-                    guard let p = s.tabs[i].path, let (fresh, basis) = collected[p],
-                          !s.tabs[i].saving, s.tabs[i].mtime == basis else { continue }
-                    s.tabs[i] = editorAfterDiskRead(s.tabs[i], read: fresh)
+            if what != "git" {
+                let tabs = await panes.editorSnapshot(paneId: pane).tabs
+                // Each read is kept with the mtime the tab had when it began: a save that lands while
+                // the read is in flight leaves the read stale, and applying it would rewind the tab.
+                var reads: [String: (fresh: EditorTab, basis: Int64)] = [:]
+                for tab in tabs {
+                    guard case .file(let path, let r) = tab.subject, only == nil || r == only else { continue }
+                    if let fresh = try? await read(path, action: "editor_refresh") { reads[path] = (fresh, tab.mtime) }
                 }
-                // Spec: an event on a path in the results (final review I4). A path is a file or a
-                // folder FSEvents asks to rescan, so a result at or under it counts. Without paths
-                // (an agent's refresh), every result under the root counts, erring toward Re-run.
-                let hit = s.search.results.contains { r in
-                    guard only == nil || r.root == only else { return false }
-                    guard let changedPaths else { return true }
-                    let file = r.root + "/" + r.path
-                    return changedPaths.contains { file == $0 || file.hasPrefix($0 + "/") }
+                let collected = reads
+                let wasReadOnly = Set(tabs.filter(\.readOnly).compactMap(\.path))
+                await panes.updateEditor(paneId: pane) { s in
+                    for i in s.tabs.indices {
+                        guard let p = s.tabs[i].path, let (fresh, basis) = collected[p],
+                              !s.tabs[i].saving, s.tabs[i].mtime == basis else { continue }
+                        s.tabs[i] = editorAfterDiskRead(s.tabs[i], read: fresh)
+                    }
+                    // Spec: an event on a path in the results (final review I4). A path is a file or a
+                    // folder FSEvents asks to rescan, so a result at or under it counts. Without paths
+                    // (an agent's refresh), every result under the root counts, erring toward Re-run.
+                    let hit = s.search.results.contains { r in
+                        guard only == nil || r.root == only else { return false }
+                        guard let changedPaths else { return true }
+                        let file = r.root + "/" + r.path
+                        return changedPaths.contains { file == $0 || file.hasPrefix($0 + "/") }
+                    }
+                    if hit { s.search.changedSince = true }
                 }
-                if hit { s.search.changedSince = true }
+                // A tab that turned writable (it was over the cap) gets its baseline now.
+                for t in await panes.editorSnapshot(paneId: pane).tabs where !t.readOnly {
+                    if case .file(let p, let r) = t.subject, wasReadOnly.contains(p) { startBaseline(pane, path: p, root: r) }
+                }
             }
+            if what != "files" { await refreshGit(pane, root: only) }
             return await reply(pane)
         }))
 
@@ -705,6 +1093,9 @@ public func registerEditorActions(
                 for tab in additions where !s.tabs.contains(where: { $0.path == tab.path }) { s.tabs.append(tab) }
                 if !hadActive, s.tabs.count > firstNew { s.active = firstNew }
             }
+            for tab in additions where !tab.readOnly {
+                if case .file(let p, let r) = tab.subject { startBaseline(pane, path: p, root: r) }
+            }
             if await layout?.editorColumn(id: pane) != nil {
                 // Pruned only against listings that succeeded: a root whose listing failed keeps
                 // its open folders, since nothing says they are gone.
@@ -731,13 +1122,13 @@ public func registerEditorActions(
 
     await registry.register(Action(
         name: "editor_tree",
-        description: "Show or hide an editor pane's left column (shown), switch its view (files or search), "
+        description: "Show or hide an editor pane's left column (shown), switch its view (files, search or changes — the project's git changes, 3b-iii), "
             + "or set its width (points; clamped by the view). With no pane, the focused or first editor pane, or "
             + "a new one. A pane that never set its column starts from the one last left in any editor pane. "
             + "Shown on files, it lists every root.",
         kind: .control, audience: .agentReachable,
         schema: schema(["shown": .object(["type": .string("boolean")]),
-                        "view": .object(["type": .string("string"), "enum": .array([.string("files"), .string("search")])]),
+                        "view": .object(["type": .string("string"), "enum": .array([.string("files"), .string("search"), .string("changes")])]),
                         "width": .object(["type": .string("number")])]),
         handler: { params in
             let pane = try await editorPane(params, action: "editor_tree")
@@ -865,6 +1256,71 @@ public func registerEditorActions(
             return await reply(pane)
         }))
 
+    let groupSchema: JSONValue = .object(["type": .string("string"),
+                                          "enum": .array(GitGroup.allCases.map { .string($0.rawValue) })])
+
+    await registry.register(Action(
+        name: "editor_changes_select",
+        description: "Open one changed file's diff in an editor pane, as a read-only diff tab titled `name (Changes)`, "
+            + "`(Staged)` or `(Untracked)`: root (absolute, one of the active project's roots), path (relative to "
+            + "root), group (staged, changed or untracked — a partly staged file is in two). Staged compares HEAD "
+            + "with the index, changed the index with the working tree (a conflicted file HEAD with the working "
+            + "tree), untracked nothing with the working tree; a deleted file is compared with nothing. A preview "
+            + "tab, replaced by the next one, unless pin is true. A file no longer in that group opens reading "
+            + "No longer changed. The Changes highlight moves to it. Returns the pane's state; the diff's texts "
+            + "are not in it — read them with git_show.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["root": .object(["type": .string("string")]), "path": .object(["type": .string("string")]),
+                        "group": groupSchema, "pin": .object(["type": .string("boolean")])],
+                       required: ["root", "path", "group"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_changes_select")
+            let row = try await changesRow(params, action: "editor_changes_select")
+            await openDiff(pane, row, pin: jsonObject(params)?["pin"] == .bool(true))
+            return await reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "editor_changes_step",
+        description: "Move an editor pane's Changes highlight delta rows (1 next, -1 previous) through every "
+            + "root's changed files in order — roots in project order, a collapsed root skipped, then staged, "
+            + "changed, untracked — stopping at either end. With nothing highlighted, the first row. It "
+            + "moves the highlight and opens its diff as a preview tab, as editor_changes_select does. Returns "
+            + "the pane's state.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["delta": .object(["type": .string("integer")])], required: ["delta"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_changes_step")
+            guard let delta = jsonObject(params)?["delta"]?.intValue else {
+                throw StandardActionError.missingParam(action: "editor_changes_step", param: "delta")
+            }
+            let status = await gitStatus?.roots ?? []
+            let c = await updateColumn(pane, asDefault: false) { c in
+                c.changesHighlight = editorChangesStep(status, closed: c.changesClosed,
+                                                       from: editorChangesResolve(c.changesHighlight, roots: status), by: delta)
+            }
+            if let h = c.changesHighlight { await openDiff(pane, h, pin: false) }
+            return await reply(pane)
+        }))
+
+    for (name, closing) in [("editor_changes_collapse", true), ("editor_changes_expand", false)] {
+        await registry.register(Action(
+            name: name,
+            description: (closing ? "Collapse" : "Expand") + " one root (root, absolute) in an editor pane's "
+                + "Changes view. Kept per pane, apart from the Files tree's open folders, and saved with the "
+                + "layout. Returns the pane's state.",
+            kind: .control, audience: .agentReachable,
+            schema: schema(["root": .object(["type": .string("string")])], required: ["root"]),
+            handler: { params in
+                let pane = try await editorPane(params, action: name)
+                let root = try await projectRoot(params, action: name)
+                await updateColumn(pane, asDefault: false) { c in
+                    if closing { c.changesClosed.insert(root) } else { c.changesClosed.remove(root) }
+                }
+                return await reply(pane)
+            }))
+    }
+
     let flags: [String: JSONValue] = ["query": .object(["type": .string("string")]),
                                       "case": .object(["type": .string("boolean")]),
                                       "word": .object(["type": .string("boolean")]),
@@ -885,6 +1341,7 @@ public func registerEditorActions(
             }
             let snap = await panes.editorSnapshot(paneId: pane)
             guard let i = editorTabIndex(snap, path: nil) else { throw EditorActionError.noTab(action: "editor_find") }
+            if case .diff = snap.tabs[i].subject { throw EditorActionError.diffTab(action: "editor_find") }
             let c = flag(params, "case"), w = flag(params, "word"), r = flag(params, "regex")
             let matches = try editorFindMatches(snap.tabs[i].text, query: query, caseSensitive: c, wholeWord: w, regex: r)
             await panes.updateEditor(paneId: pane) { s in
@@ -1357,7 +1814,8 @@ private actor EditorColumnWrites {
 }
 
 private enum EditorCloseOutcome: Sendable { case noTab, unsaved(String), closed }
-private enum EditorReplaceOutcome: Sendable { case noTab, readOnly(String, String?), replaced }
+private enum EditorPeekOutcome: Sendable { case ok, noTab, noMarks, noChange, noPeek }
+private enum EditorReplaceOutcome: Sendable { case noTab, readOnly(String, String?), stale(String), replaced }
 private enum EditorUndoClaim: Sendable { case busy, nothing, claimed([EditorReplaceUndoRecord]) }
 private enum EditorSaveClaim: Sendable {
     case noTab, busy, noScratchPath
@@ -1368,7 +1826,8 @@ private enum EditorSaveClaim: Sendable {
 
 /// The tab `path` (or `scratch`, an Untitled-N number) names, else the active tab. Always called
 /// inside the closure that then uses it.
-private func editorTabIndex(_ s: EditorSnapshot, path: String?, scratch: Int? = nil) -> Int? {
+private func editorTabIndex(_ s: EditorSnapshot, path: String?, scratch: Int? = nil, diff: EditorTabSubject? = nil) -> Int? {
+    if let diff { return s.tabs.firstIndex { $0.subject == diff } }
     if let path { return s.tabs.firstIndex { $0.path == path } }
     if let scratch { return s.tabs.firstIndex { $0.subject == .scratch(number: scratch) } }
     guard let i = s.active, i < s.tabs.count else { return nil }
@@ -1380,4 +1839,10 @@ private extension Optional {
         guard let self else { return nil }
         return try await f(self)
     }
+}
+
+/// Whether a root's status says what is changed in it. An errored root, or one still loading its
+/// first read, says nothing: a file missing from it is unknown, not "no longer changed".
+private func editorRootIsKnown(_ r: GitRootState) -> Bool {
+    r.error == nil && !(r.loading && r.files.isEmpty)
 }

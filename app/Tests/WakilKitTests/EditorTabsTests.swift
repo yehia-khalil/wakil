@@ -99,3 +99,11 @@ private func fileTab(_ path: String, root: String = "/p/api") -> EditorTab {
     #expect(editorTabDropX(EditorTabDrop(from: 0, to: 1), spans: spans) == 203)
     #expect(editorTabDropX(EditorTabDrop(from: 2, to: 1), spans: spans) == 101)
 }
+
+@Test func aDiffTabsTitleNamesItsGroupAndItsKeyIsItsOwn() {
+    let t = EditorTab.diff(root: "/p/api", path: "app/User.php", group: .staged)
+    #expect(editorTabTitles([t]) == ["User.php (Staged)"])
+    #expect(editorTabKey(t) == "diff:staged:/p/api/app/User.php")
+    #expect(editorTabParams(t.subject) == ["diff": .object(["root": .string("/p/api"), "path": .string("app/User.php"),
+                                                            "group": .string("staged")])])
+}

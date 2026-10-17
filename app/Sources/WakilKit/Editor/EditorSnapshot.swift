@@ -4,6 +4,8 @@ import Foundation
 public enum EditorTabSubject: Sendable, Equatable, Hashable {
     case file(path: String, root: String)
     case scratch(number: Int)
+    /// A Changes diff (3b-iii): `path` relative to `root`, in one group. Read-only, never saved.
+    case diff(root: String, path: String, group: GitGroup)
 }
 
 public enum EditorDiskState: String, Sendable, Equatable { case inSync, changedOnDisk, deleted }
@@ -54,12 +56,20 @@ public struct EditorTab: Sendable, Equatable {
     /// Opened by a single click and replaced by the next one, until pinned.
     public var preview: Bool
     public var dirty: Bool { text != savedText }
+    /// A diff tab's two sides; nil for every other tab.
+    public var diffState: GitDiffState?
+    /// The file's index text (3b-iii), which its gutter marks compare against. nil means no marks:
+    /// untracked, outside a repository, scratch, read-only, or not fetched yet.
+    public var baseline: String?
+    /// The hunk the peek shows (3b-iii); nil when closed.
+    public var peek: Int?
 
     public init(
         subject: EditorTabSubject, text: String, savedText: String, language: String,
         diskState: EditorDiskState, mtime: Int64, cursor: EditorPosition, selection: EditorRange?,
         visibleRange: ClosedRange<Int>?, scrollTop: Double, notice: String?, readOnly: Bool,
-        saving: Bool, edits: Int, lastAgentEdit: EditorAgentEdit?, preview: Bool = false
+        saving: Bool, edits: Int, lastAgentEdit: EditorAgentEdit?, preview: Bool = false, diffState: GitDiffState? = nil,
+        baseline: String? = nil, peek: Int? = nil
     ) {
         self.subject = subject
         self.text = text
@@ -77,6 +87,9 @@ public struct EditorTab: Sendable, Equatable {
         self.edits = edits
         self.lastAgentEdit = lastAgentEdit
         self.preview = preview
+        self.diffState = diffState
+        self.baseline = baseline
+        self.peek = peek
     }
 }
 
@@ -118,6 +131,15 @@ extension EditorTab {
                   diskState: .inSync, mtime: 0, cursor: EditorPosition(line: 1, column: 1), selection: nil,
                   visibleRange: nil, scrollTop: 0, notice: nil, readOnly: false, saving: false, edits: 0,
                   lastAgentEdit: nil)
+    }
+
+    /// A diff tab, its two sides loading. Read-only and never dirty: its text is not a buffer.
+    public static func diff(root: String, path: String, group: GitGroup) -> EditorTab {
+        let language = editorLanguage(forPath: path)
+        return EditorTab(subject: .diff(root: root, path: path, group: group), text: "", savedText: "",
+                         language: language, diskState: .inSync, mtime: 0, cursor: EditorPosition(line: 1, column: 1),
+                         selection: nil, visibleRange: nil, scrollTop: 0, notice: nil, readOnly: true, saving: false,
+                         edits: 0, lastAgentEdit: nil, diffState: .loading(language))
     }
 
     public var path: String? { if case .file(let p, _) = subject { p } else { nil } }

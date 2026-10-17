@@ -161,6 +161,25 @@ public func layoutDroppingUnknownPaneKinds(
     return (cleaned, "dropped \(unknown.count) \(plural) this build cannot draw: \(described)")
 }
 
+/// `snapshot` with every saved Git pane turned into an editor pane showing Changes (3b-iii, Decision
+/// 40): the Git pane folded into the editor, so the pane comes back as the editor on the same list.
+///
+/// **The first kind migration.** Every other kind this build does not know is still dropped with a
+/// note (`layoutDroppingUnknownPaneKinds`), which runs after this. Same id and frame, so the snap
+/// graph, focus and maximize still name the pane (R8). No tabs: a Git pane saved none, and diff tabs
+/// are never saved (R7). The column takes the layout's default width.
+public func layoutMigratingGitPanes(_ snapshot: LayoutSnapshot) -> LayoutSnapshot {
+    var out = snapshot
+    let width = snapshot.editorColumnDefault?.width ?? EditorColumnState.initial.width
+    out.panes = snapshot.panes.map { p in
+        guard p.kind == "git" else { return p }
+        return Pane(id: p.id, kind: "editor", title: Pane.defaultTitle(kind: "editor"), frame: p.frame,
+                    density: p.density, columnWidths: p.columnWidths,
+                    editorColumn: EditorColumnState(shown: true, view: .changes, width: width, open: []))
+    }
+    return out
+}
+
 /// `snapshot` with every overlay pane removed — today, every settings
 /// pane — together with any reference the rest of the snapshot held to
 /// one.

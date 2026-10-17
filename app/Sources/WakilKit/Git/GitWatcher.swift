@@ -1,10 +1,10 @@
 import CoreServices
 import Foundation
 
-/// Tells a git pane that something under one of the project's roots changed.
+/// Tells the window that something under one of the project's roots changed.
 ///
 /// A protocol so the window can be handed a fake: `WindowModel` starts, restarts and stops
-/// one of these as git panes open and close and the project changes, and a test checks that
+/// one of these as editor panes open and close and the project changes, and a test checks that
 /// lifecycle without touching the file system.
 public protocol RootWatcher: Sendable {
     /// Watches `roots`, replacing whatever was watched before. Calls `changed(root)` once per

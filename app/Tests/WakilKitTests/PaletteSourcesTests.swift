@@ -89,10 +89,6 @@ private func gitRoot(_ name: String, _ files: [GitFileRow]) -> GitRootState {
                  files: files, error: nil, loading: false)
 }
 
-private func gitSnapshot(_ roots: [GitRootState]) -> GitSnapshot {
-    GitSnapshot(roots: roots, selection: nil, folded: false, diff: nil)
-}
-
 // MARK: - Tests
 
 @Suite struct PaletteSourcesTests {
@@ -100,7 +96,7 @@ private func gitSnapshot(_ roots: [GitRootState]) -> GitSnapshot {
     @Test func newPaneRowsComeFromPaneKinds() async {
         let rows = newPaneEntries(kinds: Pane.kinds)
         #expect(Set(rows.map(\.id)) == Set(Pane.kinds.subtracting([Pane.settingsKind]).map { "newpane:\($0)" }))
-        #expect(rows.map(\.title) == ["New Database pane", "New Terminal", "New API client", "New Git pane", "New Editor pane"])
+        #expect(rows.map(\.title) == ["New Database pane", "New Terminal", "New API client", "New Editor pane"])
         let db = rows.first { $0.id == "newpane:db" }
         #expect(db?.kindLabel == "db")
         #expect(db?.group == .newPane)
@@ -217,56 +213,42 @@ private func gitSnapshot(_ roots: [GitRootState]) -> GitSnapshot {
     }
 
     // 7
-    @Test func changedFilesFromGitSnapshot() async {
-        let snap = gitSnapshot([gitRoot("walk-a", [
+    @Test func changedFilesFromTheWindowsStatus() async {
+        let roots = [gitRoot("walk-a", [
             GitFileRow(path: "src/booking-controller.ts", origPath: nil, group: .changed, status: "M"),
             GitFileRow(path: "notes.md", origPath: nil, group: .untracked, status: "?"),
-        ])])
-        let source = ChangedFilesSource(gitPanes: { [GitPaneState(paneId: "git-1", snapshot: snap)] },
-                                        statusWithoutPane: { [] })
-        let rows = await source.entries()
+        ])]
+        let rows = await ChangedFilesSource(status: { roots }).entries()
         #expect(rows.count == 2)
         let controller = rows.first { $0.title == "booking-controller.ts" }
         #expect(controller?.subtitle == "Changes · walk-a")
         #expect(controller?.kindLabel == "git")
         #expect(controller?.group == .resources)
-        #expect(controller?.action == .dispatch(action: "git_select", params: .object([
-            "pane": .string("git-1"), "root": .string("/w/walk-a"),
-            "path": .string("src/booking-controller.ts"), "group": .string("changed"),
+        // No `pane`: `editor_changes_select` picks the focused or first editor pane, or opens one.
+        #expect(controller?.action == .dispatch(action: "editor_changes_select", params: .object([
+            "root": .string("/w/walk-a"), "path": .string("src/booking-controller.ts"), "group": .string("changed"),
         ])))
         #expect(rows.first { $0.title == "notes.md" }?.subtitle == "Untracked · walk-a")
     }
 
     @Test func partlyStagedFileIsTwoRows() async {
-        let snap = gitSnapshot([gitRoot("walk-a", [
+        let roots = [gitRoot("walk-a", [
             GitFileRow(path: "a.ts", origPath: nil, group: .staged, status: "M"),
             GitFileRow(path: "a.ts", origPath: nil, group: .changed, status: "M"),
-        ])])
-        let rows = await ChangedFilesSource(gitPanes: { [GitPaneState(paneId: "git-1", snapshot: snap)] },
-                                            statusWithoutPane: { [] }).entries()
+        ])]
+        let rows = await ChangedFilesSource(status: { roots }).entries()
         #expect(rows.count == 2)
         #expect(Set(rows.map(\.subtitle)) == ["Staged · walk-a", "Changes · walk-a"])
         #expect(Set(rows.map(\.id)).count == 2)
     }
 
-    @Test func twoGitPanesOverTheSameRootsListEachFileOnceInTheFirstPane() async {
-        let snap = gitSnapshot([gitRoot("walk-a", [GitFileRow(path: "a.ts", origPath: nil, group: .changed, status: "M")])])
-        let rows = await ChangedFilesSource(gitPanes: {
-            [GitPaneState(paneId: "git-1", snapshot: snap), GitPaneState(paneId: "git-2", snapshot: snap)]
-        }, statusWithoutPane: { [] }).entries()
-        #expect(rows.count == 1)
-        if case .dispatch(_, .object(let params))? = rows.first?.action {
-            #expect(params["pane"] == .string("git-1"))
-        } else {
-            Issue.record("expected a git_select dispatch")
-        }
-    }
-
-    @Test func noGitPaneOpenOpensOneThenSelects() async {
-        let roots = [gitRoot("walk-a", [GitFileRow(path: "a.ts", origPath: nil, group: .changed, status: "M")])]
-        let rows = await ChangedFilesSource(gitPanes: { [] }, statusWithoutPane: { roots }).entries()
-        #expect(rows.count == 1)
-        #expect(rows.first?.action == .openGitAndSelect(root: "/w/walk-a", path: "a.ts", group: "changed"))
+    @Test func aRootLoadingOrFailedListsNothing() async {
+        var loading = gitRoot("walk-a", [GitFileRow(path: "a.ts", origPath: nil, group: .changed, status: "M")])
+        loading.loading = true
+        var failed = gitRoot("walk-b", [GitFileRow(path: "b.ts", origPath: nil, group: .changed, status: "M")])
+        failed.error = "not a git repository"
+        let roots = [loading, failed]
+        #expect(await ChangedFilesSource(status: { roots }).entries().isEmpty)
     }
 
     // 8
@@ -357,7 +339,7 @@ private func gitSnapshot(_ roots: [GitRootState]) -> GitSnapshot {
             NewPaneSource(),
             TablesSource(db: db, environment: { "staging" }, cache: TableCache()),
             ApiEntriesSource(http: http, environment: { "staging" }),
-            ChangedFilesSource(gitPanes: { [] }, statusWithoutPane: { [] }),
+            ChangedFilesSource(status: { [] }),
             ItemsSource.projects(organisation: { "acme" }, read: { _ in ([], nil) }),
             ItemsSource.sessions(read: none),
             ItemsSource.providers(read: none),
@@ -373,13 +355,13 @@ private func gitSnapshot(_ roots: [GitRootState]) -> GitSnapshot {
                       fetch: PaneFetch(query: .table(database: "core", name: "bookings")))
         let term = Pane(id: "p2", kind: "terminal", title: "shell",
                         frame: PaneFrame(x: 0, y: 0, width: 1, height: 1), terminalPath: "/w/walk-a")
-        let git = Pane(id: "p3", kind: "git", title: "Git", frame: PaneFrame(x: 0, y: 0, width: 1, height: 1))
+        let editor = Pane(id: "p3", kind: "editor", title: "Editor", frame: PaneFrame(x: 0, y: 0, width: 1, height: 1))
         let api = Pane(id: "p4", kind: "api", title: "api", frame: PaneFrame(x: 0, y: 0, width: 1, height: 1))
         let rows = await OpenPanesSource(panes: {
-            [PaneSummary(pane: db), PaneSummary(pane: term), PaneSummary(pane: git, gitRoots: 2),
+            [PaneSummary(pane: db), PaneSummary(pane: term), PaneSummary(pane: editor),
              PaneSummary(pane: api, apiEntry: "catalog")]
         }).entries()
-        #expect(rows.map(\.subtitle) == ["bookings", "/w/walk-a", "2 roots", "catalog"])
+        #expect(rows.map(\.subtitle) == ["bookings", "/w/walk-a", "", "catalog"])
         #expect(rows.first?.action == .focusPane(id: "p1"))
         #expect(rows.first?.id == "pane:p1")
         #expect(rows.first?.kindLabel == "db")

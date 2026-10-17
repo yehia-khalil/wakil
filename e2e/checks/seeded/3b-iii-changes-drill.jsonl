@@ -1,0 +1,71 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_tree","params":{"view":"changes"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"expect":{"pane":"editor-1","field":"column.shown","equals":"true"}}
+{"expect":{"tree":"contains","text":"STAGED"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"app.txt","group":"staged"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"app.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.group","equals":"staged"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.root","contains":"/e2e-api"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.loading","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.error","equals":"null"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.no_longer_changed","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.binary","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","equals":"null"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].preview","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}
+{"expect":{"pane":"editor-1","field":"hunks","equals":"null"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"staged"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"app.txt"}}
+{"expect":{"tree":"contains","text":"app.txt (Staged)"}}
+{"dispatch":{"action":"editor_changes_step","params":{"pane":"editor-1","delta":1}}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"changed"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.group","equals":"changed"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].preview","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
+{"expect":{"tree":"contains","text":"app.txt (Changes)"}}
+{"expect":{"tree":"absent","text":"app.txt (Staged)"}}
+{"dispatch":{"action":"editor_changes_step","params":{"pane":"editor-1","delta":2}}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"untracked"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"notes"}}
+{"expect":{"tree":"contains","text":"notes (Untracked)"}}
+{"dispatch":{"action":"editor_changes_step","params":{"pane":"editor-1","delta":1}}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.root","contains":"/e2e-portal"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"index.txt"}}
+{"dispatch":{"action":"editor_changes_step","params":{"pane":"editor-1","delta":1}}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"index.txt"}}
+{"dispatch":{"action":"editor_changes_step","params":{"pane":"editor-1","delta":-1}}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.root","contains":"/e2e-api"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}
+{"dispatch":{"action":"editor_changes_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api"}}}
+{"expect":{"pane":"editor-1","field":"column.changes_closed","contains":"/e2e-api"}}
+{"expect":{"tree":"absent","text":"?, notes"}}
+{"expect":{"tree":"contains","text":"M, index.txt"}}
+{"dispatch":{"action":"editor_changes_step","params":{"pane":"editor-1","delta":-1}}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"index.txt"}}
+{"dispatch":{"action":"editor_changes_expand","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api"}}}
+{"expect":{"pane":"editor-1","field":"column.changes_closed","equals":"[]"}}
+{"expect":{"tree":"contains","text":"?, notes"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"BookingController.php","group":"untracked","pin":true}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].diff.path","equals":"BookingController.php"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].preview","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"expect":{"tree":"contains","text":"BookingController.php (Untracked)"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"notes","group":"untracked"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"notes"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].diff.path","equals":"BookingController.php"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1","diff":{"root":"{fixtureRoot}/e2e-api","path":"BookingController.php","group":"untracked"}}}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"notes"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1","diff":{"root":"{fixtureRoot}/e2e-api","path":"BookingController.php","group":"untracked"}},"refuses":"editor_close: the editor pane has no open tab"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"notes","group":"modified"},"refuses":"editor_changes_select: group must be staged, changed or untracked, not \"modified\""}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-project","path":"notes","group":"untracked"},"refuses":"is not a root of the active project (roots: "}}
+{"dispatch":{"action":"editor_changes_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-project"},"refuses":"editor_changes_collapse: "}}
+{"dispatch":{"action":"editor_changes_step","params":{"pane":"editor-1"},"refuses":"editor_changes_step"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_changes_step\""}}}

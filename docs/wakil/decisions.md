@@ -1282,6 +1282,23 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* a replace is found to have overwritten work the operator had not saved — then the
     price becomes *gate*.
 
+40. **The Git pane is the editor's Changes view; gutter marks and the peek ship with it.**
+    *(2026-10-15, operator, during the 3b-iii design —
+    `docs/superpowers/specs/2026-10-15-3b-iii-changes-view-design.md`.)*
+    Decision 36's fold, made. The editor's left column has a third view, **Changes** (⌘⇧G): one
+    header per root, Staged / Changes / Untracked, and a row opens a read-only **diff tab**
+    (`User.php (Changes)`) in the editor's own web view, under the preview-tab rule; ⌘⏎ opens the
+    file itself. **The window keeps one git status** (`GitStatus`), read once per root per watcher
+    wake while any editor pane is open, and everything that shows git reads it. A file tab in a
+    repository shows **gutter marks** against the index, computed in WakilKit from the buffer; a mark
+    opens an inline **peek** whose **Revert** is a buffer edit — undoable, unsaved until ⌘S — and so
+    asks nothing (Rule 1). The Files tree shows each changed file's status letter. **The Git pane
+    kind is gone**, and a layout that saved one opens it as an editor pane on Changes — the first kind
+    migration; every other unknown kind is still dropped. Nothing writes to git: stage, unstage,
+    commit and discard stay 3a-ii's.
+    *Reverse if:* the Changes view is found unable to show something the operator relied on the Git
+    pane's spine or names column for — then that piece comes back inside the editor, not as a pane.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,

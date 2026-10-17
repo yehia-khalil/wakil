@@ -40,18 +40,18 @@ var Surfaces = []string{
 	// grid row is the db pane's vocabulary, not chrome every kind shares, so
 	// it is `db` on `api`'s precedent rather than `pane.db.*`.
 	"db",
-	// The editor pane's own namespace (3b-i), on `git`'s precedent: tabs
-	// `editor.tab.<i>`, the disk line's Reload and Compare, the save-as field
-	// and the unsaved prompt's three buttons. Added by the Cover rung: without
-	// it the resolver drops every one of them from the tree it reads, so no
-	// check could press them and the gate could not count them.
+	// The editor pane's own namespace (3b-i), on `api`'s and `db`'s precedent:
+	// tabs `editor.tab.<i>`, the disk line's Reload and Compare, the save-as
+	// field and the unsaved prompt's three buttons. Added by the Cover rung:
+	// without it the resolver drops every one of them from the tree it reads,
+	// so no check could press them and the gate could not count them.
+	//
+	// 3b-iii folded the Git pane into the editor's Changes view, so what was
+	// the `git` namespace (3a-i: `git.row:…`, `git.mark:…`) is gone with the
+	// pane kind, and its rows are named here: `editor.changes.root:<root>`,
+	// `editor.changes.row:<root>/<path>:<group>`, and a diff tab's lines
+	// `editor.diff.*`. No `git.` identifier is left in the app to harvest.
 	"editor",
-	// The git pane's own namespace (3a-i), on `api`'s and `db`'s precedent:
-	// rows `git.row:<root>/<path>:<group>`, spine marks `git.mark:…`. Added
-	// by the Cover rung, because without it every one of them was invisible to
-	// the gate and unaddressable by a check — the blind denominator
-	// docs/agents/e2e.md warns about.
-	"git",
 	"landing",
 	"org",
 	"palette",
@@ -87,14 +87,15 @@ var AuditedSources = []string{
 	// in the editor's own files — `api.<key>.part.<i>.remove` / `.unbind` in the token view.
 	"ApiFieldEditor.swift",
 	"ApiTokenView.swift",
-	// 3a-i joins here, in the Cover rung that named its surface `git`: its
-	// rows and spine marks are tap targets, and an unnamed one added later
-	// should fail the gate the day it lands.
-	"GitPane.swift",
 	// 3b-i joins here, in the Cover rung that named its surface `editor`. The
 	// unsaved prompt (`UnsavedPromptBar`) lives in this file too, so the
 	// window-level prompt's buttons are under the gate with the pane's.
 	"EditorPane.swift",
+	// 3b-iii joins the column here, in the Cover rung for the Changes view
+	// that lives in it: the Files tree's rows, the Search view and the
+	// Changes rows and root headers were named since 3b-ii, but the file sat
+	// outside the gate, so a new tap target there could arrive unnamed.
+	"EditorColumn.swift",
 	"Landing.swift",
 	"OrgPlane.swift",
 	"Palettes.swift",

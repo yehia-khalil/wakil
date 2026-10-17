@@ -204,7 +204,6 @@ struct Landing: View {
         switch kind {
         case "db": return "Database pane"
         case "terminal": return "Terminal pane"
-        case "git": return "Git"
         default: return kind
         }
     }

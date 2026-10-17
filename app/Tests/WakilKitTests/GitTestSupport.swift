@@ -14,6 +14,7 @@ actor FakeGit: ToolCaller {
     var shows: [String: String] = [:]           // "root|path|rev" -> text
     var calls: [String] = []
     var showErrors: [String: String] = [:]      // "root|path|rev" -> isError text
+    var absentShows: Set<String> = []           // "root|path|rev" git_show answers `absent` for
     var slowShow = false
     /// `slowStatus` parks every `git_status` under its call number (0, 1, …) until
     /// `releaseStatus(_:)`. The reply is taken when the call arrives, so a parked read
@@ -40,12 +41,28 @@ actor FakeGit: ToolCaller {
     func setSlowShow(_ slow: Bool) { slowShow = slow }
     func setSlowStatus(_ slow: Bool) { slowStatus = slow }
     func set(showError key: String, _ text: String) { showErrors[key] = text }
+    func set(showAbsent key: String) { absentShows.insert(key) }
     func releaseStatus(_ call: Int) {
         statusReleased.insert(call)
         statusParked.removeValue(forKey: call)?.resume()
     }
     private func parkStatus(_ call: Int, _ c: CheckedContinuation<Void, Never>) {
         if statusReleased.contains(call) { c.resume() } else { statusParked[call] = c }
+    }
+    /// `indexedShow` parks every `git_show` under its call number (0, 1, … from the moment it is turned
+    /// on) until `releaseShow(_:)`, taking the reply when the call arrives. It lets a test land two shows
+    /// of the SAME path in either order.
+    private var indexedShow = false
+    private var showCount = 0
+    private var showParked: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var showReleased: Set<Int> = []
+    func setIndexedShow(_ on: Bool) { indexedShow = on; showCount = 0; showReleased = [] }
+    func releaseShow(_ call: Int) {
+        showReleased.insert(call)
+        showParked.removeValue(forKey: call)?.resume()
+    }
+    private func parkShow(_ call: Int, _ c: CheckedContinuation<Void, Never>) {
+        if showReleased.contains(call) { c.resume() } else { showParked[call] = c }
     }
     func release() {
         released = true
@@ -79,6 +96,18 @@ actor FakeGit: ToolCaller {
             try Task.checkCancellation()
             return reply
         case "git_show":
+            if indexedShow {
+                let call = showCount
+                showCount += 1
+                let key = "\(root)|\(path)|\(optionalString(arguments, "rev") ?? "")"
+                let text = shows[key] ?? ""
+                await withCheckedContinuation { c in Task { self.parkShow(call, c) } }
+                try Task.checkCancellation()
+                return .object(["structuredContent": .object([
+                    "text": .string(text), "binary": .bool(false),
+                    "bytes": .integer(Int64(text.utf8.count)), "truncated": .bool(false),
+                ])])
+            }
             if slowShow { await withCheckedContinuation { c in Task { self.park(path, c) } } }
             try Task.checkCancellation()
             let key = "\(root)|\(path)|\(optionalString(arguments, "rev") ?? "")"
@@ -90,17 +119,10 @@ actor FakeGit: ToolCaller {
             return .object(["structuredContent": .object([
                 "text": .string(shows[key] ?? ""), "binary": .bool(false),
                 "bytes": .integer(Int64((shows[key] ?? "").utf8.count)), "truncated": .bool(false),
+                "absent": .bool(absentShows.contains(key)),
             ])])
         default:
             return .object([:])
         }
     }
-}
-
-/// A layout with one open `git` pane, built the way the api pane tests build theirs:
-/// `LayoutStore.open` names it, so the id is returned rather than chosen.
-func openGitPane() async -> (layout: LayoutStore, panes: PaneStore, pane: String) {
-    let layout = LayoutStore()
-    let pane = await layout.open(kind: "git", title: "git").id
-    return (layout, PaneStore(), pane)
 }

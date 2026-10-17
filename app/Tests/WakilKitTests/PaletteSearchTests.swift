@@ -29,7 +29,7 @@ private let other = e("bookings", "core db · staging", "table")
 
 @Test func everyAliasResolves() {
     let cases: [(String, String)] = [("db", "table"), ("database", "table"), ("table", "table"), ("api", "api"),
-        ("git", "git"), ("term", "terminal"), ("terminal", "terminal"), ("pane", "pane"),
+        ("term", "terminal"), ("terminal", "terminal"), ("pane", "pane"),
         ("project", "project"), ("session", "session"), ("provider", "provider")]
     for (word, kind) in cases {
         #expect(PaletteSearch.score(e("x", "", kind), words: [word]) != nil, "\(word) → \(kind)")
@@ -141,17 +141,16 @@ private func lit(_ title: String, _ words: [String], subtitle: String = "") -> [
 }
 
 /// Final fix wave, item 7: the aliases reach the rows the sources really produce. The kind
-/// labels come from `newPaneEntries` and `OpenPanesSource` — `db`, `terminal`, `api`, `git` —
+/// labels come from `newPaneEntries` and `OpenPanesSource` — `db`, `terminal`, `api` —
 /// not from labels a test made up, and every open or new pane row answers `pane`.
 @Test func kindAliasesReachTheSourcesRealRows() async {
-    let new = newPaneEntries(kinds: ["db", "terminal", "api", "git"])
+    let new = newPaneEntries(kinds: ["db", "terminal", "api"])
     let open = await OpenPanesSource(panes: {
         [PaneSummary(id: "d1", kind: "db", title: "core", holds: "bookings"),
          PaneSummary(id: "t1", kind: "terminal", title: "zsh", holds: "/tmp"),
-         PaneSummary(id: "a1", kind: "api", title: "catalog", holds: "staging"),
-         PaneSummary(id: "g1", kind: "git", title: "repo", holds: "2 roots")]
+         PaneSummary(id: "a1", kind: "api", title: "catalog", holds: "staging")]
     }).entries()
-    #expect(Set((new + open).map(\.kindLabel)) == ["db", "terminal", "api", "git"], "the real labels")
+    #expect(Set((new + open).map(\.kindLabel)) == ["db", "terminal", "api"], "the real labels")
     func hits(_ query: String) -> Set<String> { Set(PaletteSearch.rank(new + open, query: query).map(\.id)) }
 
     for word in ["db", "database"] {
@@ -161,7 +160,6 @@ private func lit(_ title: String, _ words: [String], subtitle: String = "") -> [
         #expect(hits(word).isSuperset(of: ["newpane:terminal", "pane:t1"]), "\(word)")
     }
     #expect(hits("api").isSuperset(of: ["newpane:api", "pane:a1"]))
-    #expect(hits("git").isSuperset(of: ["newpane:git", "pane:g1"]))
     #expect(hits("pane") == Set((new + open).map(\.id)), "every open and new pane row answers pane")
 }
 

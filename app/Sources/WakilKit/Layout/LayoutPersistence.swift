@@ -178,8 +178,8 @@ public struct LayoutPersistence: Sendable {
             // Silently, with no note: a settings pane in a file is not a
             // stale pane kind the operator needs telling about — this
             // build draws that kind perfectly well, it just never restores
-            // one.
-            let checked = layoutDroppingUnknownPaneKinds(layoutWithoutOverlayPanes(decoded))
+            // one. A Git pane is migrated, not dropped (3b-iii).
+            let checked = layoutDroppingUnknownPaneKinds(layoutMigratingGitPanes(layoutWithoutOverlayPanes(decoded)))
             return (checked.snapshot, checked.note.map { "layout for \(scope): \($0)" })
         } catch {
             return (nil, "layout for \(scope) could not be read (\(error)); starting from an empty canvas")

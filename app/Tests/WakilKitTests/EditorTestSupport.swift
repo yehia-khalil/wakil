@@ -19,7 +19,7 @@ actor FakeFiles: ToolCaller {
     private var parked: [CheckedContinuation<Void, Never>] = []
     private var clock: Int64 = 100
 
-    func put(_ path: String, _ text: String) { clock += 1; disk[path] = (text, clock) }
+    func put(_ path: String, _ text: String) { clock += 1; disk[path] = (text, clock); overCap[path] = nil }
     func remove(_ path: String) { disk[path] = nil }
     func setListing(_ root: String, _ files: [String]) { listing[root] = files }
     func setListError(_ root: String, _ text: String) { listErrors[root] = text }
@@ -282,6 +282,8 @@ struct EditorFixture {
     let layout: LayoutStore
     let files: FakeFiles
     var pane: String
+    let git: FakeGit
+    let status: GitStatus
 
     @discardableResult
     func dispatch(_ name: String, _ params: [String: JSONValue] = [:], origin: ActionOrigin = .agent,
@@ -292,6 +294,18 @@ struct EditorFixture {
                                            environment: environment, confirmation: nil)
     }
     func snapshot() async -> EditorSnapshot { await panes.editorSnapshot(paneId: pane) }
+
+    /// Waits until `path`'s tab holds `baseline`. A baseline lands after the action that opened the
+    /// tab has returned (final review 2), so a test reads it only once it is there. Callers carry
+    /// `.timeLimit`.
+    func baselineLands(_ path: String, _ baseline: String?) async {
+        // Ends on the suite's time limit too, as a failure: `try?` alone swallowed the cancellation
+        // and a baseline that never landed spun forever.
+        while await snapshot().tabs.first(where: { $0.path == path })?.baseline != baseline, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(await snapshot().tabs.first(where: { $0.path == path })?.baseline == baseline)
+    }
 }
 
 func editorFixture(roots: [String] = ["/p/api", "/p/web"]) async throws -> EditorFixture {
@@ -302,9 +316,12 @@ func editorFixture(roots: [String] = ["/p/api", "/p/web"]) async throws -> Edito
     let pane = await layout.open(kind: "editor", title: "Editor").id
     let panes = PaneStore(kinds: PaneKinds.standard)
     let files = FakeFiles()
+    let git = FakeGit()
+    let status = GitStatus(git: git, roots: { await files.fixtureRoots() ?? roots })
     await registerEditorActions(into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
-                                roots: { await files.fixtureRoots() ?? roots })
-    return EditorFixture(registry: registry, panes: panes, layout: layout, files: files, pane: pane)
+                                gitStatus: status, roots: { await files.fixtureRoots() ?? roots })
+    return EditorFixture(registry: registry, panes: panes, layout: layout, files: files, pane: pane,
+                         git: git, status: status)
 }
 
 func range(_ l1: Int, _ c1: Int, _ l2: Int, _ c2: Int) -> JSONValue {

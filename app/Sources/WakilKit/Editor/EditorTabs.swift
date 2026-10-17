@@ -24,6 +24,8 @@ public func editorTabTitles(_ tabs: [EditorTab]) -> [String] {
             guard counts[name, default: 0] > 1 else { return name }
             let parent = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
             return "\(parent)/\(name)"
+        case .diff(_, let path, let group):
+            return "\((path as NSString).lastPathComponent) (\(editorDiffGroupTitle(group)))"
         }
     }
 }
@@ -151,4 +153,15 @@ public struct EditorTabDrop: Sendable, Equatable {
 public func editorTabDropX(_ drop: EditorTabDrop, spans: [ClosedRange<Double>]) -> Double {
     guard spans.indices.contains(drop.to) else { return 0 }
     return drop.to > drop.from ? spans[drop.to].upperBound + 1 : spans[drop.to].lowerBound - 1
+}
+
+/// The params that name `subject`'s tab to `editor_close` (and every action that takes a tab): path,
+/// scratch, or a diff's root, path and group.
+public func editorTabParams(_ subject: EditorTabSubject) -> [String: JSONValue] {
+    switch subject {
+    case .file(let path, _): ["path": .string(path)]
+    case .scratch(let n): ["scratch": .integer(Int64(n))]
+    case .diff(let root, let path, let group):
+        ["diff": .object(["root": .string(root), "path": .string(path), "group": .string(group.rawValue)])]
+    }
 }

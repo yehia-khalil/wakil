@@ -331,7 +331,7 @@ final class WindowSession {
             // (`wakil-never-wired-parameters`). `AppWiringTests` pins that
             // the store itself is built; this line is the hand-off.
             vocabulary: wiring.vocabulary,
-            // 3a-i. What keeps a git pane live. This initialiser takes it with no default,
+            // 3a-i. What keeps the window's git status live. This initialiser takes it with no default,
             // so leaving it out does not compile — the other way it could be lost is this
             // line passing something other than the wiring's, which `AppWiringTests`'
             // `theWatcherIsActuallyPassedIn` pins from the other side.
@@ -340,6 +340,8 @@ final class WindowSession {
             // 3b-ii. The one file list the editor actions were registered with; the trees draw
             // it and the watcher invalidates it. No default, for `rootWatcher`'s reason.
             fileLists: wiring.fileLists,
+            // 3b-iii. The status the actions read; no default, for `rootWatcher`'s reason.
+            gitStatus: wiring.gitStatus,
             // The palette reads tables, API entries and changed files straight from these
             // clients, drawing no pane. No default, for `rootWatcher`'s reason. ⌘P's files come
             // from the same list as the trees, so the two never disagree.

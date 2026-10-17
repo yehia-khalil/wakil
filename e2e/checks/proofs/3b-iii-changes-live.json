@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-iii-changes-live.jsonl",
+  "baseCommit": "2dfec0ee0c10361256dd62e7365793e14cb46481",
+  "provedAt": "2026-10-16T20:59:37.504574Z",
+  "checkBlob": "2d71046e10a7a299a0ecd571fe47f88a0117e212"
+}

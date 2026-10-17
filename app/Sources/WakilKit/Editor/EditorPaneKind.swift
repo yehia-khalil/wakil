@@ -23,12 +23,22 @@ enum EditorPaneKind: PaneKind {
             switch tab.subject {
             case .file(let p, let r): path = .string(p); root = .string(r)
             case .scratch(let n): scratch = .number(Double(n))
+            case .diff: break
+            }
+            var diff: JSONValue = .null
+            if case .diff(let r, let p, let g) = tab.subject, let d = tab.diffState {
+                diff = .object([
+                    "root": .string(r), "path": .string(p), "group": .string(g.rawValue),
+                    "loading": .bool(d.loading), "error": d.error.map { .string($0) } ?? .null,
+                    "binary": .bool(d.binary), "bytes": .number(Double(d.bytes)), "lines": .number(Double(d.lines)),
+                    "truncated": .bool(d.truncated), "no_longer_changed": .bool(d.noLongerChanged),
+                    "language": .string(d.language)])
             }
             return .object([
                 "path": path, "scratch": scratch, "root": root, "language": .string(tab.language),
                 "dirty": .bool(tab.dirty), "disk_state": .string(tab.diskState.rawValue),
                 "notice": tab.notice.map { .string($0) } ?? .null, "saving": .bool(tab.saving),
-                "preview": .bool(tab.preview),
+                "preview": .bool(tab.preview), "diff": diff,
             ])
         })
         o["active"] = s.active.map { .number(Double($0)) } ?? .null
@@ -38,11 +48,22 @@ enum EditorPaneKind: PaneKind {
         o["visible_range"] = tab?.visibleRange.map {
             .object(["first": .number(Double($0.lowerBound)), "last": .number(Double($0.upperBound))])
         } ?? .null
+        o["hunks"] = tab.flatMap { t in t.readOnly ? nil : t.baseline.map { base in
+            .array(editorHunks(base: base, text: t.text).map { h in
+                .object(["kind": .string(h.kind.rawValue), "line": .number(Double(h.newStart)),
+                         "count": .number(Double(h.newCount))]) }) } } ?? .null
+        o["peek"] = tab.flatMap(editorPeekView).map { v in
+            .object(["index": .number(Double(v.index)), "count": .number(Double(v.count)),
+                     "line": .number(Double(v.afterLine))]) } ?? .null
         o["visible_text"] = tab.flatMap { t in t.visibleRange.map { .string(editorLines(t.text, $0)) } } ?? .null
         o["selected_text"] = tab.flatMap { t in t.selection.map { .string(editorText(t.text, in: $0)) } } ?? .null
         o["column"] = s.column.map { c in .object([
             "shown": .bool(c.shown), "view": .string(c.view.rawValue), "width": .number(c.width),
-            "open": .array(c.open.map { .string($0) })]) } ?? .null
+            "open": .array(c.open.map { .string($0) }),
+            "changes_closed": .array(c.changesClosed.sorted().map { .string($0) }),
+            "changes_highlight": c.changesHighlight.map { h in
+                .object(["root": .string(h.root), "path": .string(h.path), "group": .string(h.group)]) } ?? .null,
+        ]) } ?? .null
         let f = s.findReport.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.number(Double(r.count)), r.shown) }
             ?? s.find.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.null, true) }
         o["find"] = f.map { q, c, w, r, count, shown in .object([

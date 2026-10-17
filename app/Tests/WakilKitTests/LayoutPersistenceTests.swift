@@ -596,3 +596,70 @@ private func conversation(_ organization: String, _ project: String, _ root: Str
     #expect(scope("acme", "widgets") != scope("acme", "gadgets"))
     #expect(scope("acme", "widgets") != fromOne)
 }
+
+// 3b-iii, R1: a column view this build does not know decodes as `.files`.
+@Test func anUnknownColumnViewDecodesAsFiles() throws {
+    let json = #"{"shown":true,"view":"timeline","width":240,"open":[]}"#
+    let c = try JSONDecoder().decode(EditorColumnState.self, from: Data(json.utf8))
+    #expect(c.view == .files && c.shown)
+}
+
+@Test func aLayoutWhoseDefaultColumnIsOnAnUnknownViewStillLoads() throws {
+    let empty = try JSONEncoder().encode(LayoutSnapshot(panes: [], graph: SnapGraph()))
+    var object = try #require(JSONSerialization.jsonObject(with: empty) as? [String: Any])
+    object["editorColumnDefault"] = ["shown": true, "view": "timeline", "width": 300, "open": [String]()] as [String: Any]
+    let json = try JSONSerialization.data(withJSONObject: object)
+    let s = try JSONDecoder().decode(LayoutSnapshot.self, from: json)
+    #expect(s.editorColumnDefault?.view == .files && s.editorColumnDefault?.width == 300)
+}
+
+// 3b-iii: the Changes view's column state.
+@Test func aColumnSavedBefore3biiiDecodesWithNoChangesState() throws {
+    let json = #"{"shown":true,"view":"search","width":240,"open":["/p/api"]}"#
+    let c = try JSONDecoder().decode(EditorColumnState.self, from: Data(json.utf8))
+    #expect(c.changesClosed.isEmpty && c.changesHighlight == nil && c.open == ["/p/api"])
+}
+
+@Test func theChangesStateRoundTrips() throws {
+    let c = EditorColumnState(shown: true, view: .changes, width: 260, open: [], changesClosed: ["/p/web"],
+                              changesHighlight: EditorChangesRow(root: "/p/api", path: "a.go", group: "staged"))
+    #expect(try JSONDecoder().decode(EditorColumnState.self, from: JSONEncoder().encode(c)) == c)
+}
+
+// MARK: - 3b-iii: a saved Git pane comes back as the editor on Changes
+
+@Test func aSavedGitPaneLoadsAsAnEditorPaneOnChangesWithItsFrameAndId() throws {
+    let frame = PaneFrame(x: 10, y: 20, width: 600, height: 400)
+    var s = LayoutSnapshot(panes: [Pane(id: "git-1", kind: "git", title: "Git", frame: frame)], graph: SnapGraph())
+    s.focusedId = "git-1"
+    let out = layoutMigratingGitPanes(s)
+    let p = try #require(out.panes.first)
+    #expect(p.id == "git-1" && p.kind == "editor" && p.title == "Editor" && p.frame == frame)
+    #expect(p.editorColumn == EditorColumnState(shown: true, view: .changes, width: 240, open: []))
+    #expect(p.editorTabs == nil && out.focusedId == "git-1")
+}
+
+@Test func theMigratedColumnTakesTheLayoutsDefaultWidth() {
+    var s = LayoutSnapshot(panes: [Pane(id: "g", kind: "git", title: "Git", frame: PaneFrame(x: 0, y: 0, width: 1, height: 1))],
+                           graph: SnapGraph())
+    s.editorColumnDefault = EditorColumnState(shown: false, view: .search, width: 310, open: [])
+    #expect(layoutMigratingGitPanes(s).panes[0].editorColumn?.width == 310)
+}
+
+@Test func anyOtherUnknownKindIsStillDropped() throws {
+    let s = LayoutSnapshot(panes: [Pane(id: "x", kind: "database", title: "D", frame: PaneFrame(x: 0, y: 0, width: 1, height: 1))],
+                           graph: SnapGraph())
+    let checked = layoutDroppingUnknownPaneKinds(layoutMigratingGitPanes(s))
+    #expect(checked.snapshot.panes.isEmpty && checked.note != nil)
+}
+
+@Test func aLayoutFileWithAGitPaneComesBackAsAnEditor() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let persistence = LayoutPersistence(directory: directory)
+    try persistence.save(LayoutSnapshot(panes: [Pane(id: "git-1", kind: "git", title: "Git",
+                                                     frame: PaneFrame(x: 0, y: 0, width: 500, height: 300))],
+                                        graph: SnapGraph()), for: scope("acme", "p"))
+    let (loaded, note) = persistence.load(for: scope("acme", "p"))
+    #expect(loaded?.panes.first?.kind == "editor" && note == nil)
+}

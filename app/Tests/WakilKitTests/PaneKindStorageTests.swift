@@ -6,20 +6,19 @@ import Testing
 
 @Test func aPaneHoldingOneKindRefusesAnother() async {
     let store = PaneStore(kinds: PaneKinds.standard)
-    await store.setGit(paneId: "p", .empty)
-    await store.setTerminalProposal(paneId: "p", nil)
     await store.setRows(
         paneId: "p", columns: ["a"], columnTypes: ["text"], columnTypesInferred: false,
         rows: [[.string("x")]], millis: 1, truncated: false, pageable: false, offset: 0,
         sort: [], listsTables: false, editable: nil)
-    #expect(await store.snapshot(paneId: "p", kind: "git").git == .empty)
-    #expect(await store.snapshot(paneId: "p", kind: "git").dataSurface == nil)
+    await store.setTerminalProposal(paneId: "p", nil)
+    #expect(await store.snapshot(paneId: "p", kind: "db").dataSurface?.rows == [[.string("x")]])
+    #expect(await store.snapshot(paneId: "p", kind: "terminal").terminal == nil)
 }
 
 @Test func aNeverWrittenPaneAnswersItsKindsEmptySnapshot() async {
     let store = PaneStore(kinds: PaneKinds.standard)
-    let git = await store.snapshot(paneId: "g", kind: "git")
-    #expect(git.git == .empty && git.failure == nil)
+    let db = await store.snapshot(paneId: "d", kind: "db")
+    #expect(db.dataSurface == .empty && db.failure == nil)
     let settings = await store.snapshot(paneId: "s", kind: Pane.settingsKind)
     #expect(settings.contents == nil && settings.failure == nil)
     let unknown = await store.snapshot(paneId: "u", kind: "nope")
@@ -51,7 +50,7 @@ import Testing
     let seed = LayoutScope(organization: "acme", project: "widgets")
     let conversation = LayoutScope(organization: "acme", project: "widgets", lineageRoot: "r")
     await store.switchScope(to: seed)
-    await store.setGit(paneId: "g", .empty)
+    await store.setTerminalProposal(paneId: "g", nil)
     let mark = await store.apiResolutionMark()
     await store.switchScope(to: conversation, adoptingFrom: seed)
     #expect(await store.holdsContents(paneId: "g"))

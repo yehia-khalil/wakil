@@ -7,8 +7,9 @@ private func treeFixture() async throws -> (EditorFixture, EditorFileLists) {
     let lists = EditorFileLists(files: f.files)
     let registry = ActionRegistry(journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "t")
     await registerEditorActions(into: registry, panes: f.panes, layout: f.layout, files: lists, fileLists: lists,
-                                roots: { ["/p/api", "/p/web"] })
-    f = EditorFixture(registry: registry, panes: f.panes, layout: f.layout, files: f.files, pane: f.pane)
+                                gitStatus: nil, roots: { ["/p/api", "/p/web"] })
+    f = EditorFixture(registry: registry, panes: f.panes, layout: f.layout, files: f.files, pane: f.pane,
+                         git: f.git, status: f.status)
     await lists.setWatching(true)
     return (f, lists)
 }
@@ -237,8 +238,9 @@ private func treeFixture() async throws -> (EditorFixture, EditorFileLists) {
     let lists = EditorFileLists(files: f.files)
     let registry = ActionRegistry(journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "t")
     await registerEditorActions(into: registry, panes: f.panes, layout: f.layout, files: lists, fileLists: lists,
-                                roots: { ["/p/api", "/p/web"] })
-    f = EditorFixture(registry: registry, panes: f.panes, layout: f.layout, files: f.files, pane: f.pane)
+                                gitStatus: nil, roots: { ["/p/api", "/p/web"] })
+    f = EditorFixture(registry: registry, panes: f.panes, layout: f.layout, files: f.files, pane: f.pane,
+                         git: f.git, status: f.status)
     await f.files.setListing("/p/api", ["a.go"]); await f.files.setListing("/p/web", ["i.ts"])
     try await f.dispatch("editor_tree", ["shown": .bool(true)])
     #expect(await lists.state().listings["/p/api"]?.files == ["a.go"])

@@ -3,46 +3,34 @@ import Testing
 
 private let ctx = ContextStore.ActiveContext(org: "o", project: "p", environment: "local")
 
-private func row(_ path: String, _ group: GitGroup = .changed) -> GitFileRow {
-    GitFileRow(path: path, origPath: nil, group: group, status: "M")
+/// A `GitSource` over a `GitStatus` that has read `files` for `/p/api` (3b-iii: the window's status).
+private func source(_ files: [(String, String, String)], read: Bool = true) async -> GitSource {
+    let git = FakeGit()
+    await git.set(status: "/p/api", files: files)
+    let status = GitStatus(git: git, roots: { ["/p/api"] })
+    if read { await status.refresh() }
+    return GitSource(status: status)
 }
 
-private func root(_ name: String, _ files: [GitFileRow]) -> GitRootState {
-    GitRootState(root: "/p/\(name)", name: name, branch: "main", detached: "", ahead: 0, behind: 0,
-                 files: files, error: nil, loading: false)
-}
-
-private func snapshot(_ roots: [GitRootState]) -> GitSnapshot {
-    GitSnapshot(roots: roots, selection: nil, folded: false, diff: nil)
-}
-
-@Test func gitPaneFilesAreIdentifiersByPathAndBaseName() async throws {
-    let (layout, panes, id) = await openGitPane()
-    await panes.setGit(paneId: id, snapshot([root("api", [row("app/Http/BookingController.php")])]))
-    let names = try await GitSource(layout: layout, panes: panes).identifiers(for: ctx)
+@Test func changedFilesAreIdentifiersByPathAndBaseName() async throws {
+    let names = try await source([("app/Http/BookingController.php", "changed", "M")]).identifiers(for: ctx)
     #expect(names.contains { $0.text == "app/Http/BookingController.php" && $0.kind == .file })
     #expect(names.contains { $0.text == "BookingController" && $0.origin == "git · api" && $0.source == .panes })
 }
 
 @Test func aFileInTwoGroupsIsOneName() async throws {
-    let (layout, panes, id) = await openGitPane()
-    await panes.setGit(paneId: id, snapshot([root("api", [row("a/Foo.php", .staged), row("a/Foo.php", .changed)])]))
-    let names = try await GitSource(layout: layout, panes: panes).identifiers(for: ctx)
+    let names = try await source([("a/Foo.php", "staged", "M"), ("a/Foo.php", "changed", "M")]).identifiers(for: ctx)
     #expect(names.filter { $0.text == "a/Foo.php" }.count == 1)
     #expect(names.filter { $0.text == "Foo" }.count == 1)
 }
 
-@Test func onlyGitPanesContribute() async throws {
-    let (layout, panes, _) = await openGitPane()
-    _ = await layout.open(kind: "terminal", title: "t")
-    let names = try await GitSource(layout: layout, panes: panes).identifiers(for: ctx)
+@Test func nothingBeforeTheStatusIsRead() async throws {
+    let names = try await source([("a/Foo.php", "changed", "M")], read: false).identifiers(for: ctx)
     #expect(names.isEmpty)
 }
 
 @Test func spokenBookingControllerResolvesToThePath() async throws {
-    let (layout, panes, id) = await openGitPane()
-    await panes.setGit(paneId: id, snapshot([root("api", [row("api/app/Http/BookingController.php")])]))
-    let names = try await GitSource(layout: layout, panes: panes).identifiers(for: ctx)
+    let names = try await source([("api/app/Http/BookingController.php", "changed", "M")]).identifiers(for: ctx)
     let r = IdentifierResolver.resolve("show me booking controller", in: Vocabulary(names))
     #expect(r.map(\.phrase) == ["booking controller"])
     #expect(r.first?.candidates.map(\.text) == ["BookingController"])

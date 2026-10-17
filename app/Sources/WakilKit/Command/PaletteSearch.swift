@@ -12,7 +12,6 @@ public enum PaletteSearch {
         "database": ["db", "database"],
         "db": ["db", "database", "table"],
         "api": ["api"],
-        "git": ["git"],
         "terminal": ["term", "terminal"],
         "pane": ["pane"],
         "project": ["project"],

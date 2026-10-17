@@ -32,10 +32,6 @@ public enum PaletteAction: Sendable, Equatable {
     /// A row that opens its children, e.g. a database row → its tables.
     case drill(sourceId: String, value: String)
     case setProject(String), setProvider(String), resumeSession(String)
-    /// A changed file chosen while no Git pane is open: the window opens one, then runs
-    /// `git_select` on it. One action rather than two dispatches, because the second needs the
-    /// pane id only the first produces. `group` is a `GitGroup` raw value.
-    case openGitAndSelect(root: String, path: String, group: String)
     /// A project file: the window opens it in the focused or first editor pane, or a new one
     /// (`editor_open` with no pane).
     case openInEditor(path: String)

@@ -37,6 +37,8 @@ struct EditorPane: View {
     let roots: [String]
     /// The window's one file list per root (`WindowModel.editorFiles`).
     let files: EditorFileListsState
+    /// The window's git status, as the Changes view and the tree's letters draw it (3b-iii).
+    let gitRoots: [GitRootState]
     /// The column a pane that never set its own starts from.
     let columnDefault: EditorColumnState
     /// Monaco's find bar reporting its query, switches and count (the view-report path).
@@ -62,8 +64,6 @@ struct EditorPane: View {
     let resolveUnsaved: (UnsavedChoice) -> Void
 
     @State private var host = EditorHost()
-    /// Compare's diff host: made the first time Compare opens, kept for the pane's life.
-    @State private var compareHost = GitDiffHost()
     /// Compare, open: the path and the disk text it shows against the buffer.
     @State private var comparing: EditorComparing?
     /// Compare could not read the file: the reason, whole (Rule 8).
@@ -113,6 +113,7 @@ struct EditorPane: View {
             HStack(spacing: 0) {
                 if column.shown {
                     EditorColumn(column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
+                                 gitRoots: gitRoots,
                                  search: snapshot.search, paneWidth: geo.size.width, dispatch: dispatch,
                                  canReveal: activeTab?.path != nil,
                                  reveal: { Task { await revealInTree() } },
@@ -125,10 +126,26 @@ struct EditorPane: View {
         }
         .onChange(of: viewOptions, initial: true) { _, o in
             host.setOptions(o)
-            // A nil renderer is fine: showCompare re-sends the font size when Compare opens.
-            compareHost.renderer?.setFontSize(o.fontSize)
+        }
+        // The keys the page takes follow the pane's state (R13): the peek's, or Compare's Esc.
+        .onChange(of: editorCapturedKeys(comparing: comparing != nil, peek: comparing == nil && activeTab.flatMap(editorPeekView) != nil), initial: true) { _, keys in
+            host.renderer?.captureKeys(keys)
         }
         .task {
+            // These closures live as long as the host, so they read `host.latest` (the newest snapshot
+            // handed in), never `snapshot`, which is this struct's copy from first appearance.
+            // A click anywhere in the gutter strip posts, marked or not: only a marked line opens a
+            // peek, so a click on none never dispatches a refusal the operator did not cause.
+            host.markClicked = { subject, line in
+                guard let tab = host.latest?.tabs.first(where: { $0.subject == subject }),
+                      editorPeekLineHasMark(tab, line: line) else { return }
+                Task { await dispatch("editor_peek", ["line": .integer(Int64(line))]) }
+            }
+            host.peekPressed = { op in peekOp(op) }
+            host.onKey = { key in
+                if comparing != nil { if key == "escape" { closeCompare() }; return }
+                peekOp(key == "escape" ? "close" : key)
+            }
             host.bufferChanged = bufferChanged
             host.viewReported = viewReported
             host.findReported = findReported
@@ -175,7 +192,7 @@ struct EditorPane: View {
                 // Compare's diff) with it — keys typed after a click on the Settings tree were
                 // going into the file. Only when one of them still holds it: a field the click
                 // landed on has it already, and a pane that takes it is not overruled.
-                host.resignKeyboard(alsoFrom: compareHost.renderer?.webView)
+                host.resignKeyboard(alsoFrom: nil)
                 return
             }
             if !saveAsRequested, !columnOwnsKeyboard { host.focus() }
@@ -209,14 +226,15 @@ struct EditorPane: View {
                 lineText(compareFailure).accessibilityIdentifier("editor.compare.failure")
             }
             if saveAsRequested { saveAsField }
-            ZStack {
-                if let comparing {
-                    compareView(comparing)
-                } else {
+            // One web view for the code editor, a diff tab and Compare: the page chooses what shows.
+            ZStack(alignment: .top) {
+                VStack(spacing: 0) {
+                    if let comparing { compareHeader(comparing) }
+                    if let tab = activeTab, let d = tab.diffState { diffLine(tab, d) }
                     GitDiffHostView(webView: host.renderer?.webView)
-                        .accessibilityIdentifier("editor.monaco")
-                    if snapshot.tabs.isEmpty { emptyState }
+                        .accessibilityIdentifier(comparing != nil ? "editor.compare.diff" : "editor.monaco")
                 }
+                if snapshot.tabs.isEmpty, comparing == nil { emptyState }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -259,7 +277,7 @@ struct EditorPane: View {
                 .foregroundStyle(EditorPaneStyle.text)
                 .opacity(column.shown ? 0.9 : 0.5)
                 .padding(.leading, 10)
-                .help("Files ⌘B · Search ⌘⇧F")
+                .help("Files ⌘B · Search ⌘⇧F · Changes ⌘⇧G")
                 .accessibilityIdentifier("editor.column.toggle")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
@@ -372,7 +390,9 @@ struct EditorPane: View {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("editor.tab.\(index)")
         .accessibilityAction { focusTab(index) }
-        .accessibilityAddTraits(on ? .isSelected : [])
+        // Text, as a Changes row is: as a button its title never reached the tree (AXDescription only).
+        .accessibilityRemoveTraits(.isButton)
+        .accessibilityAddTraits(on ? [.isStaticText, .isSelected] : .isStaticText)
     }
 
     private func focusTab(_ index: Int) {
@@ -423,6 +443,47 @@ struct EditorPane: View {
         .accessibilityIdentifier("editor.diskChanged")
     }
 
+    // MARK: - Diff tab line
+
+    /// A diff tab's state: Loading (Rule 5), its error whole (Rule 8), the binary or truncated
+    /// banner (3a-i), or "No longer changed".
+    @ViewBuilder
+    private func diffLine(_ tab: EditorTab, _ d: GitDiffState) -> some View {
+        if d.loading {
+            HStack(spacing: 6) { EditorBusyTick(); lineText("Loading") }.accessibilityIdentifier("editor.diff.loading")
+        } else if let error = d.error {
+            lineText(error).accessibilityIdentifier("editor.diff.error")
+        } else if let banner = gitDiffBanner(d) {
+            lineText(banner).accessibilityIdentifier("editor.diff.banner")
+        }
+        if d.noLongerChanged { lineText("No longer changed").accessibilityIdentifier("editor.diff.gone") }
+    }
+
+    // MARK: - Peek
+
+    /// A peek control or key (R13): step, close, or Revert — `editor_replace_range` with the hunk's
+    /// old lines, which asks nothing (Rule 1) and is undone with ⌘Z.
+    ///
+    /// Revert passes `expect`, the hunk's new text as this snapshot has it, so the store refuses it
+    /// when the buffer changed since (final review 3); a press while one is still in flight is
+    /// dropped, so a double-click reverts one hunk, not the next one too.
+    private func peekOp(_ op: String) {
+        Task {
+            switch op {
+            case "up": await dispatch("editor_peek_step", ["delta": .integer(-1)])
+            case "down": await dispatch("editor_peek_step", ["delta": .integer(1)])
+            case "close": await dispatch("editor_peek_close", [:])
+            case "revert":
+                guard !host.reverting, let latest = host.latest, let r = editorPeekRevert(latest) else { return }
+                host.reverting = true
+                await dispatch("editor_replace_range", ["path": .string(r.path), "range": editorRangeParam(r.range),
+                                                        "text": .string(r.text), "expect": .string(r.expect)])
+                host.reverting = false
+            default: break
+            }
+        }
+    }
+
     // MARK: - Compare
 
     private func openCompare(_ tab: EditorTab) {
@@ -434,19 +495,14 @@ struct EditorPane: View {
                 return
             }
             comparing = EditorComparing(path: path, disk: disk)
-            await compareHost.start()
-            compareHost.onKey = { key in if key == "escape" { closeCompare() } }
-            compareHost.captureKeys(true)
             showCompare()
         }
     }
 
     /// Disk on the original side, the buffer as it is now on the modified side.
     private func showCompare() {
-        guard let c = comparing, let renderer = compareHost.renderer,
-              let tab = snapshot.tabs.first(where: { $0.path == c.path }) else { return }
-        renderer.show(original: c.disk, modified: tab.text, language: tab.language)
-        renderer.setFontSize(viewOptions.fontSize)
+        guard let c = comparing, let tab = snapshot.tabs.first(where: { $0.path == c.path }) else { return }
+        host.showCompare(original: c.disk, modified: tab.text, language: tab.language)
     }
 
     private var ownsCompareEscape: Bool {
@@ -455,11 +511,11 @@ struct EditorPane: View {
 
     private func closeCompare() {
         comparing = nil
-        compareHost.captureKeys(false)
+        host.endCompare()
         host.focus()
     }
 
-    private func compareView(_ c: EditorComparing) -> some View {
+    private func compareHeader(_ c: EditorComparing) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 12) {
                 Text("\((c.path as NSString).lastPathComponent) — on disk ↔ unsaved")
@@ -480,9 +536,6 @@ struct EditorPane: View {
                     .accessibilityIdentifier("editor.compare.close")
             }
             .padding(.horizontal, 10)
-            GitDiffHostView(webView: compareHost.renderer?.webView)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .accessibilityIdentifier("editor.compare.diff")
         }
     }
 
@@ -671,7 +724,20 @@ final class EditorHost {
     @ObservationIgnored private var starting = false
     /// The newest snapshot handed in. One that lands while the renderer is still being made
     /// (a new pane's first tab) is applied when it exists, not dropped.
-    @ObservationIgnored private var latest: EditorSnapshot?
+    @ObservationIgnored private(set) var latest: EditorSnapshot?
+    /// The pane's key handler for keys the page took (`captureKeys`), re-handed by the view.
+    @ObservationIgnored var onKey: ((String) -> Void)?
+    /// The marks last sent, per key: an unchanged set is not sent again.
+    @ObservationIgnored private var marksSent: [String: [EditorGutterMark]] = [:]
+    @ObservationIgnored private var marksTask: Task<Void, Never>?
+    /// A mark clicked: (tab subject, line).
+    @ObservationIgnored var peekPressed: ((String) -> Void)?
+    @ObservationIgnored var markClicked: ((EditorTabSubject, Int) -> Void)?
+    /// A Revert is on its way to the store: another press is dropped until it lands.
+    @ObservationIgnored var reverting = false
+    /// Compare is on screen: snapshots are kept (`latest`) but not rendered, or the next one — a
+    /// keystroke's echo, a view report — would put the active tab back over Compare.
+    @ObservationIgnored private var comparing = false
 
     /// The offline rule list, compiled once per launch and shared by every editor pane.
     private static var networkBlock: WKContentRuleList?
@@ -685,7 +751,7 @@ final class EditorHost {
             if let cached = Self.networkBlock {
                 block = cached
             } else {
-                block = try await MonacoDiffRenderer.compileNetworkBlock()
+                block = try await MonacoEditorRenderer.compileNetworkBlock()
                 Self.networkBlock = block
             }
         } catch {
@@ -730,6 +796,12 @@ final class EditorHost {
                 self.viewsInFlight -= 1
             }
         }
+        made.onKey = { [weak self] key in self?.onKey?(key) }
+        made.onPeek = { [weak self] _, op in self?.peekPressed?(op) }
+        made.onMark = { [weak self] key, line in
+            guard let self, let s = self.subjects[key] else { return }
+            self.markClicked?(s, line)
+        }
         made.onFind = { [weak self] report in
             guard let send = self?.findReported else { return }
             Task { @MainActor in await send(report) }
@@ -758,7 +830,7 @@ final class EditorHost {
     func apply(_ snapshot: EditorSnapshot) {
         latest = snapshot
         subjects = Dictionary(snapshot.tabs.map { (editorTabKey($0), $0.subject) }, uniquingKeysWith: { a, _ in a })
-        guard let renderer else { return }
+        guard !comparing, let renderer else { return }
         let activeKey = active
         guard let shown = editorSnapshotToRender(
             snapshot, rendered: rendered, active: activeKey, typed: activeKey.flatMap { typed[$0] } ?? [],
@@ -766,6 +838,7 @@ final class EditorHost {
         let found = findShown ?? editorFindShownSeed(shown)
         let steps = editorRenderSteps(rendered: rendered, active: activeKey, snapshot: shown, findShown: found)
         editorApply(steps, to: renderer)
+        for case .dispose(let k) in steps { marksSent[k] = nil }
         rendered = editorRenderedAfter(steps, rendered: rendered, snapshot: shown)
         findShown = editorFindShownAfter(steps, findShown: found, snapshot: shown)
         active = shown.active.flatMap { $0 < shown.tabs.count ? editorTabKey(shown.tabs[$0]) : nil }
@@ -775,6 +848,42 @@ final class EditorHost {
             basisSent[key] = serial
             renderer.setBasis(key: key, serial: serial)
         }
+        scheduleMarks(shown)
+    }
+
+    /// The active file tab's marks, 150 ms after its text or baseline last changed. No baseline, no marks.
+    private func scheduleMarks(_ snapshot: EditorSnapshot) {
+        marksTask?.cancel()
+        guard let i = snapshot.active, i < snapshot.tabs.count, snapshot.tabs[i].diffState == nil else { return }
+        let t = snapshot.tabs[i], key = editorTabKey(t)
+        let base = t.readOnly ? nil : t.baseline, text = t.text
+        marksTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            // The diff runs off the main actor (it is capped, but still not free).
+            let marks = await Task.detached(priority: .userInitiated) {
+                base.map { editorGutterMarks(editorHunks(base: $0, text: text)) } ?? []
+            }.value
+            guard !Task.isCancelled, let self, let renderer = self.renderer else { return }
+            guard self.marksSent[key] != marks else { return }
+            self.marksSent[key] = marks
+            renderer.setMarks(key: key, marks: marks)
+        }
+    }
+
+    /// Shows `original` ↔ `modified` in the diff editor as Compare (R2), outside the tab render.
+    func showCompare(original: String, modified: String, language: String) {
+        comparing = true
+        renderer?.showDiff(key: "compare", original: original, modified: modified, language: language,
+                           cursor: EditorPosition(line: 1, column: 1), scrollTop: 0)
+        active = nil   // when Compare ends, the active tab is shown again, as a switch would show it
+    }
+
+    /// Back from Compare: the active tab is shown again.
+    func endCompare() {
+        comparing = false
+        active = nil
+        if let latest { apply(latest) }
     }
 
     /// The editor takes the keyboard: the web view first responder, then Monaco.
@@ -880,7 +989,8 @@ struct UnsavedPromptBar: View {
 
 // MARK: - Treatment
 
-/// Rule 5's load mark, the rail's busy treatment — see `GitBusyTick`.
+/// Rule 5's load mark, the rail's busy treatment (`Rail.tick`): a 2 pt tick in §5's green with its
+/// glow — no spinner (§9).
 struct EditorBusyTick: View {
     var label = "saving"
     var identifier = "editor.saving"
@@ -903,4 +1013,43 @@ enum EditorPaneStyle {
     static let amber = Color(TerminalPalette.amber)
     /// §5's violet `#7c5cff`: the column's selected row and a search switch that is on.
     static let violet = Color(VoidPalette.violet)
+    static let lifted = Color(red: 0x1c / 255, green: 0x20 / 255, blue: 0x30 / 255)
+
+    /// §5: amber for a change, green for an addition, a deletion muted — never red (3a-i's tones).
+    static func tone(_ t: GitStatusTone) -> Color {
+        switch t {
+        case .modified: amber
+        case .added: Color(TerminalPalette.green)
+        case .muted: text.opacity(0.45)
+        }
+    }
+}
+
+/// Hosts the pane's Monaco web view in a container the pane owns (3a-i's, moved here with the Git
+/// pane in 3b-iii). The web view outlives this view — a SwiftUI rebuild removes it and puts the same
+/// one back — so dismantling detaches it and nothing more.
+struct GitDiffHostView: NSViewRepresentable {
+    let webView: WKWebView?
+
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor(EditorPaneStyle.slab).cgColor
+        attach(to: container)
+        return container
+    }
+
+    func updateNSView(_ container: NSView, context: Context) { attach(to: container) }
+
+    static func dismantleNSView(_ container: NSView, coordinator: ()) {
+        container.subviews.forEach { $0.removeFromSuperview() }
+    }
+
+    private func attach(to container: NSView) {
+        guard let webView, webView.superview !== container else { return }
+        webView.removeFromSuperview()
+        webView.frame = container.bounds
+        webView.autoresizingMask = [.width, .height]
+        container.addSubview(webView)
+    }
 }

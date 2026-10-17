@@ -110,9 +110,9 @@ private actor LateBox {
     func add(_ rows: [PaletteEntry]) { deliveries.append(rows) }
 }
 
-/// One window over a real registry: layout and git actions against a `FakeGit`, roots from a
-/// `GitRootsContext`, and whatever else `register` adds — the wiring's arrangement without the
-/// binaries.
+/// One window over a real registry: layout actions, the window's status over a `FakeGit` (with the
+/// editor's actions on it when `editorGit`), roots from a `GitRootsContext`, and whatever else
+/// `register` adds — the wiring's arrangement without the binaries.
 private struct PaletteWindow {
     let model: WindowModel
     let registry: ActionRegistry
@@ -131,6 +131,7 @@ private func paletteWindow(
     http: (any ToolCaller)? = nil,
     files: (any ToolCaller)? = nil,
     harness: AgentHarness? = nil,
+    editorGit: Bool = false,
     register: @Sendable (ActionRegistry, PaneStore, LayoutStore) async -> Void = { _, _, _ in }
 ) async -> PaletteWindow {
     let registry = ActionRegistry(
@@ -144,6 +145,10 @@ private func paletteWindow(
     await git.set(status: "/p/portal", files: [])
     await registerLayoutActions(into: registry, layout: layout, panes: panes)
     await register(registry, panes, layout)
+    // The window's one status, read by the window and the actions alike (3b-iii) — the production
+    // arrangement.
+    let box = RootsBox()
+    let status = GitStatus(git: git, roots: { await box.model?.gitRootPaths ?? [] })
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout,
         context: ContextStore(client: context),
@@ -151,11 +156,14 @@ private func paletteWindow(
         rootPath: "/tmp", providerId: "main",
         lookupFactory: { _ in PaletteLookup() },
         rootWatcher: RecordingRootWatcher(),
+        gitStatus: status,
         paletteClients: PaletteClients(database: db, http: http, git: git, files: files),
         environment: environment)
-    await registerGitActions(
-        into: registry, panes: panes, layout: layout, git: git,
-        roots: { [weak model] in await model?.gitRootPaths ?? [] })
+    box.model = model
+    if editorGit {
+        await registerEditorActions(into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
+                                    gitStatus: status, roots: { await box.model?.gitRootPaths ?? [] })
+    }
     return PaletteWindow(model: model, registry: registry, panes: panes, layout: layout, git: git,
                          context: context)
 }
@@ -171,18 +179,18 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
 // MARK: - Tests
 
 @Suite @MainActor struct WindowModelPaletteTests {
-    /// Spec 37: ⌘P → "New Git pane" → a git pane opens and is focused.
-    @Test func newGitPaneEntryOpensAndFocusesAGitPane() async throws {
+    /// Spec 37: ⌘P → "New Editor pane" → an editor pane opens and is focused.
+    @Test func newEditorPaneEntryOpensAndFocusesAnEditorPane() async throws {
         let w = await paletteWindow()
         await w.model.refreshContext()
         let entries = await w.model.paletteRootEntries(mode: .open) { _ in }
-        let row = try #require(entries.first { $0.id == "newpane:git" })
+        let row = try #require(entries.first { $0.id == "newpane:editor" })
 
         #expect(await w.model.performPalette(.run(row.action)) == nil)
 
-        let gitPanes = w.model.layoutSnapshot.panes.filter { $0.kind == "git" }
-        #expect(gitPanes.count == 1)
-        #expect(w.model.layoutSnapshot.focusedId == gitPanes.first?.id)
+        let editors = w.model.layoutSnapshot.panes.filter { $0.kind == "editor" }
+        #expect(editors.count == 1)
+        #expect(w.model.layoutSnapshot.focusedId == editors.first?.id)
         #expect(try await w.journal().contains { $0.action == "pane_open" && $0.origin == .ui })
     }
 
@@ -193,7 +201,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         await fakeFiles.setListing("/p/api", ["a.go"])
         let w = await paletteWindow(files: fakeFiles) { registry, panes, layout in
             await registerEditorActions(into: registry, panes: panes, layout: layout, files: fakeFiles, fileLists: nil,
-                                        roots: { ["/p/api", "/p/portal"] })
+                                        gitStatus: nil, roots: { ["/p/api", "/p/portal"] })
         }
         await w.model.refreshContext()
         func resourceKinds() async -> [String] {
@@ -219,7 +227,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         await fakeFiles.setListing("/p/api", ["a.go"])
         let w = await paletteWindow(files: fakeFiles) { registry, panes, layout in
             await registerEditorActions(into: registry, panes: panes, layout: layout, files: fakeFiles, fileLists: nil,
-                                        roots: { ["/p/api", "/p/portal"] })
+                                        gitStatus: nil, roots: { ["/p/api", "/p/portal"] })
         }
         await w.model.refreshContext()
         let rows = await w.model.paletteRootEntries(mode: .open) { _ in }
@@ -405,7 +413,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         await w.model.refreshContext()
         let before = try await w.journal().count
 
-        let error = await w.model.performPalette(.run(.dispatch(action: "pane_open", params: .object(["kind": .string("git")]))))
+        let error = await w.model.performPalette(.run(.dispatch(action: "pane_open", params: .object(["kind": .string("editor")]))))
 
         #expect(error == "the palette was opened for acme/p in staging; reopen it")
         #expect(try await w.journal().count == before)
@@ -472,60 +480,19 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
 
     /// Spec §7, rule 6: the pane acted on is focused even when nothing opens.
     @Test func theActedOnPaneIsFocused() async throws {
-        let w = await paletteWindow()
+        let w = await paletteWindow(editorGit: true)
         await w.model.refreshContext()
-        await w.model.openPane(kind: "git")
-        let git = try #require(w.model.layoutSnapshot.focusedId)
+        await w.model.openPane(kind: "editor")
+        let editor = try #require(w.model.layoutSnapshot.focusedId)
         await w.model.openPane(kind: "db")
-        #expect(w.model.layoutSnapshot.focusedId != git)
+        #expect(w.model.layoutSnapshot.focusedId != editor)
         let entries = await w.model.paletteRootEntries(mode: .open) { _ in }
         let row = try #require(entries.first { $0.id == "file:changed:/p/api/a.txt" })
 
         #expect(await w.model.performPalette(.run(row.action)) == nil)
 
-        #expect(try await w.journal().contains { $0.action == "git_select" && $0.outcome == "ok" })
-        #expect(w.model.layoutSnapshot.focusedId == git)
-    }
-
-    /// The first-status wait ends at once when its pane is gone, answering that nothing is
-    /// left to select in.
-    @Test func theGitWaitEndsWhenThePaneIsGone() async {
-        let w = await paletteWindow()
-        await w.model.refreshContext()
-        await w.panes.updateGit(paneId: "gone", create: true) { s in
-            s.roots = [GitRootState(root: "/p/api", name: "api", branch: "", detached: "", ahead: 0,
-                                    behind: 0, files: [], error: nil, loading: true)]
-        }
-        let start = ContinuousClock.now
-
-        #expect(await w.model.waitForFirstGitStatus("gone") == false)
-        #expect(ContinuousClock.now - start < .seconds(1))
-    }
-
-    /// The wait ends when the run waiting on it is cancelled.
-    ///
-    /// **Deterministic** (final fix wave, item 3): once the pane has opened, every `git_status`
-    /// parks, so roots marked loading stay loading however slow the machine and whatever re-reads
-    /// them — the wait can only end by the cancel or the 5 s deadline, and the bound below sits
-    /// under that deadline, so a deadline exit fails it. (`setSlowStatus` before `openPane` would
-    /// park `openPane` itself: it awaits the watcher's first read.)
-    @Test func theGitWaitEndsWhenCancelled() async throws {
-        let w = await paletteWindow()
-        await w.model.refreshContext()
-        await w.model.openPane(kind: "git")
-        let pane = try #require(w.model.layoutSnapshot.focusedId)
-        await w.git.setSlowStatus(true)
-        await w.panes.updateGit(paneId: pane) { s in
-            for i in s.roots.indices { s.roots[i].loading = true }
-        }
-        let start = ContinuousClock.now
-        let wait = Task { await w.model.waitForFirstGitStatus(pane) }
-        await Task.yield()
-        wait.cancel()
-
-        #expect(await wait.value == false)
-        #expect(ContinuousClock.now - start < .seconds(4))
-        for call in 0..<16 { await w.git.releaseStatus(call) }
+        #expect(try await w.journal().contains { $0.action == "editor_changes_select" && $0.outcome == "ok" })
+        #expect(w.model.layoutSnapshot.focusedId == editor)
     }
 
     /// Opening the palette reads; it never writes the window's status — not even when a read
@@ -571,7 +538,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         await gate.release()
         _ = await older.value
 
-        #expect(await w.model.performPalette(.run(.dispatch(action: "pane_open", params: .object(["kind": .string("git")])))) == nil)
+        #expect(await w.model.performPalette(.run(.dispatch(action: "pane_open", params: .object(["kind": .string("editor")])))) == nil)
     }
 
     /// A run cancelled from elsewhere answers nothing — not an older error still in `status`.
@@ -633,10 +600,10 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
     @Test func closePaneClosesTheFocusedPane() async throws {
         let w = await paletteWindow()
         await w.model.refreshContext()
-        await w.model.openPane(kind: "git")
+        await w.model.openPane(kind: "db")
         let pane = try #require(w.model.layoutSnapshot.focusedId)
         _ = await w.model.paletteRootEntries(mode: .commands) { _ in }
-        let close = try #require(CommandCatalog.entries(for: await w.model.paletteContext()).first { $0.id == "git.close" })
+        let close = try #require(CommandCatalog.entries(for: await w.model.paletteContext()).first { $0.id == "db.close" })
 
         #expect(await w.model.performPalette(.run(close.action)) == nil)
 
@@ -644,25 +611,24 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         #expect(try await w.journal().last?.action == "pane_close")
     }
 
-    /// P7 (c): a changed file chosen with no Git pane open opens one, waits for its first
-    /// status, then selects the file in it.
-    @Test func aChangedFileWithNoGitPaneOpensOneThenSelects() async throws {
-        let w = await paletteWindow()
+    /// P7 (c), 3b-iii: a changed file chosen with no editor pane open opens one, with the file's
+    /// diff tab, and focuses it.
+    @Test func aChangedFileWithNoEditorPaneOpensOneWithItsDiffTab() async throws {
+        let w = await paletteWindow(editorGit: true)
         await w.model.refreshContext()
         let entries = await w.model.paletteRootEntries(mode: .open) { _ in }
         let row = try #require(entries.first { $0.id == "file:changed:/p/api/a.txt" })
-        #expect(row.action == .openGitAndSelect(root: "/p/api", path: "a.txt", group: "changed"))
+        #expect(row.action == .dispatch(action: "editor_changes_select", params: .object([
+            "root": .string("/p/api"), "path": .string("a.txt"), "group": .string("changed"),
+        ])))
 
         #expect(await w.model.performPalette(.run(row.action)) == nil)
 
-        let pane = try #require(w.model.layoutSnapshot.panes.first { $0.kind == "git" })
+        let pane = try #require(w.model.layoutSnapshot.panes.first { $0.kind == "editor" })
         #expect(w.model.layoutSnapshot.focusedId == pane.id)
-        let snapshot = await w.panes.gitSnapshot(paneId: pane.id)
-        #expect(snapshot.selection == GitSelection(root: "/p/api", path: "a.txt", group: .changed))
-        let actions = try await w.journal().map(\.action)
-        let open = try #require(actions.firstIndex(of: "pane_open"))
-        let select = try #require(actions.firstIndex(of: "git_select"))
-        #expect(open < select)
+        let tabs = await w.panes.editorSnapshot(paneId: pane.id).tabs
+        #expect(tabs.map(\.subject) == [.diff(root: "/p/api", path: "a.txt", group: .changed)])
+        #expect(try await w.journal().contains { $0.action == "editor_changes_select" && $0.outcome == "ok" })
     }
 
     /// P7 (b): the table cache never answers across projects.
@@ -699,7 +665,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
             await late.deliveries.last?.contains { $0.id == "table:core/invoices" } ?? false
         })
         let fresh = try #require(await late.deliveries.last)
-        #expect(fresh.contains { $0.id == "newpane:git" }, "the refresh replaces the tables, not the list")
+        #expect(fresh.contains { $0.id == "newpane:editor" }, "the refresh replaces the tables, not the list")
     }
 
     /// P7 (a): a late result from a palette that has since closed is dropped.
@@ -774,7 +740,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         #expect(left.tableCacheKeys.isEmpty)
         #expect(w.model.apiSendRequests.isEmpty)
         let error = await w.model.performPalette(
-            .run(.dispatch(action: "pane_open", params: .object(["kind": .string("git")])), step: "drill:tables:core"))
+            .run(.dispatch(action: "pane_open", params: .object(["kind": .string("editor")])), step: "drill:tables:core"))
         #expect(error == "the organisation changed under the palette; reopen it")
         #expect(try await w.journal().count == before)
     }
@@ -914,21 +880,22 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
     }
 
     /// Rule 6: a run that outlives its palette does not move the keyboard. The operator closed it
-    /// and went to the Database pane while the Git pane waited for its first status; the select
-    /// still lands, but focus stays where the operator put it.
+    /// and went to the Database pane while the new editor pane's status was still being read; the
+    /// select still lands, but focus stays where the operator put it.
     @Test func aRunFinishingAfterTheCloseLeavesFocusAlone() async throws {
-        let w = await paletteWindow()
+        let w = await paletteWindow(editorGit: true)
         await w.model.refreshContext()
         await w.model.openPane(kind: "db")
         let db = try #require(w.model.layoutSnapshot.focusedId)
         _ = await w.model.paletteRootEntries(mode: .open) { _ in }
         await w.git.setSlowStatus(true)
         w.model.paletteOpened()
-
         let run = Task {
-            await w.model.performPalette(.run(.openGitAndSelect(root: "/p/api", path: "a.txt", group: "changed")))
+            await w.model.performPalette(.run(.dispatch(action: "editor_changes_select", params: .object([
+                "root": .string("/p/api"), "path": .string("a.txt"), "group": .string("changed"),
+            ]))))
         }
-        #expect(await apiEventually { w.model.layoutSnapshot.panes.contains { $0.kind == "git" } })
+        #expect(await apiEventually { w.model.layoutSnapshot.panes.contains { $0.kind == "editor" } })
         w.model.paletteClosed()
         #expect(await w.model.focusPane(id: db))
         for call in 0..<16 { await w.git.releaseStatus(call) }
@@ -963,8 +930,11 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
 private let registeredBeforeThePalette: Set<String> = [
     "editor_refresh",
     "editor_tree", "editor_tree_expand", "editor_tree_collapse", "editor_tree_reveal", "editor_move_tab",
+    // 3b-iii: the Changes view's four, all agent-reachable.
+    "editor_changes_select", "editor_changes_step", "editor_changes_collapse", "editor_changes_expand",
+    "editor_peek", "editor_peek_step", "editor_peek_close",
     "editor_find", "editor_search", "files_search",
-    "editor_open", "editor_new_scratch", "editor_focus_tab", "editor_close", "editor_goto", "editor_select", "editor_set_language", "editor_replace_range", "editor_save", "editor_reload", "editor_restore", "editor_replace", "editor_replace_undo",
+    "editor_open", "editor_open_file", "editor_new_scratch", "editor_focus_tab", "editor_close", "editor_goto", "editor_select", "editor_set_language", "editor_replace_range", "editor_save", "editor_reload", "editor_restore", "editor_replace", "editor_replace_undo",
     "api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_render_curl", "api_reopen",
     "api_request", "api_send", "api_set_request", "api_unbind", "api_undo_fill",
     // Provider capacity, on purpose: the operator-only record path and the agent's read.
@@ -978,7 +948,6 @@ private let registeredBeforeThePalette: Set<String> = [
     "db_cancel", "db_classify_statement", "db_describe_table", "db_list_databases", "db_list_tables", "db_page",
     "db_read_table", "db_refetch", "db_remove_database", "db_render_update", "db_run_mutation",
     "db_run_query", "db_set_dsn",
-    "git_fold", "git_refresh", "git_select", "git_step", "git_unfold",
     "pane_close", "pane_focus", "pane_maximize", "pane_move", "pane_open", "pane_resize", "pane_restore",
     "pane_scroll_clear", "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
     "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
@@ -993,8 +962,11 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__ctx_editor_settings",
     "mcp__wakil__editor_tree", "mcp__wakil__editor_tree_expand", "mcp__wakil__editor_tree_collapse",
     "mcp__wakil__editor_move_tab", "mcp__wakil__editor_tree_reveal",
+    "mcp__wakil__editor_changes_select", "mcp__wakil__editor_changes_step",
+    "mcp__wakil__editor_changes_collapse", "mcp__wakil__editor_changes_expand",
+    "mcp__wakil__editor_peek", "mcp__wakil__editor_peek_step", "mcp__wakil__editor_peek_close",
     "mcp__wakil__editor_find", "mcp__wakil__editor_search", "mcp__wakil__files_search",
-    "mcp__wakil__editor_open", "mcp__wakil__editor_new_scratch", "mcp__wakil__editor_focus_tab", "mcp__wakil__editor_close", "mcp__wakil__editor_goto", "mcp__wakil__editor_select", "mcp__wakil__editor_set_language", "mcp__wakil__editor_replace_range", "mcp__wakil__editor_reload", "mcp__wakil__editor_restore",
+    "mcp__wakil__editor_open", "mcp__wakil__editor_open_file", "mcp__wakil__editor_new_scratch", "mcp__wakil__editor_focus_tab", "mcp__wakil__editor_close", "mcp__wakil__editor_goto", "mcp__wakil__editor_select", "mcp__wakil__editor_set_language", "mcp__wakil__editor_replace_range", "mcp__wakil__editor_reload", "mcp__wakil__editor_restore",
     "mcp__wakil-git", "mcp__wakil-pm", "mcp__wakil-recall",
     "mcp__wakil__api_bind", "mcp__wakil__api_cancel", "mcp__wakil__api_fill_from_curl",
     "mcp__wakil__api_open", "mcp__wakil__api_render_curl", "mcp__wakil__api_reopen",
@@ -1006,8 +978,7 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__ctx_set_project", "mcp__wakil__db_cancel", "mcp__wakil__db_classify_statement", "mcp__wakil__db_describe_table",
     "mcp__wakil__db_list_databases", "mcp__wakil__db_list_tables", "mcp__wakil__db_page",
     "mcp__wakil__db_read_table", "mcp__wakil__db_refetch", "mcp__wakil__db_render_update",
-    "mcp__wakil__db_run_query", "mcp__wakil__git_fold", "mcp__wakil__git_refresh",
-    "mcp__wakil__git_select", "mcp__wakil__git_step", "mcp__wakil__git_unfold",
+    "mcp__wakil__db_run_query",
     "mcp__wakil__pane_close", "mcp__wakil__pane_focus", "mcp__wakil__pane_maximize",
     "mcp__wakil__pane_move", "mcp__wakil__pane_open", "mcp__wakil__pane_resize",
     "mcp__wakil__pane_restore", "mcp__wakil__pane_scroll_clear", "mcp__wakil__pane_scroll_to_row",

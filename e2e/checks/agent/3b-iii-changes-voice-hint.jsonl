@@ -1,7 +1,8 @@
 {"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
 {"expect":{"tree":"contains","text":"e2e-git"}}
-{"dispatch":{"action":"pane_open","params":{"kind":"git"}}}
-{"expect":{"pane":"git-1","field":"roots[1].files[2].path","equals":"BookingController.php"}}
+{"dispatch":{"action":"editor_tree","params":{"view":"changes"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"?, BookingController.php"}}
 {"do":{"type":{"into":"window.composer","text":"show me booking controller"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"booking controller → BookingController"}}

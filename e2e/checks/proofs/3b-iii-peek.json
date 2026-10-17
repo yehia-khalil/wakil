@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-iii-peek.jsonl",
+  "baseCommit": "2dfec0ee0c10361256dd62e7365793e14cb46481",
+  "provedAt": "2026-10-16T20:59:37.504574Z",
+  "checkBlob": "9aa7c62be5aaf1752070a4ed36035dda4b1d06b9"
+}

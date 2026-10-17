@@ -1,0 +1,17 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"mkdir -p ~/.wakil/layouts/e2e-fixture && printf '%s' '{\"panes\":[{\"id\":\"git-1\",\"kind\":\"git\",\"title\":\"Git\",\"frame\":{\"x\":40,\"y\":40,\"width\":900,\"height\":560}}],\"focusedId\":\"git-1\",\"graph\":{\"links\":[]}}' > ~/.wakil/layouts/e2e-fixture/e2e-git.json && echo git-layout-seeded"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"git-layout-seeded"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"pane":"git-1","field":"kind","equals":"editor"}}
+{"expect":{"pane":"git-1","field":"column.view","equals":"changes"}}
+{"expect":{"pane":"git-1","field":"column.shown","equals":"true"}}
+{"expect":{"pane":"git-1","field":"tabs","equals":"[]"}}
+{"expect":{"tree":"contains","text":"e2e-api · main"}}
+{"expect":{"tree":"contains","text":"?, notes"}}
+{"expect":{"tree":"contains","text":"e2e-git · not a git repository"}}
+{"parity":{"action":"editor_changes_select","params":{"pane":"git-1","root":"{fixtureRoot}/e2e-api","path":"notes","group":"untracked"},"click":"editor.changes.row:e2e-api/notes:untracked","assert":"read_pane"}}
+{"expect":{"pane":"git-1","field":"tabs[0].diff.path","equals":"notes"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"git"},"refuses":"pane_open: param \"kind\" cannot be \"git\""}}

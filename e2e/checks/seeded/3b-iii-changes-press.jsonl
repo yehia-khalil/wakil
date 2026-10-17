@@ -1,0 +1,26 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_tree","params":{"view":"changes"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"?, notes"}}
+{"parity":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"notes","group":"untracked"},"click":"editor.changes.row:e2e-api/notes:untracked","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"notes"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.group","equals":"untracked"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].preview","equals":"true"}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}
+{"do":{"click":"editor.changes.row:e2e-portal/index.txt:changed"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.root","contains":"/e2e-portal"}}
+{"expect":{"focus":"editor.column"}}
+{"do":{"press":"Up"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}
+{"parity":{"action":"editor_changes_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api"},"click":"editor.changes.root:e2e-api","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"column.changes_closed","contains":"/e2e-api"}}
+{"expect":{"tree":"absent","text":"?, notes"}}
+{"expect":{"tree":"contains","text":"e2e-api · main"}}
+{"parity":{"action":"editor_changes_expand","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api"},"click":"editor.changes.root:e2e-api","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"column.changes_closed","equals":"[]"}}
+{"expect":{"tree":"contains","text":"?, notes"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_changes_collapse\""}}}

@@ -11,9 +11,10 @@ import (
 	"github.com/yehia-khalil/wakil/internal/wakilcore"
 )
 
-// The git project's roots, as directory names under the fixture root. 3a-i's
-// git pane lists every root of the active project, so these are what its
-// checks address: `git.row:e2e-api/app.txt:staged` and the like.
+// The git project's roots, as directory names under the fixture root. The
+// editor's Changes view (3b-iii, 3a-i's Git pane folded in) lists every root of
+// the active project, so these are what its checks address:
+// `editor.changes.row:e2e-api/notes:untracked` and the like.
 const (
 	// GitProjectRootPlain is the project's own directory, holding its
 	// project.json and nothing else. **Not a repository, on purpose**: it is
@@ -81,7 +82,7 @@ func seedGitProject(root string, spec SeedSpec) (string, error) {
 		{git: []string{"add", "app.txt"}},
 		{write: map[string]string{"app.txt": "line one\nline two, staged\nline three, unstaged\n"}},
 		// Two untracked files. `notes` has no extension on purpose: the
-		// coverage gate matches `git.row:<…>/<…>:<…>` one dot-free segment
+		// coverage gate matches `editor.changes.row:<…>/<…>:<…>` one dot-free segment
 		// per placeholder, so only a row whose path holds no dot can credit
 		// the family. `BookingController.php` is the compound name 3a-i's
 		// GitSource offers the voice resolver ("booking controller").

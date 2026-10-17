@@ -18,7 +18,7 @@ public protocol PaletteSource: Sendable {
 // MARK: - Clients
 
 /// The children the palette reads directly, drawing no pane: `wakil-db` for tables, `wakil-http`
-/// for API entries, `wakil-git` for changed files with no Git pane open. A `nil` client's source
+/// for API entries, `wakil-git` for changed files while no editor pane keeps the window's status. A `nil` client's source
 /// is left out, as an unwired action is.
 public struct PaletteClients: Sendable {
     public var database: (any ToolCaller)?
@@ -142,7 +142,7 @@ public struct PaneSummary: Sendable, Equatable {
     public let id: String
     public let kind: String
     public let title: String
-    /// db: the table, else the database; api: the entry; git: the roots count; terminal: the cwd.
+    /// db: the table, else the database; api: the entry; terminal: the cwd.
     public let holds: String
 
     public init(id: String, kind: String, title: String, holds: String) {
@@ -152,8 +152,8 @@ public struct PaneSummary: Sendable, Equatable {
         self.holds = holds
     }
 
-    /// `apiEntry` and `gitRoots` live in `PaneStore`, not on the pane, so the caller reads them.
-    public init(pane: Pane, apiEntry: String? = nil, gitRoots: Int? = nil) {
+    /// `apiEntry` lives in `PaneStore`, not on the pane, so the caller reads it.
+    public init(pane: Pane, apiEntry: String? = nil) {
         let holds: String
         switch pane.kind {
         case "db":
@@ -164,7 +164,6 @@ public struct PaneSummary: Sendable, Equatable {
             }
         case "terminal": holds = pane.terminalPath ?? ""
         case "api": holds = apiEntry ?? ""
-        case "git": holds = gitRoots.map { $0 == 1 ? "1 root" : "\($0) roots" } ?? ""
         default: holds = ""
         }
         self.init(id: pane.id, kind: pane.kind, title: pane.title, holds: holds)
@@ -193,7 +192,7 @@ public struct OpenPanesSource: PaletteSource {
 
 /// The kinds the palette may open, in the order they are offered. `pane_open` refuses
 /// `settings`, so it is never one.
-private let paneKindOrder = ["db", "terminal", "api", "git", "editor"]
+private let paneKindOrder = ["db", "terminal", "api", "editor"]
 
 private func offeredKinds(_ kinds: Set<String>) -> [String] {
     let offered = kinds.subtracting([Pane.settingsKind])
@@ -206,7 +205,6 @@ public func paneKindTitle(kind: String) -> String {
     case "db": "Database"
     case "terminal": "Terminal"
     case "api": "API client"
-    case "git": "Git"
     case "editor": "Editor"
     default: kind
     }
@@ -218,7 +216,6 @@ public func newPaneTitle(kind: String) -> String {
     case "db": "New Database pane"
     case "terminal": "New Terminal"
     case "api": "New API client"
-    case "git": "New Git pane"
     case "editor": "New Editor pane"
     default: "New \(kind) pane"
     }
@@ -437,70 +434,36 @@ public struct ApiEntriesSource: PaletteSource {
 
 // MARK: - Changed files
 
-/// One open Git pane and its snapshot.
-public struct GitPaneState: Sendable, Equatable {
-    public let paneId: String
-    public let snapshot: GitSnapshot
-
-    public init(paneId: String, snapshot: GitSnapshot) {
-        self.paneId = paneId
-        self.snapshot = snapshot
-    }
-}
-
 /// Changed files, one row per file per group — a partly staged file is two rows, as it is two
-/// rows in the Git pane.
+/// rows in the editor's Changes view.
 ///
-/// With a Git pane open the rows come from its snapshot (the first pane naming a file wins) and
-/// select in that pane. With none, `statusWithoutPane` reads the roots' status and each row is
-/// `.openGitAndSelect`, which the window runs as open-then-select.
+/// The rows come from `status`: the window's while an editor pane keeps it live, else a read made
+/// for the palette alone. Each row dispatches `editor_changes_select` with no `pane`, so the focused
+/// or first editor pane opens the file's diff tab, or a new editor pane opens for it (3b-iii).
 ///
-/// A root that is loading or failed contributes nothing: the Git pane is where a root's error is
-/// read, and a non-repository root would otherwise be a standing error row in every ⌘P.
+/// A root that is loading or failed contributes nothing: the Changes view is where a root's error
+/// is read, and a non-repository root would otherwise be a standing error row in every ⌘P.
 public struct ChangedFilesSource: PaletteSource {
     public let id = "changedFiles"
     public let group = PaletteGroup.resources
-    private let gitPanes: @Sendable () async -> [GitPaneState]
-    private let statusWithoutPane: @Sendable () async -> [GitRootState]
+    private let status: @Sendable () async -> [GitRootState]
 
-    public init(
-        gitPanes: @escaping @Sendable () async -> [GitPaneState],
-        statusWithoutPane: @escaping @Sendable () async -> [GitRootState]
-    ) {
-        self.gitPanes = gitPanes
-        self.statusWithoutPane = statusWithoutPane
+    public init(status: @escaping @Sendable () async -> [GitRootState]) {
+        self.status = status
     }
 
     public func entries() async -> [PaletteEntry] {
-        let panes = await gitPanes()
-        if panes.isEmpty {
-            return rows(await statusWithoutPane(), pane: nil, seen: [])
-        }
-        var seen: Set<String> = []
-        var all: [PaletteEntry] = []
-        for pane in panes {
-            let more = rows(pane.snapshot.roots, pane: pane.paneId, seen: seen)
-            seen.formUnion(more.map(\.id))
-            all += more
-        }
-        return all
-    }
-
-    private func rows(_ roots: [GitRootState], pane: String?, seen: Set<String>) -> [PaletteEntry] {
-        roots.filter { $0.error == nil && !$0.loading }.flatMap { root in
-            root.files.compactMap { file -> PaletteEntry? in
-                let rowId = "file:\(file.group.rawValue):\(root.root)/\(file.path)"
-                guard !seen.contains(rowId) else { return nil }
-                let action: PaletteAction = pane.map { pane in
-                    .dispatch(action: "git_select", params: .object([
-                        "pane": .string(pane), "root": .string(root.root),
-                        "path": .string(file.path), "group": .string(file.group.rawValue),
-                    ]))
-                } ?? .openGitAndSelect(root: root.root, path: file.path, group: file.group.rawValue)
-                return PaletteEntry(
-                    id: rowId, group: group, title: (file.path as NSString).lastPathComponent,
+        await status().filter { $0.error == nil && !$0.loading }.flatMap { root in
+            root.files.map { file in
+                PaletteEntry(
+                    id: "file:\(file.group.rawValue):\(root.root)/\(file.path)", group: group,
+                    title: (file.path as NSString).lastPathComponent,
                     subtitle: "\(gitGroupLabel(file.group).capitalized) · \(root.name)", kindLabel: "git",
-                    verb: "open", action: action)
+                    verb: "open",
+                    action: .dispatch(action: "editor_changes_select", params: .object([
+                        "root": .string(root.root), "path": .string(file.path),
+                        "group": .string(file.group.rawValue),
+                    ])))
             }
         }
     }

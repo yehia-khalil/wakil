@@ -78,7 +78,7 @@ see everything (see `CONTRIBUTING.md`, "Where does my code go?").
 
 - `WindowModel.swift` — `WindowModel` (`@MainActor @Observable`): the active context, the panes'
   snapshots (one cell per open pane, `paneCells`, read per pane through `terminal(_:)`, `api(_:)`
-  and `git(_:)`), the thought thread, the harness, the org switch. Every state change goes through
+  and `editor(_:)`), the window's git status mirror (`gitRoots`, 3b-iii), the thought thread, the harness, the org switch. Every state change goes through
   `registry.dispatch(..., origin: .ui)` and its handlers. `WindowModel` itself writes `PaneStore`
   only for a few window-side marks (failure lines, api focus, response clears, a cleared terminal
   proposal, scope switches and the org-switch clear); see [runtime.md](runtime.md).
@@ -195,6 +195,15 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
   and `files_search`, which answers without touching a pane.
   3b-ii-b adds `editor_replace` (batched `files_replace`, open tabs edited in their buffers, `cancel`),
   `editor_replace_undo`, `editor_move_tab` and `editor_tree_reveal`, and `editor_search`'s `replace`.
+  3b-iii adds `editor_changes_select`, `editor_changes_step`, `editor_changes_collapse`,
+  `editor_changes_expand`, `editor_open_file`, and `editor_refresh`'s `what`.
+- `EditorChanges.swift` (3b-iii) — the Changes view's rows over the window's `GitStatus`:
+  `editorChangesRows` (step order, a collapsed root left out), `editorChangesStep`,
+  `editorChangesResolve` (where the highlight goes after a refresh, Rule 6), `editorChangesFile` and
+  `editorTreeStatus` (the Files tree's status letter).
+- `EditorDiff.swift` (3b-iii) — diff tabs: `GitDiffState` (a diff's two sides and the facts about
+  them), `gitDiffBanner`, `editorDiffRevs` (which revisions a group compares), `editorDiffOpensFile`
+  and `editorCommandReturnOpensFile` (⌘⏎), and `EditorDiffFlights` (one fetch per diff tab).
 - `EditorTree.swift` — `EditorRootListing` (one root's `files_list`: files, ignored, heavy folders,
   child repositories), `EditorDirEntry`, `EditorTreeRow` and `editorTreeRows` (what the column draws;
   it leaves ignored files out when `showIgnored` is false (3b-v)), the keyboard's steps (`editorTreeStep`, `editorTreeLeft`, `editorTreeTypeAhead`,
@@ -223,10 +232,13 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
   `EditorAutosaveStep`, and `EditorAutosave`, the per-pane memory that says which tabs to arm or save; the
   window keeps the timers.
 
-Uses `Panes/`, `Layout/`, `Core/`, `Registry/`, `MCP/`. Window-side code is in `App/` (below).
+Uses `Panes/`, `Layout/`, `Core/`, `Registry/`, `MCP/`, `Context/` and `Git/` (`Editor -> Git`,
+3b-iii: the Changes view and diff tabs read the window's `GitStatus`; `Git/` uses nothing in
+`Editor/`, so the link is one way). Window-side code is in `App/` (below).
 Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadPaneTests`,
 `EditorRefreshTests`, `EditorRendererTests`, `WindowModelEditorTests`, `EditorTreeTests`,
-`EditorTreeActionsTests`, `EditorSearchTests`, `EditorSearchActionsTests`.
+`EditorTreeActionsTests`, `EditorSearchTests`, `EditorSearchActionsTests`, `EditorChangesTests`,
+`EditorChangesActionsTests`, `EditorDiffTabsTests`, `EditorDiffBannerTests`.
 
 ### Gate/ — the write gate and confirmations
 
@@ -241,26 +253,25 @@ Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadP
 Uses: nothing but `Core`.
 Tests: `WriteGateTests`, `ConfirmationBrokerTests`, `ProductionDeclarationTests`.
 
-### Git/ — the git pane's logic
+### Git/ — the window's git status
 
-- `GitSnapshot.swift` — `GitSnapshot`, `GitRootState`, `GitFileRow`, `GitSelection`,
-  `GitDiffState`.
-- `GitPaneKind.swift` — `GitPaneKind` (the `PaneKind` conformance, name `git`, and what
-  `read_pane` returns for a git pane), `PaneSnapshot.git`.
-- `PaneStore+Git.swift` — the git pane's `PaneStore` methods, as an `extension PaneStore`
-  (`gitSnapshot`, `setGit`, `updateGit`).
-- `GitActions.swift` — `registerGitActions` (`git_status`, `git_refresh`, `git_select`, `git_step`,
-  `git_fold`, `git_unfold`, …), `GitFlights`. The actions that answer with the pane return
-  `panes.readPane(paneId:kind:)`, the same object `read_pane` returns.
+The Git pane kind folded into the editor in 3b-iii (Decision 40): what is left is the window's one
+status and what reads it. A saved Git pane loads as an editor pane on Changes
+(`Layout/LayoutStore.swift`, `layoutMigratingGitPanes`).
+
+- `GitStatus.swift` — `GitStatus` (actor): the window's one `git_status` per root per wake, shared by
+  the window, the editor's actions and `GitSource`; and the types it holds, moved here from the Git
+  pane: `GitGroup`, `GitFileRow`, `GitRootState`, `GitActionError`.
+- `GitPaneLines.swift` — the text helpers the Changes view draws: `gitRootLine`, `gitRootErrorDetail`,
+  `gitGroupLabel`, `gitListSections`, `gitRowLabel`, `gitStatusTone`.
+- `GitSource.swift` — `GitSource`, the changed files' names offered to the vocabulary, read from the
+  window's `GitStatus` (so only while an editor pane keeps it).
 - `GitWatcher.swift` — `RootWatcher` (protocol), `FSEventsRootWatcher`; `GitRootWatcher.swift` —
   `GitRootWatcher`, which the window tells which roots to watch.
-- `GitSource.swift` — `GitSource`, the names a git pane offers to the vocabulary.
-- `GitNavigation.swift`, `GitPaneLines.swift`, `DiffRenderer.swift` (`DiffRenderer` protocol; the
-  Monaco conformance is in `WakilApp`).
 
-Uses: `Context`, `Identifiers`, `Layout`, `MCP`, `Panes`, `Registry`.
-Tests: `GitActionsTests`, `GitNavigationTests`, `GitPaneLinesTests`, `GitPaneSnapshotTests`,
-`GitRootWatcherTests`, `GitSourceTests`, `GitWatcherTests`, with `GitTestSupport.swift`.
+Uses: `Context`, `Identifiers`, `MCP`, `Registry`.
+Tests: `GitStatusTests`, `GitPaneLinesTests`, `GitRootWatcherTests`, `GitSourceTests`,
+`GitWatcherTests`, with `GitTestSupport.swift`.
 
 ### Harness/ — driving the agent
 
@@ -302,10 +313,11 @@ Tests: `IdentifierTests`, `IdentifierResolverTests`, `IdentifierSourcesTests`,
 ### Layout/ — where the panes are
 
 - `Pane.swift` — `Pane`, `PaneFrame`, `PaneDensity`; `Pane.kinds` (`db`, `terminal`, `api`,
-  `settings`, `git`: the kinds `pane_open` accepts and a loaded layout may hold), `Pane.settingsKind`.
+  `settings`, `editor`: the kinds `pane_open` accepts and a loaded layout may hold), `Pane.settingsKind`.
   Which `PaneKind` holds each kind's contents is `App/PaneKinds.swift`'s, not this file's.
 - `LayoutStore.swift` — `LayoutStore` (actor): every visited `LayoutScope`'s arrangement;
-  `LayoutSnapshot`.
+  `LayoutSnapshot`; `layoutMigratingGitPanes` (a saved Git pane becomes an editor pane on Changes,
+  3b-iii) and `layoutDroppingUnknownPaneKinds`.
 - `LayoutPersistence.swift` — `LayoutPersistence`: reads and writes a scope's arrangement on disk
   (see [state.md](state.md)).
 - `LayoutActions.swift` — `registerLayoutActions` (`pane_open`, `pane_close`, `pane_move`,
@@ -340,7 +352,7 @@ Tests: `MCPClientTests`, `MCPServerTests`, `JSONRPCTests`, `PermissionPromptTest
 
 The store every pane's contents live in, the `PaneKind` protocol each kind conforms to, and the two
 kinds that stay here (the db pane's data surface and settings). **`Panes/` names no other kind**:
-Git, Terminal and Api keep their conformance and store methods in their own folders.
+Terminal, Api and Editor keep their conformance and store methods in their own folders.
 
 - `PaneKind.swift` — `PaneKind` (protocol, refines `SendableMetatype`), `PaneKindSnapshot`
   (a kind's snapshot; equality across kinds is false), `PaneSlot` (one pane: its kind and that
@@ -501,8 +513,8 @@ some kind and names no kind outside `Panes/` (the data surface and settings kind
 - **Restoring** — `Layout/PaneRestorable.swift`: a kind that must do something when its pane is
   restored (launch, an org switch loaded from disk) conforms to `PaneRestorable` and returns a
   `PaneRestoreStep` (an action, its params, whether a refusal is written into the pane) from
-  `restoreStep(for:)`. `WindowModel.restorePaneContents` names no kind. Three conform: `db`
-  (`db_refetch`), `git` and `editor` (`editor_restore`). `rerunsSubjectOnRestore` is the older flag
+  `restoreStep(for:)`. `WindowModel.restorePaneContents` names no kind. Two conform: `db`
+  (`db_refetch`) and `editor` (`editor_restore`). `rerunsSubjectOnRestore` is the older flag
   for a kind whose subject is a read.
 - **Slots** — `PaneStore` keeps one `PaneSlot` (the kind and its contents) per pane id per
   `LayoutScope`. A kind's store methods use `contents(K.self, paneId)` (the kind's empty contents
@@ -511,7 +523,7 @@ some kind and names no kind outside `Panes/` (the data surface and settings kind
   created on first touch so that a scope change reaches state that has only been read.
   `switchScope(to:)` and `clearAllScopes()` call each touched kind's hook.
 - **The kinds list** — `App/PaneKinds.swift`: `PaneKinds.standard` (`DataSurfacePaneKind`,
-  `TerminalPaneKind`, `ApiPaneKind`, `SettingsPaneKind`, `GitPaneKind`, `EditorPaneKind`), `kind(named:)` and
+  `TerminalPaneKind`, `ApiPaneKind`, `SettingsPaneKind`, `EditorPaneKind`), `kind(named:)` and
   `is(_:_:)`. `WakilWiring.build` passes it to `PaneStore(kinds:)`; the store uses it only for a
   pane that was never written. A never-written pane of a kind the list does not hold answers no
   contents and a failure naming the kind, not an empty grid.
@@ -521,18 +533,17 @@ some kind and names no kind outside `Panes/` (the data surface and settings kind
   |---|---|---|
   | `db` | `Panes/` | `DataSurfacePaneKind.swift`; its store methods in `PaneStore.swift` |
   | `settings` | `Panes/` | `SettingsPaneKind.swift` (no contents in the store) |
-  | `git` | `Git/` | `GitPaneKind.swift`, `PaneStore+Git.swift` |
   | `terminal` | `Terminal/` | `TerminalPaneKind.swift`, `PaneStore+Terminal.swift`, `TerminalSnapshot.swift`, `TerminalSnapshot+Identifiers.swift` |
   | `api` | `Api/` | `ApiPaneKind.swift`, `ApiPaneKind+ReadPane.swift`, `PaneStore+Api.swift`, `ApiSnapshot.swift`, `ApiSnapshot+Identifiers.swift` |
-  | `editor` | `Editor/` | `EditorPaneKind.swift`, `PaneStore+Editor.swift`, `EditorSnapshot.swift`, `EditorTabs.swift`, `EditorActions.swift`, `EditorRenderer.swift`, `EditorTree.swift`, `EditorFileLists.swift`, `EditorSearch.swift`, `EditorReplace.swift`, `EditorSettings.swift`, `EditorAutosave.swift` |
+  | `editor` | `Editor/` | `EditorPaneKind.swift`, `PaneStore+Editor.swift`, `EditorSnapshot.swift`, `EditorTabs.swift`, `EditorActions.swift`, `EditorRenderer.swift`, `EditorTree.swift`, `EditorFileLists.swift`, `EditorSearch.swift`, `EditorReplace.swift`, `EditorSettings.swift`, `EditorAutosave.swift`, `EditorChanges.swift`, `EditorDiff.swift` |
 
 - **`read_pane`** — `PaneStore.readPane(paneId:kind:)` builds the envelope and merges the pane's
-  kind's `readPane`. `MCPServer`'s `read_pane` and the git actions call it; settings is answered in
+  kind's `readPane`. `MCPServer`'s `read_pane` calls it; settings is answered in
   `MCP/MCPServer.swift` from the config tree.
 - **Identifiers** — `Identifiers/IdentifierSources.swift` defines `OffersIdentifiers`; a kind's
   snapshot conforms in the kind's folder, and `PaneSource` asks each pane's snapshot.
 - **The window** — `WindowModel.paneCells` holds one `PaneSnapshotCell` (`App/PaneSnapshotCell.swift`)
-  per open pane; views read it through `terminal(_:)`, `api(_:)`, `git(_:)` and `editor(_:)`. `refreshPanes()`
+  per open pane; views read it through `terminal(_:)`, `api(_:)` and `editor(_:)`. `refreshPanes()`
   writes each pane's cell (`setCell`) and replaces the dictionary only when a pane opens or closes;
   `refreshTerminal(pane:)` writes only its own pane's cell, so a tick writes only that pane's
   cell and only views reading that cell are invalidated (the 240.5 ms/frame rule in its doc
@@ -549,7 +560,7 @@ some kind and names no kind outside `Panes/` (the data surface and settings kind
 | Every `Pane.kinds` entry has a kind, and every kind's names are `Pane.kinds` entries | `everyLayoutKindIsServed`, `everyKindsNamesAreLayoutKinds` (`PaneKindsTests`); `everyLayoutKindHasAPaneKind` (`PaneKindClassificationTests`) |
 | Every kind's never-written pane answers `read_pane` with its kind and no failure | `everyKindsEmptyPaneAnswersReadPane` (`PaneKindsTests`) |
 | A pane holding one kind refuses another's write; store-wide state hears scope changes | `PaneKindStorageTests` |
-| Only `db` and `git` (both reads) re-run their subject on restore; a kind that restores by its own action (`editor_restore`) conforms to `PaneRestorable` instead | `onlyReadsRerunOnRestore`, `theOnlyKindsWhoseSubjectIsRerunAtLaunchAreReads` (`PaneKindClassificationTests`) |
+| Only `db` (a read) re-runs its subject on restore; a kind that restores by its own action (`editor_restore`) conforms to `PaneRestorable` instead | `onlyReadsRerunOnRestore`, `theOnlyKindsWhoseSubjectIsRerunAtLaunchAreReads` (`PaneKindClassificationTests`) |
 | `Panes/` uses no folder but `Core`, so it names no kind outside it | `wakilKitKeepsItsLayering` (no `Panes -> ` line is listed, so a new one fails) |
 
 Adding a kind: `CONTRIBUTING.md`, "A new pane kind".
