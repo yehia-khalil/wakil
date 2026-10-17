@@ -198,3 +198,18 @@ public func editorPruneOpen(_ open: [String], listings: [EditorRootListing]) -> 
 public func editorFolder(of row: EditorTreeRow) -> String {
     row.kind == .file ? (row.id as NSString).deletingLastPathComponent : row.id
 }
+
+/// A file operation the tree's keys start (3b-iv): ⌘⌫ moves the selection to the Trash, F2 renames it.
+public enum EditorTreeKeyCommand: Sendable, Equatable { case trash, rename }
+
+/// The tree's file-operation key, by the characters the key press carries. The Delete key sends
+/// U+007F (DEL), not U+0008: SwiftUI's `KeyEquivalent.delete` is U+0008, so matching it never saw ⌘⌫
+/// (3b-iv Cover). Both are taken, as the terminal takes them. F2 has no `KeyEquivalent`: its
+/// character is `NSF2FunctionKey` (U+F705). ⌘⌫ is ⌘ alone; F2 takes any modifiers, as before.
+public func editorTreeKeyCommand(characters: String, command: Bool, otherChord: Bool) -> EditorTreeKeyCommand? {
+    switch characters {
+    case "\u{7F}", "\u{8}": return command && !otherChord ? .trash : nil
+    case "\u{F705}": return .rename
+    default: return nil
+    }
+}

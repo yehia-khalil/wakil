@@ -229,3 +229,19 @@ public func editorRenameTarget(of path: String, typed: String) -> String {
     let rel = typed.drop { $0 == "/" }
     return ((folder as NSString).appendingPathComponent(String(rel)) as NSString).standardizingPath
 }
+
+/// Whether the tab now in front of a pane arrived there — opened (⌘T, New File, an open) or picked
+/// (⌘P, a tab click) — and so takes the keyboard (Rule 3). A preview tab is browsing: never. A tab
+/// that comes forward only because the one in front went (⌘W, Move to Trash, the agent's
+/// `editor_trash` or `editor_close`) did not arrive: the keyboard stays where the operator was
+/// (Rule 6), in the tree or wherever it is. A tab is the same tab across a rename (its former keys).
+public func editorFrontTabArrived(old: EditorSnapshot, now: EditorSnapshot) -> Bool {
+    guard let n = now.active, now.tabs.indices.contains(n), !now.tabs[n].preview else { return false }
+    let front = now.tabs[n], key = editorTabKey(front)
+    guard let o = old.active, old.tabs.indices.contains(o) else { return true }
+    let was = editorTabKey(old.tabs[o])
+    guard key != was else { return false }
+    let frontWent = !now.tabs.contains { editorTabKey($0) == was || $0.formerKeys.contains(was) }
+    let wasOpen = old.tabs.contains { editorTabKey($0) == key || front.formerKeys.contains(editorTabKey($0)) }
+    return !(frontWent && wasOpen)
+}

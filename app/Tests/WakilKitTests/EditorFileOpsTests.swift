@@ -229,3 +229,48 @@ private func tab(_ path: String, text: String = "t", saved: String = "t") -> Edi
     #expect(!after.saving && !after.dirty)
     #expect(await f.files.text(of: "/p/api/b.go") == "v1")
 }
+
+// MARK: - The tree's keys and the keyboard after a close (3b-iv Cover fixes)
+
+@Test func commandDeleteTrashesByTheCharacterTheDeleteKeySends() {
+    // The Delete key sends U+007F; `KeyEquivalent.delete` is U+0008 and never matched it.
+    #expect(editorTreeKeyCommand(characters: "\u{7F}", command: true, otherChord: false) == .trash)
+    #expect(editorTreeKeyCommand(characters: "\u{8}", command: true, otherChord: false) == .trash)
+    // Not without ⌘, nor with another chord key beside it (⌥⌘⌫, ⌃⌘⌫): those pass.
+    #expect(editorTreeKeyCommand(characters: "\u{7F}", command: false, otherChord: false) == nil)
+    #expect(editorTreeKeyCommand(characters: "\u{7F}", command: true, otherChord: true) == nil)
+    #expect(editorTreeKeyCommand(characters: "\u{F705}", command: false, otherChord: false) == .rename)
+    // Arrows, Return and letters are the tree's other keys, never a file operation.
+    for c in ["\u{F700}", "\u{F701}", "\r", "a", ""] {
+        #expect(editorTreeKeyCommand(characters: c, command: false, otherChord: false) == nil)
+    }
+}
+
+private func fileTab(_ path: String, preview: Bool = false) -> EditorTab {
+    var t = tab(path); t.preview = preview; return t
+}
+
+@Test func aTabThatComesForwardBecauseTheFrontOneWentDoesNotTakeTheKeyboard() {
+    // A trash (or close) of the front preview tab leaves the scratch in front: Rule 6, not Rule 3.
+    let scratch = EditorTab.scratch(number: 1, language: "plaintext")
+    let old = EditorSnapshot(tabs: [scratch, fileTab("/p/api/a.go", preview: true)], active: 1)
+    #expect(!editorFrontTabArrived(old: old, now: EditorSnapshot(tabs: [scratch], active: 0)))
+    // The same for a pinned front tab closed with a pinned neighbour.
+    let b = fileTab("/p/api/b.go"), c = fileTab("/p/api/c.go")
+    #expect(!editorFrontTabArrived(old: EditorSnapshot(tabs: [b, c], active: 1), now: EditorSnapshot(tabs: [b], active: 0)))
+}
+
+@Test func aNewOrPickedTabTakesTheKeyboard() {
+    let scratch = EditorTab.scratch(number: 1, language: "plaintext"), a = fileTab("/p/api/a.go")
+    // New File (or any open): a tab not there before comes to the front.
+    #expect(editorFrontTabArrived(old: EditorSnapshot(tabs: [scratch], active: 0), now: EditorSnapshot(tabs: [scratch, a], active: 1)))
+    // The pane's first tab.
+    #expect(editorFrontTabArrived(old: EditorSnapshot(tabs: [], active: nil), now: EditorSnapshot(tabs: [a], active: 0)))
+    // A tab click (or ⌘P to an open file): the front tab is still open, another is picked.
+    #expect(editorFrontTabArrived(old: EditorSnapshot(tabs: [scratch, a], active: 0), now: EditorSnapshot(tabs: [scratch, a], active: 1)))
+    // A preview replacing the front preview opens in its place: new, but a preview, so browsing.
+    let p = fileTab("/p/api/p.go", preview: true), q = fileTab("/p/api/q.go", preview: true)
+    #expect(!editorFrontTabArrived(old: EditorSnapshot(tabs: [scratch, p], active: 1), now: EditorSnapshot(tabs: [scratch, q], active: 1)))
+    // Nothing changed in front: nothing to take.
+    #expect(!editorFrontTabArrived(old: EditorSnapshot(tabs: [a], active: 0), now: EditorSnapshot(tabs: [a], active: 0)))
+}
