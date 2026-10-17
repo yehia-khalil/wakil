@@ -959,6 +959,130 @@ public func registerEditorActions(
         },
         price: (production: .allow, otherwise: .allow)))
 
+    /// Every editor pane in every scope gets `change` applied to its tabs, its active tab kept or
+    /// moved to a neighbour (Rule 6), and its saved tabs written back (3b-iv: the tree is the
+    /// project's, in every pane — Decision 37).
+    @Sendable func retab(_ change: @escaping @Sendable ([EditorTab]) -> [EditorTab]) async {
+        for target in await panes.editorPanesInEveryScope() {
+            await panes.updateEditor(in: target.scope, paneId: target.paneId) { s in
+                let new = change(s.tabs)
+                guard new != s.tabs else { return }
+                s.active = editorActiveAfter(s.tabs, active: s.active, new: new)
+                s.tabs = new
+            }
+            if target.scope == (await panes.activeScope) { await persist(target.paneId) }
+        }
+    }
+
+    await registry.register(Action(
+        name: "editor_create",
+        description: "Make an empty file or a folder (kind file or dir) at path (absolute, inside a root), and "
+            + "missing folders above it. A file opens as a pinned tab; a folder is opened in the tree. An "
+            + "existing name is refused, never overwritten. Confined to the active project's roots (Invariant 6, "
+            + "Decision 41). Allowed everywhere.",
+        kind: .mutate, audience: .agentReachable,
+        schema: schema(["path": .object(["type": .string("string")]),
+                        "kind": .object(["type": .string("string"), "enum": .array([.string("file"), .string("dir")])])],
+                       required: ["path", "kind"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_create")
+            guard let raw = optionalString(params, "path") else {
+                throw StandardActionError.missingParam(action: "editor_create", param: "path")
+            }
+            let kind = optionalString(params, "kind") ?? "file"
+            let c = try await confine(raw, action: "editor_create")
+            switch try await filesTool(try requireFiles("editor_create"), "files_create",
+                                       ["path": .string(c.path), "kind": .string(kind)]) {
+            case .failed(let text): throw EditorFilesError(description: text)
+            case .ok: break
+            }
+            _ = await fileLists?.invalidate(root: c.root)
+            if kind == "file" {
+                try await openFile(pane, path: c.path, at: nil, selection: nil, preview: false, action: "editor_create")
+            } else {
+                // The new folder shows: every folder above it, up to its root, is open.
+                await updateColumn(pane) { col in
+                    var p = (c.path as NSString).deletingLastPathComponent
+                    while p.count >= c.root.count {
+                        if !col.open.contains(p) { col.open.append(p) }
+                        p = (p as NSString).deletingLastPathComponent
+                    }
+                }
+            }
+            guard case .object(var o) = await reply(pane) else { return .null }
+            o["made"] = .string(c.path)
+            return .object(o)
+        },
+        price: (production: .allow, otherwise: .allow)))
+
+    await registry.register(Action(
+        name: "editor_rename",
+        description: "Rename or move a file or folder: path to to (both absolute, inside the roots; another root "
+            + "is allowed). Open tabs on it, or under a moved folder, follow in every editor pane with their "
+            + "unsaved edits; its diff tabs close. An existing to is refused; a root is never moved; a move "
+            + "across volumes is refused. Confined to the active project's roots (Invariant 6, Decision 41). "
+            + "Allowed everywhere.",
+        kind: .mutate, audience: .agentReachable,
+        schema: schema(["path": .object(["type": .string("string")]), "to": .object(["type": .string("string")])],
+                       required: ["path", "to"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_rename")
+            guard let rawFrom = optionalString(params, "path") else {
+                throw StandardActionError.missingParam(action: "editor_rename", param: "path")
+            }
+            guard let rawTo = optionalString(params, "to") else {
+                throw StandardActionError.missingParam(action: "editor_rename", param: "to")
+            }
+            let from = try await confine(rawFrom, action: "editor_rename")
+            let to = try await confine(rawTo, action: "editor_rename")
+            switch try await filesTool(try requireFiles("editor_rename"), "files_move",
+                                       ["from": .string(from.path), "to": .string(to.path)]) {
+            case .failed(let text): throw EditorFilesError(description: text)
+            case .ok: break
+            }
+            await retab { editorRepointTabs($0, from: from.path, to: to.path, root: to.root) }
+            // An open folder that moved stays open under its new name.
+            await updateColumn(pane, onlyIfChanged: true) { col in
+                col.open = col.open.map { p in
+                    p == from.path || p.hasPrefix(from.path + "/") ? to.path + p.dropFirst(from.path.count) : p
+                }
+            }
+            _ = await fileLists?.invalidate(root: from.root)
+            if to.root != from.root { _ = await fileLists?.invalidate(root: to.root) }
+            guard case .object(var o) = await reply(pane) else { return .null }
+            o["from"] = .string(from.path)
+            o["to"] = .string(to.path)
+            return .object(o)
+        },
+        price: (production: .allow, otherwise: .allow)))
+
+    await registry.register(Action(
+        name: "editor_trash",
+        description: "Move a file or folder at path (absolute, inside a root) to the Trash, where Finder's Put "
+            + "Back restores it; no dialog (Rule 1). Its clean tabs close in every editor pane; a tab with "
+            + "unsaved edits stays open, marked deleted, and saving it recreates the file. A root is never "
+            + "trashed. Needs macOS 15. Confined to the active project's roots (Invariant 6, Decision 41). "
+            + "Allowed everywhere.",
+        kind: .mutate, audience: .agentReachable,
+        schema: schema(["path": .object(["type": .string("string")])], required: ["path"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_trash")
+            guard let raw = optionalString(params, "path") else {
+                throw StandardActionError.missingParam(action: "editor_trash", param: "path")
+            }
+            let c = try await confine(raw, action: "editor_trash")
+            switch try await filesTool(try requireFiles("editor_trash"), "files_trash", ["path": .string(c.path)]) {
+            case .failed(let text): throw EditorFilesError(description: text)
+            case .ok: break
+            }
+            await retab { editorTabsAfterTrash($0, path: c.path) }
+            _ = await fileLists?.invalidate(root: c.root)
+            guard case .object(var o) = await reply(pane) else { return .null }
+            o["trashed"] = .string(c.path)
+            return .object(o)
+        },
+        price: (production: .allow, otherwise: .allow)))
+
     await registry.register(Action(
         name: "editor_reload",
         description: "Replace a tab's buffer (path, or the active tab) with the file on disk, dropping "

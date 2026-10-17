@@ -78,3 +78,111 @@ private func tab(_ path: String, text: String = "t", saved: String = "t") -> Edi
     let new = [tab("/p/api/b.go"), moved]
     #expect(editorActiveAfter(old, active: 1, new: new) == 0)
 }
+
+@Test func renameRepointsTheTabInEveryPaneAndJournalsIt() async throws {
+    let f = try await editorFixture()
+    await f.files.put("/p/api/a.go", "v0")
+    try await f.dispatch("editor_open", ["path": .string("/p/api/a.go")])
+    await f.panes.editorBufferDidChange(paneId: f.pane, tab: 0, text: "v1", basis: 0)
+    let other = await f.layout.open(kind: "editor", title: "Editor").id
+    try await f.dispatch("editor_open", ["path": .string("/p/api/a.go"), "pane": .string(other)])
+    try await f.dispatch("editor_rename", ["path": .string("/p/api/a.go"), "to": .string("/p/api/sub/b.go")])
+    #expect(await f.files.calls.contains("files_move /p/api/a.go -> /p/api/sub/b.go"))
+    let mine = await f.snapshot().tabs[0]
+    #expect(mine.path == "/p/api/sub/b.go" && mine.text == "v1" && mine.dirty)
+    #expect(await f.panes.editorSnapshot(paneId: other).tabs[0].path == "/p/api/sub/b.go")
+}
+
+@Test func aRefusedRenameLeavesTabsAndSaysWhy() async throws {
+    let f = try await editorFixture()
+    await f.files.put("/p/api/a.go", "v0")
+    try await f.dispatch("editor_open", ["path": .string("/p/api/a.go")])
+    await f.files.setMoveError("/p/api/b.go already exists")
+    await #expect(throws: (any Error).self) {
+        try await f.dispatch("editor_rename", ["path": .string("/p/api/a.go"), "to": .string("/p/api/b.go")])
+    }
+    #expect(await f.snapshot().tabs[0].path == "/p/api/a.go")
+}
+
+@Test func renameOutsideTheRootsIsRefusedBeforeAnyCall() async throws {
+    let f = try await editorFixture()
+    await f.files.put("/p/api/a.go", "v0")
+    await #expect(throws: (any Error).self) {
+        try await f.dispatch("editor_rename", ["path": .string("/p/api/a.go"), "to": .string("/etc/a.go")])
+    }
+    #expect(await !f.files.calls.contains { $0.hasPrefix("files_move") })
+}
+
+@Test func trashClosesACleanTabAndKeepsADirtyOne() async throws {
+    let f = try await editorFixture()
+    await f.files.put("/p/api/d/a.go", "a")
+    await f.files.put("/p/api/d/b.go", "b")
+    try await f.dispatch("editor_open", ["path": .string("/p/api/d/a.go")])
+    try await f.dispatch("editor_open", ["path": .string("/p/api/d/b.go")])
+    await f.panes.editorBufferDidChange(paneId: f.pane, tab: 1, text: "b!", basis: 0)
+    try await f.dispatch("editor_trash", ["path": .string("/p/api/d")])
+    let tabs = await f.snapshot().tabs
+    #expect(tabs.map(\.path) == ["/p/api/d/b.go"])
+    #expect(tabs[0].diskState == .deleted && tabs[0].text == "b!")
+    #expect(await f.snapshot().active == 0)
+}
+
+@Test func aDirtyTabLeftByTrashRecreatesItsFileOnSave() async throws {
+    let f = try await editorFixture()
+    await f.files.put("/p/api/a.go", "a")
+    try await f.dispatch("editor_open", ["path": .string("/p/api/a.go")])
+    await f.panes.editorBufferDidChange(paneId: f.pane, tab: 0, text: "a!", basis: 0)
+    try await f.dispatch("editor_trash", ["path": .string("/p/api/a.go")])
+    try await f.dispatch("editor_save")
+    #expect(await f.files.text(of: "/p/api/a.go") == "a!")
+}
+
+@Test func createAFileOpensItPinned() async throws {
+    let f = try await editorFixture()
+    try await f.dispatch("editor_create", ["path": .string("/p/api/n/new.ts"), "kind": .string("file")])
+    let s = await f.snapshot()
+    #expect(s.tabs.map(\.path) == ["/p/api/n/new.ts"] && s.active == 0 && !s.tabs[0].preview)
+}
+
+@Test func createAnExistingNameIsRefusedWhole() async throws {
+    let f = try await editorFixture()
+    await f.files.put("/p/api/a.go", "a")
+    do {
+        try await f.dispatch("editor_create", ["path": .string("/p/api/a.go"), "kind": .string("file")])
+        Issue.record("created over a file")
+    } catch {
+        #expect(String(describing: error).contains("/p/api/a.go already exists"))
+    }
+}
+
+@Test func theThreeActionsAreAllowedInProductionForTheAgent() async throws {
+    let f = try await editorFixture()
+    await f.files.put("/p/api/a.go", "a")
+    try await f.dispatch("editor_create", ["path": .string("/p/api/b.go"), "kind": .string("file")], origin: .agent, environment: "production")
+    try await f.dispatch("editor_rename", ["path": .string("/p/api/b.go"), "to": .string("/p/api/c.go")], origin: .agent, environment: "production")
+    try await f.dispatch("editor_trash", ["path": .string("/p/api/c.go")], origin: .agent, environment: "production")
+}
+
+// Review Focus 1. Autosave arms by path (EditorAutosave.observe); a renamed dirty tab must be armed
+// under its new path, or its pending save would name a tab that no longer exists.
+@Test func aRenamedDirtyTabIsArmedUnderItsNewPath() {
+    var a = EditorAutosave()
+    var clean = EditorTab.file(path: "/p/a", root: "/p", text: "x", mtime: 1, language: "go")
+    _ = a.observe(pane: "e1", snapshot: EditorSnapshot(tabs: [clean], active: 0), mode: .pause)
+    clean.text = "y"; clean.edits = 1
+    let typed = EditorSnapshot(tabs: [clean], active: 0)
+    #expect(a.observe(pane: "e1", snapshot: typed, mode: .pause).arm == ["/p/a"])
+    let moved = EditorSnapshot(tabs: editorRepointTabs(typed.tabs, from: "/p/a", to: "/p/b", root: "/p"), active: 0)
+    #expect(a.observe(pane: "e1", snapshot: moved, mode: .pause).arm == ["/p/b"])
+}
+
+// Review Focus 2: a tab open in another conversation's pane (a scope not on screen) follows too.
+@Test func aTabInAHiddenScopeIsRepointedToo() async throws {
+    let f = try await editorFixture()
+    await f.files.put("/p/api/a.go", "v0")
+    try await f.dispatch("editor_open", ["path": .string("/p/api/a.go")])
+    let home = await f.panes.activeScope
+    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, lineageRoot: "conv-2"))
+    try await f.dispatch("editor_rename", ["path": .string("/p/api/a.go"), "to": .string("/p/api/b.go")])
+    #expect(await f.panes.editorSnapshot(in: home, paneId: f.pane).tabs[0].path == "/p/api/b.go")
+}
