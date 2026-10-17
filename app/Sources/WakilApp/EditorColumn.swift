@@ -589,6 +589,7 @@ struct EditorColumn: View {
         Task {
             do {
                 let moveTo: String?
+                var madeFile = false
                 switch edit {
                 case .create(let folder, let kind):
                     // The placeholder name is dropped: the target resolves against `folder` itself.
@@ -596,6 +597,7 @@ struct EditorColumn: View {
                     let onFolder = selected == folder
                     try await dispatchThrowing("editor_create", ["path": .string(path), "kind": .string(kind)])
                     moveTo = kind == "dir" && onFolder ? path : nil
+                    madeFile = kind != "dir"
                 case .rename(let path):
                     let to = editorRenameTarget(of: path, typed: typed)
                     let onRow = selected == path
@@ -608,7 +610,9 @@ struct EditorColumn: View {
                 nameBusy = false
                 if nameEdit == edit {
                     nameEdit = nil; nameError = nil
-                    if refocus { treeFocused = true }
+                    // A new file's pinned tab takes the cursor (spec; Rule 3): the tree never pulls
+                    // the keyboard back from it.
+                    if refocus, !madeFile { treeFocused = true }
                 } else if nameEdit != nil {
                     // An edit started while this one landed: its field was disabled when it appeared.
                     focusNameField()
