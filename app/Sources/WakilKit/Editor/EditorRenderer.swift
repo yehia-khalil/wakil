@@ -76,8 +76,10 @@ public enum EditorRenderStep: Sendable, Equatable {
 }
 
 /// "file:<path>" or "scratch:<n>".
-public func editorTabKey(_ tab: EditorTab) -> String {
-    switch tab.subject {
+public func editorTabKey(_ tab: EditorTab) -> String { editorTabKey(tab.subject) }
+
+public func editorTabKey(_ subject: EditorTabSubject) -> String {
+    switch subject {
     case .file(let path, _): "file:\(path)"
     case .scratch(let n): "scratch:\(n)"
     case .diff(let root, let path, let group): "diff:\(group.rawValue):\(root)/\(path)"

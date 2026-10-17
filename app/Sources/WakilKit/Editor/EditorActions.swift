@@ -901,9 +901,16 @@ public func registerEditorActions(
                 default: return await reply(pane)   // Rule 5: one already in flight
                 }
             }
+            // The tab after the await: by the claimed subject, or a file tab editor_rename re-pointed
+            // from it meanwhile (its former keys hold the claimed one), so `saving` never sticks.
+            let claimedKey = editorTabKey(subject)
+            @Sendable func savedTab(_ s: EditorSnapshot) -> Int? {
+                s.tabs.firstIndex(where: { $0.subject == subject })
+                    ?? s.tabs.firstIndex(where: { if case .file = $0.subject { $0.formerKeys.contains(claimedKey) } else { false } })
+            }
             @Sendable func release() async {
                 await panes.updateEditor(paneId: pane) { s in
-                    if let i = s.tabs.firstIndex(where: { $0.subject == subject }) { s.tabs[i].saving = false }
+                    if let i = savedTab(s) { s.tabs[i].saving = false }
                 }
             }
             let target: (path: String, root: String)
@@ -930,7 +937,7 @@ public func registerEditorActions(
                 throw error
             }
             await panes.updateEditor(paneId: pane) { s in
-                guard let i = s.tabs.firstIndex(where: { $0.subject == subject }) else { return }
+                guard let i = savedTab(s) else { return }
                 s.tabs[i].saving = false
                 switch outcome {
                 case .failed(let message):

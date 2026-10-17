@@ -202,3 +202,30 @@ private func tab(_ path: String, text: String = "t", saved: String = "t") -> Edi
     #expect(after.allSatisfy { $0.formerKeys.isEmpty })
     #expect(await !f.files.calls.contains { $0.hasPrefix("files_move") })
 }
+
+// A rename while a save is in flight re-points the tab; the save's release still finds it by the
+// claimed subject's former key, so `saving` never sticks (final review I2).
+@Test func aRenameDuringAnInFlightSaveStillReleasesTheTab() async throws {
+    let f = try await editorFixture()
+    await f.files.put("/p/api/a.go", "v0")
+    try await f.dispatch("editor_open", ["path": .string("/p/api/a.go")])
+    await f.panes.editorBufferDidChange(paneId: f.pane, tab: 0, text: "v1", basis: 0)
+    await f.files.setSlowWrite(true)
+    let save = Task { try await f.dispatch("editor_save", origin: .ui) }
+    while !(await f.snapshot().tabs[0].saving) { await Task.yield() }
+    try await f.dispatch("editor_rename", ["path": .string("/p/api/a.go"), "to": .string("/p/api/b.go")])
+    await f.files.releaseWrite()
+    // The fake parks before writing, so the write lands after the move and finds a.go gone: the
+    // save fails, says so on the re-pointed tab, and keeps its edit unsaved.
+    await #expect(throws: (any Error).self) { _ = try await save.value }
+    let t = await f.snapshot().tabs[0]
+    #expect(t.path == "/p/api/b.go" && t.text == "v1")
+    #expect(!t.saving)
+    #expect(t.notice?.contains("does not exist") == true)
+    // Not stuck: the next save runs (no busy) and writes b.go.
+    await f.files.setSlowWrite(false)
+    try await f.dispatch("editor_save", origin: .ui)
+    let after = await f.snapshot().tabs[0]
+    #expect(!after.saving && !after.dirty)
+    #expect(await f.files.text(of: "/p/api/b.go") == "v1")
+}
