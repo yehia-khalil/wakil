@@ -274,3 +274,14 @@ private func fileTab(_ path: String, preview: Bool = false) -> EditorTab {
     // Nothing changed in front: nothing to take.
     #expect(!editorFrontTabArrived(old: EditorSnapshot(tabs: [a], active: 0), now: EditorSnapshot(tabs: [a], active: 0)))
 }
+
+@Test func theFrontTabRenamedDoesNotTakeTheKeyboard() {
+    // F2 on the active file's row, or the agent's editor_rename: the same tab under a new key.
+    let scratch = EditorTab.scratch(number: 1, language: "plaintext"), a = fileTab("/p/api/a.go")
+    let renamed = editorRepointTabs([a], from: "/p/api/a.go", to: "/p/api/b.go", root: "/p/api")[0]
+    #expect(!editorFrontTabArrived(old: EditorSnapshot(tabs: [scratch, a], active: 1),
+                                   now: EditorSnapshot(tabs: [scratch, renamed], active: 1)))
+    // Renamed twice while the first snapshot was skipped: still the same tab.
+    let twice = editorRepointTabs([renamed], from: "/p/api/b.go", to: "/p/api/c.go", root: "/p/api")[0]
+    #expect(!editorFrontTabArrived(old: EditorSnapshot(tabs: [a], active: 0), now: EditorSnapshot(tabs: [twice], active: 0)))
+}

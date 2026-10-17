@@ -240,7 +240,8 @@ public func editorFrontTabArrived(old: EditorSnapshot, now: EditorSnapshot) -> B
     let front = now.tabs[n], key = editorTabKey(front)
     guard let o = old.active, old.tabs.indices.contains(o) else { return true }
     let was = editorTabKey(old.tabs[o])
-    guard key != was else { return false }
+    // The same tab re-keyed by a rename (F2, the agent's `editor_rename`) did not arrive (Rule 6).
+    guard key != was, !front.formerKeys.contains(was) else { return false }
     let frontWent = !now.tabs.contains { editorTabKey($0) == was || $0.formerKeys.contains(was) }
     let wasOpen = old.tabs.contains { editorTabKey($0) == key || front.formerKeys.contains(editorTabKey($0)) }
     return !(frontWent && wasOpen)
