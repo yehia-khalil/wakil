@@ -448,8 +448,10 @@ no full debugger.
   - **Files** — the project's roots as top-level folders (VS Code multi-root style), with a
     root that holds repositories showing each as a node. Gitignored files are dimmed, not
     hidden; heavy folders (`node_modules`, `vendor`, …) are one dimmed row, loaded when
-    opened. The tree follows the disk live and keeps open folders open. Read-only until
-    3b-iv (Decision 37). A reveal button in its header (and ⌘K's *Reveal Active File in
+    opened. The tree follows the disk live and keeps open folders open. 3b-iv (Decision 41)
+    makes it writable: each root row shows a **+** on hover or selection, a menu of New File and
+    New Folder, and a new item, or a rename (F2), is an inline name field in the row's own
+    indent, monospaced 11 pt, with a refusal shown whole beneath it. A reveal button in its header (and ⌘K's *Reveal Active File in
     Tree*) opens the folders above the active file and selects its row; the tree never
     follows the active file by itself.
   - **The preview tab** — a single click opens a file in one italic tab that the next

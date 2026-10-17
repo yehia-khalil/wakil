@@ -93,7 +93,7 @@ Rules no phase may break.
    this triple — see Decision 4.)* *(2026-09-15: 2b-viii's switch changes the triple's
    org member in place and needed no amendment.)*
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
-   deliberate justification, never by default. Four have earned in. The justification
+   deliberate justification, never by default. Five have earned in. The justification
    for each, and what each leaves refused, is in `decisions.md` under *"Invariant 6 — the
    writes that have earned in"*, cited by date.
 
@@ -103,14 +103,15 @@ Rules no phase may break.
    | Issue status transition | Jira | 2026-09-14 |
    | Request with a mutation method | HTTP | 2026-09-17 |
    | File write — local files inside the project's roots | wakil-files | 2026-10-11 |
+   | File create, move, Move to Trash | wakil-files | 2026-10-17 |
 
    **Still refused:** schema mutation (every DDL verb, `TRUNCATE` explicitly), Mongo
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`
    of the API entry it targets, a command the **agent** runs in a terminal pane — the
    agent already has a bare shell, so a terminal run adds the organisation's credentials,
-   not reach, and the refusal defends Invariant 4 — and file delete and rename.
+   not reach, and the refusal defends Invariant 4.
 
-   **Each write declares its own price** rather than inheriting one from its kind; see
+   **Each write declares its own price**; see
    §9 and Decision 25.
 7. **Writes are never voice-confirmable.** Voice may propose a mutation; only typed
    confirmation may execute one — wherever the write's price is *gate*. *(2026-09-17: the
