@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-iv-trash-selection.jsonl",
+  "baseCommit": "a2a8b3fc90506ed554bcbb2e7888f9daa31d0f99",
+  "provedAt": "2026-10-17T16:11:26.311424Z",
+  "checkBlob": "6848305414e1c2fb775267d42380b7393c21fc79"
+}
