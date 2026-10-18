@@ -206,7 +206,9 @@ public func editorAfterAppendRead(_ tab: EditorTab, reply o: [String: JSONValue]
     let following = (tab.visibleRange?.upperBound ?? 0) >= lastText(tab.text)
     t.text += chunk
     if following {
-        t.cursor = EditorPosition(line: lastText(t.text), column: 1)
+        // The empty line under the new entry, as a terminal's prompt sits under its output: revealing
+        // the entry's own line can leave it under the edge, which Monaco counts as in view.
+        t.cursor = EditorPosition(line: lastText(t.text) + 1, column: 1)
         t.selection = nil
     }
     t.savedText = t.text

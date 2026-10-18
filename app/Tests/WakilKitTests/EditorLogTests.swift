@@ -121,7 +121,7 @@ private let log = "/p/api/storage/logs/laravel.log"
     let reply: [String: JSONValue] = ["exists": .bool(true), "text": .string("d\ne\n"), "utf8": .bool(true),
                                       "end": .integer(10), "size": .integer(10), "mtime": .integer(2)]
     guard case .appended(let t) = editorAfterAppendRead(tab, reply: reply) else { Issue.record("not appended"); return }
-    #expect(t.cursor == EditorPosition(line: 5, column: 1) && t.selection == nil)
+    #expect(t.cursor == EditorPosition(line: 6, column: 1) && t.selection == nil)
 }
 
 @Test func anAppendWhileScrolledUpLeavesTheCursor() {
