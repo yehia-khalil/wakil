@@ -1,0 +1,25 @@
+{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.tree.row:e2e-api"}}
+{"expect":{"tree":"contains","text":"README.md"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/README.md","preview":false}}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-api/README.md"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].preview","equals":"false"}}
+{"do":{"click":"editor.tree.row:e2e-api/notes"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].path","contains":"/e2e-api/notes"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"2"}}
+{"do":{"click":"editor.tree.row:e2e-api/README.md"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].preview","equals":"false"}}
+{"expect":{"focus":"editor.column"}}
+{"do":{"press":"Down"}}
+{"do":{"hotkey":"cmd+backspace"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_trash\""}}}
+{"expect":{"focus":"editor.column"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-api/README.md"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_trash","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/app.txt"},"refuses":"/e2e-api/app.txt does not exist"}}
