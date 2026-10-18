@@ -23,6 +23,10 @@ struct EditorFileIcon: View {
         if Self.available {
             Text(String(glyph))
                 .font(.custom("seti", size: Self.size))
+                // Seti's advance widths run 13–15.6 pt at this size; without `fixedSize` the 10 pt
+                // frame clips the wider glyphs (Go drew as "GC"). The glyph keeps its own size,
+                // centred on the column.
+                .fixedSize()
                 .frame(width: 10)
                 .accessibilityHidden(true)
         }
