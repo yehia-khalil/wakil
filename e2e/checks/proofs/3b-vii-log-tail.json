@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-vii-log-tail.jsonl",
+  "baseCommit": "1d1a6f2b959a65ac9093b38e9de62d41355f50fb",
+  "provedAt": "2026-10-18T16:35:04.066979Z",
+  "checkBlob": "27d80d33b93950c1d5abe05ea141789c3d89abc3"
+}
