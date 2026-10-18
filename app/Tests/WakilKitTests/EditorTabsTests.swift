@@ -32,6 +32,37 @@ private func fileTab(_ path: String, root: String = "/p/api") -> EditorTab {
     #expect(editorLanguage(forPath: "/a/b.unknown") == "plaintext")
 }
 
+@Test func glyphsFollowTheLanguage() {
+    let cases: [(String, Character)] = [
+        ("/a/main.go", "\u{E03A}"), ("/a/App.swift", "\u{E092}"), ("/a/index.php", "\u{E070}"),
+        ("/a/app.test.tsx", "\u{E099}"), ("/a/b.mjs", "\u{E051}"), ("/a/package.json", "\u{E055}"),
+        ("/a/ci.yml", "\u{E0A7}"), ("/a/q.sql", "\u{E022}"), ("/a/README.MD", "\u{E060}"),
+        ("/a/x.vue", "\u{E048}"), ("/a/s.css", "\u{E01D}"), ("/a/s.scss", "\u{E084}"),
+        ("/a/run.py", "\u{E07B}"), ("/a/go.sh", "\u{E089}"), ("/a/pom.xml", "\u{E0A5}"),
+        ("/a/Dockerfile", "\u{E025}"),
+    ]
+    for (path, glyph) in cases { #expect(editorFileGlyph(forPath: path) == glyph, "\(path)") }
+}
+
+@Test func filesWithNoGlyphShowThePage() {
+    #expect(editorFileGlyph(forPath: "/a/.env") == "\u{E023}")      // ini
+    #expect(editorFileGlyph(forPath: "/a/Makefile") == "\u{E023}")  // plaintext
+    #expect(editorFileGlyph(forPath: "/a/LICENSE") == "\u{E023}")
+    #expect(editorFileGlyph(forPath: "/a/b.unknown") == "\u{E023}")
+}
+
+@Test func aFileTabShowsItsFilesGlyph() {
+    #expect(editorTabGlyph(fileTab("/p/api/main.go")) == "\u{E03A}")
+}
+
+@Test func aDiffTabShowsItsFilesGlyph() {
+    #expect(editorTabGlyph(.diff(root: "/p/api", path: "cmd/main.go", group: .changed)) == "\u{E03A}")
+}
+
+@Test func aScratchTabShowsThePage() {
+    #expect(editorTabGlyph(.scratch(number: 1, language: "sql")) == "\u{E023}")
+}
+
 @Test func commandWClosesATabWhileAnyIsOpenThenThePane() {
     #expect(editorCloseTarget(tabs: 2) == .tab)
     #expect(editorCloseTarget(tabs: 0) == .pane)

@@ -66,6 +66,40 @@ public func editorLanguage(forPath path: String) -> String {
     }
 }
 
+/// The Seti icon font's glyph for a path (3b-iv-b): its language's, through
+/// `editorLanguage(forPath:)`, so the icon always matches the highlighting; else the plain page.
+/// Code points from VS Code's `theme-seti/icons/vs-seti-icon-theme.json` at the commit the bundled
+/// `seti.woff` came from.
+public func editorFileGlyph(forPath path: String) -> Character {
+    switch editorLanguage(forPath: path) {
+    case "go": "\u{E03A}"
+    case "swift": "\u{E092}"
+    case "php": "\u{E070}"
+    case "typescript": "\u{E099}"
+    case "javascript": "\u{E051}"
+    case "json": "\u{E055}"
+    case "yaml": "\u{E0A7}"
+    case "sql": "\u{E022}"
+    case "markdown": "\u{E060}"
+    case "html": "\u{E048}"
+    case "css": "\u{E01D}"
+    case "scss": "\u{E084}"
+    case "python": "\u{E07B}"
+    case "shell": "\u{E089}"
+    case "xml": "\u{E0A5}"
+    case "dockerfile": "\u{E025}"
+    default: "\u{E023}"
+    }
+}
+
+/// A tab's glyph: a file's or a diff's by its path; a scratch tab's is the plain page.
+public func editorTabGlyph(_ tab: EditorTab) -> Character {
+    switch tab.subject {
+    case .file(let path, _), .diff(_, let path, _): editorFileGlyph(forPath: path)
+    case .scratch: "\u{E023}"
+    }
+}
+
 /// The tabs a layout keeps: files only, with cursor and scroll. Scratch tabs and unsaved text
 /// are never persisted (spec, Restore).
 public func editorSavedTabs(_ s: EditorSnapshot) -> [EditorSavedTab] {

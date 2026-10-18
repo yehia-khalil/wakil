@@ -454,6 +454,8 @@ no full debugger.
     indent, monospaced 11 pt, with a refusal shown whole beneath it. A reveal button in its
     header (and ⌘K's *Reveal Active File in Tree*) opens the folders above the active file and
     selects its row; the tree never follows the active file by itself.
+    3b-iv-b gives file rows, Changes rows and editor tabs a single-colour Seti glyph for the
+    file's language, in the name's own colour; folders keep their chevron.
   - **The preview tab** — a single click opens a file in one italic tab that the next
     single click replaces; a double-click or an edit keeps it. Tabs move by dragging along
     their own strip (a violet line marks the drop) and close on a middle-click, as ⌘W closes
