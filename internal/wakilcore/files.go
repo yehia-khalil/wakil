@@ -688,6 +688,8 @@ type SearchResult struct {
 	Truncated bool          `json:"truncated"`
 	// FilesTruncated: some root's listing hit FileListCap, so it was searched only in part.
 	FilesTruncated bool `json:"files_truncated"`
+	// SkippedLarge: the files over FileCap that were not searched, root-relative (3b-vii).
+	SkippedLarge []string `json:"skipped_large"`
 }
 
 // searchPattern compiles q the one way both kinds of root are searched, so a pattern means the
@@ -748,7 +750,7 @@ func SearchFiles(ctx context.Context, roots []string, heavy []string, only []str
 		}
 		targets = only
 	}
-	res := SearchResult{Matches: []SearchMatch{}}
+	res := SearchResult{Matches: []SearchMatch{}, SkippedLarge: []string{}}
 	for _, root := range targets {
 		l, lerr := ListFiles(ctx, root, roots, heavy)
 		if lerr != nil {
@@ -765,7 +767,11 @@ func SearchFiles(ctx context.Context, roots []string, heavy []string, only []str
 				continue
 			}
 			info, serr := os.Stat(p)
-			if serr != nil || !info.Mode().IsRegular() || info.Size() > FileCap {
+			if serr != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			if info.Size() > FileCap {
+				res.SkippedLarge = append(res.SkippedLarge, rel)
 				continue
 			}
 			data, rerr := os.ReadFile(p)

@@ -110,7 +110,7 @@ func newServer() *mcp.Server {
 			return nil, d, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "files_search", Description: "Read-only. Searches the project's files for query (literal unless regex; case-insensitive unless case; whole words with word): each match's root, path (relative), line, column (1-based, UTF-16) and the matching line as preview. Ignored files and the heavy folders are skipped, as are binary files and files over 2 MB. Stops at 2,000 matches (truncated); files_truncated says a root had more than 50,000 files and was searched only in part. Links to files outside the roots are skipped. An invalid regex is Go's own error."},
+	mcp.AddTool(s, &mcp.Tool{Name: "files_search", Description: "Read-only. Searches the project's files for query (literal unless regex; case-insensitive unless case; whole words with word): each match's root, path (relative), line, column (1-based, UTF-16) and the matching line as preview. Ignored files and the heavy folders are skipped, as are binary files and files over 2 MB (named in skipped_large). Stops at 2,000 matches (truncated); files_truncated says a root had more than 50,000 files and was searched only in part. Links to files outside the roots are skipped. An invalid regex is Go's own error."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a searchArg) (*mcp.CallToolResult, wakilcore.SearchResult, error) {
 			rs, heavy, fail := project()
 			if fail != nil {

@@ -1253,3 +1253,15 @@ func TestListFilesReportsAnEmptyFolderInsideAnUntrackedFolderHoldingAFile(t *tes
 		t.Fatalf("empty %v", l.Empty)
 	}
 }
+
+func TestFilesSearchNamesTheLargeFilesItSkipped(t *testing.T) {
+	a, b := searchFixture(t)
+	write(t, filepath.Join(a, "storage", "laravel.log"), strings.Repeat("bookingId\n", FileCap/9))
+	r, err := SearchFiles(context.Background(), []string{a, b}, testHeavy, nil, SearchQuery{Query: "bookingId"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(r.SkippedLarge, ",") != "storage/laravel.log" {
+		t.Fatalf("skipped %v", r.SkippedLarge)
+	}
+}
