@@ -65,15 +65,14 @@ import Testing
     #expect(await f.snapshot().tabs.isEmpty)
 }
 
-@Test func anOverCapFileOpensReadOnlyWithItsNoticeWhole() async throws {
+@Test func anOverCapFileWithNoTailOpensReadOnlyWithItsNoticeWhole() async throws {
     let f = try await editorFixture()
-    // FakeFiles has no over-cap mode: give it one for this test by writing the reply shape directly.
-    // (Add `func putOverCap(_ path: String, size: Int)` to FakeFiles answering over_cap true.)
+    // An over-cap reply with no tail: only an older wakil-files answers this way (3b-vii).
     await f.files.putOverCap("/p/api/dump.sql", size: 48_000_000)
     try await f.dispatch("editor_open", ["path": .string("/p/api/dump.sql")])
     let t = await f.snapshot().tabs[0]
     #expect(t.readOnly && t.text.isEmpty)
-    #expect(t.notice == "dump.sql is 48 MB; files over 2 MB open in 3b-v")
+    #expect(t.notice == "dump.sql is 48 MB and could not be read as text")
 }
 
 @Test func newScratchOpensAnEmptyFocusedUntitledTab() async throws {
@@ -307,7 +306,7 @@ import Testing
     try await f.dispatch("editor_open", ["path": .string("/p/api/dump.sql")])
     await #expect(throws: EditorActionError.readOnly(
         action: "editor_save", path: "/p/api/dump.sql",
-        notice: "dump.sql is 48 MB; files over 2 MB open in 3b-v")) { try await f.dispatch("editor_save", origin: .ui) }
+        notice: "dump.sql is 48 MB and could not be read as text")) { try await f.dispatch("editor_save", origin: .ui) }
     #expect(await f.files.calls.filter { $0.hasPrefix("files_write") }.isEmpty)
     #expect(await f.files.text(of: "/p/api/dump.sql") == nil)
     #expect(!(await f.snapshot().tabs[0].saving))

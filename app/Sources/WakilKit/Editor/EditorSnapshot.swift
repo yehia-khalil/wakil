@@ -49,6 +49,10 @@ public struct EditorTab: Sendable, Equatable {
     public var notice: String?
     /// Over cap, binary, not UTF-8.
     public var readOnly: Bool
+    /// The byte offset the tab's text starts at, when it holds a large file's tail (3b-vii); nil = the whole file.
+    public var tailStart: Int? = nil
+    /// The byte offset the tab has read its file up to: where the next append reads from (3b-vii).
+    public var readTo: Int = 0
     public var saving: Bool
     /// Bumps on every text change; the renderer's edit counter.
     public var edits: Int

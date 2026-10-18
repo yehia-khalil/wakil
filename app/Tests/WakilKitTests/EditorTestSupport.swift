@@ -19,7 +19,10 @@ actor FakeFiles: ToolCaller {
     private var parked: [CheckedContinuation<Void, Never>] = []
     private var clock: Int64 = 100
 
-    func put(_ path: String, _ text: String) { clock += 1; disk[path] = (text, clock); overCap[path] = nil }
+    func put(_ path: String, _ text: String) { clock += 1; disk[path] = (text, clock); overCap[path] = nil; tails[path] = nil }
+    /// A large file's tail (3b-vii): `files_read` answers it as Go does over the cap.
+    var tails: [String: (text: String, start: Int, size: Int)] = [:]
+    func putTail(_ path: String, text: String, start: Int, size: Int) { clock += 1; tails[path] = (text, start, size); disk[path] = nil }
     func remove(_ path: String) { disk[path] = nil }
     func setListing(_ root: String, _ files: [String]) { listing[root] = files }
     func setListError(_ root: String, _ text: String) { listErrors[root] = text }
@@ -183,6 +186,31 @@ actor FakeFiles: ToolCaller {
         func ok(_ o: [String: JSONValue]) -> JSONValue { .object(["structuredContent": .object(o)]) }
         switch name {
         case "files_read":
+            if let tl = tails[path] {
+                return ok(["path": .string(path), "exists": .bool(true), "text": .string(tl.text), "utf8": .bool(true),
+                           "binary": .bool(false), "over_cap": .bool(true), "tail": .bool(true),
+                           "start": .integer(Int64(tl.start)), "end": .integer(Int64(tl.size)),
+                           "size": .integer(Int64(tl.size)), "mtime": .integer(clock)])
+            }
+            if case .object(let a) = arguments, let from = a["from"]?.intValue {
+                calls[calls.count - 1] += " from \(from)"
+                guard let f = disk[path] else { return ok(["path": .string(path), "exists": .bool(false), "text": .string(""),
+                                                          "utf8": .bool(true), "size": .integer(0), "mtime": .integer(0)]) }
+                let bytes = Array(f.text.utf8)
+                func flag(_ key: String) -> JSONValue {
+                    ok(["exists": .bool(true), key: .bool(true), "text": .string(""), "utf8": .bool(true),
+                        "size": .integer(Int64(bytes.count)), "mtime": .integer(f.mtime)])
+                }
+                if bytes.count < from { return flag("shrunk") }
+                if bytes.count - from > 2 << 20 { return flag("too_far") }
+                var chunk = Array(bytes[from...])
+                chunk = Array(chunk[..<((chunk.lastIndex(of: 0x0A) ?? -1) + 1)])
+                let binary = chunk.contains(0)
+                return ok(["exists": .bool(true), "text": .string(binary ? "" : String(decoding: chunk, as: UTF8.self)),
+                           "utf8": .bool(true), "binary": .bool(binary), "start": .integer(Int64(from)),
+                           "end": .integer(Int64(from + chunk.count)), "size": .integer(Int64(bytes.count)),
+                           "mtime": .integer(f.mtime)])
+            }
             if let size = overCap[path] {
                 return ok(["path": .string(path), "exists": .bool(true), "text": .string(""), "utf8": .bool(true),
                            "binary": .bool(false), "over_cap": .bool(true), "size": .integer(Int64(size)), "mtime": .integer(1)])
