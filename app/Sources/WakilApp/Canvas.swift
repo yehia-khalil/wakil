@@ -437,6 +437,11 @@ extension WakilWindow {
                         withPane["pane"] = .string(pane.id)
                         await model.dispatchFromSurface(name, .object(withPane))
                     },
+                    dispatchThrowing: { name, params in
+                        var withPane = params
+                        withPane["pane"] = .string(pane.id)
+                        try await model.dispatchFromSurfaceThrowing(name, .object(withPane))
+                    },
                     bufferChanged: { subject, text, basis in
                         await model.editorBufferDidChange(pane: pane.id, subject: subject, text: text, basis: basis)
                     },

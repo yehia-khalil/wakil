@@ -7,16 +7,19 @@ public struct EditorRootListing: Sendable, Equatable {
     public var ignored: [String]
     public var heavy: [String]
     public var repos: [String]
+    /// Folders holding nothing (3b-iv), relative: a created folder has no file to list it by.
+    public var empty: [String]
     public var truncated: Bool
     public var error: String?
 
     public init(root: String, files: [String], ignored: [String], heavy: [String], repos: [String],
-                truncated: Bool, error: String?) {
+                truncated: Bool, error: String?, empty: [String] = []) {
         self.root = root
         self.files = files
         self.ignored = ignored
         self.heavy = heavy
         self.repos = repos
+        self.empty = empty
         self.truncated = truncated
         self.error = error
     }
@@ -28,7 +31,8 @@ public struct EditorRootListing: Sendable, Equatable {
             return items.compactMap { if case .string(let s) = $0 { return s } else { return nil } }
         }
         self.init(root: root, files: strings("files"), ignored: strings("ignored"), heavy: strings("heavy"),
-                  repos: strings("repos"), truncated: content["truncated"] == .bool(true), error: nil)
+                  repos: strings("repos"), truncated: content["truncated"] == .bool(true), error: nil,
+                  empty: strings("empty"))
     }
 
     public static func failed(root: String, _ error: String) -> EditorRootListing {
@@ -105,6 +109,7 @@ public func editorTreeRows(_ listings: [EditorRootListing], open: Set<String>,
         for f in l.files { insert(f, into: trie) }
         if showIgnored { for f in l.ignored { insert(f, into: trie, ignored: true) } }
         for h in l.heavy { insert(h, into: trie, dir: true, heavy: true) }
+        for e in l.empty { insert(e, into: trie, dir: true) }   // a folder node with nothing under it
         for r in l.repos { insert(r, into: trie, dir: true) }   // a node even when it lists nothing
         let repos = Set(l.repos)
         func emit(_ node: TreeNode, prefix: String, depth: Int, dimmed: Bool) {
@@ -192,4 +197,31 @@ public func editorPruneOpen(_ open: [String], listings: [EditorRootListing]) -> 
 
 public func editorFolder(of row: EditorTreeRow) -> String {
     row.kind == .file ? (row.id as NSString).deletingLastPathComponent : row.id
+}
+
+/// A file operation the tree's keys start (3b-iv): ⌘⌫ moves the selection to the Trash, F2 renames it.
+public enum EditorTreeKeyCommand: Sendable, Equatable { case trash, rename }
+
+/// The tree's file-operation key, by the characters the key press carries. The Delete key sends
+/// U+007F (DEL), not U+0008: SwiftUI's `KeyEquivalent.delete` is U+0008, so matching it never saw ⌘⌫
+/// (3b-iv Cover). Both are taken, as the terminal takes them. F2 has no `KeyEquivalent`: its
+/// character is `NSF2FunctionKey` (U+F705). ⌘⌫ is ⌘ alone; F2 takes any modifiers, as before.
+public func editorTreeKeyCommand(characters: String, command: Bool, otherChord: Bool) -> EditorTreeKeyCommand? {
+    switch characters {
+    case "\u{7F}", "\u{8}": return command && !otherChord ? .trash : nil
+    case "\u{F705}": return .rename
+    default: return nil
+    }
+}
+
+/// A refusal shown under the tree's name field, its absolute paths written from their root's name
+/// (`/var/…/walk/api/src/b.ts` → `api/src/b.ts`): the root is the row above, and a temp root's path
+/// would otherwise fill the column. Every path stays whole from the root down (Rule 8).
+public func editorTreeShortError(_ message: String, roots: [String]) -> String {
+    var out = message
+    for root in roots.sorted(by: { $0.count > $1.count }) {
+        let name = (root as NSString).lastPathComponent
+        out = out.replacingOccurrences(of: root + "/", with: name + "/")
+    }
+    return out
 }

@@ -165,3 +165,84 @@ public func editorTabParams(_ subject: EditorTabSubject) -> [String: JSONValue] 
         ["diff": .object(["root": .string(root), "path": .string(path), "group": .string(group.rawValue)])]
     }
 }
+
+/// `path` is `base` or under it.
+private func editorAtOrUnder(_ path: String, _ base: String) -> Bool { path == base || path.hasPrefix(base + "/") }
+
+/// Tabs after `from` became `to` (3b-iv): file tabs at or under it follow, edits and all, keeping
+/// their old key for the renderer (ruling R2); diff tabs at or under it close, Changes relists them.
+public func editorRepointTabs(_ tabs: [EditorTab], from: String, to: String, root: String) -> [EditorTab] {
+    tabs.compactMap { t in
+        switch t.subject {
+        case .file(let path, _) where editorAtOrUnder(path, from):
+            var n = t
+            let moved = to + path.dropFirst(from.count)
+            n.formerKeys = Array((t.formerKeys + [editorTabKey(t)]).suffix(4))
+            n.subject = .file(path: moved, root: root)
+            if t.language == editorLanguage(forPath: path) { n.language = editorLanguage(forPath: moved) }
+            return n
+        case .diff(let r, let p, _) where editorAtOrUnder(r + "/" + p, from):
+            return nil
+        default:
+            return t
+        }
+    }
+}
+
+/// Tabs after `path` went to the Trash (3b-iv): clean file tabs close, dirty ones stay marked
+/// deleted (a save recreates the file), diff tabs close.
+public func editorTabsAfterTrash(_ tabs: [EditorTab], path: String) -> [EditorTab] {
+    tabs.compactMap { t in
+        switch t.subject {
+        case .file(let p, _) where editorAtOrUnder(p, path):
+            guard t.dirty else { return nil }
+            var n = t
+            n.diskState = .deleted
+            return n
+        case .diff(let r, let p, _) where editorAtOrUnder(r + "/" + p, path):
+            return nil
+        default:
+            return t
+        }
+    }
+}
+
+/// The active index after `old` became `new`: the same tab if it survived (by subject, or by the
+/// key it had before a rename), else the neighbour `editorTabAfterClosing` picks (Rule 6).
+public func editorActiveAfter(_ old: [EditorTab], active: Int?, new: [EditorTab]) -> Int? {
+    guard !new.isEmpty else { return nil }
+    guard let a = active, a < old.count else { return active.map { min($0, new.count - 1) } }
+    func survives(_ o: EditorTab, as n: EditorTab) -> Bool {
+        let key = editorTabKey(o)
+        return editorTabKey(n) == key || (!new.contains { editorTabKey($0) == key } && n.formerKeys.contains(key))
+    }
+    if let i = new.firstIndex(where: { survives(old[a], as: $0) }) { return i }
+    // Survivors before the active one keep their order, so its neighbour sits at the same index.
+    let before = old[..<a].filter { o in new.contains { survives(o, as: $0) } }.count
+    return min(before, new.count - 1)
+}
+
+/// Where a rename typed as `typed` lands: relative to `path`'s folder, standardized, so `sub/x`
+/// moves down and `../x` up; a leading "/" is still the folder's (never the disk's root).
+public func editorRenameTarget(of path: String, typed: String) -> String {
+    let folder = (path as NSString).deletingLastPathComponent
+    let rel = typed.drop { $0 == "/" }
+    return ((folder as NSString).appendingPathComponent(String(rel)) as NSString).standardizingPath
+}
+
+/// Whether the tab now in front of a pane arrived there — opened (⌘T, New File, an open) or picked
+/// (⌘P, a tab click) — and so takes the keyboard (Rule 3). A preview tab is browsing: never. A tab
+/// that comes forward only because the one in front went (⌘W, Move to Trash, the agent's
+/// `editor_trash` or `editor_close`) did not arrive: the keyboard stays where the operator was
+/// (Rule 6), in the tree or wherever it is. A tab is the same tab across a rename (its former keys).
+public func editorFrontTabArrived(old: EditorSnapshot, now: EditorSnapshot) -> Bool {
+    guard let n = now.active, now.tabs.indices.contains(n), !now.tabs[n].preview else { return false }
+    let front = now.tabs[n], key = editorTabKey(front)
+    guard let o = old.active, old.tabs.indices.contains(o) else { return true }
+    let was = editorTabKey(old.tabs[o])
+    // The same tab re-keyed by a rename (F2, the agent's `editor_rename`) did not arrive (Rule 6).
+    guard key != was, !front.formerKeys.contains(was) else { return false }
+    let frontWent = !now.tabs.contains { editorTabKey($0) == was || $0.formerKeys.contains(was) }
+    let wasOpen = old.tabs.contains { editorTabKey($0) == key || front.formerKeys.contains(editorTabKey($0)) }
+    return !(frontWent && wasOpen)
+}

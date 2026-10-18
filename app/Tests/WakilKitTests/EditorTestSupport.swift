@@ -146,6 +146,10 @@ actor FakeFiles: ToolCaller {
     func setDirThrows(_ key: String, _ text: String) { dirThrows[key] = text }
     func setSlowWrite(_ on: Bool) { slowWrite = on }
     func setWriteError(_ e: String?) { writeError = e }
+    /// Folders `files_create` made (the disk holds files only); `files_move` answers `moveError` whole.
+    var madeDirs: Set<String> = []
+    var moveError: String?
+    func setMoveError(_ e: String?) { moveError = e }
     func releaseWrite() { released = true; parked.forEach { $0.resume() }; parked = [] }
     private func park(_ c: CheckedContinuation<Void, Never>) { if released { c.resume() } else { parked.append(c) } }
 
@@ -200,6 +204,22 @@ actor FakeFiles: ToolCaller {
             }
             put(path, optionalString(arguments, "text") ?? "")
             return ok(["path": .string(path), "size": .integer(Int64(disk[path]!.text.utf8.count)), "mtime": .integer(disk[path]!.mtime)])
+        case "files_create":
+            let kind = optionalString(arguments, "kind") ?? "file"
+            if disk[path] != nil || madeDirs.contains(path) {
+                return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string("\(path) already exists")])])])
+            }
+            if kind == "dir" { madeDirs.insert(path) } else { put(path, "") }
+            return ok(["path": .string(path), "root": .string(""), "kind": .string(kind)])
+        case "files_move":
+            let from = optionalString(arguments, "from") ?? "", to = optionalString(arguments, "to") ?? ""
+            calls.append("files_move \(from) -> \(to)")
+            if let moveError { return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(moveError)])])]) }
+            for (k, v) in disk where k == from || k.hasPrefix(from + "/") { disk[k] = nil; disk[to + k.dropFirst(from.count)] = v }
+            return ok(["from": .string(from), "to": .string(to), "kind": .string(disk[to] == nil ? "dir" : "file")])
+        case "files_trash":
+            for k in disk.keys where k == path || k.hasPrefix(path + "/") { disk[k] = nil }
+            return ok(["path": .string(path), "root": .string(""), "kind": .string("file")])
         case "files_list":
             if let text = listErrors[path] {
                 return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(text)])])])

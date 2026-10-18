@@ -128,11 +128,14 @@ var errListFull = errors.New("file list full")
 // files outside the heavy folders; Heavy the heavy folders found, never walked; Repos the child
 // repositories of a folder of repositories (3b-ii).
 type FileList struct {
-	Root      string   `json:"root"`
-	Files     []string `json:"files"`
-	Ignored   []string `json:"ignored"`
-	Heavy     []string `json:"heavy"`
-	Repos     []string `json:"repos"`
+	Root    string   `json:"root"`
+	Files   []string `json:"files"`
+	Ignored []string `json:"ignored"`
+	Heavy   []string `json:"heavy"`
+	Repos   []string `json:"repos"`
+	// Empty is the folders holding nothing git or the walk lists (3b-iv ruling R1): a folder New
+	// Folder just made, which a file listing alone would never show.
+	Empty     []string `json:"empty"`
 	Truncated bool     `json:"truncated"`
 }
 
@@ -202,13 +205,55 @@ func gitListHeavy(ctx context.Context, dir string, names []string) ([]string, er
 	return heavy, nil
 }
 
+// gitListEmpty answers the repository's untracked folders that hold no file git lists: `--directory`
+// reports such a folder as one "name/" entry, collapsed to its top, even when it holds files; the
+// caller walks each for the folders inside that have no entry (addEmptyUnder).
+func gitListEmpty(ctx context.Context, dir string) ([]string, error) {
+	lines, err := gitLines(ctx, dir, "ls-files", "-z", "--others", "--exclude-standard", "--directory")
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, l := range lines {
+		if strings.HasSuffix(l, "/") && !isNestedRepo(dir, l) {
+			out = append(out, strings.TrimSuffix(l, "/"))
+		}
+	}
+	return out, nil
+}
+
+// addEmptyUnder adds every folder in d, an untracked folder git collapsed to one "d/" entry
+// ("made/deeper" comes back as "made/"), that holds no entry, d itself included; it skips
+// nested repositories and heavy folders as the walk does.
+func (w *walked) addEmptyUnder(real, d string) {
+	top := filepath.Join(real, filepath.FromSlash(d))
+	_ = filepath.WalkDir(top, func(p string, e fs.DirEntry, err error) error {
+		if err != nil || !e.IsDir() {
+			return nil
+		}
+		if p != top {
+			if w.isHeavy(e.Name()) || skippedDirs[e.Name()] {
+				return filepath.SkipDir
+			}
+			if _, serr := os.Lstat(filepath.Join(p, ".git")); serr == nil {
+				return filepath.SkipDir
+			}
+		}
+		if entries, rerr := os.ReadDir(p); rerr == nil && len(entries) == 0 {
+			rel, _ := filepath.Rel(real, p)
+			w.empty = append(w.empty, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+}
+
 // walked is one listing in progress. heavyNames is the heavy folder names, .git first (3b-v part 2:
 // the active project's list, HeavyNames); the non-git walk's skippedDirs stay built in. Heavy
 // folders are listed as one entry each and never walked: their contents load only when the
 // operator opens one (files_list_dir, 3b-ii).
 type walked struct {
-	files, ignored, heavy, repos []string
-	heavyNames                   []string
+	files, ignored, heavy, repos, empty []string
+	heavyNames                          []string
 }
 
 func (w *walked) isHeavy(name string) bool { return slices.Contains(w.heavyNames, name) }
@@ -340,6 +385,9 @@ func walkFiles(ctx context.Context, real string, heavy []string) (walked, error)
 				return filepath.SkipDir
 			}
 		}
+		if entries, rerr := os.ReadDir(p); rerr == nil && len(entries) == 0 {
+			w.empty = append(w.empty, rel)
+		}
 		return nil
 	})
 	if errors.Is(err, errListFull) {
@@ -378,6 +426,12 @@ func ListFiles(ctx context.Context, root string, roots []string, heavy []string)
 		w.heavy = foundHeavy
 		w.addTracked(ctx, real, "", files)
 		w.addIgnoredOf(real, "", ignored)
+		if empty, eerr := gitListEmpty(ctx, real); eerr == nil {
+			// d itself is reported only when it has no entry, so never when it holds a listed file.
+			for _, d := range empty {
+				w.addEmptyUnder(real, d)
+			}
+		}
 		if cerr := ctx.Err(); cerr != nil {
 			return FileList{}, cerr
 		}
@@ -389,7 +443,7 @@ func ListFiles(ctx context.Context, root string, roots []string, heavy []string)
 			return FileList{}, err
 		}
 	}
-	for _, s := range []*[]string{&w.files, &w.ignored, &w.heavy, &w.repos} {
+	for _, s := range []*[]string{&w.files, &w.ignored, &w.heavy, &w.repos, &w.empty} {
 		sort.Strings(*s)
 		if *s == nil {
 			*s = []string{}
@@ -403,7 +457,7 @@ func ListFiles(ctx context.Context, root string, roots []string, heavy []string)
 	if room := FileListCap - len(w.files); len(w.ignored) > room {
 		w.ignored, truncated = w.ignored[:room], true
 	}
-	return FileList{Root: real, Files: w.files, Ignored: w.ignored, Heavy: w.heavy, Repos: w.repos, Truncated: truncated}, nil
+	return FileList{Root: real, Files: w.files, Ignored: w.ignored, Heavy: w.heavy, Repos: w.repos, Empty: w.empty, Truncated: truncated}, nil
 }
 
 // ListDir lists one folder of a root: its direct entries, folders first, each sorted. dir is

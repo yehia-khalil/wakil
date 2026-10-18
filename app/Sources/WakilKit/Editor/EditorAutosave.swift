@@ -46,6 +46,15 @@ public struct EditorAutosave: Sendable {
             // A tab seen for the first time has nothing to compare with, so it never arms.
             if mode == .pause, !tab.readOnly, let before = seen?[path], before != tab.edits {
                 step.arm.append(path)
+            } else if mode == .pause, !tab.readOnly, seen?[path] == nil,
+                      let before = tab.formerKeys.reversed().lazy.compactMap({ key -> Int? in
+                          guard key.hasPrefix("file:") else { return nil }
+                          return seen?[String(key.dropFirst("file:".count))]
+                      }).first,
+                      before != tab.edits || tab.dirty {
+                // Renamed (3b-iv): seen under a former path, so it is the same tab under its new one.
+                // A timer armed under the old path would name a tab that is gone; it arms here instead.
+                step.arm.append(path)
             }
         }
         let current = snapshot.active.flatMap { snapshot.tabs.indices.contains($0) ? editorTabKey(snapshot.tabs[$0]) : nil }

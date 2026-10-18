@@ -1135,3 +1135,69 @@ func TestFilesReplaceNamingAMissingRootOfTheProjectListsIt(t *testing.T) {
 		t.Fatalf("got %+v, %v", r, err)
 	}
 }
+
+func TestListFilesReportsEmptyFoldersOutsideARepository(t *testing.T) {
+	a, _, _ := filesRoots(t)
+	write(t, filepath.Join(a, "full", "f.txt"), "x")
+	if err := os.MkdirAll(filepath.Join(a, "hollow", "deeper"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l, err := ListFiles(context.Background(), a, []string{a}, HeavyNames(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(l.Empty, []string{"hollow/deeper"}) {
+		t.Fatalf("empty %v", l.Empty)
+	}
+}
+
+func TestListFilesReportsEmptyFoldersInARepository(t *testing.T) {
+	a, _, _ := filesRoots(t)
+	gitInit(t, a) // the helper the repo listing tests already use
+	write(t, filepath.Join(a, "f.txt"), "x")
+	if err := os.MkdirAll(filepath.Join(a, "made"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l, err := ListFiles(context.Background(), a, []string{a}, HeavyNames(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(l.Empty, []string{"made"}) {
+		t.Fatalf("empty %v", l.Empty)
+	}
+}
+
+// git collapses an untracked folder to its top ("made/deeper" comes back as "made/"): the listing
+// walks it to find the empty folder inside.
+func TestListFilesReportsANestedEmptyFolderInARepository(t *testing.T) {
+	a, _, _ := filesRoots(t)
+	gitInit(t, a)
+	write(t, filepath.Join(a, "f.txt"), "x")
+	if err := os.MkdirAll(filepath.Join(a, "made", "deeper"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l, err := ListFiles(context.Background(), a, []string{a}, HeavyNames(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(l.Empty, []string{"made/deeper"}) {
+		t.Fatalf("empty %v", l.Empty)
+	}
+}
+
+func TestListFilesReportsAnEmptyFolderInsideAnUntrackedFolderHoldingAFile(t *testing.T) {
+	a, _, _ := filesRoots(t)
+	gitInit(t, a)
+	write(t, filepath.Join(a, "f.txt"), "x")
+	write(t, filepath.Join(a, "src", "newdir", "f.txt"), "x")
+	if err := os.MkdirAll(filepath.Join(a, "src", "newdir", "inner"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l, err := ListFiles(context.Background(), a, []string{a}, HeavyNames(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(l.Empty, []string{"src/newdir/inner"}) {
+		t.Fatalf("empty %v", l.Empty)
+	}
+}

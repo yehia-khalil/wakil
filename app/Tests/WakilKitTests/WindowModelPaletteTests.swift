@@ -934,6 +934,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "editor_changes_select", "editor_changes_step", "editor_changes_collapse", "editor_changes_expand",
     "editor_peek", "editor_peek_step", "editor_peek_close",
     "editor_find", "editor_search", "files_search",
+    // 3b-iv: file operations in the tree, all agent-reachable mutations.
+    "editor_create", "editor_rename", "editor_trash",
     "editor_open", "editor_open_file", "editor_new_scratch", "editor_focus_tab", "editor_close", "editor_goto", "editor_select", "editor_set_language", "editor_replace_range", "editor_save", "editor_reload", "editor_restore", "editor_replace", "editor_replace_undo",
     "api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_render_curl", "api_reopen",
     "api_request", "api_send", "api_set_request", "api_unbind", "api_undo_fill",

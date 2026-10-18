@@ -93,9 +93,9 @@ Rules no phase may break.
    this triple — see Decision 4.)* *(2026-09-15: 2b-viii's switch changes the triple's
    org member in place and needed no amendment.)*
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
-   deliberate justification, never by default. Four have earned in. The justification
+   deliberate justification, never by default. Five have earned in. The justification
    for each, and what each leaves refused, is in `decisions.md` under *"Invariant 6 — the
-   writes that have earned in"*, cited by date.
+   writes that have earned in"*.
 
    | Write | Adapter | Earned |
    |---|---|---|
@@ -103,12 +103,13 @@ Rules no phase may break.
    | Issue status transition | Jira | 2026-09-14 |
    | Request with a mutation method | HTTP | 2026-09-17 |
    | File write — local files inside the project's roots | wakil-files | 2026-10-11 |
+   | File create, move, Move to Trash — inside the roots | wakil-files | 2026-10-17 |
 
    **Still refused:** schema mutation (every DDL verb, `TRUNCATE` explicitly), Mongo
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`
    of the API entry it targets, a command the **agent** runs in a terminal pane — the
    agent already has a bare shell, so a terminal run adds the organisation's credentials,
-   not reach, and the refusal defends Invariant 4 — and file delete and rename.
+   not reach, and the refusal defends Invariant 4.
 
    **Each write declares its own price** rather than inheriting one from its kind; see
    §9 and Decision 25.
@@ -116,7 +117,7 @@ Rules no phase may break.
    confirmation may execute one — wherever the write's price is *gate*. *(2026-09-17: the
    per-adapter exception this invariant never had. An adapter may declare a price of
    *allow*, and then a spoken turn does execute the write. Phase 2's exit criterion
-   already required it. Decision 25 is the mechanism.)* *(2026-09-22: 2e's credential
+   required it. Decision 25 is the mechanism.)* *(2026-09-22: 2e's credential
    writes declare no price; Decision 30 makes the settings pane operator-only, so voice
    never reaches them. 2026-10-11: the editor's file write declares *allow*, voice
    included — Decision 36.)*
@@ -148,8 +149,7 @@ Explicit, as of 2026-09-03. Revisit deliberately, not casually.
 
 ## 6. Decisions and rationale
 
-Each entry: the call, why, and what would change our mind; `decisions.md` carries them
-in full.
+Each entry: the call, why, and what would change our mind.
 
 **Read the third column first** — **15 of 32 entries state no reversal condition**, and
 `decisions.md`'s header says what that gap costs.
@@ -198,7 +198,7 @@ Recorded honestly rather than guessed; the reasoning is in `open-questions.md`, 
 closed question keeps its entry.
 
 **`Blocks` is a scheduling instrument, not a label** — check it against the phase map
-whenever either changes. It has already gone stale once (`phase-log.md`, 2026-09-15).
+whenever either changes. It has gone stale once (`phase-log.md`, 2026-09-15).
 
 | # | Question | Blocks | Status |
 |---|---|---|---|
@@ -225,7 +225,7 @@ whenever either changes. It has already gone stale once (`phase-log.md`, 2026-09
 
 ## 8. Phase map
 
-Each phase has an exit criterion that can actually be tested. **This is the status table
+Each phase has an exit criterion that can be tested. **This is the status table
 — what is built, what is not, and what each thing waits on.** Everything else is in
 **`phase-log.md`**: what each walk found, which checks were accepted rather than walked,
 how the phases split. Decision 1 still rests on 2d shipping.

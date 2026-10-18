@@ -1,0 +1,37 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.editor"}}
+{"expect":{"tree":"contains","text":"AUTOSAVE"}}
+{"do":{"click":"settings.editor.autosave.focus"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.autosave","equals":"focus"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/gone/clean.txt","kind":"file"}}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/gone/sub/dirty.txt","kind":"file"}}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/kept.txt","kind":"file"}}}
+{"expect":{"pane":"editor-2","field":"tabs[3].path","contains":"/e2e-project/kept.txt"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/gone/sub/dirty.txt","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"unsaved words"}}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/kept.txt","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"kept words"}}}
+{"expect":{"pane":"editor-2","field":"tabs[2].dirty","equals":"true"}}
+{"expect":{"pane":"editor-2","field":"tabs[3].dirty","equals":"true"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"editor-2"}}}
+{"dispatch":{"action":"editor_trash","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/gone"}}}
+{"expect":{"pane":"editor-2","field":"tabs[1].path","contains":"/e2e-project/gone/sub/dirty.txt"}}
+{"expect":{"pane":"editor-2","field":"tabs[1].disk_state","equals":"deleted"}}
+{"expect":{"pane":"editor-2","field":"tabs[1].dirty","equals":"true"}}
+{"expect":{"pane":"editor-2","field":"tabs[2].path","contains":"/e2e-project/kept.txt"}}
+{"expect":{"pane":"editor-2","field":"tabs[3]","present":false}}
+{"dispatch":{"action":"pane_focus","params":{"id":"settings-1"}}}
+{"expect":{"pane":"editor-2","field":"tabs[2].dirty","equals":"false"}}
+{"expect":{"pane":"editor-2","field":"tabs[2].disk_state","equals":"inSync"}}
+{"expect":{"pane":"editor-2","field":"tabs[1].disk_state","equals":"deleted"}}
+{"expect":{"pane":"editor-2","field":"tabs[1].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_trash","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/gone"},"refuses":"/e2e-project/gone does not exist"}}
+{"do":{"click":"rail.editor-2"}}
+{"dispatch":{"action":"editor_focus_tab","params":{"pane":"editor-2","index":1}}}
+{"expect":{"pane":"editor-2","field":"active","equals":"1"}}
+{"do":{"hotkey":"cmd+s"}}
+{"expect":{"pane":"editor-2","field":"tabs[1].disk_state","equals":"inSync"}}
+{"expect":{"pane":"editor-2","field":"tabs[1].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/gone/sub/dirty.txt"}}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-2","path":"{fixtureRoot}/e2e-project/gone/sub/dirty.txt"}}}
+{"expect":{"pane":"editor-2","field":"visible_text","equals":"unsaved words"}}

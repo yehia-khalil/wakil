@@ -1204,8 +1204,9 @@ Each entry: the call, why, and what would change our mind.
     (inside Wakil sessions the bridge denies it, so `editor_save` is that write), so an editor write
     adds no reach beyond what a bare harness has — the argument that settled the terminal. Gating it would add friction and no
     safety. **Still refused:** any path outside the roots (after resolving symlinks), file delete,
-    rename and move; each would earn in on its own. Mechanism: `wakil-files` (`files_write`), confined
-    by `wakilcore.ConfineFilePath`; `editor_save` declares the price.
+    rename and move; each would earn in on its own. *(Earned in 2026-10-17, Decision 41.)*
+    Mechanism: `wakil-files` (`files_write`), confined by `wakilcore.ConfineFilePath`;
+    `editor_save` declares the price.
     **The Git pane folds into the editor** (sub-phase 3b-iii): the editor's left column has *Files* and
     *Changes*; a changed file's diff opens as an editor tab. This revises Decision 17's *"Git is a
     separate dual-driven pane"*: git stays project-level across roots, and so does the editor (its tree
@@ -1298,6 +1299,26 @@ Each entry: the call, why, and what would change our mind.
     commit and discard stay 3a-ii's.
     *Reverse if:* the Changes view is found unable to show something the operator relied on the Git
     pane's spine or names column for — then that piece comes back inside the editor, not as a pane.
+41. **File create, move and Move to Trash earn their way in: the Trash is the undo, and the price is allow.**
+    *(2026-10-17, operator, during the 3b-iv design —
+    `docs/superpowers/specs/2026-10-17-3b-iv-file-operations-design.md`.)*
+    Decision 36 left delete, rename and move refused; each earns in here. **Delete is Move to
+    Trash, with no dialog**: the Trash is undoable from Finder, so it destroys nothing and Rule 1
+    asks nothing; there is no permanent delete. **Rename is F2**, so Enter keeps opening the row.
+    **Creation has a button and a menu**: each root row has a **+** offering New File and New
+    Folder, and a folder's right-click offers them too, with Rename and Move to Trash; a file's
+    offers Rename and Move to Trash. **Open tabs follow a rename or move**, unsaved edits and all;
+    Move to Trash closes clean tabs, and a tab with unsaved edits stays open, marked deleted, and
+    saving it recreates the file. **The price is *allow*, for the operator and the agent, voice
+    included**, on Decision 36's argument: the agent's harness already has `mv`, `mkdir` and `rm`,
+    so the editor adds no reach, and the Trash is gentler than `rm`. **All three writes live in
+    `wakil-files`** (approach A): Go is built with `CGO_ENABLED=0` and cannot call `NSFileManager`,
+    so it runs `/usr/bin/trash`, which macOS ships from 15; on macOS 14 Move to Trash fails with an
+    error that says so and nothing else is affected. Approach B (Swift trashes after Go confines)
+    was rejected because it splits the check and the write across two processes; approach C
+    (raise the floor to macOS 15) is out of scope.
+    *Reverse if:* a trash or move the agent made through the editor reaches something its own `mv`
+    or `rm` could not.
 
 ## Invariant 6 — the writes that have earned in
 
@@ -1448,3 +1469,11 @@ whole text by atomic rename, confined to the active project's roots after symlin
 Priced *allow* everywhere, voice included. The reasoning, and what stays refused (delete,
 rename, move, any path outside the roots), is Decision 36. The editor's `editor_save`, and since 3b-ii-b `editor_replace` and
 `editor_replace_undo` (Decision 39), are the actions that reach it.
+
+### 2026-10-17 — file create, move and Move to Trash
+
+Through `wakil-files`, confined to the active project's roots, priced *allow* everywhere, voice
+included. The Trash is undoable, so nothing is destroyed. The agent's harness already holds `mv`,
+`mkdir` and `rm`, so the editor adds no reach. All three are confined on the parent folder, so a
+link is acted on as itself, never followed. Still refused: permanent delete, a root, anything
+outside the roots, and a move across volumes. The reasoning is Decision 41.

@@ -17,6 +17,9 @@ struct EditorColumn: View {
     let search: EditorSearchState
     let paneWidth: CGFloat
     let dispatch: (String, [String: JSONValue]) async -> Void
+    /// `dispatch`, its refusal thrown here rather than put on the status line: the name field shows
+    /// it under itself (3b-iv, Rule 8).
+    let dispatchThrowing: (String, [String: JSONValue]) async throws -> Void
     /// A file tab is in front: the Files header's reveal button has something to reveal (3b-ii-b).
     let canReveal: Bool
     let reveal: () -> Void
@@ -31,6 +34,9 @@ struct EditorColumn: View {
     /// The operator's reveal: the file row to select once it is among `rows` (the folders above it open
     /// a turn after the action). Selecting it scrolls to it and leaves the keyboard where it is (Rule 6).
     @Binding var pendingReveal: String?
+    /// The file a single click in the tree just brought forward: browsing, so the keyboard stays in
+    /// the tree even when that file's tab is already open and pinned (Rule 6). The pane reads it once.
+    @Binding var browsed: String?
 
     @State private var dragWidth: Double?
     @State private var query = ""
@@ -56,6 +62,18 @@ struct EditorColumn: View {
     /// The operator's own ▸ asked for the Replace field: it takes the keyboard once drawn, then this
     /// clears. An agent's `editor_search {replace}` shows the field and moves nothing (Rule 6).
     @State private var wantReplaceFocus = false
+    /// The tree's inline name field (3b-iv): creating under a folder, or renaming a row.
+    private enum NameEdit: Equatable { case create(folder: String, kind: String), rename(path: String) }
+    @State private var nameEdit: NameEdit?
+    @State private var nameText = ""
+    @State private var nameError: String?
+    @State private var nameBusy = false
+    @FocusState private var nameFocused: Bool
+    /// The row under the pointer: a root shows its **+** while hovered or selected.
+    @State private var hovered: String?
+    /// Bumped by every row the operator picks (`activate`): a commit in flight moves the selection
+    /// to its new path only if no pick came after it started (Rule 6).
+    @State private var picks = 0
 
     /// The name a row's root goes by in identifiers: `editor.tree.row:<root name>/<relative>`.
     private func rootName(_ row: EditorTreeRow) -> String { (row.root as NSString).lastPathComponent }
@@ -89,6 +107,7 @@ struct EditorColumn: View {
         .onChange(of: rows) { old, now in
             selected = editorTreeSelection(after: selected, previous: old, now: now)
             takeReveal(now)
+            dropOrphanedNameEdit(now)
         }
         .onChange(of: pendingReveal) { _, _ in takeReveal(rows) }
     }
@@ -172,7 +191,17 @@ struct EditorColumn: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(rows) { row in treeRow(row).id(row.id) }
+                    ForEach(rows) { row in
+                        if nameEdit == .rename(path: row.id) {
+                            nameField(.rename(path: row.id), depth: row.depth, placeholder: row.name).id(row.id)
+                        } else {
+                            treeRow(row).id(row.id)
+                        }
+                        if case .create(row.id, let kind) = nameEdit {
+                            nameField(.create(folder: row.id, kind: kind), depth: row.depth + 1,
+                                      placeholder: kind == "dir" ? "folder name" : "file name")
+                        }
+                    }
                     ForEach(pendingRoots, id: \.self) { root in
                         HStack(spacing: 6) {
                             EditorBusyTick(label: "listing", identifier: "editor.tree.loading")
@@ -217,8 +246,7 @@ struct EditorColumn: View {
                 rowLabel(row)
                     .padding(.leading, 6 + CGFloat(row.depth * 12))
                     .padding(.trailing, 6)
-                    .padding(.vertical, row.kind == .root ? 0 : 2)
-                    .padding(.top, row.kind == .root ? 8 : 0)
+                    .padding(.vertical, 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay {
                         if row.id == selected {
@@ -244,6 +272,21 @@ struct EditorColumn: View {
                     .accessibilityAddTraits(.isButton)
                     .accessibilityAddTraits(row.id == selected ? .isSelected : [])
                     .accessibilityAction { activate(row) }
+                    .onHover { inside in
+                        if inside { hovered = row.id } else if hovered == row.id { hovered = nil }
+                    }
+                    // 3b-iv: a root makes; a file renames and trashes; a folder or repo does all four.
+                    .contextMenu {
+                        if row.kind != .file {
+                            Button("New File") { startCreate(in: row.id, kind: "file") }
+                            Button("New Folder") { startCreate(in: row.id, kind: "dir") }
+                        }
+                        if row.kind != .root {
+                            if row.kind != .file { Divider() }
+                            Button("Rename") { startRename(row) }
+                            Button("Move to Trash") { trash(row) }
+                        }
+                    }
                 if let error = row.error {
                     // Rule 8, in the Git pane's root-error style: whole, wrapping, selectable.
                     Text(error)
@@ -256,12 +299,15 @@ struct EditorColumn: View {
                         .accessibilityIdentifier("editor.tree.error:\(path)")
                 }
             }
+            // A root's gap sits above its row, outside the selection outline, so the name stays
+            // centred in it.
+            .padding(.top, row.kind == .root ? 6 : 0)
         }
     }
 
     private func rowLabel(_ row: EditorTreeRow) -> some View {
         // Hoisted for the identifier harvest, as in `treeRow`.
-        let path = rowPath(row)
+        let path = rowPath(row), root = rootName(row)
         return HStack(spacing: 5) {
             if row.loading { EditorBusyTick(label: "loading", identifier: "editor.tree.loading") }
             switch row.kind {
@@ -290,6 +336,16 @@ struct EditorColumn: View {
                     // The row's git status letter (3b-iii), named so it can be found per row: the
                     // tree reads it as a bare "M" or "?" beside the name.
                     .accessibilityIdentifier("editor.tree.status:\(path)")
+            }
+            if row.kind == .root, hovered == row.id || selected == row.id {
+                Spacer(minLength: 6)
+                Menu {
+                    Button("New File") { startCreate(in: row.id, kind: "file") }
+                    Button("New Folder") { startCreate(in: row.id, kind: "dir") }
+                } label: { Image(systemName: "plus").font(.system(size: 10, weight: .semibold)) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .help("New File or Folder")
+                    .accessibilityIdentifier("editor.tree.add:\(root)")
             }
         }
         .foregroundStyle(EditorPaneStyle.text.opacity(row.kind == .root ? 0.62 : 0.86))
@@ -422,9 +478,11 @@ struct EditorColumn: View {
     private func activate(_ row: EditorTreeRow, keep: Bool = false) {
         guard row.kind != .note else { return }
         selected = row.id
+        picks += 1
         treeFocused = true
         switch row.kind {
         case .file:
+            if !keep { browsed = row.id }
             Task { await dispatch("editor_open", ["path": .string(row.id), "preview": .bool(!keep)]) }
         case .root, .repo, .folder:
             Task { await dispatch(row.open ? "editor_tree_collapse" : "editor_tree_expand", ["path": .string(row.id)]) }
@@ -438,6 +496,22 @@ struct EditorColumn: View {
     }
 
     private func treeKey(_ press: KeyPress) -> KeyPress.Result {
+        // The name field has the keyboard: arrows and type-ahead do not move the selection under it.
+        // A refused edit left open after a click away does not: the tree keeps its keys meanwhile.
+        guard !nameFocused else { return .ignored }
+        // ⌘⌫ and F2 (3b-iv), matched by character (`editorTreeKeyCommand`): the Delete key sends
+        // U+007F, which `KeyEquivalent.delete` (U+0008) never matched, and F2 has no `KeyEquivalent`.
+        let chord = press.modifiers.intersection([.command, .control, .option, .shift])
+        let characters = press.characters.isEmpty ? String(press.key.character) : press.characters
+        if let command = editorTreeKeyCommand(characters: characters, command: chord.contains(.command),
+                                              otherChord: !chord.subtracting(.command).isEmpty),
+           let row = rows.first(where: { $0.id == selected }) {
+            switch command {
+            case .trash: trash(row)
+            case .rename: startRename(row)
+            }
+            return .handled
+        }
         guard !isChord(press) else { return .ignored }
         switch press.key {
         case .upArrow:
@@ -471,6 +545,181 @@ struct EditorColumn: View {
             if let hit = editorTreeTypeAhead(rows, selected: selected, prefix: typed) { selected = hit }
         }
         return .handled
+    }
+
+    // MARK: - File operations (3b-iv)
+
+    // The tree's create, rename and Move to Trash. The view only wires: the target path is
+    // `editorRenameTarget`'s, the selection after a trash is `editorTreeSelection`'s (the column's
+    // `.onChange(of: rows)`), and every change is one `editor_*` action.
+
+    /// Starting an edit while one is open (the menus stay live, and a right-click does not move the
+    /// keyboard) commits the open one first, so its text is never dropped (Rule 2); while one is in
+    /// flight the new start is ignored (Rule 5).
+    private func mayStartEdit() -> Bool {
+        guard !nameBusy else { return false }
+        if nameEdit != nil { commitName() }
+        return true
+    }
+
+    private func startCreate(in folder: String, kind: String) {
+        guard mayStartEdit() else { return }
+        nameText = ""; nameError = nil
+        nameEdit = .create(folder: folder, kind: kind)
+        // The field sits among the folder's children, so a closed folder opens first.
+        if let row = rows.first(where: { $0.id == folder }), !row.open {
+            Task { await dispatch("editor_tree_expand", ["path": .string(folder)]) }
+        }
+    }
+
+    private func startRename(_ row: EditorTreeRow) {
+        guard row.kind == .file || row.kind == .folder || row.kind == .repo else { return }
+        guard mayStartEdit() else { return }
+        nameText = row.name; nameError = nil
+        nameEdit = .rename(path: row.id)
+    }
+
+    /// Only the action: the trashed row leaves `rows`, and the column's `.onChange(of: rows)` moves
+    /// the selection to the next survivor, else the previous (ruling F1).
+    private func trash(_ row: EditorTreeRow) {
+        guard row.kind == .file || row.kind == .folder || row.kind == .repo else { return }
+        Task { await dispatch("editor_trash", ["path": .string(row.id)]) }
+    }
+
+    /// Rule 2: focus leaving commits, Enter is a shortcut (`refocus`: Enter gives the tree the keyboard
+    /// back, as Esc does, and on a refusal keeps it in the field). Rule 5: a second commit while one is
+    /// in flight is dropped. Rule 8: a refusal stays under the field, whole, with the text kept.
+    /// Rule 6: a commit from focus loss never takes the keyboard back, and the selection follows the
+    /// new path only if it was on the edited row (the folder, for a create) and the operator has
+    /// picked no row since.
+    private func commitName(refocus: Bool = false) {
+        guard let edit = nameEdit, !nameBusy else { return }
+        let typed = nameText.trimmingCharacters(in: .whitespaces)
+        guard !typed.isEmpty else { cancelName(refocus: refocus); return }
+        let picksAtStart = picks
+        nameBusy = true
+        Task {
+            do {
+                let moveTo: String?
+                var madeFile = false
+                switch edit {
+                case .create(let folder, let kind):
+                    // The placeholder name is dropped: the target resolves against `folder` itself.
+                    let path = editorRenameTarget(of: folder + "/_", typed: typed)
+                    let onFolder = selected == folder
+                    try await dispatchThrowing("editor_create", ["path": .string(path), "kind": .string(kind)])
+                    moveTo = kind == "dir" && onFolder ? path : nil
+                    madeFile = kind != "dir"
+                case .rename(let path):
+                    let to = editorRenameTarget(of: path, typed: typed)
+                    let onRow = selected == path
+                    try await dispatchThrowing("editor_rename", ["path": .string(path), "to": .string(to)])
+                    moveTo = onRow ? to : nil
+                }
+                // The column's `.onChange(of: rows)` may have moved the selection off the old path
+                // meanwhile; only a pick by the operator keeps the new path from taking it.
+                if let moveTo, picks == picksAtStart { selected = moveTo }
+                nameBusy = false
+                if nameEdit == edit {
+                    nameEdit = nil; nameError = nil
+                    // A new file's pinned tab takes the cursor (spec; Rule 3): the tree never pulls
+                    // the keyboard back from it.
+                    if refocus, !madeFile { treeFocused = true }
+                } else if nameEdit != nil {
+                    // An edit started while this one landed: its field was disabled when it appeared.
+                    focusNameField()
+                }
+            } catch {
+                nameBusy = false
+                if nameEdit != edit {
+                    // Superseded by an edit started from a menu (which typed nothing yet: the field
+                    // was disabled): the refused one comes back with its text and its error.
+                    nameEdit = edit
+                    nameText = typed
+                }
+                nameError = String(describing: error)
+                // Enabled again first: a disabled field cannot take the keyboard.
+                if refocus { nameFocused = true }
+            }
+        }
+    }
+
+    /// Esc: clears `nameEdit` first, so the blur that follows finds nothing to commit.
+    private func cancelName(refocus: Bool = true) {
+        nameEdit = nil; nameError = nil; nameText = ""
+        if refocus { treeFocused = true }
+    }
+
+    /// The row a field edits, or creates under, has left the tree (an agent moved it): the field
+    /// goes with it, or the tree's keys would stay ignored with no field to type in.
+    private func dropOrphanedNameEdit(_ now: [EditorTreeRow]) {
+        guard let edit = nameEdit, !nameBusy else { return }
+        let id: String
+        switch edit {
+        case .create(let folder, _): id = folder
+        case .rename(let path): id = path
+        }
+        if !now.contains(where: { $0.id == id }) { cancelName(refocus: false) }
+    }
+
+    /// `edit` is the edit this field was drawn for: its blur commits that edit only, never one started
+    /// from a menu as it went (Rule 2).
+    private func nameField(_ edit: NameEdit, depth: Int, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            TextField(placeholder, text: $nameText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(EditorPaneStyle.text)
+                .focused($nameFocused)
+                .disabled(nameBusy)
+                .onSubmit { commitName(refocus: true) }
+                .onKeyPress(.escape) { cancelName(); return .handled }
+                .onChange(of: nameFocused) { _, now in
+                    if !now, nameEdit == edit { commitName() }
+                    // Rule 9, once the field holds the keyboard: from F2 the tree gives it up later
+                    // than from the menu, so `onAppear` alone found the tree still first responder.
+                    if now, case .rename = edit, nameEdit == edit { selectStem() }
+                }
+                // Rule 3: the field arrives focused. Rule 9: a rename preselects the stem only.
+                .onAppear(perform: focusNameField)
+                .padding(.horizontal, 4).padding(.vertical, 1)
+                .background(EditorPaneStyle.lifted, in: RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(EditorPaneStyle.violet, lineWidth: 1))
+                .accessibilityIdentifier("editor.tree.name")
+            if let nameError {
+                Text(editorTreeShortError(nameError, roots: rows.filter { $0.kind == .root }.map(\.id)))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("editor.tree.name.error")
+            }
+        }
+        // Lined up with a row's name: past the row's inset and its chevron column (`rowLabel`), less
+        // the field's own inset.
+        .padding(.leading, 17 + CGFloat(depth * 12)).padding(.trailing, 6).padding(.vertical, 2)
+    }
+
+    /// A turn later, as the replace field takes it (`takeReplaceFocus`): set while F2's key press is
+    /// still being handled, the tree kept the keyboard and the field never got it.
+    private func focusNameField() {
+        Task { @MainActor in nameFocused = true }
+    }
+
+    /// Selects the name before its last `.` in the field editor (the whole name when there is no
+    /// `.`, or when its only `.` leads it), once the field editor holds the keyboard: it is tried a
+    /// turn later and, while the window's first responder is not yet a text view, for a few more.
+    private func selectStem(tries: Int = 5) {
+        let name = nameText as NSString
+        let dot = name.range(of: ".", options: .backwards).location
+        let stemLength = dot == NSNotFound || dot == 0 ? name.length : dot
+        DispatchQueue.main.async {
+            guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else {
+                if tries > 1 { selectStem(tries: tries - 1) }
+                return
+            }
+            editor.setSelectedRange(NSRange(location: 0, length: stemLength))
+        }
     }
 
     // MARK: - Search
