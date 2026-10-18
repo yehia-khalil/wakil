@@ -12,14 +12,14 @@
 {"expect":{"focus":"editor.tree.name"}}
 {"do":{"keys":"README.md"}}
 {"do":{"click":"editor.column.files"}}
-{"expect":{"tree":"contains","text":"/e2e-api/README.md already exists"}}
+{"expect":{"tree":"contains","text":"e2e-api/README.md already exists"}}
 {"expect":{"frame":"editor.tree.name.error","inside":"editor.column"}}
 {"expect":{"focus":"editor.column"}}
 {"do":{"keys":"n"}}
 {"do":{"press":"Up"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-api/app.txt"}}
-{"expect":{"tree":"contains","text":"/e2e-api/README.md already exists"}}
+{"expect":{"tree":"contains","text":"e2e-api/README.md already exists"}}
 {"do":{"focus":"editor.tree.name"}}
 {"do":{"press":"Right"}}
 {"do":{"keys":"x"}}
@@ -33,7 +33,7 @@
 {"do":{"press":"Return"}}
 {"do":{"keys":"app.txt"}}
 {"do":{"click":"editor.column.files"}}
-{"expect":{"tree":"contains","text":"/e2e-api/app.txt already exists"}}
+{"expect":{"tree":"contains","text":"e2e-api/app.txt already exists"}}
 {"expect":{"focus":"editor.column"}}
 {"do":{"keys":"n"}}
 {"do":{"hotkey":"cmd+backspace"}}
