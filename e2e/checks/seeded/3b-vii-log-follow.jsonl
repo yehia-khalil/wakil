@@ -11,6 +11,7 @@
 {"do":{"keys":"echo '[2026-10-18 13:34:00] local.WARNING: line 201' >> ~/../e2e-project/small.log && echo appended"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"appended"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"editor-2"}}}
 {"expect":{"pane":"editor-2","field":"visible_text","contains":"local.WARNING: line 201"}}
 {"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"false"}}
 {"expect":{"pane":"editor-2","field":"tabs[0].disk_state","equals":"inSync"}}

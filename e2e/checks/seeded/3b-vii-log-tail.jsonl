@@ -14,6 +14,7 @@
 {"do":{"keys":"printf '[2026-10-18 13:34:00] local.ERROR: again\\n' >> ~/../e2e-project/big.log && echo appended"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"appended"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"editor-2"}}}
 {"expect":{"pane":"editor-2","field":"visible_text","contains":"local.ERROR: again"}}
 {"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"false"}}
 {"expect":{"pane":"editor-2","field":"tabs[0].notice","equals":"Showing the last 2 MB of 3 MB"}}
