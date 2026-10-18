@@ -105,10 +105,10 @@ func startedClient(bin: URL, home: URL, org: String) async throws -> MCPClient {
 
     _ = try await registry.dispatch(
         name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-        origin: .ui, environment: "dev", confirmation: nil)
+        origin: .ui, caller: .test("dev"), confirmation: nil)
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("dev")]),
-        origin: .ui, environment: "dev", confirmation: nil)
+        origin: .ui, caller: .test("dev"), confirmation: nil)
     let ctx = try await store.current()
 
     await client.stop()
@@ -205,4 +205,28 @@ func startedClient(bin: URL, home: URL, org: String) async throws -> MCPClient {
     #expect(calls.first?.name == "get_context")
     #expect(calls.first?.arguments == .object([:]))
     #expect(calls.first?.timeout == MCPClient.readReplyTimeout)
+}
+
+/// `ProjectKey` is the registry key `WAKIL_PROJECT` pins by, reported beside
+/// `Project.name` because the two are written independently and can differ.
+@Test func activeContextCarriesTheProjectKeyBesideTheName() throws {
+    let parsed = try ContextStore.parseActiveContext(.object([
+        "Org": .string("acme"),
+        "Project": .object(["name": .string("Widgets Display")]),
+        "ProjectKey": .string("widgets"),
+        "Environment": .string("dev"),
+    ]))
+    #expect(parsed.project == "Widgets Display")
+    #expect(parsed.projectKey == "widgets")
+}
+
+/// A `wakil-ctx` built before `ProjectKey` existed reports none; the name is
+/// what every build before it pinned by, so it stands in.
+@Test func activeContextFallsBackToTheNameWhenTheProjectKeyIsAbsent() throws {
+    let parsed = try ContextStore.parseActiveContext(.object([
+        "Org": .string("acme"),
+        "Project": .object(["name": .string("widgets")]),
+        "Environment": .string("dev"),
+    ]))
+    #expect(parsed.projectKey == "widgets")
 }

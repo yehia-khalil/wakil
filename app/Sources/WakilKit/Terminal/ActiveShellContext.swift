@@ -15,7 +15,7 @@ import Foundation
 /// `WakilWiring.build`, before any `WindowModel` exists; the active context changes for the
 /// whole life of the app after that. A value captured at registration
 /// would therefore be the launch context forever, which is the same
-/// reasoning `MCPSocketServer`'s `environmentProvider` already follows for
+/// reasoning `MCPSocketServer`'s `caller` already follows for
 /// the environment string the write gate judges.
 ///
 /// **Why it has a source rather than being assigned to.** The window is

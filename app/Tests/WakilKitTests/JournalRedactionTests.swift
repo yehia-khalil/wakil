@@ -50,7 +50,7 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
             "dsn": .string("mysql://root:hunter2@db.internal:3306/orders"),
             "driver": .string("mysql"),
         ]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let entries = try await registry.journalEntries()
     guard entries.count == 1, case .object(let params) = entries[0].params else {
@@ -78,7 +78,7 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
     _ = try await registry.dispatch(
         name: "db_set_dsn",
         params: .object(["dsn": .string(shared), "note": .string(shared)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let entries = try await registry.journalEntries()
     guard entries.count == 1, case .object(let params) = entries[0].params else {
@@ -107,7 +107,7 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
         try await registry.dispatch(
             name: "db_write_dsn",
             params: .object(["dsn": .string("postgres://u:p@h/db")]),
-            origin: .ui, environment: "production", confirmation: nil)
+            origin: .ui, caller: .test("production"), confirmation: nil)
     }
 
     let entries = try await registry.journalEntries()
@@ -139,7 +139,7 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
                 "database": .string("orders"),
                 "dsn": .string("mysql://root:hunter2@db.internal:3306/orders"),
             ]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
 
     let entries = try await registry.journalEntries()
@@ -162,7 +162,7 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
 
     _ = try await registry.dispatch(
         name: "db_set_dsn", params: .string("mysql://root:hunter2@db/orders"),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let entries = try await registry.journalEntries()
     guard entries.count == 1 else {
@@ -183,7 +183,7 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
 
     _ = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db"), "title": .string("orders")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     let entries = try await registry.journalEntries()
     guard entries.count == 1 else {
@@ -203,7 +203,7 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
     try await registry.journalUncertainMutation(
         action: "db_set_dsn",
         params: .object(["dsn": .string("mysql://root:hunter2@db/orders")]),
-        origin: .ui, environment: "staging")
+        origin: .ui, caller: .test("staging"))
 
     let entries = try await registry.journalEntries()
     guard entries.count == 1, case .object(let params) = entries[0].params else {
@@ -240,7 +240,7 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
             "driver": .string("mysql"),
             "dsn": .string("mysql://root:hunter2@db.internal:3306/orders"),
         ]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let entries = try await registry.journalEntries()
     guard let entry = entries.first(where: { $0.action == "db_set_dsn" }),
@@ -286,7 +286,7 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
             "grantWrite": .bool(true),
             "writeDsn": .string("mysql://rw:otherpw@db/orders"),
         ]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let entries = try await registry.journalEntries()
     guard let entry = entries.first(where: { $0.action == "db_set_dsn" }),

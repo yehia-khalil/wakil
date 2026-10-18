@@ -326,7 +326,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         await #expect(throws: ActionError.self) {
             try await w.registry.dispatch(
                 name: "ctx_set_environment", params: .object(["name": .string("production")]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
         }
     }
 
@@ -976,8 +976,7 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__api_undo_fill",
     "mcp__wakil__ctx_capacity",  // provider capacity; capacity_record is operator-only
     "mcp__wakil__ctx_config_tree", "mcp__wakil__ctx_list_environments",
-    "mcp__wakil__ctx_list_projects", "mcp__wakil__ctx_list_providers", "mcp__wakil__ctx_set_environment",
-    "mcp__wakil__ctx_set_project", "mcp__wakil__db_cancel", "mcp__wakil__db_classify_statement", "mcp__wakil__db_describe_table",
+    "mcp__wakil__ctx_list_projects", "mcp__wakil__ctx_list_providers", "mcp__wakil__db_cancel", "mcp__wakil__db_classify_statement", "mcp__wakil__db_describe_table",
     "mcp__wakil__db_list_databases", "mcp__wakil__db_list_tables", "mcp__wakil__db_page",
     "mcp__wakil__db_read_table", "mcp__wakil__db_refetch", "mcp__wakil__db_render_update",
     "mcp__wakil__db_run_query",

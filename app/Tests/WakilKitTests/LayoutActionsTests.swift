@@ -33,7 +33,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     _ = try? await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db")]),
-        origin: .agent, environment: "production", confirmation: nil)
+        origin: .agent, caller: .test("production"), confirmation: nil)
     #expect(await layout.snapshot().panes.count == 1)
 }
 
@@ -63,7 +63,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
         _ = try await registry.dispatch(
             name: "pane_open",
             params: .object(["kind": .string("database"), "title": .string("events.events")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         Issue.record("a kind no view can draw should not have opened a pane")
     } catch let error as LayoutActionError {
         #expect(error == .badParam(action: "pane_open", param: "kind", value: "database"))
@@ -83,7 +83,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     _ = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     #expect(await layout.snapshot().panes.map(\.kind) == ["db"])
 }
 
@@ -113,7 +113,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     let result = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db"), "title": .string("Rows")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     guard case .object(let object) = result, case .string(let id)? = object["id"] else {
         Issue.record("pane_open returned \(result), expected an object with a string id")
@@ -131,7 +131,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     _ = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await layout.snapshot().panes.first?.title == "db")
 }
 
@@ -145,11 +145,11 @@ private func makeRegistry() -> (ActionRegistry, URL) {
     _ = try await registry.dispatch(
         name: "pane_move",
         params: .object(["id": .string(pane.id), "x": .number(12), "y": .number(34)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     _ = try await registry.dispatch(
         name: "pane_resize",
         params: .object(["id": .string(pane.id), "width": .number(300), "height": .number(200)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let frame = try #require(await layout.snapshot().panes.first).frame
     #expect(frame == PaneFrame(x: 12, y: 34, width: 300, height: 200))
@@ -164,7 +164,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     _ = try await registry.dispatch(
         name: "pane_close", params: .object(["id": .string(pane.id)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     #expect(await layout.snapshot().panes.isEmpty)
 }
@@ -182,7 +182,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     _ = try await registry.dispatch(
         name: "pane_focus", params: .object(["id": .string(first.id)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     #expect(await layout.snapshot().focusedId == first.id)
 }
@@ -195,7 +195,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
     await #expect(throws: LayoutError.unknownPane("nope")) {
         _ = try await registry.dispatch(
             name: "pane_close", params: .object(["id": .string("nope")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -209,7 +209,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
     _ = try await registry.dispatch(
         name: "pane_snap",
         params: .object(["id": .string(pane.id), "edge": .string("left")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     #expect(await layout.snapshot().panes.first?.frame.minX == 0)
 }
@@ -225,7 +225,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
         _ = try await registry.dispatch(
             name: "pane_snap",
             params: .object(["id": .string(pane.id), "edge": .string("sideways")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -237,7 +237,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
     await #expect(throws: (any Error).self) {
         _ = try await registry.dispatch(
             name: "pane_move", params: .object(["id": .string("db-1")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -249,7 +249,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     _ = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     let entries = try await registry.journalEntries()
     #expect(entries.count == 1)
@@ -268,12 +268,12 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     _ = try await registry.dispatch(
         name: "pane_maximize", params: .object(["id": .string(pane.id)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await layout.snapshot().maximizedId == pane.id)
 
     _ = try await registry.dispatch(
         name: "pane_restore", params: .object([:]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await layout.snapshot().maximizedId == nil)
     #expect(await layout.snapshot().panes.first?.frame == before)
 }
@@ -296,7 +296,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
     _ = try await registry.dispatch(
         name: "pane_set_density",
         params: .object(["id": .string(a.id), "density": .string("dense")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let snapshot = await layout.snapshot()
     #expect(snapshot.panes.first { $0.id == a.id }?.density == .dense)
@@ -314,7 +314,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
         _ = try await registry.dispatch(
             name: "pane_set_density",
             params: .object(["id": .string(pane.id), "density": .string("compact")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -330,7 +330,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     let opened = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     guard case .object(let result) = opened, case .string(let id)? = result["id"] else {
         Issue.record("pane_open returned \(opened), expected an object with a string id")
         return
@@ -343,7 +343,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     _ = try await registry.dispatch(
         name: "pane_close", params: .object(["id": .string(id)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await panes.paneIds() == [])
 }
 
@@ -362,7 +362,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
 
     _ = try? await registry.dispatch(
         name: "pane_close", params: .object(["id": .string("db-1")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await panes.paneIds() == ["db-1"])
 }
 
@@ -377,7 +377,7 @@ private func makeRegistry() -> (ActionRegistry, URL) {
         unsavedEditorTabs: { _ in ["a.go"] })
     let opened = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     guard case .object(let result) = opened, case .string(let id)? = result["id"] else {
         Issue.record("pane_open returned \(opened)")
         return
@@ -385,11 +385,11 @@ private func makeRegistry() -> (ActionRegistry, URL) {
     await #expect(throws: (any Error).self) {
         _ = try await registry.dispatch(
             name: "pane_close", params: .object(["id": .string(id)]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
     }
     #expect(await layout.snapshot().panes.contains { $0.id == id })
     _ = try await registry.dispatch(
         name: "pane_close", params: .object(["id": .string(id), "discard": .bool(true)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await !layout.snapshot().panes.contains { $0.id == id })
 }

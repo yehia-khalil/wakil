@@ -102,7 +102,7 @@ private func readLines(_ fd: Int32, count: Int, seconds: Int) -> [String] {
     let server = MCPSocketServer(
         surface: MCPSurface(registry: registry, panes: panes, layout: layout, confirmations: ConfirmationBroker()),
         socketPath: socketPath,
-        environmentProvider: { "staging" })
+        caller: { .test("staging") })
     try await server.start()
 
     let process = Process()

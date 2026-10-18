@@ -225,7 +225,7 @@ func apiRequestRefusesAMutationMethod() async throws {
     await #expect(throws: (any Error).self) {
         _ = try await registry.dispatch(
             name: "api_request", params: .object(["pane": .string(paneId)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     // Nothing was sent, so nothing was recorded.
     #expect(await panes.apiResponse(paneId: paneId).state == "none")
@@ -251,7 +251,7 @@ func apiRequestRecordsTheRefusal() async throws {
 
     let result = try await registry.dispatch(
         name: "api_request", params: .object(["pane": .string(paneId)]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     guard case .object(let fields) = result else { Issue.record("no object"); return }
     #expect(fields["state"] == .string("refusal"))
@@ -282,7 +282,7 @@ private func requestFixture() async throws -> (ActionRegistry, PaneStore, Layout
         into: registry, panes: panes, layout: layout, http: http,
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
-        name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+        name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
         confirmation: nil)
     guard case .object(let fields) = opened, case .string(let paneId)? = fields["pane"] else {
         throw NoPane()

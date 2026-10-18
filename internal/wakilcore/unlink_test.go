@@ -416,3 +416,40 @@ func TestSecretDeleteReportsARealFailure(t *testing.T) {
 		t.Errorf("the diagnostic was dropped: %q", msg)
 	}
 }
+
+// A pinned process unlinking the active provider must clear only the
+// provider; the pinned project and environment must not reach active.json.
+func TestUnlinkInAPinnedProcessDoesNotPersistThePins(t *testing.T) {
+	fakeKeychain(t)
+	home := unlinkFixture(t, "acme")
+	dir := sharedConfigDir(t, home, ".claude-main")
+	if err := AddProvider("acme", Provider{ID: "main", Kind: ProviderKindClaudeCode, ConfigDir: dir, ClaudePath: "/usr/local/bin/claude"}); err != nil {
+		t.Fatal(err)
+	}
+	pp := filepath.Join(home, "p", ".wakil", "project.json")
+	if err := os.MkdirAll(filepath.Dir(pp), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pp, []byte(`{"name":"p","org":"acme","roots":[{"path":"."}],"environments":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveRegistry("acme", map[string]ProjectEntry{"p": {Path: pp}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteActive(ActiveContext{Project: "/operator/own", Environment: "staging", Provider: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WAKIL_PROJECT", "p")
+	t.Setenv("WAKIL_ENVIRONMENT", "local")
+	if _, err := UnlinkProvider("acme", "main"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadActiveUnpinned()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ActiveContext{Project: "/operator/own", Environment: "staging"}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}

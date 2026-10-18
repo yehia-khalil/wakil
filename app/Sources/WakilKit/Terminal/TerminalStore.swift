@@ -275,19 +275,9 @@ public actor TerminalStore {
         } catch {
             throw TerminalOpenError.spawnFailed("\(error)")
         }
-        var childEnvironment = environment
-        for (key, value) in launch.environment { childEnvironment[key] = value }
-        // Seeds `TERM` (only if the caller left it unset) and strips any
-        // stale `COLUMNS`/`LINES` — beneath everything set above, since
-        // `terminalChildEnvironment` only touches a key that is still
-        // absent. The three empty strings are not a gap: the active
-        // org/project/environment are folded in by `term_open`'s own
-        // handler, which calls the same builder with the window's live
-        // context and hands the result down as `environment:`. This call
-        // is the store's floor under whatever that produced, and
-        // contributes only `TERM` and the `COLUMNS`/`LINES` removal.
-        childEnvironment = terminalChildEnvironment(
-            org: "", project: "", environment: "", base: childEnvironment)
+        let childEnvironment = Self.childEnvironment(
+            processEnvironment: ProcessInfo.processInfo.environment,
+            callerEnvironment: environment, launchEnvironment: launch.environment)
 
         let session = TerminalSession(
             paneId: paneId, shellName: shellName, cols: cols, rows: rows)
@@ -304,6 +294,28 @@ public actor TerminalStore {
             screen: .blocks, grid: [])
         startPublishing()
         return TerminalOpened(shell: shellName, cols: cols, rows: rows, cwd: path)
+    }
+
+    /// The shell's whole environment, handed to `spawn` as is: Wakil's process environment,
+    /// the caller's `environment:` over it, `shellLaunch`'s additions over that, then
+    /// `terminalChildEnvironment` as the floor (`TERM` seeded, `COLUMNS`/`LINES` stripped).
+    ///
+    /// **The place comes from the caller alone.** `term_open` folds the window's org, project
+    /// and environment into what it hands down; a `WAKIL_*` the caller did not set is removed,
+    /// so a pin Wakil.app itself was launched with never shows through as the shell's place.
+    /// Pure, like `launchBase`, so a test can fabricate the process environment.
+    static func childEnvironment(
+        processEnvironment: [String: String], callerEnvironment: [String: String],
+        launchEnvironment: [String: String]
+    ) -> [String: String] {
+        var result = processEnvironment
+        for (key, value) in callerEnvironment { result[key] = value }
+        for (key, value) in launchEnvironment { result[key] = value }
+        return terminalChildEnvironment(
+            org: callerEnvironment["WAKIL_ORG"] ?? "",
+            project: callerEnvironment["WAKIL_PROJECT"] ?? "",
+            environment: callerEnvironment["WAKIL_ENVIRONMENT"] ?? "",
+            base: result)
     }
 
     /// `shellLaunch`'s `base`: `processEnvironment` (Wakil's own process

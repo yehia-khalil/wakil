@@ -63,7 +63,7 @@ private func openApi(
     if let pane { params["pane"] = .string(pane) }
     let result = try await registry.dispatch(
         name: "api_open", params: .object(params),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     guard case .object(let fields) = result, case .string(let paneId)? = fields["pane"] else {
         throw NoPaneIdReturned()
     }
@@ -272,7 +272,7 @@ private func openApi(
     for (name, params) in calls {
         do {
             _ = try await registry.dispatch(
-                name: name, params: params, origin: .agent, environment: "staging",
+                name: name, params: params, origin: .agent, caller: .test("staging"),
                 confirmation: nil)
             Issue.record("\(name) drove an api pane")
         } catch let error as PaneContentActionError {

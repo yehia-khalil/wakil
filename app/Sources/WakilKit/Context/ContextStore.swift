@@ -127,7 +127,14 @@ public actor ContextStore {
     /// reports it.
     public struct ActiveContext: Equatable, Sendable {
         public let org: String
+        /// `Project.name` from `project.json` — what the window draws.
         public let project: String
+        /// `wakilcore.Resolved.ProjectKey`: the project's registry key, which
+        /// `WAKIL_PROJECT` pins by. Written independently of `project` and
+        /// free to differ from it, so a pin is built from this and never from
+        /// the name. Falls back to the name against a `wakil-ctx` built
+        /// before the key was reported — the name is what those builds pinned by.
+        public let projectKey: String
         public let environment: String
         /// `Project.Roots` resolved to absolute paths, in declaration
         /// order — `wakilcore.Resolved.RootPaths`, which is
@@ -171,12 +178,13 @@ public actor ContextStore {
         public let environmentProduction: EnvironmentProduction
 
         public init(
-            org: String, project: String, environment: String, rootPaths: [String] = [],
-            activeProvider: String = "",
+            org: String, project: String, projectKey: String? = nil, environment: String,
+            rootPaths: [String] = [], activeProvider: String = "",
             environmentProduction: EnvironmentProduction = .undeclared
         ) {
             self.org = org
             self.project = project
+            self.projectKey = projectKey ?? project
             self.environment = environment
             self.rootPaths = rootPaths
             self.activeProvider = activeProvider
@@ -280,8 +288,16 @@ public actor ContextStore {
         if case .string(let value)? = fields["ActiveProvider"] {
             activeProvider = value
         }
+        // "ProjectKey", capitalized like the keys above. Absent (omitempty,
+        // or an older `wakil-ctx`) leaves the name standing in — see
+        // `ActiveContext.projectKey`.
+        var projectKey: String?
+        if case .string(let value)? = fields["ProjectKey"], !value.isEmpty {
+            projectKey = value
+        }
         return ActiveContext(
-            org: org, project: project, environment: environment, rootPaths: rootPaths,
+            org: org, project: project, projectKey: projectKey, environment: environment,
+            rootPaths: rootPaths,
             activeProvider: activeProvider,
             environmentProduction: EnvironmentProduction(declarations: declarations))
     }

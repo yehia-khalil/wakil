@@ -207,7 +207,7 @@ private struct AlwaysSucceedsCredentialsLookupForIdentifiers: ProviderCredential
     try await registry.journalIdentifierEvent(
         action: "identifier_source_failed",
         params: .object(["source": .string("schema"), "error": .string("list_columns: connection refused")]),
-        environment: "", outcome: "error")
+        caller: .test(""), outcome: "error")
 
     let entry = try #require(try await registry.journalEntries().last)
     #expect(entry.action == "identifier_source_failed")

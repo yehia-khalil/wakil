@@ -57,9 +57,11 @@ approves and the action is dispatched again with `confirmation: "confirm"`.
 4. **`MCPSocketServer`** (`WakilKit/MCP/MCPServer.swift`) reads the frame and calls `handle`.
 5. **`handleToolsCall`**: `read_pane`, `read_layout` and `approve_tool_use` are answered in the
    window. Anything else is dispatched.
-6. **`registry.dispatch(..., origin: .agent, environment:, confirmation:)`**, where the environment is
-   `environmentProvider`, the window's live `model.environment`. Steps 4 to 10 of flow 1 apply. For
-   `.control` the gate differs by origin: an agent's switch into or out of production is gated.
+6. **`registry.dispatch(..., origin: .agent, caller:, confirmation:)`**, where the caller is
+   `caller`, the window's live `model.agentCaller` (its place and session); the gate reads its environment. Steps 4 to 10 of flow 1 apply. For
+   `.control` the gate differs by origin. The agent cannot switch project or environment at all:
+   `ctx_set_project` and `ctx_set_environment` are operator-only, because an agent's place is fixed
+   when its session starts.
 7. **On `needsConfirmation`, `parkForConfirmation`** builds a `PendingMutation` and calls
    `confirmations.request`, holding the tool call open. `WindowModel`'s confirmation pump sets
    `pending`, and `ConfirmationPlane` draws it.

@@ -12,9 +12,9 @@ import Foundation
 /// pane-scoped dispatch is expected to populate it without changing this
 /// type's shape.
 ///
-/// `environment` is the active environment `dispatch` handed to
-/// `writeGate` — the value at the moment the decision was made, not at the
-/// moment the action was proposed. The two differ, and deliberately so: a
+/// `environment` is the environment of the caller's place that `dispatch`
+/// handed to `writeGate` — the value at the moment the decision was made,
+/// not at the moment the action was proposed. The two differ, and deliberately so: a
 /// mutation that parks at the confirmation plane is re-judged against the
 /// environment as it stands when the operator confirms, because ⌘K still
 /// works while the plane is up (`WindowModel`'s confirm path and
@@ -29,6 +29,11 @@ import Foundation
 /// it. `nil` reads as "not recorded", which is true of that history and of
 /// nothing written since.
 ///
+/// `organization`, `project` and `session` complete the place the dispatch
+/// acted in and name the agent session that asked (nil for the operator's own
+/// dispatches). They are optional for the same reason `environment` is: lines
+/// written before they existed omit them, and `nil` there means "not recorded".
+///
 /// `reason` is the sentence a failed handler threw, on `"error"` lines only
 /// (Decision 35, #323): each marked parameter's value replaced, capped at
 /// 300 characters. Optional for the same reason `environment` is.
@@ -39,7 +44,10 @@ public struct JournalEntry: Codable, Sendable, Equatable {
     public var params: JSONValue
     public var origin: ActionOrigin
     public var paneId: String?
+    public var organization: String?
+    public var project: String?
     public var environment: String?
+    public var session: String?
     public var outcome: String
     public var reason: String?
 
@@ -50,7 +58,10 @@ public struct JournalEntry: Codable, Sendable, Equatable {
         params: JSONValue,
         origin: ActionOrigin,
         paneId: String? = nil,
+        organization: String? = nil,
+        project: String? = nil,
         environment: String? = nil,
+        session: String? = nil,
         outcome: String,
         reason: String? = nil
     ) {
@@ -60,7 +71,10 @@ public struct JournalEntry: Codable, Sendable, Equatable {
         self.params = params
         self.origin = origin
         self.paneId = paneId
+        self.organization = organization
+        self.project = project
         self.environment = environment
+        self.session = session
         self.outcome = outcome
         self.reason = reason
     }

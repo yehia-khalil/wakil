@@ -350,7 +350,7 @@ func curlReadsTheRowsCredentialNotTheRenderingPanes() async throws {
     var ids: [String] = []
     for _ in 0..<2 {
         let opened = try await registry.dispatch(
-            name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+            name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
             confirmation: nil)
         guard case .object(let f) = opened, case .string(let pane)? = f["pane"] else {
             Issue.record("api_open answered no pane"); return
@@ -370,7 +370,7 @@ func curlReadsTheRowsCredentialNotTheRenderingPanes() async throws {
     func curl(from pane: String, row: String) async throws -> String {
         let reply = try await registry.dispatch(
             name: "api_render_curl", params: .object(["pane": .string(pane), "row": .string(row)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         guard case .object(let f) = reply, case .string(let line)? = f["curl"] else { return "" }
         return line
     }

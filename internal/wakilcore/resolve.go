@@ -6,8 +6,14 @@ import (
 )
 
 type Resolved struct {
-	Org         string
-	Project     *Project
+	Org     string
+	Project *Project
+	// ProjectKey is the active project's registry key — the name
+	// WAKIL_PROJECT pins by (ReadActive looks it up in the registry). It is
+	// not Project.Name: the key and project.json's "name" are written
+	// independently and can differ, so the app needs this one to build a
+	// pin and the other to draw. Tagged capitalized like RootPaths below.
+	ProjectKey  string `json:"ProjectKey,omitempty"`
 	ProjectPath string
 	Environment string
 	Provider    ProviderReport
@@ -118,6 +124,28 @@ func providerReport(org string, projectPath string) ProviderReport {
 	return rep
 }
 
+// projectKey is the registry key for the active project: the pin itself
+// when this process is pinned, else the entry whose path is projectPath —
+// by path, for the reason providerReport gives. Two keys naming one path
+// resolve to the first in sort order, so the answer is stable. "" when no
+// entry matches.
+func projectKey(org string, projectPath string) string {
+	if pinned, _ := PinnedPlace(); pinned != "" {
+		return pinned
+	}
+	reg, err := LoadRegistryFor(org)
+	if err != nil {
+		return ""
+	}
+	key := ""
+	for k, e := range reg {
+		if e.Path == projectPath && (key == "" || k < key) {
+			key = k
+		}
+	}
+	return key
+}
+
 func Resolve() (*Resolved, error) {
 	active, err := ReadActive()
 	if err != nil {
@@ -141,6 +169,7 @@ func Resolve() (*Resolved, error) {
 	out := Resolved{
 		Org:            currentOrg,
 		Project:        proj,
+		ProjectKey:     projectKey(currentOrg, active.Project),
 		ProjectPath:    active.Project,
 		Environment:    active.Environment,
 		Provider:       providerReport(currentOrg, active.Project),
@@ -187,6 +216,9 @@ func ResolveEnvironment() (Environment, error) {
 }
 
 func SetProjectChecked(name string) error {
+	if project, _ := PinnedPlace(); project != "" {
+		return ErrPinned()
+	}
 	reg, err := LoadRegistry()
 	if err != nil {
 		return err
@@ -206,7 +238,7 @@ func SetProjectChecked(name string) error {
 	if proj.Org != currentOrg {
 		return UserError(fmt.Sprintf("project %q is filed under org %q but its project.json declares org %q — the project file wins, so fix the mismatch with: wakil project rm %s, then wakil project add %s --path %s --org %s (wakil project add refuses an existing name, so rm must come first)", name, currentOrg, proj.Org, name, name, entry.Path, proj.Org))
 	}
-	active, err := ReadActive()
+	active, err := ReadActiveUnpinned()
 	if err != nil {
 		return err
 	}

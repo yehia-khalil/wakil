@@ -6,7 +6,7 @@ import Foundation
 /// `permissionDecision` compares against. Deliberately includes a `.mutate`
 /// name: `db_run_mutation` is the whole reason this function exists, and a
 /// fixture that omitted it would let the one row that matters go untested.
-private let known = ["db_run_query", "db_run_mutation", "ctx_set_environment", "pane_set_density"]
+private let known = ["db_run_query", "db_run_mutation", "pane_move", "pane_set_density"]
 
 @Test func everyRegisteredActionIsReachableIncludingMutations() {
     for name in known {
@@ -133,7 +133,7 @@ private func bridgeReply(toolName: String, input: JSONValue) async throws -> [St
             ]),
         ]),
         result: nil, error: nil)
-    let out = await handle(message, surface: surface, environment: { "staging" })
+    let out = await handle(message, surface: surface, caller: { .test("staging") })
     // Probe §3: one text content block whose TEXT is the JSON — not a JSON
     // result object. Getting this wrong makes the CLI unable to read the
     // answer at all.
@@ -215,7 +215,7 @@ private func bridgeReply(toolName: String, input: JSONValue) async throws -> [St
             "arguments": .object(["input": .object([:])]),
         ]),
         result: nil, error: nil)
-    let out = await handle(message, surface: surface, environment: { "staging" })
+    let out = await handle(message, surface: surface, caller: { .test("staging") })
     #expect(out?.error == nil, "a malformed request is denied, not errored")
     guard case .object(let result)? = out?.result,
           case .array(let content)? = result["content"],
@@ -248,7 +248,7 @@ private func bridgeReply(toolName: String, input: JSONValue) async throws -> [St
             ]),
         ]),
         result: nil, error: nil)
-    _ = await handle(message, surface: surface, environment: { "staging" })
+    _ = await handle(message, surface: surface, caller: { .test("staging") })
     let after = (try? FileManager.default.contentsOfDirectory(atPath: journal.path))?.count ?? 0
     #expect(after == before)
 }
@@ -398,5 +398,31 @@ private func bridgeReply(toolName: String, input: JSONValue) async throws -> [St
         ActionDescriptor(name: "term_open", description: "", kind: .control, schema: .object([:])),
     ])
     #expect(!allowed.contains { $0.hasSuffix("term_run") })
+    #expect(allowed.contains { $0.hasSuffix("term_open") })
+}
+
+// MARK: - The agent's place is fixed (background agents, Invariant 5)
+
+/// An agent's place (organisation, project, environment) is fixed when its
+/// session starts, so it cannot switch project or environment at all: the
+/// refusal is outright, not a held confirmation. Must fail if either name
+/// leaves `operatorOnlyActions` or `agentAllowedTools` stops excluding it.
+@Test func theAgentCannotMoveItsOwnPlace() {
+    for name in ["ctx_set_project", "ctx_set_environment"] {
+        let decision = permissionDecision(
+            toolName: "mcp__\(wakilShimServerName)__\(name)", knownActions: [name])
+        guard case .deny(let reason) = decision else {
+            Issue.record("\(name) must be operator-only, got \(decision)")
+            continue
+        }
+        #expect(reason.contains("place is fixed"), "\(name): got: \(reason)")
+        #expect(!reason.contains("confirm"), "\(name) is refused, not held: \(reason)")
+    }
+    let allowed = agentAllowedTools(actions: [
+        ActionDescriptor(name: "ctx_set_project", description: "", kind: .control, schema: .object([:])),
+        ActionDescriptor(name: "ctx_set_environment", description: "", kind: .control, schema: .object([:])),
+        ActionDescriptor(name: "term_open", description: "", kind: .control, schema: .object([:])),
+    ])
+    #expect(!allowed.contains { $0.hasSuffix("ctx_set_project") || $0.hasSuffix("ctx_set_environment") })
     #expect(allowed.contains { $0.hasSuffix("term_open") })
 }

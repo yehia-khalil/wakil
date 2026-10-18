@@ -52,7 +52,7 @@ private func fixture(
 
 private func run(_ registry: ActionRegistry, _ name: String, _ params: [String: JSONValue]) async throws -> JSONValue {
     try await registry.dispatch(
-        name: name, params: .object(params), origin: .agent, environment: "staging", confirmation: nil)
+        name: name, params: .object(params), origin: .agent, caller: .test("staging"), confirmation: nil)
 }
 
 struct DBCancelTests {

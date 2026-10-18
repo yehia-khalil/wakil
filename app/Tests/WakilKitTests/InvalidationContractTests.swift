@@ -20,7 +20,7 @@ import Testing
 /// defends against is a property nobody thought about at all; it is not a
 /// substitute for checking the reset logic itself.
 private let orgDerived: Set<String> = [
-    "project", "environment", "environmentProduction",
+    "project", "projectKey", "environment", "environmentProduction",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
     // Each open pane's snapshot lives in one cell of `paneCells` (pluggable pane kinds, PR 7),

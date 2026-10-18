@@ -96,8 +96,11 @@ public enum ActionAudience: String, Sendable, Equatable {
 /// it names, and the operator's own write always lands. A handler is
 /// handed only its params, so the origin reaches that one through
 /// `ActionRegistry.dispatchOrigin`, which `dispatch` binds around the
-/// handler call. Nothing else reads it, and a second reader should be a
-/// decision rather than a habit.
+/// handler call. A second reader was decided on for background agents: a
+/// handler that journals a follow-up line (`api_send`'s sent-URL line) reads
+/// the whole caller, place and session, through `ActionRegistry.dispatchCaller`,
+/// so that line names the same place as the dispatch line it follows. Any
+/// further reader should still be a decision rather than a habit.
 public enum ActionOrigin: String, Codable, Sendable {
     case ui
     case agent
@@ -137,6 +140,9 @@ public struct Action: Sendable {
     /// Only `ctx_set_environment` sets this. It is read by
     /// `ActionRegistry.dispatch` and handed to `writeGate`, which uses it
     /// for exactly one decision: whether an agent is entering production.
+    /// The agent cannot reach `ctx_set_environment` (it is operator-only:
+    /// an agent's place is fixed when its session starts), so this is a
+    /// second layer behind the audience rather than what stops the agent.
     ///
     /// **`ctx_set_project` deliberately does not set it.**
     /// `wakilcore.SetProjectChecked` keeps the current environment name if

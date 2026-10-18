@@ -866,6 +866,39 @@ import SwiftTerm
     #expect(environment["WAKIL_ENVIRONMENT"] == nil)
 }
 
+/// Wakil.app may itself have been launched with a pin in its environment. An empty member
+/// means "no such place member", so the inherited value must not show through.
+@Test func anEmptyContextMemberRemovesAnInheritedPin() {
+    let environment = terminalChildEnvironment(
+        org: "initech", project: "", environment: "",
+        base: ["HOME": "/Users/x", "WAKIL_PROJECT": "inherited", "WAKIL_ENVIRONMENT": "production"])
+    #expect(environment["WAKIL_PROJECT"] == nil)
+    #expect(environment["WAKIL_ENVIRONMENT"] == nil)
+    #expect(environment["WAKIL_ORG"] == "initech")
+}
+
+/// The store's own layering: the shell's place is what the caller (`term_open`) handed down,
+/// and a pin in Wakil's process environment the caller did not set never reaches the shell.
+@Test func theShellsPlaceIsTheCallersNeverTheProcesss() {
+    let process = ["PATH": "/usr/bin", "WAKIL_ORG": "other", "WAKIL_PROJECT": "inherited",
+                   "WAKIL_ENVIRONMENT": "production"]
+    let unpinned = TerminalStore.childEnvironment(
+        processEnvironment: process, callerEnvironment: ["HOME": "/scratch"],
+        launchEnvironment: ["ZDOTDIR": "/rc"])
+    #expect(unpinned["WAKIL_ORG"] == nil)
+    #expect(unpinned["WAKIL_PROJECT"] == nil)
+    #expect(unpinned["WAKIL_ENVIRONMENT"] == nil)
+    #expect(unpinned["PATH"] == "/usr/bin" && unpinned["HOME"] == "/scratch" && unpinned["ZDOTDIR"] == "/rc")
+
+    let placed = TerminalStore.childEnvironment(
+        processEnvironment: process,
+        callerEnvironment: ["WAKIL_ORG": "initech", "WAKIL_PROJECT": "api", "WAKIL_ENVIRONMENT": "staging"],
+        launchEnvironment: [:])
+    #expect(placed["WAKIL_ORG"] == "initech")
+    #expect(placed["WAKIL_PROJECT"] == "api")
+    #expect(placed["WAKIL_ENVIRONMENT"] == "staging")
+}
+
 @Test func anUnsupportedShellIsRefusedByShellLaunchToo() throws {
     let directory = testScratchRoot
         .appendingPathComponent("wakil-rc-\(UUID().uuidString)")

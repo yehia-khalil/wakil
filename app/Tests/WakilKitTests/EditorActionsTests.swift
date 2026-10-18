@@ -53,7 +53,7 @@ import Testing
     try await f.layout.close(id: f.pane)
     await f.files.put("/p/api/a.go", "a")
     let reply = try await f.registry.dispatch(name: "editor_open", params: .object(["path": .string("/p/api/a.go")]),
-                                              origin: .agent, environment: "staging", confirmation: nil)
+                                              origin: .agent, caller: .test("staging"), confirmation: nil)
     let opened = await f.layout.snapshot().panes.filter { $0.kind == "editor" }
     #expect(opened.count == 1)
     #expect(optionalString(reply, "pane") == opened[0].id)

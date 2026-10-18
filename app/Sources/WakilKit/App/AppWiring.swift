@@ -407,7 +407,9 @@ public struct WakilWiring: Sendable {
                 try? await journalRegistry.journalIdentifierEvent(
                     action: "identifier_source_failed",
                     params: .object(["source": .string(source), "error": .string(message)]),
-                    environment: "", outcome: "error")
+                    caller: DispatchCaller(
+                        place: Place(organization: "", project: "", environment: ""), session: nil),
+                    outcome: "error")
             })
 
         return WakilWiring(

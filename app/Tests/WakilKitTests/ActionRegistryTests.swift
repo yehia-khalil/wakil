@@ -13,7 +13,7 @@ private func testAction(_ name: String, _ kind: ActionKind) -> Action {
         .appendingPathComponent(UUID().uuidString), sessionId: "s1")
     await r.register(testAction("db_run_query", .read))
     let out = try await r.dispatch(name: "db_run_query", params: .string("sql"),
-                                   origin: .ui, environment: "staging", confirmation: nil)
+                                   origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(out == .object(["echo": .string("sql")]))
 }
 
@@ -22,7 +22,7 @@ private func testAction(_ name: String, _ kind: ActionKind) -> Action {
         .appendingPathComponent(UUID().uuidString), sessionId: "s1")
     await #expect(throws: ActionError.unknown("nope")) {
         try await r.dispatch(name: "nope", params: .null, origin: .agent,
-                             environment: "staging", confirmation: nil)
+                             caller: .test("staging"), confirmation: nil)
     }
     // Probing for a nonexistent action name must still leave a trace: an
     // audit trail that only records recognized names would miss exactly
@@ -68,9 +68,9 @@ private func testAction(_ name: String, _ kind: ActionKind) -> Action {
     let r = ActionRegistry(journalDirectory: dir, sessionId: "s1")
     await r.register(testAction("db_run_query", .read))
     _ = try await r.dispatch(name: "db_run_query", params: .string("q"),
-                             origin: .ui, environment: "staging", confirmation: nil)
+                             origin: .ui, caller: .test("staging"), confirmation: nil)
     _ = try await r.dispatch(name: "db_run_query", params: .string("q"),
-                             origin: .agent, environment: "staging", confirmation: nil)
+                             origin: .agent, caller: .test("staging"), confirmation: nil)
     let entries = try await r.journalEntries()
     guard entries.count == 2 else {
         Issue.record("expected 2 journal entries, got \(entries.count)"); return
@@ -88,7 +88,7 @@ private func testAction(_ name: String, _ kind: ActionKind) -> Action {
     await r.register(testAction("test.mutate", .mutate))   // test-only: 2a ships no .mutate actions
     await #expect(throws: ActionError.needsConfirmation("test.mutate")) {
         try await r.dispatch(name: "test.mutate", params: .null, origin: .ui,
-                             environment: "staging", confirmation: nil)
+                             caller: .test("staging"), confirmation: nil)
     }
     let entries = try await r.journalEntries()
     guard entries.count == 1 else {
@@ -103,7 +103,7 @@ private func testAction(_ name: String, _ kind: ActionKind) -> Action {
     await r.register(testAction("test.mutate", .mutate))
     await #expect(throws: ActionError.blockedInProduction("test.mutate")) {
         try await r.dispatch(name: "test.mutate", params: .null, origin: .ui,
-                             environment: "production", confirmation: "confirm")
+                             caller: .test("production"), confirmation: "confirm")
     }
 }
 
@@ -112,7 +112,7 @@ private func testAction(_ name: String, _ kind: ActionKind) -> Action {
     let r = ActionRegistry(journalDirectory: dir, sessionId: "s1")
     await r.register(testAction("a.b", .read))
     _ = try await r.dispatch(name: "a.b", params: .null, origin: .debug,
-                             environment: "staging", confirmation: nil)
+                             caller: .test("staging"), confirmation: nil)
     let text = try String(contentsOf: dir.appendingPathComponent("s1.jsonl"), encoding: .utf8)
     #expect(text.hasSuffix("\n"))
     #expect(text.split(separator: "\n").count == 1)
@@ -153,7 +153,7 @@ private func testAction(_ name: String, _ kind: ActionKind) -> Action {
         _ = try await registry.dispatch(
             name: "ctx_set_environment_stub",
             params: .object(["name": .string("production")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     #expect(await ran.count == 0)
 
@@ -161,21 +161,21 @@ private func testAction(_ name: String, _ kind: ActionKind) -> Action {
     _ = try await registry.dispatch(
         name: "ctx_set_environment_stub",
         params: .object(["name": .string("production")]),
-        origin: .agent, environment: "staging", confirmation: "confirm")
+        origin: .agent, caller: .test("staging"), confirmation: "confirm")
     #expect(await ran.count == 1)
 
     // Same call from the UI: runs with no confirmation.
     _ = try await registry.dispatch(
         name: "ctx_set_environment_stub",
         params: .object(["name": .string("production")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await ran.count == 2)
 
     // Agent, target staging: runs with no confirmation.
     _ = try await registry.dispatch(
         name: "ctx_set_environment_stub",
         params: .object(["name": .string("staging")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     #expect(await ran.count == 3)
 
     let entries = try await registry.journalEntries()
@@ -203,7 +203,7 @@ private func testAction(_ name: String, _ kind: ActionKind) -> Action {
     _ = try await registry.dispatch(
         name: "pane_move_stub",
         params: .object(["name": .string("production")]),
-        origin: .agent, environment: "production", confirmation: nil)
+        origin: .agent, caller: .test("production"), confirmation: nil)
     #expect(await ran.count == 1)
 }
 
@@ -228,15 +228,15 @@ actor Ran {
                             schema: .object([:])) { _ in throw ActionError.unknown("boom") })
 
     _ = try? await r.dispatch(name: "nope", params: .null, origin: .agent,
-                              environment: "dev", confirmation: nil)                    // unknown
+                              caller: .test("dev"), confirmation: nil)                    // unknown
     _ = try? await r.dispatch(name: "test.mutate", params: .null, origin: .ui,
-                              environment: "production", confirmation: "confirm")       // blocked
+                              caller: .test("production"), confirmation: "confirm")       // blocked
     _ = try? await r.dispatch(name: "test.mutate", params: .null, origin: .ui,
-                              environment: "staging", confirmation: nil)                // gated
+                              caller: .test("staging"), confirmation: nil)                // gated
     _ = try? await r.dispatch(name: "db_run_query", params: .null, origin: .ui,
-                              environment: "staging", confirmation: nil)                // ok
+                              caller: .test("staging"), confirmation: nil)                // ok
     _ = try? await r.dispatch(name: "test.throws", params: .null, origin: .ui,
-                              environment: "local", confirmation: nil)                  // error
+                              caller: .test("local"), confirmation: nil)                  // error
 
     let entries = try await r.journalEntries()
     guard entries.count == 5 else {
@@ -252,7 +252,7 @@ actor Ran {
     let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
     let r = ActionRegistry(journalDirectory: dir, sessionId: "s1")
     try await r.journalUncertainMutation(action: "db_run_mutation", params: .null,
-                                         origin: .agent, environment: "staging")
+                                         origin: .agent, caller: .test("staging"))
     let entries = try await r.journalEntries()
     guard entries.count == 1 else {
         Issue.record("expected 1 journal entry, got \(entries.count)"); return
@@ -314,7 +314,7 @@ actor Ran {
     // the declared price allows it outright.
     _ = try await registry.dispatch(
         name: "cheap_write_stub", params: .null,
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     #expect(await ran.count == 1)
 }
 
@@ -339,6 +339,6 @@ actor Ran {
 
     _ = try await registry.dispatch(
         name: "confirmable_in_production_stub", params: .null,
-        origin: .ui, environment: "production", confirmation: "confirm")
+        origin: .ui, caller: .test("production"), confirmation: "confirm")
     #expect(await ran.count == 1)
 }

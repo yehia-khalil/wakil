@@ -15,7 +15,7 @@ private func cancelFixture(
         into: registry, panes: panes, layout: LayoutStore(), http: http,
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
-        name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+        name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
         confirmation: nil)
     guard case .object(let f) = opened, case .string(let pane)? = f["pane"] else {
         throw CancelFixtureFailed()
@@ -28,7 +28,7 @@ private func dispatch(
     _ registry: ActionRegistry, _ name: String, _ params: [String: JSONValue]
 ) async throws -> JSONValue {
     try await registry.dispatch(
-        name: name, params: .object(params), origin: .agent, environment: "staging",
+        name: name, params: .object(params), origin: .agent, caller: .test("staging"),
         confirmation: nil)
 }
 

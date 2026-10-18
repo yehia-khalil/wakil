@@ -304,7 +304,7 @@ private func adoptRegistry() async throws -> (ActionRegistry, AdoptRecorder) {
             "configDir": .string("/Users/x/.claude-initech"), "kind": .string("claude-code"),
             "fromOrg": .string("initech"), "fromId": .string("main"),
         ]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let calls = await caller.recorded()
     guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
@@ -327,7 +327,7 @@ private func adoptRegistry() async throws -> (ActionRegistry, AdoptRecorder) {
             "org": .string("personal"), "id": .string("work"),
             "configDir": .string("/Users/x/.claude-initech"), "kind": .string("claude-code"),
         ]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let calls = await caller.recorded()
     guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
@@ -351,7 +351,7 @@ private func adoptRegistry() async throws -> (ActionRegistry, AdoptRecorder) {
             "configDir": .string("/Users/x/.claude-initech"), "kind": .string("claude-code"),
             "fromOrg": .string(""), "fromId": .string(""),
         ]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let calls = await caller.recorded()
     guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {

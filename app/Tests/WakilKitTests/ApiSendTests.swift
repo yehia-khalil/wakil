@@ -33,7 +33,7 @@ private func sendFixture() async throws -> (ActionRegistry, PaneStore, String) {
         into: registry, panes: panes, layout: layout, http: http,
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
-        name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+        name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
         confirmation: nil)
     guard case .object(let fields) = opened, case .string(let paneId)? = fields["pane"] else {
         throw NoSendPane()
@@ -72,21 +72,21 @@ func theExitClause() async throws {
     // both halves below diverge only if `api_send` declares its own.
     _ = try await registry.dispatch(
         name: "api_send", params: statement,
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     #expect(await panes.apiResponse(paneId: paneId).state != "none")
 
     // In production the same call, with no confirmation, does not run.
     await #expect(throws: (any Error).self) {
         _ = try await registry.dispatch(
             name: "api_send", params: statement,
-            origin: .agent, environment: "production", confirmation: nil)
+            origin: .agent, caller: .test("production"), confirmation: nil)
     }
 
     // And with one, it does — `.gate` rather than `.block`, which is the
     // difference between "costs a confirmation" and "cannot be done".
     _ = try await registry.dispatch(
         name: "api_send", params: statement,
-        origin: .ui, environment: "production", confirmation: "confirm")
+        origin: .ui, caller: .test("production"), confirmation: "confirm")
 
     // A GET never reaches the gate at all, in any environment — which is
     // why the send had to be split into two actions.
@@ -103,7 +103,7 @@ func aGatedMutateNeedsItsStatement() async throws {
     await #expect(throws: (any Error).self) {
         _ = try await registry.dispatch(
             name: "api_send", params: .object(["pane": .string(paneId)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     #expect(await panes.apiResponse(paneId: paneId).state == "none")
 }
@@ -122,7 +122,7 @@ func apiSendRefusesAReadMethod() async throws {
                 "pane": .string(paneId),
                 "statement": .string("POST /bookings/41/confirm"),
             ]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -136,7 +136,7 @@ func aStagingMutationSendsOnOneClick() async throws {
             "pane": .string(paneId),
             "statement": .string("POST /bookings/41/confirm with an empty body"),
         ]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     guard case .object(let fields) = result else { Issue.record("no object"); return }
     // It went — the stub answers `list_apis`-shaped content with no
@@ -280,7 +280,7 @@ func theJournalRecordsWhatLeft() async throws {
         into: registry, panes: panes, layout: layout, http: http,
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
-        name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+        name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
         confirmation: nil)
     guard case .object(let openFields) = opened,
         case .string(let paneId)? = openFields["pane"]
@@ -297,7 +297,7 @@ func theJournalRecordsWhatLeft() async throws {
         params: .object([
             "pane": .string(paneId), "statement": .string("POST /bookings/<id>"),
         ]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     // Only the dispatch line — no URL was ever composed, and a line
     // claiming one would record a request that never existed.
@@ -314,7 +314,7 @@ func theJournalRecordsWhatLeft() async throws {
         params: .object([
             "pane": .string(paneId), "statement": .string("POST /bookings/41/confirm"),
         ]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     let all = try journalLines(directory)
     let sent = all.filter { $0.outcome == "sent" }

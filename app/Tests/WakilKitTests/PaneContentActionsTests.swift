@@ -32,7 +32,7 @@ private func run(
     origin: ActionOrigin = .ui, environment: String = "staging"
 ) async throws -> JSONValue {
     try await registry.dispatch(
-        name: name, params: params, origin: origin, environment: environment, confirmation: nil)
+        name: name, params: params, origin: origin, caller: .test(environment), confirmation: nil)
 }
 
 @Test func selectCellSetsTheAnchorAndCollapsesTheSelectionToItsRow() async throws {

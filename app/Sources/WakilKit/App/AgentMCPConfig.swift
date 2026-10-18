@@ -26,7 +26,8 @@ public let agentFacingServers = ["wakil-pm", "wakil-recall", "wakil-git"]
 /// servers the session has, so what is absent here is unreachable to the
 /// agent rather than merely undocumented.
 ///
-/// `organization` and `provider` become `WAKIL_ORG`/`WAKIL_PROVIDER` on every
+/// `place` (as `WAKIL_ORG`, `WAKIL_PROJECT`, `WAKIL_ENVIRONMENT`) and `provider`
+/// (`WAKIL_PROVIDER`) go to every
 /// server, which is spec §2.4's mechanism for taking org identity off the
 /// config dir. They are set on the shim too, not only on the Phase 1
 /// binaries — the shim ignores them (`runShim` parses nothing and reads no
@@ -37,11 +38,19 @@ public func agentMCPConfigJSON(
     shimExecutable: URL,
     socketPath: String,
     binaries: [String: URL],
-    organization: String?,
+    place: Place?,
     provider: String?
 ) -> String {
     var environment: [String: JSONValue] = [:]
-    if let organization { environment["WAKIL_ORG"] = .string(organization) }
+    // Absent means unset, never the empty string (the Go side reads an empty one as unset too).
+    // With WAKIL_PROJECT set, the session's environment is WAKIL_ENVIRONMENT alone: absent means
+    // no environment, never active.json's (`ReadActive`). Without it, an absent member follows
+    // active.json — the operator's window.
+    if let place {
+        if !place.organization.isEmpty { environment["WAKIL_ORG"] = .string(place.organization) }
+        if !place.project.isEmpty { environment["WAKIL_PROJECT"] = .string(place.project) }
+        if !place.environment.isEmpty { environment["WAKIL_ENVIRONMENT"] = .string(place.environment) }
+    }
     if let provider { environment["WAKIL_PROVIDER"] = .string(provider) }
 
     var servers: [String: JSONValue] = [
@@ -198,12 +207,9 @@ public func agentAllowedTools(actions: [ActionDescriptor]) -> [String] {
     // results next to the terminal" reachable at all — layout actions are
     // `.control`, and a filter on `.read` alone would publish a tool
     // surface the agent could see in `tools/list` and never be permitted
-    // to call. The context setters are `.control` too and stay reachable
-    // deliberately: the Phase 2 exit criterion is a spoken "open the
-    // booking project on staging…", so removing them here would make the
-    // criterion unsatisfiable. What governs production is `writeGate`,
-    // which refuses an agent-originated switch *into* production without a
-    // typed confirmation — a gate, not an absence from this list.
+    // to call. The context setters were `.control` too, but an agent's place is
+    // fixed when its session starts, so `ctx_set_project` and
+    // `ctx_set_environment` are operator-only and filtered below.
     //
     // **`operatorOnlyActions` is the one deliberate exception, and it is
     // NOT optional here.** `session_set_provider` is `.control`, exactly

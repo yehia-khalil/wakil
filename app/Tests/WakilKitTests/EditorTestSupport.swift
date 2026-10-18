@@ -311,7 +311,7 @@ struct EditorFixture {
         var p = params
         if p["pane"] == nil { p["pane"] = .string(pane) }
         return try await registry.dispatch(name: name, params: .object(p), origin: origin,
-                                           environment: environment, confirmation: nil)
+                                           caller: .test(environment), confirmation: nil)
     }
     func snapshot() async -> EditorSnapshot { await panes.editorSnapshot(paneId: pane) }
 

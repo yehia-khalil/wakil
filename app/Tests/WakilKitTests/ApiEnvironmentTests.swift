@@ -52,7 +52,7 @@ func aSingleEntryEnvironmentNeverLeavesAPaneUnpointed() async throws {
         http: RecordingToolCaller(always: listApisReply([("catalog", "https://c.example")])),
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
-        name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+        name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
         confirmation: nil)
     guard case .object(let f) = opened else { Issue.record("no result"); return }
     #expect(f["entry"] == .string("catalog"))
@@ -71,7 +71,7 @@ func anOmittedEntryOpensUnpointed() async throws {
         into: registry, panes: panes, layout: LayoutStore(), http: http,
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
-        name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+        name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
         confirmation: nil)
     guard case .object(let f) = opened, case .string(let pane)? = f["pane"] else {
         Issue.record("no pane"); return
@@ -85,7 +85,7 @@ func anOmittedEntryOpensUnpointed() async throws {
     // Send from it is refused, as a refusal the pane draws, and nothing reaches wakil-http.
     _ = try await registry.dispatch(
         name: "api_request", params: .object(["pane": .string(pane)]), origin: .agent,
-        environment: "staging", confirmation: nil)
+        caller: .test("staging"), confirmation: nil)
     let snapshot = await panes.apiSnapshot(paneId: pane)
     guard case .refusal(let refusal) = snapshot.response else { Issue.record("not refused"); return }
     #expect(refusal.failures.map(\.message) == [apiPickAnEntryFirst])
@@ -106,17 +106,17 @@ func anUnpointedMutationIsRefused() async throws {
         into: registry, panes: panes, layout: LayoutStore(), http: http,
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
-        name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+        name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
         confirmation: nil)
     guard case .object(let f) = opened, case .string(let pane)? = f["pane"] else {
         Issue.record("no pane"); return
     }
     _ = try await registry.dispatch(
         name: "api_set_request", params: .object(["pane": .string(pane), "method": .string("POST")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     let sent = try await registry.dispatch(
         name: "api_send", params: .object(["pane": .string(pane), "statement": .string("POST /x")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     guard case .object(let r) = sent else { Issue.record("no result"); return }
     #expect(r["state"] == .string("refusal"))
     guard case .refusal(let refusal) = await panes.apiSnapshot(paneId: pane).response else {
@@ -305,13 +305,13 @@ func reopeningAPointedPaneKeepsItsEntry() async throws {
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
         name: "api_open", params: .object(["entry": .string("billing")]), origin: .agent,
-        environment: "staging", confirmation: nil)
+        caller: .test("staging"), confirmation: nil)
     guard case .object(let f) = opened, case .string(let pane)? = f["pane"] else {
         Issue.record("no pane"); return
     }
     let again = try await registry.dispatch(
         name: "api_open", params: .object(["pane": .string(pane)]), origin: .agent,
-        environment: "staging", confirmation: nil)
+        caller: .test("staging"), confirmation: nil)
     guard case .object(let g) = again else { Issue.record("no result"); return }
     #expect(g["entry"] == .string("billing"))
     #expect(g["origin"] == .string("https://b.example"))

@@ -76,7 +76,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         _ = try await registry.dispatch(
             name: "ctx_set_editor_settings",
             params: .object(["fontSize": .integer(14), "wordWrap": .string("yes"), "bogus": .bool(true)]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         let calls = await caller.recorded()
         guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
             Issue.record("expected one call, got \(calls)"); return
@@ -90,13 +90,13 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         await #expect(throws: (any Error).self) {
             try await registry.dispatch(
                 name: "ctx_set_project_editor_settings", params: .object(["tabSize": .integer(2)]),
-                origin: .ui, environment: "staging", confirmation: nil)
+                origin: .ui, caller: .test("staging"), confirmation: nil)
         }
         #expect(await caller.recorded().isEmpty)
         _ = try await registry.dispatch(
             name: "ctx_set_project_editor_settings",
             params: .object(["projectPath": .string("/p.json"), "tabSize": .integer(2), "insertSpaces": .bool(false)]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         let calls = await caller.recorded()
         #expect(calls.last?.tool == "set_project_editor_settings")
         #expect(calls.last?.arguments == .object([
@@ -147,7 +147,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         _ = try await registry.dispatch(
             name: "ctx_set_project_editor_settings",
             params: .object(["projectPath": .string("/p.json"), "heavyFolders": .array([])]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         let calls = await caller.recorded()
         #expect(calls.count == 1)
         #expect(calls[0].arguments == .object(["projectPath": .string("/p.json"), "heavyFolders": .array([])]))
@@ -157,16 +157,16 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         let (registry, caller) = try await registryWithRecordingContext()
         _ = try await registry.dispatch(
             name: "ctx_set_editor_settings", params: .object(["showIgnored": .bool(false)]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         _ = try await registry.dispatch(
             name: "ctx_set_project_editor_settings",
             params: .object(["projectPath": .string("/p.json"),
                              "heavyFolders": .array([.string("storage"), .string("dist")])]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         _ = try await registry.dispatch(
             name: "ctx_set_project_editor_settings",
             params: .object(["projectPath": .string("/p.json"), "heavyFolders": .array([.string("a"), .integer(3)])]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         let calls = await caller.recorded()
         #expect(calls.count == 3)
         #expect(calls[0].arguments == .object(["showIgnored": .bool(false)]))

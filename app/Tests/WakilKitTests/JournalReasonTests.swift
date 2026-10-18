@@ -35,7 +35,7 @@ private func dispatchExpectingFailure(
     _ registry: ActionRegistry, _ name: String, _ params: JSONValue = .object([:])
 ) async {
     _ = try? await registry.dispatch(
-        name: name, params: params, origin: .ui, environment: "staging", confirmation: nil)
+        name: name, params: params, origin: .ui, caller: .test("staging"), confirmation: nil)
 }
 
 @Test func aFailedActionJournalsItsReason() async throws {
@@ -80,7 +80,7 @@ private func dispatchExpectingFailure(
         audience: .operatorOnly, schema: .object([:]), handler: { _ in .null }))
 
     _ = try await registry.dispatch(
-        name: "fine", params: .object([:]), origin: .ui, environment: "staging", confirmation: nil)
+        name: "fine", params: .object([:]), origin: .ui, caller: .test("staging"), confirmation: nil)
     await dispatchExpectingFailure(registry, "no_such_action")
 
     let entries = try await registry.journalEntries()

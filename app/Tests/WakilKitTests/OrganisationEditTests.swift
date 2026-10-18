@@ -60,7 +60,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     _ = try await registry.dispatch(
         name: "ctx_update_org",
         params: .object(["id": .string("acme"), "displayName": .string("Acme Corporation")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let calls = await caller.recorded()
     guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
@@ -81,7 +81,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     _ = try await registry.dispatch(
         name: "ctx_update_org",
         params: .object(["id": .string("acme"), "jiraBase": .string("")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let calls = await caller.recorded()
     guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
@@ -100,7 +100,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     _ = try await registry.dispatch(
         name: "ctx_update_org",
         params: .object(["id": .string("acme"), "displayName": .integer(7)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let calls = await caller.recorded()
     guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
@@ -118,7 +118,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     await #expect(throws: (any Error).self) {
         try await registry.dispatch(
             name: "ctx_update_org", params: .object(["displayName": .string("Acme")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
     }
     #expect(await caller.recorded().isEmpty)
 }
@@ -143,7 +143,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     _ = try await productionRegistry.dispatch(
         name: "ctx_update_org",
         params: .object(["id": .string("acme"), "displayName": .string("Acme")]),
-        origin: .ui, environment: "production", confirmation: nil)
+        origin: .ui, caller: .test("production"), confirmation: nil)
     #expect(await caller.recorded().count == 1,
             "a .control settings edit must not be gated by the environment")
 }
@@ -179,7 +179,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     _ = try await registry.dispatch(
         name: "ctx_update_org",
         params: .object(["id": .string("acme"), "displayName": .string("Acme")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     let entries = try await registry.journalEntries()
     guard let entry = entries.first(where: { $0.action == "ctx_update_org" }) else {
@@ -223,7 +223,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     _ = try await registry.dispatch(
         name: "ctx_update_org",
         params: .object(["id": .string("acme"), "speechProvider": .string("apple")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let calls = await caller.recorded()
     guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {

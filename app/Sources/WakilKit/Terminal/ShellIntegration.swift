@@ -542,24 +542,23 @@ public func shellLaunch(
 /// keeps its own value; only a `base` with no `TERM` at all gets Wakil's
 /// default.
 ///
-/// **Wired into `TerminalStore.performOpen`**, as the last layer over the
-/// caller's `environment:` and `shellLaunch`'s own additions — this was
-/// dead code until then, reachable only from tests, which meant no
-/// shipped pane actually got `TERM` seeded. `org`/`project`/`environment`
-/// are passed as empty strings from that call site, because `term_open`
-/// has no source for the window's active context yet; a later task wires
-/// that through, and until it does this function only contributes `TERM`
-/// and the `COLUMNS`/`LINES` removal.
+/// **Called twice.** `term_open` calls it with the window's live place
+/// (`project` is the registry key) over Wakil's process environment, and
+/// `TerminalStore.childEnvironment` calls it again as the last layer, with
+/// whatever place the caller handed down — so the place is the caller's, and
+/// a `WAKIL_*` the caller left out is removed rather than inherited.
 public func terminalChildEnvironment(
     org: String, project: String, environment: String,
     base: [String: String] = ProcessInfo.processInfo.environment
 ) -> [String: String] {
     var result = base
     // Absent means unset, never the empty string — the rule
-    // `WakilWiring.childProcessEnvironment` already holds itself to.
-    if !org.isEmpty { result["WAKIL_ORG"] = org }
-    if !project.isEmpty { result["WAKIL_PROJECT"] = project }
-    if !environment.isEmpty { result["WAKIL_ENVIRONMENT"] = environment }
+    // `WakilWiring.childProcessEnvironment` already holds itself to. And
+    // absent means absent: an empty member removes whatever `base` carried,
+    // so a pin Wakil.app was itself launched with cannot stand in for it.
+    result["WAKIL_ORG"] = org.isEmpty ? nil : org
+    result["WAKIL_PROJECT"] = project.isEmpty ? nil : project
+    result["WAKIL_ENVIRONMENT"] = environment.isEmpty ? nil : environment
     if result["TERM"] == nil { result["TERM"] = "xterm-256color" }
     // COLUMNS/LINES are deliberately NOT set: the winsize on the pty is
     // the authority, and a stale pair in the environment is exactly how a

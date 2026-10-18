@@ -50,10 +50,10 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
 
     let first = try await registry.dispatch(
         name: "settings_open", params: .object([:]), origin: .ui,
-        environment: "staging", confirmation: nil)
+        caller: .test("staging"), confirmation: nil)
     let second = try await registry.dispatch(
         name: "settings_open", params: .object([:]), origin: .ui,
-        environment: "staging", confirmation: nil)
+        caller: .test("staging"), confirmation: nil)
 
     guard case .object(let firstFields) = first, case .object(let secondFields) = second else {
         Issue.record("settings_open must return an object"); return
@@ -75,7 +75,7 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
     await #expect(throws: (any Error).self) {
         try await registry.dispatch(
             name: "pane_open", params: .object(["kind": .string(Pane.settingsKind)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     #expect(await layout.snapshot().panes.isEmpty)
 }
@@ -243,7 +243,7 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
 
     _ = try await registry.dispatch(
         name: "settings_open", params: .object([:]), origin: .agent,
-        environment: "staging", confirmation: nil)
+        caller: .test("staging"), confirmation: nil)
 
     let entries = try await registry.journalEntries()
     guard let entry = entries.first(where: { $0.action == "settings_open" }) else {

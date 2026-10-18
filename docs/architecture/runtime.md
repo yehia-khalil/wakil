@@ -66,7 +66,7 @@ What the wiring offers:
    `orgSwitcher: { wiring.switchOrg(to:) }`.
 7. Calls `wiring.useActiveContext(of: model)` and creates the `ComposerModel`.
 8. Creates and starts `MCPSocketServer(surface: wiring.mcpSurface, socketPath:,
-   environmentProvider: { model.environment })`. A socket that will not bind becomes a note.
+   caller: { model.agentCaller })`. A socket that will not bind becomes a note.
 
 ## `WindowModel`
 

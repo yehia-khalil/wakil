@@ -262,7 +262,7 @@ func clearStalePointers(org, id string) []string {
 	// another organisation's active context is inside a boundary this
 	// call is not.
 	if current, err := CurrentOrg(); err == nil && current == org {
-		if active, err := ReadActive(); err == nil && active.Provider == id {
+		if active, err := ReadActiveUnpinned(); err == nil && active.Provider == id {
 			active.Provider = ""
 			if err := WriteActive(active); err == nil {
 				cleared = append(cleared, "active.json provider")

@@ -447,7 +447,7 @@ private func writeSwitchOrgFixture(home: URL, org: String, project: String) thro
 private func listedProjectNames(_ registry: ActionRegistry) async throws -> Set<String> {
     let result = try await registry.dispatch(
         name: "ctx_list_projects", params: .object([:]), origin: .debug,
-        environment: "dev", confirmation: nil)
+        caller: .test("dev"), confirmation: nil)
     guard case .object(let top) = result,
           case .object(let structured)? = top["structuredContent"],
           case .object(let projects)? = structured["projects"]

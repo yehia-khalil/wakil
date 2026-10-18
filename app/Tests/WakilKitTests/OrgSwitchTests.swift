@@ -185,13 +185,13 @@ private func writeProviderFixtureForOrgSwitch(home: URL, org: String, id: String
     // comment in `ContextStoreTests.swift`.
     _ = try await registry.dispatch(
         name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     _ = try await registry.dispatch(
         name: "ctx_set_provider", params: .object(["name": .string("work")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "beta", context: ContextStore(client: client))
 
@@ -971,13 +971,13 @@ private actor SharedClientOrgSwitcherForTesting {
             into: setupRegistry, context: setupClient, panes: PaneStore(), db: nil, resumes: ResumeBroker())
         _ = try await setupRegistry.dispatch(
             name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         _ = try await setupRegistry.dispatch(
             name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         _ = try await setupRegistry.dispatch(
             name: "ctx_set_provider", params: .object(["name": .string("work")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         await setupClient.stop()
     }
 
@@ -1083,13 +1083,13 @@ private final class LookupOrgRecorder: @unchecked Sendable {
         into: registry, context: client, panes: PaneStore(), db: nil, resumes: ResumeBroker())
     _ = try await registry.dispatch(
         name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     _ = try await registry.dispatch(
         name: "ctx_set_provider", params: .object(["name": .string("work")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let seen = LookupOrgRecorder()
     let model = WindowModel(
@@ -1221,10 +1221,10 @@ private final class LookupOrgRecorder: @unchecked Sendable {
     await registerLayoutActions(into: registry, layout: layout, panes: panes)
     _ = try await registry.dispatch(
         name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout,
@@ -1444,7 +1444,7 @@ private final class LookupOrgRecorder: @unchecked Sendable {
     // `activateLayout` has a project to file the canvas under.
     _ = try await registry.dispatch(
         name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: persistence,
@@ -1501,7 +1501,7 @@ private final class LookupOrgRecorder: @unchecked Sendable {
         layout: layout)
     _ = try await registry.dispatch(
         name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout,

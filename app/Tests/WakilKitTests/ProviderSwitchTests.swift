@@ -565,11 +565,11 @@ private actor DispatchSpy {
     let settingsId = model.layoutSnapshot.panes.first { $0.kind == Pane.settingsKind }!.id
     _ = try? await registry.dispatch(
         name: "pane_move", params: .object(["id": .string(settingsId), "x": .number(40), "y": .number(60)]),
-        origin: .ui, environment: "", confirmation: nil)
+        origin: .ui, caller: .test(""), confirmation: nil)
     _ = try? await registry.dispatch(
         name: "pane_resize",
         params: .object(["id": .string(settingsId), "width": .number(900), "height": .number(520)]),
-        origin: .ui, environment: "", confirmation: nil)
+        origin: .ui, caller: .test(""), confirmation: nil)
     await model.refreshLayout()
     let before = model.layoutSnapshot.panes.first { $0.kind == Pane.settingsKind }!.frame
 

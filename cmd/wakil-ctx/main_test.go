@@ -178,6 +178,56 @@ func TestGetContextExposesTheActiveProvider(t *testing.T) {
 	}
 }
 
+// TestGetContextReportsTheRegistryKeyBesideTheName: the registry key and
+// project.json's "name" are written independently, and WAKIL_PROJECT is
+// looked up by the key (ReadActive), so the app must be told the key — the
+// name alone is not something a pin can be built from.
+func TestGetContextReportsTheRegistryKeyBesideTheName(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	reg, err := wakilcore.LoadRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := reg["proj"]
+	if err := wakilcore.SaveRegistry("initech", map[string]wakilcore.ProjectEntry{"relocated": entry}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	ss, err := newServer().Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("server Connect: %v", err)
+	}
+	t.Cleanup(func() { ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "get-context-key-test", Version: "0.0.0"}, nil).Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("client Connect: %v", err)
+	}
+	t.Cleanup(func() { cs.Close() })
+
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "get_context"})
+	if err != nil || res.IsError {
+		t.Fatalf("get_context: err=%v res=%v", err, res)
+	}
+	raw, err := json.Marshal(res.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var structured struct {
+		ProjectKey string
+		Project    struct {
+			Name string `json:"name"`
+		}
+	}
+	if err := json.Unmarshal(raw, &structured); err != nil {
+		t.Fatal(err)
+	}
+	if structured.ProjectKey != "relocated" || structured.Project.Name != "proj" {
+		t.Fatalf("ProjectKey = %q, Project.name = %q; want relocated beside proj\nfull: %s", structured.ProjectKey, structured.Project.Name, raw)
+	}
+}
+
 // TestGetContextReportsOrgAndProviderWhenNoActiveProject is Task 1's own
 // wire-level test: a fresh org — WAKIL_ORG set, the org directory
 // created, but no active project chosen yet, the first state any new
@@ -1022,5 +1072,51 @@ func TestEditorSettingsRoundTrip(t *testing.T) {
 	b, _ := json.Marshal(res.StructuredContent)
 	if !strings.Contains(string(b), `"tabSize":2`) || !strings.Contains(string(b), `"fontSize":16`) {
 		t.Errorf("editor_settings = %s", b)
+	}
+}
+
+func TestSetEnvironmentRefusedWhenPinned(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]},"local":{"databases":[]}`)
+	for _, pin := range []string{"WAKIL_PROJECT", "WAKIL_ENVIRONMENT"} {
+		val := "proj"
+		if pin == "WAKIL_ENVIRONMENT" {
+			val = "staging"
+		}
+		t.Run(pin, func(t *testing.T) {
+			t.Setenv(pin, val)
+			err := setEnvironment("local")
+			if err == nil || !strings.Contains(err.Error(), "pinned") {
+				t.Fatalf("got %v", err)
+			}
+			if _, ok := wakilcore.IsUserError(err); !ok {
+				t.Fatalf("want a UserError, got %T", err)
+			}
+		})
+	}
+}
+
+func TestSetProviderWhilePinnedDoesNotPersistThePins(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	if err := setEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(os.Getenv("HOME"), "cfg")
+	if err := os.MkdirAll(cfg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := wakilcore.AddProvider("initech",
+		wakilcore.Provider{ID: "work", Kind: wakilcore.ProviderKindClaudeCode, ConfigDir: cfg}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WAKIL_ENVIRONMENT", "local")
+	if err := setActiveProvider("work"); err != nil {
+		t.Fatalf("setActiveProvider must work in a pinned process: %v", err)
+	}
+	got, err := wakilcore.ReadActiveUnpinned()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Provider != "work" || got.Environment != "staging" {
+		t.Fatalf("the file must keep the operator's own values, got %+v", got)
 	}
 }

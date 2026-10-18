@@ -716,7 +716,7 @@ private actor CommitCounter {
     let registry = ActionRegistry(journalDirectory: directory, sessionId: "mint")
 
     try await registry.journalMintOutcome(
-        id: "acme", stored: false, origin: .ui, environment: "staging")
+        id: "acme", stored: false, origin: .ui, caller: .test("staging"))
 
     let entries = try await registry.journalEntries()
     guard let entry = entries.first, case .object(let params) = entry.params else {
@@ -736,9 +736,9 @@ private actor CommitCounter {
     let registry = ActionRegistry(journalDirectory: directory, sessionId: "mint")
 
     try await registry.journalMintOutcome(
-        id: "acme", stored: true, origin: .ui, environment: "staging")
+        id: "acme", stored: true, origin: .ui, caller: .test("staging"))
     try await registry.journalMintOutcome(
-        id: "other", stored: false, origin: .ui, environment: "staging")
+        id: "other", stored: false, origin: .ui, caller: .test("staging"))
 
     let entries = try await registry.journalEntries()
     #expect(entries.map(\.outcome) == ["minted", "uncertain"])
@@ -844,7 +844,7 @@ private actor AddProviderRecorder: ToolCaller {
             "id": .string("walk-2e"), "configDir": .string("/Users/x/.claude-walk-2e"),
             "claudePath": .string("/Users/x/.local/bin/claude"),
         ]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     let calls = await recorder.recorded()
     guard let call = calls.first(where: { $0.tool == "add_provider" }),

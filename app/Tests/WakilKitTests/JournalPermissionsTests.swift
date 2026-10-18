@@ -16,7 +16,7 @@ private func dispatchOne(_ registry: ActionRegistry) async throws {
         name: "fine", description: "test", kind: .control,
         audience: .operatorOnly, schema: .object([:]), handler: { _ in .null }))
     _ = try await registry.dispatch(
-        name: "fine", params: .object([:]), origin: .ui, environment: "staging", confirmation: nil)
+        name: "fine", params: .object([:]), origin: .ui, caller: .test("staging"), confirmation: nil)
 }
 
 @Test func aNewJournalIsTheOperatorsAlone() async throws {

@@ -105,9 +105,9 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
         """)
 }
 
-/// The behavioural half of "nothing changes": the seven names the agent
-/// cannot reach today are exactly the seven it cannot reach after this
-/// prefactor, and every other registered action stays reachable.
+/// The behavioural half of the classification: the names the agent cannot
+/// reach are exactly the ones listed below, and every other registered action
+/// stays reachable. Adding an operator-only action means adding it here.
 @Test func theClassificationLeavesTodaysReachabilityExactlyAsItWas() async throws {
     let wiring = try await wiringWithNoBinaries()
     await wiring.shutdown()
@@ -132,7 +132,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // them.
             "ctx_provider_login",
             // 3b-v (Decision 38): Decision 30 kept — the agent reads editor settings, never writes them.
-            "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+            "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_project",
+            "ctx_set_project_editor_settings",
             "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
             // 2e (#207). The reason NEW to this set: every other member
             // objects to what the agent could REACH, and these two object

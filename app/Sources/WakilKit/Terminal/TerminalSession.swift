@@ -534,17 +534,14 @@ final class TerminalSession: @unchecked Sendable {
         let pathC = strdup(executable)
         let cwdC = strdup(cwd)
         let argvC = Self.makeCArray(argv)
-        // **Seeded from this process's environment, with the caller's
-        // entries layered on top.** `execve` REPLACES the environment
-        // rather than overlaying it the way the earlier `execv` +
-        // `setenv` pair did, so passing only the caller's dictionary —
-        // which defaults to empty — handed the shell nothing: `TERM=dumb`,
-        // `HOME`, `USER` and `LANG` empty, and bash falling back to its
-        // built-in `PATH` of `/usr/gnu/bin:/usr/local/bin:/bin:/usr/bin:.`,
-        // trailing `.` and all. No rc file is read without `HOME`, which
-        // is exactly what Task 7's shell-integration injection needs.
-        var merged = ProcessInfo.processInfo.environment
-        for (key, value) in environment { merged[key] = value }
+        // **The whole environment, as given.** `execve` REPLACES the
+        // environment rather than overlaying it, so `environment` must
+        // already be complete — `TerminalStore.childEnvironment` seeds it
+        // from this process's own. Passing a partial one hands the shell
+        // nothing: `TERM=dumb`, `HOME`, `USER` and `LANG` empty, bash's
+        // built-in `PATH`, and no rc file read. Not re-merged here, so a
+        // key the store removed (an inherited `WAKIL_PROJECT`) stays removed.
+        let merged = environment
         let envC = Self.makeCArray(merged.map { "\($0.key)=\($0.value)" })
         defer {
             free(pathC)

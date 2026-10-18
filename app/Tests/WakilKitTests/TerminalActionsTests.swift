@@ -39,7 +39,7 @@ private struct NoPaneIdReturned: Error {}
 private func open(_ registry: ActionRegistry, path: String) async throws -> String {
     let result = try await registry.dispatch(
         name: "term_open", params: .object(["path": .string(path)]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     guard case .object(let fields) = result, case .string(let paneId)? = fields["pane"] else {
         throw NoPaneIdReturned()
     }
@@ -72,7 +72,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
 
     let result = try await registry.dispatch(
         name: "term_open", params: .object(["path": .string(NSTemporaryDirectory())]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     guard case .object(let fields) = result, case .string(let paneId)? = fields["pane"] else {
         Issue.record("no pane id returned"); return
@@ -113,7 +113,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
     _ = try await registry.dispatch(
         name: "term_open",
         params: .object(["pane": .string(first), "path": .string(second.path)]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     let opened = await layout.snapshot().panes.first { $0.id == first }
     #expect(opened?.terminalPath == second.path)
@@ -130,7 +130,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
 
     let result = try await registry.dispatch(
         name: "term_open", params: .object(["path": .string(NSTemporaryDirectory())]),
-        origin: .agent, environment: "production", confirmation: nil)
+        origin: .agent, caller: .test("production"), confirmation: nil)
 
     #expect(result != .null)
     let descriptor = await registry.all().first { $0.name == "term_open" }
@@ -148,7 +148,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
 
     _ = try await registry.dispatch(
         name: "term_open", params: .object(["path": .string("/usr/lib")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     await terminals.shutdownAll(runStream: .finish)
 }
@@ -161,7 +161,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
     _ = try await registry.dispatch(
         name: "term_open",
         params: .object(["pane": .string(first), "path": .string("/usr/lib")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     #expect(await terminals.pidForTesting(paneId: first) != pidBefore)
     #expect(kill(pidBefore!, 0) == -1)
@@ -176,7 +176,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
         _ = try await registry.dispatch(
             name: "term_open",
             params: .object(["path": .string("/tmp"), "shell": .string("/bin/fish")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     await terminals.shutdownAll(runStream: .finish)
 }
@@ -210,7 +210,7 @@ private func waitUntil(
     _ = try await registry.dispatch(
         name: "term_propose",
         params: .object(["pane": .string(pane), "command": .string("kubectl get pods")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     guard let snapshot = (await panes.snapshot(paneId: pane, kind: "terminal")).terminal
     else { Issue.record("no terminal snapshot"); return }
@@ -230,7 +230,7 @@ private func waitUntil(
         _ = try await registry.dispatch(
             name: "term_propose",
             params: .object(["pane": .string(pane), "command": .string(command)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
 
     let proposals = (await panes.terminalBlocks(paneId: pane)).filter { $0.origin == .proposed }
@@ -417,7 +417,7 @@ private func waitUntil(
 
     _ = try await registry.dispatch(
         name: "term_scroll", params: .object(["pane": .string(pane), "block": .string("b1")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     #expect(await panes.terminalScrollTarget(paneId: pane) == "b1")
     await terminals.shutdownAll(runStream: .finish)
@@ -451,7 +451,7 @@ private func waitUntil(
 
     _ = try await registry.dispatch(
         name: "term_scroll", params: .object(["pane": .string(pane)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
 
     #expect(await panes.terminalScrollTarget(paneId: pane) == nil)
     await terminals.shutdownAll(runStream: .finish)
@@ -468,7 +468,7 @@ private func waitUntil(
         _ = try await registry.dispatch(
             name: "term_scroll",
             params: .object(["pane": .string(pane), "block": .string("b-nope")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     await terminals.shutdownAll(runStream: .finish)
 }
@@ -529,7 +529,7 @@ private func waitUntil(
 /// changes for the rest of the app's life — a project switch, an
 /// environment switch, an org switch. A captured value would pin every
 /// shell Wakil ever opens to the launch context, which is the same
-/// reasoning `MCPSocketServer`'s `environmentProvider` already follows for
+/// reasoning `MCPSocketServer`'s `caller` already follows for
 /// the environment the write gate judges.
 @MainActor
 @Test func theActiveContextIsReadAtDispatchTimeAndNotCapturedAtRegistration() async throws {
@@ -612,7 +612,7 @@ private func waitUntil(
 
     let result = try await registry.dispatch(
         name: "term_open", params: .object([:]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     guard case .object(let fields) = result, case .string(let paneId)? = fields["pane"] else {
         Issue.record("no pane id returned"); return
     }
@@ -635,7 +635,7 @@ private func waitUntil(
 
     let result = try await registry.dispatch(
         name: "term_open", params: .object([:]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     guard case .object(let fields) = result, case .string(let paneId)? = fields["pane"] else {
         Issue.record("no pane id returned"); return
     }

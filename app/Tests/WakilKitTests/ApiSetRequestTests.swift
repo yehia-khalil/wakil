@@ -54,7 +54,7 @@ private func fixture(
 private func open(_ f: ApiFixture, entry: String = "billing") async throws -> String {
     let result = try await f.registry.dispatch(
         name: "api_open", params: .object(["entry": .string(entry)]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     guard case .object(let fields) = result, case .string(let paneId)? = fields["pane"] else {
         throw NoPaneIdReturned()
     }
@@ -69,7 +69,7 @@ private func setRequest(
     all["pane"] = .string(pane)
     return try await f.registry.dispatch(
         name: "api_set_request", params: .object(all),
-        origin: origin, environment: "staging", confirmation: nil)
+        origin: origin, caller: .test("staging"), confirmation: nil)
 }
 
 /// The `request` region of what `read_pane` would answer with.
@@ -596,7 +596,7 @@ private func boundJSON(_ bound: ApiBoundValue) -> JSONValue {
     await #expect(throws: ApiActionError.self) {
         _ = try await f.registry.dispatch(
             name: "api_set_request", params: .object(["method": .string("POST")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -649,7 +649,7 @@ private func boundJSON(_ bound: ApiBoundValue) -> JSONValue {
     _ = try await f.registry.dispatch(
         name: "api_set_request",
         params: .object(["pane": .string(paneId), "method": .string("DELETE")]),
-        origin: .agent, environment: "production", confirmation: nil)
+        origin: .agent, caller: .test("production"), confirmation: nil)
     #expect(try await request(f, paneId)["method"] == .string("DELETE"))
 }
 
@@ -854,7 +854,7 @@ private func boundJSON(_ bound: ApiBoundValue) -> JSONValue {
     let row = try #require(await f.panes.apiSnapshot(paneId: paneId).recent.first)
     _ = try await f.registry.dispatch(
         name: "api_reopen", params: .object(["pane": .string(paneId), "row": .string(row.id)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await f.layout.snapshot().panes.first { $0.id == paneId }?.title == "catalog")
 }
 
@@ -885,7 +885,7 @@ func aCrossEntryReopenResolvesTheRowsEntry() async throws {
     let rowId = try await recordSent(f, pane: paneId, entry: "billing", credentialed: true)
     _ = try await f.registry.dispatch(
         name: "api_reopen", params: .object(["pane": .string(paneId), "row": .string(rowId)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     let snap = await f.panes.apiSnapshot(paneId: paneId)
     #expect(snap.entry == "billing")
     #expect(snap.request.origin == "https://billing.example.com")
@@ -896,7 +896,7 @@ func aCrossEntryReopenResolvesTheRowsEntry() async throws {
     let back = try await recordSent(f, pane: paneId, entry: "catalog", credentialed: false)
     _ = try await f.registry.dispatch(
         name: "api_reopen", params: .object(["pane": .string(paneId), "row": .string(back)]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     let after = await f.panes.apiSnapshot(paneId: paneId)
     #expect(after.request.origin == "https://c.example")
     #expect(!after.credentialed)

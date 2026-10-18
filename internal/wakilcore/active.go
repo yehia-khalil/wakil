@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type ActiveContext struct {
@@ -38,9 +39,60 @@ func activePath() (string, error) {
 	return filepath.Join(dir, "active.json"), nil
 }
 
-// ReadActive returns the current org's active context. A missing file is
-// an ordinary state — no project set yet — not an error.
+// PinnedPlace returns the project name (WAKIL_PROJECT) and environment
+// (WAKIL_ENVIRONMENT) this process was launched pinned to. Each is "" when
+// its variable is unset or empty. A pinned process (a background agent
+// kept on the place it started in) resolves against these instead of
+// active.json, which the operator keeps changing underneath it.
+func PinnedPlace() (project string, environment string) {
+	return os.Getenv("WAKIL_PROJECT"), os.Getenv("WAKIL_ENVIRONMENT")
+}
+
+// ErrPinned is the refusal a pinned process gets when it tries to switch
+// an axis its launcher fixed.
+func ErrPinned() error {
+	project, environment := PinnedPlace()
+	return UserError("this process's place is pinned to " + project + "/" + environment + " — it cannot switch project or environment")
+}
+
+// ReadActive returns the current org's active context, with this process's
+// pinned place (PinnedPlace) laid over it: a pinned project name is looked
+// up in the org's registry and replaces Project with that entry's
+// project.json path, and then Environment is WAKIL_ENVIRONMENT alone ("" if
+// unset) — the file's environment belongs to the project on screen, not the
+// pinned one. With only the environment pinned, it replaces the file's.
+// Provider always comes from the file. A missing file is an ordinary state — no
+// project set yet — not an error.
+//
+// Pinning never bypasses Invariant 4: the pinned project's project.json is
+// still checked against the current org by Resolve().
 func ReadActive() (ActiveContext, error) {
+	a, err := ReadActiveUnpinned()
+	if err != nil {
+		return ActiveContext{}, err
+	}
+	project, environment := PinnedPlace()
+	if project != "" {
+		reg, err := LoadRegistry()
+		if err != nil {
+			return ActiveContext{}, err
+		}
+		entry, ok := reg[project]
+		if !ok {
+			return ActiveContext{}, UserError("pinned project " + strconv.Quote(project) + " is not registered in this org")
+		}
+		a.Project = entry.Path
+		a.Environment = environment
+	} else if environment != "" {
+		a.Environment = environment
+	}
+	return a, nil
+}
+
+// ReadActiveUnpinned returns the file's own active context, ignoring the
+// pins. It is for read-modify-write of the file (a provider switch), which
+// must not copy a pinned process's place into the operator's active.json.
+func ReadActiveUnpinned() (ActiveContext, error) {
 	path, err := activePath()
 	if err != nil {
 		return ActiveContext{}, err

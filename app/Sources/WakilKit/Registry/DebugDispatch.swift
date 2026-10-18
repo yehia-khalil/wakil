@@ -104,6 +104,10 @@ private func dispatchOneDebugLine(
         return (encodeDebugErrorLine(#"each line must be a JSON object with a string "action" field"#), true)
     }
     let params = obj["params"] ?? .object([:])
+    // `--dispatch` names an environment and nothing else; the organisation
+    // and project are empty, which the journal records as absent.
+    let caller = DispatchCaller(
+        place: Place(organization: "", project: "", environment: environment), session: nil)
     var confirmation: String?
     if case .string(let c)? = obj["confirmation"] {
         confirmation = c
@@ -114,7 +118,7 @@ private func dispatchOneDebugLine(
             name: name,
             params: params,
             origin: .debug,
-            environment: environment,
+            caller: caller,
             confirmation: confirmation
         )
         return (encodeDebugLine(result), false)
@@ -127,7 +131,7 @@ private func dispatchOneDebugLine(
         // See `recordUncertainMutation`.
         await recordUncertainMutation(
             error, registry: registry, action: name, params: params, origin: .debug,
-            environment: environment)
+            caller: caller)
         return (encodeDebugErrorLine("\(error)"), true)
     }
 }

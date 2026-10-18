@@ -397,3 +397,188 @@ func TestActiveProviderIsEmptyBeforeItIsSet(t *testing.T) {
 		t.Fatalf("Provider = %q after writing an active context with none set, want empty", got.Provider)
 	}
 }
+
+// pinFixture registers projects "a" and "b" in org "initech" (each with a
+// project.json declaring orgOf[name], default "initech") and writes an
+// active.json naming a's path, environment staging, provider p1. It
+// returns the two project.json paths.
+func pinFixture(t *testing.T, orgOf map[string]string) (aPath, bPath string) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("WAKIL_ORG", "initech")
+	mkOrgDir(t, home, "initech")
+	paths := map[string]string{}
+	reg := map[string]ProjectEntry{}
+	for _, name := range []string{"a", "b"} {
+		org := orgOf[name]
+		if org == "" {
+			org = "initech"
+		}
+		dir := filepath.Join(home, name, ".wakil")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, "project.json")
+		body := `{"name":"` + name + `","org":"` + org + `","roots":[{"path":"."}],"environments":{"staging":{"databases":[]},"local":{"databases":[]}}}`
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		paths[name] = p
+		reg[name] = ProjectEntry{Path: p}
+	}
+	if err := SaveRegistry("initech", reg); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteActive(ActiveContext{Project: paths["a"], Environment: "staging", Provider: "p1"}); err != nil {
+		t.Fatal(err)
+	}
+	return paths["a"], paths["b"]
+}
+
+func TestReadActivePinnedProjectOverridesFile(t *testing.T) {
+	_, bPath := pinFixture(t, nil)
+	t.Setenv("WAKIL_PROJECT", "b")
+	t.Setenv("WAKIL_ENVIRONMENT", "local")
+	got, err := ReadActive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ActiveContext{Project: bPath, Environment: "local", Provider: "p1"}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestReadActivePinnedEnvironmentOnly(t *testing.T) {
+	aPath, _ := pinFixture(t, nil)
+	t.Setenv("WAKIL_ENVIRONMENT", "local")
+	got, err := ReadActive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Project != aPath || got.Environment != "local" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestReadActiveEmptyPinIsUnset(t *testing.T) {
+	aPath, _ := pinFixture(t, nil)
+	t.Setenv("WAKIL_PROJECT", "")
+	t.Setenv("WAKIL_ENVIRONMENT", "")
+	got, err := ReadActive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Project != aPath || got.Environment != "staging" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestReadActivePinnedUnknownProjectFails(t *testing.T) {
+	pinFixture(t, nil)
+	t.Setenv("WAKIL_PROJECT", "nope")
+	_, err := ReadActive()
+	if err == nil || !strings.Contains(err.Error(), "nope") || !strings.Contains(err.Error(), "not registered") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestResolvePinnedProjectOtherOrgRefused(t *testing.T) {
+	pinFixture(t, map[string]string{"b": "other"})
+	t.Setenv("WAKIL_PROJECT", "b")
+	_, err := Resolve()
+	if err == nil || !strings.Contains(err.Error(), "belongs to org") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestSetProjectCheckedRefusedWhenPinned(t *testing.T) {
+	pinFixture(t, nil)
+	path, _ := activePath()
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WAKIL_PROJECT", "b")
+	err = SetProjectChecked("a")
+	if err == nil || !strings.Contains(err.Error(), "pinned") {
+		t.Fatalf("got %v", err)
+	}
+	if _, ok := IsUserError(err); !ok {
+		t.Fatalf("want a UserError, got %T", err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("active.json changed")
+	}
+}
+
+func TestReadActiveUnpinnedIgnoresThePins(t *testing.T) {
+	aPath, _ := pinFixture(t, nil)
+	t.Setenv("WAKIL_PROJECT", "b")
+	t.Setenv("WAKIL_ENVIRONMENT", "local")
+	got, err := ReadActiveUnpinned()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Project != aPath || got.Environment != "staging" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestSetProjectCheckedWithOnlyEnvironmentPinnedKeepsTheFilesEnvironment(t *testing.T) {
+	pinFixture(t, nil)
+	t.Setenv("WAKIL_ENVIRONMENT", "local")
+	if err := SetProjectChecked("b"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadActiveUnpinned()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Environment != "staging" {
+		t.Fatalf("pinned environment leaked into active.json: %+v", got)
+	}
+}
+
+// A pinned project takes its environment from WAKIL_ENVIRONMENT alone. The
+// file's environment belongs to whatever project the operator has on screen
+// now, so laying it under a pinned project would hand the pinned session
+// an environment it never started in — production, at worst.
+func TestReadActivePinnedProjectNeverTakesTheFilesEnvironment(t *testing.T) {
+	aPath, _ := pinFixture(t, nil)
+	if err := WriteActive(ActiveContext{Project: aPath, Environment: "production", Provider: "p1"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WAKIL_PROJECT", "b")
+	t.Setenv("WAKIL_ENVIRONMENT", "")
+	got, err := ReadActive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Environment != "" {
+		t.Fatalf("Environment = %q, want \"\" (pinned project, WAKIL_ENVIRONMENT unset)", got.Environment)
+	}
+}
+
+// Resolve reports the registry key of a pinned project as the pin itself,
+// and of an unpinned one by looking the active path up in the registry.
+func TestResolveReportsTheProjectKey(t *testing.T) {
+	pinFixture(t, nil)
+	r, err := Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ProjectKey != "a" {
+		t.Fatalf("unpinned ProjectKey = %q, want a", r.ProjectKey)
+	}
+	t.Setenv("WAKIL_PROJECT", "b")
+	r, err = Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ProjectKey != "b" {
+		t.Fatalf("pinned ProjectKey = %q, want b", r.ProjectKey)
+	}
+}

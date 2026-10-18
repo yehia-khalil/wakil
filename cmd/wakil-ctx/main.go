@@ -51,6 +51,9 @@ func toolErr(err error) *mcp.CallToolResult {
 }
 
 func setEnvironment(name string) error {
+	if project, environment := wakilcore.PinnedPlace(); project != "" || environment != "" {
+		return wakilcore.ErrPinned()
+	}
 	r, err := wakilcore.Resolve()
 	if err != nil {
 		return err
@@ -91,7 +94,7 @@ func setActiveProvider(id string) error {
 	if _, err := wakilcore.LoadProviderFor(org, id); err != nil {
 		return err
 	}
-	a, err := wakilcore.ReadActive()
+	a, err := wakilcore.ReadActiveUnpinned()
 	if err != nil {
 		return err
 	}

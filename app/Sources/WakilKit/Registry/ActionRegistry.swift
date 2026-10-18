@@ -183,18 +183,18 @@ public actor ActionRegistry {
         name: String,
         params: JSONValue,
         origin: ActionOrigin,
-        environment: String,
+        caller: DispatchCaller,
         confirmation: String?
     ) async throws -> JSONValue {
         guard let action = actions[name] else {
             try appendJournalEntry(action: name, params: params, origin: origin,
-                                   environment: environment, outcome: "unknown",
+                                   caller: caller, outcome: "unknown",
                                    secretParams: nil)
             throw ActionError.unknown(name)
         }
 
         switch writeGate(
-            environment: environment,
+            environment: caller.place.environment,
             kind: action.kind,
             origin: origin,
             targetEnvironment: targetEnvironment(of: action, in: params),
@@ -203,13 +203,13 @@ public actor ActionRegistry {
         {
         case .block:
             try appendJournalEntry(action: name, params: params, origin: origin,
-                                   environment: environment, outcome: "blocked",
+                                   caller: caller, outcome: "blocked",
                                    secretParams: action.secretParams)
             throw ActionError.blockedInProduction(name)
         case .gate:
             if confirmation != "confirm" {
                 try appendJournalEntry(action: name, params: params, origin: origin,
-                                   environment: environment, outcome: "gated",
+                                   caller: caller, outcome: "gated",
                                    secretParams: action.secretParams)
                 throw ActionError.needsConfirmation(name)
             }
@@ -221,16 +221,18 @@ public actor ActionRegistry {
             // Bound here and nowhere else: `dispatch` is the one place
             // that knows who asked. See `ActionRegistry.dispatchOrigin`.
             let result = try await ActionRegistry.$dispatchOrigin.withValue(origin) {
-                try await action.handler(params)
+                try await ActionRegistry.$dispatchCaller.withValue(caller) {
+                    try await action.handler(params)
+                }
             }
             try appendJournalEntry(action: name, params: params, origin: origin,
-                                   environment: environment, outcome: "ok",
+                                   caller: caller, outcome: "ok",
                                    secretParams: action.secretParams)
             publishDispatch(name)
             return result
         } catch {
             try appendJournalEntry(action: name, params: params, origin: origin,
-                                   environment: environment, outcome: "error",
+                                   caller: caller, outcome: "error",
                                    secretParams: action.secretParams,
                                    reason: Self.reason(for: error, params: params,
                                                        secretParams: action.secretParams))
@@ -320,7 +322,7 @@ public actor ActionRegistry {
     /// `"error"` is Wakil reporting that it stopped waiting, not evidence
     /// that the database did nothing.
     public func journalUncertainMutation(
-        action: String, params: JSONValue, origin: ActionOrigin, environment: String
+        action: String, params: JSONValue, origin: ActionOrigin, caller: DispatchCaller
     ) throws {
         // The mark is looked up by name rather than taken from the caller,
         // for the same reason `dispatch` reads it off the registered
@@ -330,7 +332,7 @@ public actor ActionRegistry {
         // `public` — falls to the unknown path's rule, so the line beside
         // a redacted one is never the leak.
         try appendJournalEntry(action: action, params: params, origin: origin,
-                               environment: environment, outcome: "uncertain",
+                               caller: caller, outcome: "uncertain",
                                secretParams: actions[action]?.secretParams)
     }
 
@@ -362,7 +364,7 @@ public actor ActionRegistry {
     /// key values — and a record that cannot name what left is not a
     /// record of a send.
     public func journalSentRequest(
-        action: String, params: JSONValue, origin: ActionOrigin, environment: String,
+        action: String, params: JSONValue, origin: ActionOrigin, caller: DispatchCaller,
         url: String, outcome: String
     ) throws {
         var recorded: [String: JSONValue] = [:]
@@ -370,17 +372,17 @@ public actor ActionRegistry {
         recorded["url"] = .string(url)
         try appendJournalEntry(
             action: action, params: .object(recorded), origin: origin,
-            environment: environment, outcome: outcome,
+            caller: caller, outcome: outcome,
             secretParams: actions[action]?.secretParams)
     }
 
     /// 2d-ii: a turn whose text landed from speech. Carries no transcript —
     /// the turn itself is the agent's record; this line says only how it
     /// was entered.
-    public func journalVoiceTurn(environment: String) throws {
+    public func journalVoiceTurn(caller: DispatchCaller) throws {
         try appendJournalEntry(
             action: "voice_turn", params: .object(["via": .string("voice")]), origin: .ui,
-            environment: environment, outcome: "ok", secretParams: [])
+            caller: caller, outcome: "ok", secretParams: [])
     }
 
     /// 2d-i: a note handed to the agent, or a vocabulary source that
@@ -390,11 +392,11 @@ public actor ActionRegistry {
     /// action" to `redacting`, which keeps the keys and replaces every
     /// value with `[redacted]` — a record of a note nobody could read.
     public func journalIdentifierEvent(
-        action: String, params: JSONValue, environment: String, outcome: String
+        action: String, params: JSONValue, caller: DispatchCaller, outcome: String
     ) throws {
         try appendJournalEntry(
             action: action, params: params, origin: .ui,
-            environment: environment, outcome: outcome, secretParams: [])
+            caller: caller, outcome: outcome, secretParams: [])
     }
 
     /// Appends the mint's own outcome line — the second fact `dispatch`
@@ -421,11 +423,11 @@ public actor ActionRegistry {
     /// outcomes, no caller-supplied string, and no route to
     /// `appendJournalEntry` for anything else.
     public func journalMintOutcome(
-        id: String, stored: Bool, origin: ActionOrigin, environment: String
+        id: String, stored: Bool, origin: ActionOrigin, caller: DispatchCaller
     ) throws {
         try appendJournalEntry(
             action: "provider_mint", params: .object(["id": .string(id)]),
-            origin: origin, environment: environment,
+            origin: origin, caller: caller,
             outcome: stored ? "minted" : "uncertain",
             // Empty, not nil: this call KNOWS nothing here is secret.
             secretParams: [])
@@ -542,7 +544,7 @@ public actor ActionRegistry {
         action: String,
         params: JSONValue,
         origin: ActionOrigin,
-        environment: String,
+        caller: DispatchCaller,
         outcome: String,
         secretParams: Set<String>?,
         reason: String? = nil
@@ -553,7 +555,18 @@ public actor ActionRegistry {
             action: action,
             params: Self.redacting(params, secretParams: secretParams),
             origin: origin,
-            environment: environment,
+            // Absent means unset, never the empty string: a caller with no
+            // organisation, project or session (the `--dispatch` runner, the
+            // vocabulary store's reports) journals nothing for it.
+            //
+            // `environment` is the exception, and deliberately: every line
+            // since 2026-09-10 records it, `""` for "none active", so an absent
+            // key keeps meaning "written before environments were journalled"
+            // (`JournalEntry.environment`). Dropping `""` would blur the two.
+            organization: caller.place.organization.nilIfEmpty,
+            project: caller.place.project.nilIfEmpty,
+            environment: caller.place.environment,
+            session: caller.session?.nilIfEmpty,
             outcome: outcome,
             reason: reason
         )
@@ -623,4 +636,15 @@ extension ActionRegistry {
     /// module could bind, and a rule that protects the operator's typing
     /// should not be overridable by a caller that merely knows the name.
     @TaskLocal static var dispatchOrigin: ActionOrigin = .agent
+
+    /// The caller of the dispatch the running handler is part of, bound beside
+    /// `dispatchOrigin` for the same reasons. Read by a handler that journals a
+    /// follow-up line of its own (`api_send`'s sent-URL line), so that line names
+    /// the same place and session as the dispatch line it follows. `nil` outside
+    /// `dispatch`, where no caller is known.
+    @TaskLocal static var dispatchCaller: DispatchCaller?
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

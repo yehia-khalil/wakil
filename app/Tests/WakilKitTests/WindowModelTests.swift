@@ -446,7 +446,7 @@ private func makeRegistry() throws -> (ActionRegistry, PaneStore, LayoutStore) {
     _ = try await registry.dispatch(
         name: "pane_select_cell",
         params: .object(["pane": .string("db-1"), "row": .number(2), "column": .string("id")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     #expect(await waitUntil { model.table("db-1").selection.anchorRow == 2 })
     #expect(model.table("db-1").selection.rows == [2])
@@ -468,7 +468,7 @@ private func makeRegistry() throws -> (ActionRegistry, PaneStore, LayoutStore) {
     _ = try await registry.dispatch(
         name: "pane_move",
         params: .object(["id": .string(id), "x": .number(321), "y": .number(654)]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     #expect(await waitUntil {
         model.layoutSnapshot.panes.first { $0.id == id }?.frame.x == 321
@@ -2071,7 +2071,7 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
             "wakil-recall": URL(fileURLWithPath: "/Apps/Wakil.app/Contents/Resources/wakil-recall"),
             "wakil-git": URL(fileURLWithPath: "/Apps/Wakil.app/Contents/Resources/wakil-git"),
         ],
-        organization: "personal",
+        place: Place(organization: "personal", project: "", environment: ""),
         provider: "primary")
 
     let servers = try decodeConfig(json)
@@ -2100,6 +2100,80 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
     #expect(env["WAKIL_PROVIDER"] == .string("primary"))
 }
 
+@Test func agentConfigPinsEveryServerToThePlace() throws {
+    let servers = try decodeConfig(agentMCPConfigJSON(
+        shimExecutable: URL(fileURLWithPath: "/Apps/Wakil.app/Contents/MacOS/Wakil"),
+        socketPath: "/tmp/wakil-1.sock",
+        binaries: Dictionary(uniqueKeysWithValues: agentFacingServers.map {
+            ($0, URL(fileURLWithPath: "/bin/\($0)"))
+        }),
+        place: Place(organization: "initech", project: "api", environment: "staging"),
+        provider: "primary"))
+
+    #expect(servers.count == agentFacingServers.count + 1)
+    for (name, server) in servers {
+        guard case .object(let entry) = server, case .object(let env)? = entry["env"] else {
+            Issue.record("no env for \(name)")
+            continue
+        }
+        #expect(env["WAKIL_ORG"] == .string("initech"), "\(name)")
+        #expect(env["WAKIL_PROJECT"] == .string("api"), "\(name)")
+        #expect(env["WAKIL_ENVIRONMENT"] == .string("staging"), "\(name)")
+    }
+}
+
+@Test func agentConfigOmitsEmptyPlaceMembers() throws {
+    let servers = try decodeConfig(agentMCPConfigJSON(
+        shimExecutable: URL(fileURLWithPath: "/Apps/Wakil.app/Contents/MacOS/Wakil"),
+        socketPath: "/tmp/wakil-1.sock",
+        binaries: [:],
+        place: Place(organization: "initech", project: "api", environment: ""),
+        provider: nil))
+    guard case .object(let shim)? = servers["wakil"], case .object(let env)? = shim["env"] else {
+        Issue.record("no shim env")
+        return
+    }
+    #expect(env["WAKIL_ORG"] == .string("initech"))
+    #expect(env["WAKIL_PROJECT"] == .string("api"))
+    #expect(env["WAKIL_ENVIRONMENT"] == nil)
+}
+
+/// The registry key, not project.json's name, is what a pin carries: the Go side looks
+/// `WAKIL_PROJECT` up by key, and the two can differ. The window still draws the name.
+@MainActor
+@Test func aPlaceCarriesTheRegistryKeyWhileTheWindowDrawsTheName() async throws {
+    let client = RecordingToolCaller { name, _ in
+        guard name == "get_context" else { return .object([:]) }
+        return .object(["structuredContent": .object([
+            "Org": .string("initech"),
+            "Project": .object(["name": .string("API Service")]),
+            "ProjectKey": .string("api"),
+            "Environment": .string("staging"),
+        ])])
+    }
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot, organization: "initech", context: ContextStore(client: client))
+    await model.refreshContext()
+
+    #expect(model.project == "API Service")
+    #expect(model.place == Place(organization: "initech", project: "api", environment: "staging"))
+    #expect(model.activeShellContext.project == "api")
+
+    let servers = try decodeConfig(agentMCPConfigJSON(
+        shimExecutable: URL(fileURLWithPath: "/Apps/Wakil.app/Contents/MacOS/Wakil"),
+        socketPath: "/tmp/wakil-1.sock", binaries: [:], place: model.place, provider: nil))
+    guard case .object(let shim)? = servers["wakil"], case .object(let env)? = shim["env"] else {
+        Issue.record("no shim env")
+        return
+    }
+    #expect(env["WAKIL_PROJECT"] == .string("api"))
+
+    let shell = model.activeShellContext
+    let terminal = terminalChildEnvironment(
+        org: shell.org, project: shell.project, environment: shell.environment, base: [:])
+    #expect(terminal["WAKIL_PROJECT"] == "api")
+}
+
 /// Spec §2.1: `wakil-ctx`, `wakil-db` and `wakil-http` are "removed from the
 /// agent's configuration entirely" — the registry is their only caller, so
 /// that the pane is state rather than a reconstruction. With
@@ -2115,7 +2189,7 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
             "wakil-db": URL(fileURLWithPath: "/bin/wakil-db"),
             "wakil-http": URL(fileURLWithPath: "/bin/wakil-http"),
         ],
-        organization: nil,
+        place: nil,
         provider: nil))
 
     #expect(servers["wakil-ctx"] == nil)
@@ -2140,10 +2214,10 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
 /// registry does is as much a drift as one that grants less.
 ///
 /// `ctx_set_project` and `ctx_set_environment` are `.control` as of 2b-i
-/// Task 9, and Task 10 (this widening) is what makes `agentAllowedTools`
-/// admit `.control` alongside `.read` — so both are in this list rather than
-/// dropped from it, and `read_layout` joins `read_pane` as a second
-/// hand-written entry.
+/// Task 9 and were in this list once `agentAllowedTools` admitted `.control`
+/// alongside `.read`. They are absent now: both are operator-only, because an
+/// agent's place is fixed when its session starts. `read_layout` joins
+/// `read_pane` as a second hand-written entry.
 @Test func theAllowListIsExactlyTheRegistrysReadAndControlActionsPlusBothReadTools() async {
     // Registering writes nothing: only `dispatch` touches the journal, and
     // nothing here dispatches. The directory is named so a stray write would
@@ -2158,8 +2232,7 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
     // ABSENT from this list — fix round 1 of the acceptance review caught
     // that it must be, alongside session_set_provider (excluded below by
     // name — see `operatorOnlyActions`'s own doc comment). It is `.control`
-    // and would otherwise pass the kind filter exactly like the two
-    // `ctx_` setters beside it, but it writes `active.json`'s Provider
+    // and would otherwise pass the kind filter, but it writes `active.json`'s Provider
     // field, which `WindowSession.swift` reads
     // (`activeContext?.activeProvider`) to choose which account the NEXT
     // window opens under. An agent that could call it freely still could
@@ -2173,10 +2246,10 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
         // `.read`, and not in `operatorOnlyActions`. It answers the active
         // project's environment names and whether each is read-only — no
         // host, no DSN, no credential, since the DSN lives in the Keychain
-        // and never travels with this listing. The agent has been able to
-        // CALL `ctx_set_environment` since 2a while being unable to
-        // enumerate what it could switch to, which is the asymmetry this
-        // closes; the write gate still stands between it and production.
+        // and never travels with this listing. The agent cannot switch
+        // environment (`ctx_set_environment` is operator-only); the listing
+        // tells it which environments exist so it can name the one the work
+        // needs to the operator.
         // ctx_config_tree, added by Phase 2e (#198): `.read`, and NOT in
         // `operatorOnlyActions`, so it passes the filter. Decision 30's
         // new asymmetry stated as one line of a list — the agent may read
@@ -2200,8 +2273,6 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
         // which exists for the two actions that actually MOVE an
         // account rather than merely list what is registered.
         "mcp__wakil__ctx_list_providers",
-        "mcp__wakil__ctx_set_environment",
-        "mcp__wakil__ctx_set_project",
         // db_describe_table, db_list_tables and db_read_table added by
         // Phase 2c-ii Task 10 — the schema browser, each `.read` because
         // it reaches a real database, so all three pass this filter
@@ -2286,7 +2357,7 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
             "wakil-recall": URL(fileURLWithPath: "/bin/wakil-recall"),
             "wakil-git": URL(fileURLWithPath: "/bin/wakil-git"),
         ],
-        organization: nil, provider: nil))
+        place: nil, provider: nil))
 
     let descriptor = ActionDescriptor(
         name: "db_run_query", description: "", kind: .read,
@@ -2315,9 +2386,9 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
     // Layout is reachable — that is the whole point of making it .control.
     #expect(allowed.contains("mcp__wakil__pane_move"))
     #expect(allowed.contains("mcp__wakil__pane_snap"))
-    // Context switching stays reachable: the Phase 2 exit criterion needs
-    // it. The gate, not the allow list, is what governs production.
-    #expect(allowed.contains("mcp__wakil__ctx_set_environment"))
+    // Context switching is operator-only: an agent's place is fixed at session start.
+    #expect(!allowed.contains("mcp__wakil__ctx_set_environment"))
+    #expect(!allowed.contains("mcp__wakil__ctx_set_project"))
     #expect(allowed.contains("mcp__wakil__read_pane"))
     #expect(allowed.contains("mcp__wakil__read_layout"))
     // **Two `.mutate` actions as of 2c-iv**, and both must be absent from
@@ -3246,7 +3317,7 @@ private func machineRow(
     // after its own dispatches.
     _ = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db")]),
-        origin: .agent, environment: "dev", confirmation: nil)
+        origin: .agent, caller: .test("dev"), confirmation: nil)
     await model.refreshLayout()
     #expect(model.layoutSnapshot.panes.count == 2)
 
@@ -3703,7 +3774,7 @@ private func machineRow(
     // operator's path.
     _ = try await registry.dispatch(
         name: "pane_focus", params: .object(["id": .string(only.id)]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     await model.refreshLayout()
 
     #expect(model.keyboardFocusRequests == before + 1)
@@ -4059,7 +4130,7 @@ private func registerNoOpRefetch(into registry: ActionRegistry) async {
     let first = Task {
         try await registry.dispatch(
             name: "db_refetch", params: .object(["pane": .string("db-1")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     #expect(await dbEventually { @Sendable in await dbSnapshot(panes, "db-1").runningSince != nil })
     #expect(await dbEventually { @Sendable in await db.stalled == 1 })
@@ -4102,7 +4173,7 @@ private func registerNoOpRefetch(into registry: ActionRegistry) async {
     let read = Task {
         try await registry.dispatch(
             name: "db_refetch", params: .object(["pane": .string("db-1")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     #expect(await dbEventually { @Sendable in await dbSnapshot(panes, "db-1").runningSince != nil })
     #expect(await dbEventually { @Sendable in await db.stalled == 1 })
@@ -4189,7 +4260,7 @@ private func registerNoOpRefetch(into registry: ActionRegistry) async {
     let read = Task {
         try await registry.dispatch(
             name: "db_refetch", params: .object(["pane": .string("db-1")]),
-            origin: .agent, environment: "dev", confirmation: nil)
+            origin: .agent, caller: .test("dev"), confirmation: nil)
     }
     #expect(await dbEventually { @Sendable in await dbSnapshot(panes, "db-1").runningSince != nil })
     #expect(await dbEventually { @Sendable in await db.stalled == 1 })
@@ -4498,7 +4569,7 @@ private func registerFakeRefetch(
     // without a confirmation.
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-        origin: .agent, environment: model.environment, confirmation: nil)
+        origin: .agent, caller: model.agentCaller, confirmation: nil)
 
     #expect(await waitUntil { model.environment == "staging" })
     // `refreshContext()` and `restorePaneContents()` run one after another
@@ -4583,7 +4654,7 @@ private actor SettingsBackend: ToolCaller {
             "name": .string("ledger"), "driver": .string("mysql"),
             "dsn": .string("mysql://u:p@h/ledger"),
         ]),
-        origin: .agent, environment: model.environment, confirmation: nil)
+        origin: .agent, caller: model.agentCaller, confirmation: nil)
 
     #expect(await waitUntil {
         model.settings?.projects.first?.environments.first?.databases.map(\.name) == ["ledger"]
@@ -5056,8 +5127,8 @@ private func makeCommitCellEditGateFixture(
 /// and the `#expect` below only reads `last` after that call has
 /// returned.
 private final class OrgRecorder: @unchecked Sendable {
-    private(set) var last: String?
-    func record(_ org: String) { last = org }
+    private(set) var last: Place?
+    func record(_ place: Place) { last = place }
 }
 
 /// Pins the whole point of threading the org through `harnessFactory` as a
@@ -5071,10 +5142,25 @@ private final class OrgRecorder: @unchecked Sendable {
     let model = await WindowModel.forTesting(
         scratchRoot: testScratchRoot,
         organization: "alpha",
-        harnessFactory: { org, _ in seen.record(org); return nil })
+        harnessFactory: { place, _ in seen.record(place); return nil })
     await model.setOrganizationForTesting("beta")
     _ = await model.startHarnessForTesting()
-    #expect(seen.last == "beta")
+    #expect(seen.last?.organization == "beta")
+}
+
+/// The harness is pinned to the place on screen when it starts, so an agent keeps working
+/// there after the operator moves on.
+@Test func harnessIsBuiltForThePlaceOnScreenAtSend() async {
+    let seen = OrgRecorder()
+    let model = await WindowModel.forTesting(
+        scratchRoot: testScratchRoot,
+        organization: "initech",
+        harnessFactory: { place, _ in seen.record(place); return nil })
+    await model.seedForTesting(
+        providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+        project: "api", environment: "staging")
+    await model.send("hello")
+    #expect(seen.last == Place(organization: "initech", project: "api", environment: "staging"))
 }
 
 // MARK: - `slugForOrgIdentifier(from:)` — the Creating form's derived id (spec §8.1.1 / §9)
@@ -6322,7 +6408,7 @@ private func oneCell(_ model: WindowModel) -> String {
 
     _ = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     #expect(await waitUntil { !model.layoutSnapshot.panes.isEmpty },
             "the pane never reached the canvas at all")
@@ -6356,7 +6442,7 @@ private func oneCell(_ model: WindowModel) -> String {
 
     _ = try await registry.dispatch(
         name: "pane_open", params: .object(["kind": .string("db")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     #expect(await waitUntil { model.sessionStarted })
 
     #expect(model.lineageRoot == nil,
@@ -6382,7 +6468,7 @@ private func oneCell(_ model: WindowModel) -> String {
     // empty: closing a pane that is not there.
     _ = try? await registry.dispatch(
         name: "pane_close", params: .object(["pane": .string("db-404")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     // Given the same room the assertions above are given, so this reads as
     // "it did not happen" rather than "it had not happened yet".
@@ -6556,7 +6642,7 @@ private actor EnvironmentBackend: ToolCaller {
 @MainActor
 private func environmentWindow(
     _ backend: EnvironmentBackend, persistence: LayoutPersistence? = nil,
-    harnessFactory: @escaping @Sendable (String, ProviderSelection) -> AgentHarness? = { _, _ in nil }
+    harnessFactory: @escaping @Sendable (Place, ProviderSelection) -> AgentHarness? = { _, _ in nil }
 ) async throws -> (WindowModel, ActionRegistry, PaneStore, LayoutStore) {
     let (registry, panes, layout) = try makeRegistry()
     await registerStandardActions(into: registry, context: backend, panes: panes, db: nil, resumes: ResumeBroker())
@@ -6653,7 +6739,7 @@ private func environmentWindow(
 
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("qa")]),
-        origin: .agent, environment: model.environment, confirmation: nil)
+        origin: .agent, caller: model.agentCaller, confirmation: nil)
 
     #expect(await waitUntil {
         await panes.apiSnapshot(paneId: "api-1").request.origin == "https://catalog-qa.example"
@@ -6763,7 +6849,7 @@ private func statement(_ params: JSONValue) -> String? {
         into: registry, panes: panes, layout: layout, http: nil,
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
-        name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+        name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
         confirmation: nil)
     guard case .object(let fields) = opened, case .string(let pane)? = fields["pane"] else {
         throw SilentTestError()
@@ -6771,7 +6857,7 @@ private func statement(_ params: JSONValue) -> String? {
     _ = try await registry.dispatch(
         name: "api_set_request",
         params: .object(["pane": .string(pane), "method": .string("POST")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     let log = SendLog()
     await registry.register(Action(
         name: "api_send", description: "", kind: .read, schema: .object([:]),
@@ -6905,7 +6991,7 @@ private let walkedDraft: JSONValue = .object([
 @MainActor
 private func seededApiWindow(
     _ backend: EnvironmentBackend,
-    harnessFactory: @escaping @Sendable (String, ProviderSelection) -> AgentHarness? = { _, _ in nil }
+    harnessFactory: @escaping @Sendable (Place, ProviderSelection) -> AgentHarness? = { _, _ in nil }
 ) async throws -> (WindowModel, ActionRegistry, PaneStore, LayoutStore) {
     let persistence = LayoutPersistence(directory: try windowScratchDirectory())
     // The project seed a previous session left: the api pane's frame and title, never its draft.
@@ -6926,14 +7012,14 @@ private func seededApiWindow(
     let (model, registry, panes, _) = try await seededApiWindow(backend)
     #expect(await waitUntil { await registry.dispatchSubscriberCount > 0 })
     _ = try await registry.dispatch(
-        name: "api_set_request", params: walkedDraft, origin: .ui, environment: "staging",
+        name: "api_set_request", params: walkedDraft, origin: .ui, caller: .test("staging"),
         confirmation: nil)
     let before = await panes.apiSnapshot(paneId: "api-1")
     let listings = await backend.listings
 
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-        origin: .agent, environment: model.environment, confirmation: nil)
+        origin: .agent, caller: model.agentCaller, confirmation: nil)
     // The pump runs after the dispatch: give it the room every agent-path test here gives it.
     _ = await waitUntil { await backend.listings != listings }
 
@@ -6955,7 +7041,7 @@ private func seededApiWindow(
     let (model, registry, panes, _) = try await seededApiWindow(backend)
     #expect(model.lineageRoot == nil, "a launch files its canvas under no conversation")
     _ = try await registry.dispatch(
-        name: "api_set_request", params: walkedDraft, origin: .ui, environment: "staging",
+        name: "api_set_request", params: walkedDraft, origin: .ui, caller: .test("staging"),
         confirmation: nil)
     let before = await panes.apiSnapshot(paneId: "api-1")
     #expect(before.entry == "catalog")
@@ -6977,7 +7063,7 @@ private func seededApiWindow(
         backend, harnessFactory: { _, _ in StubHarness() })
     #expect(model.lineageRoot == nil)
     _ = try await registry.dispatch(
-        name: "api_set_request", params: walkedDraft, origin: .ui, environment: "staging",
+        name: "api_set_request", params: walkedDraft, origin: .ui, caller: .test("staging"),
         confirmation: nil)
     let before = await panes.apiSnapshot(paneId: "api-1")
 

@@ -194,7 +194,7 @@ private func bindFixture() async throws -> (ActionRegistry, PaneStore, LayoutSto
         activeContext: { ("initech", "proj", "staging", "/tmp") })
 
     let opened = try await registry.dispatch(
-        name: "api_open", params: .object([:]), origin: .agent, environment: "staging",
+        name: "api_open", params: .object([:]), origin: .agent, caller: .test("staging"),
         confirmation: nil)
     guard case .object(let fields) = opened, case .string(let paneId)? = fields["pane"] else {
         throw NoApiPaneOpened()
@@ -221,7 +221,7 @@ func apiBindIsReachableAndFillsTheDraft() async throws {
         params: .object([
             "pane": .string(paneId), "source": .string("db1"), "row": .number(0),
         ]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     guard case .object(let fields) = result else {
         Issue.record("api_bind returned no object"); return
@@ -253,7 +253,7 @@ func apiBindRefusesAnAbsentRow() async throws {
             params: .object([
                 "pane": .string(paneId), "source": .string("db1"), "row": .number(99),
             ]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     // A refusal applies no part of the call.
     #expect(await panes.apiDraft(paneId: paneId).path == [.slot("id")])
@@ -271,14 +271,14 @@ func apiUnbindIsReachableAndReturnsTheHole() async throws {
         params: .object([
             "pane": .string(paneId), "source": .string("db1"), "row": .number(0),
         ]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     _ = try await registry.dispatch(
         name: "api_unbind",
         params: .object([
             "pane": .string(paneId), "region": .string("path"), "index": .number(1),
         ]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     #expect(await panes.apiDraft(paneId: paneId).path == [.literal("/bookings/"), .slot("id")])
 }
@@ -300,7 +300,7 @@ func aBindingStillCannotBeAuthored() async throws {
                     ])
                 ]),
             ]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     #expect(await panes.apiDraft(paneId: paneId).path.isEmpty)
 }
@@ -461,7 +461,7 @@ func integersOffTheWireReachBothActions() async throws {
         name: "api_bind",
         params: try wireParams(#"{"pane":"PANE","source":"db1","row":0}"#
             .replacingOccurrences(of: "PANE", with: paneId)),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     guard case .bound = await panes.apiDraft(paneId: paneId).path[0] else {
         Issue.record("api_bind did not bind from wire-decoded params"); return
     }
@@ -470,7 +470,7 @@ func integersOffTheWireReachBothActions() async throws {
         name: "api_unbind",
         params: try wireParams(#"{"pane":"PANE","region":"path","index":0}"#
             .replacingOccurrences(of: "PANE", with: paneId)),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     #expect(await panes.apiDraft(paneId: paneId).path == [.slot("id")])
 }
 
@@ -485,7 +485,7 @@ func anAbsurdRowIsRefusedRatherThanTrapping() async throws {
             name: "api_bind",
             params: try wireParams(#"{"pane":"PANE","source":"db1","row":1e30}"#
                 .replacingOccurrences(of: "PANE", with: paneId)),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -503,7 +503,7 @@ func aDropIsRefusedUnderTheOperatorsHand() async throws {
             params: .object([
                 "pane": .string(paneId), "source": .string("db1"), "row": .integer(0),
             ]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     // The field under the operator's cursor is not rewritten, and the draft is untouched.
     #expect(await panes.apiDraft(paneId: paneId).path == [.slot("id")])
@@ -617,7 +617,7 @@ func aPureRepointIsReported() async throws {
         params: .object([
             "pane": .string(paneId), "source": .string("db1"), "row": .integer(0),
         ]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     guard case .object(let fields) = result else { Issue.record("no object"); return }
     // Without `rebound` this is byte-identical to a call that did nothing,

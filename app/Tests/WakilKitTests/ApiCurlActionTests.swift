@@ -89,7 +89,7 @@ private struct CurlRig {
         let reply = try await registry.dispatch(
             name: "api_fill_from_curl",
             params: .object(["pane": .string(pane), "text": .string(text)]),
-            origin: origin, environment: "staging", confirmation: nil)
+            origin: origin, caller: .test("staging"), confirmation: nil)
         guard case .object(let fields) = reply else { return [:] }
         return fields
     }
@@ -98,7 +98,7 @@ private struct CurlRig {
     func undo(origin: ActionOrigin = .ui) async throws -> JSONValue {
         try await registry.dispatch(
             name: "api_undo_fill", params: .object(["pane": .string(pane)]),
-            origin: origin, environment: "staging", confirmation: nil)
+            origin: origin, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -114,7 +114,7 @@ private func curlRig(entry: String = "billing", http: CurlHTTP = CurlHTTP()) asy
         activeContext: { ("initech", "proj", "staging", "/tmp") })
     let opened = try await registry.dispatch(
         name: "api_open", params: .object(["entry": .string(entry)]), origin: .ui,
-        environment: "staging", confirmation: nil)
+        caller: .test("staging"), confirmation: nil)
     guard case .object(let f) = opened, case .string(let pane)? = f["pane"] else {
         throw CurlRigFailed()
     }
@@ -227,7 +227,7 @@ func anyOtherWriteForgetsTheKeptDraft() async throws {
     _ = try await rig.registry.dispatch(
         name: "api_set_request",
         params: .object(["pane": .string(rig.pane), "method": .string("PUT")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     await #expect(throws: (any Error).self) { try await rig.undo() }
 
     // Forgotten at the PRESS: Undo after Send must not put back a draft from before a request
@@ -313,7 +313,7 @@ func theLineClearsWithTheKeptDraft() async throws {
     _ = try await rig.registry.dispatch(
         name: "api_set_request",
         params: .object(["pane": .string(rig.pane), "method": .string("PUT")]),
-        origin: .ui, environment: "staging", confirmation: nil)
+        origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await cleared(rig))
 
     try await rig.fill()

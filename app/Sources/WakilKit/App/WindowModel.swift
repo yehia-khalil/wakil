@@ -29,8 +29,21 @@ public final class WindowModel {
     /// `refreshContext()` has answered — `environmentLabel` is what the view
     /// draws, and it says so rather than showing a blank.
     public private(set) var organization = ""
+    /// `project.json`'s name, for drawing. Never what a pin carries — that is `projectKey`.
     public private(set) var project = ""
+    /// The active project's registry key (`ContextStore.ActiveContext.projectKey`), which
+    /// `WAKIL_PROJECT` is looked up by. Set and cleared with `project`.
+    public private(set) var projectKey = ""
     public private(set) var environment = ""
+
+    /// The place on screen now, which a harness is pinned to when it starts.
+    public var place: Place {
+        Place(organization: organization, project: projectKey, environment: environment)
+    }
+    /// What the MCP server reads for an agent's call: the place on screen now,
+    /// with the session the agent runs under. Replaced by the session's own
+    /// pinned place once agents are pinned.
+    public var agentCaller: DispatchCaller { DispatchCaller(place: place, session: sessionId) }
     /// The active project's production declarations (Decision 26, #182).
     ///
     /// Held so the VIEW can hand them to `VoidPalette.forEnvironment` and
@@ -53,8 +66,9 @@ public final class WindowModel {
     /// already the active project's root, falling back to the operator's
     /// home directory when no project is active — so `term_open` need not
     /// repeat that fallback.
+    /// `project` here is the registry key, since it becomes the shell's `WAKIL_PROJECT`.
     public var activeShellContext: (org: String, project: String, environment: String, rootPath: String) {
-        (org: organization, project: project, environment: environment, rootPath: rootPath)
+        (org: organization, project: projectKey, environment: environment, rootPath: rootPath)
     }
     /// One table per pane, keyed by pane id.
     ///
@@ -453,12 +467,13 @@ public final class WindowModel {
     /// ordinary degraded launch — no provider available, or `lookup`
     /// refused it — and says so rather than appearing to send.
     ///
-    /// **The org is a parameter as of 2b-viii, for the same reason the
-    /// provider became one in 2b-vi**: the config JSON this closure builds
-    /// carries `WAKIL_ORG` to every MCP server the agent talks to, so a
-    /// factory that captured the launch org would run a post-switch
-    /// session's servers under the org the window was opened with.
-    private let harnessFactory: @Sendable (String, ProviderSelection) -> AgentHarness?
+    /// **The place is a parameter, for the same reason the provider
+    /// became one in 2b-vi**: the config JSON this closure builds carries
+    /// the whole `Place` — `WAKIL_ORG`, `WAKIL_PROJECT`, `WAKIL_ENVIRONMENT`
+    /// — to every MCP server the agent talks to, pinning the session where
+    /// it starts. A factory that captured the launch place would run a
+    /// later session's servers in the place the window was opened in.
+    private let harnessFactory: @Sendable (Place, ProviderSelection) -> AgentHarness?
     /// Builds a credentials lookup for a given org.
     ///
     /// A factory rather than an instance because `WakilCLICredentialsLookup`
@@ -789,7 +804,7 @@ public final class WindowModel {
         layout: LayoutStore,
         persistence: LayoutPersistence? = nil,
         context: ContextStore?,
-        harnessFactory: @escaping @Sendable (String, ProviderSelection) -> AgentHarness?,
+        harnessFactory: @escaping @Sendable (Place, ProviderSelection) -> AgentHarness?,
         resumes: ResumeBroker,
         rootPath: String,
         providerId: String,
@@ -989,49 +1004,31 @@ public final class WindowModel {
                 // `dispatches()` never finishes on its own, so hoisting
                 // the unwrap would hold `self` for the model's whole life.
                 guard let self else { return }
-                // **Final review, Critical 2.** `ctx_set_environment` has
-                // exactly one caller on the operator's side —
-                // `setEnvironment`, the UI chooser — which follows it with
-                // `refreshContext()` and `restorePaneContents()` by hand.
-                // The agent's own `ctx_set_environment` never goes through
-                // `setEnvironment` at all — it lands here, like any other
-                // dispatch this pump did not make — so without this branch
-                // every open pane kept the environment just left showing on
-                // screen, the banner kept naming it, and `environment`
-                // itself (what `environmentProvider` feeds `writeGate` for
-                // the agent's own next dispatch) stayed stale: a switch
-                // into production judged by the environment just left,
-                // gating a mutation policy says must be blocked outright.
-                // This makes the agent's path do exactly what
-                // `setEnvironment` does for the operator's.
-                //
-                // **`ctx_set_project` gets a branch of its own below, and
-                // #182 is why the gap became material.** A project switch
-                // replaces the whole set of environments, and the
-                // operator's `setProject` refreshes by hand — but the
-                // agent's never did, so the window kept the outgoing
-                // project's name and environment. Those were at least
-                // stale TOGETHER. Decision 26's production flags are not:
-                // `targetEnvironment` reaches `writeGate` fresh from the
-                // caller's params while the declarations stayed the old
-                // project's, so an agent that switched project and then
-                // entered an environment the NEW project declares
-                // production was judged against flags that never
-                // mentioned it — the name rule again, silently, for the
-                // one case the flag exists to cover. D10's own comment
-                // says entering production must cost a gate.
+                // **A backstop for a context switch the setters did not make.**
+                // The operator's switches go through `setEnvironment` and
+                // `setProject`, which refresh by hand, and the agent can no
+                // longer make one at all: `ctx_set_environment` and
+                // `ctx_set_project` are operator-only, because an agent's
+                // place is fixed when its session starts (Invariant 5). These
+                // branches were written for the agent's switch, when it could
+                // make one; they stay so that any dispatch reaching the
+                // registry by another route still leaves the panes, the
+                // banner and `environment` naming the place actually active,
+                // and the gate reading the active project's production flags
+                // (#182) rather than the previous project's.
                 if name == "ctx_set_environment" {
                     // Fix round 1, item 5: the operator's own switch is seen here too, and
                     // `setEnvironment` is already handling it. Wait for it to finish, THEN
                     // compare: the operator's switch reads as a no-op and is not done twice
                     // (whose late clear wiped a reply already received under the new
-                    // environment), while an agent's switch that landed meanwhile still shows.
+                    // environment), while a switch from any other route that landed meanwhile
+                    // still shows.
                     _ = await self.operatorEnvironmentSwitch?.value
                     let before = self.environment
                     await self.refreshContext()
                     // W12: a switch to the active environment changes nothing on screen.
                     if !environmentSwitchIsNoOp(from: before, to: self.environment) {
-                        // The agent's switch now does what the operator's does, replies included.
+                        // Such a switch does what the operator's does, replies included.
                         await self.panes.clearApiResponses(to: self.environment)
                         await self.restorePaneContents()
                     }
@@ -1039,7 +1036,7 @@ public final class WindowModel {
                 // **`ctx_set_project` refreshes and does NOT restore**, which
                 // is exactly what the operator's `setProject` does — it calls
                 // `refreshContext()` alone, where `setEnvironment` calls both.
-                // The branch above exists to make the agent's path do what the
+                // The branch above exists to make any other route do what the
                 // operator's does; doing MORE here would be this pump
                 // inventing a pane policy for project switches that the UI
                 // path does not have, and #179 lists pane restoration on a
@@ -1167,7 +1164,7 @@ public final class WindowModel {
         capacity.attach { [weak self] name, params in
             guard let self else { return .null }
             return try await self.registry.dispatch(name: name, params: params, origin: .ui,
-                                                    environment: self.environment, confirmation: nil)
+                                                    caller: DispatchCaller(place: self.place, session: nil), confirmation: nil)
         }
     }
 
@@ -1259,7 +1256,7 @@ public final class WindowModel {
         layout: LayoutStore,
         persistence: LayoutPersistence? = nil,
         context: ContextStore?,
-        harnessFactory: @escaping @Sendable (String, ProviderSelection) -> AgentHarness?,
+        harnessFactory: @escaping @Sendable (Place, ProviderSelection) -> AgentHarness?,
         resumes: ResumeBroker,
         rootPath: String,
         providerId: String,
@@ -1366,7 +1363,7 @@ public final class WindowModel {
     static func forTesting(
         scratchRoot: URL,
         organization: String = "test-org",
-        harnessFactory: @escaping @Sendable (String, ProviderSelection) -> AgentHarness? = { _, _ in nil },
+        harnessFactory: @escaping @Sendable (Place, ProviderSelection) -> AgentHarness? = { _, _ in nil },
         lookup: ProviderCredentialsLookup? = nil,
         lookupFactory: (@Sendable (String) -> ProviderCredentialsLookup)? = nil,
         context: ContextStore? = nil,
@@ -1575,6 +1572,7 @@ public final class WindowModel {
         self.databaseDrivers = databaseDrivers
         self.layoutSnapshot = layoutSnapshot
         self.project = project
+        self.projectKey = project
         self.environment = environment
     }
 
@@ -1697,6 +1695,7 @@ public final class WindowModel {
             let active = try await context.current()
             organization = active.org
             project = active.project
+            projectKey = active.projectKey
             environment = active.environment
             // **The one writer of the gate's view of production**
             // (Decision 26, #182). `get_context` carried the whole project
@@ -1758,6 +1757,7 @@ public final class WindowModel {
             // provider while `organization` names the new one — the
             // wrong credential boundary, drawn confidently (spec §6).
             project = ""
+            projectKey = ""
             environment = ""
             // The flags belong to the project that could not be read, so
             // they go with it. Keeping them would price the new org's
@@ -1852,6 +1852,7 @@ public final class WindowModel {
         // caller assigns it from the id it switched to, which is more
         // authoritative than anything get_context will say (spec §6).
         project = ""
+        projectKey = ""
         environment = ""
         // Org-derived, and a credential boundary rather than a display
         // detail: the declarations describe the OUTGOING org's project.
@@ -2459,7 +2460,7 @@ public final class WindowModel {
     public func refreshDatabases() async {
         guard let result = try? await registry.dispatch(
             name: "db_list_databases", params: .object([:]), origin: .ui,
-            environment: environment, confirmation: nil)
+            caller: DispatchCaller(place: place, session: nil), confirmation: nil)
         else { return }
         databases = databaseNames(fromListResult: result)
         databaseDrivers = databaseDriverMap(fromListResult: result)
@@ -2495,7 +2496,7 @@ public final class WindowModel {
     public func openSettings() async {
         guard (try? await registry.dispatch(
             name: "settings_open", params: .object([:]), origin: .ui,
-            environment: environment, confirmation: nil)) != nil
+            caller: DispatchCaller(place: place, session: nil), confirmation: nil)) != nil
         else { return }
         await refreshLayout()
         await refreshSettings()
@@ -2529,7 +2530,7 @@ public final class WindowModel {
         do {
             let result = try await registry.dispatch(
                 name: "ctx_config_tree", params: .object([:]), origin: .ui,
-                environment: environment, confirmation: nil)
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             guard let tree = decodeSettingsTree(fromResult: result) else {
                 settingsFailure = "settings could not be read: the reply was not a configuration tree"
                 return
@@ -2551,7 +2552,7 @@ public final class WindowModel {
             if let listing = decodeAccountListing(
                 fromResult: try? await registry.dispatch(
                     name: "ctx_list_accounts", params: .object([:]), origin: .ui,
-                    environment: environment, confirmation: nil))
+                    caller: DispatchCaller(place: place, session: nil), confirmation: nil))
             {
                 accounts = listing
             }
@@ -2582,7 +2583,7 @@ public final class WindowModel {
             _ = try await registry.dispatch(
                 name: "ctx_update_org",
                 params: .object(["id": .string(organisation), field.rawValue: .string(value)]),
-                origin: .ui, environment: environment, confirmation: nil)
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             await refreshSettings()
             return nil
         } catch {
@@ -2600,7 +2601,7 @@ public final class WindowModel {
     public func refreshEditorSettings() async {
         guard let result = try? await registry.dispatch(
                   name: "ctx_editor_settings", params: .object([:]), origin: .ui,
-                  environment: environment, confirmation: nil),
+                  caller: DispatchCaller(place: place, session: nil), confirmation: nil),
               let decoded = decodeEditorSettings(fromResult: result)
         else { return }
         editorSettings = decoded
@@ -2631,7 +2632,7 @@ public final class WindowModel {
         var refusal: String?
         do {
             _ = try await registry.dispatch(
-                name: action, params: params, origin: .ui, environment: environment, confirmation: nil)
+                name: action, params: params, origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
         } catch {
             refusal = statusDescribingFailure(action, error)
         }
@@ -2811,7 +2812,7 @@ public final class WindowModel {
         do {
             let result = try await registry.dispatch(
                 name: "ctx_add_provider", params: params, origin: .ui,
-                environment: environment, confirmation: nil)
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             guard case .object(let object) = result,
                   case .object(let structured)? = object["structuredContent"],
                   let data = try? JSONEncoder().encode(JSONValue.object(structured)),
@@ -2838,7 +2839,8 @@ public final class WindowModel {
     /// id itself. See `ActionRegistry.journalMintOutcome`.
     private func journalMintOutcome(id: String, stored: Bool) async {
         try? await registry.journalMintOutcome(
-            id: id, stored: stored, origin: .ui, environment: environment)
+            id: id, stored: stored, origin: .ui,
+            caller: DispatchCaller(place: place, session: nil))
     }
 
     /// Re-authenticates an existing row, in place (#205).
@@ -2950,7 +2952,7 @@ public final class WindowModel {
         guard let result = try? await registry.dispatch(
             name: "ctx_unlink_provider",
             params: .object(["id": .string(account.accountId), "org": .string(account.org)]),
-            origin: .ui, environment: environment, confirmation: nil)
+            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
         else {
             await refreshSettings()
             return nil
@@ -2997,7 +2999,7 @@ public final class WindowModel {
         do {
             _ = try await registry.dispatch(
                 name: "db_set_dsn", params: .object(params), origin: .ui,
-                environment: self.environment, confirmation: nil)
+                caller: DispatchCaller(place: self.place, session: nil), confirmation: nil)
             await refreshSettings()
             return nil
         } catch {
@@ -3022,7 +3024,7 @@ public final class WindowModel {
                     "projectPath": .string(projectPath), "environment": .string(environment),
                     "name": .string(name),
                 ]),
-                origin: .ui, environment: self.environment, confirmation: nil)
+                origin: .ui, caller: DispatchCaller(place: self.place, session: nil), confirmation: nil)
             await refreshSettings()
             return nil
         } catch {
@@ -3136,7 +3138,7 @@ public final class WindowModel {
     private func deriveProviderConfigDir(id: String) async -> String? {
         guard let result = try? await registry.dispatch(
             name: "ctx_provider_login", params: .object(["id": .string(id)]),
-            origin: .ui, environment: environment, confirmation: nil),
+            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil),
             case .object(let fields) = result,
             case .string(let configDir)? = fields["configDir"], !configDir.isEmpty
         else {
@@ -3801,7 +3803,7 @@ public final class WindowModel {
                     "pane": .string(pane), "source": .string(source),
                     "row": .integer(Int64(row)),
                 ]),
-                origin: .ui, environment: environment, confirmation: nil)
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             outcome = .result(result)
             status = ""
         } catch {
@@ -3822,7 +3824,7 @@ public final class WindowModel {
             outcome = .result(try await registry.dispatch(
                 name: "api_fill_from_curl",
                 params: .object(["pane": .string(pane), "text": .string(text)]),
-                origin: .ui, environment: environment, confirmation: nil))
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil))
             status = ""
         } catch {
             outcome = .refused(String(describing: error))
@@ -3838,7 +3840,7 @@ public final class WindowModel {
         do {
             outcome = .result(try await registry.dispatch(
                 name: "api_undo_fill", params: .object(["pane": .string(pane)]),
-                origin: .ui, environment: environment, confirmation: nil))
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil))
             status = ""
         } catch {
             outcome = .refused(String(describing: error))
@@ -4072,7 +4074,7 @@ public final class WindowModel {
             params["pane"] = .string(pane.id)
             _ = try? await registry.dispatch(
                 name: "editor_refresh", params: .object(params),
-                origin: .ui, environment: environment, confirmation: nil)
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
         }
         await refreshPanes()
     }
@@ -4105,7 +4107,7 @@ public final class WindowModel {
             if let root { params["root"] = .string(root) }
             _ = try? await registry.dispatch(
                 name: "editor_refresh", params: .object(params),
-                origin: .ui, environment: environment, confirmation: nil)
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
         }
         await refreshPanes()
     }
@@ -4515,7 +4517,7 @@ public final class WindowModel {
         if replace { params["replace"] = .bool(true) }
         do {
             _ = try await registry.dispatch(name: "editor_save", params: .object(params), origin: .ui,
-                                            environment: environment, confirmation: nil)
+                                            caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             status = ""
         } catch EditorActionError.targetExists(let existing) {
             return .exists(name: (existing as NSString).lastPathComponent)
@@ -4919,7 +4921,7 @@ public final class WindowModel {
         let save = Task {
             do {
                 _ = try await self.registry.dispatch(name: "editor_save", params: params, origin: .ui,
-                                                     environment: environment, confirmation: nil)
+                                                     caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             } catch where self.isRoutineCancel(error) || apiSurfaceRefusalIsSilent(error) {
                 // A cancelled save is told nothing, as `dispatch` does.
             } catch {
@@ -5886,7 +5888,7 @@ public final class WindowModel {
         do {
             let result = try await registry.dispatch(
                 name: action, params: .object([:]), origin: .ui,
-                environment: environment, confirmation: nil)
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             guard case .object(let object) = result,
                   case .object(let structured)? = object["structuredContent"]
             else {
@@ -5945,7 +5947,7 @@ public final class WindowModel {
         do {
             let result = try await registry.dispatch(
                 name: name, params: params, origin: .ui,
-                environment: environment, confirmation: nil)
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             status = ""
             return result
         } catch ActionError.needsConfirmation {
@@ -6018,7 +6020,7 @@ public final class WindowModel {
         do {
             let result = try await registry.dispatch(
                 name: name, params: params, origin: .ui,
-                environment: environment, confirmation: nil)
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             status = ""
             return .ran(result)
         } catch ActionError.needsConfirmation {
@@ -6066,7 +6068,7 @@ public final class WindowModel {
 
         switch await confirmations.request(proposal) {
         case .approved:
-            // `environment` is the property, read here rather than
+            // `place` is the property, read here rather than
             // captured before the park, so the gate judges the environment
             // as it stands at the moment the operator confirmed — a ⌘K
             // switch into production while the plane was up must block
@@ -6078,17 +6080,17 @@ public final class WindowModel {
             // pair, and a pair that disagreed about the environment would
             // be worse than one that named none. The binding is outside the
             // `do` so the `catch` can see it.
-            let judged = environment
+            let judged = place
             do {
                 let result = try await registry.dispatch(
                     name: name, params: params, origin: .ui,
-                    environment: judged, confirmation: "confirm")
+                    caller: DispatchCaller(place: judged, session: nil), confirmation: "confirm")
                 status = ""
                 return .ran(result)
             } catch {
                 await recordUncertainMutation(
                     error, registry: registry, action: name, params: params, origin: .ui,
-                    environment: judged)
+                    caller: DispatchCaller(place: judged, session: nil))
                 status = statusDescribingFailure(name, error)
                 return .refused(status)
             }
@@ -6158,7 +6160,7 @@ public final class WindowModel {
         else {
             return nil
         }
-        guard let harness = harnessFactory(organization, ProviderSelection(id: providerId, credentials: credentials)) else {
+        guard let harness = harnessFactory(place, ProviderSelection(id: providerId, credentials: credentials)) else {
             status = "no agent session: no agent available for provider \(providerId)"
             return nil
         }
@@ -6324,7 +6326,7 @@ public final class WindowModel {
             // `voice_turn` line, and no suspension sits before the
             // org-switch generation guard in `textWithIdentifierNote`.
             if source == .voice {
-                try? await registry.journalVoiceTurn(environment: environment)
+                try? await registry.journalVoiceTurn(caller: DispatchCaller(place: place, session: nil))
             }
             status = ""
             return true
@@ -6485,7 +6487,7 @@ public final class WindowModel {
         else {
             return
         }
-        guard let next = harnessFactory(organization, ProviderSelection(id: providerId, credentials: credentials)) else {
+        guard let next = harnessFactory(place, ProviderSelection(id: providerId, credentials: credentials)) else {
             status = "resume \(parent): no agent session available"
             return
         }
@@ -6549,7 +6551,7 @@ public final class WindowModel {
         _ = try? await registry.dispatch(
             name: "session_record_parent",
             params: .object(["child": .string(child), "parent": .string(parent)]),
-            origin: .ui, environment: environment, confirmation: nil)
+            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
         // Last, and only once the swap has actually happened: the canvas
         // follows the conversation. A resume that returned early above
         // never reaches here, so a refused resume leaves the arrangement
@@ -6593,7 +6595,7 @@ public final class WindowModel {
     private func lineageRootOfSession(_ id: String) async -> String? {
         guard let result = try? await registry.dispatch(
             name: "session_get", params: .object(["id": .string(id)]),
-            origin: .ui, environment: environment, confirmation: nil)
+            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
         else { return nil }
         guard case .object(let object) = result,
             case .object(let structured)? = object["structuredContent"],
@@ -6758,7 +6760,7 @@ public final class WindowModel {
             return
         }
         guard let next = harnessFactory(
-            organization, ProviderSelection(id: id, credentials: credentials)) else {
+            place, ProviderSelection(id: id, credentials: credentials)) else {
             status = "set provider \(id): no agent session available"
             return
         }
@@ -6833,7 +6835,7 @@ public final class WindowModel {
         _ = try? await registry.dispatch(
             name: "ctx_set_provider",
             params: .object(["name": .string(id)]),
-            origin: .ui, environment: environment, confirmation: nil)
+            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
         // The new account's capacity, probed: a switch is one of the three
         // moments that asks for it (launch and a turn's end are the others).
         // Started after the canvas below, unawaited: it never holds the switch (Rule 4).
@@ -7796,7 +7798,7 @@ public final class WindowModel {
         if let settings { return settings.org.speechProvider }
         guard let result = try? await registry.dispatch(
             name: "ctx_config_tree", params: .object([:]), origin: .ui,
-            environment: environment, confirmation: nil),
+            caller: DispatchCaller(place: place, session: nil), confirmation: nil),
               let tree = decodeSettingsTree(fromResult: result) else { return "" }
         settings = tree
         return tree.org.speechProvider
@@ -7821,7 +7823,7 @@ public final class WindowModel {
         nextThoughtId += 1
         try? await registry.journalIdentifierEvent(
             action: "identifiers_resolved", params: .object(["note": .string(note)]),
-            environment: environment, outcome: "ok")
+            caller: DispatchCaller(place: place, session: nil), outcome: "ok")
         return text + "\n\n" + note
     }
 
@@ -7871,7 +7873,7 @@ public final class WindowModel {
         let result = try await registry.dispatch(
             name: "session_read",
             params: .object(["id": .string(id), "limit": .number(Double(Self.rebuiltThreadLimit))]),
-            origin: .ui, environment: environment, confirmation: nil)
+            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
         guard case .object(let object) = result, case .object(let structured)? = object["structuredContent"] else {
             throw ReadThreadError.malformedResult("session_read: the result carried no structuredContent object")
         }
@@ -8113,7 +8115,11 @@ public final class WindowModel {
         // — so there is nothing to retry here even if this did throw.
         _ = try? await registry.dispatch(
             name: "term_run", params: params, origin: .ui,
-            environment: environment, confirmation: nil)
+            caller: DispatchCaller(
+                place: Place(organization: context.org, project: context.project,
+                             environment: context.environment),
+                session: nil),
+            confirmation: nil)
     }
 
     /// The operator's `⏎` on a proposal.
@@ -8220,7 +8226,7 @@ public final class WindowModel {
     func openTerminalForTesting(path: String) async -> String {
         guard let result = try? await registry.dispatch(
             name: "term_open", params: .object(["path": .string(path)]),
-            origin: .ui, environment: environment, confirmation: nil),
+            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil),
             case .object(let fields) = result, case .string(let pane)? = fields["pane"]
         else { return "" }
         await mirror.backfill()
@@ -8257,7 +8263,7 @@ public final class WindowModel {
         _ = try? await registry.dispatch(
             name: "term_propose",
             params: .object(["pane": .string(pane), "command": .string(command)]),
-            origin: .agent, environment: environment, confirmation: nil)
+            origin: .agent, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
     }
 
     /// TEST-ONLY: `pane`'s pending proposal, or `nil`.

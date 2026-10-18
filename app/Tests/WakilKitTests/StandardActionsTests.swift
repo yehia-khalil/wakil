@@ -500,7 +500,7 @@ struct DBActionTests {
             containers: [("events", "table"), ("customers", "table")])
         _ = try await harness.registry.dispatch(
             name: "db_list_tables", params: .object([:]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         let pane = await harness.layout.snapshot().panes[0]
         #expect(pane.fetch?.query == .tables(database: nil))
         guard case .object(let snap) = await harness.panes.readPane(paneId: pane.id, kind: "db"),
@@ -521,7 +521,7 @@ struct DBActionTests {
             schema: [("id", "INTEGER"), ("kind", "TEXT")])
         _ = try await harness.registry.dispatch(
             name: "db_describe_table", params: .object(["table": .string("events")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         let pane = await harness.layout.snapshot().panes[0]
         #expect(pane.fetch?.query == .columns(database: nil, table: "events"))
         guard case .object(let snap) = await harness.panes.readPane(paneId: pane.id, kind: "db"),
@@ -536,7 +536,7 @@ struct DBActionTests {
         await #expect(throws: StandardActionError.self) {
             _ = try await harness.registry.dispatch(
                 name: "db_describe_table", params: .object([:]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
         }
     }
 
@@ -544,7 +544,7 @@ struct DBActionTests {
         let harness = try await DBActionHarness(rows: [["id", "kind"], [1, "a"]])
         _ = try await harness.registry.dispatch(
             name: "db_read_table", params: .object(["table": .string("events")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         let pane = await harness.layout.snapshot().panes[0]
         #expect(pane.fetch?.query == .table(database: nil, name: "events"))
         // Which is the whole reason .table exists as its own case rather than
@@ -559,11 +559,11 @@ struct DBActionTests {
         let existing = await harness.layout.open(kind: "db", title: "main")
         _ = try await harness.registry.dispatch(
             name: "db_list_tables", params: .object(["pane": .string(existing.id)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         #expect(await harness.layout.snapshot().panes.count == 1)
         _ = try await harness.registry.dispatch(
             name: "db_list_tables", params: .object([:]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         #expect(await harness.layout.snapshot().panes.count == 2)
     }
 
@@ -585,7 +585,7 @@ struct DBActionTests {
         let harness = try await DBActionHarness(rows: [["id"], [1]])
         _ = try await harness.registry.dispatch(
             name: "db_run_query", params: .object(["query": .string("SELECT * FROM events")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         let snapshot = await harness.layout.snapshot()
         #expect(snapshot.panes.count == 1)
         #expect(snapshot.panes[0].kind == "db")
@@ -598,7 +598,7 @@ struct DBActionTests {
         for _ in 0..<2 {
             _ = try await harness.registry.dispatch(
                 name: "db_run_query", params: .object(["query": .string("SELECT * FROM events")]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
         }
         #expect(await harness.layout.snapshot().panes.count == 2)
     }
@@ -610,7 +610,7 @@ struct DBActionTests {
             name: "db_run_query",
             params: .object(["query": .string("SELECT * FROM events WHERE id = 1"),
                      "pane": .string(pane.id)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         let snapshot = await harness.layout.snapshot()
         #expect(snapshot.panes.count == 1)
         #expect(snapshot.panes[0].fetch?.query
@@ -622,7 +622,7 @@ struct DBActionTests {
         _ = try await harness.registry.dispatch(
             name: "db_run_query",
             params: .object(["query": .string("SELECT 1"), "database": .string("analytics")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         let fetch = await harness.layout.snapshot().panes[0].fetch
         #expect(fetch?.query == .sql(database: "analytics", raw: "SELECT 1"))
         #expect(fetch?.offset == 0)
@@ -637,7 +637,7 @@ struct DBActionTests {
             _ = try await harness.registry.dispatch(
                 name: "db_run_query",
                 params: .object(["query": .string("SELECT 1"), "pane": .string("db-404")]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
         }
     }
 
@@ -648,7 +648,7 @@ struct DBActionTests {
             name: "db_run_query",
             params: .object(["query": .string("SELECT 1"), "pane": .string(pane.id),
                      "offset": .number(500)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         #expect(await harness.layout.fetch(id: pane.id)?.offset == 500)
         // And the offset reaches the server, not just the layout.
         #expect(await harness.lastArguments["offset"] == .number(500))
@@ -658,7 +658,7 @@ struct DBActionTests {
         let harness = try await DBActionHarness(rows: [["id"], [1]])
         let result = try await harness.registry.dispatch(
             name: "db_run_query", params: .object(["query": .string("SELECT 1")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         guard case .object(let obj) = result, case .string(let pane)? = obj["pane"] else {
             Issue.record("the result must name the pane"); return
         }
@@ -682,7 +682,7 @@ struct DBActionTests {
         _ = try await registry.dispatch(
             name: "db_run_query",
             params: .object(["query": .string("select 1"), "pane": .string("db-2")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
 
         guard case .object(let named) = await panes.readPane(paneId: "db-2", kind: "db"),
               case .object(let fallback) = await panes.readPane(paneId: "db", kind: "db") else {
@@ -707,7 +707,7 @@ struct DBActionTests {
 
         _ = try await registry.dispatch(
             name: "db_run_query", params: .object(["query": .string("select 1")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         guard case .object(let fallback) = await panes.readPane(paneId: "db", kind: "db") else {
             Issue.record("snapshot is not an object")
             return
@@ -748,7 +748,7 @@ struct DBActionTests {
 
         _ = try await registry.dispatch(
             name: "db_run_query", params: .object(["query": .string("select 1")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
 
         // A second, separate pane now exists...
         let allPanes = await layout.snapshot().panes
@@ -804,7 +804,7 @@ struct DBActionTests {
                 "database": .string("events"),
                 "pane": .string(existing.id),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         let pane = try #require(
             await layout.snapshot().panes.first(where: { $0.id == existing.id }))
@@ -840,7 +840,7 @@ struct DBActionTests {
                 "query": .string("select * from events"),
                 "pane": .string(existing.id),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         let pane = try #require(
             await layout.snapshot().panes.first(where: { $0.id == existing.id }))
@@ -879,7 +879,7 @@ struct DBActionTests {
                 params: .object([
                     "query": .string("select 1"), "pane": .string("core.customers"),
                 ]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
             Issue.record("a pane id that names nothing should not have been accepted")
         } catch let error as StandardActionError {
             guard case .unknownPane(_, let named, let open) = error else {
@@ -923,7 +923,7 @@ struct DBActionTests {
         _ = try await registry.dispatch(
             name: "db_run_query",
             params: .object(["query": .string("select 1"), "pane": .string(real.id)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
 
         guard case .object(let snapshot) = await panes.readPane(paneId: real.id, kind: "db") else {
             Issue.record("snapshot is not an object")
@@ -957,7 +957,7 @@ struct DBActionTests {
         let result = try await registry.dispatch(
             name: "db_run_query",
             params: .object(["query": .string("select 1"), "pane": .string(real.id)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
 
         guard case .object(let obj) = result else {
             Issue.record("db_run_query did not return an object")
@@ -1002,7 +1002,7 @@ struct DBActionTests {
         let result = try await registry.dispatch(
             name: "db_run_query",
             params: .object(["query": .string("select 1"), "database": .string("events")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
 
         // A real pane now exists — kind "db" so every route keyed on kind
         // finds it, titled after the database the rows came from, focused
@@ -1100,7 +1100,7 @@ struct DBActionTests {
             PaneFetch(query: .sql(database: "main", raw: "SELECT * FROM events")), id: pane.id)
         _ = try await harness.registry.dispatch(
             name: "db_refetch", params: .object(["pane": .string(pane.id)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         #expect(await harness.lastTool == "query")
         #expect(await harness.lastArguments["query"] == .string("SELECT * FROM events"))
         #expect(await harness.lastArguments["database"] == .string("main"))
@@ -1119,7 +1119,7 @@ struct DBActionTests {
             await harness.layout.setFetch(PaneFetch(query: subject), id: pane.id)
             _ = try await harness.registry.dispatch(
                 name: "db_refetch", params: .object(["pane": .string(pane.id)]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
             #expect(await harness.lastTool == tool)
         }
     }
@@ -1130,7 +1130,7 @@ struct DBActionTests {
         await #expect(throws: StandardActionError.self) {
             _ = try await harness.registry.dispatch(
                 name: "db_refetch", params: .object(["pane": .string(pane.id)]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
         }
     }
 
@@ -1149,7 +1149,7 @@ struct DBActionTests {
             rows: [[.number(1)]], millis: 0, truncated: true, pageable: true, offset: 0, sort: [], listsTables: false, editable: nil)
         _ = try await harness.registry.dispatch(
             name: "db_page", params: .object(["pane": .string(pane.id), "to": .string("next")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         #expect(await harness.layout.fetch(id: pane.id)?.offset == 500)
         #expect(await harness.lastArguments["offset"] == .number(500))
     }
@@ -1164,7 +1164,7 @@ struct DBActionTests {
             rows: [[.number(1)]], millis: 0, truncated: false, pageable: true, offset: 0, sort: [], listsTables: false, editable: nil)
         _ = try await harness.registry.dispatch(
             name: "db_page", params: .object(["pane": .string(pane.id), "to": .string("previous")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         #expect(await harness.layout.fetch(id: pane.id)?.offset == 0)
     }
 
@@ -1182,7 +1182,7 @@ struct DBActionTests {
         await #expect(throws: LayoutActionError.self) {
             _ = try await harness.registry.dispatch(
                 name: "db_page", params: .object(["pane": .string(pane.id), "to": .string("sideways")]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
         }
     }
 
@@ -1210,7 +1210,7 @@ struct DBActionTests {
         do {
             _ = try await harness.registry.dispatch(
                 name: "db_page", params: .object(["pane": .string(pane.id), "to": .string("next")]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
             Issue.record("expected db_page to refuse a pane whose result is not pageable")
         } catch let error as StandardActionError {
             guard case .paneNotPageable(let action, let namedPane) = error else {
@@ -1253,7 +1253,7 @@ struct DBActionTests {
             _ = try await harness.registry.dispatch(
                 name: "db_page",
                 params: .object(["pane": .string(pane.id), "to": .string("20000000000000000")]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
         }
         #expect(await harness.layout.fetch(id: pane.id)?.offset == 0)
     }
@@ -1280,7 +1280,7 @@ struct DBActionTests {
         await #expect(throws: StandardActionError.self) {
             _ = try await harness.registry.dispatch(
                 name: "db_page", params: .object(["pane": .string(pane.id), "to": .string("next")]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
         }
         // The pane is still on page one, which is what it is still SHOWING.
         #expect(await harness.layout.fetch(id: pane.id)?.offset == 0)
@@ -1317,7 +1317,7 @@ struct DBActionTests {
         let result = try await harness.registry.dispatch(
             name: "pane_sort",
             params: .object(["pane": .string(pane.id), "column": .string("id")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         guard case .object(let obj) = result else { Issue.record("not an object"); return }
         #expect(obj["requeried"] == .bool(false))
@@ -1349,7 +1349,7 @@ struct DBActionTests {
         _ = try await harness.registry.dispatch(
             name: "pane_sort",
             params: .object(["pane": .string(pane.id), "column": .string("id")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         #expect(await harness.layout.fetch(id: pane.id)?.sort == [])
     }
@@ -1379,11 +1379,11 @@ struct DBActionTests {
         _ = try await harness.registry.dispatch(
             name: "pane_sort",
             params: .object(["pane": .string(pane.id), "column": .string("k")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         _ = try await harness.registry.dispatch(
             name: "pane_sort",
             params: .object(["pane": .string(pane.id), "column": .string("v")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         // Neither click could ever record onto the subject — this is the
         // unpageable case Important 3 already covers — so the only place
@@ -1414,7 +1414,7 @@ struct DBActionTests {
         _ = try await harness.registry.dispatch(
             name: "pane_sort",
             params: .object(["pane": .string(pane.id), "column": .string("name")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         #expect(await harness.layout.fetch(id: pane.id)?.sort
                 == [PaneSort(column: "name", direction: .ascending)])
@@ -1485,7 +1485,7 @@ struct DBActionTests {
 
         _ = try await harness.registry.dispatch(
             name: "db_run_query", params: .object(["query": .string("SELECT * FROM events")]),
-            origin: .agent, environment: "dev", confirmation: nil)
+            origin: .agent, caller: .test("dev"), confirmation: nil)
 
         // The observation pump is what carries an agent's dispatch back to
         // the window, and it runs on its own schedule — so this waits for
@@ -1530,7 +1530,7 @@ struct DBActionTests {
         let result = try await harness.registry.dispatch(
             name: "db_classify_statement",
             params: .object(["statement": .string("UPDATE events SET kind = 'x' WHERE id = 1")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         guard case .object(let obj) = result,
               case .object(let structured)? = obj["structuredContent"] else {
             Issue.record("no structured result"); return
@@ -1586,7 +1586,7 @@ struct DBActionTests {
                 "table": .string("events"), "rowKey": .string(#""id" = '1'"#),
                 "column": .string("kind"), "value": .string("b"),
             ]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
 
         #expect(await harness.lastTool == "render_update")
         guard case .object(let obj) = result,
@@ -1609,7 +1609,7 @@ struct DBActionTests {
                 "rowKey": .string(#""id" = '1'"#), "column": .string("kind"),
                 "columnType": .string("INTEGER"), "value": .string("=1+1"),
             ]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
 
         let sent = await harness.lastArguments
         #expect(sent["database"] == .string("analytics"))
@@ -1636,7 +1636,7 @@ struct DBActionTests {
                     "table": .string("events"), "rowKey": .string(#""id" = '1'"#),
                     "column": .string("flags"), "value": .string("1"),
                 ]),
-                origin: .agent, environment: "staging", confirmation: nil)
+                origin: .agent, caller: .test("staging"), confirmation: nil)
             Issue.record("expected db_render_update to surface the server's refusal")
         } catch StandardActionError.serverError(let action, let message) {
             #expect(action == "db_render_update")
@@ -1671,7 +1671,7 @@ struct DBActionTests {
                 "pane": .string(pane.id), "column": .string("id"),
                 "direction": .string("asc"),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         #expect(await harness.lastTool == nil)   // nothing reached the database
         #expect(await harness.layout.fetch(id: pane.id)?.sort
                 == [PaneSort(column: "id", direction: .ascending)])
@@ -1728,7 +1728,7 @@ struct DBActionTests {
             params: .object([
                 "pane": .string(pane.id), "column": .string("kind"), "direction": .string("asc"),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         #expect(await harness.lastTool == nil)   // complete result, no round trip
         #expect(await harness.layout.fetch(id: pane.id)?.sort
                 == [PaneSort(column: "kind", direction: .ascending)])
@@ -1741,7 +1741,7 @@ struct DBActionTests {
             params: .object([
                 "pane": .string(pane.id), "column": .string("id"), "direction": .string("desc"),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         #expect(await harness.lastTool == nil)
 
         // The subject records both terms, "kind" still primary.
@@ -1776,7 +1776,7 @@ struct DBActionTests {
         await harness.resetCallLog()
         _ = try await harness.registry.dispatch(
             name: "db_refetch", params: .object(["pane": .string(pane.id)]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
         #expect(await harness.lastArguments["sort"] == .array([
             .object(["column": .string("kind"), "descending": .bool(false)]),
             .object(["column": .string("id"), "descending": .bool(true)]),
@@ -1813,13 +1813,13 @@ struct DBActionTests {
             params: .object([
                 "pane": .string(pane.id), "column": .string("kind"), "direction": .string("asc"),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         _ = try await harness.registry.dispatch(
             name: "pane_sort",
             params: .object([
                 "pane": .string(pane.id), "column": .string("id"), "direction": .string("desc"),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         // Drop `id`'s own term. `kind` was never named in this call.
         _ = try await harness.registry.dispatch(
@@ -1827,7 +1827,7 @@ struct DBActionTests {
             params: .object([
                 "pane": .string(pane.id), "column": .string("id"), "direction": .string("drop"),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         // The subject still promises `kind` — not an empty list.
         #expect(await harness.layout.fetch(id: pane.id)?.sort
@@ -1865,16 +1865,16 @@ struct DBActionTests {
             params: .object([
                 "pane": .string(pane.id), "column": .string("kind"), "direction": .string("asc"),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         _ = try await harness.registry.dispatch(
             name: "pane_sort",
             params: .object([
                 "pane": .string(pane.id), "column": .string("id"), "direction": .string("desc"),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         _ = try await harness.registry.dispatch(
             name: "pane_sort", params: .object(["pane": .string(pane.id)]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         #expect(await harness.layout.fetch(id: pane.id)?.sort == [])
     }
@@ -1896,7 +1896,7 @@ struct DBActionTests {
                 "pane": .string(pane.id), "column": .string("id"),
                 "direction": .string("desc"),
             ]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         #expect(await harness.lastTool == "query")
         // D5's wire shape: a list, in precedence order — index 0 the
         // primary key — rather than the scalar `sortColumn`/
@@ -1930,7 +1930,7 @@ struct DBActionTests {
         _ = try await harness.registry.dispatch(
             name: "pane_sort",
             params: .object(["pane": .string(pane.id), "column": .string("id")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         #expect(await harness.lastTool == "query")
     }
 
@@ -1947,7 +1947,7 @@ struct DBActionTests {
             sort: [PaneSort(column: "id", direction: .ascending)], listsTables: false, editable: nil)
         _ = try await harness.registry.dispatch(
             name: "pane_sort", params: .object(["pane": .string(pane.id)]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
         #expect(await harness.layout.fetch(id: pane.id)?.sort == [])
         guard case .object(let snap) = await harness.panes.readPane(paneId: pane.id, kind: "db") else {
             Issue.record("no snapshot"); return
@@ -1967,7 +1967,7 @@ struct DBActionTests {
                     "pane": .string(pane.id), "column": .string("id"),
                     "direction": .string("sideways"),
                 ]),
-                origin: .ui, environment: "staging", confirmation: nil)
+                origin: .ui, caller: .test("staging"), confirmation: nil)
         }
     }
 
@@ -2266,7 +2266,7 @@ struct DBActionTests {
 
         _ = try await registry.dispatch(
             name: "db_run_query", params: .object(["query": .string("select 1")]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
 
         let calls = await db.calls
         #expect(calls.count == 1)
@@ -2443,7 +2443,7 @@ private func standardRegistryWithResumeBroker() async throws -> (ActionRegistry,
 
     let result = try await registry.dispatch(
         name: "session_resume", params: .object(["id": .string("parent-7")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
 
     // The handler answered rather than blocking on the swap.
     #expect("\(result)".contains("parent-7"))
@@ -2461,7 +2461,7 @@ private func standardRegistryWithResumeBroker() async throws -> (ActionRegistry,
     await #expect(throws: (any Error).self) {
         _ = try await registry.dispatch(
             name: "session_resume", params: .object([:]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -2765,7 +2765,7 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         await expectMissingClient(action: name) {
             _ = try await r.dispatch(
                 name: name, params: params, origin: .debug,
-                environment: "dev", confirmation: nil)
+                caller: .test("dev"), confirmation: nil)
         }
     }
 
@@ -2778,7 +2778,7 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
     await expectMissingClient(action: "db_run_mutation") {
         _ = try await r.dispatch(
             name: "db_run_mutation", params: paramsByAction["db_run_mutation"]!, origin: .debug,
-            environment: "dev", confirmation: "confirm")
+            caller: .test("dev"), confirmation: "confirm")
     }
 }
 
@@ -2822,7 +2822,7 @@ private func expectMissingClient(
     await registerStandardActions(into: r, context: nil, panes: PaneStore(), db: nil, resumes: ResumeBroker())
 
     do {
-        _ = try await r.dispatch(name: "ctx_set_project", params: .object([:]), origin: .debug, environment: "dev", confirmation: nil)
+        _ = try await r.dispatch(name: "ctx_set_project", params: .object([:]), origin: .debug, caller: .test("dev"), confirmation: nil)
         Issue.record("should have thrown for a missing \"name\" param")
     } catch let error as StandardActionError {
         // A missing client is checked before a missing param in this
@@ -2886,7 +2886,7 @@ private func repoRoot() -> URL {
     do {
         _ = try await r.dispatch(
             name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-            origin: .ui, environment: "dev", confirmation: nil)
+            origin: .ui, caller: .test("dev"), confirmation: nil)
         Issue.record("expected ctx_set_project to refuse a project filed under another org")
     } catch StandardActionError.serverError(let action, let message) {
         #expect(action == "ctx_set_project")
@@ -2923,12 +2923,12 @@ private func repoRoot() -> URL {
 
     _ = try await r.dispatch(
         name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-        origin: .ui, environment: "dev", confirmation: nil)
+        origin: .ui, caller: .test("dev"), confirmation: nil)
 
     do {
         _ = try await r.dispatch(
             name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-            origin: .ui, environment: "dev", confirmation: nil)
+            origin: .ui, caller: .test("dev"), confirmation: nil)
         Issue.record("expected ctx_set_environment to refuse an environment the project doesn't declare")
     } catch StandardActionError.serverError(let action, let message) {
         #expect(action == "ctx_set_environment")
@@ -2965,7 +2965,7 @@ private func repoRoot() -> URL {
     // still a normal dispatch outcome (the handler ran and returned),
     // not a hang or a crash.
     do {
-        _ = try await r.dispatch(name: "ctx_list_projects", params: .object([:]), origin: .debug, environment: "dev", confirmation: nil)
+        _ = try await r.dispatch(name: "ctx_list_projects", params: .object([:]), origin: .debug, caller: .test("dev"), confirmation: nil)
         Issue.record("expected ctx_list_projects to report an error for an org that was never created")
     } catch is StandardActionError {
         // expected: the server reported isError, surfaced as .serverError
@@ -3009,7 +3009,7 @@ private func repoRoot() -> URL {
     ) {
         _ = try await registry.dispatch(
             name: "session_list", params: .object([:]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
     }
 }
 
@@ -3037,7 +3037,7 @@ private func repoRoot() -> URL {
     func dispatch(_ name: String, _ value: String) async throws {
         _ = try await registry.dispatch(
             name: name, params: .object(["name": .string(value)]),
-            origin: .ui, environment: "staging", confirmation: nil)
+            origin: .ui, caller: .test("staging"), confirmation: nil)
     }
 
     try await dispatch("ctx_set_project", "alpha")
@@ -3095,12 +3095,12 @@ private func writeProviderFixture(home: URL, org: String, id: String) throws {
     // way, so this sets one before ever calling `current()`.
     _ = try await r.dispatch(
         name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-        origin: .ui, environment: "dev", confirmation: nil)
+        origin: .ui, caller: .test("dev"), confirmation: nil)
     #expect(try await ContextStore(client: client).current().activeProvider == "")
 
     _ = try await r.dispatch(
         name: "ctx_set_provider", params: .object(["name": .string("work")]),
-        origin: .ui, environment: "dev", confirmation: nil)
+        origin: .ui, caller: .test("dev"), confirmation: nil)
 
     #expect(try await ContextStore(client: client).current().activeProvider == "work")
 
@@ -3123,7 +3123,7 @@ private func writeProviderFixture(home: URL, org: String, id: String) throws {
     do {
         _ = try await r.dispatch(
             name: "ctx_set_provider", params: .object(["name": .string("ghost")]),
-            origin: .ui, environment: "dev", confirmation: nil)
+            origin: .ui, caller: .test("dev"), confirmation: nil)
         Issue.record("expected ctx_set_provider to refuse an unregistered provider id")
     } catch StandardActionError.serverError(let action, let message) {
         #expect(action == "ctx_set_provider")
@@ -3137,7 +3137,7 @@ private func writeProviderFixture(home: URL, org: String, id: String) throws {
     // up here.
     _ = try await r.dispatch(
         name: "ctx_set_project", params: .object(["name": .string("widgets")]),
-        origin: .ui, environment: "dev", confirmation: nil)
+        origin: .ui, caller: .test("dev"), confirmation: nil)
     #expect(try await ContextStore(client: client).current().activeProvider == "")
     await client.stop()
 }

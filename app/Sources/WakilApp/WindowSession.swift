@@ -116,7 +116,7 @@ final class WindowSession {
         // keep building the launch org's MCP config JSON and credentials
         // lookup for every harness after a live org switch, rather than
         // the org actually running by then.
-        let harnessFactory: @Sendable (String, ProviderSelection) -> AgentHarness?
+        let harnessFactory: @Sendable (Place, ProviderSelection) -> AgentHarness?
         let lookupFactory: @Sendable (String) -> ProviderCredentialsLookup
         // 2e (#204). Built beside `lookupFactory` because it needs the
         // same `wakil` executable and the same per-org construction: the
@@ -179,17 +179,18 @@ final class WindowSession {
             // tools this config publishes (probe §6), so the two have to
             // describe the same surface. See `agentAllowedTools`.
             let allowedTools = agentAllowedTools(actions: await wiring.registry.all())
-            harnessFactory = { org, selection in
-                // Rebuilt per selection, never captured: this JSON carries
-                // WAKIL_PROVIDER (and, as of 2b-viii, WAKIL_ORG) to every
-                // MCP server, so reusing JSON captured at window open
-                // would run the new account's session — or a post-switch
-                // session's servers — with the old provider id or org.
+            harnessFactory = { place, selection in
+                // Rebuilt per call, never captured: this JSON carries
+                // WAKIL_PROVIDER and the session's whole place — WAKIL_ORG,
+                // WAKIL_PROJECT, WAKIL_ENVIRONMENT — to every MCP server, so
+                // reusing JSON captured at window open would run the new
+                // account's session — or a post-switch session's servers —
+                // with the old provider id or the old place.
                 let configJSON = agentMCPConfigJSON(
                     shimExecutable: executableURL,
                     socketPath: socketPath,
                     binaries: binaries,
-                    organization: org,
+                    place: place,
                     provider: selection.id)
                 return ClaudeCodeCLIHarness(
                     claudePath: selection.credentials.claudePath,
@@ -365,8 +366,8 @@ final class WindowSession {
             // agent is told is on screen is what is on screen (Invariant 3).
             surface: wiring.mcpSurface,
             socketPath: socketPath,
-            // The gate judges the same environment string the window shows.
-            environmentProvider: { await model.environment })
+            // The gate judges the place the window shows, with the session the agent runs under.
+            caller: { await model.agentCaller })
         do {
             try await server.start()
             socketServer = server

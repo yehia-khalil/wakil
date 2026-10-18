@@ -238,7 +238,7 @@ private func fixture() async throws -> ApiFixture {
 private func open(_ f: ApiFixture) async throws -> String {
     let result = try await f.registry.dispatch(
         name: "api_open", params: .object(["entry": .string("billing")]),
-        origin: .agent, environment: "staging", confirmation: nil)
+        origin: .agent, caller: .test("staging"), confirmation: nil)
     guard case .object(let fields) = result, case .string(let paneId)? = fields["pane"] else {
         throw NoPaneIdReturned()
     }
@@ -253,7 +253,7 @@ private func setRequest(
     all["pane"] = .string(pane)
     return try await f.registry.dispatch(
         name: "api_set_request", params: .object(all),
-        origin: origin, environment: "staging", confirmation: nil)
+        origin: origin, caller: .test("staging"), confirmation: nil)
 }
 
 private func literal(_ text: String) -> JSONValue { .object(["literal": .string(text)]) }
@@ -323,7 +323,7 @@ private func row(_ name: String, _ value: [JSONValue]) -> JSONValue {
             params: .object([
                 "pane": .string(paneId), "region": .string("path"), "index": .integer(1),
             ]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
     let message = String(describing: try #require(thrown))
     #expect(message.contains("the operator is editing Body"))

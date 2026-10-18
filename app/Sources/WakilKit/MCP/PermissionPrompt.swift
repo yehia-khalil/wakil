@@ -26,8 +26,8 @@ public let permissionPromptToolName = "approve_tool_use"
 /// regardless of kind).
 ///
 /// **Why a kind check alone cannot do this job.** `agentAllowedTools`
-/// filters `.control` IN by design — layout, `ctx_set_environment` and
-/// `session_resume` all rely on that free pass — so no `.control` action
+/// filters `.control` IN by design — layout and `session_resume` rely on
+/// that free pass — so no `.control` action
 /// can be kept from the agent by its kind. `session_set_provider` is the
 /// first one that must be: an agent that could switch its own account
 /// could move itself to a provider whose sessions the operator is not
@@ -92,6 +92,8 @@ public let operatorOnlyActions: Set<String> = [
     // provider capacity: the agent may not forge a reading the operator chooses accounts by.
     "capacity_record",
     "session_set_provider", "ctx_set_provider",
+    // An agent's place is fixed when its session starts (Invariant 5); only the operator moves it.
+    "ctx_set_project", "ctx_set_environment",
     "ctx_list_orgs", "ctx_create_org",
     "ctx_list_machine_providers", "ctx_adopt_provider",
     // 2e (#200). `ctx_list_accounts` is the settings pane's account
@@ -211,6 +213,9 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
     case "session_set_provider", "ctx_set_provider":
         return "\(toolName): the operator chooses which account a session runs under; you "
             + "cannot switch it. Ask the operator to switch it in the Wakil window instead."
+    case "ctx_set_project", "ctx_set_environment":
+        return "\(toolName): An agent's place is fixed when its session starts (Invariant 5). "
+            + "Tell the operator which place the work needs; they can start an agent there."
     case "ctx_list_orgs", "ctx_list_machine_providers", "ctx_list_accounts":
         return "\(toolName): this session is scoped to one organisation. Enumerating every "
             + "organisation and config dir on this machine is not something a session scoped "

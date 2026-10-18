@@ -26,7 +26,7 @@ private func capacityRegistry() async throws -> (ActionRegistry, CapacityCaller)
         "fiveHour": .object(["percentLeft": .integer(28), "resetsAt": .string("2026-10-10T17:20:00Z")]),
         "asOf": .string("2026-10-10T16:18:00Z")])
     _ = try await registry.dispatch(name: "capacity_record", params: params, origin: .ui,
-                                    environment: "local", confirmation: nil)
+                                    caller: .test("local"), confirmation: nil)
     let calls = await caller.recorded()
     #expect(calls.map(\.tool) == ["record_capacity"])
     #expect(calls.first?.arguments == params)
@@ -35,7 +35,7 @@ private func capacityRegistry() async throws -> (ActionRegistry, CapacityCaller)
 @Test func ctxCapacityReadsTheCapacityTool() async throws {
     let (registry, caller) = try await capacityRegistry()
     _ = try await registry.dispatch(name: "ctx_capacity", params: .object([:]), origin: .agent,
-                                    environment: "local", confirmation: nil)
+                                    caller: .test("local"), confirmation: nil)
     #expect(await caller.recorded().map(\.tool) == ["capacity"])
 }
 
@@ -48,9 +48,9 @@ private func capacityRegistry() async throws -> (ActionRegistry, CapacityCaller)
     let (registry, caller) = try await capacityRegistry()
     let params: JSONValue = .object(["refresh": .bool(true)])
     _ = try await registry.dispatch(name: "ctx_capacity", params: params, origin: .agent,
-                                    environment: "local", confirmation: nil)
+                                    caller: .test("local"), confirmation: nil)
     _ = try await registry.dispatch(name: "ctx_capacity", params: params, origin: .ui,
-                                    environment: "local", confirmation: nil)
+                                    caller: .test("local"), confirmation: nil)
     let calls = await caller.recorded()
     #expect(calls.count == 2)
     #expect(calls[0].arguments == .object([:]))

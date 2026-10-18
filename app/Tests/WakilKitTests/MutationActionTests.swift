@@ -78,7 +78,7 @@ import Testing
         _ = try await registry.dispatch(
             name: "db_run_mutation",
             params: .object(["statement": .string("DELETE FROM t WHERE id=1")]),
-            origin: .agent, environment: "production", confirmation: "confirm")
+            origin: .agent, caller: .test("production"), confirmation: "confirm")
     }
 
     let entries = try await registry.journalEntries()
@@ -95,7 +95,7 @@ import Testing
         _ = try await registry.dispatch(
             name: "db_run_mutation",
             params: .object(["statement": .string("DELETE FROM t WHERE id=1")]),
-            origin: .agent, environment: "staging", confirmation: nil)
+            origin: .agent, caller: .test("staging"), confirmation: nil)
     }
 
     let entries = try await registry.journalEntries()

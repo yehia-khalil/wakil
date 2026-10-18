@@ -1265,7 +1265,10 @@ public func registerApiActions(
             if case .ok(let reply) = outcome.response {
                 try? await registry.journalSentRequest(
                     action: action, params: params, origin: ActionRegistry.dispatchOrigin,
-                    environment: snapshot.environment, url: reply.url, outcome: "sent")
+                    caller: ActionRegistry.dispatchCaller ?? DispatchCaller(
+                        place: Place(organization: "", project: "", environment: snapshot.environment),
+                        session: nil),
+                    url: reply.url, outcome: "sent")
             }
 
             return .object([

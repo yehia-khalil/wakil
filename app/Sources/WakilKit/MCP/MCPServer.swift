@@ -186,24 +186,24 @@ public struct MCPSurface: Sendable {
 ///   no reply for one, so this returns `nil` and sends nothing. Answering a
 ///   notification would itself be a protocol violation.
 ///
-/// **`environment` is a closure, not a string, and that is a correctness
-/// requirement rather than a convenience.** The active environment is what
-/// `writeGate` judges, and it changes while this server is up —
+/// **`caller` is a closure, not a value, and that is a correctness
+/// requirement rather than a convenience.** The caller's place (and so its
+/// environment) is what `writeGate` judges, and it changes while this server is up —
 /// `ctx_set_environment`, or an operator pressing ⌘K, moves it. A gated
 /// proposal parks for up to `ConfirmationBroker`'s timeout (120s) before it
-/// is re-dispatched, so a string captured when the request was *read* can
+/// is re-dispatched, so a value captured when the request was *read* can
 /// be stale by the time the gate re-reads it. The reachable direction is
 /// the dangerous one: a proposal can only park when the environment is
 /// *not* production (production is `.block`, which never parks), so a stale
 /// capture can only ever be more permissive than the truth. Taking a
-/// closure means there is no captured string to go stale, and it makes this
+/// closure means there is no captured value to go stale, and it makes this
 /// path agree with `WindowModel.parkAndAwait`, which reads its `environment`
 /// property afresh at re-dispatch — the spec's "one confirmation mechanism,
 /// not two" has to mean the two agree about the one input the gate reads.
 public func handle(
     _ message: JSONRPCMessage,
     surface: MCPSurface,
-    environment: @Sendable () async -> String
+    caller: @Sendable () async -> DispatchCaller
 ) async -> JSONRPCMessage? {
     guard let id = message.id else {
         return nil
@@ -238,7 +238,7 @@ public func handle(
         return JSONRPCMessage(id: id, result: .object(["tools": .array(tools)]))
 
     case "tools/call":
-        return await handleToolsCall(id: id, params: message.params, surface: surface, environment: environment)
+        return await handleToolsCall(id: id, params: message.params, surface: surface, caller: caller)
 
     default:
         return JSONRPCMessage(id: id, error: JSONRPCError(
@@ -610,7 +610,7 @@ private func handleToolsCall(
     id: JSONRPCID,
     params: JSONValue?,
     surface: MCPSurface,
-    environment: @Sendable () async -> String
+    caller: @Sendable () async -> DispatchCaller
 ) async -> JSONRPCMessage {
     guard case .object(let obj)? = params, case .string(let name)? = obj["name"] else {
         return JSONRPCMessage(id: id, error: JSONRPCError(
@@ -651,13 +651,13 @@ private func handleToolsCall(
 
     // Bound once and reused below rather than awaited twice: the `"error"`
     // and `"uncertain"` lines the `StandardActionError` branch writes are
-    // read as a pair, and `environment()` is a fresh read of mutable state
+    // read as a pair, and `caller()` is a fresh read of mutable state
     // that could answer differently the second time.
-    let judged = await environment()
+    let judged = await caller()
     do {
         let result = try await surface.registry.dispatch(
             name: name, params: arguments, origin: .agent,
-            environment: judged, confirmation: confirmation)
+            caller: judged, confirmation: confirmation)
         return JSONRPCMessage(id: id, result: toolResultEnvelope(result))
     } catch let error as StandardActionError {
         // A mutation Wakil stopped waiting for, reached without ever
@@ -666,7 +666,7 @@ private func handleToolsCall(
         // record, same wording, same reason: see `recordUncertainMutation`.
         await recordUncertainMutation(
             error, registry: surface.registry, action: name, params: arguments, origin: .agent,
-            environment: judged)
+            caller: judged)
         return JSONRPCMessage(id: id, error: JSONRPCError(code: -32603, message: "\(error)"))
     } catch ActionError.needsConfirmation {
         // The gate refused for want of a confirmation the agent cannot
@@ -680,7 +680,7 @@ private func handleToolsCall(
         // call rather than a "pending" it has to learn to poll.
         return await parkForConfirmation(
             id: id, name: name, arguments: arguments,
-            surface: surface, environment: environment)
+            surface: surface, caller: caller)
     } catch let error as ActionError {
         return JSONRPCMessage(id: id, error: jsonRPCError(for: error))
     } catch {
@@ -728,7 +728,7 @@ private let confirmationBusyCode = -32005
 /// from the parked projection: the operator confirmed a specific statement,
 /// and anything reconstructed could differ from what they read.
 ///
-/// **`environment` is re-read after the park, never captured across it.**
+/// **`caller` is re-read after the park, never captured across it.**
 /// The gate must judge the environment as it stands at the moment of
 /// confirmation, not as it stood when the proposal was made, and the park
 /// is up to 120 seconds long. Only the non-production environments park at
@@ -767,7 +767,7 @@ private func parkForConfirmation(
     name: String,
     arguments: JSONValue,
     surface: MCPSurface,
-    environment: @Sendable () async -> String
+    caller: @Sendable () async -> DispatchCaller
 ) async -> JSONRPCMessage {
     let isMutation = await surface.registry.all().first(where: { $0.name == name })?.kind == .mutate
     // A gated `.control` action (D10: `ctx_set_environment` on either side
@@ -803,18 +803,18 @@ private func parkForConfirmation(
         // doc comment for the production case that makes the difference —
         // and then bound, so the `"error"`/`"uncertain"` pair below cannot
         // disagree about which environment was judged.
-        let judged = await environment()
+        let judged = await caller()
         do {
             let result = try await surface.registry.dispatch(
                 name: name, params: arguments, origin: .agent,
-                environment: judged, confirmation: "confirm")
+                caller: judged, confirmation: "confirm")
             return JSONRPCMessage(id: id, result: toolResultEnvelope(result))
         } catch let error as ActionError {
             return JSONRPCMessage(id: id, error: jsonRPCError(for: error))
         } catch {
             await recordUncertainMutation(
                 error, registry: surface.registry, action: name, params: arguments, origin: .agent,
-                environment: judged)
+                caller: judged)
             return JSONRPCMessage(id: id, error: JSONRPCError(code: -32603, message: "\(error)"))
         }
     case .cancelled:
@@ -1063,7 +1063,7 @@ private func jsonRPCError(for error: ActionError) -> JSONRPCError {
 public actor MCPSocketServer {
     private let surface: MCPSurface
     private let socketPath: String
-    private let environmentProvider: @Sendable () async -> String
+    private let caller: @Sendable () async -> DispatchCaller
 
     private var listenFD: Int32 = -1
     private var acceptThread: Thread?
@@ -1071,8 +1071,8 @@ public actor MCPSocketServer {
     /// `surface` rather than a `registry` plus a `panes` parameter, and set
     /// once here rather than passed per call: what this server answers from
     /// cannot change between one frame and the next, so it is construction
-    /// data, not request data. `environmentProvider` is the deliberate
-    /// exception — the active environment *does* change while the server is
+    /// data, not request data. `caller` is the deliberate
+    /// exception — the caller's place *does* change while the server is
     /// up (`ctx_set_environment`), so it is a closure read at each point
     /// the gate needs it rather than a string captured once. It is passed
     /// down to `handle` still as a closure, and for a gated request it is
@@ -1081,11 +1081,11 @@ public actor MCPSocketServer {
     public init(
         surface: MCPSurface,
         socketPath: String,
-        environmentProvider: @escaping @Sendable () async -> String
+        caller: @escaping @Sendable () async -> DispatchCaller
     ) {
         self.surface = surface
         self.socketPath = socketPath
-        self.environmentProvider = environmentProvider
+        self.caller = caller
     }
 
     public func start() async throws {
@@ -1147,7 +1147,7 @@ public actor MCPSocketServer {
     /// on serving this one.
     private func startAcceptLoop(fd: Int32) {
         let surface = self.surface
-        let environmentProvider = self.environmentProvider
+        let caller = self.caller
         let thread = Thread {
             while true {
                 let clientFD = accept(fd, nil, nil)
@@ -1159,7 +1159,7 @@ public actor MCPSocketServer {
                     return
                 }
                 disableSIGPIPE(onSocket: clientFD)
-                let connection = Connection(fd: clientFD, surface: surface, environmentProvider: environmentProvider)
+                let connection = Connection(fd: clientFD, surface: surface, caller: caller)
                 Task { await connection.run() }
             }
         }
@@ -1206,7 +1206,7 @@ public actor MCPSocketServer {
 /// every 5 such connections failed, in every one of eight runs: replies came
 /// back out of request order (`…, 2, 4, 3, 5, …`), because `ingest` is `async`
 /// and a second chunk's `Task` could run while the first was suspended
-/// awaiting `environmentProvider`/`handle`; and, more destructively, whole
+/// awaiting `caller`/`handle`; and, more destructively, whole
 /// connections went silent partway through — 0, 2, 4, 18 and 26 replies of
 /// the 40 expected — because two chunks of one frame arrived at `FrameReader`
 /// inverted, spliced into JSON that could not decode, and latched the reader
@@ -1242,14 +1242,14 @@ public actor MCPSocketServer {
 private actor Connection {
     private let fh: FileHandle
     private let surface: MCPSurface
-    private let environmentProvider: @Sendable () async -> String
+    private let caller: @Sendable () async -> DispatchCaller
     private var reader = FrameReader()
     private var poisoned = false
 
-    init(fd: Int32, surface: MCPSurface, environmentProvider: @escaping @Sendable () async -> String) {
+    init(fd: Int32, surface: MCPSurface, caller: @escaping @Sendable () async -> DispatchCaller) {
         self.fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         self.surface = surface
-        self.environmentProvider = environmentProvider
+        self.caller = caller
     }
 
     func run() {
@@ -1266,7 +1266,7 @@ private actor Connection {
         // argument does not cover. There, the backlog is self-limiting: the
         // harness's consumer only parses, and `MCPClient`'s only pushes into
         // a `FrameReader` whose own buffer is capped. Here `ingest` awaits a
-        // *caller-supplied* `environmentProvider()` and `handle()`, so a fast
+        // *caller-supplied* `caller` closure and `handle()`, so a fast
         // local peer facing a slow provider accumulates raw socket bytes with
         // no bound at all — "a session's worth of events" is not the ceiling
         // it is for the harness. Accepted as-is rather than papered over: the
@@ -1327,7 +1327,7 @@ private actor Connection {
             // 120 seconds, and the environment the gate judges on the way
             // out must be the one that is active *then*. See `handle`'s doc
             // comment.
-            guard let reply = await handle(message, surface: surface, environment: environmentProvider)
+            guard let reply = await handle(message, surface: surface, caller: caller)
             else { continue }
             if let frame = try? encodeFrame(reply) {
                 try? fh.write(contentsOf: frame)

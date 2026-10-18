@@ -182,13 +182,15 @@ public enum StandardActionError: Error, Sendable, Equatable, CustomStringConvert
 /// layers exist to prevent, paid out one launch later instead of
 /// immediately.
 ///
-/// `ctx_set_environment` additionally declares
-/// `targetEnvironmentParam: "name"`, which is what lets `writeGate` refuse
-/// an *agent* switching into production without a typed confirmation. 2a
-/// classified both setters `.read` and the 2026-09-08 acceptance run found
+/// Both setters are operator-only: an agent's place is fixed when its
+/// session starts, so the agent cannot switch project or environment at
+/// all. 2a classified both `.read` and the 2026-09-08 acceptance run found
 /// the consequence: asked only to list projects, the agent also set the
 /// active one, and nothing stopped it
-/// (`docs/wakil/phase-2a-acceptance.md` §6).
+/// (`docs/wakil/phase-2a-acceptance.md` §6). `ctx_set_environment` still
+/// declares `targetEnvironmentParam: "name"`, so `writeGate` would hold an
+/// agent-originated switch into production if one ever reached it — a
+/// second layer behind the audience, not the thing that stops the agent.
 ///
 /// **`ctx_set_project` deliberately declares no target.**
 /// `wakilcore.SetProjectChecked` keeps the current environment name when
@@ -373,7 +375,7 @@ public func registerStandardActions(
         name: "ctx_set_project",
         description: "Switch the active project (must belong to the active org).",
         kind: .control,
-        audience: .agentReachable,
+        audience: .operatorOnly,
         schema: nameParamSchema,
         handler: { params in
             guard let context else {
@@ -390,7 +392,7 @@ public func registerStandardActions(
         name: "ctx_set_environment",
         description: "Switch the active environment within the active project.",
         kind: .control,
-        audience: .agentReachable,
+        audience: .operatorOnly,
         schema: nameParamSchema,
         handler: { params in
             guard let context else {
@@ -2443,23 +2445,23 @@ func mutationCallFailure(
 /// failure to append is therefore swallowed, and what the caller surfaces
 /// — `mutationFateUnknown`'s text — still says the whole truth.
 ///
-/// **`environment` must be the value the caller passed to `dispatch`, not a
-/// fresh read.** Both live callers re-read the active environment
-/// immediately before dispatching, precisely because it can change while a
-/// proposal is parked; reading it a second time here would let the pair of
-/// lines disagree about the one condition they exist to record. Capture it
-/// once, dispatch with it, and pass that same value here.
+/// **`caller` must be the value the caller passed to `dispatch`, not a
+/// fresh read.** Both live callers re-read the caller's place immediately
+/// before dispatching, precisely because it can change while a proposal is
+/// parked; reading it a second time here would let the pair of lines
+/// disagree about the one condition they exist to record. Capture it once,
+/// dispatch with it, and pass that same value here.
 public func recordUncertainMutation(
     _ error: Error,
     registry: ActionRegistry,
     action: String,
     params: JSONValue,
     origin: ActionOrigin,
-    environment: String
+    caller: DispatchCaller
 ) async {
     guard case StandardActionError.mutationFateUnknown = error else { return }
     try? await registry.journalUncertainMutation(
-        action: action, params: params, origin: origin, environment: environment)
+        action: action, params: params, origin: origin, caller: caller)
 }
 
 /// Refuses a `pane` naming a pane that is not open.
