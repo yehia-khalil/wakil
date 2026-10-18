@@ -229,3 +229,16 @@ func TestFilesCreateMoveAreServedAndConfined(t *testing.T) {
 		t.Fatal("trashed the root")
 	}
 }
+
+// 3b-vii: from reaches ReadFileFrom through the tool, so a growing log reads only what was added.
+func TestFilesReadFromThroughTheTool(t *testing.T) {
+	pdir := setupProject(t, `"dev":{"databases":[]}`, "")
+	p := filepath.Join(pdir, "laravel.log")
+	if err := os.WriteFile(p, []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, out := callFiles(t, "files_read", map[string]any{"path": p, "from": 4})
+	if res.IsError || out["text"] != "two\n" || out["end"] != float64(8) {
+		t.Fatalf("got %+v %v", out, res.Content)
+	}
+}
