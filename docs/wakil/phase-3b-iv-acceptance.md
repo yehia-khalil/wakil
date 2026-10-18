@@ -2,7 +2,7 @@
 
 **Spec:** [`2026-10-17-3b-iv-file-operations-design.md`](../superpowers/specs/2026-10-17-3b-iv-file-operations-design.md)
 
-**Not walked yet.** Only the operator walks; every Walked cell below is empty until then.
+**Walked 2026-10-18 by the operator**, all ten rows passing, on the build with the walk's fixes (root row centring, F2 focus and stem, the name field's look, a tree click keeping the keyboard).
 
 The exit criterion, from the spec: create, rename, move and Move to Trash from the Files tree, with
 open tabs following, and the same three operations for the agent (`editor_create`, `editor_rename`,
@@ -54,16 +54,16 @@ Walk in order, on `walk-fileops`, in `personal`.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 1 | Right-click the `api` root row, then a file (`README.md`), then a folder (`app`) | Root: New File, New Folder only. File: Rename, Move to Trash only. Folder: all four, a separator before Rename. No root offers Rename or Move to Trash | |
-| 2 | Hover the `api` root; press its **+**, New File; type `notes/today.md`, Enter; type `hi` | The **+** shows on hover and when the root is selected; the name field arrives focused; `notes` is made, `today.md` opens as a pinned tab and `hi` lands in it, not in the tree | |
-| 3 | **+**, New Folder, `a/b`, Enter; right-click `a/b`, New Folder, `c`, Enter | Each new folder appears and is selected (violet outline); the selection never jumps to the top | |
-| 4 | Open `app/Models/User.php`, type a word (unsaved). Select its row, press F2 | A field holding `User.php` with `User` selected, `.php` not | |
-| 5 | Type `Account`, then click in the editor | The rename applies on the click; `Account.php` is selected in the tree; its tab follows, still unsaved; ⌘Z in the tab removes the word | |
-| 6 | Open `app/Http/Kernel.php` in a second editor pane; expand `app/Http` in the first; F2 on `app`, `core`, Enter | Both panes' tabs now under `core/`, unsaved edits kept; `core` stays open in this pane and is selected | |
-| 7 | F2 on `src/a.ts`, type `b`, Enter; then click the Files header, press ↓ and ⌘⌫ | `…/src/b.ts already exists` shown whole under the field, `b.ts` kept; after the click the tree takes ↓ and ⌘⌫ trashes the selected row, no dialog | |
-| 8 | In `docs/trash-me`, select `b.txt` and press ⌘⌫ three times | `b.txt` goes and `c.txt` is selected; then `c.txt` goes and `a.txt` is selected; then `a.txt` goes and `trash-me` is selected. All three are in Finder's Trash; Put Back restores them | |
-| 9 | Open `docs/keep/clean.txt`; open `docs/keep/sub/dirty.txt` and type; Move `keep` to Trash from its menu; set Settings → Editor → Autosave to *on focus change* and click another pane; then ⌘S in the dirty tab | The clean tab closes; the dirty one stays, marked deleted, and autosave does not bring it back; ⌘S recreates `keep/sub/dirty.txt` with what was typed | |
-| 10 | F2 on a file, type a name, Enter, and press ⌘⌫ at once | The rename lands; nothing but the selected row is trashed, and no error about a missing file appears | |
+| 1 | Right-click the `api` root row, then a file (`README.md`), then a folder (`app`) | Root: New File, New Folder only. File: Rename, Move to Trash only. Folder: all four, a separator before Rename. No root offers Rename or Move to Trash || ✓ 2026-10-18 |
+| 2 | Hover the `api` root; press its **+**, New File; type `notes/today.md`, Enter; type `hi` | The **+** shows on hover and when the root is selected; the name field arrives focused; `notes` is made, `today.md` opens as a pinned tab and `hi` lands in it, not in the tree || ✓ 2026-10-18 |
+| 3 | **+**, New Folder, `a/b`, Enter; right-click `a/b`, New Folder, `c`, Enter | Each new folder appears and is selected (violet outline); the selection never jumps to the top || ✓ 2026-10-18 |
+| 4 | Open `app/Models/User.php`, type a word (unsaved). Select its row, press F2 | A field holding `User.php` with `User` selected, `.php` not || ✓ 2026-10-18 |
+| 5 | Type `Account`, then click in the editor | The rename applies on the click; `Account.php` is selected in the tree; its tab follows, still unsaved; ⌘Z in the tab removes the word || ✓ 2026-10-18 |
+| 6 | Open `app/Http/Kernel.php` in a second editor pane; expand `app/Http` in the first; F2 on `app`, `core`, Enter | Both panes' tabs now under `core/`, unsaved edits kept; `core` stays open in this pane and is selected || ✓ 2026-10-18 |
+| 7 | F2 on `src/a.ts`, type `b`, Enter; then click the Files header, press ↓ and ⌘⌫ | `…/src/b.ts already exists` shown whole under the field, `b.ts` kept; after the click the tree takes ↓ and ⌘⌫ trashes the selected row, no dialog || ✓ 2026-10-18 |
+| 8 | In `docs/trash-me`, select `b.txt` and press ⌘⌫ three times | `b.txt` goes and `c.txt` is selected; then `c.txt` goes and `a.txt` is selected; then `a.txt` goes and `trash-me` is selected. All three are in Finder's Trash; Put Back restores them || ✓ 2026-10-18 |
+| 9 | Open `docs/keep/clean.txt`; open `docs/keep/sub/dirty.txt` and type; Move `keep` to Trash from its menu; set Settings → Editor → Autosave to *on focus change* and click another pane; then ⌘S in the dirty tab | The clean tab closes; the dirty one stays, marked deleted, and autosave does not bring it back; ⌘S recreates `keep/sub/dirty.txt` with what was typed || ✓ 2026-10-18 |
+| 10 | F2 on a file, type a name, Enter, and press ⌘⌫ at once | The rename lands; nothing but the selected row is trashed, and no error about a missing file appears || ✓ 2026-10-18 |
 
 ## 2. Residue — what the walk cannot establish
 
