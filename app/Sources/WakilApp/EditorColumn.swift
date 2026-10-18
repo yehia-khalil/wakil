@@ -34,6 +34,9 @@ struct EditorColumn: View {
     /// The operator's reveal: the file row to select once it is among `rows` (the folders above it open
     /// a turn after the action). Selecting it scrolls to it and leaves the keyboard where it is (Rule 6).
     @Binding var pendingReveal: String?
+    /// The file a single click in the tree just brought forward: browsing, so the keyboard stays in
+    /// the tree even when that file's tab is already open and pinned (Rule 6). The pane reads it once.
+    @Binding var browsed: String?
 
     @State private var dragWidth: Double?
     @State private var query = ""
@@ -479,6 +482,7 @@ struct EditorColumn: View {
         treeFocused = true
         switch row.kind {
         case .file:
+            if !keep { browsed = row.id }
             Task { await dispatch("editor_open", ["path": .string(row.id), "preview": .bool(!keep)]) }
         case .root, .repo, .folder:
             Task { await dispatch(row.open ? "editor_tree_collapse" : "editor_tree_expand", ["path": .string(row.id)]) }

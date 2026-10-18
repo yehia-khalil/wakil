@@ -86,6 +86,9 @@ struct EditorPane: View {
     @State private var columnFocusWanted: EditorColumnView?
     /// The column holds the keyboard: a focus change of the pane leaves it there (Rule 3).
     @State private var columnHasKeyboard = false
+    /// The file the tree's single click brought forward (`EditorColumn.browsed`): its tab coming to
+    /// the front is browsing, not arriving, whether or not it was already open and pinned.
+    @State private var treeBrowsed: String?
     /// The revealed file's row, until the column has drawn and selected it.
     @State private var pendingReveal: String?
     /// Each tab's horizontal span in the strip's space, reported by the tabs themselves.
@@ -123,7 +126,7 @@ struct EditorPane: View {
                                  reveal: { Task { await revealInTree() } },
                                  selected: $treeSelected, selectedResult: $resultSelected,
                                  focusWanted: $columnFocusWanted, hasKeyboard: $columnHasKeyboard,
-                                 pendingReveal: $pendingReveal)
+                                 pendingReveal: $pendingReveal, browsed: $treeBrowsed)
                 }
                 editorStack
             }
@@ -174,7 +177,15 @@ struct EditorPane: View {
             // tree's or Search's single click, ↑↓ and Return): the keyboard stays in the column. A tab
             // forward only because the front one went (⌘⌫, the agent's trash or close) did not
             // arrive: the keyboard stays where the operator was (Rule 6). `editorFrontTabArrived`.
-            if editorFrontTabArrived(old: old, now: now), isFocusedPane, !saveAsRequested, comparing == nil {
+            // A tree click on a file whose tab is already open and pinned brings that tab forward
+            // too: browsing all the same, so the keyboard stays in the tree (`treeBrowsed`).
+            let front = now.active.flatMap { now.tabs.indices.contains($0) ? now.tabs[$0].path : nil }
+            let browsing = front != nil && front == treeBrowsed
+            if front != old.active.flatMap({ old.tabs.indices.contains($0) ? old.tabs[$0].path : nil }) {
+                treeBrowsed = nil
+            }
+            if !browsing, editorFrontTabArrived(old: old, now: now), isFocusedPane, !saveAsRequested,
+               comparing == nil {
                 host.focus()
             }
         }
