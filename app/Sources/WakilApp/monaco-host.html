@@ -308,7 +308,9 @@
       if (created) { models[key] = monaco.editor.createModel(text, language); indent(models[key]); }
       current = key;
       ed.setModel(models[key]);
-      ed.updateOptions({ readOnly: readOnly });
+      // 3b-vii: a log's bottom is its last line at the bottom edge, as in a terminal, so opening at
+      // the bottom and following show the newest entries, not the blank space past them.
+      ed.updateOptions({ readOnly: readOnly, scrollBeyondLastLine: models[key].getLanguageId() !== 'log' });
       report();
       if (created) foldEntries(key, 1);
     };
