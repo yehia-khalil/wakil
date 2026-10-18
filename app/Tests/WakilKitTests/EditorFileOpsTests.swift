@@ -182,7 +182,7 @@ private func tab(_ path: String, text: String = "t", saved: String = "t") -> Edi
     await f.files.put("/p/api/a.go", "v0")
     try await f.dispatch("editor_open", ["path": .string("/p/api/a.go")])
     let home = await f.panes.activeScope
-    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, lineageRoot: "conv-2"))
+    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, environment: home.environment, lineageRoot: "conv-2"))
     try await f.dispatch("editor_rename", ["path": .string("/p/api/a.go"), "to": .string("/p/api/b.go")])
     #expect(await f.panes.editorSnapshot(in: home, paneId: f.pane).tabs[0].path == "/p/api/b.go")
 }

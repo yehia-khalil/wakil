@@ -3909,7 +3909,7 @@ public final class WindowModel {
     public func dispatchFromSurfaceThrowing(_ name: String, _ params: JSONValue) async throws -> JSONValue {
         do {
             let result = try await registry.dispatch(
-                name: name, params: params, origin: .ui, environment: environment, confirmation: nil)
+                name: name, params: params, origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             status = ""
             await refreshPanes()
             return result
