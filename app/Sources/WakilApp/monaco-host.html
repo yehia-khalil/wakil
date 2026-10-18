@@ -351,10 +351,12 @@
       // A keystroke not yet posted stays pending: its post then carries the old text, the keystroke and
       // this chunk, so the store sees the tab go dirty (final review I3).
       const shown = key === current;
-      // At the bottom by scroll, not by visible lines: a folded last entry hides its own lines
-      // (final review I1).
+      // At the bottom when the last line's top is in view — by position, not by visible lines, which
+      // leave out a folded last entry (final review I1), and not by scroll height, which counts the
+      // space Monaco draws past the last line.
       const lh = ed.getOption(monaco.editor.EditorOption.lineHeight);
-      const follow = shown && ed.getScrollTop() + ed.getLayoutInfo().height >= ed.getScrollHeight() - lh;
+      const bottom = function () { return ed.getTopForLineNumber(m.getLineCount()) + lh - ed.getLayoutInfo().height; };
+      const follow = shown && ed.getTopForLineNumber(m.getLineCount()) < ed.getScrollTop() + ed.getLayoutInfo().height;
       const from = m.getLineCount();
       const end = m.getFullModelRange().getEndPosition();
       applying = true;
@@ -366,7 +368,7 @@
       basis[key] = serial;
       if (shown) {
         foldEntries(key, from);
-        if (follow) ed.setScrollTop(ed.getScrollHeight());   // the bottom, past a folded last entry
+        if (follow) ed.setScrollTop(Math.max(0, bottom()));   // the last line at the bottom edge
         report();
       }
     };
