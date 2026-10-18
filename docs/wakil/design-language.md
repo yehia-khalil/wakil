@@ -268,6 +268,10 @@ program, alongside Wakil), not what the reserved hues mean once used.
 Implementation: `TerminalAnsiColor.swift` (`WakilKit`), asserted in
 `TerminalAnsiColorTests.swift`.
 
+**A log in the editor (3b-vii).** Red marks a log's error levels and amber its warnings — the same
+meanings, applied to text Wakil draws — while timestamps and stack traces are dimmed, so each
+entry's first line carries the eye.
+
 ## 6. Typography
 
 - **Micro-labels:** uppercase, `letter-spacing: .16–.22em`, 8–9.5px, low opacity. These

@@ -10,6 +10,9 @@ import Foundation
     /// Replace a model's whole text (a reload) — keeps cursor and scroll where they fit. `basis` is
     /// the agent-edit serial the model then holds, set in the same call.
     func resetText(key: String, text: String, basis: Int)
+    /// Append `text` at the end of a model (a growing log, 3b-vii). The page follows the bottom when
+    /// the last line was in view, and folds new log entries.
+    func appendText(key: String, text: String, basis: Int)
     /// Apply one edit as an undoable step (an agent edit) — **only onto `before`**. A model that is
     /// not `before` holds keystrokes the store has not seen, and the range would land at shifted
     /// columns; it, or a result that is not `after`, is replaced whole by `after` instead (the
@@ -65,6 +68,7 @@ public enum EditorRenderStep: Sendable, Equatable {
     case language(key: String, String)
     case readOnly(key: String, Bool)
     case reset(key: String, text: String, basis: Int)
+    case append(key: String, text: String, basis: Int)
     case edit(key: String, range: EditorRange, text: String, before: String, after: String, basis: Int)
     case reveal(key: String, cursor: EditorPosition, selection: EditorRange?)
     case scroll(key: String, top: Double)
@@ -135,6 +139,9 @@ public func editorRenderSteps(rendered: [String: EditorRendered], active: String
                     editorReplacing(r.text, e.range, with: e.text) == t.text
                 {
                     steps.append(.edit(key: key, range: e.range, text: e.text, before: r.text, after: t.text, basis: serial))
+                } else if !r.text.isEmpty, t.text.hasPrefix(r.text) {
+                    // Text that only grew (a log, 3b-vii) is appended, keeping folds and scroll.
+                    steps.append(.append(key: key, text: String(t.text.dropFirst(r.text.count)), basis: serial))
                 } else {
                     steps.append(.reset(key: key, text: t.text, basis: serial))
                 }
@@ -214,6 +221,7 @@ public func editorFindShownSeed(_ snapshot: EditorSnapshot) -> Int {
         case .language(let key, let language): renderer.setLanguage(key: key, language: language)
         case .readOnly(let key, let on): renderer.setReadOnly(key: key, readOnly: on)
         case .reset(let key, let text, let basis): renderer.resetText(key: key, text: text, basis: basis)
+        case .append(let key, let text, let basis): renderer.appendText(key: key, text: text, basis: basis)
         case .edit(let key, let range, let text, let before, let after, let basis):
             renderer.applyEdit(key: key, range: range, text: text, before: before, after: after, basis: basis)
         case .reveal(let key, let cursor, let selection):

@@ -54,6 +54,22 @@ private func rendered(_ t: EditorTab) -> EditorRendered {
         == [.reset(key: "file:/p/a.go", text: "new", basis: 0)])
 }
 
+@Test func textThatOnlyGrewIsAppendedNotReset() {
+    var a = tab("/p/a.log", "one\n")
+    let r = ["file:/p/a.log": rendered(a)]
+    a.text = "one\ntwo\n"; a.savedText = a.text
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/a.log", snapshot: EditorSnapshot(tabs: [a], active: 0))
+        == [.append(key: "file:/p/a.log", text: "two\n", basis: 0)])
+}
+
+@Test func textThatChangedEarlierIsStillReset() {
+    var a = tab("/p/a.log", "one\n")
+    let r = ["file:/p/a.log": rendered(a)]
+    a.text = "uno\ntwo\n"; a.savedText = a.text
+    #expect(editorRenderSteps(rendered: r, active: "file:/p/a.log", snapshot: EditorSnapshot(tabs: [a], active: 0))
+        == [.reset(key: "file:/p/a.log", text: "uno\ntwo\n", basis: 0)])
+}
+
 @Test func anAgentGotoIsARevealAndAClosedTabIsDisposed() {
     var a = tab("/p/a.go", "x\ny")
     let b = tab("/p/b.go", "b")
@@ -220,6 +236,7 @@ private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRender
     func setLanguage(key: String, language: String) { calls.append("language \(key)") }
     func setReadOnly(key: String, readOnly: Bool) { calls.append("readOnly \(key)") }
     func resetText(key: String, text: String, basis: Int) { calls.append("reset \(key)") }
+    func appendText(key: String, text: String, basis: Int) { calls.append("append \(key)") }
     func applyEdit(key: String, range: EditorRange, text: String, before: String, after: String, basis: Int) { calls.append("edit \(key)") }
     func reveal(key: String, cursor: EditorPosition, selection: EditorRange?) { calls.append("reveal \(key)") }
     func setScrollTop(key: String, top: Double) { calls.append("scroll \(key)") }

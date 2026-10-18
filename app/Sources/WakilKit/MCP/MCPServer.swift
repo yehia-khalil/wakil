@@ -482,7 +482,7 @@ private let readPaneToolListEntry = JSONValue.object([
         + "shown — or null when no find is open. search is the project search — query and "
         + "its switches case, word and regex; in_flight while it runs; truncated when it "
         + "stopped at the match cap; files_truncated when a root had too many files and was "
-        + "searched only in part; changed_since when a searched file has changed since the "
+        + "searched only in part; skipped_large, the files over 2 MB it did not search; changed_since when a searched file has changed since the "
         + "results were taken; cancelled when it was stopped before it finished; error, "
         + "any error; and results, each match's root, path, "
         + "line, column and preview; replace is the Replace field's text, or null while it is closed; "

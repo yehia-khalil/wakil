@@ -62,6 +62,7 @@ public func editorLanguage(forPath path: String) -> String {
     case "sh", "zsh", "bash": return "shell"
     case "xml": return "xml"
     case "ini", "toml", "env": return "ini"
+    case "log": return "log"
     default: return "plaintext"
     }
 }

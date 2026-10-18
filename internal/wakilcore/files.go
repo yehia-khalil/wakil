@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -20,7 +21,7 @@ import (
 	"unicode/utf8"
 )
 
-// FileCap is the most text files_read returns (spec 3b-i: larger files are 3b-v's).
+// FileCap is the most text files_read returns at once; over it, the file's last FileCap bytes (3b-vii).
 const FileCap = 2 << 20
 
 // FileListCap is the most files plus ignored entries files_list returns for one root.
@@ -38,6 +39,13 @@ type FileRead struct {
 	UTF8    bool   `json:"utf8"`
 	OverCap bool   `json:"over_cap"`
 	Exists  bool   `json:"exists"`
+	// Tail: over the cap, Text is the file's last FileCap bytes from the first line start; Start is
+	// its offset. End is the offset after Text (3b-vii).
+	Tail   bool `json:"tail"`
+	Start  int  `json:"start"`
+	End    int  `json:"end"`
+	Shrunk bool `json:"shrunk"`  // from: the file is now shorter than from
+	TooFar bool `json:"too_far"` // from: more than FileCap bytes lie past from
 }
 
 // FileWritten is what a write left on disk.
@@ -517,15 +525,28 @@ func ReadFile(path string, roots []string) (FileRead, error) {
 		return FileRead{}, UserError(path + " is not a regular file; the editor opens regular files only")
 	}
 	r := FileRead{Path: real, Root: root, Size: int(info.Size()), Mtime: info.ModTime().UnixNano(), Exists: true}
+	var data []byte
 	if r.Size > FileCap {
-		r.OverCap = true
-		r.UTF8 = true
-		return r, nil
-	}
-	data, err := os.ReadFile(real)
-	if err != nil {
+		r.OverCap, r.Tail = true, true
+		chunk, rerr := readAt(real, r.Size-FileCap, FileCap)
+		if rerr != nil {
+			return FileRead{}, rerr
+		}
+		r.Start = r.Size - FileCap
+		if i := bytes.IndexByte(chunk, '\n'); i >= 0 && i+1 < len(chunk) {
+			chunk, r.Start = chunk[i+1:], r.Start+i+1
+		}
+		data = chunk
+	} else if data, err = os.ReadFile(real); err != nil {
 		return FileRead{}, err
 	}
+	r.End = r.Start + len(data)
+	classify(&r, data)
+	return r, nil
+}
+
+// classify sets Binary, UTF8 and Text from data, as files_read always has.
+func classify(r *FileRead, data []byte) {
 	switch {
 	case bytes.IndexByte(data, 0) >= 0:
 		r.Binary = true
@@ -535,6 +556,61 @@ func ReadFile(path string, roots []string) (FileRead, error) {
 		r.UTF8 = true
 		r.Text = string(data)
 	}
+}
+
+// readAt reads up to n bytes of the file at real from off.
+func readAt(real string, off, n int) ([]byte, error) {
+	f, err := os.Open(real)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	buf := make([]byte, n)
+	m, err := f.ReadAt(buf, int64(off))
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	return buf[:m], nil
+}
+
+// ReadFileFrom reads the whole lines past byte offset from (3b-vii: a growing log). Shrunk when
+// the file is now shorter than from; TooFar when more than FileCap bytes lie past it. Text stops
+// after the last newline, so a line still being written waits for the next read.
+func ReadFileFrom(path string, from int, roots []string) (FileRead, error) {
+	real, root, err := ConfineFilePath(path, roots, false)
+	if err != nil {
+		return FileRead{}, err
+	}
+	info, err := os.Stat(real)
+	if errors.Is(err, fs.ErrNotExist) {
+		return FileRead{Path: real, Root: root, UTF8: true}, nil
+	}
+	if err != nil {
+		return FileRead{}, err
+	}
+	if info.IsDir() {
+		return FileRead{}, UserError(path + " is a folder, not a file")
+	}
+	if !info.Mode().IsRegular() {
+		return FileRead{}, UserError(path + " is not a regular file; the editor opens regular files only")
+	}
+	r := FileRead{Path: real, Root: root, Size: int(info.Size()), Mtime: info.ModTime().UnixNano(), Exists: true,
+		Start: from, End: from, UTF8: true}
+	switch {
+	case from < 0 || r.Size < from:
+		r.Shrunk = true
+		return r, nil
+	case r.Size-from > FileCap:
+		r.TooFar = true
+		return r, nil
+	}
+	data, err := readAt(real, from, r.Size-from)
+	if err != nil {
+		return FileRead{}, err
+	}
+	data = data[:bytes.LastIndexByte(data, '\n')+1]
+	r.End = from + len(data)
+	classify(&r, data)
 	return r, nil
 }
 
@@ -612,6 +688,8 @@ type SearchResult struct {
 	Truncated bool          `json:"truncated"`
 	// FilesTruncated: some root's listing hit FileListCap, so it was searched only in part.
 	FilesTruncated bool `json:"files_truncated"`
+	// SkippedLarge: the files over FileCap that were not searched, root-relative (3b-vii).
+	SkippedLarge []string `json:"skipped_large"`
 }
 
 // searchPattern compiles q the one way both kinds of root are searched, so a pattern means the
@@ -672,7 +750,7 @@ func SearchFiles(ctx context.Context, roots []string, heavy []string, only []str
 		}
 		targets = only
 	}
-	res := SearchResult{Matches: []SearchMatch{}}
+	res := SearchResult{Matches: []SearchMatch{}, SkippedLarge: []string{}}
 	for _, root := range targets {
 		l, lerr := ListFiles(ctx, root, roots, heavy)
 		if lerr != nil {
@@ -689,7 +767,11 @@ func SearchFiles(ctx context.Context, roots []string, heavy []string, only []str
 				continue
 			}
 			info, serr := os.Stat(p)
-			if serr != nil || !info.Mode().IsRegular() || info.Size() > FileCap {
+			if serr != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			if info.Size() > FileCap {
+				res.SkippedLarge = append(res.SkippedLarge, rel)
 				continue
 			}
 			data, rerr := os.ReadFile(p)

@@ -1,0 +1,24 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"yes x | head -c 3000000 > ~/../e2e-project/big.log && printf '[2026-10-18 13:33:20] local.ERROR: boom\\n#0 /a.php(1): f()\\n' >> ~/../e2e-project/big.log && echo big-written"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"big-written"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-project/big.log"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"/e2e-project/big.log"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].language","equals":"log"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].notice","equals":"Showing the last 2 MB of 3 MB"}}
+{"expect":{"tree":"contains","text":"Showing the last 2 MB of 3 MB"}}
+{"expect":{"pane":"editor-2","field":"visible_text","contains":"local.ERROR: boom"}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-2"},"refuses":"big.log is open read-only (Showing the last 2 MB of 3 MB)"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"terminal-1"}}}
+{"do":{"keys":"printf '[2026-10-18 13:34:00] local.ERROR: again\\n' >> ~/../e2e-project/big.log && echo appended"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"appended"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"editor-2"}}}
+{"expect":{"pane":"editor-2","field":"visible_text","contains":"local.ERROR: again"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"false"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].notice","equals":"Showing the last 2 MB of 3 MB"}}
+{"do":{"hotkey":"cmd+shift+f"}}
+{"dispatch":{"action":"editor_search","params":{"pane":"editor-2","query":"boom"}}}
+{"expect":{"pane":"editor-2","field":"search.skipped_large","contains":"big.log"}}
+{"expect":{"tree":"contains","text":"1 file over 2 MB not searched: big.log"}}

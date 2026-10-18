@@ -1,0 +1,17 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"for i in $(seq 1 200); do echo \"[2026-10-18 13:33:20] local.INFO: line $i\"; done > ~/../e2e-project/small.log && echo small-written"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"small-written"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-project/small.log"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"/e2e-project/small.log"}}
+{"expect":{"pane":"editor-2","field":"cursor.line","equals":"201"}}
+{"expect":{"pane":"editor-2","field":"visible_text","contains":"local.INFO: line 200"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"terminal-1"}}}
+{"do":{"keys":"echo '[2026-10-18 13:34:00] local.WARNING: line 201' >> ~/../e2e-project/small.log && echo appended"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"appended"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"editor-2"}}}
+{"expect":{"pane":"editor-2","field":"visible_text","contains":"local.WARNING: line 201"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"false"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].disk_state","equals":"inSync"}}

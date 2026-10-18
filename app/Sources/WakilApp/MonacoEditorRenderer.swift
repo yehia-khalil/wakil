@@ -82,6 +82,10 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
         run("wakilResetText(\(Self.js(key)),\(Self.js(text)),\(basis))")
     }
 
+    func appendText(key: String, text: String, basis: Int) {
+        run("wakilAppendText(\(Self.js(key)),\(Self.js(text)),\(basis))")
+    }
+
     /// One `evaluateJavaScript`: the page checks `before`, applies, checks `after`, and sets the
     /// basis in the same turn (final review I2).
     func applyEdit(key: String, range r: EditorRange, text: String, before: String, after: String, basis: Int) {

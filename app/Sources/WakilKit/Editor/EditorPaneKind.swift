@@ -70,6 +70,7 @@ enum EditorPaneKind: PaneKind {
         o["search"] = .object([
             "query": .string(q.query), "case": .bool(q.caseSensitive), "word": .bool(q.wholeWord), "regex": .bool(q.regex),
             "in_flight": .bool(q.inFlight), "truncated": .bool(q.truncated), "files_truncated": .bool(q.filesTruncated),
+            "skipped_large": .array(q.skippedLarge.map { .string($0) }),
             "changed_since": .bool(q.changedSince), "cancelled": .bool(q.cancelled), "error": q.error.map { .string($0) } ?? .null,
             "results": .array(q.results.map { m in .object([
                 "root": .string(m.root), "path": .string(m.path), "line": .number(Double(m.line)),

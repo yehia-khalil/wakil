@@ -1241,6 +1241,10 @@ Each entry: the call, why, and what would change our mind.
     ignored:** shown dimmed, loaded on opening, never searched — the walk cannot tell an ignored
     file from a skipped one without git. *Reverse if:* search on a large repository is measured too
     slow for the 250 ms pause, which brings `git grep` back for repositories.
+    **Amended 2026-10-18 (3b-vii design; the operator decided):** **3b-vi — scratch buffers sent to
+    other panes — is parked.** The DB pane's query line already wraps, colours and formats SQL, so
+    only sending a selection to a terminal pane had value, and not enough to build now. The later
+    rows keep their numbers: large files and logs 3b-vii, AI ghost-text 3b-viii, LSP 3b-ix.
 
 38. **Editor settings live in two tiers, autosave is the operator's choice, and Decision 30 holds.**
     *(2026-10-13, operator, during the 3b-v design.)*

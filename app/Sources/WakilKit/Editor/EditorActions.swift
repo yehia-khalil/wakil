@@ -135,24 +135,88 @@ private func editorRange(_ v: JSONValue?) -> EditorRange? {
 
 private func megabytes(_ bytes: Int) -> String { "\(Int((Double(bytes) / 1_000_000).rounded())) MB" }
 
-/// A tab from a `files_read` reply. Over the cap, binary or not UTF-8 opens read-only with a notice.
+public func editorTailNotice(size: Int) -> String { "Showing the last 2 MB of \(megabytes(size))" }
+
+/// A tab from a `files_read` reply. A large file's tail opens read-only with its notice; binary or
+/// not UTF-8 opens read-only with a notice. A log opens at its bottom (3b-vii).
 func editorTab(fromRead o: [String: JSONValue], path: String, root: String) -> EditorTab {
     let name = (path as NSString).lastPathComponent
     let text: String = { if case .string(let s)? = o["text"] { s } else { "" } }()
     var tab = EditorTab.file(path: path, root: root, text: text, mtime: Int64(o["mtime"]?.intValue ?? 0),
                              language: editorLanguage(forPath: path))
+    tab.readTo = o["end"]?.intValue ?? (o["size"]?.intValue ?? text.utf8.count)
     if o["exists"] == .bool(false) { tab.diskState = .deleted }
-    if o["over_cap"] == .bool(true) {
-        tab.readOnly = true
-        tab.notice = "\(name) is \(megabytes(o["size"]?.intValue ?? 0)); files over 2 MB open in 3b-v"
-    } else if o["binary"] == .bool(true) {
+    if o["binary"] == .bool(true) {
         tab.readOnly = true
         tab.notice = "\(name) is a binary file"
     } else if o["utf8"] == .bool(false) {
         tab.readOnly = true
         tab.notice = "\(name) is not UTF-8; it opens read-only"
+    } else if o["tail"] == .bool(true) {
+        tab.readOnly = true
+        tab.tailStart = o["start"]?.intValue ?? 0
+        tab.notice = editorTailNotice(size: o["size"]?.intValue ?? 0)
+    } else if o["over_cap"] == .bool(true) {
+        tab.readOnly = true
+        tab.notice = "\(name) is \(megabytes(o["size"]?.intValue ?? 0)) and could not be read as text"
+    }
+    if tab.language == "log" || tab.tailStart != nil {
+        let lines = text.reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
+        tab.cursor = EditorPosition(line: lines, column: 1)
+        tab.scrollTop = Double(lines) * 100        // past the end; Monaco clamps it to the bottom
     }
     return tab
+}
+
+/// Whether a disk change reaches this tab as an append (3b-vii): a tail, or a clean `.log` still following.
+public func editorAppends(_ tab: EditorTab) -> Bool {
+    guard case .file = tab.subject, tab.diskState != .deleted else { return false }
+    if tab.notice?.hasSuffix("it stopped following") == true { return false }
+    return tab.tailStart != nil || (tab.language == "log" && !tab.dirty)
+}
+
+public enum EditorAppendOutcome: Sendable, Equatable {
+    case unchanged, appended(EditorTab), reread, stopped(EditorTab), deleted
+}
+
+/// What an appending tab becomes after `files_read {from: readTo}` (3b-vii). A tail never grows past
+/// twice the cap, and a small log that passes the cap becomes a tail: both are read afresh.
+public func editorAfterAppendRead(_ tab: EditorTab, reply o: [String: JSONValue]) -> EditorAppendOutcome {
+    let cap = 2 << 20
+    if o["exists"] == .bool(false) { return .deleted }
+    if o["shrunk"] == .bool(true) || o["too_far"] == .bool(true) { return .reread }
+    let size = o["size"]?.intValue ?? 0
+    if tab.tailStart == nil && size > cap { return .reread }
+    let name = ((tab.path ?? "") as NSString).lastPathComponent
+    var t = tab
+    if o["binary"] == .bool(true) || o["utf8"] == .bool(false) {
+        t.readOnly = true
+        t.notice = o["binary"] == .bool(true) ? "\(name) now holds binary data; it stopped following"
+                                              : "\(name) is no longer UTF-8; it stopped following"
+        return .stopped(t)
+    }
+    let chunk: String = { if case .string(let s)? = o["text"] { s } else { "" } }()
+    let end = o["end"]?.intValue ?? tab.readTo
+    if tab.tailStart != nil { t.notice = editorTailNotice(size: size) }
+    if chunk.isEmpty || end == tab.readTo { return t == tab ? .unchanged : .appended(t) }
+    if tab.tailStart != nil && tab.text.utf8.count + chunk.utf8.count > 2 * cap { return .reread }
+    // Following (Rule 6): a view that reached the last line with text moves to the new last one; one
+    // scrolled up stays. A log ends in a newline, so the line before the last is the one with text.
+    let lastText = { (text: String) in max(1, text.reduce(1) { $1 == "\n" ? $0 + 1 : $0 } - 1) }
+    let following = (tab.visibleRange?.upperBound ?? 0) >= lastText(tab.text)
+    t.text += chunk
+    if following {
+        // The empty line under the new entry, as a terminal's prompt sits under its output: revealing
+        // the entry's own line can leave it under the edge, which Monaco counts as in view.
+        t.cursor = EditorPosition(line: lastText(t.text) + 1, column: 1)
+        t.selection = nil
+    }
+    t.savedText = t.text
+    t.readTo = end
+    t.mtime = Int64(o["mtime"]?.intValue ?? Int(tab.mtime))
+    t.diskState = .inSync
+    t.edits += 1
+    return .appended(t)
 }
 
 /// What a tab becomes after re-reading its file (spec, Data flow: disk changes). `read` is the tab
@@ -172,6 +236,8 @@ private func editorAfterDiskReadRaw(_ tab: EditorTab, read: EditorTab) -> Editor
     if read.mtime == tab.mtime && tab.diskState != .deleted { return tab }
     t.mtime = read.mtime
     t.readOnly = read.readOnly
+    t.tailStart = read.tailStart
+    t.readTo = read.readTo
     if t.readOnly { t.baseline = nil }       // a read-only tab has no marks
     t.notice = read.notice ?? (tab.notice == nil ? nil : tab.notice)
     if read.text == tab.text {
@@ -1161,13 +1227,33 @@ public func registerEditorActions(
                 // Each read is kept with the mtime the tab had when it began: a save that lands while
                 // the read is in flight leaves the read stale, and applying it would rewind the tab.
                 var reads: [String: (fresh: EditorTab, basis: Int64)] = [:]
+                // 3b-vii: a tail or a clean log reads only what was added since `readTo`.
+                var appended: [String: (reply: [String: JSONValue], basis: Int64, readTo: Int)] = [:]
                 for tab in tabs {
                     guard case .file(let path, let r) = tab.subject, only == nil || r == only else { continue }
+                    if editorAppends(tab), let files, (try? await confine(path, action: "editor_refresh")) != nil,
+                       case .ok(let o)? = try? await filesTool(files, "files_read",
+                                                               ["path": .string(path), "from": .integer(Int64(tab.readTo))]) {
+                        if editorAfterAppendRead(tab, reply: o) != .reread { appended[path] = (o, tab.mtime, tab.readTo); continue }
+                    }
                     if let fresh = try? await read(path, action: "editor_refresh") { reads[path] = (fresh, tab.mtime) }
                 }
                 let collected = reads
+                let collectedAppends = appended
                 let wasReadOnly = Set(tabs.filter(\.readOnly).compactMap(\.path))
                 await panes.updateEditor(paneId: pane) { s in
+                    for i in s.tabs.indices {
+                        guard let p = s.tabs[i].path, let (reply, basis, readTo) = collectedAppends[p],
+                              !s.tabs[i].saving, s.tabs[i].mtime == basis, s.tabs[i].readTo == readTo,
+                              !s.tabs[i].dirty || s.tabs[i].tailStart != nil else { continue }
+                        // Applied to the tab as it is now, so a cursor or scroll reported while the
+                        // read was in flight stays (Rule 6).
+                        switch editorAfterAppendRead(s.tabs[i], reply: reply) {
+                        case .appended(let t), .stopped(let t): s.tabs[i] = t
+                        case .deleted: s.tabs[i].diskState = .deleted
+                        case .unchanged, .reread: break
+                        }
+                    }
                     for i in s.tabs.indices {
                         guard let p = s.tabs[i].path, let (fresh, basis) = collected[p],
                               !s.tabs[i].saving, s.tabs[i].mtime == basis else { continue }
@@ -1583,8 +1669,11 @@ public func registerEditorActions(
             switch outcome {
             case .success(.object(let o)):
                 (s.search.results, s.search.truncated, s.search.filesTruncated) = matches(from: o)
+                if case .array(let skipped)? = o["skipped_large"] {
+                    s.search.skippedLarge = skipped.compactMap { if case .string(let p) = $0 { p } else { nil } }
+                } else { s.search.skippedLarge = [] }
             case .failure(let e) where !(e is CancellationError):
-                s.search.results = []; s.search.truncated = false; s.search.filesTruncated = false
+                s.search.results = []; s.search.truncated = false; s.search.filesTruncated = false; s.search.skippedLarge = []
                 s.search.error = String(describing: e)
             default: break
             }
@@ -1646,7 +1735,7 @@ public func registerEditorActions(
                     s.search.cancelled = false
                     s.search.error = nil
                     s.search.changedSince = false
-                    s.search.results = []; s.search.truncated = false; s.search.filesTruncated = false
+                    s.search.results = []; s.search.truncated = false; s.search.filesTruncated = false; s.search.skippedLarge = []
                     s.search.replace.preview = [:]
                     return s.search.serial
                 }
