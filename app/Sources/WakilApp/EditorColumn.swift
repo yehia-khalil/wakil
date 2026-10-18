@@ -315,7 +315,9 @@ struct EditorColumn: View {
                 Image(systemName: row.open ? "chevron.down" : "chevron.right")
                     .font(.system(size: 8, weight: .semibold))
                     .frame(width: 10)
-            case .file, .note:
+            case .file:
+                EditorFileIcon(editorFileGlyph(forPath: row.id))
+            case .note:
                 Spacer().frame(width: 10)
             }
             if row.kind == .repo {
@@ -433,6 +435,9 @@ struct EditorColumn: View {
             Text(row.status)
                 .foregroundStyle(EditorPaneStyle.tone(gitStatusTone(row.status)))
                 .frame(width: 18, alignment: .leading)
+            EditorFileIcon(editorFileGlyph(forPath: row.path))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
+                .padding(.trailing, 5)
             Text(gitRowLabel(row))
                 .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
                 .lineLimit(1).truncationMode(.middle)

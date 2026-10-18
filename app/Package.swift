@@ -43,6 +43,8 @@ let package = Package(
                 .copy("default.metallib"),
                 .copy("monaco-host.html"),
                 .copy("../../Resources/monaco"),
+                // The Seti icon font (3b-iv-b): VS Code's single-colour file icons, MIT.
+                .copy("../../Resources/seti"),
             ]),
         .testTarget(name: "WakilKitTests", dependencies: ["WakilKit"], exclude: ["Fixtures"]),
     ]

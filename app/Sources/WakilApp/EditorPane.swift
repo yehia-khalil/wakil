@@ -341,6 +341,8 @@ struct EditorPane: View {
                 .fill(on ? EditorPaneStyle.tick : .clear)
                 .frame(width: 2, height: 15)
                 .shadow(color: on ? EditorPaneStyle.tick.opacity(0.7) : .clear, radius: 3.5)
+            EditorFileIcon(editorTabGlyph(tab))
+                .foregroundStyle(on ? EditorPaneStyle.text : EditorPaneStyle.text.opacity(0.62))
             Text(title)
                 .font(.system(size: 11.5, design: .monospaced))
                 .italic(tab.preview)
