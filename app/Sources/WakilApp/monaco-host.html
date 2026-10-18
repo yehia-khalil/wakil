@@ -356,7 +356,10 @@
       // space Monaco draws past the last line.
       const lh = ed.getOption(monaco.editor.EditorOption.lineHeight);
       const bottom = function () { return ed.getTopForLineNumber(m.getLineCount()) + lh - ed.getLayoutInfo().height; };
-      const follow = shown && ed.getTopForLineNumber(m.getLineCount()) < ed.getScrollTop() + ed.getLayoutInfo().height;
+      // A log ends in a newline, so its last line is empty and may sit just under the edge: the line
+      // above it is the one that must be in view.
+      const lastText = Math.max(1, m.getLineCount() - 1);
+      const follow = shown && ed.getTopForLineNumber(lastText) < ed.getScrollTop() + ed.getLayoutInfo().height;
       const from = m.getLineCount();
       const end = m.getFullModelRange().getEndPosition();
       applying = true;
