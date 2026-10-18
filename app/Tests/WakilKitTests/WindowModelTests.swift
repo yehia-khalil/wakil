@@ -5163,6 +5163,144 @@ private final class OrgRecorder: @unchecked Sendable {
     #expect(seen.last == Place(organization: "initech", project: "api", environment: "staging"))
 }
 
+/// What the socket judges an agent's call against is the session's own place, so the operator
+/// switching project on screen does not move a running agent.
+@Test @MainActor func theAgentCallerKeepsTheSessionsPlaceAcrossAProjectSwitch() async {
+    let harnesses = HarnessBox()
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot,
+        organization: "initech",
+        harnessFactory: { _, _ in harnesses.next() })
+    model.seedForTesting(
+        providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+        project: "api", environment: "staging")
+    await model.send("hello")
+    // The operator moves the screen to another project.
+    model.seedForTesting(
+        providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+        project: "billing", environment: "staging")
+
+    #expect(model.place.project == "billing")
+    #expect(model.agentCaller.place
+        == Place(organization: "initech", project: "api", environment: "staging"))
+}
+
+@Test @MainActor func aResumedSessionTakesThePlaceOnScreenAtResume() async throws {
+    let (registry, panes, layout) = try makeRegistry()
+    await registerFakeReadSession(into: registry, cwd: "/Users/x/proj", entries: [])
+    let harnesses = HarnessBox()
+    let model = WindowModel(
+        registry: registry, panes: panes, layout: layout, context: nil,
+        harnessFactory: { _ in harnesses.next() }, resumes: ResumeBroker(),
+        rootPath: "/Users/x/proj", providerId: "main", lookup: AlwaysSucceedsCredentialsLookup(), environment: "staging")
+    model.seedForTesting(
+        providerId: "main", rootPath: "/Users/x/proj", thoughts: 0,
+        project: "billing", environment: "staging")
+    #expect(model.agentPlace == nil)
+
+    await model.resume(sessionId: "parent-1")
+
+    #expect(model.agentPlace == model.place)
+    #expect(model.agentPlace?.project == "billing")
+}
+
+@Test @MainActor func anOrgSwitchClearsTheAgentPlace() async {
+    let harnesses = HarnessBox()
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot,
+        organization: "initech",
+        harnessFactory: { _, _ in harnesses.next() })
+    model.seedForTesting(
+        providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+        project: "api", environment: "staging")
+    await model.send("hello")
+    #expect(model.agentPlace != nil)
+
+    await model.setOrganization("acme")
+
+    #expect(model.agentPlace == nil)
+}
+
+/// A pool client that knows the place it was started for, and a log of the places stopped.
+private final class PlaceProbe: ToolCaller, @unchecked Sendable {
+    let place: Place
+    init(_ place: Place) { self.place = place }
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        .object([:])
+    }
+}
+
+private actor StoppedPlaces {
+    private(set) var places: [Place] = []
+    func record(_ place: Place) { places.append(place) }
+}
+
+private func recordingPool(_ stopped: StoppedPlaces) -> PlaceClients {
+    PlaceClients(
+        start: { _, place in PlaceProbe(place) },
+        stop: { client in if let probe = client as? PlaceProbe { await stopped.record(probe.place) } })
+}
+
+/// Waits (bounded) until `stopped` holds `place`: `retain` runs on its own task after the
+/// change that drives it.
+private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -> Bool {
+    for _ in 0..<500 {
+        if await stopped.places.contains(place) { return true }
+        try? await Task.sleep(nanoseconds: 2_000_000)
+    }
+    return false
+}
+
+/// The window, not a test, tells the pool which places are still in use: an org switch ends
+/// the session, so the clients pinned to its place are stopped.
+@Test @MainActor func anOrgSwitchStopsTheAgentPlacesPinnedClients() async throws {
+    let stopped = StoppedPlaces()
+    let pool = recordingPool(stopped)
+    let harnesses = HarnessBox()
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot, organization: "initech",
+        harnessFactory: { _, _ in harnesses.next() }, placeClients: pool)
+    model.seedForTesting(
+        providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+        project: "api", environment: "staging")
+    await model.send("hello")
+    let agentPlace = try #require(model.agentPlace)
+    _ = try await pool.client(.database, for: agentPlace)
+
+    await model.setOrganization("acme")
+
+    #expect(await waitUntilStopped(agentPlace, in: stopped))
+}
+
+/// A resume into another place moves the session there, so the old place's clients stop.
+@Test @MainActor func aResumeIntoAnotherPlaceStopsTheOldPlacesPinnedClients() async throws {
+    let (registry, panes, layout) = try makeRegistry()
+    await registerFakeReadSession(into: registry, cwd: "/Users/x/proj", entries: [])
+    let stopped = StoppedPlaces()
+    let pool = recordingPool(stopped)
+    let harnesses = HarnessBox()
+    let model = WindowModel(
+        registry: registry, panes: panes, layout: layout, context: nil,
+        harnessFactory: { _, _ in harnesses.next() }, resumes: ResumeBroker(),
+        rootPath: "/Users/x/proj", providerId: "main",
+        lookupFactory: { _ in AlwaysSucceedsCredentialsLookup() },
+        placeClients: pool, environment: "staging")
+    model.seedForTesting(
+        providerId: "main", rootPath: "/Users/x/proj", thoughts: 0,
+        project: "billing", environment: "staging")
+    await model.send("hello")
+    let old = try #require(model.agentPlace)
+    _ = try await pool.client(.database, for: old)
+
+    model.seedForTesting(
+        providerId: "main", rootPath: "/Users/x/proj", thoughts: 0,
+        project: "api", environment: "staging")
+    await model.resume(sessionId: "parent-1")
+    #expect(model.agentPlace?.project == "api")
+
+    #expect(await waitUntilStopped(old, in: stopped))
+}
+
 // MARK: - `slugForOrgIdentifier(from:)` — the Creating form's derived id (spec §8.1.1 / §9)
 
 /// The spec's own example, verbatim: "Initech Labs" proposes `initech-labs`.

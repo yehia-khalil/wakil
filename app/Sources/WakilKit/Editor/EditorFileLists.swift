@@ -33,7 +33,37 @@ public actor EditorFileLists: ToolCaller {
     }
     private var changeSubscribers: [UUID: AsyncStream<Void>.Continuation] = [:]
 
-    public init(files: any ToolCaller) { self.files = files }
+    public init(files: any ToolCaller) {
+        self.files = files
+    }
+
+    /// Every list here is the window's, so a `files_list` an agent session made
+    /// (`pinnedPlace(of:)`) never reads or fills `kept`, `inFlight` or the trees' state: it is
+    /// read fresh, through `files`, which routes it to its place's own client.
+    private func forAnotherPlace() -> Bool {
+        pinnedPlace(of: ActionRegistry.dispatchCaller) != nil
+    }
+
+    /// The place on screen, installed by the window (`setScreenPlace`). Nil until then, and an
+    /// agent's read is then never the screen's.
+    private nonisolated let screenPlace = ScreenPlaceBox()
+
+    /// Tells the lists which place the trees are drawn for, so an agent session pinned to that
+    /// place lists into them (`listing(root:)`).
+    public nonisolated func setScreenPlace(_ lookup: @escaping @Sendable () async -> Place?) {
+        screenPlace.set(lookup)
+    }
+
+    /// Whether a listing read now is drawn by the trees: the operator's always, an agent
+    /// session's only while its place is the one on screen. Its read still went to its own
+    /// place's client (`rawList`), which for the screen's place answers for the same roots.
+    /// Without this an agent's `editor_tree` showed the column with every root still listing,
+    /// and no row the operator could open.
+    private func drawnOnScreen() async -> Bool {
+        guard let caller = ActionRegistry.dispatchCaller, let pinned = pinnedPlace(of: caller) else { return true }
+        guard let screen = screenPlace.current() else { return false }
+        return await screen() == pinned
+    }
 
     /// Wakes on every change to `state()`: a root listed, a folder loading or loaded (final review
     /// C1). The window mirrors on it, so a root's "listing" tick and a folder's load tick are drawn
@@ -137,6 +167,10 @@ public actor EditorFileLists: ToolCaller {
     /// files_list for `root`: kept while watched (one read shared by concurrent callers), fresh otherwise.
     /// A read that an `invalidate` overtook answers its caller but is never kept.
     private func rawList(_ root: String) async throws -> JSONValue {
+        if forAnotherPlace() {
+            return try await files.callTool(name: "files_list", arguments: .object(["root": .string(root)]),
+                                            timeout: MCPClient.readReplyTimeout)
+        }
         if watching, let k = kept[root] { return k }
         if watching, let t = inFlight[root] { return try await t.value }
         let gen = generation[root, default: 0]
@@ -151,6 +185,7 @@ public actor EditorFileLists: ToolCaller {
     }
 
     public func listing(root: String) async -> EditorRootListing {
+        let shown = await drawnOnScreen()
         let gen = generation[root, default: 0]
         let l: EditorRootListing
         do {
@@ -165,7 +200,7 @@ public actor EditorFileLists: ToolCaller {
         } catch {
             l = .failed(root: root, String(describing: error))
         }
-        if generation[root, default: 0] == gen { current.listings[root] = l }
+        if shown, generation[root, default: 0] == gen { current.listings[root] = l }
         return l
     }
 
@@ -233,5 +268,24 @@ public actor EditorFileLists: ToolCaller {
             return try await files.callTool(name: name, arguments: arguments, timeout: timeout)
         }
         return try await rawList(root)
+    }
+}
+
+/// `EditorFileLists.setScreenPlace`'s lookup, set once from the window's synchronous `init`.
+private final class ScreenPlaceBox: @unchecked Sendable {
+    typealias Lookup = @Sendable () async -> Place?
+    private let lock = NSLock()
+    private var lookup: Lookup?
+
+    func set(_ lookup: @escaping Lookup) {
+        lock.lock()
+        self.lookup = lookup
+        lock.unlock()
+    }
+
+    func current() -> Lookup? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lookup
     }
 }

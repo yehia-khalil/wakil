@@ -768,12 +768,13 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         lookupFactory: { _ in FailingLookupForWiringTests() },
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
         fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
-        paletteClients: PaletteClients())
+        paletteClients: PaletteClients(), placeClients: wiring.placeClients)
     let held = try #require(model.rootWatcherForTesting as? FSEventsRootWatcher)
     #expect(held === (wiring.rootWatcher as? FSEventsRootWatcher))
 }
 
-/// 3b-iii: the status the window shows and the actions read is built over the wiring's own `wakil-git`.
+/// 3b-iii: the status the window shows and the actions read is built over the wiring's own `wakil-git`,
+/// routed by place.
 @MainActor
 @Test func theStatusIsTheOneTheActionsRead() async throws {
     let binDir = repoRoot().appendingPathComponent("bin")
@@ -785,7 +786,11 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         environment: ["HOME": try scratch().path, "PATH": "/usr/bin:/bin", "WAKIL_BIN_DIR": binDir.path])
     defer { shutdownSynchronously(wiring) }
     let client = try #require(wiring.gitClient, "\(wiring.diagnostics)")
-    let held = try #require(wiring.gitStatus.git as? MCPClient)
+    // Routed (background agents, 2 of 4): an agent's diff and baseline reads go to a client pinned
+    // to its own place, and every other read to the window's — this one.
+    let routed = try #require(wiring.gitStatus.git as? PlaceRoutedCaller)
+    #expect(routed.role == .git)
+    let held = try #require(routed.window as? MCPClient)
     #expect(held === client)
 }
 
@@ -814,7 +819,7 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         lookupFactory: { _ in FailingLookupForWiringTests() },
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
         fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
-        paletteClients: PaletteClients())
+        paletteClients: PaletteClients(), placeClients: wiring.placeClients)
     #expect(model.fileListsForTesting === lists)
 
     let emptyBin = try scratch()
@@ -841,4 +846,161 @@ private struct FailingLookupForWiringTests: ProviderCredentialsLookup {
     let empty = WakilWiring.childProcessEnvironment(
         from: ["HOME": "/h", "PATH": "/p", "WAKIL_ANTHROPIC_BASE_URL": ""], org: "initech", provider: "main")
     #expect(empty["WAKIL_ANTHROPIC_BASE_URL"] == nil)
+}
+
+/// Background agents, 2 of 4: an agent's dispatch reaches a client pinned to its own place,
+/// through the registry `build` itself assembled. **The guard against a `register*` call in
+/// `build` being handed a window client instead of a routed one**: every unit test of the router
+/// builds its own `PlaceRoutedCaller`, so only a test through `build` notices that. The real
+/// `wakil-ctx` behind both, two orgs in a scratch `HOME`: the window's client answers org A's
+/// projects, and a pinned one org B's.
+@Test func anAgentsDispatchThroughTheBuiltRegistryReachesTheClientPinnedToItsPlace() async throws {
+    let bin = repoRoot().appendingPathComponent("bin/wakil-ctx")
+    try #require(FileManager.default.isExecutableFile(atPath: bin.path), "run `make build` first")
+
+    let home = try scratch()
+    let orgA = "place-route-test-a-\(UUID().uuidString)"
+    let orgB = "place-route-test-b-\(UUID().uuidString)"
+    try writeSwitchOrgFixture(home: home, org: orgA, project: "alpha-project")
+    try writeSwitchOrgFixture(home: home, org: orgB, project: "beta-project")
+
+    let wiring = await WakilWiring.build(
+        journalDirectory: try scratch(),
+        sessionId: "s1",
+        environment: [
+            "HOME": home.path, "PATH": "/usr/bin:/bin", "WAKIL_ORG": orgA,
+            "WAKIL_BIN_DIR": bin.deletingLastPathComponent().path,
+        ])
+    #expect(wiring.contextClient != nil, "\(wiring.diagnostics)")
+    let onScreen = Place(organization: orgA, project: "alpha-project", environment: "dev")
+    let away = Place(organization: orgB, project: "beta-project", environment: "dev")
+
+    func projects(as place: Place, session: String?) async throws -> Set<String> {
+        let result = try await wiring.registry.dispatch(
+            name: "ctx_list_projects", params: .object([:]), origin: .agent,
+            caller: DispatchCaller(place: place, session: session), confirmation: nil)
+        guard case .object(let top) = result,
+              case .object(let structured)? = top["structuredContent"],
+              case .object(let projects)? = structured["projects"]
+        else { return [] }
+        return Set(projects.keys)
+    }
+
+    #expect(try await projects(as: onScreen, session: nil) == ["alpha-project"])
+    #expect(try await projects(as: away, session: "s1") == ["beta-project"])
+    // And the window's own client was never re-pointed for it.
+    #expect(try await projects(as: onScreen, session: nil) == ["alpha-project"])
+    // The operator's dispatch stays on the window's client even when the place it carries is
+    // another org's: it starts nothing.
+    #expect(try await projects(as: away, session: nil) == ["alpha-project"])
+    #expect(await wiring.placeClients.startedRoles(for: away) == [.context])
+
+    await wiring.shutdown()
+}
+
+/// The switch race, end to end: `setProject` writes `active.json` before the window's `place`
+/// moves. An agent pinned to the old project calling in between must get the old project's
+/// answer from its pinned `wakil-ctx`, not the new one's from the window's, which already
+/// reads the rewritten file.
+@Test func anAgentCallingMidSwitchIsAnsweredForItsOwnPlace() async throws {
+    let bin = repoRoot().appendingPathComponent("bin/wakil-ctx")
+    try #require(FileManager.default.isExecutableFile(atPath: bin.path), "run `make build` first")
+
+    let home = try scratch()
+    let org = "place-race-test-\(UUID().uuidString)"
+    let orgDir = home.appendingPathComponent(".wakil/orgs/\(org)")
+    var registry: [String: JSONValue] = [:]
+    var paths: [String: String] = [:]
+    for (project, environment) in [("alpha", "staging"), ("beta", "production")] {
+        let dir = orgDir.appendingPathComponent("proj-\(project)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let path = dir.appendingPathComponent("project.json")
+        try """
+            {"name":"\(project)","org":"\(org)","roots":[{"path":"/tmp/\(project)"}],\
+            "scopes":{},"environments":{"\(environment)":{"databases":[]}}}
+            """.write(to: path, atomically: true, encoding: .utf8)
+        registry[project] = .object(["path": .string(path.path)])
+        paths[project] = path.path
+    }
+    try JSONEncoder().encode(JSONValue.object(registry))
+        .write(to: orgDir.appendingPathComponent("projects.json"))
+    // `setProject` has already written the new project; the screen has not caught up.
+    try #"{"project":"\#(paths["beta"]!)","environment":"production"}"#
+        .write(to: orgDir.appendingPathComponent("active.json"), atomically: true, encoding: .utf8)
+
+    let wiring = await WakilWiring.build(
+        journalDirectory: try scratch(), sessionId: "s1",
+        environment: [
+            "HOME": home.path, "PATH": "/usr/bin:/bin", "WAKIL_ORG": org,
+            "WAKIL_BIN_DIR": bin.deletingLastPathComponent().path,
+        ])
+    #expect(wiring.contextClient != nil, "\(wiring.diagnostics)")
+    let staging = Place(organization: org, project: "alpha", environment: "staging")
+
+    func environments(session: String?) async throws -> Set<String> {
+        let result = try await wiring.registry.dispatch(
+            name: "ctx_list_environments", params: .object([:]), origin: .agent,
+            caller: DispatchCaller(place: staging, session: session), confirmation: nil)
+        guard case .object(let top) = result,
+              case .object(let structured)? = top["structuredContent"],
+              case .object(let environments)? = structured["environments"]
+        else { return [] }
+        return Set(environments.keys)
+    }
+
+    #expect(try await environments(session: "s1") == ["staging"])
+    // The window's own client already answers for the new project.
+    #expect(try await environments(session: nil) == ["production"])
+
+    await wiring.shutdown()
+}
+
+/// Every role `build` registers is routed: an agent's cheap call through each reaches a client
+/// pinned to its place, so a `register*` call regressing to a raw window client fails here.
+@Test func everyRoleTheBuiltRegistryCallsIsRoutedForAnAgent() async throws {
+    let binDir = repoRoot().appendingPathComponent("bin")
+    for role in ClientRole.allCases {
+        try #require(FileManager.default.isExecutableFile(atPath: binDir.appendingPathComponent(role.rawValue).path),
+                     "run `make build` first")
+    }
+    let home = try scratch()
+    let orgA = "place-roles-test-a-\(UUID().uuidString)"
+    let orgB = "place-roles-test-b-\(UUID().uuidString)"
+    try writeSwitchOrgFixture(home: home, org: orgA, project: "alpha-project")
+    try writeSwitchOrgFixture(home: home, org: orgB, project: "beta-project")
+    let wiring = await WakilWiring.build(
+        journalDirectory: try scratch(), sessionId: "s1",
+        environment: [
+            "HOME": home.path, "PATH": "/usr/bin:/bin", "WAKIL_ORG": orgA, "WAKIL_BIN_DIR": binDir.path,
+        ])
+    for role in ClientRole.allCases {
+        #expect(wiring.wakilOwnedClients.first { $0.name == role.rawValue }?.client != nil, "\(wiring.diagnostics)")
+    }
+    let api = await wiring.layout.open(kind: "api", title: "api")
+    let editor = await wiring.layout.open(kind: "editor", title: "editor")
+    wiring.gitRoots.use { ["/tmp"] }
+    let away = Place(organization: orgB, project: "beta-project", environment: "dev")
+
+    // Each call may fail past the client — none of these is configured — but it has reached one.
+    let calls: [(ClientRole, String, JSONValue)] = [
+        (.context, "ctx_list_projects", .object([:])),
+        (.database, "db_list_databases", .object([:])),
+        (.http, "api_fill_from_curl", .object(["pane": .string(api.id), "text": .string("curl http://x")])),
+        // 3b-iii: git is reached through the editor; a diff tab's fetch is its own flight, so the
+        // check below waits for it.
+        (.git, "editor_changes_select", .object([
+            "pane": .string(editor.id), "root": .string("/tmp"), "path": .string("x"), "group": .string("changed"),
+        ])),
+        (.files, "files_search", .object(["query": .string("needle")])),
+    ]
+    for (role, action, params) in calls {
+        _ = try? await wiring.registry.dispatch(
+            name: action, params: params, origin: .agent,
+            caller: DispatchCaller(place: away, session: "s1"), confirmation: nil)
+        #expect(await dbEventually(10) { await wiring.placeClients.startedRoles(for: away).contains(role) },
+                "\(action)")
+    }
+    #expect(await wiring.placeClients.startedRoles(for: away) == Set(ClientRole.allCases))
+
+    await wiring.shutdown()
 }

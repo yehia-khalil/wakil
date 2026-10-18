@@ -1060,6 +1060,59 @@ private actor EnvironmentBox {
     #expect(outcomes == ["gated", "blocked"])
 }
 
+/// The socket reads the caller afresh after a park, and what it reads is the agent's own
+/// place. The screen moving to production while the call is parked changes nothing the
+/// agent's call is judged against. `caller` is the window's own `agentCaller`, the closure
+/// `WindowSession` hands the socket, so this fails if that reads the screen.
+@MainActor
+@Test func aParkedAgentMutationIsJudgedInTheAgentsPlace() async throws {
+    let dir = testScratchRoot
+        .appendingPathComponent("wakil-test-\(UUID().uuidString)")
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
+    let broker = ConfirmationBroker(timeout: .seconds(60))
+    await registry.register(Action(
+        name: "test_mutate", description: "test", kind: .mutate,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in .object(["ok": .bool(true)]) }
+    ))
+    let surface = MCPSurface(
+        registry: registry, panes: PaneStore(), layout: LayoutStore(),
+        confirmations: broker)
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot, organization: "initech",
+        harnessFactory: { _, _ in RecordingHarness() })
+    model.seedForTesting(
+        providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+        project: "api", environment: "staging")
+    await model.send("hello")
+    #expect(model.agentPlace?.environment == "staging")
+
+    let call = JSONRPCMessage(
+        id: .number(1), method: "tools/call",
+        params: .object([
+            "name": .string("test_mutate"),
+            "arguments": .object(["statement": .string("DELETE FROM t WHERE id=1")]),
+        ]))
+
+    async let reply = handle(call, surface: surface, caller: { await model.agentCaller })
+    while await broker.current() == nil { await Task.yield() }
+    let parked = await broker.current()
+
+    // The operator moves the screen to production while the call is parked.
+    model.seedForTesting(
+        providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+        project: "api", environment: "production")
+    #expect(model.place.environment == "production")
+    await broker.approve(id: parked!.id)
+
+    let answered = await reply
+    #expect(answered?.error == nil)
+    let entries = try await registry.journalEntries()
+    let last = try #require(entries.last { $0.action == "test_mutate" })
+    #expect(last.outcome == "ok")
+    #expect(last.environment == "staging")
+}
+
 @Test func readPaneReportsThePanesKindFromTheLayoutRatherThanGuessing() async {
     let dir = testScratchRoot
         .appendingPathComponent("wakil-test-\(UUID().uuidString)")

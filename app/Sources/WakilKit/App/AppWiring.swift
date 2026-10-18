@@ -85,6 +85,13 @@ public struct WakilWiring: Sendable {
     /// window by `useActiveContext(of:)`, and read from `wakil-ctx` until then — which is
     /// all `--dispatch`, with no window, ever has.
     let gitRoots: GitRootsSource
+    /// Clients pinned to an agent session's own place, for every call it makes, wherever the
+    /// screen is (background agents, 2 of 4). Every handler `build` registers reaches Go
+    /// through a `PlaceRoutedCaller` over the window's client and this pool. Not in
+    /// `wakilOwnedClients`: an org switch re-points the window's own clients only, and a pool
+    /// client already belongs to its place's org. `WindowModel` retains the places in use;
+    /// `shutdown` stops the rest.
+    public let placeClients: PlaceClients
 
     /// Every client this assembly owns and must re-point on an org
     /// switch, as ONE collection.
@@ -216,13 +223,17 @@ public struct WakilWiring: Sendable {
     /// model answers as an unwired one does.
     @MainActor
     public func useActiveContext(of model: WindowModel) {
+        // Both below are read for the dispatch they run in: an agent session gets its own
+        // place's context and roots (`WindowModel.shellContext(forCaller:)`).
         shellContext.use { [weak model] in
             guard let model else { return ("", "", "", "") }
-            return await model.activeShellContext
+            return await model.shellContext(forCaller: ActionRegistry.dispatchCaller)
         }
         // 3a-i: the git actions' roots are the window's too, read on every call for the
         // same reason — a project switch changes them.
-        gitRoots.use { [weak model] in await model?.gitRootPaths ?? [] }
+        gitRoots.use { [weak model] in
+            await model?.gitRootPaths(forCaller: ActionRegistry.dispatchCaller) ?? []
+        }
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -253,6 +264,7 @@ public struct WakilWiring: Sendable {
         for (_, client) in wakilOwnedClients {
             await client?.stop()
         }
+        await placeClients.stopAll()
         // No shell outlives the app. `--dispatch` can open one too.
         // `.finish`: this is the process ending, not an org switch, so the
         // run stream ends here as well (`TerminalRunStreamDisposition`).
@@ -322,7 +334,42 @@ public struct WakilWiring: Sendable {
         let gitClient = await startClient("wakil-git")
         // 3b-i, eager for the git client's reason: an editor's first open must find it up.
         let filesClient = await startClient("wakil-files")
-        let fileLists = filesClient.map { EditorFileLists(files: $0) }
+
+        // Background agents, 2 of 4: an agent session's call goes to a client of its own,
+        // started for its place on first use. Each is a fresh process under
+        // `pinnedEnvironment` — never a window client re-pointed (Invariant 4).
+        let placeClients = PlaceClients(
+            start: { role, place in
+                guard let url = binaryURL(
+                    named: role.rawValue, executableDirectory: executableDirectory, environment: environment)
+                else {
+                    throw PlaceClientError.notFound(
+                        notFoundDiagnostic(for: role.rawValue, executableDirectory: executableDirectory,
+                                           environment: environment))
+                }
+                let client = MCPClient(
+                    executable: url, arguments: [],
+                    environment: pinnedEnvironment(
+                        for: place, from: environment, provider: pinnedProvider(for: place, launch: environment)))
+                do {
+                    try await client.start()
+                } catch {
+                    // `startClient`'s reason: a failed start can leave a child running.
+                    await client.stop()
+                    throw error
+                }
+                return client
+            },
+            stop: { client in await (client as? MCPClient)?.stop() })
+        // Every handler below is handed one of these instead of the window's client. A role
+        // whose window client is missing stays missing: its actions fail naming it, as before.
+        func routed(_ role: ClientRole, _ client: MCPClient?) -> (any ToolCaller)? {
+            client.map { PlaceRoutedCaller(role: role, window: $0, pool: placeClients) }
+        }
+        let routedFiles = routed(.files, filesClient)
+        // The list wraps the routed client, so its pass-through reads route too. It keeps the
+        // window's lists only: an agent's listing skips them.
+        let fileLists = routedFiles.map { EditorFileLists(files: $0) }
 
         let panes = PaneStore(kinds: PaneKinds.standard)
         let layout = LayoutStore()
@@ -331,7 +378,8 @@ public struct WakilWiring: Sendable {
         let providerSwitches = ProviderSwitchBroker()
         let terminals = TerminalStore(panes: panes)
         await registerStandardActions(
-            into: registry, context: contextClient, panes: panes, db: databaseClient, resumes: resumes,
+            into: registry, context: routed(.context, contextClient), panes: panes,
+            db: routed(.database, databaseClient), resumes: resumes,
             providerSwitches: providerSwitches, layout: layout)
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
@@ -355,19 +403,19 @@ public struct WakilWiring: Sendable {
         // actions registered and failing honestly, rather than leaving
         // the window without them.
         let apiResolver = await registerApiActions(
-            into: registry, panes: panes, layout: layout, http: httpClient,
+            into: registry, panes: panes, layout: layout, http: routed(.http, httpClient),
             activeContext: { await shellContext.current() })
         // 3a-i. The roots are asked live, like the shell context above: the window's once
         // there is one, `wakil-ctx`'s until then.
         let gitRoots = GitRootsSource(context: contextClient)
-        let gitStatus = GitStatus(git: gitClient, roots: { await gitRoots.current() })
+        let gitStatus = GitStatus(git: routed(.git, gitClient), roots: { await gitRoots.current() })
         await registerEditorActions(
             into: registry, panes: panes, layout: layout,
-            files: fileLists.map { $0 as any ToolCaller } ?? filesClient, fileLists: fileLists,
+            files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
             gitStatus: gitStatus, roots: { await gitRoots.current() })
 
         // Provider capacity: the record path and the one read every surface uses.
-        await registerCapacityActions(into: registry, context: contextClient)
+        await registerCapacityActions(into: registry, context: routed(.context, contextClient))
 
         // **The gate learns the project's production flags before its
         // first dispatch** (Decision 26, #182). A window re-reads them on
@@ -428,6 +476,7 @@ public struct WakilWiring: Sendable {
             gitStatus: gitStatus,
             editorRootWatcher: FSEventsRootWatcher(),
             gitRoots: gitRoots,
+            placeClients: placeClients,
             confirmations: ConfirmationBroker(),
             resumes: resumes,
             providerSwitches: providerSwitches,
@@ -659,6 +708,27 @@ public struct WakilWiring: Sendable {
         return childEnvironment
     }
 
+    /// The provider a client pinned to `place` is started with: the launch's, only when `place`
+    /// is in the launch's org. Another org's gets none, as `switchOrg`'s restart does — a
+    /// provider id from one org would mis-scope another's.
+    static func pinnedProvider(for place: Place, launch environment: [String: String]) -> String? {
+        guard let org = environment["WAKIL_ORG"], !org.isEmpty, place.organization == org else { return nil }
+        return environment["WAKIL_PROVIDER"]
+    }
+
+    /// The environment a client pinned to `place` is started under: the window's own
+    /// (`childProcessEnvironment`, with `place`'s organisation and the window marker) plus
+    /// `WAKIL_PROJECT` — the registry key — and `WAKIL_ENVIRONMENT`, which the Go binaries
+    /// honour over `active.json`. An empty member is left unset, never exported blank.
+    public static func pinnedEnvironment(
+        for place: Place, from environment: [String: String], provider: String?
+    ) -> [String: String] {
+        var pinned = childProcessEnvironment(from: environment, org: place.organization, provider: provider)
+        if !place.project.isEmpty { pinned["WAKIL_PROJECT"] = place.project }
+        if !place.environment.isEmpty { pinned["WAKIL_ENVIRONMENT"] = place.environment }
+        return pinned
+    }
+
     /// Re-points every Wakil-owned Go client at `org`, restarting their
     /// child processes in place.
     ///
@@ -732,6 +802,21 @@ public struct WakilWiring: Sendable {
             }
         }
         return diagnostics
+    }
+}
+
+/// Why a pinned client did not start: its binary was not found, which `build`'s own
+/// diagnostic for the same binary already names.
+enum PlaceClientError: Error, CustomStringConvertible {
+    case notFound(String)
+    /// `PlaceClients.stopAll` has run: the window is closing and starts no more.
+    case stopped(String)
+
+    var description: String {
+        switch self {
+        case .notFound(let line): return line
+        case .stopped(let binary): return "\(binary) was not started: this window's pinned clients are stopped"
+        }
     }
 }
 

@@ -348,7 +348,10 @@ final class WindowSession {
             // from the same list as the trees, so the two never disagree.
             paletteClients: PaletteClients(
                 database: wiring.databaseClient, http: wiring.httpClient, git: wiring.gitClient,
-                files: wiring.fileLists.map { $0 as any ToolCaller } ?? wiring.filesClient))
+                files: wiring.fileLists.map { $0 as any ToolCaller } ?? wiring.filesClient),
+            // Background agents, 2 of 4: the pool the registered handlers route an agent
+            // session's calls through, told by the window which places are still in use.
+            placeClients: wiring.placeClients)
 
         // `term_open` now has a window to ask for the active organisation,
         // project and environment — the three `WAKIL_*` keys a shell in a

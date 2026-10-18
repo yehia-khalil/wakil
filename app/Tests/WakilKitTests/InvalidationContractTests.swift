@@ -32,7 +32,7 @@ private let orgDerived: Set<String> = [
     "queryLineRefusals", "queryLineRestores", "queryLineRestoreToken",
     "databaseChoices", "pending", "databases", "databaseDrivers", "layoutSnapshot",
     "layoutScope", "loadedLayoutScopes", "thoughts", "providerId",
-    "harness", "sessionId", "turnInFlight", "lookup", "rootPaths", "hasProjectRoot",
+    "harness", "agentPlace", "sessionId", "turnInFlight", "lookup", "rootPaths", "hasProjectRoot",
     "organization", "resumedParentForTesting", "queuedOrgSwitch",
     // 2026-09-20: `sessionStarted` gates the Landing, and a switch ends the
     // session it describes — every pane closed, the servers respawned, a
@@ -259,6 +259,9 @@ private let orgIndependent: Set<String> = [
     // Whether the plane is up — what is on screen, `showOrgPlane`'s shape. The window closes
     // the palette itself when the org plane rises (`WakilWindow`), through `paletteClosed`.
     "paletteShowing",
+    // Background agents, 2 of 4: the tail of the pool's retain queue, `surfaceChain`'s shape —
+    // the order retains land in, not either org's state.
+    "placeRetain",
 ]
 
 /// **A stable reference whose CONTENTS are org-scoped and must be torn
@@ -333,6 +336,13 @@ private let orgDerivedBehindAReference: Set<String> = [
     // statement, `invalidateForOrgChange` calls `dropAll()` on it, so
     // nothing of the old org resolves after the switch (Invariant 4).
     "vocabulary",
+    // Background agents, 2 of 4. `placeClients` is the wiring's pool, one for the window's
+    // life, whose CONTENTS are clients pinned to the session's place in the outgoing org.
+    // `invalidateForOrgChange` clears `agentPlace` and retains no place, so the pool stops them.
+    "placeClients",
+    // Background agents, 2 of 4. `placeContexts` holds what those pinned `wakil-ctx`s said —
+    // the outgoing org's roots and production flags. The same `retainAgentPlace` drops them.
+    "placeContexts",
 ]
 
 @MainActor

@@ -90,7 +90,7 @@ private func gitWindow(
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in GitWindowLookup() },
         rootWatcher: watcher, editorRootWatcher: nil, fileLists: nil,
-        gitStatus: status, paletteClients: PaletteClients())
+        gitStatus: status, paletteClients: PaletteClients(), placeClients: nil)
     box.model = model
     await registerEditorActions(into: registry, panes: panes, layout: layout, files: nil, fileLists: nil,
                                 gitStatus: status, roots: { await box.model?.gitRootPaths ?? [] })

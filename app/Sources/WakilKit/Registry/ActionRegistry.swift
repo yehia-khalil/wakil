@@ -102,6 +102,22 @@ public actor ActionRegistry {
     public func setEnvironmentProduction(_ production: EnvironmentProduction) {
         environmentProduction = production
     }
+
+    /// The production declarations of an agent caller's own place (`pinnedPlace(of:)`): an
+    /// agent session is priced by ITS project's flags, never by the ones on screen, even while
+    /// the screen shows its place (background agents, 2 of 4). Nil from the lookup — or no
+    /// lookup, as in `--dispatch` and in tests with no window — means `environmentProduction`
+    /// applies.
+    ///
+    /// Installed by `WindowModel` when it is built, and nonisolated for that reason: its
+    /// initialiser is synchronous. Read on every dispatch, before the gate.
+    public nonisolated func setProductionLookup(
+        _ lookup: @escaping @Sendable (DispatchCaller) async -> EnvironmentProduction?
+    ) {
+        productionLookup.set(lookup)
+    }
+
+    private nonisolated let productionLookup = ProductionLookupBox()
     private let journalDirectory: URL
     private let sessionId: String
     private let encoder: JSONEncoder
@@ -193,13 +209,18 @@ public actor ActionRegistry {
             throw ActionError.unknown(name)
         }
 
+        // An agent caller's own place's declarations; the window's otherwise.
+        // Read before anything else runs, like the gate itself. A read is allowed whatever
+        // they say, so it asks nothing.
+        let lookup = action.kind == .read ? nil : productionLookup.current()
+        let production = await lookup?(caller) ?? environmentProduction
         switch writeGate(
             environment: caller.place.environment,
             kind: action.kind,
             origin: origin,
             targetEnvironment: targetEnvironment(of: action, in: params),
             price: action.price,
-            production: environmentProduction)
+            production: production)
         {
         case .block:
             try appendJournalEntry(action: name, params: params, origin: origin,
@@ -647,4 +668,25 @@ extension ActionRegistry {
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+/// `ActionRegistry.setProductionLookup`'s slot: the same lock-and-closure box as
+/// `ActiveShellContext`, so a synchronous initialiser can install it.
+final class ProductionLookupBox: @unchecked Sendable {
+    typealias Lookup = @Sendable (DispatchCaller) async -> EnvironmentProduction?
+
+    private let lock = NSLock()
+    private var lookup: Lookup?
+
+    func set(_ lookup: @escaping Lookup) {
+        lock.lock()
+        self.lookup = lookup
+        lock.unlock()
+    }
+
+    func current() -> Lookup? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lookup
+    }
 }

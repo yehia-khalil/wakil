@@ -44,7 +44,9 @@ What the wiring offers:
   one `MCPSurface`. It is the only public way to get one, so the socket server cannot be given one
   assembly's registry and another's stores.
 - **`useActiveContext(of:)`** — points the terminal actions' `ActiveShellContext` and the
-  `GitRootsSource` the `GitStatus` and the editor's git actions read at the live `WindowModel`. Both are read on every call, never captured.
+  `GitRootsSource` the `GitStatus` and the editor's git actions read at the live `WindowModel`.
+  Both are read on every call, never captured, and for the dispatch's caller (see
+  [An agent's calls follow its own place](#an-agents-calls-follow-its-own-place)).
 - **`switchOrg(to:)`** — stops and restarts every Wakil-owned client in place under the new org,
   with `provider: nil`. In place, because the action handlers captured these client instances.
 - **`shutdown()`** — stops the root watcher, every Wakil-owned client, and every terminal.
@@ -94,6 +96,42 @@ thought thread, status).
 - **It runs the pumps** that consume the harness's events, confirmations, resumes, provider switches
   and terminal runs. `shutdown()` cancels them all (`ShutdownContractTests`).
 
+## An agent's calls follow its own place
+
+An agent session is pinned to the place (organisation, project registry key, environment) it
+started in, and `model.agentCaller` hands the socket that place with the session's id. Every call
+the session makes acts there, wherever the screen is:
+
+- **The task-local.** `ActionRegistry.dispatch` binds `ActionRegistry.dispatchCaller` around every
+  handler, so anything a handler calls can ask whom the dispatch is for without a parameter
+  (Invariant 5: the agent's tool schemas name no project or environment).
+- **Who is calling decides.** `pinnedPlace(of:)` (`Core/Place.swift`) is the one rule everything
+  below asks: a caller with a session and a complete place (organisation and project set) is an
+  agent, answered for its own place even while the screen shows that same place. A caller without
+  a session — the operator's own dispatches — takes the window's path whatever place it carries.
+  Never a comparison with the screen: `setProject` and `switchEnvironment` rewrite `active.json`
+  before the window's `place` moves, so in between an agent on the old place would compare equal
+  while the window's clients already answer for the new one.
+- **The pool.** Every handler `build` registers reaches Go through a `PlaceRoutedCaller`. An agent
+  caller goes to `PlaceClients`: one lazily started client per (binary, place), each its own
+  process under `pinnedEnvironment` (`WAKIL_ORG`, `WAKIL_PROJECT`, `WAKIL_ENVIRONMENT`,
+  `WAKIL_IN_WINDOW=1`, and the launch's `WAKIL_PROVIDER` only in the launch's org). A window
+  client is never re-pointed for an agent (Invariant 4). After `stopAll` the pool starts nothing.
+- **The window-side readers.** `term_open`, the api pane, and the git and editor actions' roots read
+  `WindowModel.shellContext(forCaller:)` and `gitRootPaths(forCaller:)`. An agent caller gets its
+  own place and its own project's roots, read by `PlaceContexts` through the pool's `wakil-ctx`
+  and kept per place. If the read fails, it gets no roots, never the window's. `EditorFileLists`
+  keeps the window's listings only: an agent's `files_list` is read fresh through the pool.
+- **The gate.** `dispatch` asks the window's production lookup (`setProductionLookup`) for the
+  caller first: an agent is priced by its own project's declarations, or by the name rule
+  (`.undeclared`) if they cannot be read. Never by the screen's.
+- **The window's path.** The operator's dispatches, an incomplete place, or no caller at all (a
+  read the window makes itself) take the window's own clients, roots and flags. `--dispatch`
+  dispatches with no session, so nothing routes.
+
+`WindowModel` retains the session's place in `PlaceContexts` and `PlaceClients` whenever
+`agentPlace` changes, and the pool stops the clients of places no session holds any more.
+
 ## Where binaries are found
 
 `WakilWiring.binaryURL(named:executableDirectory:environment:)`, three layouts in order:
@@ -127,6 +165,7 @@ from `agentMCPConfigJSON`. The `claude` process itself gets `CLAUDE_CONFIG_DIR`,
 | Thing | Born | Dies |
 |---|---|---|
 | The four Wakil-owned `MCPClient`s | `WakilWiring.build` | `WakilWiring.shutdown`; restarted in place by `switchOrg` |
+| Pool clients (`PlaceClients`) | an agent's first call for its place | `retain` when no session holds the place; `WakilWiring.shutdown` |
 | `MCPSocketServer` | `WindowSession.start` | `WindowSession.shutdown` |
 | `ClaudeCodeCLIHarness` (and the shim and agent servers `claude` spawns) | `WindowModel` on a session start, resume or provider switch | `harness.stop()`: org switch, next harness, `WindowModel.shutdown` |
 | Terminal PTYs (`TerminalStore`) | `term_open` | `pane_close`, an org switch (`shutdownAll(runStream: .keepOpen)`), shutdown (`.finish`) |

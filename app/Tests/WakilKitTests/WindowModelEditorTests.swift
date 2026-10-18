@@ -48,7 +48,7 @@ func editorWindowFull(
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in EditorWindowLookup() },
         rootWatcher: withGit ? gitWatcher : nil, editorRootWatcher: watcher, fileLists: fileLists, gitStatus: status,
-        paletteClients: PaletteClients(files: fileLists))
+        paletteClients: PaletteClients(files: fileLists), placeClients: nil)
     box.model = model
     await registerEditorActions(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
@@ -243,6 +243,33 @@ func editorWindowWithFiles(
         await files.setListing("/p/api", ["a.go", "b.go"])
         await watcher.fire("/p/api")
         #expect(model.editorFiles.listings["/p/api"]?.files == ["a.go", "b.go"])
+    }
+
+    // An agent session pinned to the place on screen shows the Files column: its roots' listings
+    // are what the operator's tree draws, so they land in the window's lists. Left out, the column
+    // drew each root as still listing, with no row the operator could open. An agent pinned to a
+    // place the screen is not showing still lists into nothing the screen draws.
+    @Test func theScreensOwnAgentListsIntoTheTreeTheOperatorSees() async throws {
+        let (model, _, files) = await editorWindowParts(roots: ["/p/api", "/p/portal"])
+        await model.refreshContext()
+        await files.setListing("/p/api", ["a.go"])
+        await model.openPane(kind: "editor")
+        let pane = try #require(model.layoutSnapshot.focusedId)
+        let lists = try #require(model.fileListsForTesting)
+
+        let elsewhere = Place(organization: model.place.organization, project: "other", environment: "qa")
+        _ = await ActionRegistry.$dispatchCaller.withValue(DispatchCaller(place: elsewhere, session: "s0")) {
+            await lists.listing(root: "/p/api")
+        }
+        #expect(await lists.state().listings["/p/api"] == nil, "another place's read is not the screen's tree")
+
+        _ = try await model.registryForTesting.dispatch(
+            name: "editor_tree",
+            params: .object(["pane": .string(pane), "shown": .bool(true), "view": .string("files")]),
+            origin: .agent, caller: DispatchCaller(place: model.place, session: "s1"), confirmation: nil)
+
+        #expect(try await drawn { model.editorFiles.listings["/p/api"]?.files == ["a.go"] },
+                "the column draws the root as still listing")
     }
 
     // Final review I1: both projects have an editor pane, so the list stays watched across the

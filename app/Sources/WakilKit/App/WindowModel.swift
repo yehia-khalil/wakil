@@ -40,10 +40,25 @@ public final class WindowModel {
     public var place: Place {
         Place(organization: organization, project: projectKey, environment: environment)
     }
-    /// What the MCP server reads for an agent's call: the place on screen now,
-    /// with the session the agent runs under. Replaced by the session's own
-    /// pinned place once agents are pinned.
-    public var agentCaller: DispatchCaller { DispatchCaller(place: place, session: sessionId) }
+    /// The place the live session's harness was built for: what the factory
+    /// was called with, committed and cleared together with `harness`. Nil
+    /// while no session is live.
+    public private(set) var agentPlace: Place?
+    /// The clients pinned to agent sessions' places (`WakilWiring.placeClients`). Told the places
+    /// still in use after every `agentPlace` change, so a client for a place no session holds
+    /// any more is stopped. Nil in tests that route no call; production passes the wiring's.
+    private let placeClients: PlaceClients?
+    /// What an agent's place's own `wakil-ctx` says about it — its roots and production
+    /// flags — read through `placeClients`. Nil exactly when that is: a window that routes no
+    /// call has no place but its own to answer for.
+    private let placeContexts: PlaceContexts?
+    /// The last `retain` handed to `placeClients`, so each waits for the one before it and
+    /// the pool always ends on the latest place.
+    private var placeRetain: Task<Void, Never>?
+    /// What the MCP server reads for an agent's call: the session's own place,
+    /// so a project switch on screen does not move a running agent. Before a
+    /// session exists it is the place on screen.
+    public var agentCaller: DispatchCaller { DispatchCaller(place: agentPlace ?? place, session: sessionId) }
     /// The active project's production declarations (Decision 26, #182).
     ///
     /// Held so the VIEW can hand them to `VoidPalette.forEnvironment` and
@@ -69,6 +84,41 @@ public final class WindowModel {
     /// `project` here is the registry key, since it becomes the shell's `WAKIL_PROJECT`.
     public var activeShellContext: (org: String, project: String, environment: String, rootPath: String) {
         (org: organization, project: projectKey, environment: environment, rootPath: rootPath)
+    }
+
+    /// `activeShellContext` for a dispatch made for `caller`: what `term_open` and the api pane
+    /// read (`WakilWiring.useActiveContext(of:)`). An agent session (`pinnedPlace(of:)`) gets its
+    /// own place and its own project's first root, so its shell opens where it works, even while
+    /// the screen shows that place. Anything else — the operator's own — gets the window's.
+    ///
+    /// Its own place even when its context cannot be read, starting in the home directory
+    /// then: the window's root is the other project's, and a shell for one place opened in
+    /// another's directory is the mismatch this exists to prevent.
+    public func shellContext(
+        forCaller caller: DispatchCaller?
+    ) async -> (org: String, project: String, environment: String, rootPath: String) {
+        guard let placeContexts, let away = pinnedPlace(of: caller) else { return activeShellContext }
+        let roots = (try? await placeContexts.context(for: away).rootPaths) ?? []
+        return (org: away.organization, project: away.project, environment: away.environment,
+                rootPath: roots.first ?? NSHomeDirectory())
+    }
+
+    /// `gitRootPaths` for a dispatch made for `caller`: the roots the git and editor actions
+    /// confine to. An agent session gets its own project's roots, and none when they cannot be
+    /// read — never the window's, which belong to the project on screen.
+    public func gitRootPaths(forCaller caller: DispatchCaller?) async -> [String] {
+        guard let placeContexts, let away = pinnedPlace(of: caller) else { return gitRootPaths }
+        return (try? await placeContexts.context(for: away).rootPaths) ?? []
+    }
+
+    /// The gate's lookup (`ActionRegistry.setProductionLookup`): nil for anything but an agent
+    /// session (`pinnedPlace(of:)`), so the window's own flags apply. For an agent its own
+    /// project's declarations — and `.undeclared`, the name rule, when they cannot be read.
+    /// Never nil there: nil would let the screen's project judge another project's
+    /// environments, and a `production: false` written for one would disarm the other.
+    func productionFlags(forCaller caller: DispatchCaller) async -> EnvironmentProduction? {
+        guard let placeContexts, let away = pinnedPlace(of: caller) else { return nil }
+        return (try? await placeContexts.context(for: away).environmentProduction) ?? .undeclared
     }
     /// One table per pane, keyed by pane id.
     ///
@@ -877,9 +927,14 @@ public final class WindowModel {
         // The palette's direct reads. Defaulted to none here for `rootWatcher`'s reason; the
         // public initialiser production calls takes it with no default.
         paletteClients: PaletteClients = PaletteClients(),
+        // Background agents, 2 of 4. Defaulted to nil here for `rootWatcher`'s reason; the
+        // public initialiser production calls takes it with no default.
+        placeClients: PlaceClients? = nil,
         environment: String
     ) {
         self.registry = registry
+        self.placeClients = placeClients
+        self.placeContexts = placeClients.map { PlaceContexts(clients: $0) }
         self.paletteClients = paletteClients
         self.vocabulary = vocabulary
         self.panes = panes
@@ -1166,6 +1221,19 @@ public final class WindowModel {
             return try await self.registry.dispatch(name: name, params: params, origin: .ui,
                                                     caller: DispatchCaller(place: self.place, session: nil), confirmation: nil)
         }
+
+        // The gate prices an agent caller by its own place's flags. Only with a pool to read them
+        // through; without one every caller is judged by `refreshContext`'s, as before. The
+        // operator's dispatches never hop here: they take the window's flags.
+        if placeContexts != nil {
+            registry.setProductionLookup { [weak self] caller in
+                guard pinnedPlace(of: caller) != nil else { return nil }
+                return await self?.productionFlags(forCaller: caller)
+            }
+        }
+
+        // The trees draw the place on screen: an agent session pinned to it lists into them.
+        fileLists?.setScreenPlace { [weak self] in await self?.place }
     }
 
     /// Adapts the pre-2b-viii (org-oblivious) initialiser shape onto the
@@ -1312,7 +1380,11 @@ public final class WindowModel {
         // The palette's direct reads (`PaletteClients`). No default, for `rootWatcher`'s
         // reason: production passes the wiring's clients, and a test with no palette says
         // `PaletteClients()` out loud.
-        paletteClients: PaletteClients
+        paletteClients: PaletteClients,
+        // Background agents, 2 of 4. No default, for `rootWatcher`'s reason: without it a
+        // client pinned to a session's old place is never stopped, with nothing failing.
+        // Production passes `wiring.placeClients`; a test that routes no call says `nil`.
+        placeClients: PlaceClients?
     ) {
         self.init(
             registry: registry, panes: panes, layout: layout, persistence: persistence,
@@ -1330,6 +1402,7 @@ public final class WindowModel {
             fileLists: fileLists,
             gitStatus: gitStatus,
             paletteClients: paletteClients,
+            placeClients: placeClients,
             environment: "")
     }
 
@@ -1380,7 +1453,8 @@ public final class WindowModel {
         // passes its own instance here and keeps a reference to it.
         confirmations: ConfirmationBroker = ConfirmationBroker(),
         // 2d-i. Nil by default, as in production's initialiser.
-        vocabulary: VocabularyStore? = nil
+        vocabulary: VocabularyStore? = nil,
+        placeClients: PlaceClients? = nil
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1456,7 +1530,8 @@ public final class WindowModel {
             editorRootWatcher: nil,
             fileLists: nil,
             gitStatus: nil,
-            paletteClients: PaletteClients())
+            paletteClients: PaletteClients(),
+            placeClients: placeClients)
         model.setOrganizationForTesting(organization)
         shellContext.use { [weak model] in
             guard let model else { return ("", "", "", "") }
@@ -1705,6 +1780,10 @@ public final class WindowModel {
             // project's declarations.
             environmentProduction = active.environmentProduction
             await registry.setEnvironmentProduction(active.environmentProduction)
+            // An agent session may have kept this place's context. This read is newer, so that
+            // copy goes: the agent's next call is priced by what the project declares now, not
+            // by what it declared then.
+            await placeContexts?.forget(place)
             // **Re-derived, not carried.** All three are org-derived
             // state that `invalidateForOrgChange` cleared, and this is
             // the one call that can rebuild them from the org this
@@ -1980,6 +2059,8 @@ public final class WindowModel {
         capacity.reset()
         providerId = ""
         harness = nil
+        agentPlace = nil
+        retainAgentPlace()
         sessionId = nil
         turnInFlight = false
         // TEST-ONLY, but still a record of which session
@@ -6152,6 +6233,27 @@ public final class WindowModel {
     /// legible message rather than whatever a lookup call for the empty
     /// string happens to fail with.
     private func startHarness() async -> AgentHarness? {
+        await startHarnessInPlace()?.0
+    }
+
+    /// Tells the pool which places are still in use after `agentPlace` changed: the session's
+    /// own, or none. Chained, not awaited, so the switch that changed it never waits on a
+    /// child process stopping, and two retains in a row land in the order they were made.
+    private func retainAgentPlace() {
+        guard let placeClients else { return }
+        let places = Set([agentPlace].compactMap { $0 })
+        let previous = placeRetain
+        let placeContexts = placeContexts
+        placeRetain = Task {
+            await previous?.value
+            await placeContexts?.retain(places)
+            await placeClients.retain(places)
+        }
+    }
+
+    /// `startHarness`, with the place the factory was called with, so `send`
+    /// commits it beside the harness.
+    private func startHarnessInPlace() async -> (AgentHarness, Place)? {
         guard !providerId.isEmpty else {
             status = "no agent session: no provider is active for this window yet"
             return nil
@@ -6160,11 +6262,12 @@ public final class WindowModel {
         else {
             return nil
         }
-        guard let harness = harnessFactory(place, ProviderSelection(id: providerId, credentials: credentials)) else {
+        let startPlace = place
+        guard let harness = harnessFactory(startPlace, ProviderSelection(id: providerId, credentials: credentials)) else {
             status = "no agent session: no agent available for provider \(providerId)"
             return nil
         }
-        return harness
+        return (harness, startPlace)
     }
 
     /// Sends one turn to the agent, starting the session on the first call.
@@ -6270,7 +6373,14 @@ public final class WindowModel {
             // `.result` ever coming to fire it. That is the starvation the
             // `catch` below exists to prevent, and widening the flag wants
             // its own change rather than a ride on this one.
-            harness = await startHarness()
+            if let started = await startHarnessInPlace() {
+                harness = started.0
+                agentPlace = started.1
+            } else {
+                harness = nil
+                agentPlace = nil
+            }
+            retainAgentPlace()
         }
         guard let harness else {
             // Unreachable today — `harness` and `sessionId` are only ever
@@ -6487,7 +6597,8 @@ public final class WindowModel {
         else {
             return
         }
-        guard let next = harnessFactory(place, ProviderSelection(id: providerId, credentials: credentials)) else {
+        let nextPlace = place
+        guard let next = harnessFactory(nextPlace, ProviderSelection(id: providerId, credentials: credentials)) else {
             status = "resume \(parent): no agent session available"
             return
         }
@@ -6533,6 +6644,8 @@ public final class WindowModel {
         turnInFlight = false
 
         harness = next
+        agentPlace = nextPlace
+        retainAgentPlace()
         self.sessionId = child
         // A resume is a fork: the child is a new conversation id, so the
         // window's assigned identity moves with it.
@@ -6759,8 +6872,9 @@ public final class WindowModel {
             status = "set provider \(id): \(error)"
             return
         }
+        let nextPlace = place
         guard let next = harnessFactory(
-            place, ProviderSelection(id: id, credentials: credentials)) else {
+            nextPlace, ProviderSelection(id: id, credentials: credentials)) else {
             status = "set provider \(id): no agent session available"
             return
         }
@@ -6810,6 +6924,8 @@ public final class WindowModel {
         turnInFlight = false
 
         harness = next
+        agentPlace = nextPlace
+        retainAgentPlace()
         sessionId = fresh
         assignedSessionId = fresh
         // A provider switch starts a new conversation, not a fork of the

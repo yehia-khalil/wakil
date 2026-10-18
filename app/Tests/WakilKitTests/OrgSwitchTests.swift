@@ -996,7 +996,7 @@ private actor SharedClientOrgSwitcherForTesting {
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForOrgSwitch() },
         orgSwitcher: { org in await switcher.attempt(org) },
-        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients())
+        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil)
     model.setOrganizationForTesting("alpha")
 
     await switcher.armHold()
@@ -1101,7 +1101,7 @@ private final class LookupOrgRecorder: @unchecked Sendable {
             seen.record(org)
             return AlwaysSucceedsCredentialsLookupForOrgSwitch()
         },
-        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients())
+        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil)
     #expect(
         seen.orgs == [""],
         "init's org-less placeholder is all a window has before it has learned its org")
@@ -1232,7 +1232,7 @@ private final class LookupOrgRecorder: @unchecked Sendable {
         harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForOrgSwitch() },
-        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients())
+        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil)
 
     // The project switch, through the one path that makes one: this is
     // what puts both stores on project "widgets".
