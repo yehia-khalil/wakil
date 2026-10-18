@@ -243,8 +243,7 @@ struct EditorColumn: View {
                 rowLabel(row)
                     .padding(.leading, 6 + CGFloat(row.depth * 12))
                     .padding(.trailing, 6)
-                    .padding(.vertical, row.kind == .root ? 0 : 2)
-                    .padding(.top, row.kind == .root ? 8 : 0)
+                    .padding(.vertical, 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay {
                         if row.id == selected {
@@ -297,6 +296,9 @@ struct EditorColumn: View {
                         .accessibilityIdentifier("editor.tree.error:\(path)")
                 }
             }
+            // A root's gap sits above its row, outside the selection outline, so the name stays
+            // centred in it.
+            .padding(.top, row.kind == .root ? 6 : 0)
         }
     }
 
