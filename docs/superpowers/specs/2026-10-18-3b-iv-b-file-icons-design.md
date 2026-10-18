@@ -132,3 +132,8 @@ the three call sites, the `design-language.md` line. Then Cover and Walk.
 - **`design-language.md`**, the Files tree passage: one sentence — tree and Changes file rows and editor tabs
   show a single-colour Seti glyph for the file's language, in the name's colour.
 - No Invariant, no Decision: nothing is written, nothing is priced.
+
+## Amendment — 2026-10-18, while planning
+
+- `EditorFileIcon` lives in its own file, `app/Sources/WakilApp/EditorFileIcon.swift`, not in
+  `EditorColumn.swift`: that file is over 1,000 lines and the view is used by two files.
