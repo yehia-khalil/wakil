@@ -691,8 +691,10 @@ struct EditorColumn: View {
         .padding(.leading, 6 + CGFloat(depth * 12)).padding(.trailing, 6).padding(.vertical, 2)
     }
 
+    /// A turn later, as the replace field takes it (`takeReplaceFocus`): set while F2's key press is
+    /// still being handled, the tree kept the keyboard and the field never got it.
     private func focusNameField() {
-        nameFocused = true
+        Task { @MainActor in nameFocused = true }
     }
 
     /// Selects the name before its last `.` in the field editor (the whole name when there is no
