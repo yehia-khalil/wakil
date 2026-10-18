@@ -285,3 +285,11 @@ private func fileTab(_ path: String, preview: Bool = false) -> EditorTab {
     let twice = editorRepointTabs([renamed], from: "/p/api/b.go", to: "/p/api/c.go", root: "/p/api")[0]
     #expect(!editorFrontTabArrived(old: EditorSnapshot(tabs: [a], active: 0), now: EditorSnapshot(tabs: [twice], active: 0)))
 }
+
+@Test func theNameFieldsErrorWritesPathsFromTheirRoot() {
+    let roots = ["/var/t/walk/api", "/var/t/walk/api2"]
+    #expect(editorTreeShortError("/var/t/walk/api/src/b.ts already exists", roots: roots) == "api/src/b.ts already exists")
+    #expect(editorTreeShortError("/var/t/walk/api2/x already exists", roots: roots) == "api2/x already exists")
+    #expect(editorTreeShortError("/elsewhere/x is outside the project's roots", roots: roots)
+        == "/elsewhere/x is outside the project's roots")
+}

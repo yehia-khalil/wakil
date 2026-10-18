@@ -213,3 +213,15 @@ public func editorTreeKeyCommand(characters: String, command: Bool, otherChord: 
     default: return nil
     }
 }
+
+/// A refusal shown under the tree's name field, its absolute paths written from their root's name
+/// (`/var/…/walk/api/src/b.ts` → `api/src/b.ts`): the root is the row above, and a temp root's path
+/// would otherwise fill the column. Every path stays whole from the root down (Rule 8).
+public func editorTreeShortError(_ message: String, roots: [String]) -> String {
+    var out = message
+    for root in roots.sorted(by: { $0.count > $1.count }) {
+        let name = (root as NSString).lastPathComponent
+        out = out.replacingOccurrences(of: root + "/", with: name + "/")
+    }
+    return out
+}
