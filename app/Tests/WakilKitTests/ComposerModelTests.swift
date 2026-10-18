@@ -60,6 +60,18 @@ private func model(
 /// Lets the model's start/pump tasks run.
 private func settle() async { for _ in 0..<20 { await Task.yield() }; try? await Task.sleep(for: .milliseconds(30)) }
 
+/// Waits until `done`, up to 2 s. What a hold hears and what its release lands reach the model
+/// through task hops (the engine's start, its stop, then the pump), which a loaded full-suite
+/// run can delay past any fixed wait; a check that asserts what arrived waits for it to arrive.
+@MainActor
+private func settle(until done: () -> Bool) async {
+    let deadline = ContinuousClock.now + .seconds(2)
+    while !done(), ContinuousClock.now < deadline {
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+}
+
 @MainActor
 @Test func holdThenReleaseLandsTheWordsUnsent() async {
     let clock = Clock()
@@ -70,10 +82,10 @@ private func settle() async { for _ in 0..<20 { await Task.yield() }; try? await
     composer.optionDown()
     clock.t = 0.2; composer.tick()
     #expect(window.coreState == .listening)
-    await settle()
+    await settle(until: { !composer.machine.settled.isEmpty })
     #expect(composer.bar == .hearing(settled: "show", volatile: "tables", hint: ComposerBarContent.releaseHint))
     clock.t = 1; composer.optionUp()
-    await settle()
+    await settle(until: { composer.machine.phase == .idle })
     #expect(composer.draft == "show tables")
     #expect(composer.landedUnsent)
     #expect(composer.focusToken == 1)
@@ -88,9 +100,9 @@ private func settle() async { for _ in 0..<20 { await Task.yield() }; try? await
     let (composer, _, _) = model(steps: [.init(after: 0, event: .partial(settled: "all", volatile: ""))], clock: clock)
     composer.edited(draft: "show tables", caret: 5)
     composer.optionDown(); clock.t = 0.2; composer.tick()
-    await settle()
+    await settle(until: { !composer.machine.settled.isEmpty })
     clock.t = 1; composer.optionUp()
-    await settle()
+    await settle(until: { composer.machine.phase == .idle })
     #expect(composer.draft == "show all tables")
 }
 
@@ -135,7 +147,7 @@ private func settle() async { for _ in 0..<20 { await Task.yield() }; try? await
         .init(after: 0.01, event: .failed("engine stopped")),
     ], clock: clock)
     composer.optionDown(); clock.t = 0.2; composer.tick()
-    await settle()
+    await settle(until: { composer.machine.phase == .idle })
     #expect(composer.draft == "open the")
     #expect(window.thoughts.last?.label == "speech")
     #expect(window.thoughts.last?.isError == true)
@@ -146,9 +158,9 @@ private func settle() async { for _ in 0..<20 { await Task.yield() }; try? await
     let clock = Clock()
     let (composer, window, harness) = model(steps: [.init(after: 0, event: .partial(settled: "show tables", volatile: ""))], clock: clock)
     composer.optionDown(); clock.t = 0.2; composer.tick()
-    await settle()
+    await settle(until: { !composer.machine.settled.isEmpty })
     clock.t = 1; composer.optionUp()
-    await settle()
+    await settle(until: { composer.machine.phase == .idle })
     await composer.submit()
     #expect(composer.draft == "")
     #expect(!composer.landedUnsent)
@@ -176,9 +188,9 @@ private func settle() async { for _ in 0..<20 { await Task.yield() }; try? await
     let made = Made()
     let (composer, _, _) = model(steps: [.init(after: 0, event: .partial(settled: "one", volatile: ""))], clock: clock, made: made)
     composer.optionDown(); clock.t = 0.2; composer.tick()
-    await settle()
+    await settle(until: { !composer.machine.settled.isEmpty })
     clock.t = 1; composer.optionUp()
-    await settle()
+    await settle(until: { composer.machine.phase == .idle })
     #expect(composer.draft == "one")
     #expect(made.all.count == 1)
     let first = made.all[0]
