@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-iv-create-folder.jsonl",
   "baseCommit": "a2a8b3fc90506ed554bcbb2e7888f9daa31d0f99",
-  "provedAt": "2026-10-18T07:34:37.514653Z",
-  "checkBlob": "7c10fad8d127eb6e9ff3b25985ef2750be30afba"
+  "provedAt": "2026-10-18T19:00:46.272115Z",
+  "checkBlob": "e805a5d172dc188b62e65ac99900bb7d88233804"
 }
