@@ -670,7 +670,12 @@ struct EditorColumn: View {
                 .disabled(nameBusy)
                 .onSubmit { commitName(refocus: true) }
                 .onKeyPress(.escape) { cancelName(); return .handled }
-                .onChange(of: nameFocused) { _, now in if !now, nameEdit == edit { commitName() } }
+                .onChange(of: nameFocused) { _, now in
+                    if !now, nameEdit == edit { commitName() }
+                    // Rule 9, once the field holds the keyboard: from F2 the tree gives it up later
+                    // than from the menu, so `onAppear` alone found the tree still first responder.
+                    if now, case .rename = edit, nameEdit == edit { selectStem() }
+                }
                 // Rule 3: the field arrives focused. Rule 9: a rename preselects the stem only.
                 .onAppear(perform: focusNameField)
                 .accessibilityIdentifier("editor.tree.name")
@@ -688,17 +693,21 @@ struct EditorColumn: View {
 
     private func focusNameField() {
         nameFocused = true
-        if case .rename = nameEdit { selectStem() }
     }
 
     /// Selects the name before its last `.` in the field editor (the whole name when there is no
-    /// `.`, or when its only `.` leads it), a turn later, once the field holds the keyboard.
-    private func selectStem() {
+    /// `.`, or when its only `.` leads it), once the field editor holds the keyboard: it is tried a
+    /// turn later and, while the window's first responder is not yet a text view, for a few more.
+    private func selectStem(tries: Int = 5) {
         let name = nameText as NSString
         let dot = name.range(of: ".", options: .backwards).location
         let stemLength = dot == NSNotFound || dot == 0 ? name.length : dot
         DispatchQueue.main.async {
-            (NSApp.keyWindow?.firstResponder as? NSTextView)?.setSelectedRange(NSRange(location: 0, length: stemLength))
+            guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else {
+                if tries > 1 { selectStem(tries: tries - 1) }
+                return
+            }
+            editor.setSelectedRange(NSRange(location: 0, length: stemLength))
         }
     }
 
