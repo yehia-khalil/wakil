@@ -119,7 +119,7 @@ Add to `app/Tests/WakilKitTests/EditorTabsTests.swift`, after `languageComesFrom
 
 - [ ] **Step 2: Run the tests to see them fail**
 
-Run: `cd /Users/yehia/Desktop/scripts/wakil-public/app && ../scripts/swift-test.sh --filter "Glyph|ThePage"`
+Run: `cd app && ../scripts/swift-test.sh --filter "Glyph|ThePage"`
 Expected: build fails with `cannot find 'editorFileGlyph' in scope`.
 
 - [ ] **Step 3: Implement**
@@ -164,7 +164,7 @@ public func editorTabGlyph(_ tab: EditorTab) -> Character {
 
 - [ ] **Step 4: Run the tests to see them pass**
 
-Run: `cd /Users/yehia/Desktop/scripts/wakil-public/app && ../scripts/swift-test.sh --filter "Glyph|ThePage"`
+Run: `cd app && ../scripts/swift-test.sh --filter "Glyph|ThePage"`
 Expected: 5 tests pass.
 
 - [ ] **Step 5: Commit**
@@ -197,7 +197,6 @@ regressions) and, at Cover and the walk, by sight and the existing e2e checks.
 - [ ] **Step 1: Add the font and its licence**
 
 ```bash
-cd /Users/yehia/Desktop/scripts/wakil-public
 mkdir -p app/Resources/seti
 curl -sfL -o app/Resources/seti/seti.woff https://raw.githubusercontent.com/microsoft/vscode/00ab0906bad641d5be1d009da16baa5cec66a161/extensions/theme-seti/icons/seti.woff
 curl -sfL -o app/Resources/seti/LICENSE https://raw.githubusercontent.com/jesseweed/seti-ui/master/LICENSE.md
@@ -320,7 +319,7 @@ Append to the spec:
 
 - [ ] **Step 8: Build and test**
 
-Run: `cd /Users/yehia/Desktop/scripts/wakil-public && make app-build && make app-test`
+Run: `make app-build && make app-test`
 Expected: the build succeeds; app-test passes (about 3,020 tests). If one of the known
 intermittent tests fails (`ComposerModelTests`, the `EditorSearchTests` debounce test,
 `WindowModelTests.aDispatchThatArrangesNothingWritesNothingEvenWithAPaneBusy`), report it by name;
@@ -328,7 +327,7 @@ do not rerun into green.
 
 - [ ] **Step 9: Check the bundle carries the font**
 
-Run: `cd /Users/yehia/Desktop/scripts/wakil-public && make app-bundle && ls app/Wakil.app/Wakil_WakilApp.bundle/Contents/Resources/seti`
+Run: `make app-bundle && ls app/Wakil.app/Wakil_WakilApp.bundle/Contents/Resources/seti`
 Expected: `LICENSE  seti.woff`.
 
 - [ ] **Step 10: Commit**
