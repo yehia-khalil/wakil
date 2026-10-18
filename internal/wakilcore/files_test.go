@@ -92,12 +92,64 @@ func TestFilesReadReturnsTextSizeAndMtime(t *testing.T) {
 	}
 }
 
-func TestFilesReadOverTheCapReturnsNoText(t *testing.T) {
+func TestFilesReadOverTheCapReturnsTheTailFromALineStart(t *testing.T) {
 	a, _, _ := filesRoots(t)
-	write(t, filepath.Join(a, "big.sql"), strings.Repeat("x", FileCap+1))
-	r, err := ReadFile(filepath.Join(a, "big.sql"), []string{a})
-	if err != nil || r.Text != "" || !r.OverCap || r.Size != FileCap+1 {
+	head := strings.Repeat("x", FileCap) // pushed out of the window
+	body := "partial line\n[2026-10-18 13:33:20] local.ERROR: boom\nlast\n"
+	write(t, filepath.Join(a, "laravel.log"), head+body)
+	r, err := ReadFile(filepath.Join(a, "laravel.log"), []string{a})
+	if err != nil || !r.Tail || !r.OverCap || r.Size != len(head)+len(body) {
 		t.Fatalf("got %+v %v", r, err)
+	}
+	if strings.HasPrefix(r.Text, "x") || !strings.HasSuffix(r.Text, "local.ERROR: boom\nlast\n") {
+		t.Fatalf("tail does not start at a line: %q", r.Text[:min(40, len(r.Text))])
+	}
+	if r.Start != r.Size-len(r.Text) || r.End != r.Size {
+		t.Fatalf("start %d end %d size %d len %d", r.Start, r.End, r.Size, len(r.Text))
+	}
+}
+
+func TestFilesReadFromReturnsWholeLinesAfterTheOffset(t *testing.T) {
+	a, _, _ := filesRoots(t)
+	p := filepath.Join(a, "laravel.log")
+	write(t, p, "one\ntwo\nthr")
+	r, err := ReadFileFrom(p, 4, []string{a})
+	if err != nil || r.Text != "two\n" || r.End != 8 || r.Size != 11 {
+		t.Fatalf("got %+v %v", r, err)
+	}
+	r, _ = ReadFileFrom(p, 8, []string{a})
+	if r.Text != "" || r.End != 8 {
+		t.Fatalf("a line still being written must wait: %+v", r)
+	}
+}
+
+func TestFilesReadFromAShorterFileSaysShrunk(t *testing.T) {
+	a, _, _ := filesRoots(t)
+	p := filepath.Join(a, "laravel.log")
+	write(t, p, "new\n")
+	r, err := ReadFileFrom(p, 100, []string{a})
+	if err != nil || !r.Shrunk || r.Text != "" {
+		t.Fatalf("got %+v %v", r, err)
+	}
+}
+
+func TestFilesReadFromTooFarBehindSaysTooFar(t *testing.T) {
+	a, _, _ := filesRoots(t)
+	p := filepath.Join(a, "laravel.log")
+	write(t, p, strings.Repeat("y\n", FileCap)) // 2×FileCap bytes past offset 0
+	r, err := ReadFileFrom(p, 0, []string{a})
+	if err != nil || !r.TooFar || r.Text != "" {
+		t.Fatalf("got %+v %v", r, err)
+	}
+}
+
+func TestFilesReadFromFlagsABinaryChunk(t *testing.T) {
+	a, _, _ := filesRoots(t)
+	p := filepath.Join(a, "laravel.log")
+	write(t, p, "ok\n\x00bad\n")
+	r, _ := ReadFileFrom(p, 3, []string{a})
+	if !r.Binary || r.Text != "" {
+		t.Fatalf("got %+v", r)
 	}
 }
 

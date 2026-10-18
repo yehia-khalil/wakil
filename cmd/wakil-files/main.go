@@ -46,6 +46,7 @@ type replaceArg struct {
 
 type readArg struct {
 	Path string `json:"path" jsonschema:"absolute path of a file inside one of the active project's roots"`
+	From *int   `json:"from,omitempty" jsonschema:"byte offset: answer only the whole lines after it (a growing log)"`
 }
 type writeArg struct {
 	Path   string `json:"path" jsonschema:"absolute path of a file inside one of the active project's roots"`
@@ -145,13 +146,19 @@ func newServer() *mcp.Server {
 			return nil, r, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "files_read", Description: "Read-only. One file's text, size and mtime (Unix ns). No text over 2 MB (over_cap), for a binary file (binary) or a file that is not UTF-8 (utf8 false); exists false for a missing file; a FIFO, socket or device is refused. Confined to the active project's roots."},
+	mcp.AddTool(s, &mcp.Tool{Name: "files_read", Description: "Read-only. One file's text, size and mtime (Unix ns). Over 2 MB, the last 2 MB from a line start (tail, over_cap, start). With from (a byte offset), only the whole lines after it, end the offset after them; shrunk when the file is now shorter than from, too_far when more than 2 MB lie past it. No text for a binary file (binary) or a file that is not UTF-8 (utf8 false); exists false for a missing file; a FIFO, socket or device is refused. Confined to the active project's roots."},
 		func(_ context.Context, _ *mcp.CallToolRequest, a readArg) (*mcp.CallToolResult, wakilcore.FileRead, error) {
 			rs, fail := roots()
 			if fail != nil {
 				return fail, wakilcore.FileRead{}, nil
 			}
-			r, err := wakilcore.ReadFile(a.Path, rs)
+			var r wakilcore.FileRead
+			var err error
+			if a.From != nil {
+				r, err = wakilcore.ReadFileFrom(a.Path, *a.From, rs)
+			} else {
+				r, err = wakilcore.ReadFile(a.Path, rs)
+			}
 			if err != nil {
 				return mcpx.ToolErr("wakil-files", err), wakilcore.FileRead{}, nil
 			}
