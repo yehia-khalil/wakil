@@ -200,7 +200,15 @@ public func editorAfterAppendRead(_ tab: EditorTab, reply o: [String: JSONValue]
     if tab.tailStart != nil { t.notice = editorTailNotice(size: size) }
     if chunk.isEmpty || end == tab.readTo { return t == tab ? .unchanged : .appended(t) }
     if tab.tailStart != nil && tab.text.utf8.count + chunk.utf8.count > 2 * cap { return .reread }
+    // Following (Rule 6): a view that reached the last line with text moves to the new last one; one
+    // scrolled up stays. A log ends in a newline, so the line before the last is the one with text.
+    let lastText = { (text: String) in max(1, text.reduce(1) { $1 == "\n" ? $0 + 1 : $0 } - 1) }
+    let following = (tab.visibleRange?.upperBound ?? 0) >= lastText(tab.text)
     t.text += chunk
+    if following {
+        t.cursor = EditorPosition(line: lastText(t.text), column: 1)
+        t.selection = nil
+    }
     t.savedText = t.text
     t.readTo = end
     t.mtime = Int64(o["mtime"]?.intValue ?? Int(tab.mtime))

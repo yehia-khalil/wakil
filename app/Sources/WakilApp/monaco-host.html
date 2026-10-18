@@ -344,22 +344,13 @@
     // columns, so the model is replaced whole by `after`, the store's text. A result that is not
     // `after` (Monaco normalising line endings) is replaced the same way. The serial is set in
     // this same call, so no keystroke can be posted between the edit and its basis.
-    // 3b-vii: a growing log. Appended as its own undo step; the view follows only when it was at the
-    // bottom (Rule 6), and the new entries arrive folded (Rule 9: an opened fold stays open).
+    // 3b-vii: a growing log. Appended as its own undo step, the new entries folded (Rule 9: an opened
+    // fold stays open). Following is the store's: it moves the cursor, and the reveal step scrolls.
     window.wakilAppendText = function (key, text, serial) {
       const m = models[key]; if (!m) return;
       // A keystroke not yet posted stays pending: its post then carries the old text, the keystroke and
       // this chunk, so the store sees the tab go dirty (final review I3).
       const shown = key === current;
-      // At the bottom when the last line's top is in view — by position, not by visible lines, which
-      // leave out a folded last entry (final review I1), and not by scroll height, which counts the
-      // space Monaco draws past the last line.
-      const lh = ed.getOption(monaco.editor.EditorOption.lineHeight);
-      const bottom = function () { return ed.getTopForLineNumber(m.getLineCount()) + lh - ed.getLayoutInfo().height; };
-      // A log ends in a newline, so its last line is empty and may sit just under the edge: the line
-      // above it is the one that must be in view.
-      const lastText = Math.max(1, m.getLineCount() - 1);
-      const follow = shown && ed.getTopForLineNumber(lastText) < ed.getScrollTop() + ed.getLayoutInfo().height;
       const from = m.getLineCount();
       const end = m.getFullModelRange().getEndPosition();
       applying = true;
@@ -371,7 +362,6 @@
       basis[key] = serial;
       if (shown) {
         foldEntries(key, from);
-        if (follow) ed.setScrollTop(Math.max(0, bottom()));   // the last line at the bottom edge
         report();
       }
     };

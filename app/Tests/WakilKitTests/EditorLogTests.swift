@@ -104,10 +104,31 @@ private let log = "/p/api/storage/logs/laravel.log"
     let refresh = Task { try await f.dispatch("editor_refresh", origin: .ui) }
     while await !f.files.calls.contains("files_read \(log) from 8") { await Task.yield() }
     await f.panes.editorViewDidReport(paneId: f.pane, tab: 0, cursor: EditorPosition(line: 1, column: 2),
-                                      selection: nil, visibleRange: 1...3, scrollTop: 0)
+                                      selection: nil, visibleRange: 1...1, scrollTop: 0)   // scrolled up
     await f.files.releaseRead()
     _ = try await refresh.value
     let t = await f.snapshot().tabs[0]
     #expect(t.text == "one\ntwo\nthree\n")
     #expect(t.cursor == EditorPosition(line: 1, column: 2) && t.scrollTop == 0)
+}
+
+// Cover: following is decided where it can be tested — a tab whose view reached its last line with
+// text moves its cursor to the new last line, which the reveal step scrolls into view (Rule 6: a
+// tab scrolled up stays put).
+@Test func anAppendAtTheBottomMovesTheCursorToTheNewLastLine() {
+    var tab = EditorTab.file(path: log, root: "/p/api", text: "a\nb\nc\n", mtime: 1, language: "log")
+    tab.readTo = 6; tab.visibleRange = 2...3; tab.cursor = EditorPosition(line: 3, column: 2)
+    let reply: [String: JSONValue] = ["exists": .bool(true), "text": .string("d\ne\n"), "utf8": .bool(true),
+                                      "end": .integer(10), "size": .integer(10), "mtime": .integer(2)]
+    guard case .appended(let t) = editorAfterAppendRead(tab, reply: reply) else { Issue.record("not appended"); return }
+    #expect(t.cursor == EditorPosition(line: 5, column: 1) && t.selection == nil)
+}
+
+@Test func anAppendWhileScrolledUpLeavesTheCursor() {
+    var tab = EditorTab.file(path: log, root: "/p/api", text: "a\nb\nc\n", mtime: 1, language: "log")
+    tab.readTo = 6; tab.visibleRange = 1...2; tab.cursor = EditorPosition(line: 1, column: 1)
+    let reply: [String: JSONValue] = ["exists": .bool(true), "text": .string("d\n"), "utf8": .bool(true),
+                                      "end": .integer(8), "size": .integer(8), "mtime": .integer(2)]
+    guard case .appended(let t) = editorAfterAppendRead(tab, reply: reply) else { Issue.record("not appended"); return }
+    #expect(t.cursor == EditorPosition(line: 1, column: 1))
 }
