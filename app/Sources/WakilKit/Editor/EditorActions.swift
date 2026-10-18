@@ -1658,8 +1658,11 @@ public func registerEditorActions(
             switch outcome {
             case .success(.object(let o)):
                 (s.search.results, s.search.truncated, s.search.filesTruncated) = matches(from: o)
+                if case .array(let skipped)? = o["skipped_large"] {
+                    s.search.skippedLarge = skipped.compactMap { if case .string(let p) = $0 { p } else { nil } }
+                } else { s.search.skippedLarge = [] }
             case .failure(let e) where !(e is CancellationError):
-                s.search.results = []; s.search.truncated = false; s.search.filesTruncated = false
+                s.search.results = []; s.search.truncated = false; s.search.filesTruncated = false; s.search.skippedLarge = []
                 s.search.error = String(describing: e)
             default: break
             }
@@ -1721,7 +1724,7 @@ public func registerEditorActions(
                     s.search.cancelled = false
                     s.search.error = nil
                     s.search.changedSince = false
-                    s.search.results = []; s.search.truncated = false; s.search.filesTruncated = false
+                    s.search.results = []; s.search.truncated = false; s.search.filesTruncated = false; s.search.skippedLarge = []
                     s.search.replace.preview = [:]
                     return s.search.serial
                 }

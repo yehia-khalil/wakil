@@ -78,6 +78,8 @@ actor FakeFiles: ToolCaller {
     func setSearch(_ m: [(String, String, Int, Int, String)]) { searchMatches = m; searchError = nil }
     func setSearchError(_ e: String?) { searchError = e }
     func setSearchFilesTruncated(_ on: Bool) { searchFilesTruncated = on }
+    var searchSkippedLarge: [String] = []
+    func setSearchSkippedLarge(_ paths: [String]) { searchSkippedLarge = paths }
     func setSlowSearch(_ on: Bool) { slowSearch = on; searchReleased = false }
     func releaseSearch() { searchReleased = true; parkedSearches.forEach { $0.resume() }; parkedSearches = [] }
     private func parkSearch(_ c: CheckedContinuation<Void, Never>) {
@@ -270,7 +272,8 @@ actor FakeFiles: ToolCaller {
             return ok(["matches": .array(searchMatches.map { m in .object([
                 "root": .string(m.0), "path": .string(m.1), "line": .integer(Int64(m.2)),
                 "column": .integer(Int64(m.3)), "preview": .string(m.4)]) }),
-                "truncated": .bool(false), "files_truncated": .bool(searchFilesTruncated)])
+                "truncated": .bool(false), "files_truncated": .bool(searchFilesTruncated),
+                "skipped_large": .array(searchSkippedLarge.map { .string($0) })])
         case "files_replace_text":
             if let replaceError { return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(replaceError)])])]) }
             let query = optionalString(arguments, "query") ?? "", with = optionalString(arguments, "replacement") ?? ""

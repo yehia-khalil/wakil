@@ -889,6 +889,9 @@ struct EditorColumn: View {
                 searchLine(EditorSearchState.filesTruncatedNote, opacity: 0.55)
                     .accessibilityIdentifier("editor.search.filesNote")
             }
+            if let note = editorSkippedLargeNote(search.skippedLarge) {
+                searchLine(note, opacity: 0.55).accessibilityIdentifier("editor.search.largeNote")
+            }
             if search.changedSince {
                 HStack(spacing: 10) {
                     Text("files changed since this search")

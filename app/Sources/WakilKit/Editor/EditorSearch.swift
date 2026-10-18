@@ -28,6 +28,8 @@ public struct EditorSearchState: Sendable, Equatable {
     public var truncated: Bool
     /// Some root's listing hit the 50,000-file cap: only the first 50,000 files are searched.
     public var filesTruncated: Bool
+    /// The files over 2 MB the last search skipped, root-relative (3b-vii).
+    public var skippedLarge: [String] = []
     public var changedSince: Bool
     /// The operator or the agent stopped the last search before it finished: the column says so, so a
     /// stopped search never looks like one that found nothing. The next search, or an empty query, clears it.
@@ -185,4 +187,12 @@ public func editorFindMatches(_ text: String, query: String, caseSensitive: Bool
         }
     }
     public func cancel() { task?.cancel(); task = nil }
+}
+
+/// The line under the results naming the files over 2 MB search skipped (3b-vii); nil when none.
+public func editorSkippedLargeNote(_ paths: [String]) -> String? {
+    guard !paths.isEmpty else { return nil }
+    let head = paths.prefix(3).joined(separator: ", ")
+    let more = paths.count > 3 ? ", …and \(paths.count - 3) more" : ""
+    return "\(paths.count) file\(paths.count == 1 ? "" : "s") over 2 MB not searched: \(head)\(more)"
 }

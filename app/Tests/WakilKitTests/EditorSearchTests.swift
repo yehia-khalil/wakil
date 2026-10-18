@@ -71,3 +71,10 @@ private func m(_ root: String, _ path: String, _ line: Int) -> EditorSearchMatch
     s.query = "("                                                           // an invalid pattern marks nothing
     #expect(editorSearchMarks(preview: "(x)", search: s).isEmpty)
 }
+
+@Test func theSkippedLargeNoteNamesUpToThreeFiles() {
+    #expect(editorSkippedLargeNote([]) == nil)
+    #expect(editorSkippedLargeNote(["storage/logs/laravel.log"]) == "1 file over 2 MB not searched: storage/logs/laravel.log")
+    #expect(editorSkippedLargeNote(["a", "b", "c"]) == "3 files over 2 MB not searched: a, b, c")
+    #expect(editorSkippedLargeNote(["a", "b", "c", "d", "e"]) == "5 files over 2 MB not searched: a, b, c, …and 2 more")
+}

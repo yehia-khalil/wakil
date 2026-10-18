@@ -214,3 +214,13 @@ private actor Flag {
     try await f.dispatch("editor_search", ["query": .string("")])
     #expect(await f.snapshot().search.cancelled == false)
 }
+
+@Test func aSearchKeepsTheLargeFilesItSkippedAndTheNextOneClearsThem() async throws {
+    let f = try await editorFixture()
+    await f.files.setSearchSkippedLarge(["storage/logs/laravel.log"])
+    try await f.dispatch("editor_search", ["query": .string("x")])
+    #expect(await f.snapshot().search.skippedLarge == ["storage/logs/laravel.log"])
+    await f.files.setSearchSkippedLarge([])
+    try await f.dispatch("editor_search", ["query": .string("x")])
+    #expect(await f.snapshot().search.skippedLarge.isEmpty)
+}

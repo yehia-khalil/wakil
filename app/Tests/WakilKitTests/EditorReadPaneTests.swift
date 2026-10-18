@@ -39,7 +39,7 @@ import Testing
         "column": .null,
         "find": .null,
         "search": .object(["query": .string(""), "case": .bool(false), "word": .bool(false), "regex": .bool(false),
-                           "in_flight": .bool(false), "truncated": .bool(false), "files_truncated": .bool(false),
+                           "in_flight": .bool(false), "truncated": .bool(false), "files_truncated": .bool(false), "skipped_large": .array([]),
                            "changed_since": .bool(false), "cancelled": .bool(false), "error": .null, "results": .array([]),
                            "replace": .null, "replace_in_flight": .bool(false), "last_replace": .null]),
     ]))
