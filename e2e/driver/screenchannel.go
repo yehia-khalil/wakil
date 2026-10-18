@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -97,6 +98,11 @@ func (c *ScreenChannel) screenClient() (*MCP, error) {
 		if err == nil && screen != nil && place == *screen {
 			return c.client, nil
 		}
+		// The one socket of a build from before the shown-place sockets: it
+		// follows the screen, so it is still the screen's (SelectScreenSocket).
+		if errors.Is(err, ErrNoPlaceMeta) {
+			return c.client, nil
+		}
 		_ = c.client.Close()
 		c.client, c.path = nil, ""
 	}
@@ -146,6 +152,9 @@ func probeSocket(path string) (SocketPlace, error) {
 	}
 	defer client.Close()
 	place, screen, err := client.Places()
+	if errors.Is(err, ErrNoPlaceMeta) {
+		return SocketPlace{Path: path, Unplaced: true}, nil
+	}
 	if err != nil {
 		return SocketPlace{}, fmt.Errorf("%s: %w", path, err)
 	}

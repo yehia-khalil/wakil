@@ -204,6 +204,13 @@ func (r Result) Err() error {
 	if len(r.Fatal) > 0 {
 		return fmt.Errorf("the run itself is unsound:\n  %s", joinLines(r.Fatal))
 	}
+	// **A launch of quarantined checks alone is reported, not silent.** `make
+	// e2e-run` launches one file at a time, so a quarantined file is a launch
+	// with nothing counted; its outcome is printed as QUARANTINED, which is the
+	// whole of what quarantine promises. It proves nothing, and is not red.
+	if r.ChecksRun == 0 && len(r.Quarantined) > 0 {
+		return nil
+	}
 	if r.ChecksRun == 0 {
 		return fmt.Errorf("no check ran, so nothing was proved")
 	}

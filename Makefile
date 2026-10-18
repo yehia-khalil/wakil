@@ -340,6 +340,14 @@ E2E_SETTLE_ARG = $(if $(E2E_SETTLE),--settle $(E2E_SETTLE),)
 # `make e2e E2E_ONLY='e2e/checks/seeded/git-*.jsonl'`.
 E2E_ONLY ?=
 
+# E2E_QUARANTINE names known-red checks by file base name, comma-separated, e.g.
+# `make e2e-full E2E_QUARANTINE=api-unbind.jsonl,project-root-note.jsonl`. Each is
+# handed to wakil-e2e's `--quarantine` on its own file only — one launch per
+# file, and the runner refuses a name that is not among the checks it runs — and
+# is reported on every run, never retried. A name no selected file carries fails
+# the run before any launch: a stale entry would hide a check nobody runs.
+E2E_QUARANTINE ?=
+
 e2e: app-bundle axresolve e2e-agent
 	@files=$$(go run ./e2e/cmd/wakil-e2e-select --trunk "$(E2E_TRUNK)" \
 	    $(if $(E2E_ONLY),--only $(E2E_ONLY),)) || exit 1; \
@@ -357,12 +365,21 @@ e2e-full: app-bundle axresolve e2e-agent
 e2e-run:
 	@test -d "$(E2E_BUNDLE)" || { \
 	    echo "make e2e: no bundle at $(E2E_BUNDLE) — run \`make app-bundle\`"; exit 1; }
+	@for name in $$(echo "$(E2E_QUARANTINE)" | tr ',' ' '); do \
+	    case " $$(for f in $(E2E_FILES); do printf '%s ' "$${f##*/}"; done)" in \
+	        *" $$name "*) ;; \
+	        *) echo "make e2e: E2E_QUARANTINE names $$name, which is not among the checks being run"; exit 1;; \
+	    esac; \
+	done
 	@status=0; \
 	for check in $(E2E_FILES); do \
 	    case $$check in \
 	        e2e/checks/unseeded/*) flags="--no-seed"; label="organisation plane";; \
 	        e2e/checks/agent/*) flags="--agent on"; label="seeded, scripted agent";; \
 	        *) flags=""; label="seeded";; \
+	    esac; \
+	    case ",$(E2E_QUARANTINE)," in \
+	        *",$${check##*/},"*) flags="$$flags --quarantine $${check##*/}"; label="$$label, quarantined";; \
 	    esac; \
 	    echo "== $$check ($$label)"; \
 	    go run ./e2e/cmd/wakil-e2e --bundle "$(E2E_BUNDLE)" $$flags $(E2E_SETTLE_ARG) "$$check" \

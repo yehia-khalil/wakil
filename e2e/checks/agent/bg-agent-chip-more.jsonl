@@ -1,0 +1,49 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"hold a turn open here"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"hold a turn open here"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"qa"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.qa"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"window.composer","text":"hold a turn open here"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"hold a turn open here"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"window.composer","text":"hold a turn open here"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"hold a turn open here"}}
+{"do":{"hotkey":"cmd+shift+o"}}
+{"expect":{"tree":"contains","text":"ORGANISATION"}}
+{"do":{"click":"org.row.e2e-fixture-two.switch"}}
+{"expect":{"tree":"contains","text":"e2e-project-two"}}
+{"expect":{"tree":"absent","text":"hold a turn open here"}}
+{"expect":{"tree":"contains","text":"Value: working"}}
+{"expect":{"frame":"window.agentChip.more","clear":"window.agentChip.e2e-fixture/e2e-project/qa"}}
+{"do":{"click":"window.agentChip.more"}}
+{"do":{"click":"window.agentChip.e2e-fixture/e2e-project/staging"}}
+{"expect":{"tree":"absent","text":"e2e-project-two"}}
+{"expect":{"tree":"contains","text":"hold a turn open here"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"new terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"touch ~/wakil-e2e-release-held"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"tree":"contains","text":"a held turn was released"}}
+{"expect":{"tree":"absent","text":"e2e-project-two"}}

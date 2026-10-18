@@ -180,12 +180,17 @@ func (m *MCP) Places() (place Place, screen *Place, err error) {
 		return Place{}, nil, err
 	}
 	if payload.Meta.Place == nil {
-		return Place{}, nil, fmt.Errorf(
-			"initialize: no _meta[\"wakil/place\"], so this socket cannot say whose calls it " +
-				"makes — a Wakil built before the shown-place sockets")
+		return Place{}, nil, ErrNoPlaceMeta
 	}
 	return *payload.Meta.Place, payload.Meta.Screen, nil
 }
+
+// ErrNoPlaceMeta is what Places answers for a socket whose `initialize`
+// carries no `_meta["wakil/place"]`: a Wakil built before the shown-place
+// sockets, whose one window-wide socket followed the screen.
+var ErrNoPlaceMeta = fmt.Errorf(
+	"initialize: no _meta[\"wakil/place\"], so this socket cannot say whose calls it " +
+		"makes — a Wakil built before the shown-place sockets")
 
 // Tool is one entry of the action denominator: what the window can be asked
 // to do, and whether doing it changes anything.

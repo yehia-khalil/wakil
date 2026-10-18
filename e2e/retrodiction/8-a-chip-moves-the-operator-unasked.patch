@@ -1,0 +1,15 @@
+diff --git a/app/Sources/WakilKit/App/WindowModel.swift b/app/Sources/WakilKit/App/WindowModel.swift
+index 6aeaf67..01dff1f 100644
+--- a/app/Sources/WakilKit/App/WindowModel.swift
++++ b/app/Sources/WakilKit/App/WindowModel.swift
+@@ -8050,6 +8050,10 @@ public final class WindowModel {
+         if case .result(let isError, _) = event {
+             agent.turnInFlight = false
+             markUnseen(failed: isError, for: agent)
++            // RECONSTRUCTION (background agents, Rule 6): an agent whose turn
++            // ends off screen takes the operator to its place, unasked, instead
++            // of turning its chip and staying put.
++            if !isError, agent.place != place { Task { await self.goTo(agent.place) } }
+         }
+         // Task 15, fix round 1 (Critical): `Date()` is captured exactly
+         // here, at the one place a harness event actually arrives, and

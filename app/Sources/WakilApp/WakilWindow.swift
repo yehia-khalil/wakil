@@ -406,6 +406,23 @@ struct WakilWindow: View {
                     .padding(.trailing, 24)
                     .padding(.bottom, 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+
+                    // Background agents 4 of 4: a chip per agent in another place, top right.
+                    // Chrome, so here in the window's own layer — above the canvas, not inside the
+                    // context line's `VStack` — and declared before the palette and the org plane
+                    // so both draw over it. The confirmation and unsaved-changes planes live on the
+                    // canvas's own overlay, below this layer, so while one is up the chips go inert
+                    // under it as the canvas does behind the org plane: still in view, not
+                    // clickable.
+                    let planeUp = session.model.showOrgPlane || session.model.paletteShowing
+                        || session.model.pending != nil || session.model.unsavedPrompt != nil
+                    AgentChips(model: session.model)
+                        .opacity(planeUp ? 0.22 : 1)
+                        .blur(radius: planeUp ? 0.6 : 0)
+                        .allowsHitTesting(!planeUp)
+                        .padding(.top, 16)
+                        .padding(.trailing, 16)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
                 // ⌘P / ⌘K: the palette's plane, over everything but the org plane
                 // (which closes it — see the `onChange`s below).

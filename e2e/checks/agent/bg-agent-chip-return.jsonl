@@ -1,0 +1,43 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"start the held agent in staging"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"start the held agent in staging"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"qa"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.qa"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"expect":{"tree":"contains","text":"Value: working"}}
+{"expect":{"tree":"absent","text":"start the held agent in staging"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"touch ~/wakil-e2e-release-staging"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"tree":"contains","text":"Value: done"}}
+{"expect":{"tree":"absent","text":"Value: working"}}
+{"expect":{"tree":"absent","text":"the held agent in staging finished"}}
+{"expect":{"tree":"absent","text":"billing.e2e-fixture.invalid"}}
+{"expect":{"tree":"absent","text":"qa declares no entry named billing"}}
+{"do":{"type":{"into":"window.composer","text":"start the second agent in qa"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"the second agent answered in qa"}}
+{"expect":{"tree":"contains","text":"catalog-qa.e2e-fixture.invalid"}}
+{"expect":{"tree":"contains","text":"Value: done"}}
+{"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
+{"do":{"click":"window.agentChip.e2e-fixture/e2e-project/staging"}}
+{"expect":{"tree":"contains","text":"the held agent in staging finished"}}
+{"expect":{"tree":"absent","text":"the second agent answered in qa"}}
+{"expect":{"pane":"api-2","field":"entry","equals":"billing"}}
+{"expect":{"pane":"api-2","field":"environment","equals":"staging"}}
+{"expect":{"tree":"absent","text":"Value: done"}}
+{"expect":{"tree":"absent","text":"Value: working"}}
+{"expect":{"journal":{"contains":"\"params\":{\"entry\":\"billing\"}"}}}
+{"expect":{"journal":{"contains":"\"params\":{\"entry\":\"catalog\"}"}}}
+{"expect":{"journal":{"contains":"\"session\":\""}}}
+{"expect":{"journal":{"contains":"\"environment\":\"qa\""}}}

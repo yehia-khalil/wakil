@@ -87,11 +87,8 @@ Rules no phase may break.
    provider serving several orgs, because `buildLaunch` always passes `--strict-mcp-config`,
    so Wakil's sessions ignore the `WAKIL_ORG` a config dir pins and only plain `claude`
    still reads it *(measured 2026-09-22)*. History in `phase-log.md`.
-5. **Exactly one active (org, project, environment).** Implicit scope is the product; an
-   explicit project argument on every tool call would forfeit it. *(Amended 2026-09-06:
-   the provider is session-scoped, not context-scoped, and is deliberately not part of
-   this triple — see Decision 4.)* *(2026-09-15: 2b-viii's switch changes the triple's
-   org member in place and needed no amendment.)*
+5. **Exactly one place on screen; each agent keeps its own.** Implicit scope is the
+   product; an explicit project argument would forfeit it. History: Decision 41.
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
    deliberate justification, never by default. Five have earned in. The justification
    for each, and what each leaves refused, is in `decisions.md` under *"Invariant 6 — the
@@ -189,6 +186,7 @@ Each entry: the call, why, and what would change our mind.
 | 31 | `ProviderLogin` is a kind-keyed protocol; the seam splits at the human, not the language | a second kind shares Claude's mint shape |
 | 32 | An organisation unlinks a binding, never removes a provider; `home` is an artefact | `claude` revokes per config dir, not per machine |
 | 36 | File write earns in (allow everywhere, inside the roots); the Git pane folds into the editor | an editor write reaches what the agent's own tools cannot |
+| 41 | One agent per place, kept; switching tears nothing down | agents should follow the operator |
 
 ***Reverse if* is a gist**; `decisions.md` states each in full.
 
@@ -277,9 +275,10 @@ Terms coined for this project. Phase specs must use them consistently.
 | **Environment** | A named target within a project — local, staging, production. Carries DB and HTTP configuration. Meaningless for PM, chat, and inbox. **Whether an environment is *production* is declared, not spelled**: it carries a `production` flag, and the name supplies the flag's default rather than the answer (Decision 26). |
 | **Connection** | An authenticated account at the organization level: a Jira site, a Slack workspace, a mailbox. |
 | **Scope** | A project-level narrowing of a connection: a Jira project key, a channel list, an email label set. |
-| **Layout scope** | What a pane arrangement is filed under: the organization, the project, and — once a conversation exists — its lineage root. The one key both pane stores and layout persistence share. **Not a Scope** — that narrows a connection; this names a canvas. |
+| **Layout scope** | What a pane arrangement is filed under: the organization, project, environment and — once a conversation exists — its lineage root. The one key both pane stores and layout persistence share. **Not a Scope** — that narrows a connection; this names a canvas. |
 | **Lineage root** | The oldest ancestor of a session, and so the identity one conversation keeps across every resume that forked it: a conversation is a chain of sessions, not one. What ⌘P collapses a chain to, and what an arrangement is filed under. |
-| **Active context** | The current (organization, project, environment) triple. Exactly one is active. Every tool resolves against it implicitly. |
+| **Place** | An (organization, project, environment); one agent at most (Decision 41). |
+| **Active context** | The place on screen. Agents resolve against their own. |
 | **Capability layer** | Headless, UI-free operations ("run this SQL, return rows"). Separate processes, usable without Wakil.app. |
 | **Action layer** | In-app, stateful operations that own pane state, call capabilities, and update the UI. |
 | **Pane** | A dual-driven surface in Wakil.app: state, an action registry, and readable state. DB viewer, API client, terminal. |

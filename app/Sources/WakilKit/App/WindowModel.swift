@@ -345,7 +345,8 @@ public final class WindowModel {
     /// The on-screen place's waiting proposal, or `nil`. The confirmation plane renders from
     /// this; another place's waits, unseen, until the operator goes there.
     public var pending: PendingMutation? { parkedProposals[place] }
-    /// The places with a proposal waiting, for the chips that say so (Plan 4).
+    /// The places with a proposal waiting, whoever proposed it. The chips count only the agent's
+    /// (`chips`).
     public var waitingPlaces: Set<Place> { Set(parkedProposals.keys) }
 
     /// The arrangement the canvas draws. A cached copy of
@@ -955,6 +956,7 @@ public final class WindowModel {
                 // in `shutdown()`.
                 guard let self else { return }
                 self.parkedProposals = parked
+                for place in parked.keys { if let agent = self.agents[place] { self.refreshChipProduction(of: agent) } }
             }
         }
 
@@ -1779,6 +1781,11 @@ public final class WindowModel {
             // project's declarations.
             environmentProduction = active.environmentProduction
             await registry.setEnvironmentProduction(active.environmentProduction)
+            if let agent = currentAgent {
+                // Newer than any chip read still in flight for this place: those are dropped.
+                agent.productionReads += 1
+                agent.showProduction(active.environmentProduction)
+            }
             // An agent session may have kept this place's context. This read is newer, so that
             // copy goes: the agent's next call is priced by what the project declares now, not
             // by what it declared then.
@@ -2109,6 +2116,10 @@ public final class WindowModel {
     private func activateLayout(carrying overlay: Pane? = nil, adoptingCanvas: Bool = false) async {
         // The place is on screen: it has a socket from now on, before any turn (`openShownSocket`).
         openShownSocket()
+        // The place is the screen's now: what its agent did while away has been seen, and its
+        // chip goes (background agents 4 of 4). Not while `goTo` is passing through it: only
+        // where that lands has been seen, and `goTo` clears it there (final review I1).
+        if goTosInFlight == 0 { markSeen(currentAgent) }
         // No project, no arrangement. `refreshContext`'s error branch
         // clears `project` deliberately — keeping the outgoing org's would
         // draw the wrong credential boundary confidently (spec §6) — and
@@ -6559,6 +6570,7 @@ public final class WindowModel {
             // either suspension, `append` clears what is already there,
             // and nothing re-sets it once `send` returns.
             agent.turnInFlight = true
+            refreshChipProduction(of: agent)
             // 2d-ii: the operator's own turn is a row, so what was actually
             // sent — a misheard sentence included — stays on screen.
             agent.appendRow(label: "you", detail: text)
@@ -6622,6 +6634,37 @@ public final class WindowModel {
                 await self.recordCapacity(event, provider: pumpProvider, for: agent)
                 if case .result = event { self.startCapacityProbe() }
             }
+            // The stream ended under a pump nothing replaced or cancelled: the session's process
+            // went away, and no turn runs on in it. Off screen, its chip says it failed (background
+            // agents 4 of 4) — and, once seen, not that it is still working.
+            guard !Task.isCancelled, let self, agent.eventPumpGeneration == generation else { return }
+            agent.turnInFlight = false
+            self.markUnseen(failed: true, for: agent)
+        }
+    }
+
+    /// Marks a turn's end, or a session's failure, for a chip when `agent`'s place is off screen;
+    /// on screen the operator sees it happen. Activating the place clears both.
+    private func markUnseen(failed: Bool, for agent: PlaceAgent) {
+        guard agent.place != place else { return }
+        if failed { agent.unseenFailure = true } else { agent.unseenResult = true }
+        refreshChipProduction(of: agent)
+    }
+
+    /// Reads whether `agent`'s environment is production from its own project's flags, for its
+    /// chip, so `chips` stays synchronous. Unread, or when the read fails, the name rule
+    /// `PlaceAgent` starts with stands; once read, the declaration wins. Fire-and-forget, so a read
+    /// lands only if it is still the newest for an agent still holding the place: an older read
+    /// landing last, or one for an agent since replaced, is dropped.
+    private func refreshChipProduction(of agent: PlaceAgent) {
+        guard let placeContexts, !agent.place.organization.isEmpty else { return }
+        let place = agent.place
+        agent.productionReads += 1
+        let read = agent.productionReads
+        Task { [weak self] in
+            guard let flags = try? await placeContexts.context(for: place).environmentProduction else { return }
+            guard let self, self.agents[place] === agent, agent.productionReads == read else { return }
+            agent.showProduction(flags)
         }
     }
 
@@ -7201,6 +7244,63 @@ public final class WindowModel {
         // what `autoResumeAfterSwitch` would have picked; ruled 2026-09-20). A seam row naming
         // the orgs would be written into a thread that never changed: each place's thread is its
         // own, and the context line already says where the operator is.
+    }
+
+    /// One chip per agent whose place is not the screen's and has something to show, ordered by
+    /// organisation, project and environment (background agents 4 of 4). Empty when no agent
+    /// works elsewhere, so the window's resting state is unchanged.
+    public var chips: [AgentChip] {
+        // The agent waits only on its own proposal; the operator's, parked in the same place, is
+        // not the agent asking for anything (final review, minor 1).
+        let waiting = Set(parkedProposals.filter { $0.value.origin == .agent }.keys)
+        return agents.values
+            .compactMap { agent -> AgentChip? in
+                guard agent.place != place, let state = AgentChip.state(
+                    waiting: waiting.contains(agent.place), failed: agent.unseenFailure,
+                    working: agent.turnInFlight, done: agent.unseenResult)
+                else { return nil }
+                return AgentChip(place: agent.place, state: state, productionEnvironment: agent.productionEnvironment)
+            }
+            .sorted {
+                ($0.place.organization, $0.place.project, $0.place.environment)
+                    < ($1.place.organization, $1.place.project, $1.place.environment)
+            }
+    }
+
+    /// Goes to `target` the way the operator would by hand — the organisation, then the
+    /// project, then the environment, each only when it differs — so a chip's click asks nothing
+    /// (Rule 1) and is the one thing that moves the operator (Rule 6). It stops at the first
+    /// switch refused, whose refusal stays in `status`.
+    ///
+    /// Each switch lands somewhere first — an org switch on that org's remembered place, a
+    /// project switch on its first environment — and none of those has been seen: only the place
+    /// the screen ends on, the target or wherever a refusal stopped it, loses its unseen marks.
+    public func goTo(_ target: Place) async {
+        goTosInFlight += 1
+        defer {
+            goTosInFlight -= 1
+            if goTosInFlight == 0 { markSeen(currentAgent) }
+        }
+        if target.organization != organization {
+            await requestOrganizationSwitch(target.organization)
+            guard organization == target.organization else { return }
+        }
+        if !target.project.isEmpty, target.project != projectKey {
+            guard await setProject(target.project) else { return }
+        }
+        if !target.environment.isEmpty, target.environment != environment {
+            _ = await setEnvironment(target.environment)
+        }
+    }
+
+    /// The `goTo`s still between switches — a count, as a second click can start one before the
+    /// first ends — so a place one lands on may be one it is only passing through.
+    private var goTosInFlight = 0
+
+    /// `agent`'s place is on screen: what it did while away has been seen.
+    private func markSeen(_ agent: PlaceAgent?) {
+        agent?.unseenResult = false
+        agent?.unseenFailure = false
     }
 
     /// The operator asked to switch: it happens at once. Nothing is asked about unsaved tabs
@@ -7962,7 +8062,10 @@ public final class WindowModel {
 
     private func append(_ event: HarnessEvent, to agent: PlaceAgent) {
         debugLogIfEnabled(event)
-        if case .result = event { agent.turnInFlight = false }
+        if case .result(let isError, _) = event {
+            agent.turnInFlight = false
+            markUnseen(failed: isError, for: agent)
+        }
         // Task 15, fix round 1 (Critical): `Date()` is captured exactly
         // here, at the one place a harness event actually arrives, and
         // carried alongside it into `mirror.events` — not recomputed later,

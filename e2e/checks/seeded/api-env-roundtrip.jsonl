@@ -1,17 +1,38 @@
 {"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
 {"dispatch":{"action":"api_open","params":{"entry":"billing"}}}
 {"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog.e2e-fixture.invalid"}}
-{"dispatch":{"action":"ctx_set_environment","params":{"name":"qa"}}}
-{"expect":{"pane":"api-1","field":"environment","equals":"qa"}}
-{"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog-qa.e2e-fixture.invalid"}}
-{"expect":{"pane":"api-2","field":"entry","equals":"billing"}}
-{"expect":{"tree":"contains","text":"qa declares no entry named billing — pick one"}}
-{"dispatch":{"action":"ctx_set_environment","params":{"name":"staging"}}}
+{"expect":{"tree":"contains","text":"billing.e2e-fixture.invalid"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"qa"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.qa"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"expect":{"tree":"contains","text":"catalog-qa.e2e-fixture.invalid"}}
+{"expect":{"tree":"absent","text":"billing.e2e-fixture.invalid"}}
+{"expect":{"tree":"absent","text":"qa declares no entry named billing"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"staging"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.staging"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"expect":{"pane":"api-1","field":"environment","equals":"staging"}}
 {"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog.e2e-fixture.invalid"}}
 {"expect":{"pane":"api-2","field":"request.origin","equals":"https://billing.e2e-fixture.invalid"}}
+{"expect":{"tree":"absent","text":"catalog-qa.e2e-fixture.invalid"}}
 {"expect":{"tree":"absent","text":"declares no entry named"}}
 {"dispatch":{"action":"api_open","params":{}}}
-{"expect":{"pane":"api-3","field":"entry","equals":""}}
+{"expect":{"pane":"api-4","field":"entry","equals":""}}
 {"expect":{"tree":"contains","text":"pick an entry — staging declares 3"}}
-{"dispatch":{"action":"api_request","params":{"pane":"api-3"}}}
-{"expect":{"pane":"api-3","field":"response.failures[0].message","equals":"pick an entry first"}}
+{"dispatch":{"action":"api_request","params":{"pane":"api-4"}}}
+{"expect":{"pane":"api-4","field":"response.failures[0].message","equals":"pick an entry first"}}

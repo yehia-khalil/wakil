@@ -4,7 +4,12 @@
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"git-layout-seeded"}}
 {"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
-{"dispatch":{"action":"ctx_set_project","params":{"name":"e2e-git"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
 {"expect":{"pane":"git-1","field":"kind","equals":"editor"}}
 {"expect":{"pane":"git-1","field":"column.view","equals":"changes"}}
 {"expect":{"pane":"git-1","field":"column.shown","equals":"true"}}

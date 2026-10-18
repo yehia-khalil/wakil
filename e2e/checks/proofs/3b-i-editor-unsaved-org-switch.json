@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-i-editor-unsaved-org-switch.jsonl",
-  "baseCommit": "0c9e85c6f259709c820148fa01cff5fb2be62f8c",
-  "provedAt": "2026-10-12T19:51:14.376655Z",
-  "checkBlob": "8906254e2f9b8d98568818e83416e15c754f37b8"
+  "baseCommit": "a2a8b3fc90506ed554bcbb2e7888f9daa31d0f99",
+  "provedAt": "2026-10-18T11:26:34.327825Z",
+  "checkBlob": "937e1dc4b1e12f29c85acb54b46adcdfc34c8bca"
 }

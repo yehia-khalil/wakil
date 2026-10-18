@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/palette-switch-environment.jsonl",
-  "baseCommit": "f25a762e5ee7b303ce0ca6efa5715891820d0e53",
-  "provedAt": "2026-10-10T19:57:57.198384Z",
-  "checkBlob": "26c4010178385996cdc8f1c84111491273e1c74c"
+  "baseCommit": "a2a8b3fc90506ed554bcbb2e7888f9daa31d0f99",
+  "provedAt": "2026-10-18T11:26:34.327825Z",
+  "checkBlob": "b531c8bb1d278cf881000d797bb1d018a2e4ca70"
 }

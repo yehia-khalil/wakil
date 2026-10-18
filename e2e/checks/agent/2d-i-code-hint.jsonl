@@ -4,8 +4,26 @@
 {"do":{"keys":"echo buildLaunch > launcher.txt && git init -q && git add -A && git -c user.name=e2e -c user.email=e2e commit -qm seed"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
-{"dispatch":{"action":"ctx_set_environment","params":{"name":"qa"}}}
-{"dispatch":{"action":"ctx_set_environment","params":{"name":"staging"}}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"qa"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.qa"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"staging"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.staging"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
 {"do":{"type":{"into":"window.composer","text":"where is build launch defined"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"the agent was handed buildLaunch from the code"}}

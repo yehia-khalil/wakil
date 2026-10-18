@@ -15,6 +15,26 @@ convention. Direction approved 2026-09-03.
    shown and hidden only by the operator or the agent — ⌘B, ⌘⇧F, ⌘⇧G, its toggle,
    `editor_tree` — and never by width. (It was the second of two until 3b-iii folded the Git
    pane, and its width-gated column of file names, into the editor: Decision 40.)
+   **The background-agent chips are the first always-on chrome outside the context line**
+   *(2026-10-17, background agents 4 of 4; Decision 41)*. One chip per agent in another
+   place, top right of the window, reading `<org> · <project> · <environment>`; a click goes
+   there. They are justified because they exist only while there is work elsewhere: no agents
+   elsewhere means no chips, and the window at rest is unchanged. At most two are drawn in
+   full; the rest fold into one "+N more" chip carrying the strongest hidden state, whose
+   click opens a list. Only the 6pt dot carries a hue, from §5's table; the capsule is a
+   hairline over a near-black fill and nothing glows.
+
+   | State | Dot | Text suffix | Wins over |
+   |---|---|---|---|
+   | Working — a turn in flight | violet `#7c5cff`, breathing on the Core's thinking rhythm (motionless under Reduce Motion) | none | done |
+   | Waiting — a proposal parked for the operator | amber `#e8b45a` | ` — waiting` | everything |
+   | Done — finished off screen, not yet seen | green `#8be0c8` | ` — done` | — |
+   | Failed — the session failed off screen, not yet seen | red `#e85c5c` | ` — failed` | working, done |
+
+   A production place's environment segment is production red whatever the dot (Invariant 8),
+   and is never truncated: only the org · project part is. Visiting the place clears *done*
+   and *failed*. The view is `app/Sources/WakilApp/AgentChips.swift`; the states are
+   `AgentChip` (`WakilKit`).
 2. **Light is information.** Luminance is never decorative. If something glows, it is
    alive, active, or asking for attention.
 3. **One luminous surface.** The room is the only genuinely luminous thing — and it is
@@ -196,6 +216,9 @@ green beside it; a pure `#ff0000` on a near-black field reads as a fault in the 
 rather than as a warning.
 
 Text is cool white (`#e8ecf6`) stepped down by opacity, never by a different hue.
+
+The background-agent chips (§1, 2026-10-17) use these hues in these meanings — amber
+waiting, green completed, red failed — and luminance violet for an agent at work.
 
 **The terminal pane's carve-out, added 2026-09-18 by 2c-iii.** Everything
 above governs Wakil's OWN voice — its chrome, its labels, its status hues.

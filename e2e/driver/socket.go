@@ -107,6 +107,10 @@ type SocketPlace struct {
 	Path   string
 	Place  Place
 	Screen *Place
+	// Unplaced marks a socket that says nothing about places at all
+	// (ErrNoPlaceMeta): the window-wide socket of a Wakil built before the
+	// shown-place sockets, which `make e2e-new` drives as the merge-base.
+	Unplaced bool
 }
 
 // SelectScreenSocket picks, of a window's sockets, the one pinned to the
@@ -125,6 +129,26 @@ type SocketPlace struct {
 func SelectScreenSocket(pid int, probes []SocketPlace) (string, error) {
 	if len(probes) == 0 {
 		return "", fmt.Errorf("pid %d holds no wakil-*.sock to choose from", pid)
+	}
+	// **A build from before the shown-place sockets has one socket, and it
+	// follows the screen** — the window-wide socket every call went through.
+	// Driving it is not a guess, and it is what a red-required run against a
+	// merge-base that predates them must do; two, or one beside placed ones,
+	// is not that build and stays refused.
+	unplaced := 0
+	for _, probe := range probes {
+		if probe.Unplaced {
+			unplaced++
+		}
+	}
+	if unplaced > 0 {
+		if unplaced == 1 && len(probes) == 1 {
+			return probes[0].Path, nil
+		}
+		return "", fmt.Errorf(
+			"pid %d: %d of its %d sockets say nothing about places — neither a build from "+
+				"before the shown-place sockets (one socket) nor one after (%s)",
+			pid, unplaced, len(probes), describeProbes(probes))
 	}
 	var screen *Place
 	for _, probe := range probes {

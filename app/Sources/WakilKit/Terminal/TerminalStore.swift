@@ -161,6 +161,9 @@ public actor TerminalStore {
     /// The cursor each pane last published, so a move that redraws nothing
     /// still publishes (see `publish`).
     private var publishedCursors: [TerminalKey: (row: Int, col: Int)] = [:]
+    /// Whether each pane last published a command running, for the same reason: a `C` or `D`
+    /// mark is an OSC, which redraws nothing and moves no cursor (see `publish`).
+    private var publishedCommandRunning: [TerminalKey: Bool] = [:]
 
     /// Distinguishes this store's rc directories from every other store's.
     ///
@@ -473,6 +476,9 @@ public actor TerminalStore {
     func bracketedPaste(_ paneId: String) async -> Bool { sessions[await key(paneId)]?.bracketedPasteMode ?? false }
     /// TEST-ONLY (#365).
     func marks(_ paneId: String) async -> [TerminalStreamEvent] { sessions[await key(paneId)]?.marksForTesting() ?? [] }
+    /// TEST-ONLY: bytes handed to the session's own parse as if the shell had written them, so
+    /// a test can land a shell-integration mark that dirties no row and moves no cursor.
+    func feedForTesting(_ paneId: String, _ bytes: [UInt8]) async { sessions[await key(paneId)]?.feedForTesting(bytes) }
     /// TEST-ONLY (#365).
     func lineEditSupported(_ paneId: String) async -> Bool { sessions[await key(paneId)]?.lineEditSupportedForTesting() ?? false }
 
@@ -496,6 +502,11 @@ public actor TerminalStore {
         }
         for key in publishedCursors.keys {
             if let to = moved(key) { publishedCursors[to] = publishedCursors.removeValue(forKey: key) }
+        }
+        for key in publishedCommandRunning.keys {
+            if let to = moved(key) {
+                publishedCommandRunning[to] = publishedCommandRunning.removeValue(forKey: key)
+            }
         }
         for key in proposedCommands.keys {
             if let to = moved(key) { proposedCommands[to] = proposedCommands.removeValue(forKey: key) }
@@ -524,6 +535,7 @@ public actor TerminalStore {
         // shell keystrokes into whatever reopened the number.
         sessions[key] = nil
         publishedCursors[key] = nil
+        publishedCommandRunning[key] = nil
 
         // Off the cooperative pool: `teardown()` waits on a thread and on
         // a child, and the pool is small and shared by every
@@ -675,8 +687,15 @@ public actor TerminalStore {
         let dirty = session.takeUpdateRange() != nil
         let cursor = session.cursorPosition()
         let cursorMoved = publishedCursors[key].map { $0 != cursor } ?? true
-        guard dirty || cursorMoved || sealingOpenBlock else { return }
+        // **Nor about a command starting** (e2e bg-org-switch-keeps-the-terminal): zsh's preexec
+        // writes the `C` mark after the line's newline, so a pass can publish the newline before
+        // the mark is parsed, and the mark itself dirties nothing. A `tail -f` that then prints
+        // nothing read as idle for as long as it ran.
+        let running = session.commandRunning
+        let runningChanged = publishedCommandRunning[key].map { $0 != running } ?? true
+        guard dirty || cursorMoved || runningChanged || sealingOpenBlock else { return }
         publishedCursors[key] = cursor
+        publishedCommandRunning[key] = running
         let onTheGrid = session.isAlternateScreenActive
         await panes.setTerminalLiveState(
             paneId: paneId, cwd: session.cwd, shell: session.shellName,
@@ -715,7 +734,7 @@ public actor TerminalStore {
             // same `openBlock` state `TerminalSession.commandRunning`
             // documents. `terminalLiveRegionSlice` reads this to decide
             // whether the live region is "the prompt" or "the screen".
-            commandRunning: session.commandRunning,
+            commandRunning: running,
             inputLine: session.inputLine(),
             bracketedPaste: session.bracketedPasteMode)
     }

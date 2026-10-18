@@ -10,8 +10,11 @@
 {"do":{"keys":"qa"}}
 {"expect":{"tree":"contains","text":"text 1 of "}}
 {"do":{"click":"palette.row.qa"}}
-{"expect":{"pane":"api-1","field":"environment","equals":"qa"}}
-{"expect":{"pane":"api-1","field":"request.origin","equals":"https://catalog-qa.e2e-fixture.invalid"}}
+{"expect":{"tree":"absent","text":"catalog.e2e-fixture.invalid"}}
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"expect":{"tree":"contains","text":"catalog-qa.e2e-fixture.invalid"}}
+{"expect":{"pane":"api-2","field":"environment","equals":"qa"}}
+{"expect":{"pane":"api-1","field":"environment","present":false}}
 {"expect":{"journal":{"contains":"\"params\":{\"name\":\"qa\"}"}}}
 {"expect":{"tree":"absent","text":"Placeholder: Environment"}}
 {"do":{"hotkey":"cmd+k"}}

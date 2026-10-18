@@ -345,3 +345,31 @@ func expectCall(t *testing.T, channel *driver.ScreenChannel, want string) {
 		t.Errorf("the call reached %q, want %q", result.Text, want)
 	}
 }
+
+// A build from before the shown-place sockets has one window-wide socket that
+// follows the screen; it is driven as it is, which is what lets `make e2e-new`
+// judge a check against a merge-base that predates them.
+func TestSelectScreenSocketDrivesTheOneSocketOfABuildBeforePlaces(t *testing.T) {
+	path, err := driver.SelectScreenSocket(7, []driver.SocketPlace{
+		{Path: "/tmp/wakil-old.sock", Unplaced: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/tmp/wakil-old.sock" {
+		t.Errorf("got %q, want the one socket", path)
+	}
+}
+
+// Two sockets that say nothing, or one beside placed ones, is neither build:
+// refused rather than guessed between.
+func TestSelectScreenSocketRefusesUnplacedSocketsItCannotTellApart(t *testing.T) {
+	for _, probes := range [][]driver.SocketPlace{
+		{{Path: "/tmp/wakil-A.sock", Unplaced: true}, {Path: "/tmp/wakil-B.sock", Unplaced: true}},
+		{{Path: "/tmp/wakil-A.sock", Unplaced: true}, {Path: "/tmp/wakil-B.sock", Place: qa, Screen: on(qa)}},
+	} {
+		if path, err := driver.SelectScreenSocket(7, probes); err == nil {
+			t.Errorf("chose %q among %d sockets, %d of them unplaced", path, len(probes), 1)
+		}
+	}
+}

@@ -1,6 +1,22 @@
 {
   "rules": [
     {
+      "match": "start the held agent in staging",
+      "hold": "wakil-e2e-release-staging",
+      "call": { "action": "api_open", "params": { "entry": "billing" } },
+      "reply": "the held agent in staging finished"
+    },
+    {
+      "match": "start the second agent in qa",
+      "call": { "action": "api_open", "params": { "entry": "catalog" } },
+      "reply": "the second agent answered in qa"
+    },
+    {
+      "match": "hold a turn open here",
+      "hold": "wakil-e2e-release-held",
+      "reply": "a held turn was released"
+    },
+    {
       "match": "report my capacity at twelve percent",
       "emit": [
         {

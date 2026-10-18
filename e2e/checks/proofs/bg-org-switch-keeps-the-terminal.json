@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/bg-org-switch-keeps-the-terminal.jsonl",
+  "baseCommit": "a2a8b3fc90506ed554bcbb2e7888f9daa31d0f99",
+  "provedAt": "2026-10-18T11:26:34.327825Z",
+  "checkBlob": "e002533cc89e7cc03326d3e05f97dff3df79bb78"
+}

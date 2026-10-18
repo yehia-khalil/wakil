@@ -156,6 +156,17 @@ func answer(writer *bufio.Writer, script driver.AgentScript, socket, prompt stri
 		return text, emitResult(writer, true, text)
 	}
 
+	// A held turn stays in flight until the check releases it (AgentRule.Hold):
+	// that is what keeps an agent working while the operator is elsewhere. It
+	// holds BEFORE the call, so the call is made after the operator has moved:
+	// a call that lands in the place the agent started in, and not the one on
+	// screen, is then something a check can see.
+	if rule.Hold != "" {
+		if err := awaitRelease(rule.Hold); err != nil {
+			return err.Error(), emitResult(writer, true, err.Error())
+		}
+	}
+
 	value := ""
 	if rule.Call != nil || rule.Read != nil {
 		client, err := driver.DialMCPPath(socket, 10*time.Second)
@@ -202,6 +213,25 @@ func answer(writer *bufio.Writer, script driver.AgentScript, socket, prompt stri
 		return text, err
 	}
 	return text, emitResult(writer, false, text)
+}
+
+// awaitRelease waits for ~/<name> to exist — the file a check makes with
+// `touch ~/<name>` in a terminal — up to driver.HoldCeiling.
+func awaitRelease(name string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("a held turn has no HOME to be released in: %w", err)
+	}
+	release := filepath.Join(home, name)
+	deadline := time.Now().Add(driver.HoldCeiling)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(release); err == nil {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("the turn was held for %s and %s never appeared, so nothing released it",
+		driver.HoldCeiling, release)
 }
 
 // readField reads one pane field through the same path a check's `expect`

@@ -8,9 +8,17 @@
 {"expect":{"tree":"contains","text":"ORGANISATION"}}
 {"do":{"click":"org.row.e2e-fixture-two.switch"}}
 {"expect":{"tree":"contains","text":"e2e-project-two"}}
-{"expect":{"process":{"none-matching":"tail -f wakil-e2e-switch-marker"}}}
-{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"process":{"any-matching":"tail -f wakil-e2e-switch-marker"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"new terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
 {"do":{"keys":"echo after-the-switch"}}
 {"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"after-the-switch"}}
 {"expect":{"journal":{"contains":"echo after-the-switch"}}}
 {"expect":{"journal":{"contains":"e2e-fixture-two"}}}
+{"expect":{"process":{"any-matching":"tail -f wakil-e2e-switch-marker"}}}

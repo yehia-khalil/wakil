@@ -1,8 +1,8 @@
 diff --git a/app/Sources/WakilKit/Terminal/TerminalStore.swift b/app/Sources/WakilKit/Terminal/TerminalStore.swift
-index 369a18c..f8e502a 100644
+index b69ef91..b35645a 100644
 --- a/app/Sources/WakilKit/Terminal/TerminalStore.swift
 +++ b/app/Sources/WakilKit/Terminal/TerminalStore.swift
-@@ -427,6 +427,12 @@ public actor TerminalStore {
+@@ -479,6 +479,12 @@ public actor TerminalStore {
      /// Kills one pane's shell and waits for it. Safe concurrently, twice,
      /// and on a pane that never opened.
      public func close(paneId: String) async {
@@ -12,6 +12,6 @@ index 369a18c..f8e502a 100644
 +        // the difference, which is why this check reads the process table
 +        // and not the window.
 +        if true { return }
-         if let existing = teardownTasks[paneId] {
-             await existing.value
-             return
+         await close(key: key(paneId))
+     }
+ 

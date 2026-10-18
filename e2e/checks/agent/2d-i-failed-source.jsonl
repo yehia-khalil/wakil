@@ -1,7 +1,25 @@
 {"expect":{"tree":"contains","text":"e2e-fixture"}}
 {"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"orders","driver":"mysql","dsn":"e2e:secret@tcp(127.0.0.1:1)/orders"}}}
-{"dispatch":{"action":"ctx_set_environment","params":{"name":"qa"}}}
-{"dispatch":{"action":"ctx_set_environment","params":{"name":"staging"}}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"qa"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.qa"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"staging"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.staging"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
 {"expect":{"journal":{"contains":"list_columns orders"}}}
 {"do":{"type":{"into":"window.composer","text":"where does pane move live"}}}
 {"do":{"press":"Return"}}

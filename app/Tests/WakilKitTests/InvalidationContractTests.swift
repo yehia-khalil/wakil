@@ -109,7 +109,8 @@ private let orgDerived: Set<String> = [
 /// reset these: doing so is the teardown this plan removed.
 private let keptPerPlace: Set<String> = [
     // One `PlaceAgent` per place — harness, socket, session, thread, turn, conversation and
-    // `Bash` mirror (OrgSwitchTests.anOrgSwitchLeavesTheRunningAgentAlone).
+    // `Bash` mirror (OrgSwitchTests.anOrgSwitchLeavesTheRunningAgentAlone), and what its chip
+    // shows: an unseen result or failure, and whether its environment is production (Plan 4).
     "agents",
     // The socket each shown place opened before a session took it, pinned to that place.
     "shownSockets",
@@ -163,6 +164,9 @@ private let orgIndependent: Set<String> = [
     // Fix round 1. The operator's environment switch in progress: a task the pump waits on,
     // not org-derived state. An org switch starts no environment switch of its own.
     "operatorEnvironmentSwitch",
+    // Plan 4 final review I1: `goTosInFlight` counts chip clicks between switches, raised and
+    // lowered by the `goTo` that runs each, whichever org it ends in — the shape of `switching`.
+    "goTosInFlight",
     "registry", "persistence", "context",
     "harnessFactory", "lookupFactory", "resumes", "confirmations",
     // Background agents 3 of 4, Task 4: how a session's socket is started. It names no

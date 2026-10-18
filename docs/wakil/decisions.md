@@ -1320,6 +1320,86 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* a trash or move the agent made through the editor reaches something its own `mv`
     or `rm` could not.
 
+41. **One agent per place: each agent keeps the place it started in, and switching tears nothing
+    down.**
+    *(2026-10-16, operator, during the background-agents design —
+    `docs/superpowers/specs/2026-10-16-background-agents-design.md`; built over four stacked plans,
+    2026-10-16 to 2026-10-17.)*
+
+    Before this a window ran one agent. An org switch ended it, and a project or environment switch
+    silently retargeted it: every Wakil tool it called resolved against whatever the operator was
+    looking at, so a job started in staging could finish in another environment with nothing
+    recording that it moved.
+
+    **The operator's decisions.** A **place** is an (organization, project, environment) triple,
+    with at most one agent and its own thread and canvas. An agent is **pinned** to the place it
+    started in for its whole life: its Wakil actions, database, API, git and file calls go there,
+    whatever is on screen. Switching org, project or environment never stops, holds or redirects
+    an agent, so the org switch's "switch when this turn finishes" queue is gone. Several agents
+    run at once, one per place. An agent that needs the operator **waits**; it never pulls them
+    back. Each agent elsewhere shows as a **chip**, top right (option B of three shown over the real
+    window): violet while it works, amber while it waits, green when it finished and the operator
+    has not looked; a visit clears it, and a click goes there. A finished agent's session stays
+    alive until quit or a new conversation in that place. Quitting stops every agent; each is in
+    its place's Continue, resumable as a fork (Decision 12). The journal records, for every entry
+    an agent caused, which agent and which place. The environment is part of the place and of
+    the **layout scope**: api · staging and api · production are two places, so switching
+    environment moves to that environment's conversation instead of refetching the current one —
+    this replaces the refetch-in-place behaviour.
+
+    **Calls and rulings that changed what the operator or an agent experiences** (made while
+    designing and building; each was costed in the plan ledgers):
+    - **An agent's calls always go to its own place**, even while that place is on screen: routing
+      is by who calls, not by whether the places match. A call with no agent session (the operator,
+      the UI, `--dispatch`) always uses the window's.
+    - **An agent cannot change its own place.** `ctx_set_project` and `ctx_set_environment`
+      dispatched by an agent are refused (no org switch is exposed to it), saying the place is
+      fixed when its session starts (Rule 7 allows the refusal; the amended Invariant 5 forbids the switch).
+    - **An agent with no project is pinned by organisation**: it can never act in another org, and
+      within its own it follows the operator's project as before. Its chip reaches its org only.
+    - **An agent's proposals never expire.** It waits until the operator answers or cancels.
+      Stopping or replacing a place's session cancels that place's parked proposal; quitting
+      cancels all of them.
+    - **The org switch asks nothing about unsaved tabs** — every place stays alive, so nothing is
+      lost (the spec said "unchanged"; it contradicted itself).
+    - **A project or environment switch never cancels a read**: a slow listing or query finishes
+      into the place it began in. An org switch cancels the operator's in-flight DB reads and API
+      sends in the org being left, so none reaches the incoming org's process (Invariant 4), and an
+      agent's call on its own place's client is not cancelled.
+    - **A legacy layout file is a read-only seed** for every environment of its project, never
+      rewritten.
+    - **No background git or editor watchers.** A hidden pane catches up when its place returns.
+    - **If an agent's tool socket cannot start, the agent runs without Wakil's tools** and the status
+      says why, rather than refusing the session (Rule 7).
+    - **The thread no longer marks an org switch**: with places kept alive, the marker would be
+      appended to a place's thread on every return.
+    - **A provider switch changes only the on-screen place's agent. Quitting with agents running
+      asks nothing.**
+    - **The chips:** a failed agent gets a red ` — failed` chip; amber means a parked approval only
+      (a question asked in text shows as done); precedence is waiting, failed, working, done. At
+      most two are drawn in full and the rest fold into "+N more". A chip's production colour is
+      the place's declared flag once read (Decision 26), the name only until then. A production
+      environment segment is never truncated away.
+
+    **Invariant 5's history, moved here from the charter.** *(Amended 2026-09-06: the provider is
+    session-scoped, not context-scoped, and is deliberately not part of this triple [now: place] — see
+    Decision 4.)* *(2026-09-15: 2b-viii's switch changes the triple's org member in place and
+    needed no amendment.)* On 2026-10-17 the invariant became *exactly one place on screen; each
+    agent keeps its own*, written short to stay inside the charter's word budget. In full: implicit
+    scope is the product, and an explicit project argument on every tool call would forfeit it — no
+    agent-facing tool grows a project or environment argument; each agent is pinned to the place
+    it started in and never follows the operator's place. The charter's glossary says the same in
+    brief: a **place** has at most one agent, its own thread and its own canvas; the **active
+    context** is the place on screen, and every tool resolves against it implicitly, except that an
+    agent resolves against its own place; the **layout scope** includes the environment. Invariant 4 stays
+    structural: an agent's processes carry its own org's `WAKIL_ORG`, and `Resolve()` still checks
+    it, so an agent in one org cannot reach another's credentials however the window routes.
+
+    *Reverse if:* operators find they want an agent to follow them across places — for example,
+    they repeatedly stop an agent and restart the same job in the place they moved to — or if
+    the per-place cost (up to five pinned child processes per live agent) is measured as the
+    reason the app is slow.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,

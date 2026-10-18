@@ -251,10 +251,13 @@ Two binding requirements, confirmed 2026-09-20:
   `design-language.md` §3 has the reasoning and the numbers.
 - **Reduce Motion is honored.** The room's breath, thinking turnover and speech pulse, and
   the planes' parallax against cursor and window motion, must collapse when System
-  Settings' Reduce Motion is on. **This is unimplemented today** — no `reduceMotion` read
-  exists anywhere in `app/` — and is recorded here as known debt rather than an oversight,
-  on a shell that animates continuously by design. The debt grew on 2026-09-21: the rail's
-  promotion is a fourth thing that would have to collapse.
+  Settings' Reduce Motion is on. **This is only partly implemented.** Two places read it: the
+  room, whose breath holds still at its mean (`BreathClock`, read in `VoidView`), and, since
+  2026-10-17, the background-agent chips, whose working dot stops breathing and whose
+  arrival is a fade alone (`AgentChips.swift`). The planes' parallax does not collapse yet,
+  and is recorded here as known debt rather than an oversight, on a shell that animates
+  continuously by design. The debt grew on 2026-09-21: the rail's promotion is another
+  thing that would have to collapse.
 
 Nothing else is committed to. The data grid already carries a row-level VoiceOver label
 (`DataSurface.swift`, because SwiftUI's `Grid` of `Text` gives no real row and column

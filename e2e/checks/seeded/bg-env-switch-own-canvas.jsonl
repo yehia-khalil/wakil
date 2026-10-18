@@ -1,0 +1,28 @@
+{"dispatch":{"action":"api_open","params":{"entry":"billing"}}}
+{"expect":{"pane":"api-1","field":"entry","equals":"billing"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"qa"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.qa"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"dispatch":{"action":"api_open","params":{"entry":"catalog"}}}
+{"expect":{"tree":"contains","text":"catalog-qa.e2e-fixture.invalid"}}
+{"expect":{"tree":"absent","text":"qa declares no entry named billing"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"staging"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.staging"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"expect":{"pane":"api-1","field":"entry","equals":"billing"}}
+{"expect":{"pane":"api-1","field":"request.origin","equals":"https://billing.e2e-fixture.invalid"}}
+{"expect":{"journal":{"contains":"\"environment\":\"qa\""}}}

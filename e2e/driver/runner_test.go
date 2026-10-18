@@ -431,6 +431,25 @@ func TestQuarantinedChecksAreReportedAndNeverCountAsPassing(t *testing.T) {
 	}
 }
 
+// `make e2e-run` launches one file at a time, so a quarantined file is a launch
+// whose only check is quarantined. Its outcome is reported, which is not
+// silence, so the launch must not read as "no check ran" and stop the suite.
+func TestALaunchOfOnlyAQuarantinedCheckIsReportedNotRed(t *testing.T) {
+	runner, _ := newRunner(t, stateJSON, nil)
+	runner.Quarantined = []string{"flaky"}
+
+	got := runner.Run([]Check{
+		mustParse(t, "flaky", `{"expect":{"tree":"contains","text":"THE LANDING"}}`),
+	})
+
+	if err := got.Err(); err != nil {
+		t.Fatalf("a launch of one quarantined check must not be red, got %v", err)
+	}
+	if len(got.Quarantined) != 1 || got.ChecksRun != 0 {
+		t.Fatalf("want it reported and not counted, got %v and ChecksRun %d", got.Quarantined, got.ChecksRun)
+	}
+}
+
 // Quarantine names a check that is *known* intermittent. A quarantine entry
 // matching no check is a stale name, and silently ignoring it is how a
 // quarantine list comes to hide a check nobody runs any more.

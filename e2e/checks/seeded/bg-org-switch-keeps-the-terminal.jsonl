@@ -1,0 +1,20 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"touch wakil-e2e-keep-marker && tail -f wakil-e2e-keep-marker"}}
+{"do":{"press":"Return"}}
+{"expect":{"process":{"any-matching":"tail -f wakil-e2e-keep-marker"}}}
+{"do":{"hotkey":"cmd+shift+o"}}
+{"expect":{"tree":"contains","text":"ORGANISATION"}}
+{"do":{"click":"org.row.e2e-fixture-two.switch"}}
+{"expect":{"tree":"contains","text":"e2e-project-two"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"do":{"keys":"echo in-the-second-place"}}
+{"do":{"press":"Return"}}
+{"expect":{"journal":{"contains":"\"organization\":\"e2e-fixture-two\""}}}
+{"expect":{"journal":{"contains":"\"project\":\"e2e-project-two\""}}}
+{"do":{"hotkey":"cmd+shift+o"}}
+{"expect":{"tree":"contains","text":"ORGANISATION"}}
+{"do":{"click":"org.row.e2e-fixture.switch"}}
+{"expect":{"pane":"terminal-1","field":"commandRunning","equals":"true"}}
+{"expect":{"process":{"any-matching":"tail -f wakil-e2e-keep-marker"}}}

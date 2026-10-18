@@ -298,4 +298,6 @@ A suggested order; the plan settles it.
 
 ## Open questions
 
-1. **Where on the phase map** this sits.
+1. **Where on the phase map** this sits. **Still open on 2026-10-17**, after all four plans were
+   built: Decision 41 records the design, but the charter's §8 has no row for it yet, and none was
+   added without the operator placing it.

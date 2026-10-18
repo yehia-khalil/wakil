@@ -36,6 +36,24 @@ public final class PlaceAgent {
     var nextThoughtId = 0
     /// True from a successful `send` to the `.result` that ends the turn.
     public internal(set) var turnInFlight = false
+    /// A turn ended while the place was off screen, and the operator has not been back since
+    /// (background agents 4 of 4): its chip says done. Cleared when the place is activated.
+    public internal(set) var unseenResult = false
+    /// The session failed — a turn ended in error, or its process went away — while the place
+    /// was off screen, and the operator has not been back since. Cleared as `unseenResult` is.
+    public internal(set) var unseenFailure = false
+    /// Whether the place's environment is production, for its chip: the name rule until its own
+    /// project's flags are read (`WindowModel.refreshChipProduction(of:)`).
+    public internal(set) var productionEnvironment: Bool
+    /// Bumped by every write of `productionEnvironment` and every read started for one, so a
+    /// read that lands after a newer one is dropped (`WindowModel.refreshChipProduction(of:)`).
+    var productionReads = 0
+    /// `productionEnvironment` from the place's own project's flags: its declaration wins once
+    /// read, and the name is the default for an environment that declares nothing (Decision 26).
+    func showProduction(_ flags: EnvironmentProduction) {
+        productionEnvironment = flags.isProduction(place.environment)
+    }
+
     /// The agent's own `Bash` calls, for backfilling a terminal pane opened after them.
     let mirror: TerminalMirrorFeed
     var eventPump: Task<Void, Never>?
@@ -55,6 +73,7 @@ public final class PlaceAgent {
         self.place = place
         self.providerId = providerId
         self.mirror = mirror
+        self.productionEnvironment = isProductionEnvironment(place.environment)
     }
 
     /// Whom this agent's calls are for: its own place and session, wherever the screen is.

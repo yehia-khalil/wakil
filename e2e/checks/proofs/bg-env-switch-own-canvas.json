@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/bg-env-switch-own-canvas.jsonl",
+  "baseCommit": "a2a8b3fc90506ed554bcbb2e7888f9daa31d0f99",
+  "provedAt": "2026-10-18T11:26:34.327825Z",
+  "checkBlob": "9984ce598f30dd44db9a0a05a969b194c76005ce"
+}

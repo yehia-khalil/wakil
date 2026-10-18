@@ -1,0 +1,15 @@
+diff --git a/app/Sources/WakilKit/Core/Place.swift b/app/Sources/WakilKit/Core/Place.swift
+index e45af01..579b5e0 100644
+--- a/app/Sources/WakilKit/Core/Place.swift
++++ b/app/Sources/WakilKit/Core/Place.swift
+@@ -46,6 +46,10 @@ public struct DispatchCaller: Sendable {
+ /// agent still on the old place would read as on screen while the window's clients already
+ /// answer for the new one — a staging mutation run against production.
+ func pinnedPlace(of caller: DispatchCaller?) -> Place? {
++    // RECONSTRUCTION (background agents): no dispatch is pinned to the place
++    // its agent started in, so an agent's call resolves against whatever the
++    // window shows when it lands — the agent follows the operator's switch.
++    if true { return nil }
+     guard let caller, let session = caller.session, !session.isEmpty,
+           !caller.place.organization.isEmpty
+     else { return nil }

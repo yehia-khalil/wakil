@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/bg-agent-chip-return.jsonl",
+  "baseCommit": "a2a8b3fc90506ed554bcbb2e7888f9daa31d0f99",
+  "provedAt": "2026-10-18T11:26:34.327825Z",
+  "checkBlob": "4a12d081772ac9b7f2cf49627d4e43a66fc218cf"
+}

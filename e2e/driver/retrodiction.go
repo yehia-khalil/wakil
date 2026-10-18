@@ -111,6 +111,24 @@ var Retrodictions = []Retrodiction{
 		Recorded:      "runbook check 21; TerminalStore.close",
 		Reconstructed: true,
 	},
+	// **Background agents: the two defects the design exists to rule out**,
+	// put back as their observables. Neither shipped, so both are
+	// reconstructions; each is keyed on the mechanism (the pin, the turn's
+	// end), never on the fixture's places.
+	{
+		Name:          "7-a-switch-retargets-a-running-agent",
+		Check:         "e2e/checks/agent/bg-agent-chip-return.jsonl",
+		Defect:        "an agent's call made after the operator switched lands in the place on screen, not its own",
+		Recorded:      "2026-10-16-background-agents-design.md, Testing; north-star.md Invariant 5 (amended by Decision 41)",
+		Reconstructed: true,
+	},
+	{
+		Name:          "8-a-chip-moves-the-operator-unasked",
+		Check:         "e2e/checks/agent/bg-agent-chip-return.jsonl",
+		Defect:        "an agent that finishes off screen takes the operator to its place instead of turning its chip",
+		Recorded:      "2026-10-16-background-agents-design.md, Interaction Rules row 6; PRODUCT.md Rule 6",
+		Reconstructed: true,
+	},
 }
 
 // PatchFile is where this case's reconstruction lives.

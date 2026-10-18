@@ -204,6 +204,10 @@ struct ContextLine: View {
         .onHover { isHovering in
             withAnimation(Self.promote) { hovering = isHovering }
         }
+        // Named as a whole, so a check can hold what draws at the top right — the agent chips —
+        // clear of it at a narrow window. Its segments stay their own elements inside.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("window.contextLine")
         // **Read at rest, not only on click** — `ContextStates.dc.html` rules
         // that a segment with one option gets no chevron ("a control that
         // offers a choice of one is a lie"), and the count is not knowable

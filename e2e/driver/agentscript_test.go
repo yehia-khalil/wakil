@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -175,4 +176,28 @@ func TestTheShippedScriptHasASecondCapacityRule(t *testing.T) {
 	if !found || len(rule.Emit) != 1 || rule.Emit[0]["type"] != "rate_limit_event" {
 		t.Fatalf("want one rate_limit_event frame, got %+v", rule)
 	}
+}
+
+// A hold is released by `touch ~/<name>`, so a name that is a path names a
+// file no check can know how to make, and the turn would only ever time out.
+func TestAHoldThatIsNotAPlainFileNameIsRefused(t *testing.T) {
+	for _, hold := range []string{"a/b", "..", `a\b`} {
+		path := writeScript(t, `{"rules":[{"match":"x","reply":"y","hold":`+strconvQuote(hold)+`}]}`)
+		if _, err := LoadAgentScript(path); err == nil {
+			t.Fatalf("a hold on %q was accepted", hold)
+		}
+	}
+	path := writeScript(t, `{"rules":[{"match":"x","reply":"y","hold":"release-x"}]}`)
+	script, err := LoadAgentScript(path)
+	if err != nil {
+		t.Fatalf("a plain hold was refused: %v", err)
+	}
+	if script.Rules[0].Hold != "release-x" {
+		t.Fatalf("the hold did not survive loading: %+v", script.Rules[0])
+	}
+}
+
+func strconvQuote(s string) string {
+	encoded, _ := json.Marshal(s)
+	return string(encoded)
 }

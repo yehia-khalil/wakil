@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // AgentScriptFile is what the stub agent reads its answers from, inside the
@@ -53,7 +54,22 @@ type AgentRule struct {
 	// `rate_limit_event`, which provider capacity reads from every turn.
 	// Each must carry its own string `type`, the field `StreamJSON` decodes on.
 	Emit []map[string]interface{} `json:"emit,omitempty"`
+	// Hold keeps the turn open, before the call, the read and the reply,
+	// until a file of this name exists in the agent's HOME — the fixture's,
+	// which the window's shells share. A check releases it by
+	// typing `touch ~/<name>` into a terminal, from whichever place it is in.
+	//
+	// **Released by the check, never by a clock.** A turn that stays in flight
+	// is what puts a working chip on screen while the operator is elsewhere,
+	// and a timed hold would make "still working" a race against the check's
+	// own pace. HoldCeiling bounds it so a check that never releases fails as
+	// an error turn rather than hanging the launch.
+	Hold string `json:"hold,omitempty"`
 }
+
+// HoldCeiling is the longest a held turn waits for its release before the
+// stub answers it as an error.
+const HoldCeiling = 120 * time.Second
 
 // ValuePlaceholder is what a reply interpolates the read value into.
 const ValuePlaceholder = "{value}"
@@ -121,6 +137,11 @@ func LoadAgentScript(path string) (AgentScript, error) {
 			return AgentScript{}, fmt.Errorf(
 				"%s interpolates %s but reads nothing, so the placeholder would reach the thought "+
 					"thread as text and a check would assert on it", where, ValuePlaceholder)
+		}
+		if rule.Hold != "" && (strings.ContainsAny(rule.Hold, "/\\") || rule.Hold == "." || rule.Hold == "..") {
+			return AgentScript{}, fmt.Errorf(
+				"%s holds on %q, which is not a plain file name — the release is `touch ~/<name>`, "+
+					"and a path would name a file the check cannot know how to make", where, rule.Hold)
 		}
 		if rule.Call != nil && rule.Call.Action == "" {
 			return AgentScript{}, fmt.Errorf("%s calls an action with no name", where)

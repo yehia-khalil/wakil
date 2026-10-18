@@ -1741,6 +1741,31 @@ private func readPid(_ path: String) -> pid_t? {
     }
 }
 
+/// e2e `bg-org-switch-keeps-the-terminal` (2026-10-17): a `tail -f` read `commandRunning` false
+/// for as long as it ran. zsh's preexec writes the `C` mark after the line's own newline, and an
+/// OSC dirties no row and moves no cursor — so a pass that published the newline before the mark
+/// was parsed left the pane saying "idle" until the command printed something, which `tail -f`
+/// on an empty file never does. A command starting is a change of its own.
+@Test func aCommandStartThatRedrawsNothingIsStillPublished() async throws {
+    let panes = PaneStore()
+    try await withTerminalStore(panes: panes) { store in
+        _ = try await store.open(
+            paneId: "terminal-1", path: NSTemporaryDirectory(), shell: "/bin/zsh",
+            environment: ["HOME": scratchHome()])
+        @Sendable func published() async -> TerminalSnapshot? {
+            (await panes.snapshot(paneId: "terminal-1", kind: "terminal")).terminal
+        }
+        try await waitUntil(seconds: 8) { await store.inputLine("terminal-1") != nil }
+        try await waitUntil(seconds: 8) { await published()?.promptRow != nil }
+        #expect(await published()?.commandRunning == false)
+
+        let mark = "\u{1B}]133;C;wakil_cmd=\(Data("tail -f x".utf8).base64EncodedString())\u{07}"
+        await store.feedForTesting("terminal-1", Array(mark.utf8))
+        try await waitUntil(seconds: 8) { await published()?.commandRunning == true }
+        #expect(await published()?.commandRunning == true)
+    }
+}
+
 /// Before a shell has ever published a prompt or a cursor — a pane with
 /// no live state yet, `PaneStore.empty`'s own shape — all three are
 /// `nil`, not a fabricated `0`. A drawn cursor at row/col 0 on a pane that
