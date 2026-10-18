@@ -1218,14 +1218,13 @@ public func registerEditorActions(
                 // the read is in flight leaves the read stale, and applying it would rewind the tab.
                 var reads: [String: (fresh: EditorTab, basis: Int64)] = [:]
                 // 3b-vii: a tail or a clean log reads only what was added since `readTo`.
-                var appended: [String: (outcome: EditorAppendOutcome, basis: Int64, readTo: Int)] = [:]
+                var appended: [String: (reply: [String: JSONValue], basis: Int64, readTo: Int)] = [:]
                 for tab in tabs {
                     guard case .file(let path, let r) = tab.subject, only == nil || r == only else { continue }
                     if editorAppends(tab), let files, (try? await confine(path, action: "editor_refresh")) != nil,
                        case .ok(let o)? = try? await filesTool(files, "files_read",
                                                                ["path": .string(path), "from": .integer(Int64(tab.readTo))]) {
-                        let outcome = editorAfterAppendRead(tab, reply: o)
-                        if outcome != .reread { appended[path] = (outcome, tab.mtime, tab.readTo); continue }
+                        if editorAfterAppendRead(tab, reply: o) != .reread { appended[path] = (o, tab.mtime, tab.readTo); continue }
                     }
                     if let fresh = try? await read(path, action: "editor_refresh") { reads[path] = (fresh, tab.mtime) }
                 }
@@ -1234,10 +1233,12 @@ public func registerEditorActions(
                 let wasReadOnly = Set(tabs.filter(\.readOnly).compactMap(\.path))
                 await panes.updateEditor(paneId: pane) { s in
                     for i in s.tabs.indices {
-                        guard let p = s.tabs[i].path, let (outcome, basis, readTo) = collectedAppends[p],
+                        guard let p = s.tabs[i].path, let (reply, basis, readTo) = collectedAppends[p],
                               !s.tabs[i].saving, s.tabs[i].mtime == basis, s.tabs[i].readTo == readTo,
                               !s.tabs[i].dirty || s.tabs[i].tailStart != nil else { continue }
-                        switch outcome {
+                        // Applied to the tab as it is now, so a cursor or scroll reported while the
+                        // read was in flight stays (Rule 6).
+                        switch editorAfterAppendRead(s.tabs[i], reply: reply) {
                         case .appended(let t), .stopped(let t): s.tabs[i] = t
                         case .deleted: s.tabs[i].diskState = .deleted
                         case .unchanged, .reread: break

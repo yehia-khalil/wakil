@@ -344,14 +344,17 @@
     // columns, so the model is replaced whole by `after`, the store's text. A result that is not
     // `after` (Monaco normalising line endings) is replaced the same way. The serial is set in
     // this same call, so no keystroke can be posted between the edit and its basis.
-    // 3b-vii: a growing log. Appended as its own undo step; the view follows only when the last line
-    // was in view (Rule 6), and the new entries arrive folded (Rule 9: an opened fold stays open).
+    // 3b-vii: a growing log. Appended as its own undo step; the view follows only when it was at the
+    // bottom (Rule 6), and the new entries arrive folded (Rule 9: an opened fold stays open).
     window.wakilAppendText = function (key, text, serial) {
       const m = models[key]; if (!m) return;
-      if (typingTimer !== null && key === current) { cancelAnimationFrame(typingTimer); typingTimer = null; }
+      // A keystroke not yet posted stays pending: its post then carries the old text, the keystroke and
+      // this chunk, so the store sees the tab go dirty (final review I3).
       const shown = key === current;
-      const vr = shown ? ed.getVisibleRanges() : [];
-      const follow = shown && vr.length > 0 && vr[vr.length - 1].endLineNumber >= m.getLineCount() - 1;
+      // At the bottom by scroll, not by visible lines: a folded last entry hides its own lines
+      // (final review I1).
+      const lh = ed.getOption(monaco.editor.EditorOption.lineHeight);
+      const follow = shown && ed.getScrollTop() + ed.getLayoutInfo().height >= ed.getScrollHeight() - lh;
       const from = m.getLineCount();
       const end = m.getFullModelRange().getEndPosition();
       applying = true;
@@ -363,7 +366,7 @@
       basis[key] = serial;
       if (shown) {
         foldEntries(key, from);
-        if (follow) ed.revealLine(m.getLineCount());
+        if (follow) ed.setScrollTop(ed.getScrollHeight());   // the bottom, past a folded last entry
         report();
       }
     };

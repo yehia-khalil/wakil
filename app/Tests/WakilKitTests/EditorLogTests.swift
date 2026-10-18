@@ -92,3 +92,22 @@ private let log = "/p/api/storage/logs/laravel.log"
 @Test func otherFilesNeverAppend() {
     #expect(!editorAppends(EditorTab.file(path: "/p/api/a.go", root: "/p/api", text: "", mtime: 1, language: "go")))
 }
+
+// Final review I2: an append lands on the tab as it is when the read returns, so a cursor the
+// operator moved meanwhile stays where they put it (Rule 6).
+@Test func anAppendKeepsACursorMovedWhileItsReadWasInFlight() async throws {
+    let f = try await editorFixture()
+    await f.files.put(log, "one\ntwo\n")
+    try await f.dispatch("editor_open", ["path": .string(log)])
+    await f.files.put(log, "one\ntwo\nthree\n")
+    await f.files.setSlowRead(true)
+    let refresh = Task { try await f.dispatch("editor_refresh", origin: .ui) }
+    while await !f.files.calls.contains("files_read \(log) from 8") { await Task.yield() }
+    await f.panes.editorViewDidReport(paneId: f.pane, tab: 0, cursor: EditorPosition(line: 1, column: 2),
+                                      selection: nil, visibleRange: 1...3, scrollTop: 0)
+    await f.files.releaseRead()
+    _ = try await refresh.value
+    let t = await f.snapshot().tabs[0]
+    #expect(t.text == "one\ntwo\nthree\n")
+    #expect(t.cursor == EditorPosition(line: 1, column: 2) && t.scrollTop == 0)
+}
