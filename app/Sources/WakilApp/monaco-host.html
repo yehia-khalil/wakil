@@ -65,7 +65,13 @@
   require.config({ paths: { vs: 'monaco/vs' } });
   require(['vs/editor/editor.main'], function () {
     monaco.editor.defineTheme('wakil', {
-      base: 'vs-dark', inherit: true, rules: [],
+      base: 'vs-dark', inherit: true, rules: [
+        // 3b-vii: a log's levels, in §5's red and amber; its timestamps and traces dimmed.
+        { token: 'log-time', foreground: '7d8396' },
+        { token: 'log-trace', foreground: '7d8396' },
+        { token: 'log-error', foreground: 'e85c5c' },
+        { token: 'log-warn', foreground: 'e8b45a' }
+      ],
       colors: {
         'editor.background': '#0b0d14',
         'diffEditor.insertedTextBackground': '#8be0c82a',
@@ -170,6 +176,39 @@
     // key -> the agent-edit serial this page has applied (wakilSetBasis, queued right after the
     // edit itself), posted with the text so the store can drop a post made before an edit landed.
     const basis = {};
+    // 3b-vii: Laravel-style logs. An entry starts at a [date time] line and runs to the next.
+    const logEntry = /^\[\d{4}-\d{2}-\d{2}[ T][^\]]*\]/;
+    monaco.languages.register({ id: 'log' });
+    monaco.languages.setMonarchTokensProvider('log', { tokenizer: { root: [
+      [/^\[\d{4}-\d{2}-\d{2}[ T][^\]]*\]/, 'log-time'],
+      [/\.(EMERGENCY|ALERT|CRITICAL|ERROR):/, 'log-error'],
+      [/\.WARNING:/, 'log-warn'],
+      [/^(#\d+ |\[stacktrace\]).*$/, 'log-trace'],
+      [/[^\[.#]+/, ''],
+      [/./, '']
+    ] } });
+    function logStarts(model, from) {
+      const out = [];
+      for (let l = from; l <= model.getLineCount(); l++) if (logEntry.test(model.getLineContent(l))) out.push(l);
+      return out;
+    }
+    monaco.languages.registerFoldingRangeProvider('log', { provideFoldingRanges: function (model) {
+      const s = logStarts(model, 1), ranges = [];
+      for (let i = 0; i < s.length; i++) {
+        const end = (i + 1 < s.length ? s[i + 1] : model.getLineCount() + 1) - 1;
+        if (end > s[i]) ranges.push({ start: s[i], end: end });
+      }
+      return ranges;
+    } });
+    // Folds the entries starting at or after line `from` once the folding model has their ranges.
+    function foldEntries(key, from) {
+      setTimeout(function () {
+        const m = models[key];
+        if (!m || key !== current || m.getLanguageId() !== 'log') return;
+        const lines = logStarts(m, from);
+        if (lines.length) ed.trigger('wakil', 'editor.fold', { selectionLines: lines.map(function (l) { return l - 1; }), levels: 1 });
+      }, 60);
+    }
     // 3b-v: the settings' options. Tabs are a fallback: each model detects its own indentation
     // and uses these only where it cannot (a file's own indentation wins).
     let opts = { fontSize: 12, wordWrap: false, tabSize: 4, insertSpaces: true };
@@ -265,11 +304,13 @@
     window.wakilShowModel = function (key, text, language, readOnly) {
       ed.changeViewZones(dropPeek);
       showCode();
-      if (!models[key]) { models[key] = monaco.editor.createModel(text, language); indent(models[key]); }
+      const created = !models[key];
+      if (created) { models[key] = monaco.editor.createModel(text, language); indent(models[key]); }
       current = key;
       ed.setModel(models[key]);
       ed.updateOptions({ readOnly: readOnly });
       report();
+      if (created) foldEntries(key, 1);
     };
     window.wakilSetLanguage = function (key, language) { if (models[key]) monaco.editor.setModelLanguage(models[key], language); };
     window.wakilSetReadOnly = function (key, on) { if (key === current) ed.updateOptions({ readOnly: on }); };
@@ -303,6 +344,29 @@
     // columns, so the model is replaced whole by `after`, the store's text. A result that is not
     // `after` (Monaco normalising line endings) is replaced the same way. The serial is set in
     // this same call, so no keystroke can be posted between the edit and its basis.
+    // 3b-vii: a growing log. Appended as its own undo step; the view follows only when the last line
+    // was in view (Rule 6), and the new entries arrive folded (Rule 9: an opened fold stays open).
+    window.wakilAppendText = function (key, text, serial) {
+      const m = models[key]; if (!m) return;
+      if (typingTimer !== null && key === current) { cancelAnimationFrame(typingTimer); typingTimer = null; }
+      const shown = key === current;
+      const vr = shown ? ed.getVisibleRanges() : [];
+      const follow = shown && vr.length > 0 && vr[vr.length - 1].endLineNumber >= m.getLineCount() - 1;
+      const from = m.getLineCount();
+      const end = m.getFullModelRange().getEndPosition();
+      applying = true;
+      m.pushStackElement();
+      m.pushEditOperations([], [{ range: new monaco.Range(end.lineNumber, end.column, end.lineNumber, end.column), text: text }],
+                           function () { return null; });
+      m.pushStackElement();
+      applying = false;
+      basis[key] = serial;
+      if (shown) {
+        foldEntries(key, from);
+        if (follow) ed.revealLine(m.getLineCount());
+        report();
+      }
+    };
     window.wakilApplyEdit = function (key, sl, sc, el, ec, text, before, after, serial) {
       const m = models[key]; if (!m) return;
       if (m.getValue() !== before) {
