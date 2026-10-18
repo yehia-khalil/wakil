@@ -7,6 +7,7 @@
 {"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"/e2e-project/small.log"}}
 {"expect":{"pane":"editor-2","field":"cursor.line","equals":"201"}}
 {"expect":{"pane":"editor-2","field":"visible_text","contains":"local.INFO: line 200"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"terminal-1"}}}
 {"do":{"keys":"echo '[2026-10-18 13:34:00] local.WARNING: line 201' >> ~/../e2e-project/small.log && echo appended"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"appended"}}

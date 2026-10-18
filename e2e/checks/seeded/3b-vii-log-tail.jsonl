@@ -10,6 +10,7 @@
 {"expect":{"tree":"contains","text":"Showing the last 2 MB of 3 MB"}}
 {"expect":{"pane":"editor-2","field":"visible_text","contains":"local.ERROR: boom"}}
 {"dispatch":{"action":"editor_save","params":{"pane":"editor-2"},"refuses":"big.log is open read-only (Showing the last 2 MB of 3 MB)"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"terminal-1"}}}
 {"do":{"keys":"printf '[2026-10-18 13:34:00] local.ERROR: again\\n' >> ~/../e2e-project/big.log && echo appended"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"appended"}}
