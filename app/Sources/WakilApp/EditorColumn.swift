@@ -678,9 +678,12 @@ struct EditorColumn: View {
                 }
                 // Rule 3: the field arrives focused. Rule 9: a rename preselects the stem only.
                 .onAppear(perform: focusNameField)
+                .padding(.horizontal, 4).padding(.vertical, 1)
+                .background(EditorPaneStyle.lifted, in: RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(EditorPaneStyle.violet, lineWidth: 1))
                 .accessibilityIdentifier("editor.tree.name")
             if let nameError {
-                Text(nameError)
+                Text(editorTreeShortError(nameError, roots: rows.filter { $0.kind == .root }.map(\.id)))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
@@ -688,7 +691,9 @@ struct EditorColumn: View {
                     .accessibilityIdentifier("editor.tree.name.error")
             }
         }
-        .padding(.leading, 6 + CGFloat(depth * 12)).padding(.trailing, 6).padding(.vertical, 2)
+        // Lined up with a row's name: past the row's inset and its chevron column (`rowLabel`), less
+        // the field's own inset.
+        .padding(.leading, 17 + CGFloat(depth * 12)).padding(.trailing, 6).padding(.vertical, 2)
     }
 
     /// A turn later, as the replace field takes it (`takeReplaceFocus`): set while F2's key press is
