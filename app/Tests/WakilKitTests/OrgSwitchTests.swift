@@ -26,29 +26,18 @@ private func writeProviderFixtureForOrgSwitch(home: URL, org: String, id: String
         to: dir.appendingPathComponent("\(id).json"), atomically: true, encoding: .utf8)
 }
 
-/// Pins the defect Task 7 closes and the contract it builds to close it.
-///
-/// **Both halves of that defect, and they are no longer the same
-/// mechanism.** It was that both stores keyed on a project NAME alone
-/// while `LayoutPersistence` keyed on `(org, project)`, so disk was safe
-/// and memory was not: two orgs each holding a project named `core` —
-/// unremarkable — collided, drawing the first org's arrangement and rows
-/// under the second org's name, from a different credential boundary's
-/// database, with nothing anywhere failing. `clearAllProjects()` was the
-/// only thing standing in the way.
-///
-/// `LayoutScope` carries the organisation, so **the collision can no
-/// longer be expressed** — the first expectation below now holds by
-/// construction, and `LayoutStoreTests`/`PaneStoreTests` pin it directly.
-/// What `clearAllScopes()` still buys is the second: an org switch forgets
-/// every arrangement, including the one belonging to the org being left,
-/// because an organisation is a credential boundary (Invariant 4). Delete
-/// the `clearAllScopes()` line and that expectation fails on its own.
+/// Pins the defect Task 7 closed: both stores once keyed on a project NAME
+/// alone while `LayoutPersistence` keyed on `(org, project)`, so two orgs
+/// each holding a project named `core` drew the first org's arrangement and
+/// rows under the second org's name. `LayoutScope` carries the organisation,
+/// so the collision cannot be expressed — and that is what lets an org switch
+/// keep every scope (background agents 3 of 4): the org left is not drawn
+/// under the incoming one, and it is still there to come back to.
 @MainActor
 @Test func twoOrgsWithTheSameProjectNameDoNotShareACanvas() async {
     let layout = LayoutStore()
-    let inOrgA = LayoutScope(organization: "orga", project: "core")
-    let inOrgB = LayoutScope(organization: "orgb", project: "core")
+    let inOrgA = LayoutScope(organization: "orga", project: "core", environment: "")
+    let inOrgB = LayoutScope(organization: "orgb", project: "core", environment: "")
     await layout.switchScope(to: inOrgA)
     await layout.load(
         LayoutSnapshot(panes: [
@@ -56,32 +45,23 @@ private func writeProviderFixtureForOrgSwitch(home: URL, org: String, id: String
         ]), for: inOrgA)
     #expect(await layout.snapshot().panes.count == 1)
 
-    // The org changed. "core" in org B is a DIFFERENT project that merely
-    // shares a name.
-    await layout.clearAllScopes()
+    // "core" in org B is a DIFFERENT project that merely shares a name.
     await layout.switchScope(to: inOrgB)
-
     #expect(
         await layout.snapshot().panes.isEmpty,
         "org A's canvas must not be drawn under org B's identically-named project")
 
-    // And the org being LEFT is forgotten too, which is the part the scope
-    // does not do for free: both stores otherwise keep an outgoing scope
-    // so that returning to it finds it as it was left.
     await layout.switchScope(to: inOrgA)
-    #expect(
-        await layout.snapshot().panes.isEmpty,
-        "an org switch must forget the outgoing org's arrangement, not park it")
+    #expect(await layout.snapshot().panes.map(\.id) == ["db-1"], "the org left keeps its canvas")
 }
 
 /// The `PaneStore` half of the same collision — this store holds what is
-/// IN the panes, `LayoutStore` holds where they are, and an org change
-/// invalidates both for the same reason.
+/// IN the panes, `LayoutStore` holds where they are.
 @MainActor
 @Test func twoOrgsWithTheSameProjectNameDoNotShareRows() async {
     let panes = PaneStore(kinds: PaneKinds.standard)
-    let inOrgA = LayoutScope(organization: "orga", project: "core")
-    let inOrgB = LayoutScope(organization: "orgb", project: "core")
+    let inOrgA = LayoutScope(organization: "orga", project: "core", environment: "")
+    let inOrgB = LayoutScope(organization: "orgb", project: "core", environment: "")
     await panes.switchScope(to: inOrgA)
     await panes.setRows(
         paneId: "db-1", columns: ["id"], columnTypes: ["int"], columnTypesInferred: false,
@@ -89,68 +69,50 @@ private func writeProviderFixtureForOrgSwitch(home: URL, org: String, id: String
         sort: [], listsTables: false, editable: nil)
     #expect(object(await panes.readPane(paneId: "db-1", kind: "db"))["rowCount"] == .number(1))
 
-    await panes.clearAllScopes()
     await panes.switchScope(to: inOrgB)
-
     #expect(
         object(await panes.readPane(paneId: "db-1", kind: "db"))["rowCount"] == .number(0),
         "org A's rows must not be drawn under org B's identically-named project's pane")
 
     await panes.switchScope(to: inOrgA)
     #expect(
-        object(await panes.readPane(paneId: "db-1", kind: "db"))["rowCount"] == .number(0),
-        "an org switch must forget the outgoing org's rows, not park them")
+        object(await panes.readPane(paneId: "db-1", kind: "db"))["rowCount"] == .number(1),
+        "the org left keeps its rows")
 }
 
-/// `invalidateForOrgChange()` is the single named contract that clears
-/// everything the outgoing org owned. Every org-derived property added to
-/// `WindowModel` must be added here too.
-///
-/// **Seeds and asserts all four properties fix round 1 added a reset for**
-/// (`databaseChoices`, `pending`, `databases`, `layoutSnapshot`), each with a
-/// non-default value, so that deleting any one reset line would make this
-/// test fail — a `Mirror`-based tripwire (Task 8) can catch an
-/// unclassified NEW property, but it cannot catch an EXISTING one quietly
-/// dropped from the reset list. Only a behavioural assertion like this one
-/// can.
+/// `invalidateForOrgChange()` resets what belongs to the organisation and
+/// nothing that belongs to a place in it (background agents 3 of 4). Seeds
+/// both kinds with non-default values, so a reset dropped from the contract
+/// — or one added back for a place's state — fails here: a `Mirror` tripwire
+/// can catch an unclassified NEW property, but not a reset quietly changed.
 @MainActor
-@Test func invalidationClearsEveryOrgDerivedValue() async {
+@Test func invalidationResetsTheOrgsContextAndKeepsEveryPlacesState() async {
     let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
+    let place = Place(organization: "alpha", project: "core", environment: "staging")
     model.seedForTesting(
         providerId: "acct", rootPath: "/a/core", thoughts: 3,
         databaseChoices: [
             "db-1": QueryLineDatabaseChoice(database: "orders", subjectDatabase: "orders")
         ],
-        pending: PendingMutation(
-            action: "test_only_proposal", params: .object([:]), database: "orders",
-            statement: "DELETE FROM orders", affectsEveryRow: true, origin: .agent),
         databases: ["orders", "billing"],
         layoutSnapshot: LayoutSnapshot(panes: [
             Pane(id: "db-1", kind: "db", title: "Orders", frame: PaneFrame(x: 0, y: 0, width: 100, height: 100))
-        ]))
+        ]),
+        project: "core", environment: "staging")
 
-    // `async`, and both store clears are awaited by the method itself —
-    // so by the time this call returns, `layout` and `panes` have
-    // genuinely been cleared, not merely asked to clear on some detached
-    // task this assertion would otherwise race.
     await model.invalidateForOrgChange()
 
+    // The organisation's own: reset, and re-derived by `refreshContext`.
     #expect(model.providerId.isEmpty)
-    #expect(model.thoughts.isEmpty)
     #expect(model.project.isEmpty)
     #expect(model.environment.isEmpty)
-    #expect(
-        model.databaseChoices.isEmpty,
-        "a pane in the new org must not inherit the outgoing org's database choice")
-    #expect(
-        model.pending == nil,
-        "the outgoing org's parked confirmation must not survive the switch")
-    #expect(
-        model.databases.isEmpty,
-        "the outgoing org's database list must not linger as a stale chooser projection")
-    #expect(
-        model.layoutSnapshot == LayoutSnapshot(),
-        "the outgoing org's cached layout projection must not still be drawn after the switch")
+    #expect(model.rootPathForTesting == NSHomeDirectory())
+    // The place's own: kept, under its place. (A waiting approval is the broker's, mirrored;
+    // `anOrgSwitchWithAParkedApprovalSwitchesAnyway` parks a real one.)
+    #expect(model.agents[place]?.thoughts.count == 3, "the place's thread is its own")
+    #expect(model.databaseChoices["db-1"]?.database == "orders")
+    #expect(model.databases == ["orders", "billing"])
+    #expect(model.layoutSnapshot.panes.map(\.id) == ["db-1"])
 }
 
 /// Task 9's success half. Spec §5.3 and §6 item 2:
@@ -399,15 +361,6 @@ private func writeProviderFixtureForOrgSwitch(home: URL, org: String, id: String
 }
 
 @MainActor
-@Test func aParkedMutationRefusesTheSwitch() async {
-    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
-    await model.parkAProposalForTesting()
-    await model.setOrganization("beta")
-    #expect(model.status.contains("waiting for confirmation"))
-    #expect(model.organization == "alpha", "the switch must not have happened")
-}
-
-@MainActor
 @Test func aFailedRestartLeavesTheWindowSayingSoRatherThanClaimingTheNewOrg() async {
     let model = WindowModel.forTesting(
         scratchRoot: testScratchRoot,
@@ -456,7 +409,7 @@ private final class FlakyOrgSwitcherForTesting: @unchecked Sendable {
         "the same-org guard must not refuse a retry of the org the failed switch just wiped")
 }
 
-// MARK: - Task 11: the queue — three states, and the send refusal
+// MARK: - Waiting
 
 /// Polls `condition` until it holds or the budget runs out. The production
 /// event pump `startEventPump` starts is a separate `Task`, so a test that
@@ -485,271 +438,7 @@ private func waitUntilOrgSwitch(
     return await condition()
 }
 
-/// A minimal `AgentHarness` double, local to this file because
-/// `WindowModelTests.StubHarness` is `private` to that file. Originally
-/// built for `aRealResultEventFiresTheQueuedSwitchThroughTheProductionEventPump`
-/// (a `start`/`send` that succeed, and an `events()` stream that test feeds
-/// by hand); T11-R7b's
-/// `aSendThatFailsAfterATurnStartedFiresAQueuedSwitchRatherThanStrandingIt`
-/// reuses it with `nextSendError`/`holdNextSend` added, the same gate
-/// shape `WindowModelTests.StubHarness.holdNextSend` uses — needed to land
-/// a `requestOrganizationSwitch` call deterministically inside `send(_:)`'s
-/// `try await harness.send(text)` suspension, rather than by scheduling
-/// luck, before that call throws.
-private final class FakeHarnessForQueueTests: AgentHarness, @unchecked Sendable {
-    private let stream: AsyncStream<HarnessEvent>
-    let continuation: AsyncStream<HarnessEvent>.Continuation
-
-    /// If set, the *next* `send` throws this — after the gate below (if
-    /// held) releases — instead of succeeding.
-    var nextSendError: Error?
-    /// When true, the *next* `send` suspends immediately, before either
-    /// succeeding or throwing, until `releaseSend()` is called.
-    var holdNextSend = false { didSet { if holdNextSend { sendGate.arm() } } }
-    private let sendGate = HoldGate()
-
-    init() {
-        (stream, continuation) = AsyncStream<HarnessEvent>.makeStream()
-    }
-
-    func start(sessionId: String, resumingFrom parentSessionId: String?, workingDirectory: String) async throws {}
-    func send(_ text: String) async throws {
-        if holdNextSend {
-            holdNextSend = false
-            await sendGate.wait()
-        }
-        if let nextSendError {
-            self.nextSendError = nil
-            throw nextSendError
-        }
-    }
-    func events() -> AsyncStream<HarnessEvent> { stream }
-    func interrupt() async {}
-    func stop() async { continuation.finish() }
-
-    /// Lets a `send` gated by `holdNextSend` proceed, whether it is parked
-    /// already or still on its way to the gate: the test releases on
-    /// `turnInFlight`, which `WindowModel.send` raises BEFORE this double's
-    /// `send` (nonisolated, so on the cooperative pool) reaches the gate.
-    /// `HoldGate` latches that early release; a bare continuation lost it
-    /// and hung the suite (2026-10-09). A no-op if no hold was asked for.
-    func releaseSend() {
-        sendGate.release()
-    }
-}
-
-/// Records how many times `setOrganization` actually ran the org switcher —
-/// what `concurrentFiresOfAQueuedSwitchProduceExactlyOneSwitch` counts.
-/// `@unchecked Sendable`, the same shape as this file's own
-/// `FlakyOrgSwitcherForTesting` above, because `WindowModel`'s
-/// `orgSwitcher` parameter is `@Sendable` and a plain mutable `var` cannot
-/// be captured by one directly.
-private final class SwitchCounterForTesting: @unchecked Sendable {
-    private(set) var count = 0
-    func attempt(_ org: String) async -> [String] {
-        count += 1
-        return []
-    }
-}
-
-@MainActor
-@Test func aTurnInFlightQueuesTheSwitchAndItFiresWhenTheTurnEnds() async {
-    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
-    await model.beginTurnForTesting()
-
-    await model.requestOrganizationSwitch("beta")
-    #expect(model.queuedOrgSwitch == "beta")
-    #expect(model.organization == "alpha", "queued means not yet")
-
-    await model.endTurnForTesting()
-    #expect(model.organization == "beta")
-    #expect(model.queuedOrgSwitch == nil)
-}
-
-/// Rewritten from the brief (T11-R3): the brief's own version asserted
-/// `model.status.contains("switching to beta")`, but
-/// `requestOrganizationSwitch` already writes `"switching to beta when
-/// this turn finishes"` into `status` — which contains that substring —
-/// so that assertion alone passes even with `send`'s own guard deleted
-/// entirely. This version instead asserts the refusal's OWN phrase (only
-/// `send`'s guard writes "cancel the switch, or wait for it"), that no new
-/// turn actually started, and that the queue survived the refused send.
-@MainActor
-@Test func sendIsRefusedWhileASwitchIsQueuedSoItCannotBeStarved() async {
-    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
-    await model.beginTurnForTesting()
-    await model.requestOrganizationSwitch("beta")
-    await model.endTurnForTestingWithoutFiring()
-
-    await model.send("another turn")
-
-    #expect(
-        model.status.contains("cancel the switch, or wait for it"),
-        "\(model.status)")
-    #expect(model.turnInFlight == false, "the refusal must not have started a new turn")
-    #expect(model.queuedOrgSwitch == "beta", "the queue must survive the refused send")
-}
-
-@MainActor
-@Test func aParkedMutationHoldsTheQueuedSwitchRatherThanCancellingIt() async {
-    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
-    await model.beginTurnForTesting()
-    await model.requestOrganizationSwitch("beta")
-    await model.parkAProposalForTesting()
-    await model.endTurnForTesting()
-
-    #expect(model.queuedOrgSwitch == "beta", "held, not cancelled")
-    #expect(model.organization == "alpha")
-
-    await model.cancelPending()
-    #expect(model.organization == "beta", "a cancel clears the park and the switch fires")
-}
-
-/// T11-R4: none of the three tests above proves the PRODUCTION call site —
-/// `startEventPump`'s event pump — was ever wired to
-/// `fireQueuedSwitchIfReady()` at all; all three drive the queue through
-/// `beginTurnForTesting`/`endTurnForTesting`, which a version that never
-/// touched `append(_:)`'s call site would still pass. This test drives a
-/// real `send()` (a real turn, through a real fake `AgentHarness`) and
-/// delivers a real `.result` `HarnessEvent` through that harness's own
-/// `events()` stream — the same `continuation.yield(.result(...))` idiom
-/// `WindowModelTests.swift`'s
-/// `staleEventsFromTheSupersededHarnessNeverReachTheClearedThreadAfterASwitch`
-/// uses to end a turn for real — rather than the test-only helpers.
-@MainActor
-@Test func aRealResultEventFiresTheQueuedSwitchThroughTheProductionEventPump() async {
-    let harness = FakeHarnessForQueueTests()
-    let model = WindowModel.forTesting(
-        scratchRoot: testScratchRoot,
-        organization: "alpha",
-        harnessFactory: { _, _ in harness })
-
-    await model.send("go")
-    #expect(model.turnInFlight, "send must have actually started a turn")
-
-    await model.requestOrganizationSwitch("beta")
-    #expect(model.queuedOrgSwitch == "beta")
-    #expect(model.organization == "alpha", "queued means not yet")
-
-    harness.continuation.yield(.result(isError: false, text: nil))
-
-    #expect(await waitUntilOrgSwitch { model.organization == "beta" })
-    #expect(model.queuedOrgSwitch == nil)
-}
-
-/// T11-R2: `fireQueuedSwitchIfReady()`'s own `await
-/// confirmations.current()` is a suspension point between reading
-/// `queuedOrgSwitch` and clearing it, so two calls landing back-to-back —
-/// here, two concurrent invocations via `async let` — can both observe the
-/// queue non-nil, both pass the guard, and (without the
-/// `firingQueuedSwitch` reentrancy flag) both call `setOrganization`,
-/// firing one queued request twice. Counting `orgSwitcher` invocations
-/// through `SwitchCounterForTesting` is what makes "exactly one switch"
-/// checkable — `model.organization == "beta"` alone would read identically
-/// whether the switcher ran once or twice.
-@MainActor
-@Test func concurrentFiresOfAQueuedSwitchProduceExactlyOneSwitch() async {
-    let switcher = SwitchCounterForTesting()
-    let model = WindowModel.forTesting(
-        scratchRoot: testScratchRoot,
-        organization: "alpha",
-        orgSwitcher: { org in await switcher.attempt(org) })
-
-    await model.beginTurnForTesting()
-    await model.requestOrganizationSwitch("beta")
-    await model.endTurnForTestingWithoutFiring()
-
-    async let first: Void = model.fireQueuedSwitchIfReady()
-    async let second: Void = model.fireQueuedSwitchIfReady()
-    _ = await (first, second)
-
-    #expect(model.organization == "beta")
-    #expect(model.queuedOrgSwitch == nil)
-    #expect(
-        switcher.count == 1,
-        "two concurrent fires of one queued switch must produce exactly one setOrganization call, got \(switcher.count)")
-}
-
-/// T11-R7b (a correction of T11-R7): `send(_:)` sets `turnInFlight = true`
-/// SYNCHRONOUSLY, immediately before the genuine suspension inside `try
-/// await harness.send(text)` — so a `requestOrganizationSwitch` call
-/// landing in exactly that window sees a turn genuinely in flight and
-/// queues, precisely as it is meant to. If `harness.send` then throws,
-/// `send`'s own `catch` is the ONLY place `turnInFlight` ever becomes
-/// false for that attempt — no `.result` event is coming, because the
-/// turn never actually started — so without a fire call there, the queued
-/// switch would never drain: no turn end arrives to trigger it, and the
-/// top-of-`send` refusal turns the operator away from starting a new turn
-/// to shake it loose. `FakeHarnessForQueueTests`'s `holdNextSend` gate
-/// makes the interleaving deterministic rather than a matter of
-/// scheduling luck: `send(_:)` is suspended (with `turnInFlight` already
-/// `true`) exactly where it would be mid-flight in production, the switch
-/// is requested there, and only then is the gate released to let the
-/// fake's `send` throw.
-@MainActor
-@Test func aSendThatFailsAfterATurnStartedFiresAQueuedSwitchRatherThanStrandingIt() async {
-    struct SendFailureForTesting: Error {}
-    let harness = FakeHarnessForQueueTests()
-    harness.holdNextSend = true
-    harness.nextSendError = SendFailureForTesting()
-    let model = WindowModel.forTesting(
-        scratchRoot: testScratchRoot,
-        organization: "alpha",
-        harnessFactory: { _, _ in harness })
-
-    let sendTask = Task { await model.send("go") }
-    // Polled, not asserted immediately after `Task { ... }` returns:
-    // `send` is a separate, unstructured task from this test's own, so
-    // this waits for it to have actually reached (and set)
-    // `turnInFlight` before this test acts on that being true — the same
-    // reason `WindowModelTests.swift`'s own `waitUntil` exists.
-    #expect(await waitUntilOrgSwitch { model.turnInFlight })
-
-    await model.requestOrganizationSwitch("beta")
-    #expect(model.queuedOrgSwitch == "beta")
-
-    harness.releaseSend()
-    await sendTask.value
-
-    #expect(
-        model.organization == "beta",
-        "the queued switch must not be stranded by the send that failed to start its turn")
-    #expect(model.queuedOrgSwitch == nil)
-}
-
-// MARK: - Task 11 fix round 2
-
-/// A scratch journal directory for the two fix-round-2 tests below, which
-/// build a `WindowModel` directly (not through `forTesting`) because they
-/// need a custom `session_read` action registered — `forTesting`'s own
-/// registry only ever seeds `session_list`. The same shape as
-/// `WindowModelTests.swift`'s own (`private` to that file, so not
-/// reusable here) `windowScratchDirectory()`.
-private func orgSwitchFixRound2ScratchDirectory() throws -> URL {
-    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    return dir
-}
-
-/// Registers a `session_read` action returning a fixed, minimal thread —
-/// just enough for `resume(sessionId:)`'s own guards to pass (`provider`
-/// matching the window's `providerId`, some `cwd`) — the same shape
-/// `WindowModelTests.swift`'s (`private`) `registerFakeReadSession` uses,
-/// reproduced here because that copy is not reusable from this file.
-private func registerFakeReadSessionForOrgSwitch(provider: String, cwd: String) -> Action {
-    Action(
-        name: "session_read", description: "Task 11 fix round 2 test double", kind: .read,
-        schema: .object(["type": .string("object")]),
-        handler: { _ in
-            .object(["structuredContent": .object([
-                "cwd": .string(cwd),
-                "provider": .string(provider),
-                "parent": .string(""),
-                "truncated": .bool(false),
-                "entries": .array([]),
-            ])])
-        })
-}
+// MARK: - A lookup that always succeeds
 
 /// Always succeeds, ignoring the provider id — the same shape every one
 /// of this codebase's several private `AlwaysSucceedsCredentialsLookup`
@@ -760,111 +449,6 @@ private struct AlwaysSucceedsCredentialsLookupForOrgSwitch: ProviderCredentialsL
     func credentials(forProvider id: String) async throws -> ProviderCredentials {
         ProviderCredentials(claudePath: "/usr/bin/true", configDir: "/dev/null", oauthToken: "test-only")
     }
-}
-
-/// Fix round 2, Finding 1. `resume(sessionId:)` has two callers with
-/// different reentrancy properties: nested inside `setOrganization` via
-/// `autoResumeAfterSwitch()` (where firing from `resume`'s own body would
-/// be reentrant — T11-R1's original ruling was right about THAT caller),
-/// and `resumePump` — draining the agent's own `session_resume` tool call,
-/// or `--dispatch` — which is never nested inside a switch and IS a
-/// genuine turn end. Before this fix, `resume`'s teardown setting
-/// `turnInFlight = false` fired nothing for either caller, so a switch
-/// queued against a turn the agent then resumed away from would never
-/// drain: no `.result` is coming for a turn that got abandoned this way,
-/// and the top-of-`send` refusal turns the operator away from starting a
-/// new turn to shake it loose.
-///
-/// Delivers the resume request through `resumes.request(_:)` — the real
-/// broker, the same one `resumePump` (subscribed once, in `init`) drains —
-/// rather than calling `model.resume(sessionId:)` directly, because the
-/// fix lives at the `resumePump` call site specifically, not inside
-/// `resume(sessionId:)` itself; calling `resume` directly would prove
-/// nothing about whether that call site was ever wired up.
-@MainActor
-@Test func aResumeRequestFromTheAgentFiresAQueuedSwitchThroughTheResumePump() async throws {
-    let journalDirectory = try orgSwitchFixRound2ScratchDirectory()
-    let registry = ActionRegistry(
-        journalDirectory: journalDirectory, sessionId: "org-switch-fix-round-2-resume-pump",
-        initialActions: [
-            registerFakeReadSessionForOrgSwitch(provider: "test-provider", cwd: "/tmp/org-switch-resume")
-        ])
-    let harness = FakeHarnessForQueueTests()
-    let resumes = ResumeBroker()
-    let model = WindowModel(
-        registry: registry, panes: PaneStore(), layout: LayoutStore(), context: nil,
-        harnessFactory: { _ in harness }, resumes: resumes,
-        rootPath: "/tmp/org-switch-resume", providerId: "test-provider",
-        lookup: AlwaysSucceedsCredentialsLookupForOrgSwitch(), environment: "staging")
-    model.setOrganizationForTesting("alpha")
-
-    await model.beginTurnForTesting()
-    await model.requestOrganizationSwitch("beta")
-    #expect(model.queuedOrgSwitch == "beta")
-
-    // The agent's own `session_resume` — indistinguishable, from this
-    // broker's perspective, from `--dispatch` reaching the same path.
-    await resumes.request(ResumeRequest(sessionId: "parent-1"))
-
-    #expect(await waitUntilOrgSwitch { model.organization == "beta" })
-    #expect(model.queuedOrgSwitch == nil)
-}
-
-/// Fix round 2, Finding 2 (credential boundary). `fireQueuedSwitchIfReady()`
-/// captures `org` before its only suspension point (`await
-/// confirmations.current()`). `WindowModel` is `@MainActor`, so other
-/// MainActor work — including the plain synchronous `cancelQueuedSwitch()`
-/// — can run during that hop. `firingQueuedSwitch` guards against a
-/// SECOND CALL TO THIS SAME METHOD racing it, but does nothing about an
-/// unrelated method mutating `queuedOrgSwitch` out from under it: without
-/// the `queuedOrgSwitch == org` re-check, this method would resume holding
-/// the stale captured `org`, clear nothing, and switch anyway — silently
-/// overriding the operator's own cancel and moving credentials to an org
-/// they explicitly declined.
-///
-/// Landed deterministically via `ConfirmationBroker`'s own
-/// `armHoldNextCurrentForTesting()`/`releaseHeldCurrentForTesting()` gate
-/// (the same one-shot `CheckedContinuation` shape
-/// `WindowModelTests.StubHarness.holdNextSend` uses), NOT by racing two
-/// `async let`s or a bare `Task.yield()` against each other — both were
-/// tried first here and measured unreliable: in isolation they landed the
-/// race often enough to look convincing (a `Task.yield()`-based version
-/// passed 10/10 alone), but under the full suite's load — with hundreds of
-/// other `@MainActor` tasks sharing the same executor — the assumption
-/// that `fire`'s continuation is the very next thing scheduled stopped
-/// holding, and the same version failed to reproduce the race when run as
-/// part of `make app-test`. The gate removes scheduling from the picture
-/// entirely: `fireQueuedSwitchIfReady()`'s only suspension point,
-/// `await confirmations.current()`, is held open by the broker itself
-/// until this test explicitly releases it, so `cancelQueuedSwitch()` is
-/// guaranteed to run while `fire` is suspended there — not merely likely
-/// to.
-@MainActor
-@Test func aCancelLandingDuringTheConfirmationsCheckIsNotOverriddenByAStaleCapturedOrg() async {
-    let confirmations = ConfirmationBroker()
-    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha", confirmations: confirmations)
-    await model.beginTurnForTesting()
-    await model.requestOrganizationSwitch("beta")
-    await model.endTurnForTestingWithoutFiring()
-    #expect(model.queuedOrgSwitch == "beta")
-
-    await confirmations.armHoldNextCurrentForTesting()
-    let fire = Task { await model.fireQueuedSwitchIfReady() }
-    // Polled, not asserted immediately: `fire` is a separate task from
-    // this test's own, so this waits for it to have actually reached (and
-    // parked inside) the armed hold before this test acts on that — the
-    // same reason `waitUntilOrgSwitch`/`waitUntil` exist elsewhere in this
-    // file and `WindowModelTests.swift`.
-    #expect(await waitUntilOrgSwitch { await confirmations.isHoldingCurrentForTesting() })
-
-    model.cancelQueuedSwitch()
-    await confirmations.releaseHeldCurrentForTesting()
-    await fire.value
-
-    #expect(
-        model.organization == "alpha",
-        "a cancel landing mid-fire must not be silently overridden by a switch that had already captured the stale org")
-    #expect(model.queuedOrgSwitch == nil)
 }
 
 // MARK: - Task 11 fix round 3
@@ -880,8 +464,8 @@ private struct AlwaysSucceedsCredentialsLookupForOrgSwitch: ProviderCredentialsL
 /// `armHold()`/`isHolding()`/`release()` gate the FIRST call's restart the
 /// same one-shot `CheckedContinuation` way `ConfirmationBroker`'s testing
 /// hold does — deterministic, not scheduling luck, per this task's own
-/// standing rule (see `aCancelLandingDuringTheConfirmationsCheckIsNotOverriddenByAStaleCapturedOrg`'s
-/// doc comment for why that rule exists).
+/// standing rule: plain scheduling measured unreliable once other tests
+/// shared the executor.
 private actor SharedClientOrgSwitcherForTesting {
     private let client: MCPClient
     private let home: URL
@@ -992,11 +576,12 @@ private actor SharedClientOrgSwitcherForTesting {
     let model = WindowModel(
         registry: registry, panes: PaneStore(), layout: LayoutStore(),
         context: ContextStore(client: client),
-        harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
+        harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForOrgSwitch() },
         orgSwitcher: { org in await switcher.attempt(org) },
-        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil)
+        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil,
+        agentSocketFactory: { _, _ in NoAgentSocket() })
     model.setOrganizationForTesting("alpha")
 
     await switcher.armHold()
@@ -1095,13 +680,14 @@ private final class LookupOrgRecorder: @unchecked Sendable {
     let model = WindowModel(
         registry: registry, panes: PaneStore(), layout: LayoutStore(),
         context: ContextStore(client: client),
-        harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
+        harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { org in
             seen.record(org)
             return AlwaysSucceedsCredentialsLookupForOrgSwitch()
         },
-        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil)
+        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil,
+        agentSocketFactory: { _, _ in NoAgentSocket() })
     #expect(
         seen.orgs == [""],
         "init's org-less placeholder is all a window has before it has learned its org")
@@ -1161,48 +747,23 @@ private final class LookupOrgRecorder: @unchecked Sendable {
         """)
 }
 
-// MARK: - Final fix pass, Important 2: spec §5.1's store clears
+// MARK: - The stores survive the switch
 
-/// `invalidateForOrgChange()`'s last two lines — `await
-/// layout.clearAllScopes()` and `await panes.clearAllScopes()`, spec
-/// §5.1 — were **dead to the whole suite**: replacing both with
-/// `_ = layout; _ = panes` left 782 tests passing, 0 failures. This is the
-/// test that makes them load-bearing.
-///
-/// **Why the two tests at the top of this file do not cover them.**
-/// `twoOrgsWithTheSameProjectNameDoNotShareACanvas` and
-/// `…DoNotShareRows` build a bare `LayoutStore`/`PaneStore`, call
-/// `clearAllScopes()` *themselves*, and assert the store came back
-/// empty. They prove the two store methods work. They say nothing at all
-/// about whether `invalidateForOrgChange()` ever calls them — and
-/// `invalidationClearsEveryOrgDerivedValue` above asserts nine of the
-/// model's own properties and never touches either store.
+/// `invalidateForOrgChange()` once ended by clearing both stores, which made
+/// an org switch forget every canvas and every row. Background agents 3 of 4
+/// keeps them: each is keyed by its scope, which carries the organisation,
+/// so nothing of the org left can be drawn under the incoming one — and
+/// returning finds it as it was left.
 ///
 /// **Seeded through the model, not around it.** The stores here are the
 /// model's own; the project is switched by `refreshContext()` (which is
-/// what calls `activateLayout()`, the only thing that moves either store
-/// to a project), the pane is opened by `pane_open` through
-/// `openPane(kind:)` — Invariant 2's one way to open a pane — and the
-/// assertions read the projections the window actually draws from, after
-/// the `refreshLayout()`/`refreshPanes()` that a landing in the new org
-/// performs. So what is pinned is the model's teardown, not the stores'
-/// own API.
-///
-/// The defect underneath, restated: both stores key `byProject` by project
-/// NAME ALONE and deliberately keep a departed project's contents in
-/// memory, while `LayoutPersistence` keys by `(org, project)`. Two orgs
-/// that each hold a project called `core` — unremarkable — therefore
-/// collide in memory and nowhere on disk: org B's `core` draws org A's
-/// panes and org A's rows, under org B's credential boundary, with nothing
-/// anywhere failing.
-///
-/// Rows go in through `PaneStore.setRows` directly, the way
-/// `LayoutActionsTests` and `WindowModelTests` seed pane contents: the
-/// action that writes them is `db_run_query`, which needs a live
-/// `wakil-db` and a real database, and none of that would make the
-/// clearing any more or less true.
+/// what calls `activateLayout()`), the pane is opened by `pane_open`
+/// through `openPane(kind:)`, and the assertions read the projections the
+/// window actually draws from, after the `refreshLayout()`/`refreshPanes()`
+/// a landing performs. Rows go in through `PaneStore.setRows` directly, as
+/// `LayoutActionsTests` and `WindowModelTests` seed them.
 @MainActor
-@Test func invalidationClearsBothStoresAndNotJustTheModelsOwnProperties() async throws {
+@Test func invalidationKeepsBothStoresAndTheirRows() async throws {
     let bin = orgSwitchRepoRoot().appendingPathComponent("bin/wakil-ctx")
     try #require(FileManager.default.isExecutableFile(atPath: bin.path), "run `make build` first")
     let home = try makeFixture(org: "beta", projectOrg: "beta", environments: ["staging"])
@@ -1229,10 +790,11 @@ private final class LookupOrgRecorder: @unchecked Sendable {
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout,
         context: ContextStore(client: client),
-        harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
+        harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForOrgSwitch() },
-        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil)
+        rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil,
+        agentSocketFactory: { _, _ in NoAgentSocket() })
 
     // The project switch, through the one path that makes one: this is
     // what puts both stores on project "widgets".
@@ -1251,25 +813,13 @@ private final class LookupOrgRecorder: @unchecked Sendable {
     #expect(model.table(paneId).rows.count == 1, "seeded, or the assertions below are vacuous")
 
     await model.invalidateForOrgChange()
-    // Re-read exactly the way the landing in the new org re-reads them.
+    // Re-read exactly the way a landing re-reads them.
     await model.refreshLayout()
     await model.refreshPanes()
     await client.stop()
 
-    #expect(
-        model.layoutSnapshot.panes.isEmpty,
-        """
-        invalidateForOrgChange() must clear LayoutStore itself — `byProject` is keyed by \
-        project name alone, so the outgoing org's arrangement would otherwise be drawn under \
-        an identically-named project in the org just switched to
-        """)
-    #expect(
-        model.table(paneId).rows.isEmpty,
-        """
-        invalidateForOrgChange() must clear PaneStore itself — the outgoing org's ROWS, read \
-        under the outgoing org's credentials, would otherwise be drawn in the new org's pane \
-        of the same id
-        """)
+    #expect(model.layoutSnapshot.panes.map(\.id) == [paneId], "the arrangement is kept")
+    #expect(model.table(paneId).rows.count == 1, "and the rows in it")
 }
 
 // MARK: - Spec §6.3: what a failed `get_context` still tells the window
@@ -1429,7 +979,7 @@ private final class LookupOrgRecorder: @unchecked Sendable {
                      fetch: PaneFetch(query: .sql(database: "events", raw: "select * from events"))),
             ],
             focusedId: "db-1"),
-        for: LayoutScope(organization: "beta", project: "widgets"))
+        for: LayoutScope(organization: "beta", project: "widgets", environment: ""))
 
     let registry = ActionRegistry(
         journalDirectory: testScratchRoot
@@ -1609,43 +1159,29 @@ private final class LookupOrgRecorder: @unchecked Sendable {
     #expect("\(ActionError.needsConfirmation("db_run_mutation"))".contains("type confirm"))
 }
 
-/// The org switch's third kill point: `invalidateForOrgChange()` awaits
-/// `terminals.shutdownAll()` as well as clearing `layout` and `panes`
-/// (Task 14). The BEHAVIOURAL half of that claim — the tripwire in
-/// `InvalidationContractTests` can only prove `terminals` was classified,
-/// not that the shell dies, and a dropped reference leaks a live process
-/// holding org A's working directory open.
+/// **An org switch kills no shell** (background agents 3 of 4). It used to
+/// await `terminals.shutdownAll()` beside the store clears; a shell now lives
+/// until its pane closes or the window does, wherever the screen goes, and
+/// keeps its own place's `WAKIL_ORG` — it was started with it.
 @MainActor
-@Test func theOrgSwitchKillsEveryShellItLeavesBehind() async throws {
+@Test func anOrgSwitchKeepsEveryShellRunning() async throws {
     let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
     let pane = await model.openTerminalForTesting(path: NSTemporaryDirectory())
-    let pid = await model.terminals.pidForTesting(paneId: pane)
-    #expect(pid != nil)
+    let pid = try #require(await model.terminals.pidForTesting(paneId: pane))
 
-    await model.invalidateForOrgChange()
+    await model.setOrganization("beta")
 
-    #expect(kill(pid!, 0) == -1)
-    #expect(!(await model.terminals.isRunning(paneId: pane)))
+    #expect(model.organization == "beta", "\(model.status)")
+    #expect(kill(pid, 0) == 0, "the shell left behind is still running")
     await model.shutdown()
+    #expect(kill(pid, 0) == -1, "the window's end is what ends it")
 }
 
 /// **The run pump outlives the switch** — final review's Critical 1, and
-/// the assertion whose absence let that ship.
-///
-/// `invalidateForOrgChange()` reuses `TerminalStore.shutdownAll`, which was
-/// written for app quit and ended the run stream on its way out; the window
-/// subscribes to `completedRuns()` exactly ONCE, in `init`. So after one
-/// org switch, `terminalRunPump`'s `for await` had ended, the continuation
-/// was `nil`, and every command run in every pane from then on went
-/// unjournalled — silently, with no failure anywhere, against Invariant 2's
-/// one chokepoint. `switchOrg` keeps the same store instance, so this was
-/// the shipped path.
-///
-/// **Two entries is the whole claim.** The sibling tests above prove the
-/// shells die; this one proves the journalling survives them. Written
-/// against the real pump and two real shells, because a test that asserted
-/// on `runContinuation != nil` would pass against a stream nobody is
-/// draining any more.
+/// the assertion whose absence let that ship: one org switch once ended
+/// `terminalRunPump`'s `for await` for good, and every command run in every
+/// pane from then on went unjournalled. A switch no longer touches the
+/// terminals at all; this keeps the claim pinned.
 @MainActor
 @Test func theRunPumpKeepsJournallingAfterAnOrgSwitch() async throws {
     let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
@@ -1655,13 +1191,13 @@ private final class LookupOrgRecorder: @unchecked Sendable {
         await waitUntilOrgSwitch(seconds: 10) { await model.journalledRuns().count == 1 },
         "the first run must journal even before any switch")
 
-    await model.invalidateForOrgChange()
+    await model.setOrganization("beta")
 
     let after = await model.openTerminalForTesting(path: NSTemporaryDirectory())
     await model.sendToTerminalForTesting(pane: after, text: "printf after\n")
     #expect(
         await waitUntilOrgSwitch(seconds: 10) { await model.journalledRuns().count == 2 },
-        "a run in the new org went unjournalled — the pump died with the outgoing org's shells")
+        "a run in the new org went unjournalled — the pump died with the switch")
 
     let commands = await model.journalledRuns().compactMap { entry -> String? in
         guard case .object(let params) = entry.params,
@@ -1672,26 +1208,741 @@ private final class LookupOrgRecorder: @unchecked Sendable {
     await model.shutdown()
 }
 
-/// **An organisation switch must not be blocked by a running shell.** A
-/// forgotten `tail -f` dies silently, with no warning and no prompt.
-/// Making a shell a parked mutation would let it block a switch
-/// indefinitely, which is the worse failure — Guard 2 refuses to start
-/// while a MUTATION is parked; a shell is not one.
+/// **An organisation switch must not be blocked by a running shell**, and
+/// now does not stop it either: `yes wakil` never exits, so a switch that
+/// waited for it would hang rather than fail. Reaching the end is the claim.
 @MainActor
 @Test func anOrgSwitchIsNotBlockedByAShellThatIsStillRunning() async throws {
     let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
     let pane = await model.openTerminalForTesting(path: NSTemporaryDirectory())
     await model.sendToTerminalForTesting(pane: pane, text: "yes wakil\n")
 
-    await model.invalidateForOrgChange()
+    await model.setOrganization("beta")
 
-    // **The shape, not the clock** (#307). This asserted the switch finished
-    // within three seconds, which measured suite load rather than the switch:
-    // observed red at 6.2 s and 11.0 s under `make app-test`, and green in
-    // 0.066 s alone on the same commit.
-    //
-    // The shell above runs `yes wakil` and never exits, so a switch that
-    // waited for it would never return and this test would hang rather than
-    // fail. Reaching this line is the claim the test's own name makes.
+    #expect(model.organization == "beta", "\(model.status)")
     await model.shutdown()
+}
+
+// MARK: - Background agents 3 of 4, Task 6: an organisation switch tears nothing down
+
+private let initechPlace = Place(organization: "initech", project: "api", environment: "staging")
+private let umbrellaPlace = Place(organization: "umbrella", project: "web", environment: "staging")
+
+/// A `wakil-ctx` that answers for whichever organisation the window last switched to — the
+/// switcher below moves it — each with a project of its own, so a switch really changes the
+/// place on screen and `refreshContext` really re-reads it. `hollow` has no active project, nor
+/// has `noProjectIn` when set.
+private actor TwoOrgContext: ToolCaller {
+    private var org = "initech"
+    private let noProjectIn: String?
+    init(noProjectIn: String? = nil) { self.noProjectIn = noProjectIn }
+    func use(_ org: String) { self.org = org }
+
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        guard name == "get_context" else { return .object(["structuredContent": .object([:])]) }
+        if org == "hollow" || org == noProjectIn {
+            return .object(["structuredContent": .object([
+                "Org": .string(org), "Environment": .string(""), "Project": .null,
+                "ActiveProvider": .string("main"),
+            ])])
+        }
+        let place = org == "umbrella" ? umbrellaPlace : initechPlace
+        return .object(["structuredContent": .object([
+            "Org": .string(place.organization), "Environment": .string(place.environment),
+            "Project": .object(["name": .string(place.project)]),
+            "RootPaths": .array([.string(NSTemporaryDirectory())]),
+            "ActiveProvider": .string(place == umbrellaPlace ? "umbrella-main" : "main"),
+        ])])
+    }
+}
+
+/// A window launched into initech, whose org switcher re-points `TwoOrgContext` as
+/// `WakilWiring.switchOrg` re-points the window's clients.
+@MainActor
+private func twoOrgWindow(
+    _ harnesses: Harnesses = Harnesses(), persistence: LayoutPersistence? = nil,
+    lookups: LookupOrgRecorder? = nil, failingRestart: String? = nil,
+    lookup: (any ProviderCredentialsLookup)? = nil, placeClients: PlaceClients? = nil,
+    vocabulary: VocabularyStore? = nil, refusesHarnesses: HarnessRefusal? = nil,
+    confirmations: ConfirmationBroker = ConfirmationBroker(), noProjectIn: String? = nil
+) async -> WindowModel {
+    let context = TwoOrgContext(noProjectIn: noProjectIn)
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot, organization: "initech",
+        harnessFactory: { place, _ in refusesHarnesses?.on == true ? nil : harnesses.make(place) },
+        lookupFactory: { org in
+            lookups?.record(org)
+            return lookup ?? AlwaysSucceedsCredentialsLookupForOrgSwitch()
+        },
+        context: ContextStore(client: context),
+        orgSwitcher: { org in
+            if org == failingRestart { return ["wakil-db did not come back under \(org): transportClosed"] }
+            await context.use(org)
+            return []
+        },
+        confirmations: confirmations, vocabulary: vocabulary, placeClients: placeClients,
+        persistence: persistence)
+    await model.refreshContext()
+    return model
+}
+
+/// Review focus 3: no queue, no prompt, no refusal. The agent keeps streaming into its own
+/// thread and its shell keeps running, while the screen shows the other organisation.
+@MainActor
+@Test func anOrgSwitchLeavesTheRunningAgentAlone() async throws {
+    let harnesses = Harnesses()
+    let model = await twoOrgWindow(harnesses)
+    #expect(model.place == initechPlace)
+    #expect(await model.send("a long job"))
+    let agent = try #require(model.agents[initechPlace])
+    let harness = try #require(harnesses.in(initechPlace).first)
+    let shell = await model.openTerminalForTesting(path: NSTemporaryDirectory())
+    let pid = try #require(await model.terminals.pidForTesting(paneId: shell))
+
+    await model.requestOrganizationSwitch("umbrella")
+
+    #expect(model.organization == "umbrella", "switched at once, not queued: \(model.status)")
+    #expect(model.place == umbrellaPlace)
+    #expect(!harness.stopped, "initech's harness is not stopped")
+    #expect(model.agents[initechPlace] === agent)
+    #expect(agent.turnInFlight, "its turn is still in flight")
+    harness.emit(.assistantText("still working"))
+    #expect(
+        await waitUntilOrgSwitch { agent.thoughts.contains { $0.detail == "still working" } },
+        "its events still land in its own thread")
+    #expect(!model.thoughts.contains { $0.detail == "still working" }, "umbrella's thread is umbrella's")
+    #expect(kill(pid, 0) == 0, "its shell is still running")
+    await model.shutdown()
+}
+
+/// A waiting approval in one organisation holds nothing in another: the switch goes, and the
+/// proposal is still parked, on its own plane, when the operator comes back.
+@MainActor
+@Test func anOrgSwitchWithAParkedApprovalSwitchesAnyway() async throws {
+    let model = await twoOrgWindow()
+    await model.parkAProposalForTesting()
+    #expect(await waitUntilOrgSwitch { model.pending != nil })
+    let parked = try #require(model.pending)
+
+    await model.requestOrganizationSwitch("umbrella")
+
+    #expect(model.organization == "umbrella", "\(model.status)")
+    #expect(model.pending == nil, "umbrella's plane shows nothing of initech's")
+    #expect(model.waitingPlaces == [initechPlace], "still parked")
+
+    await model.requestOrganizationSwitch("initech")
+
+    #expect(model.place == initechPlace)
+    #expect(model.pending?.id == parked.id, "coming back shows it")
+    await model.shutdown()
+}
+
+/// R2: nothing is discarded any more, so nothing is asked. A dirty buffer is still dirty, with
+/// its text, after going away and coming back.
+@MainActor
+@Test func anOrgSwitchWithUnsavedTabsAsksNothingAndKeepsThem() async throws {
+    let context = TwoOrgContext()
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent("org-switch-editor-\(UUID().uuidString)"),
+        sessionId: "org-switch-editor")
+    let panes = PaneStore()
+    let layout = LayoutStore()
+    let fileLists = EditorFileLists(files: FakeFiles())
+    await registerLayoutActions(
+        into: registry, layout: layout, panes: panes, unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
+    let model = WindowModel(
+        registry: registry, panes: panes, layout: layout, context: ContextStore(client: context),
+        harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(), rootPath: "/tmp", providerId: "",
+        lookupFactory: { _ in EditorWindowLookup() },
+        orgSwitcher: { org in
+            await context.use(org)
+            return []
+        },
+        rootWatcher: nil, editorRootWatcher: nil, fileLists: fileLists, gitStatus: nil,
+        paletteClients: PaletteClients(files: fileLists), placeClients: nil,
+        agentSocketFactory: { _, _ in NoAgentSocket() })
+    await registerEditorActions(
+        into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
+        gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })
+    await model.refreshContext()
+    await model.newScratch()
+    let pane = try #require(model.layoutSnapshot.focusedId)
+    await model.editorBufferDidChange(pane: pane, tab: 0, text: "select 1", basis: 0)
+
+    await model.requestOrganizationSwitch("umbrella")
+
+    #expect(model.unsavedPrompt == nil, "nothing asked")
+    #expect(model.organization == "umbrella", "\(model.status)")
+    #expect(!model.layoutSnapshot.panes.contains { $0.id == pane }, "umbrella's canvas is umbrella's")
+
+    await model.requestOrganizationSwitch("initech")
+
+    #expect(model.unsavedPrompt == nil)
+    let tab = try #require(model.editor(pane)?.tabs.first)
+    #expect(tab.dirty && tab.text == "select 1", "the buffer is intact and still dirty")
+}
+
+/// Coming back to an organisation finds its canvas as it was left: the same panes, the same
+/// rows, and no subject re-run — only a canvas read off disk is refetched.
+@MainActor
+@Test func comingBackToAnOrgFindsItsCanvasAsLeft() async throws {
+    let layoutDir = testScratchRoot
+        .appendingPathComponent("org-switch-return-\(UUID().uuidString)", isDirectory: true)
+    let persistence = LayoutPersistence(directory: layoutDir)
+    try persistence.save(
+        LayoutSnapshot(panes: [
+            Pane(id: "db-1", kind: "db", title: "events",
+                 frame: PaneFrame(x: 0, y: 0, width: 640, height: 420),
+                 fetch: PaneFetch(query: .sql(database: "events", raw: "select * from events"))),
+        ], focusedId: "db-1"),
+        for: LayoutScope(organization: "initech", project: "api", environment: "staging"))
+    let refetches = RefetchCounter()
+    let model = await twoOrgWindow(persistence: persistence)
+    await model.registryForTesting.register(Action(
+        name: "db_refetch", description: "test double", kind: .read,
+        schema: .object(["type": .string("object")]),
+        handler: { _ in
+            await refetches.bump()
+            return .object([:])
+        }))
+    // The launch read the canvas off disk before the double existed; re-read it now, so the
+    // one refetch a disk load owes is counted.
+    await model.restorePaneContents()
+    #expect(await refetches.count == 1)
+    await model.panesForTesting.setRows(
+        paneId: "db-1", columns: ["id"], columnTypes: ["int"], columnTypesInferred: false,
+        rows: [[.number(7)]], millis: 1, truncated: false, pageable: false, offset: 0,
+        sort: [], listsTables: false, editable: nil)
+    await model.refreshPanes()
+    #expect(model.table("db-1").rows.count == 1)
+
+    await model.requestOrganizationSwitch("umbrella")
+    #expect(model.organization == "umbrella", "\(model.status)")
+    #expect(!model.layoutSnapshot.panes.contains { $0.id == "db-1" })
+
+    await model.requestOrganizationSwitch("initech")
+
+    #expect(model.layoutSnapshot.panes.map(\.id) == ["db-1"], "the panes as left")
+    #expect(model.table("db-1").rows.count == 1, "the rows as left")
+    #expect(await refetches.count == 1, "no subject re-run on the way back")
+}
+
+private actor RefetchCounter {
+    private(set) var count = 0
+    func bump() { count += 1 }
+}
+
+/// Invariant 4: every scope survives a switch, so landing in an org with no project — or in
+/// none, a failed restart — must not leave the org left drawn under the new name. Its canvas is
+/// put away, still in memory, and coming back finds it.
+@MainActor
+@Test func anOrgWithNoProjectDrawsNothingOfTheOrgLeft() async throws {
+    let model = await twoOrgWindow(failingRestart: "umbrella")
+    await model.openPane(kind: "db")
+    let pane = try #require(model.layoutSnapshot.panes.first?.id)
+
+    await model.requestOrganizationSwitch("hollow")
+    #expect(model.organization == "hollow", "\(model.status)")
+    #expect(model.layoutSnapshot.panes.isEmpty, "initech's canvas is not drawn under hollow")
+
+    await model.requestOrganizationSwitch("initech")
+    #expect(model.layoutSnapshot.panes.map(\.id) == [pane], "and is there to come back to")
+
+    await model.requestOrganizationSwitch("umbrella")
+    #expect(model.organization.isEmpty, "the restart failed: \(model.status)")
+    #expect(model.layoutSnapshot.panes.isEmpty, "an org-less window draws no org's canvas")
+
+    await model.requestOrganizationSwitch("initech")
+    #expect(model.layoutSnapshot.panes.map(\.id) == [pane])
+}
+
+/// Invariant 4: an agent left in initech resolves its account in initech. Its own resume —
+/// a fork, a fresh credential read — runs while umbrella is on screen, and the window's
+/// `lookup` is umbrella's by then.
+@MainActor
+@Test func anAgentLeftInAnotherOrgResolvesItsCredentialsInItsOwnOrg() async throws {
+    let harnesses = Harnesses()
+    let lookups = LookupOrgRecorder()
+    let model = await twoOrgWindow(harnesses, lookups: lookups)
+    await model.registryForTesting.register(Action(
+        name: "session_read", description: "test double", kind: .read,
+        schema: .object(["type": .string("object")]),
+        handler: { _ in
+            .object(["structuredContent": .object([
+                "cwd": .string(NSTemporaryDirectory()), "provider": .string("main"), "parent": .string(""),
+                "truncated": .bool(false), "entries": .array([]),
+            ])])
+        }))
+    #expect(await model.send("a long job"))
+    let agent = try #require(model.agents[initechPlace])
+    let before = agent.sessionId
+    await model.requestOrganizationSwitch("umbrella")
+    let mark = lookups.orgs.count
+
+    await model.resume(sessionId: "parent-1", in: initechPlace)
+
+    #expect(agent.sessionId != before, "the fork replaced initech's session: \(model.status)")
+    #expect(Array(lookups.orgs.dropFirst(mark)) == ["initech"], "\(lookups.orgs)")
+    #expect(harnesses.in(initechPlace).count == 2)
+    await model.shutdown()
+}
+
+/// Invariant 4, the capacity half: initech's agent hits a rate limit while umbrella is on
+/// screen. Its reading is recorded as that agent — so through the client pinned to its own
+/// place — never through the window's `wakil-ctx`, which answers for umbrella now.
+@MainActor
+@Test func anAgentLeftInAnotherOrgRecordsItsCapacityInItsOwnOrg() async throws {
+    let harnesses = Harnesses()
+    let model = await twoOrgWindow(harnesses)
+    let callers = CallerLog()
+    await model.registryForTesting.register(Action(
+        name: "capacity_record", description: "test double", kind: .control,
+        schema: .object(["type": .string("object")]),
+        handler: { _ in
+            await callers.record(ActionRegistry.dispatchCaller)
+            return .object([:])
+        }))
+    #expect(await model.send("a long job"))
+    let agent = try #require(model.agents[initechPlace])
+    let harness = try #require(harnesses.in(initechPlace).first)
+    await model.requestOrganizationSwitch("umbrella")
+
+    harness.emit(.rateLimit(CapacityWindows(
+        fiveHour: CapacityWindow(percentLeft: 40, resetsAt: Date().addingTimeInterval(3_600)), sevenDay: nil)))
+
+    #expect(await waitUntilOrgSwitch { await !callers.entries.isEmpty })
+    let caller = try #require(await callers.entries.first ?? nil)
+    #expect(caller.place == initechPlace)
+    #expect(caller.session == agent.sessionId, "dispatched as the agent, so its pinned client answers")
+    await model.shutdown()
+}
+
+private actor CallerLog {
+    private(set) var entries: [DispatchCaller?] = []
+    func record(_ caller: DispatchCaller?) { entries.append(caller) }
+}
+
+// MARK: - Fix round 1: what an agent left in another organisation still reaches
+
+/// Set, the harness factory has none to give.
+final class HarnessRefusal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var refusing = false
+    var on: Bool {
+        get { lock.withLock { refusing } }
+        set { lock.withLock { refusing = newValue } }
+    }
+}
+
+/// Which client answered each call: the window's, or the pool's for a place.
+private final class ClientLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [String] = []
+    var calls: [String] { lock.withLock { entries } }
+    func record(_ entry: String) { lock.withLock { entries.append(entry) } }
+}
+
+/// A `wakil-ctx` stand-in that says who it is and answers `read_session` with a minimal thread.
+private struct NamedCtx: ToolCaller {
+    let name: String
+    let log: ClientLog
+    func callTool(name tool: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        log.record("\(name):\(tool)")
+        return .object(["structuredContent": .object([
+            "cwd": .string(NSTemporaryDirectory()), "provider": .string("main"), "parent": .string(""),
+            "truncated": .bool(false), "entries": .array([]),
+        ])])
+    }
+}
+
+/// The three session actions `resume` dispatches, each answered by the client the REAL router
+/// picks for the dispatch it runs in — the window's `wakil-ctx` or the one pinned to the
+/// caller's place — so the test reads routing, not what a stub was handed.
+@MainActor
+private func registerRoutedSessionActions(on model: WindowModel, log: ClientLog, pool: PlaceClients) async {
+    let routed = PlaceRoutedCaller(role: .context, window: NamedCtx(name: "window", log: log), pool: pool)
+    for name in ["session_read", "session_get", "session_record_parent"] {
+        await model.registryForTesting.register(Action(
+            name: name, description: "routed test double", kind: .read,
+            schema: .object(["type": .string("object")]),
+            handler: { params in try await routed.callTool(name: name, arguments: params, timeout: 5) }))
+    }
+}
+
+/// Invariant 4: an initech agent's own resume, while umbrella is on screen, reads its parent's
+/// transcript, its lineage and records the fork in INITECH's session store — through the client
+/// pinned to its place, never the window's `wakil-ctx`, which answers for umbrella now.
+@MainActor
+@Test func anAgentLeftInAnotherOrgResumesAgainstItsOwnSessionStore() async throws {
+    let log = ClientLog()
+    let pool = PlaceClients(
+        start: { _, place in NamedCtx(name: "pinned:\(place.organization)", log: log) },
+        stop: { _ in })
+    let harnesses = Harnesses()
+    let model = await twoOrgWindow(harnesses, placeClients: pool)
+    await registerRoutedSessionActions(on: model, log: log, pool: pool)
+    #expect(await model.send("a long job"))
+    await model.requestOrganizationSwitch("umbrella")
+    let mark = log.calls.count
+
+    await model.resume(sessionId: "parent-1", in: initechPlace)
+
+    let calls = Array(log.calls.dropFirst(mark))
+    #expect(calls == ["pinned:initech:session_read", "pinned:initech:session_get",
+                      "pinned:initech:session_record_parent"], "\(calls) \(model.status)")
+    #expect(harnesses.in(initechPlace).count == 2, "the fork started")
+    await model.shutdown()
+}
+
+/// Invariant 4: the same resume for an agent with NO session yet (its first turn never started).
+/// Its `PlaceAgent.caller` carries no session id, and a caller is pinned to its place only with
+/// one, so without the id `resume` mints the reads would answer from umbrella's store.
+@MainActor
+@Test func anAgentWithNoSessionLeftInAnotherOrgResumesAgainstItsOwnSessionStore() async throws {
+    let log = ClientLog()
+    let pool = PlaceClients(
+        start: { _, place in NamedCtx(name: "pinned:\(place.organization)", log: log) },
+        stop: { _ in })
+    let refusal = HarnessRefusal()
+    refusal.on = true
+    let harnesses = Harnesses()
+    let model = await twoOrgWindow(harnesses, placeClients: pool, refusesHarnesses: refusal)
+    await registerRoutedSessionActions(on: model, log: log, pool: pool)
+    #expect(await !model.send("no agent yet"))
+    let agent = try #require(model.agents[initechPlace])
+    #expect(agent.sessionId == nil, "no session yet")
+    await model.requestOrganizationSwitch("umbrella")
+    refusal.on = false
+    let mark = log.calls.count
+
+    await model.resume(sessionId: "parent-1", in: initechPlace)
+
+    let calls = Array(log.calls.dropFirst(mark))
+    #expect(calls == ["pinned:initech:session_read", "pinned:initech:session_get",
+                      "pinned:initech:session_record_parent"], "\(calls) \(model.status)")
+    #expect(harnesses.in(initechPlace).count == 1, "the fork started")
+    await model.shutdown()
+}
+
+/// Invariant 4: an initech agent with no harness yet resumes under its own account, not the
+/// one the window holds for umbrella now.
+@MainActor
+@Test func anAgentWithNoHarnessLeftInAnotherOrgResumesUnderItsOwnProvider() async throws {
+    let refusal = HarnessRefusal()
+    refusal.on = true
+    let harnesses = Harnesses()
+    let model = await twoOrgWindow(harnesses, refusesHarnesses: refusal)
+    await model.registryForTesting.register(Action(
+        name: "session_read", description: "test double", kind: .read,
+        schema: .object(["type": .string("object")]),
+        handler: { _ in
+            .object(["structuredContent": .object([
+                "cwd": .string(NSTemporaryDirectory()), "provider": .string("main"), "parent": .string(""),
+                "truncated": .bool(false), "entries": .array([]),
+            ])])
+        }))
+    #expect(await !model.send("no agent yet"))
+    #expect(model.agents[initechPlace]?.harness == nil)
+    #expect(model.agents[initechPlace]?.providerId == "main")
+    await model.requestOrganizationSwitch("umbrella")
+    #expect(model.providerId == "umbrella-main")
+    refusal.on = false
+
+    await model.resume(sessionId: "parent-1", in: initechPlace)
+
+    #expect(!model.status.contains("belongs to provider"), "\(model.status)")
+    #expect(harnesses.in(initechPlace).count == 1, "forked under initech's own account")
+    await model.shutdown()
+}
+
+/// A command run in an initech shell that finishes after the switch to umbrella is journalled
+/// under initech — where the shell is — not the place on screen.
+@MainActor
+@Test func aShellsRunIsJournalledUnderItsOwnPlaceAfterAnOrgSwitch() async throws {
+    let model = await twoOrgWindow()
+    let shell = await model.openTerminalForTesting(path: NSTemporaryDirectory())
+    await model.sendToTerminalForTesting(pane: shell, text: "sleep 1; printf done\n")
+    await model.requestOrganizationSwitch("umbrella")
+    #expect(model.place == umbrellaPlace)
+
+    #expect(await waitUntilOrgSwitch(seconds: 15) { await model.journalledRuns().count == 1 })
+    let entry = try #require(await model.journalledRuns().first)
+    guard case .object(let params) = entry.params else { Issue.record("\(entry.params)"); return }
+    #expect(params["org"] == .string("initech"), "\(params)")
+    #expect(params["project"] == .string("api"))
+    await model.shutdown()
+}
+
+/// A lookup that parks every read until released.
+private actor ParkedLookup: ProviderCredentialsLookup {
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var parked = 0
+    func credentials(forProvider id: String) async throws -> ProviderCredentials {
+        parked += 1
+        if !released { await withCheckedContinuation { waiters.append($0) } }
+        return ProviderCredentials(claudePath: "/usr/bin/true", configDir: "/dev/null", oauthToken: "test-only")
+    }
+    func release() {
+        released = true
+        waiters.forEach { $0.resume() }
+        waiters = []
+    }
+}
+
+/// Invariant 4 for names: a first turn typed in initech parks in its harness start, the operator
+/// switches to umbrella, and the vocabulary is umbrella's by the time the turn reads it. The
+/// turn goes to initech's agent with no identifier note.
+@MainActor
+@Test func aTurnTypedBeforeAnOrgSwitchGetsNoneOfTheIncomingOrgsNames() async throws {
+    let named = Identifier(text: "transaction_read_only", kind: .column, origin: "umbrella db", source: .schema)
+    let source = FixedSource(kind: .schema, name: "fixed") { _ in [named] }
+    let store = VocabularyStore(live: [source], cached: [], report: { _, _ in })
+    let lookup = ParkedLookup()
+    let harnesses = Harnesses()
+    let model = await twoOrgWindow(harnesses, lookup: lookup, vocabulary: store)
+
+    let sending = Task { await model.send("what's in transaction read only") }
+    #expect(await waitUntilOrgSwitch { await lookup.parked > 0 })
+    await model.requestOrganizationSwitch("umbrella")
+    #expect(await store.current().count == 1, "the vocabulary now holds umbrella's names")
+    await lookup.release()
+    _ = await sending.value
+
+    let harness = try #require(harnesses.in(initechPlace).first)
+    #expect(harness.log.contains("send:what's in transaction read only"), "\(harness.log)")
+    #expect(!(model.agents[initechPlace]?.thoughts.contains { $0.label == "resolved" } ?? true))
+    await model.shutdown()
+}
+
+/// A provider switch asked in initech whose lookup parks while the operator switches to
+/// umbrella: initech's agent takes the new account, but neither umbrella's window provider nor
+/// its `active.json` (`ctx_set_provider`, through umbrella's `wakil-ctx` now) is written.
+@MainActor
+@Test func aProviderSwitchInterruptedByAnOrgSwitchWritesNothingOfTheIncomingOrg() async throws {
+    let lookup = ParkedLookup()
+    let model = await twoOrgWindow(lookup: lookup)
+    let writes = CallerLog()
+    await model.registryForTesting.register(Action(
+        name: "ctx_set_provider", description: "test double", kind: .control,
+        schema: .object(["type": .string("object")]),
+        handler: { _ in
+            await writes.record(ActionRegistry.dispatchCaller)
+            return .object([:])
+        }))
+    let switching = Task { await model.setProvider("work") }
+    #expect(await waitUntilOrgSwitch { await lookup.parked > 0 })
+    await model.requestOrganizationSwitch("umbrella")
+    await lookup.release()
+    await switching.value
+
+    #expect(model.providerId == "umbrella-main", "umbrella's provider is umbrella's")
+    #expect(await writes.entries.isEmpty, "no remembered default written into umbrella")
+    #expect(model.agents[initechPlace]?.providerId == "work", "initech's agent took the switch")
+    await model.shutdown()
+}
+
+/// The operator's db read in flight in initech stops at the switch — it went out on the
+/// window's client, which is about to answer for umbrella — while an initech agent's read, on
+/// its own pinned client, keeps running.
+@MainActor
+@Test func anOrgSwitchStopsTheOperatorsReadsInTheOrgLeftAndNoAgents() async throws {
+    let model = await twoOrgWindow()
+    await model.openPane(kind: "db")
+    await model.openPane(kind: "db")
+    let ids = model.layoutSnapshot.panes.map(\.id)
+    try #require(ids.count == 2)
+    let panes = model.panesForTesting
+    let cancelled = ClientLog()
+    let mine = try #require(await panes.beginDBRead(paneId: ids[0], at: Date()))
+    await panes.armDBRead(paneId: ids[0], token: mine) { cancelled.record("operator") }
+    let agents = try #require(await panes.beginDBRead(paneId: ids[1], at: Date(), byAgent: true))
+    await panes.armDBRead(paneId: ids[1], token: agents) { cancelled.record("agent") }
+
+    await model.requestOrganizationSwitch("umbrella")
+
+    #expect(cancelled.calls == ["operator"])
+    await model.requestOrganizationSwitch("initech")
+    #expect(await panes.dbReadRunning(paneId: ids[1]), "the agent's read is still in flight")
+    #expect(await !panes.dbReadRunning(paneId: ids[0]))
+}
+
+// MARK: - Final review fix wave
+
+/// Final review C1: an agent started in an organisation with no project is still pinned — by its
+/// organisation and session — so once the operator switches to umbrella its calls stay in
+/// initech: its `wakil-ctx` call and its capacity reading through the client pinned to its own
+/// place, its shell under `WAKIL_ORG=initech`, and its pane in its own canvas, not umbrella's.
+@MainActor
+@Test func anAgentWithNoProjectStaysInItsOwnOrgAfterASwitch() async throws {
+    let log = ClientLog()
+    let pool = PlaceClients(
+        start: { _, place in NamedCtx(name: "pinned:\(place.organization)", log: log) },
+        stop: { _ in })
+    let harnesses = Harnesses()
+    let model = await twoOrgWindow(harnesses, placeClients: pool, noProjectIn: "initech")
+    let bare = Place(organization: "initech", project: "", environment: "")
+    #expect(model.place == bare, "\(model.status)")
+    let routed = PlaceRoutedCaller(role: .context, window: NamedCtx(name: "window", log: log), pool: pool)
+    for name in ["ctx_probe", "capacity_record"] {
+        await model.registryForTesting.register(Action(
+            name: name, description: "routed test double", kind: .read,
+            schema: .object(["type": .string("object")]),
+            handler: { params in try await routed.callTool(name: name, arguments: params, timeout: 5) }))
+    }
+    #expect(await model.send("a job with no project"), "\(model.status)")
+    let agent = try #require(model.agents[bare])
+    let harness = try #require(harnesses.in(bare).first)
+    await model.requestOrganizationSwitch("umbrella")
+    #expect(model.place == umbrellaPlace, "\(model.status)")
+    let mark = log.calls.count
+
+    _ = try await model.registryForTesting.dispatch(
+        name: "ctx_probe", params: .object([:]), origin: .agent, caller: agent.caller, confirmation: nil)
+    harness.emit(.rateLimit(CapacityWindows(
+        fiveHour: CapacityWindow(percentLeft: 40, resetsAt: Date().addingTimeInterval(3_600)), sevenDay: nil)))
+    #expect(await waitUntilOrgSwitch { log.calls.dropFirst(mark).contains("pinned:initech:capacity_record") })
+    #expect(log.calls.dropFirst(mark).contains("pinned:initech:ctx_probe"))
+    #expect(!log.calls.dropFirst(mark).contains { $0.hasPrefix("window:") }, "\(log.calls.dropFirst(mark))")
+
+    let shell = await model.shellContext(forCaller: agent.caller)
+    #expect(shell.org == "initech", "its shell is started with WAKIL_ORG=initech")
+
+    let opened = try await model.registryForTesting.dispatch(
+        name: "pane_open", params: .object(["kind": .string("db"), "title": .string("initech's")]),
+        origin: .agent, caller: agent.caller, confirmation: nil)
+    guard case .object(let fields) = opened, case .string(let id)? = fields["id"] else {
+        Issue.record("pane_open answered \(opened)")
+        return
+    }
+    #expect(!model.layoutSnapshot.panes.contains { $0.id == id }, "umbrella's canvas is umbrella's")
+    let home = LayoutScope(organization: "initech", project: "", environment: "")
+    let homePanes = await model.layoutSnapshotForTesting(in: home).panes
+    #expect(homePanes.contains { $0.id == id }, "the pane is in initech's own canvas")
+    await model.shutdown()
+}
+
+/// Final review minor 5: a provider switch asked in initech resolves the account in initech,
+/// even when the operator has switched to umbrella by the time it reads the credentials.
+@MainActor
+@Test func aProviderSwitchResolvesItsCredentialsInTheOrgItWasAskedIn() async throws {
+    let lookups = LookupOrgRecorder()
+    let broker = ConfirmationBroker()
+    let model = await twoOrgWindow(lookups: lookups, confirmations: broker)
+    await broker.holdNextCurrentForTesting()
+    let switching = Task { await model.setProvider("work") }
+    #expect(await waitUntilOrgSwitch { await broker.holdingCurrentForTesting })
+    await model.requestOrganizationSwitch("umbrella")
+    #expect(model.organization == "umbrella", "\(model.status)")
+    let mark = lookups.orgs.count
+
+    await broker.releaseHeldCurrentForTesting()
+    await switching.value
+
+    #expect(Array(lookups.orgs.dropFirst(mark)) == ["initech"], "\(lookups.orgs) \(model.status)")
+    #expect(model.agents[initechPlace]?.providerId == "work", "\(model.status)")
+    await model.shutdown()
+}
+
+/// Final review minor 9: the operator's api send in flight in initech went out on the window's
+/// `wakil-http`, which the switch re-points at umbrella, so it stops at the switch, as the
+/// operator's db reads do. An initech agent's send, on its own pinned client, keeps running.
+@MainActor
+@Test func anOrgSwitchStopsTheOperatorsApiSendsInTheOrgLeftAndNoAgents() async throws {
+    let model = await twoOrgWindow()
+    await model.openPane(kind: "api")
+    await model.openPane(kind: "api")
+    let ids = model.layoutSnapshot.panes.map(\.id)
+    try #require(ids.count == 2)
+    let panes = model.panesForTesting
+    let cancelled = ClientLog()
+    let mine = try #require(await panes.beginApiSend(paneId: ids[0], method: "POST", at: Date()))
+    await panes.armApiSend(paneId: ids[0], token: mine) { cancelled.record("operator") }
+    let agents = try #require(
+        await panes.beginApiSend(paneId: ids[1], method: "POST", at: Date(), byAgent: true))
+    await panes.armApiSend(paneId: ids[1], token: agents) { cancelled.record("agent") }
+
+    await model.requestOrganizationSwitch("umbrella")
+
+    #expect(cancelled.calls == ["operator"])
+    await model.shutdown()
+}
+
+/// Ruling on the fix wave's concern 1: an organisation with no project shows its own canvas,
+/// `LayoutScope(org, "", "")` — the one its no-project agent works in — so that agent's pane is
+/// on screen while the operator is there.
+@MainActor
+@Test func aNoProjectAgentsPaneShowsOnScreenInItsOwnOrg() async throws {
+    let harnesses = Harnesses()
+    let model = await twoOrgWindow(harnesses, noProjectIn: "initech")
+    let bare = Place(organization: "initech", project: "", environment: "")
+    #expect(model.place == bare, "\(model.status)")
+    #expect(await model.send("a job with no project"), "\(model.status)")
+    let agent = try #require(model.agents[bare])
+
+    let opened = try await model.registryForTesting.dispatch(
+        name: "pane_open", params: .object(["kind": .string("db"), "title": .string("initech's")]),
+        origin: .agent, caller: agent.caller, confirmation: nil)
+    guard case .object(let fields) = opened, case .string(let id)? = fields["id"] else {
+        Issue.record("pane_open answered \(opened)")
+        return
+    }
+
+    #expect(await waitUntilOrgSwitch { model.layoutSnapshot.panes.contains { $0.id == id } },
+            "the agent's pane is drawn on the screen of its own org")
+    await model.shutdown()
+}
+
+/// Two organisations with no project each have their own canvas: what the operator opened in
+/// one is not drawn in the other, and is there on the return.
+@MainActor
+@Test func twoOrgsWithNoProjectDoNotShareACanvas() async throws {
+    let model = await twoOrgWindow(noProjectIn: "initech")
+    #expect(model.place == Place(organization: "initech", project: "", environment: ""), "\(model.status)")
+    await model.openPane(kind: "db")
+    let pane = try #require(model.layoutSnapshot.panes.first?.id, "\(model.status)")
+
+    await model.requestOrganizationSwitch("hollow")
+    #expect(model.organization == "hollow", "\(model.status)")
+    #expect(model.layoutSnapshot.panes.isEmpty, "hollow does not draw initech's canvas")
+
+    await model.requestOrganizationSwitch("initech")
+    #expect(model.layoutSnapshot.panes.map(\.id) == [pane], "initech's canvas is as it was left")
+    await model.shutdown()
+}
+
+/// Spec §1: arriving in another organisation shows its Landing when no work has begun there —
+/// even when the organisation left had a pane open. A dispatch finishing while the switch is
+/// between the incoming context and the incoming canvas (here `ctx_editor_settings`, which
+/// `refreshContext` makes in exactly that gap) wakes the observation pump, which read the
+/// outgoing canvas's panes as work begun in the incoming place and dropped its Landing.
+@MainActor
+@Test func arrivingFromAnOrgWithAPaneOpenStillShowsTheLanding() async throws {
+    let model = await twoOrgWindow()
+    let registry = model.registryForTesting
+    await registry.register(Action(
+        name: "test_noop", description: "test double", kind: .read,
+        schema: .object(["type": .string("object")]), handler: { _ in .object([:]) }))
+    await registry.register(Action(
+        name: "ctx_editor_settings", description: "test double", kind: .read,
+        schema: .object(["type": .string("object")]),
+        handler: { _ in
+            // Another dispatch lands meanwhile, and the pump gets its turn before this returns.
+            if ActionRegistry.dispatchCaller?.place.organization == "umbrella" {
+                _ = try? await registry.dispatch(
+                    name: "test_noop", params: .object([:]), origin: .ui,
+                    caller: DispatchCaller(place: umbrellaPlace, session: nil), confirmation: nil)
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+            return .object([:])
+        }))
+    await model.openPane(kind: "db")
+    #expect(model.sessionStarted, "initech has work on its canvas")
+
+    await model.requestOrganizationSwitch("umbrella")
+
+    #expect(model.place == umbrellaPlace, "\(model.status)")
+    #expect(model.layoutSnapshot.panes.isEmpty, "umbrella's canvas is empty")
+    #expect(!model.sessionStarted, "and so its Landing shows")
+    #expect(model.agents[umbrellaPlace]?.sessionStarted != true)
 }

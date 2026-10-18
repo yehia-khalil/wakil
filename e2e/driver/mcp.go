@@ -14,9 +14,9 @@ import (
 // *what does the app believe*, and the second way to drive it.
 //
 // **The harness does not build an observation surface; it connects to one.**
-// `WindowSession.start` already opens an `MCPSocketServer` with
-// `PaneSnapshotJSON` behind it, and that is Invariant 3's channel — the same
-// one a real agent speaks. Reading through it means a check sees exactly what
+// The window opens an `MCPSocketServer` with `PaneSnapshotJSON` behind it for
+// each place it shows, and that is Invariant 3's channel — the same one a real
+// agent in that place speaks (ScreenChannel picks which). Reading through it means a check sees exactly what
 // the agent would, rather than a second rendering of the same state.
 //
 // **The division of labour, settled by the probe.** The accessibility tree
@@ -34,20 +34,8 @@ type MCP struct {
 	timeout time.Duration
 }
 
-// DialMCP connects to the socket a known pid holds.
-//
-// The pid is the runner's own, established by difference at launch — never a
-// bundle id and never a directory scan. See SocketFor.
-func DialMCP(pid int, timeout time.Duration) (*MCP, error) {
-	path, err := SocketFor(pid)
-	if err != nil {
-		return nil, err
-	}
-	return DialMCPPath(path, timeout)
-}
-
-// DialMCPPath connects to a socket by path. Separate from DialMCP so a test
-// can drive a stand-in server without a window.
+// DialMCPPath connects to a socket by path: one ScreenChannel chose, or a
+// test's stand-in server.
 func DialMCPPath(path string, timeout time.Duration) (*MCP, error) {
 	if timeout == 0 {
 		timeout = 10 * time.Second
@@ -67,23 +55,18 @@ func (m *MCP) Close() error {
 	return m.conn.Close()
 }
 
-// AwaitMCP waits for pid to open its socket and connects.
+// AwaitMCP waits for pid to open the socket of the place it shows, and
+// returns the channel pinned to whatever place it shows from then on.
 //
 // **A predicate with a deadline, never a fixed sleep.** The socket appears
-// when the window starts its session, which is not at launch and not at a
-// time anything here can know.
-func AwaitMCP(pid int, within time.Duration) (*MCP, error) {
-	deadline := time.Now().Add(within)
-	var last error
-	for time.Now().Before(deadline) {
-		client, err := DialMCP(pid, 0)
-		if err == nil {
-			return client, nil
-		}
-		last = err
-		time.Sleep(250 * time.Millisecond)
+// once the window has read its context and shown its place, which is not at
+// launch and not at a time anything here can know.
+func AwaitMCP(pid int, within time.Duration) (*ScreenChannel, error) {
+	channel := NewScreenChannel(pid, within, func() ([]string, error) { return SocketsFor(pid) })
+	if _, err := channel.Socket(); err != nil {
+		return nil, fmt.Errorf("pid %d opened no usable MCP socket within %s: %w", pid, within, err)
 	}
-	return nil, fmt.Errorf("pid %d opened no usable MCP socket within %s: %w", pid, within, last)
+	return channel, nil
 }
 
 type rpcRequest struct {
@@ -150,28 +133,58 @@ func (m *MCP) Do(method string, params interface{}) (json.RawMessage, error) {
 	return reply.Result, nil
 }
 
-// Initialize performs the MCP handshake and returns the server's own name.
-func (m *MCP) Initialize() (string, error) {
+// initializeReply is the part of `initialize`'s result the harness reads.
+type initializeReply struct {
+	ServerInfo struct {
+		Name string `json:"name"`
+	} `json:"serverInfo"`
+	Meta struct {
+		Place  *Place `json:"wakil/place"`
+		Screen *Place `json:"wakil/screen"`
+	} `json:"_meta"`
+}
+
+func (m *MCP) initialize() (initializeReply, error) {
+	var payload initializeReply
 	result, err := m.Do("initialize", map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]interface{}{},
 		"clientInfo":      map[string]interface{}{"name": "wakil-e2e", "version": "1"},
 	})
 	if err != nil {
-		return "", err
-	}
-	var payload struct {
-		ServerInfo struct {
-			Name string `json:"name"`
-		} `json:"serverInfo"`
+		return payload, err
 	}
 	if err := json.Unmarshal(result, &payload); err != nil {
-		return "", fmt.Errorf("initialize: %w", err)
+		return payload, fmt.Errorf("initialize: %w", err)
 	}
 	if payload.ServerInfo.Name == "" {
-		return "", fmt.Errorf("initialize: the server named itself nothing, so this is not Wakil's socket")
+		return payload, fmt.Errorf("initialize: the server named itself nothing, so this is not Wakil's socket")
 	}
-	return payload.ServerInfo.Name, nil
+	return payload, nil
+}
+
+// Initialize performs the MCP handshake and returns the server's own name.
+func (m *MCP) Initialize() (string, error) {
+	payload, err := m.initialize()
+	return payload.ServerInfo.Name, err
+}
+
+// Places asks the socket, through its own `initialize`, which place every
+// call on it is made for and which place the window shows as it answers
+// (`initializeMeta` in MCPServer.swift). screen is nil when the window did not
+// say. The server keeps no handshake state, so this can be asked again on a
+// connection already in use.
+func (m *MCP) Places() (place Place, screen *Place, err error) {
+	payload, err := m.initialize()
+	if err != nil {
+		return Place{}, nil, err
+	}
+	if payload.Meta.Place == nil {
+		return Place{}, nil, fmt.Errorf(
+			"initialize: no _meta[\"wakil/place\"], so this socket cannot say whose calls it " +
+				"makes — a Wakil built before the shown-place sockets")
+	}
+	return *payload.Meta.Place, payload.Meta.Screen, nil
 }
 
 // Tool is one entry of the action denominator: what the window can be asked

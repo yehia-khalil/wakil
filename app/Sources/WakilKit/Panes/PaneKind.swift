@@ -31,17 +31,19 @@ public protocol PaneKind: SendableMetatype {
     /// **Every key of the kind is always present**, including when false, empty or null, unless
     /// the kind's own doc says otherwise.
     static func readPane(_ snapshot: Snapshot, in store: isolated PaneStore) -> [String: JSONValue]
-    /// `clearAllScopes()` (an org switch) calls this on the kind's store-wide state.
-    static func sharedAfterClearingAllScopes(_ shared: Shared) -> Shared
     /// `switchScope(to:)` calls this on the kind's store-wide state.
     static func sharedAfterSwitchingScope(_ shared: Shared) -> Shared
+    /// `switchScope(to:adoptingFrom:)` calls this: `outgoing`'s panes are now `incoming`'s.
+    static func sharedAfterAdoptingScope(_ shared: Shared, from outgoing: LayoutScope, to incoming: LayoutScope) -> Shared
 }
 
 extension PaneKind {
     public static var rerunsSubjectOnRestore: Bool { false }
     public static func failure(of contents: Contents) -> String? { nil }
-    public static func sharedAfterClearingAllScopes(_ shared: Shared) -> Shared { emptyShared }
     public static func sharedAfterSwitchingScope(_ shared: Shared) -> Shared { shared }
+    public static func sharedAfterAdoptingScope(
+        _ shared: Shared, from outgoing: LayoutScope, to incoming: LayoutScope
+    ) -> Shared { shared }
 }
 
 extension PaneKind where Shared == Void {

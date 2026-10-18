@@ -73,11 +73,6 @@ public struct EditorAutosave: Sendable {
         active[pane] = nil
     }
 
-    public mutating func reset() {
-        edits = [:]
-        active = [:]
-    }
-
     /// The tabs to save when a pane loses focus, or Wakil stops being the active app.
     public static func focusLeft(_ snapshot: EditorSnapshot, mode: EditorAutosaveMode) -> [String] {
         guard mode == .focus else { return [] }

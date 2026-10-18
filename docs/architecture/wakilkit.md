@@ -155,7 +155,8 @@ alone.
 - `ToolCaller.swift` — `ToolCaller`, the one-method port (`callTool`) every MCP client is used
   through.
 - `EnvironmentName.swift` (`EnvironmentProduction`, `isProductionEnvironment`),
-  `EnvironmentListing.swift`, `LayoutScope.swift` (`LayoutScope`), `PaneContents.swift` (`PaneCell`,
+  `EnvironmentListing.swift`, `LayoutScope.swift` (`LayoutScope`; `ScopeRouting.home`, the task-local scope a dispatch writes
+  into, read by `LayoutStore` and `PaneStore` in place of the on-screen one), `PaneContents.swift` (`PaneCell`,
   `PaneColumn`, `PaneSort`, `sortedRows`, `PaneSelection`), `WakilShimServerName.swift`
   (`wakilShimServerName = "wakil"`).
 
@@ -315,9 +316,10 @@ Tests: `IdentifierTests`, `IdentifierResolverTests`, `IdentifierSourcesTests`,
 - `Pane.swift` — `Pane`, `PaneFrame`, `PaneDensity`; `Pane.kinds` (`db`, `terminal`, `api`,
   `settings`, `editor`: the kinds `pane_open` accepts and a loaded layout may hold), `Pane.settingsKind`.
   Which `PaneKind` holds each kind's contents is `App/PaneKinds.swift`'s, not this file's.
-- `LayoutStore.swift` — `LayoutStore` (actor): every visited `LayoutScope`'s arrangement;
-  `LayoutSnapshot`; `layoutMigratingGitPanes` (a saved Git pane becomes an editor pane on Changes,
-  3b-iii) and `layoutDroppingUnknownPaneKinds`.
+- `LayoutStore.swift` — `LayoutStore` (actor): every visited `LayoutScope`'s arrangement, the
+  current one being the caller's `ScopeRouting.home` or else the one on screen (a focus off
+  screen raises no focus request); `LayoutSnapshot`; `layoutMigratingGitPanes` (a saved Git pane
+  becomes an editor pane on Changes, 3b-iii) and `layoutDroppingUnknownPaneKinds`.
 - `LayoutPersistence.swift` — `LayoutPersistence`: reads and writes a scope's arrangement on disk
   (see [state.md](state.md)).
 - `LayoutActions.swift` — `registerLayoutActions` (`pane_open`, `pane_close`, `pane_move`,
@@ -362,10 +364,10 @@ Terminal, Api and Editor keep their conformance and store methods in their own f
   kind's store methods are written with is internal: `contents`, `setContents` (refuses a pane
   holding another kind), `holds`, `kindState` / `setKindState`, `scope(holding:paneId:where:)`,
   `inScope`, `paneKeys`, `activeScope`, `holdsContents`. Public and kind-free:
-  `snapshot(paneId:kind:)`, `readPane(paneId:kind:)`, `paneIds`, `switchScope`, `clearAllScopes`,
+  `snapshot(paneId:kind:)`, `readPane(paneId:kind:)`, `paneIds`, `switchScope`,
   `drop`, `onDrop`. The db pane's methods are here too (`setRows`, `setSelection`, `setFailure`,
   `reorder`, `setScrollTarget`, `pageable`, `sort`, `editable`, …), with the db read flight
-  (`beginDBRead`, `armDBRead`, `cancelDBRead`, `finishDBRead`, `cancelAllDBReads`): one read per
+  (`beginDBRead`, `armDBRead`, `cancelDBRead`, `finishDBRead`): one read per
   pane, cancel ends it at once and keeps the rows, and a reply for a project switched away is dropped.
 - `PaneSnapshot.swift` — `PaneSnapshot` (`kind`, `failure`, and `contents`, the kind's own
   snapshot), `PaneSnapshot.dataSurface`, `DataSurfaceSnapshot`, `PaneEditableSummary`.
@@ -400,7 +402,9 @@ Tests: `SQLTokenizerTests`, `SQLStyleTests`, `SQLFormatTests`, `QueryLineKeysTes
 
 - `ActionRegistry.swift` — `ActionRegistry` (actor): `register`, `all()`, and `dispatch(name:params:
   origin:environment:confirmation:)`, which asks `writeGate`, runs the handler and journals every
-  outcome; `ActionError` (`unknown`, `needsConfirmation`, `blockedInProduction`).
+  outcome; `setProductionLookup` and `setScopeLookup` (an agent caller's own flags and scope;
+  the scope is bound around the handler as `ScopeRouting.home`); `setScreenScope` (every other
+  dispatch is bound to the scope on screen when it began, so writes after an await land there); `ActionError` (`unknown`, `needsConfirmation`, `blockedInProduction`).
 - `StandardActions.swift` — `registerStandardActions` (the `ctx_*`, `db_*` and `session_*`
   actions, and `pane_sort`), `StandardActionError`, `readConfigTree`. `db_cancel` ends the pane's
   read; every pane-bound db read runs as a flight through `dbReadInFlight`.
@@ -429,7 +433,8 @@ Tests: `ListeningMachineTests`, `ScriptedSpeechProviderTests`, `SpeechRegistryTe
 ### Terminal/ — the terminal pane's logic
 
 - `TerminalStore.swift` — `TerminalStore` (actor): every live PTY, keyed by pane id, and only the
-  live resource; `shutdownAll(runStream:)`.
+  live resource; each shell is keyed by the scope it was opened in and its pane id
+  (`TerminalKey`; pane ids repeat across loaded scopes) and publishes into that scope; `shutdownAll(runStream:)`.
 - `TerminalSession.swift` — `TerminalSession`, one shell.
 - `TerminalPaneKind.swift` — `TerminalContents` (one pane's state), `TerminalPaneKind` (the
   `PaneKind` conformance, name `terminal`, and what `read_pane` returns for a terminal pane),
@@ -521,7 +526,7 @@ some kind and names no kind outside `Panes/` (the data surface and settings kind
   for a pane holding nothing or another kind) and `setContents(K.self, paneId, _)` (refuses a pane
   holding another kind). Store-wide state is `kindState(K.self)` / `setKindState(K.self, _)`,
   created on first touch so that a scope change reaches state that has only been read.
-  `switchScope(to:)` and `clearAllScopes()` call each touched kind's hook.
+  `switchScope(to:)` and `switchScope(to:adoptingFrom:)` call each touched kind's hook.
 - **The kinds list** — `App/PaneKinds.swift`: `PaneKinds.standard` (`DataSurfacePaneKind`,
   `TerminalPaneKind`, `ApiPaneKind`, `SettingsPaneKind`, `EditorPaneKind`), `kind(named:)` and
   `is(_:_:)`. `WakilWiring.build` passes it to `PaneStore(kinds:)`; the store uses it only for a

@@ -117,7 +117,34 @@ public actor ActionRegistry {
         productionLookup.set(lookup)
     }
 
-    private nonisolated let productionLookup = ProductionLookupBox()
+    /// The scope a caller's dispatch reads and writes (background agents, 3 of 4): an agent
+    /// session's own canvas, which need not be the one on screen. Bound around the handler as
+    /// `ScopeRouting.home`. Nil from the lookup — or no lookup, as in `--dispatch` and in tests
+    /// with no window — means the on-screen scope, which is every operator dispatch.
+    ///
+    /// Installed by `WindowModel`, nonisolated for `setProductionLookup`'s reason.
+    public nonisolated func setScopeLookup(
+        _ lookup: @escaping @Sendable (DispatchCaller) async -> LayoutScope?
+    ) {
+        scopeLookup.set(lookup)
+    }
+
+    /// The scope on screen, read at the start of every dispatch the scope lookup does not home
+    /// elsewhere: the operator's own, `--dispatch`'s, an incomplete place's. Bound as
+    /// `ScopeRouting.home` too, so a handler's writes after an await land in the canvas it
+    /// began in however the screen moves meanwhile (background agents 3 of 4). Unset — a
+    /// registry with no pane store — binds nothing, and the stores follow the screen.
+    ///
+    /// Installed by whoever holds the pane store the screen is read from:
+    /// `registerStandardActions` and `WindowModel`. Nonisolated for `setProductionLookup`'s
+    /// reason.
+    public nonisolated func setScreenScope(_ screen: @escaping @Sendable () async -> LayoutScope) {
+        screenScope.set { _ in await screen() }
+    }
+
+    private nonisolated let productionLookup = CallerLookupBox<EnvironmentProduction>()
+    private nonisolated let scopeLookup = CallerLookupBox<LayoutScope>()
+    private nonisolated let screenScope = CallerLookupBox<LayoutScope>()
     private let journalDirectory: URL
     private let sessionId: String
     private let encoder: JSONEncoder
@@ -241,9 +268,15 @@ public actor ActionRegistry {
         do {
             // Bound here and nowhere else: `dispatch` is the one place
             // that knows who asked. See `ActionRegistry.dispatchOrigin`.
+            // The caller's own canvas, else the one on screen now — never whatever the screen
+            // shows when the handler's later writes land.
+            var home = await scopeLookup.current()?(caller)
+            if home == nil { home = await screenScope.current()?(caller) }
             let result = try await ActionRegistry.$dispatchOrigin.withValue(origin) {
                 try await ActionRegistry.$dispatchCaller.withValue(caller) {
-                    try await action.handler(params)
+                    try await ScopeRouting.$home.withValue(home) {
+                        try await action.handler(params)
+                    }
                 }
             }
             try appendJournalEntry(action: name, params: params, origin: origin,
@@ -670,10 +703,10 @@ private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
-/// `ActionRegistry.setProductionLookup`'s slot: the same lock-and-closure box as
-/// `ActiveShellContext`, so a synchronous initialiser can install it.
-final class ProductionLookupBox: @unchecked Sendable {
-    typealias Lookup = @Sendable (DispatchCaller) async -> EnvironmentProduction?
+/// `ActionRegistry.setProductionLookup`'s and `setScopeLookup`'s slot: the same lock-and-closure
+/// box as `ActiveShellContext`, so a synchronous initialiser can install it.
+final class CallerLookupBox<Value: Sendable>: @unchecked Sendable {
+    typealias Lookup = @Sendable (DispatchCaller) async -> Value?
 
     private let lock = NSLock()
     private var lookup: Lookup?

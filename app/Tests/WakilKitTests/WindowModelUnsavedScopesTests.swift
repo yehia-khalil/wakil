@@ -2,8 +2,9 @@ import Foundation
 import Testing
 @testable import WakilKit
 
-/// Final review I3: a project or conversation switch keeps each scope's dirty editor tabs in memory,
-/// so quitting or switching organisation must ask about them too — not only the scope on screen.
+/// Final review I3: every switch keeps each scope's dirty editor tabs in memory, so quitting must
+/// ask about them too — not only the scope on screen. An organisation switch, which keeps them as
+/// well (background agents 3 of 4), asks nothing.
 /// Save writes hidden file tabs in place; a hidden scratch tab (or another project's file) is listed
 /// with Don't Save and Cancel only, and the window never jumps to its scope (Rule 6).
 @Suite @MainActor struct WindowModelUnsavedScopesTests {
@@ -26,10 +27,11 @@ import Testing
         let model = WindowModel(
             registry: registry, panes: panes, layout: layout,
             context: ContextStore(client: GitRootsContext(roots: ["/p/api", "/p/portal"])),
-            harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
+            harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(),
             rootPath: "/tmp", providerId: "",
             lookupFactory: { _ in EditorWindowLookup() },
-            rootWatcher: nil, editorRootWatcher: RecordingRootWatcher(), fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(files: files), placeClients: nil)
+            rootWatcher: nil, editorRootWatcher: RecordingRootWatcher(), fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(files: files), placeClients: nil,
+            agentSocketFactory: { _, _ in NoAgentSocket() })
         await registerEditorActions(
             into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
             gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })
@@ -58,7 +60,7 @@ import Testing
         await w.model.editorBufferDidChange(pane: pane, tab: 0, text: "b", basis: 0)
         await w.model.editorBufferDidChange(pane: pane, tab: 1, text: "draft", basis: 0)
         let home = await w.panes.activeScope
-        await leave(w, for: LayoutScope(organization: home.organization, project: home.project, lineageRoot: "conv-2"))
+        await leave(w, for: LayoutScope(organization: home.organization, project: home.project, environment: home.environment, lineageRoot: "conv-2"))
         #expect(w.model.layoutSnapshot.panes.isEmpty)
         return home
     }
@@ -101,7 +103,7 @@ import Testing
         let pane = try #require(w.model.layoutSnapshot.focusedId)
         await w.model.editorBufferDidChange(pane: pane, tab: 0, text: "draft", basis: 0)
         let home = await w.panes.activeScope
-        await leave(w, for: LayoutScope(organization: home.organization, project: "billing"))
+        await leave(w, for: LayoutScope(organization: home.organization, project: "billing", environment: home.environment))
         #expect(await !w.model.requestQuit())
         #expect(w.model.unsavedPrompt == UnsavedPrompt(intent: .quit, files: ["Untitled-1 (\(home.project))"],
                                                        canSave: false))
@@ -112,28 +114,45 @@ import Testing
     @Test func anotherProjectsFileIsNamedByItsProjectAndSaveCannotReachIt() async throws {
         let w = await window()
         let home = await w.panes.activeScope
-        await w.panes.switchScope(to: LayoutScope(organization: home.organization, project: "billing"))
+        await w.panes.switchScope(to: LayoutScope(organization: home.organization, project: "billing", environment: home.environment))
         await w.panes.updateEditor(paneId: "editor-9", create: true) { s in
             var t = EditorTab.file(path: "/q/billing/confirm.go", root: "/q/billing", text: "x", mtime: 1, language: "go")
             t.text = "y"
             s.tabs = [t]; s.active = 0
         }
         await w.panes.switchScope(to: home)
-        await w.model.requestOrganizationSwitch("beta")
+        #expect(await !w.model.requestQuit())
         #expect(w.model.unsavedPrompt == UnsavedPrompt(
-            intent: .switchOrganisation("beta"), files: ["confirm.go (billing)"], canSave: false))
+            intent: .quit, files: ["confirm.go (billing)"], canSave: false))
         await w.model.resolveUnsaved(.cancel)
         #expect(await w.files.text(of: "/q/billing/confirm.go") == nil)
     }
 
-    @Test func anOrgSwitchListsHiddenTabsAndDontSaveDropsThem() async throws {
+    /// Every scope survives an org switch, so a quit lists a tab left in another organisation —
+    /// named by that organisation, since its project's name may be this one's too.
+    @Test func quitNamesATabLeftInAnotherOrganisationByItsOrganisation() async throws {
+        let w = await window()
+        let home = await w.panes.activeScope
+        await w.panes.switchScope(to: LayoutScope(organization: "umbrella", project: home.project, environment: home.environment))
+        await w.panes.updateEditor(paneId: "editor-9", create: true) { s in
+            var t = EditorTab.file(path: "/u/p/confirm.go", root: "/u/p", text: "x", mtime: 1, language: "go")
+            t.text = "y"
+            s.tabs = [t]; s.active = 0
+        }
+        await w.panes.switchScope(to: home)
+        #expect(await !w.model.requestQuit())
+        #expect(w.model.unsavedPrompt == UnsavedPrompt(
+            intent: .quit, files: ["confirm.go (umbrella/\(home.project))"], canSave: false))
+    }
+
+    /// R2: nothing is dropped by an org switch, so nothing is asked, and the hidden tabs are
+    /// still dirty afterwards.
+    @Test func anOrgSwitchAsksNothingAndKeepsHiddenTabs() async throws {
         let w = await window()
         _ = try await dirtyTabsLeftBehind(w)
         await w.model.requestOrganizationSwitch("beta")
-        #expect(w.model.unsavedPrompt?.files == ["a.go (another conversation)", "Untitled-1 (another conversation)"])
-        await w.model.resolveUnsaved(.dontSave)
         #expect(w.model.unsavedPrompt == nil)
-        #expect(await w.panes.editorDirtyTabsInHiddenScopes().isEmpty)
+        #expect(await w.panes.editorDirtyTabsInHiddenScopes().map(\.title) == ["a.go", "Untitled-1"])
         #expect(await w.files.text(of: "/p/api/a.go") == "a")
     }
 }

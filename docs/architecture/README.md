@@ -58,7 +58,7 @@ flowchart LR
 - **The shim.** The `claude` CLI can only spawn stdio MCP servers, and the app is already running.
   So the agent's MCP config (`agentMCPConfigJSON`) names the app's own executable with
   `--mcp-shim --socket <path>` as the server called `wakil`. `runShim` (`MCP/Shim.swift`) copies
-  bytes between its stdio and the window's unix socket and parses nothing. `MCPSocketServer`
+  bytes between its stdio and its agent session's own unix socket and parses nothing. `MCPSocketServer`
   (`MCP/MCPServer.swift`) answers each frame on the socket with `handle`.
 - **The agent's tools are the registry's actions.** `tools/list` on the socket is the registry's
   action set, plus three hand-written tools answered in the window: `read_pane` (what a pane shows,

@@ -17,20 +17,19 @@ import SwiftUI
 /// destructive, so this is edged in the ordinary half-pixel luminous slab
 /// border instead (`OrgPlane.dc.html`'s own comment).
 ///
-/// **Six states, all local `@State`** (brief §2, `OrgStates.dc.html`):
-/// Choosing, Creating, Adopting, Switching, Queued, Error. The state machine
+/// **Five states, all local `@State`** (brief §2, `OrgStates.dc.html`):
+/// Choosing, Creating, Adopting, Switching, Error. The state machine
 /// lives here, in the view, because almost none of it is state `WakilKit`
-/// owns — except `switching` and `queuedOrgSwitch` (Tasks 10/11), which
-/// genuinely are window state (spec §4.2's "dismissing this plane does not
-/// cancel it"), and are read directly rather than mirrored, so a plane
-/// closed and reopened mid-switch still shows the truth (`effectivePhase`
-/// below).
+/// owns — except `switching` (Task 10), which genuinely is window state, and
+/// is read directly rather than mirrored, so a plane closed and reopened
+/// mid-switch still shows the truth (`effectivePhase` below). There is no
+/// Queued state any more (background agents 3 of 4): a switch never waits
+/// on a turn, because it stops nothing.
 ///
 /// **Invariant 2.** Nothing here mutates organisation/provider/account state
 /// except by calling a `WindowModel` method that itself dispatches through
 /// the registry (`listOrgs`, `createOrg`, `listMachineProviders`,
-/// `adoptProvider`, `requestOrganizationSwitch`, `cancelQueuedSwitch`,
-/// `stopTurnAndSwitchNow`) — the same path the command palette dispatches
+/// `adoptProvider`, `requestOrganizationSwitch`) — the same path the command palette dispatches
 /// every other control through. `phase`/`switchTarget`/the form fields below
 /// are presentation state only, the same status the open palette (`palette`)
 /// has in `WakilWindow`.
@@ -42,15 +41,13 @@ struct OrgPlane: View {
         case creating
         case adopting(org: String)
         case switching(target: String)
-        case queued(target: String)
         case error(target: String, reason: String)
     }
 
     @State private var phase: Phase = .choosing
     /// The org this plane most recently asked `requestOrganizationSwitch`
-    /// for. Not the same thing as `model.queuedOrgSwitch` — this is set the
-    /// instant the operator picks a row, before the model has said whether
-    /// it ran immediately, queued, or refused outright.
+    /// for — set the instant the operator picks a row, before the model has
+    /// said whether it switched or refused.
     @State private var switchTarget: String?
     @State private var orgs: [WindowModel.OrgListing] = []
     @State private var machineProviders: [WindowModel.MachineProviderListing] = []
@@ -96,9 +93,6 @@ struct OrgPlane: View {
         if model.switching {
             return .switching(target: switchTarget ?? "")
         }
-        if let queued = model.queuedOrgSwitch {
-            return .queued(target: queued)
-        }
         return phase
     }
 
@@ -114,7 +108,6 @@ struct OrgPlane: View {
         case .creating: return "creating"
         case .adopting(let org): return "adopting:\(org)"
         case .switching(let target): return "switching:\(target)"
-        case .queued(let target): return "queued:\(target)"
         case .error(let target, _): return "error:\(target)"
         }
     }
@@ -184,46 +177,6 @@ struct OrgPlane: View {
                 break
             }
         }
-        // Resolves a direct (non-queued) switch's guard refusals — the
-        // early guards in `setOrganization` (already switching, same org,
-        // a confirmation pending) return before `switching` is ever set
-        // `true`, so no transition of it exists for the handler below to
-        // catch. `beginSwitch` checks for that itself, right after
-        // `requestOrganizationSwitch` returns.
-        //
-        // This handler is what resolves the OTHER case that check cannot:
-        // a switch that QUEUED. `beginSwitch`'s own `await` returns the
-        // moment the queue is written — long before `fireQueuedSwitchIfReady`
-        // (driven by a turn ending, elsewhere in the window) actually calls
-        // `setOrganization` for it. `switching` flipping `true` then `false`
-        // at that later moment is the only signal this plane gets, so it is
-        // read here, directly, exactly as ruling T14-R2 requires.
-        .onChange(of: model.switching) { old, new in
-            guard old, !new else { return }
-            guard let target = switchTarget else { return }
-            resolveSwitch(target: target)
-        }
-        // **Task 14, fix round 1 (Important 2).** This used to infer
-        // "cancelled" from `queuedOrgSwitch` going `nil` while `switching`
-        // was still `false` — but `fireQueuedSwitchIfReady()` clears
-        // `queuedOrgSwitch` synchronously and only sets `switching = true`
-        // LATER, after a further suspension inside `setOrganization`, so
-        // that inference could not tell a genuine cancel from a fire that
-        // simply had not reached `switching = true` yet. Landing on the
-        // wrong side of that race silently dropped a switch's outcome: the
-        // plane would reset to Choosing believing the switch was
-        // cancelled, then never notice `switching` flip true→false for the
-        // switch that was actually running — on failure, with nothing on
-        // screen saying why.
-        //
-        // `queuedSwitchCancellationCount` closes the race by being an
-        // unambiguous signal instead of an inference: `cancelQueuedSwitch()`
-        // is the only thing that ever bumps it, so watching it alone can
-        // never be confused with a fire.
-        .onChange(of: model.queuedSwitchCancellationCount) { _, _ in
-            switchTarget = nil
-            phase = .choosing
-        }
         // Kept alongside the `.cancelAction` button above rather than
         // replaced by it: this is the path that fires when the plane's own
         // content DOES hold focus, and the two agree on both the guard and
@@ -245,8 +198,6 @@ struct OrgPlane: View {
             adoptingPlane(org: org)
         case .switching(let target):
             switchingPlane(target: target)
-        case .queued(let target):
-            queuedPlane(target: target)
         case .error(let target, let reason):
             errorPlane(target: target, reason: reason)
         }
@@ -275,26 +226,14 @@ struct OrgPlane: View {
         }
     }
 
-    /// Reads what actually happened to a switch to `target`, once there is
-    /// something to read — called both right after `requestOrganizationSwitch`
-    /// returns (covers an immediate run or an immediate guard refusal) and
-    /// from the `switching` `onChange` handler above (covers a queued switch
-    /// firing later). Safe to call more than once for the same outcome: every
-    /// branch below is idempotent.
+    /// Reads what happened to a switch to `target`, once
+    /// `requestOrganizationSwitch` has returned: it switched, or an early
+    /// guard refused it or the restart failed. Nothing is asked first and
+    /// nothing queues, so the switch's own return is the whole outcome.
     private func resolveSwitch(target: String) {
-        // Idempotency guard: both `beginSwitch`'s own continuation and the
-        // `switching` `onChange` handler can call this for the same
-        // outcome. Whichever runs first clears `switchTarget`; the second
-        // then finds it already `nil` (or naming a different switch
-        // entirely) and does nothing.
+        // A later switch from this plane has taken over: its own call resolves it.
         guard switchTarget == target else { return }
-        if model.unsavedPrompt?.intent == .switchOrganisation(target) {
-            // 3b-i Task 9: unsaved editor tabs asked first. The window draws that prompt on the
-            // canvas, so the plane steps aside; its Save or Don't Save runs the switch.
-            switchTarget = nil
-            phase = .choosing
-            model.showOrgPlane = false
-        } else if model.organization == target {
+        if model.organization == target {
             switchTarget = nil
             phase = .choosing
             // T14-R1: a SUCCESSFUL switch dismisses the plane. Nothing in
@@ -302,14 +241,10 @@ struct OrgPlane: View {
             // honest reading is that this plane's job was to get the
             // window to the new organisation, and it just did.
             model.showOrgPlane = false
-        } else if model.queuedOrgSwitch == target {
-            // Queued; `effectivePhase` already reflects it and there is
-            // nothing more to resolve yet.
-            return
         } else if !model.switching {
-            // Neither running nor queued any more, and not the target:
-            // refused (an early guard) or failed (`orgSwitcher` came back
-            // with diagnostics). Either way `status` names it.
+            // Not running any more, and not the target: refused (an early
+            // guard) or failed (`orgSwitcher` came back with diagnostics).
+            // Either way `status` names it.
             hasAttemptedSwitchThisSession = true
             phase = .error(target: target, reason: model.status)
             switchTarget = nil
@@ -665,7 +600,7 @@ struct OrgPlane: View {
         }
     }
 
-    // MARK: - Switching / Queued / Error
+    // MARK: - Switching / Error
 
     private func switchingPlane(target: String) -> some View {
         plane {
@@ -677,34 +612,6 @@ struct OrgPlane: View {
                 ProgressView()
                     .progressViewStyle(.linear)
                     .tint(accent)
-            }
-        }
-    }
-
-    private func queuedPlane(target: String) -> some View {
-        plane {
-            VStack(alignment: .leading, spacing: 18) {
-                microLabel("Switch queued")
-                Text("Switching to \(target) when this turn finishes")
-                    .font(.system(size: 15))
-                    .foregroundStyle(coolWhite)
-
-                HStack(spacing: 10) {
-                    Spacer()
-                    quietButton("Cancel", id: "org.queued.cancel") {
-                        model.cancelQueuedSwitch()
-                        switchTarget = nil
-                        phase = .choosing
-                    }
-                    button("Stop the turn and switch now", id: "org.queued.stopAndSwitch") {
-                        Task {
-                            await model.stopTurnAndSwitchNow()
-                            resolveSwitch(target: target)
-                        }
-                    }
-                }
-
-                microLabel("A queued switch is window state \u{00b7} dismissing this plane does not cancel it")
             }
         }
     }

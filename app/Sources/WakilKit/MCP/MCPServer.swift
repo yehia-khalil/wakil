@@ -190,7 +190,7 @@ public struct MCPSurface: Sendable {
 /// requirement rather than a convenience.** The caller's place (and so its
 /// environment) is what `writeGate` judges, and it changes while this server is up —
 /// `ctx_set_environment`, or an operator pressing ⌘K, moves it. A gated
-/// proposal parks for up to `ConfirmationBroker`'s timeout (120s) before it
+/// proposal parks until the operator answers it (an agent's never expires) before it
 /// is re-dispatched, so a value captured when the request was *read* can
 /// be stale by the time the gate re-reads it. The reachable direction is
 /// the dangerous one: a proposal can only park when the environment is
@@ -200,10 +200,15 @@ public struct MCPSurface: Sendable {
 /// path agree with `WindowModel.parkAndAwait`, which reads its `environment`
 /// property afresh at re-dispatch — the spec's "one confirmation mechanism,
 /// not two" has to mean the two agree about the one input the gate reads.
+///
+/// **`screen` is the place the window shows**, read only by `initialize`, which reports it beside
+/// the caller's own place under `_meta` (`initializeMeta`). Nil where nothing has a screen — a
+/// test's server — and the reply says `null`.
 public func handle(
     _ message: JSONRPCMessage,
     surface: MCPSurface,
-    caller: @Sendable () async -> DispatchCaller
+    caller: @Sendable () async -> DispatchCaller,
+    screen: (@Sendable () async -> Place?)? = nil
 ) async -> JSONRPCMessage? {
     guard let id = message.id else {
         return nil
@@ -226,6 +231,7 @@ public func handle(
                 "name": .string("wakil"),
                 "version": .string("2a"),
             ]),
+            "_meta": initializeMeta(place: await caller().place, screen: await screen?()),
         ]))
 
     case "tools/list":
@@ -244,6 +250,29 @@ public func handle(
         return JSONRPCMessage(id: id, error: JSONRPCError(
             code: -32601, message: "Method not found: \(method)"))
     }
+}
+
+/// What `initialize` says about this socket beyond the protocol: `wakil/place`, the place every
+/// call on it is made for — an agent session's socket is pinned to its own place for life — and
+/// `wakil/screen`, the place the window shows as it answers, or null when unknown. MCP's `_meta`
+/// is the result's room for exactly this, and a client that does not read it ignores it.
+///
+/// **What the e2e harness picks its channel by** (`e2e/driver/socket.go`): a window holds one
+/// socket per place it has shown, and the one to drive is the one whose place is the screen's.
+/// Both answers come from the window that knows them. `project` is the registry key, the one
+/// `WAKIL_PROJECT` pins by.
+func initializeMeta(place: Place, screen: Place?) -> JSONValue {
+    func object(_ place: Place) -> JSONValue {
+        .object([
+            "organization": .string(place.organization),
+            "project": .string(place.project),
+            "environment": .string(place.environment),
+        ])
+    }
+    return .object([
+        "wakil/place": object(place),
+        "wakil/screen": screen.map(object) ?? .null,
+    ])
 }
 
 /// Projects one registered action into the shape `tools/list` advertises.
@@ -718,8 +747,8 @@ private let confirmationBusyCode = -32005
 /// `handleToolsCall` does no schema validation before dispatching. A
 /// `tools/call` of `{"name":"db_run_mutation","arguments":{}}` — which any
 /// socket client can send — would otherwise park a proposal with an empty
-/// statement: a red plane asking a human to confirm nothing, holding the
-/// single-flight broker for up to 120s while every other proposal is told
+/// statement: a red plane asking a human to confirm nothing, holding its
+/// place's slot in the broker until answered while every other proposal there is told
 /// `.busy`. It is refused as invalid params instead, before the broker is
 /// touched. `WindowModel.parkAndAwait` refuses the identical shape from ⌘K;
 /// the two paths agree because the one confirmation mechanism has to.
@@ -749,8 +778,8 @@ private let confirmationBusyCode = -32005
 /// no way to send a confirmation.
 ///
 /// **Residual risk: a client that gives up first still gets the write.**
-/// The park can hold this request open for up to the broker's timeout
-/// (120s by default), and `Connection.consume` awaits each `handle` call to
+/// The park holds this request open until the operator answers (an agent's
+/// proposal has no timeout, R1), and `Connection.consume` awaits each `handle` call to
 /// completion before reading the connection's next frame (see that type's
 /// doc comment) — so a `notifications/cancelled` the CLI sends after its
 /// own tool-call timeout cannot even be read until this one resolves. If
@@ -795,7 +824,9 @@ private func parkForConfirmation(
         database: stringArgument(arguments, "database"),
         statement: statement,
         affectsEveryRow: isMutation && mutationAffectsEveryRow(statement),
-        origin: .agent)
+        origin: .agent,
+        // The session's own place, so it waits there beside other places' proposals.
+        place: await caller().place)
 
     switch await surface.confirmations.request(proposal) {
     case .approved:
@@ -821,6 +852,8 @@ private func parkForConfirmation(
         return JSONRPCMessage(id: id, error: JSONRPCError(
             code: -32002, message: "\(name) requires confirmation"))
     case .expired:
+        // Unreachable while an agent's proposal has no timeout (R1); kept so the switch
+        // stays exhaustive and the code means one thing if that ever changes.
         return JSONRPCMessage(id: id, error: JSONRPCError(
             code: confirmationExpiredCode,
             message: "\(name): the operator did not confirm in time — propose it again"))
@@ -1064,6 +1097,8 @@ public actor MCPSocketServer {
     private let surface: MCPSurface
     private let socketPath: String
     private let caller: @Sendable () async -> DispatchCaller
+    /// The place the window shows, for `initialize`'s `_meta` (`initializeMeta`).
+    private let screen: (@Sendable () async -> Place?)?
 
     private var listenFD: Int32 = -1
     private var acceptThread: Thread?
@@ -1081,11 +1116,13 @@ public actor MCPSocketServer {
     public init(
         surface: MCPSurface,
         socketPath: String,
-        caller: @escaping @Sendable () async -> DispatchCaller
+        caller: @escaping @Sendable () async -> DispatchCaller,
+        screen: (@Sendable () async -> Place?)? = nil
     ) {
         self.surface = surface
         self.socketPath = socketPath
         self.caller = caller
+        self.screen = screen
     }
 
     public func start() async throws {
@@ -1148,6 +1185,7 @@ public actor MCPSocketServer {
     private func startAcceptLoop(fd: Int32) {
         let surface = self.surface
         let caller = self.caller
+        let screen = self.screen
         let thread = Thread {
             while true {
                 let clientFD = accept(fd, nil, nil)
@@ -1159,7 +1197,7 @@ public actor MCPSocketServer {
                     return
                 }
                 disableSIGPIPE(onSocket: clientFD)
-                let connection = Connection(fd: clientFD, surface: surface, caller: caller)
+                let connection = Connection(fd: clientFD, surface: surface, caller: caller, screen: screen)
                 Task { await connection.run() }
             }
         }
@@ -1231,8 +1269,8 @@ public actor MCPSocketServer {
 ///
 /// **One request can now hold the whole connection open far longer than any
 /// of the above envisioned.** `handle` (via `handleToolsCall` →
-/// `parkForConfirmation`) suspends for up to `ConfirmationBroker`'s
-/// timeout — 120s by default — while a gated proposal waits for a human.
+/// `parkForConfirmation`) suspends until the operator answers — an agent's
+/// proposal has no timeout (R1) — while a gated proposal waits for a human.
 /// Because `ingest` runs to completion before `consume` reads this
 /// connection's next chunk, nothing on this connection — not a `ping`, not
 /// a `notifications/cancelled` for the very request that is parked — can be
@@ -1243,13 +1281,18 @@ private actor Connection {
     private let fh: FileHandle
     private let surface: MCPSurface
     private let caller: @Sendable () async -> DispatchCaller
+    private let screen: (@Sendable () async -> Place?)?
     private var reader = FrameReader()
     private var poisoned = false
 
-    init(fd: Int32, surface: MCPSurface, caller: @escaping @Sendable () async -> DispatchCaller) {
+    init(
+        fd: Int32, surface: MCPSurface, caller: @escaping @Sendable () async -> DispatchCaller,
+        screen: (@Sendable () async -> Place?)?
+    ) {
         self.fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         self.surface = surface
         self.caller = caller
+        self.screen = screen
     }
 
     func run() {
@@ -1327,7 +1370,7 @@ private actor Connection {
             // 120 seconds, and the environment the gate judges on the way
             // out must be the one that is active *then*. See `handle`'s doc
             // comment.
-            guard let reply = await handle(message, surface: surface, caller: caller)
+            guard let reply = await handle(message, surface: surface, caller: caller, screen: screen)
             else { continue }
             if let frame = try? encodeFrame(reply) {
                 try? fh.write(contentsOf: frame)

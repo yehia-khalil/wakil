@@ -254,8 +254,8 @@ func onlyTheNothingInFlightRefusalIsSilent() {
 /// is untouched, its flight and its canceller still its own.
 @Test("A reply lands on the pane it left from, not on another scope's pane with its id")
 func aReplyLandsInTheScopeItLeftFrom() async throws {
-    let a = LayoutScope(organization: "o", project: "a")
-    let b = LayoutScope(organization: "o", project: "b")
+    let a = LayoutScope(organization: "o", project: "a", environment: "dev")
+    let b = LayoutScope(organization: "o", project: "b", environment: "dev")
     let panes = PaneStore()
     await panes.switchScope(to: a)
     await panes.openApi(paneId: "api-1", entry: "e", environment: "staging", origin: nil, credentialed: false)
@@ -299,4 +299,35 @@ private final class Cancelled: @unchecked Sendable {
     private var calls = 0
     func mark() { lock.lock(); calls += 1; lock.unlock() }
     var count: Int { lock.lock(); defer { lock.unlock() }; return calls }
+}
+
+/// Final review minor 9: who sent is read from who is calling, as a db read's maker is
+/// (`DBFlightMakerTests`). An org switch stops the operator's sends in the org it leaves —
+/// they went out on the window's `wakil-http`, which it re-points — and leaves an agent's,
+/// which run on the client pinned to its own place.
+@Test("An org switch's cancel stops the operator's send and leaves an agent's", .timeLimit(.minutes(1)))
+func anOrgSwitchCancelsOnlyTheOperatorsSend() async throws {
+    for (caller, byOperator) in [
+        (DispatchCaller.test("staging"), true),
+        (DispatchCaller.test("staging", session: "agent-session"), false),
+    ] {
+        let (registry, panes, pane) = try await cancelFixture(StallingHTTP())
+        let send = Task {
+            try await registry.dispatch(
+                name: "api_request", params: .object(["pane": .string(pane)]), origin: .agent,
+                caller: caller, confirmation: nil)
+        }
+        try #require(await apiEventually { await panes.apiSnapshot(paneId: pane).sending != nil })
+
+        await panes.cancelOperatorApiSends(inOrganization: LayoutScope.initial.organization)
+
+        if byOperator {
+            #expect(await apiEventually { await panes.apiSnapshot(paneId: pane).sending == nil },
+                    "the operator's send is stopped")
+        } else {
+            #expect(await panes.apiSnapshot(paneId: pane).sending != nil, "the agent's send runs on")
+            send.cancel()
+        }
+        _ = try? await send.value
+    }
 }

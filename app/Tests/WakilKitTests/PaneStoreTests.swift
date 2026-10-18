@@ -201,7 +201,7 @@ private func sortTerms(_ value: JSONValue) -> [[String: JSONValue]] {
 /// `read_pane` alike.
 @Test func anotherProjectsPaneOfTheSameNameIsEmpty() async {
     let store = PaneStore(kinds: PaneKinds.standard)
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha", environment: "dev"))
     await store.setRows(
         paneId: "db-1", columns: ["secret"], columnTypes: ["TEXT"], columnTypesInferred: false,
         rows: [[.string("alpha's production rows")]], millis: 3, truncated: true,
@@ -209,7 +209,7 @@ private func sortTerms(_ value: JSONValue) -> [[String: JSONValue]] {
     await store.setSelection(paneId: "db-1", PaneSelection(
         anchorRow: 0, anchorColumn: "secret", rows: [0]))
 
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "beta"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "beta", environment: "dev"))
     let snap = object(await store.readPane(paneId: "db-1", kind: "db"))
     #expect(snap["rowCount"] == .number(0))
     #expect(snap["rows"] == .array([]))
@@ -227,17 +227,17 @@ private func sortTerms(_ value: JSONValue) -> [[String: JSONValue]] {
 /// impossible AND coming back finds the project as it was left.
 @Test func comingBackToAProjectFindsItsRowsWhereTheyWereLeft() async {
     let store = PaneStore()
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha", environment: "dev"))
     await store.setRows(
         paneId: "db-1", columns: ["id"], columnTypes: [], columnTypesInferred: false,
         rows: [[.number(1)], [.number(2)]], millis: 0, truncated: false,
         pageable: true, offset: 0, sort: [], listsTables: false, editable: nil)
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "beta"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "beta", environment: "dev"))
     await store.setRows(
         paneId: "db-1", columns: ["other"], columnTypes: [], columnTypesInferred: false,
         rows: [[.string("beta")]], millis: 0, truncated: false,
         pageable: true, offset: 0, sort: [], listsTables: false, editable: nil)
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha", environment: "dev"))
 
     let snap = object(await store.readPane(paneId: "db-1", kind: "db"))
     #expect(snap["rowCount"] == .number(2))
@@ -664,18 +664,18 @@ private func sortTerms(_ value: JSONValue) -> [[String: JSONValue]] {
 /// boundary's database (Invariant 4), on screen and in `read_pane` alike.
 @Test func anotherOrganisationsPaneOfTheSameProjectAndNameIsEmpty() async {
     let store = PaneStore(kinds: PaneKinds.standard)
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "core"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "core", environment: "dev"))
     await store.setRows(
         paneId: "db-1", columns: ["secret"], columnTypes: ["TEXT"], columnTypesInferred: false,
         rows: [[.string("acme's production rows")]], millis: 3, truncated: true,
         pageable: true, offset: 0, sort: [], listsTables: false, editable: nil)
 
-    await store.switchScope(to: LayoutScope(organization: "globex", project: "core"))
+    await store.switchScope(to: LayoutScope(organization: "globex", project: "core", environment: "dev"))
     #expect(await store.paneIds() == [])
     let snap = object(await store.readPane(paneId: "db-1", kind: "db"))
     #expect(snap["rowCount"] == .number(0))
 
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "core"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "core", environment: "dev"))
     #expect(object(await store.readPane(paneId: "db-1", kind: "db"))["rowCount"] == .number(1))
 }
 
@@ -690,8 +690,8 @@ private func sortTerms(_ value: JSONValue) -> [[String: JSONValue]] {
 /// rows for the same reason it already does across projects and orgs.
 @Test func anotherConversationsPaneOfTheSameNameIsEmpty() async {
     let store = PaneStore(kinds: PaneKinds.standard)
-    let database = LayoutScope(organization: "acme", project: "core", lineageRoot: "root-database")
-    let tickets = LayoutScope(organization: "acme", project: "core", lineageRoot: "root-tickets")
+    let database = LayoutScope(organization: "acme", project: "core", environment: "dev", lineageRoot: "root-database")
+    let tickets = LayoutScope(organization: "acme", project: "core", environment: "dev", lineageRoot: "root-tickets")
 
     await store.switchScope(to: database)
     await store.setRows(
@@ -706,7 +706,7 @@ private func sortTerms(_ value: JSONValue) -> [[String: JSONValue]] {
     // And the project's own arrangement is a third thing again, not either
     // conversation's — a brand-new conversation seeds FROM it, and must not
     // inherit rows that belonged to a conversation.
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "core"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "core", environment: "dev"))
     #expect(await store.paneIds() == [])
 
     await store.switchScope(to: database)

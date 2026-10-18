@@ -7,12 +7,13 @@ private func scratch() -> URL {
         .appendingPathComponent("layouts-\(UUID().uuidString)", isDirectory: true)
 }
 
-/// Every test here names an org and a project, which is exactly what a
-/// `LayoutScope` is. A helper rather than the constructor at each of two
-/// dozen call sites, so the assertions stay the width they were when the
-/// two were separate arguments.
-private func scope(_ organization: String, _ project: String) -> LayoutScope {
-    LayoutScope(organization: organization, project: project)
+/// Every test here names an org and a project, which with an environment is
+/// exactly what a `LayoutScope` is. A helper rather than the constructor at
+/// each of two dozen call sites, so the assertions stay the width they were
+/// when the two were separate arguments. The environment is `dev` unless a
+/// test is about environments.
+private func scope(_ organization: String, _ project: String, _ environment: String = "dev") -> LayoutScope {
+    LayoutScope(organization: organization, project: project, environment: environment)
 }
 
 @Test func aSavedLayoutLoadsBackIdentically() throws {
@@ -52,7 +53,7 @@ private func scope(_ organization: String, _ project: String) -> LayoutScope {
     let store = LayoutPersistence(directory: directory)
     try store.save(LayoutSnapshot(), for: scope("personal", "booking"))
 
-    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking.json")
+    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking@dev.json")
     try "{ not json".write(to: file, atomically: true, encoding: .utf8)
 
     let result = store.load(for: scope("personal", "booking"))
@@ -100,7 +101,7 @@ private func scope(_ organization: String, _ project: String) -> LayoutScope {
     // Whatever it wrote, it wrote inside `directory` — not as a sibling
     // directory one or two levels up.
     let escaped = directory.deletingLastPathComponent()
-        .appendingPathComponent("escaped").appendingPathComponent("booking.json")
+        .appendingPathComponent("escaped").appendingPathComponent("booking@dev.json")
     #expect(!FileManager.default.fileExists(atPath: escaped.path))
     #expect(store.load(for: scope("../../escaped", "booking")).snapshot == LayoutSnapshot())
 
@@ -108,7 +109,7 @@ private func scope(_ organization: String, _ project: String) -> LayoutScope {
     // either — "a/b" is one flattened org, not a nested "a" containing "b".
     try store.save(LayoutSnapshot(), for: scope("a/b", "booking"))
     let nested = directory.appendingPathComponent("a")
-        .appendingPathComponent("b").appendingPathComponent("booking.json")
+        .appendingPathComponent("b").appendingPathComponent("booking@dev.json")
     #expect(!FileManager.default.fileExists(atPath: nested.path))
     #expect(store.load(for: scope("a/b", "booking")).snapshot == LayoutSnapshot())
 }
@@ -142,6 +143,109 @@ private func scope(_ organization: String, _ project: String) -> LayoutScope {
     #expect(loaded.note == nil)
 }
 
+// MARK: - The environment joins the scope (Plan 3, ruling R3)
+
+/// R3: a project file written before the environment was in the path seeds **every**
+/// environment of that project that has no file of its own. A save writes only the
+/// environment's own file, and the legacy file is never rewritten — rollback is reverting the
+/// branch, which finds it as it was.
+@Test func aLegacyProjectFileSeedsEveryEnvironment() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let orgDir = directory.appendingPathComponent("acme")
+    try FileManager.default.createDirectory(at: orgDir, withIntermediateDirectories: true)
+    let legacy = LayoutSnapshot(
+        panes: [Pane(id: "db-1", kind: "db", title: "before environments",
+                     frame: PaneFrame(x: 1, y: 2, width: 640, height: 420))],
+        focusedId: "db-1")
+    let legacyFile = orgDir.appendingPathComponent("api.json")
+    try JSONEncoder().encode(legacy).write(to: legacyFile)
+    let legacyBytes = try Data(contentsOf: legacyFile)
+    let store = LayoutPersistence(directory: directory)
+
+    let staging = store.load(for: scope("acme", "api", "staging"))
+    #expect(staging.snapshot == legacy)
+    #expect(staging.note == nil)
+    let production = store.load(for: scope("acme", "api", "production"))
+    #expect(production.snapshot == legacy)
+    #expect(production.note == nil)
+
+    let worked = LayoutSnapshot(
+        panes: [Pane(id: "db-2", kind: "db", title: "staging's own",
+                     frame: PaneFrame(x: 3, y: 4, width: 640, height: 420))],
+        focusedId: "db-2")
+    try store.save(worked, for: scope("acme", "api", "staging"))
+
+    #expect(FileManager.default.fileExists(atPath: orgDir.appendingPathComponent("api@staging.json").path))
+    #expect(try Data(contentsOf: legacyFile) == legacyBytes, "the legacy file was rewritten")
+    #expect(store.load(for: scope("acme", "api", "staging")).snapshot == worked)
+    // Production has no file of its own yet, so it still opens on the legacy seed.
+    #expect(store.load(for: scope("acme", "api", "production")).snapshot == legacy)
+}
+
+/// Before this plan the window filed a project under its display NAME; the scope now carries the
+/// registry key. A file under the name is read first, then one under the key.
+@Test func aLegacyFileUnderTheDisplayNameIsReadBeforeOneUnderTheKey() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let orgDir = directory.appendingPathComponent("acme")
+    try FileManager.default.createDirectory(at: orgDir, withIntermediateDirectories: true)
+    let byName = LayoutSnapshot(panes: [
+        Pane(id: "db-1", kind: "db", title: "by name", frame: PaneFrame(x: 1, y: 1, width: 1, height: 1)),
+    ])
+    let byKey = LayoutSnapshot(panes: [
+        Pane(id: "db-2", kind: "db", title: "by key", frame: PaneFrame(x: 2, y: 2, width: 2, height: 2)),
+    ])
+    try JSONEncoder().encode(byName).write(to: orgDir.appendingPathComponent("API Service.json"))
+    try JSONEncoder().encode(byKey).write(to: orgDir.appendingPathComponent("api.json"))
+    let store = LayoutPersistence(directory: directory)
+
+    #expect(store.load(for: scope("acme", "api", "staging"), legacyName: "API Service").snapshot == byName)
+    #expect(store.load(for: scope("acme", "api", "staging")).snapshot == byKey)
+    #expect(store.load(for: scope("acme", "api", "staging"), legacyName: "Gone").snapshot == byKey)
+}
+
+/// A conversation with no file of its own, in an environment with none either, reaches the
+/// legacy project file too — and a legacy file of the conversation's own comes first.
+@Test func aConversationFallsBackThroughItsOwnLegacyFileToTheProjects() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let orgDir = directory.appendingPathComponent("acme")
+    let rootDir = orgDir.appendingPathComponent("conversations").appendingPathComponent("root-a")
+    try FileManager.default.createDirectory(at: rootDir, withIntermediateDirectories: true)
+    let project = LayoutSnapshot(panes: [
+        Pane(id: "db-1", kind: "db", title: "project", frame: PaneFrame(x: 1, y: 1, width: 1, height: 1)),
+    ])
+    let own = LayoutSnapshot(panes: [
+        Pane(id: "db-2", kind: "db", title: "own", frame: PaneFrame(x: 2, y: 2, width: 2, height: 2)),
+    ])
+    try JSONEncoder().encode(project).write(to: orgDir.appendingPathComponent("api.json"))
+    let store = LayoutPersistence(directory: directory)
+
+    #expect(store.load(for: conversation("acme", "api", "root-a", "staging")).snapshot == project)
+
+    try JSONEncoder().encode(own).write(to: rootDir.appendingPathComponent("api.json"))
+    #expect(store.load(for: conversation("acme", "api", "root-a", "staging")).snapshot == own)
+}
+
+/// The environment is part of the file name, and a project with no environment declared still
+/// gets one file — never the legacy name, which a save must not overwrite.
+@Test func anEnvironmentIsInTheFileNameAndNoEnvironmentIsNotTheLegacyName() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = LayoutPersistence(directory: directory)
+    let orgDir = directory.appendingPathComponent("acme")
+
+    try store.save(LayoutSnapshot(), for: scope("acme", "api", "staging"))
+    try store.save(LayoutSnapshot(), for: scope("acme", "api", ""))
+    try store.save(LayoutSnapshot(), for: conversation("acme", "api", "root-a", "staging"))
+
+    #expect(FileManager.default.fileExists(atPath: orgDir.appendingPathComponent("api@staging.json").path))
+    #expect(!FileManager.default.fileExists(atPath: orgDir.appendingPathComponent("api.json").path))
+    #expect(FileManager.default.fileExists(atPath: orgDir.appendingPathComponent("conversations")
+        .appendingPathComponent("root-a").appendingPathComponent("api@staging.json").path))
+}
+
 @Test func theDefaultDirectoryHangsOffTheGivenHome() {
     let url = LayoutPersistence.defaultDirectory(home: "/tmp/somewhere")
     #expect(url.path == "/tmp/somewhere/.wakil/layouts")
@@ -157,7 +261,7 @@ private func scope(_ organization: String, _ project: String) -> LayoutScope {
     let snapshot = LayoutSnapshot(panes: [], focusedId: nil, maximizedId: nil, graph: graph)
 
     try store.save(snapshot, for: scope("personal", "booking"))
-    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking.json")
+    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking@dev.json")
     let first = try Data(contentsOf: file)
     try store.save(snapshot, for: scope("personal", "booking"))
     // Byte-identical: an unchanged arrangement must not churn the file,
@@ -181,7 +285,7 @@ private func scope(_ organization: String, _ project: String) -> LayoutScope {
     ])
     try store.save(snapshot, for: scope("personal", "booking"))
 
-    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking.json")
+    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking@dev.json")
     let text = try String(contentsOf: file, encoding: .utf8)
     #expect(!text.contains("busy"), "\(text)")
 
@@ -205,7 +309,7 @@ private func scope(_ organization: String, _ project: String) -> LayoutScope {
     ])
     try store.save(snapshot, for: scope("personal", "booking"))
 
-    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking.json")
+    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking@dev.json")
     let text = try String(contentsOf: file, encoding: .utf8)
     #expect(text.contains("dense"), "\(text)")
 
@@ -223,7 +327,7 @@ private func scope(_ organization: String, _ project: String) -> LayoutScope {
     let store = LayoutPersistence(directory: directory)
     try store.save(LayoutSnapshot(), for: scope("personal", "booking"))
 
-    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking.json")
+    let file = directory.appendingPathComponent("personal").appendingPathComponent("booking@dev.json")
     try #"{"panes":[],"graph":{"links":[]}}"#.write(to: file, atomically: true, encoding: .utf8)
 
     let result = store.load(for: scope("personal", "booking"))
@@ -308,8 +412,10 @@ private func scope(_ organization: String, _ project: String) -> LayoutScope {
 /// A conversation is identified by its lineage root — the oldest ancestor
 /// of the session, which is what one conversation keeps across every
 /// resume that forked it.
-private func conversation(_ organization: String, _ project: String, _ root: String) -> LayoutScope {
-    LayoutScope(organization: organization, project: project, lineageRoot: root)
+private func conversation(
+    _ organization: String, _ project: String, _ root: String, _ environment: String = "dev"
+) -> LayoutScope {
+    LayoutScope(organization: organization, project: project, environment: environment, lineageRoot: root)
 }
 
 @Test func aConversationsArrangementRoundTripsUnderItsLineageRoot() throws {
@@ -533,7 +639,7 @@ private func conversation(_ organization: String, _ project: String, _ root: Str
     // key.
     let file = directory.appendingPathComponent("personal")
         .appendingPathComponent("conversations").appendingPathComponent("root-a")
-        .appendingPathComponent("booking.json")
+        .appendingPathComponent("booking@dev.json")
     #expect(FileManager.default.fileExists(atPath: file.path))
     try "{ not json".write(to: file, atomically: true, encoding: .utf8)
 
@@ -574,24 +680,26 @@ private func conversation(_ organization: String, _ project: String, _ root: Str
 /// decision rather than about a hand-written `==` that could drift from
 /// its `hash`.
 @Test func aConversationIsOneKeyPerProjectItIsVisitedFrom() {
-    let fromOne = LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-a")
-    let fromAnother = LayoutScope(organization: "acme", project: "gadgets", lineageRoot: "root-a")
+    let fromOne = LayoutScope(organization: "acme", project: "widgets", environment: "dev", lineageRoot: "root-a")
+    let fromAnother = LayoutScope(organization: "acme", project: "gadgets", environment: "dev", lineageRoot: "root-a")
     #expect(fromOne != fromAnother)
     #expect(Set([fromOne, fromAnother]).count == 2)
 
     // Equal on all three fields is still one key — the property that makes
     // a scope usable as a dictionary key at all.
-    #expect(fromOne == LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-a"))
+    #expect(fromOne == LayoutScope(organization: "acme", project: "widgets", environment: "dev", lineageRoot: "root-a"))
     #expect(
         fromOne.hashValue
-            == LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-a").hashValue)
+            == LayoutScope(organization: "acme", project: "widgets", environment: "dev", lineageRoot: "root-a").hashValue)
 
     // The organisation still separates them: it is a credential boundary,
     // and a lineage store is per-org, so the same root in two orgs is two
     // conversations that merely share a name.
-    #expect(fromOne != LayoutScope(organization: "globex", project: "widgets", lineageRoot: "root-a"))
+    #expect(fromOne != LayoutScope(organization: "globex", project: "widgets", environment: "dev", lineageRoot: "root-a"))
     // And two conversations are still two keys.
-    #expect(fromOne != LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-b"))
+    #expect(fromOne != LayoutScope(organization: "acme", project: "widgets", environment: "dev", lineageRoot: "root-b"))
+    // And one conversation in two environments of one project is two keys: each is a place.
+    #expect(fromOne != LayoutScope(organization: "acme", project: "widgets", environment: "prod", lineageRoot: "root-a"))
     // A conversation's scope is never a project's, even spelled the same.
     #expect(scope("acme", "widgets") != scope("acme", "gadgets"))
     #expect(scope("acme", "widgets") != fromOne)

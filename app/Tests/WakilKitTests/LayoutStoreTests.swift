@@ -207,16 +207,16 @@ import Testing
 
 @Test func switchingProjectPreservesTheOutgoingArrangement() async throws {
     let store = LayoutStore()
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha", environment: "dev"))
     let a = await store.open(kind: "db", title: "Alpha pane")
     try await store.move(id: a.id, x: 321, y: 123)
 
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "beta"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "beta", environment: "dev"))
     #expect(await store.snapshot().panes.isEmpty)
     let b = await store.open(kind: "db", title: "Beta pane")
     #expect(await store.snapshot().panes.map(\.id) == [b.id])
 
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha", environment: "dev"))
     let snapshot = await store.snapshot()
     #expect(snapshot.panes.map(\.title) == ["Alpha pane"])
     #expect(snapshot.panes[0].frame.x == 321)
@@ -248,7 +248,7 @@ import Testing
 
 @Test func loadReplacesOneProjectsArrangementWholesale() async throws {
     let store = LayoutStore()
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "alpha", environment: "dev"))
     _ = await store.open(kind: "db", title: "Discarded")
 
     var graph = SnapGraph()
@@ -261,7 +261,7 @@ import Testing
                  frame: PaneFrame(x: 10, y: 0, width: 10, height: 10)),
         ],
         focusedId: "y", maximizedId: nil, graph: graph)
-    await store.load(restored, for: LayoutScope(organization: "acme", project: "alpha"))
+    await store.load(restored, for: LayoutScope(organization: "acme", project: "alpha", environment: "dev"))
 
     #expect(await store.snapshot() == restored)
 }
@@ -279,18 +279,18 @@ import Testing
     let persistence = LayoutPersistence(directory: directory)
 
     let store = LayoutStore()
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "widgets"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "widgets", environment: "dev"))
     let pane = await store.open(kind: "db", title: "Results")
     try await store.move(id: pane.id, x: 120, y: 90)
     let original = try #require(await store.snapshot().panes.first).frame
     try await store.maximize(id: pane.id)
-    try persistence.save(await store.snapshot(), for: LayoutScope(organization: "acme", project: "widgets"))
+    try persistence.save(await store.snapshot(), for: LayoutScope(organization: "acme", project: "widgets", environment: "dev"))
 
     // A fresh session: a new store, told nothing but what was on disk.
     let relaunched = LayoutStore()
-    await relaunched.switchScope(to: LayoutScope(organization: "acme", project: "widgets"))
-    let saved = try #require(persistence.load(for: LayoutScope(organization: "acme", project: "widgets")).snapshot)
-    await relaunched.load(saved, for: LayoutScope(organization: "acme", project: "widgets"))
+    await relaunched.switchScope(to: LayoutScope(organization: "acme", project: "widgets", environment: "dev"))
+    let saved = try #require(persistence.load(for: LayoutScope(organization: "acme", project: "widgets", environment: "dev")).snapshot)
+    await relaunched.load(saved, for: LayoutScope(organization: "acme", project: "widgets", environment: "dev"))
     #expect(await relaunched.snapshot().maximizedId == pane.id)
 
     await relaunched.restore()
@@ -525,15 +525,15 @@ import Testing
 /// than merely cleared up after.
 @Test func twoOrganisationsHoldingASameNamedProjectKeepSeparateArrangements() async throws {
     let store = LayoutStore()
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "core"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "core", environment: "dev"))
     let acme = await store.open(kind: "db", title: "Acme's pane")
     try await store.move(id: acme.id, x: 321, y: 123)
 
-    await store.switchScope(to: LayoutScope(organization: "globex", project: "core"))
+    await store.switchScope(to: LayoutScope(organization: "globex", project: "core", environment: "dev"))
     #expect(await store.snapshot().panes.isEmpty)
     _ = await store.open(kind: "db", title: "Globex's pane")
 
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "core"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "core", environment: "dev"))
     let snapshot = await store.snapshot()
     #expect(snapshot.panes.map(\.title) == ["Acme's pane"])
     #expect(snapshot.panes[0].frame.x == 321)
@@ -543,20 +543,20 @@ import Testing
 
 @Test("#4: only the project's own canvas moves into a conversation minted over it")
 func onlyTheProjectsCanvasIsAdopted() {
-    let seed = LayoutScope(organization: "acme", project: "widgets")
-    let minted = LayoutScope(organization: "acme", project: "widgets", lineageRoot: "new")
+    let seed = LayoutScope(organization: "acme", project: "widgets", environment: "dev")
+    let minted = LayoutScope(organization: "acme", project: "widgets", environment: "dev", lineageRoot: "new")
     #expect(conversationAdoptsCanvas(from: seed, to: minted))
     #expect(!conversationAdoptsCanvas(
-        from: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "old"), to: minted))
-    #expect(!conversationAdoptsCanvas(from: LayoutScope(organization: "acme", project: "gadgets"), to: minted))
-    #expect(!conversationAdoptsCanvas(from: LayoutScope(organization: "other", project: "widgets"), to: minted))
+        from: LayoutScope(organization: "acme", project: "widgets", environment: "dev", lineageRoot: "old"), to: minted))
+    #expect(!conversationAdoptsCanvas(from: LayoutScope(organization: "acme", project: "gadgets", environment: "dev"), to: minted))
+    #expect(!conversationAdoptsCanvas(from: LayoutScope(organization: "other", project: "widgets", environment: "dev"), to: minted))
     #expect(!conversationAdoptsCanvas(from: seed, to: seed))
 }
 
 @Test("#4: adopting moves the arrangement and the contents, and leaves the old scope empty")
 func adoptingMovesBothStores() async {
-    let seed = LayoutScope(organization: "acme", project: "widgets")
-    let minted = LayoutScope(organization: "acme", project: "widgets", lineageRoot: "new")
+    let seed = LayoutScope(organization: "acme", project: "widgets", environment: "dev")
+    let minted = LayoutScope(organization: "acme", project: "widgets", environment: "dev", lineageRoot: "new")
     let layout = LayoutStore()
     let panes = PaneStore()
     await layout.switchScope(to: seed)

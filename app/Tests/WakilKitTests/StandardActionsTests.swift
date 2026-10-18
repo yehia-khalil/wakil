@@ -1464,7 +1464,7 @@ struct DBActionTests {
         var saved: LayoutSnapshot?
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
-            saved = persistence.load(for: LayoutScope(organization: "acme", project: "widgets")).snapshot
+            saved = persistence.load(for: LayoutScope(organization: "acme", project: "widgets", environment: "dev")).snapshot
             if saved?.panes.contains(where: { $0.fetch != nil }) == true { break }
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
@@ -1493,7 +1493,7 @@ struct DBActionTests {
         var saved: LayoutSnapshot?
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
-            saved = persistence.load(for: LayoutScope(organization: "acme", project: "widgets")).snapshot
+            saved = persistence.load(for: LayoutScope(organization: "acme", project: "widgets", environment: "dev")).snapshot
             if saved?.panes.contains(where: { $0.fetch != nil }) == true { break }
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
@@ -1520,7 +1520,7 @@ struct DBActionTests {
 
         await model.pagePane(id: pane.id, to: "next")
 
-        let saved = persistence.load(for: LayoutScope(organization: "acme", project: "widgets")).snapshot
+        let saved = persistence.load(for: LayoutScope(organization: "acme", project: "widgets", environment: "dev")).snapshot
         await client.stop()
         #expect(saved?.panes.first { $0.id == pane.id }?.fetch?.offset == 500)
     }

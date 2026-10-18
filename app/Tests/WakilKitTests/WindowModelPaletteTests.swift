@@ -152,7 +152,7 @@ private func paletteWindow(
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout,
         context: ContextStore(client: context),
-        harnessFactory: { _, _ in harness }, resumes: ResumeBroker(),
+        harnessFactory: { _, _, _ in harness }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "main",
         lookupFactory: { _ in PaletteLookup() },
         rootWatcher: RecordingRootWatcher(),
@@ -709,7 +709,8 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
 
     /// Invariant 4: an org switch leaves nothing the palette read in the outgoing organisation —
     /// no step stamps, no built-for context or identity, no last list, no fresh tables, no table
-    /// cache, no Send request — and a row still on screen is refused rather than run.
+    /// cache — and a row still on screen is refused rather than run. (A pending Send belongs to
+    /// the canvas, and goes with the swap off it: `activateLayout`.)
     @Test func anOrgSwitchEmptiesThePalettesCache() async throws {
         let db = PaletteDB(databases: ["core"], tables: ["core": ["bookings"]])
         let w = await paletteWindow(db: db)
@@ -738,7 +739,6 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         #expect(left.stepStamps.isEmpty)
         #expect(left.latest == nil && left.freshTables == nil)
         #expect(left.tableCacheKeys.isEmpty)
-        #expect(w.model.apiSendRequests.isEmpty)
         let error = await w.model.performPalette(
             .run(.dispatch(action: "pane_open", params: .object(["kind": .string("editor")])), step: "drill:tables:core"))
         #expect(error == "the organisation changed under the palette; reopen it")

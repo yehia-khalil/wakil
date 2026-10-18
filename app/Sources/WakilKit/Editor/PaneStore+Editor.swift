@@ -102,15 +102,22 @@ extension PaneStore {
 
     /// Every dirty editor tab in a scope that is **not** on screen (final review I3): a project or
     /// conversation switch keeps them in memory, so quitting or switching organisation would drop
-    /// them. `place` says where each one is for the prompt: the other project's name, or "another
-    /// conversation" in this project.
+    /// them. `place` says where each one is for the prompt: the other project's key, the other
+    /// environment of this project, or "another conversation" in this project and environment.
     public func editorDirtyTabsInHiddenScopes() -> [EditorHiddenDirtyTab] {
         let here = activeScope
         var out: [EditorHiddenDirtyTab] = []
         for entry in everyScope(EditorPaneKind.self) where !entry.active {
             let titles = editorTabTitles(entry.contents.tabs)
             for (i, t) in entry.contents.tabs.enumerated() where t.dirty {
-                let place = entry.scope.project != here.project ? entry.scope.project : "another conversation"
+                // Plan 3: one project's environments are separate scopes too, so a tab left in
+                // another environment of this project names that environment — and an org switch
+                // keeps every scope, so a tab left in another organisation names it too.
+                let place = entry.scope.organization != here.organization
+                    ? "\(entry.scope.organization)/\(entry.scope.project)"
+                    : entry.scope.project != here.project ? entry.scope.project
+                    : entry.scope.environment != here.environment ? entry.scope.environment
+                    : "another conversation"
                 out.append(EditorHiddenDirtyTab(scope: entry.scope, paneId: entry.paneId, subject: t.subject,
                                                 title: titles[i], place: place, text: t.text))
             }
@@ -173,7 +180,7 @@ public struct EditorHiddenDirtyTab: Sendable, Equatable {
     public let paneId: String
     public let subject: EditorTabSubject
     public let title: String
-    /// Where it is: the other project's name, or "another conversation".
+    /// Where it is: the other project's key, the other environment, or "another conversation".
     public let place: String
     public let text: String
 }

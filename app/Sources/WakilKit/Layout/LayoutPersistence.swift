@@ -1,7 +1,7 @@
 import Foundation
 
 /// Reads and writes one `LayoutScope`'s pane arrangement under
-/// `~/.wakil/layouts/<org>/<project>.json`.
+/// `~/.wakil/layouts/<org>/<project>@<environment>.json`.
 ///
 /// **Keyed by the same value both stores are keyed by**, which is the
 /// whole of `LayoutScope`'s reason to exist: while this layer keyed on
@@ -155,14 +155,43 @@ public struct LayoutPersistence: Sendable {
     /// read is, so it returns the note and not the seed: falling through
     /// would hand the operator a plausible arrangement that is not theirs,
     /// with nothing to say the one they made is still on disk and broken.
-    public func load(for scope: LayoutScope) -> (snapshot: LayoutSnapshot?, note: String?) {
-        let own = read(fileURL(for: scope), describedAs: scope)
+    ///
+    /// **A file written before the environment joined the scope seeds every
+    /// environment** (Plan 3, ruling R3). Each level — the conversation's,
+    /// then the project's — reads its own `<key>@<env>.json` first; when
+    /// that is absent, the file the same level had before, filed under the
+    /// project's display name (`legacyName`, which is what the window used
+    /// until then) and then under the key. **Read-only:** `save` writes
+    /// only the per-environment path, so the legacy file stays as it was
+    /// and seeds every environment that has no file of its own yet.
+    /// Rollback is reverting the branch, which finds it untouched.
+    public func load(
+        for scope: LayoutScope, legacyName: String? = nil
+    ) -> (snapshot: LayoutSnapshot?, note: String?) {
+        let own = readFallingBack(scope, legacyName: legacyName)
         guard scope.lineageRoot != nil, own.snapshot == nil, own.note == nil else { return own }
         // Absent, and this conversation has never been arranged: the
         // project's arrangement is the starting point. Reported as the
         // SEED's own note rather than the conversation's, because that is
         // whose file was read.
-        return read(fileURL(for: scope.projectSeed), describedAs: scope.projectSeed)
+        return readFallingBack(scope.projectSeed, legacyName: legacyName)
+    }
+
+    /// `scope`'s own file, else its level's legacy files (R3), stopping at
+    /// the first that exists — a legacy file that cannot be read is a note,
+    /// like any other.
+    private func readFallingBack(
+        _ scope: LayoutScope, legacyName: String?
+    ) -> (snapshot: LayoutSnapshot?, note: String?) {
+        let own = read(fileURL(for: scope), describedAs: scope)
+        guard own.snapshot == nil, own.note == nil else { return own }
+        var names = [scope.project]
+        if let legacyName, !legacyName.isEmpty, legacyName != scope.project { names.insert(legacyName, at: 0) }
+        for name in names {
+            let legacy = read(legacyFileURL(for: scope, project: name), describedAs: scope)
+            if legacy.snapshot != nil || legacy.note != nil { return legacy }
+        }
+        return (nil, nil)
     }
 
     private func read(
@@ -186,13 +215,13 @@ public struct LayoutPersistence: Sendable {
         }
     }
 
-    /// One file per project at `<org>/<project>.json`, and one per
-    /// conversation **per project** at
-    /// `<org>/conversations/<root>/<project>.json`.
+    /// One file per project and environment at `<org>/<project>@<env>.json`,
+    /// and one per conversation **per project and environment** at
+    /// `<org>/conversations/<root>/<project>@<env>.json`.
     ///
-    /// **A project's path is unchanged**, so every file already on disk is
-    /// still found under the name it already has — nothing is migrated and
-    /// nothing is discarded.
+    /// **Every file already on disk is still found** under the name it
+    /// already has, through `load`'s legacy read (R3) — nothing is migrated
+    /// and nothing is discarded.
     ///
     /// **A conversation's path carries the project (#160), and it must
     /// carry exactly what `LayoutScope`'s identity carries.** It did not
@@ -214,10 +243,10 @@ public struct LayoutPersistence: Sendable {
     /// lies, which #142's "reclamation is by absence, not by deletion"
     /// already covers.
     ///
-    /// **Nothing can collide.** A project writes `<name>.json` directly
+    /// **Nothing can collide.** A project writes `<name>@<env>.json` directly
     /// under the org; a conversation writes inside a `conversations`
     /// directory, under a subdirectory named for its root. A project
-    /// actually called `conversations` writes `conversations.json`, a
+    /// actually called `conversations` writes `conversations@<env>.json`, a
     /// different name from the `conversations/` directory beside it. And a
     /// root's subdirectory cannot be confused with the flat file #147
     /// wrote: one is `<root>/`, the other `<root>.json`.
@@ -231,15 +260,38 @@ public struct LayoutPersistence: Sendable {
     /// minted, so flattening it is belt and braces — it is applied anyway,
     /// because the value arrives over the wire from a store an operator
     /// can hand-edit.
+    ///
+    /// **The environment is in the file name (Plan 3)**:
+    /// `<project>@<environment>.json`, where `<project>` is the registry
+    /// key. `@` is flattened out of both halves, so no key and environment
+    /// can spell another pair's file, and an empty environment flattens to
+    /// `_` — never the bare `<project>.json` every release before this
+    /// wrote, which `save` must not overwrite (R3).
     private func fileURL(for scope: LayoutScope) -> URL {
+        let name = "\(flattenPart(scope.project))@\(flattenPart(scope.environment)).json"
+        return levelDirectory(for: scope).appendingPathComponent(name)
+    }
+
+    /// Where `scope`'s level kept its file before the environment joined
+    /// the path: `<project>.json` in the same directory, `project` being
+    /// the display name or the key. Read, never written (R3).
+    private func legacyFileURL(for scope: LayoutScope, project: String) -> URL {
+        levelDirectory(for: scope).appendingPathComponent("\(flatten(project)).json")
+    }
+
+    /// The org's directory for a project's arrangement; a conversation's
+    /// root's directory inside `conversations` for a conversation's.
+    private func levelDirectory(for scope: LayoutScope) -> URL {
         let org = directory.appendingPathComponent(flatten(scope.organization), isDirectory: true)
-        guard let lineageRoot = scope.lineageRoot else {
-            return org.appendingPathComponent("\(flatten(scope.project)).json")
-        }
+        guard let lineageRoot = scope.lineageRoot else { return org }
         return org
             .appendingPathComponent("conversations", isDirectory: true)
             .appendingPathComponent(flatten(lineageRoot), isDirectory: true)
-            .appendingPathComponent("\(flatten(scope.project)).json")
+    }
+
+    /// `flatten`, and `@` too, which separates the key from the environment.
+    private func flattenPart(_ name: String) -> String {
+        flatten(name).replacingOccurrences(of: "@", with: "_")
     }
 
     private func flatten(_ name: String) -> String {

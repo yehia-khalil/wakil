@@ -2,13 +2,17 @@ import Foundation
 
 // The api kind's store methods (pluggable pane kinds): same actor, same names as before.
 extension PaneStore {
-    /// Moves whenever what an api pane's entry should resolve against may have changed: an
-    /// environment switch (`clearApiResponses`), a scope change, an org change. A re-resolve
-    /// captures it before asking `list_apis` and writes only if it has not moved (fix round 1).
-    /// Held in the api kind's store-wide state (`ApiShared`).
+    /// The active scope's resolution generation. Moves whenever what its api panes' entries should
+    /// resolve against may have changed: its environment switch (`clearApiResponses`) or an org
+    /// change. A re-resolve captures it before asking `list_apis` and writes
+    /// only if it has not moved (fix round 1). **Per scope** (`ApiShared.resolutionGenerations`):
+    /// the active scope is the caller's own, so an agent's listing in its own place is judged by
+    /// that place's generation, not the screen's.
     var apiResolutionGeneration: Int {
-        get { kindState(ApiPaneKind.self).resolutionGeneration }
-        set { var s = kindState(ApiPaneKind.self); s.resolutionGeneration = newValue; setKindState(ApiPaneKind.self, s) }
+        var s = kindState(ApiPaneKind.self)
+        let generation = s.resolutionGeneration(in: activeScope)
+        setKindState(ApiPaneKind.self, s)
+        return generation
     }
 
     /// The generation a re-resolve captures before it asks (`reresolveApis`).
@@ -33,10 +37,10 @@ extension PaneStore {
     /// **`origin` is stored, not re-derived on read.** A snapshot is built
     /// on every change, for the screen as much as for `read_pane`, and
     /// resolving an entry means asking another process — so re-deriving it
-    /// there would put an MCP call inside the draw loop. What it costs is
-    /// staleness across an environment switch, which invalidates this
-    /// store wholesale (`clearAllScopes`) rather than leaving a stale
-    /// origin behind.
+    /// there would put an MCP call inside the draw loop. It cannot go stale
+    /// across a switch: each environment is a scope of its own, so an origin
+    /// is only ever read in the environment it was resolved for, and a canvas
+    /// read off disk re-resolves it (`ApiPaneResolver.reresolve`).
     ///
     /// **`origin` may be nil, and that is the point.** A pane opened
     /// against an entry that does not resolve draws an empty origin in its
@@ -165,8 +169,11 @@ extension PaneStore {
     /// would put an unattended request on the wire in the new
     /// environment, which is the one thing this must never do.
     public func clearApiResponses(to environment: String) {
-        // Fix round 1: every re-resolve begun before this answers for the environment left.
-        apiResolutionGeneration += 1
+        // Fix round 1: every re-resolve begun before this, in this scope, answers for the
+        // environment left. Other scopes' environments did not change.
+        var shared = kindState(ApiPaneKind.self)
+        shared.bumpResolution(in: activeScope)
+        setKindState(ApiPaneKind.self, shared)
         for paneId in paneKeys {
             guard holds(ApiPaneKind.self, paneId) else { continue }
             var contents = api(paneId)
@@ -295,7 +302,7 @@ extension PaneStore {
 
     /// Starts a send on `paneId` and names it, or answers `nil` when one is already in flight.
     /// The token is what `armApiSend` and `finishApiSend` match on.
-    public func beginApiSend(paneId: String, method: String, at since: Date) -> UUID? {
+    public func beginApiSend(paneId: String, method: String, at since: Date, byAgent: Bool = false) -> UUID? {
         var contents = api(paneId)
         guard contents.flight == nil else { return nil }
         // Amendment 11a: a Send forgets what a fill kept, AT THE PRESS — Undo after it would put
@@ -306,7 +313,7 @@ extension PaneStore {
         let token = UUID()
         contents.flight = ApiFlight(
             token: token, since: since, method: method, environment: contents.environment,
-            credentialed: contents.credentialed)
+            credentialed: contents.credentialed, byAgent: byAgent)
         setApi(paneId, contents)
         publishFlight(paneId)
         return token
@@ -336,6 +343,21 @@ extension PaneStore {
         setApi(paneId, contents)
         flight.cancel?()
         return true
+    }
+
+    /// Cancels the operator's api sends in flight in every scope of `organization` — called by
+    /// an org switch before the window's clients are re-pointed (final review minor 9). A send
+    /// suspends between its flight starting and its call reaching `wakil-http`, so one the
+    /// operator made in the org left could otherwise go out on the incoming org's restarted
+    /// process, resolving its entry against that org's environments and credentials
+    /// (Invariant 4). An agent's send goes through the client pinned to its own place and is
+    /// left to land. The cancel is the operator's own Cancel: a mutation already sent reads as
+    /// fate-unknown, never as not sent.
+    public func cancelOperatorApiSends(inOrganization organization: String) {
+        for entry in everyScope(ApiPaneKind.self)
+        where entry.scope.organization == organization && entry.contents.flight?.byAgent == false {
+            inScope(entry.scope) { _ = cancelApiSend(paneId: entry.paneId) }
+        }
     }
 
     /// Ends the flight `token`. The response replaces the pane's **only while the environment is

@@ -232,12 +232,10 @@ private actor IdentifierGate {
     }
 }
 
-/// A "stop and switch now" that lands while the send is reading the
-/// vocabulary must not leave the old turn's `RESOLVED` row after the seam,
-/// nor journal its note. The switch here names the org already open, so
-/// `setOrganization` stops at its same-org guard and never drops the
-/// vocabulary: the read answers the old names, which is the window this
-/// guard closes (the real switch's drop runs only after `harness.stop()`).
+/// An org switch that lands while the send is reading the vocabulary: the turn still goes to
+/// its own place's agent (nothing is stopped), but the switch has dropped the names (`dropAll`,
+/// Invariant 4 for names), so none are attached — no `RESOLVED` row in that agent's thread, and
+/// no note journalled.
 @Test @MainActor func aSwitchDuringTheVocabularyReadLeavesNoResolvedRow() async throws {
     let gate = IdentifierGate()
     let entered = AsyncStream<Void>.makeStream()
@@ -250,16 +248,18 @@ private actor IdentifierGate {
     let harness = RecordingHarness()
     let model = modelWith(harness, vocabulary: store)
     model.setOrganizationForTesting("test-org")
+    let typedIn = model.place
     await store.contextChanged(testContext)
 
     let sending = Task { await model.send("what's in transaction read only") }
     for await _ in entered.stream { break }          // send is inside vocabulary.current()
-    await model.requestOrganizationSwitch("test-org") // a turn is in flight, so it queues
-    await model.stopTurnAndSwitchNow()
+    await model.requestOrganizationSwitch("other-org")
+    #expect(model.organization == "other-org", "\(model.status)")
     await gate.release()
     await sending.value
 
-    #expect(!model.thoughts.contains { $0.label == "resolved" })
+    let agent = try #require(model.agents[typedIn])
+    #expect(!agent.thoughts.contains { $0.label == "resolved" })
     let sent = try #require(await harness.sentTexts.last)
     #expect(sent == "what's in transaction read only")
     let entries = try await model.registryForTesting.journalEntries()

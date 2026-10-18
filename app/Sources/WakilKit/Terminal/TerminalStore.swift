@@ -48,11 +48,16 @@ public struct TerminalRun: Sendable, Equatable {
     /// events, and after the fact the journal is the only place the
     /// difference survives.
     public let wasProposed: Bool
+    /// The scope the shell was opened in (its home, background agents 3 of 4): where the run
+    /// happened, wherever the screen is by the time it finishes. Nil for a shell opened with no
+    /// scope — the window journals that under the place on screen.
+    public let scope: LayoutScope?
 
     public init(
         paneId: String, command: String, cwd: String, exitCode: Int?, durationMs: Int?,
-        wasProposed: Bool
+        wasProposed: Bool, scope: LayoutScope? = nil
     ) {
+        self.scope = scope
         self.paneId = paneId
         self.command = command
         self.cwd = cwd
@@ -62,30 +67,11 @@ public struct TerminalRun: Sendable, Equatable {
     }
 }
 
-/// What `TerminalStore.shutdownAll(runStream:)` does with the run stream
-/// once every shell is dead — the one thing app quit and an organisation
-/// switch do not agree about.
-///
-/// The shells are killed identically either way. What differs is whether
-/// the window's run pump is expected to carry on afterwards: an org switch
-/// is a *continuation* of the same window and the same store, so a command
-/// run in a pane opened after it must still be journalled; app quit is the
-/// end of both, and a `for await` nothing will ever yield to again is a
-/// task parked forever.
-public enum TerminalRunStreamDisposition: Sendable, Equatable {
-    /// App quit. The stream is finished, ending the consumer's loop.
-    case finish
-    /// An organisation switch. The stream — and the subscriber's `for
-    /// await` — outlives the shells, because the window subscribes once,
-    /// in `init`, and never again.
-    case keepOpen
-}
-
 /// Every live PTY, keyed by pane id — and **only** the live resource.
 ///
 /// **Why this is not `PaneStore`.** Their lifetimes are genuinely
-/// identical: born at pane open, warm across a project switch, dead at
-/// `pane_close`, dead at an org switch. It loses on one fact that is not
+/// identical: born at pane open, warm across every switch, dead at
+/// `pane_close`. It loses on one fact that is not
 /// about terminals at all — **there is no `deinit` in `WakilKit` that
 /// releases an OS resource, not one.** Every process and every descriptor
 /// in this application is released by an explicit awaited stop. Putting a
@@ -102,6 +88,15 @@ public enum TerminalRunStreamDisposition: Sendable, Equatable {
 /// the measured failure `MCPClient.stop()`'s doc comment records, which
 /// hung the first caller permanently. `open` is single-flight per pane for
 /// the mirror-image reason, spelled out on `open` itself.
+/// A shell's identity: the scope it was opened in and its pane id. Pane ids are unique within
+/// one scope but not across scopes loaded from disk (`LayoutStore.load` raises its counter only
+/// from the snapshot it loads), so two places can each hold `terminal-1` (background agents 3
+/// of 4). `scope` is nil for a store with no pane store, which has no scopes.
+struct TerminalKey: Hashable, Sendable {
+    let scope: LayoutScope?
+    let paneId: String
+}
+
 public actor TerminalStore {
     /// The shells Wakil generates integration for. Named, the way
     /// Invariant 6 refuses DDL by naming each verb rather than by
@@ -117,13 +112,19 @@ public actor TerminalStore {
         environment["SHELL"] ?? "/bin/zsh"
     }
 
-    private var sessions: [String: TerminalSession] = [:]
-    /// One per pane, cleared as teardown's last step so a later `open` on
+    /// Keyed by the shell's scope and pane id (`TerminalKey`), never the pane id alone.
+    private var sessions: [TerminalKey: TerminalSession] = [:]
+    /// One per shell, cleared as teardown's last step so a later `open` on
     /// the same pane starts a fresh cycle rather than replaying this one.
-    private var teardownTasks: [String: Task<Void, Never>] = [:]
-    /// One per pane, for the same reason and with the same shape. See
+    private var teardownTasks: [TerminalKey: Task<Void, Never>] = [:]
+    /// One per shell, for the same reason and with the same shape. See
     /// `open`.
-    private var openTasks: [String: Task<TerminalOpened, Error>] = [:]
+    private var openTasks: [TerminalKey: Task<TerminalOpened, Error>] = [:]
+    /// Each open shell's rc directory, named once at open (see `instanceId`).
+    private var rcDirectories: [TerminalKey: URL] = [:]
+    /// Folded into each rc directory's name, so two scopes' shells under one pane id never
+    /// share one.
+    private var rcSerial = 0
     private var shutdownTask: Task<Void, Never>?
 
     /// PTY masters and pids teardown had to give up on — what was leaked,
@@ -137,7 +138,7 @@ public actor TerminalStore {
     /// `close` on that pane took the `await existing.value` branch and
     /// hung, every `open` on it hung behind its own `close`, and because
     /// `shutdownAll` walks the panes **serially**, no OTHER pane's shell
-    /// was ever reaped either: org switch and app quit hang permanently.
+    /// was ever reaped either: app quit hangs permanently.
     /// That is the exact `MCPClient` failure class this file is modelled
     /// against, reached from a different direction.
     ///
@@ -159,7 +160,7 @@ public actor TerminalStore {
     private(set) var abandonedWrites: [AbandonedWrite] = []
     /// The cursor each pane last published, so a move that redraws nothing
     /// still publishes (see `publish`).
-    private var publishedCursors: [String: (row: Int, col: Int)] = [:]
+    private var publishedCursors: [TerminalKey: (row: Int, col: Int)] = [:]
 
     /// Distinguishes this store's rc directories from every other store's.
     ///
@@ -193,7 +194,7 @@ public actor TerminalStore {
     private var runContinuation: AsyncStream<TerminalRun>.Continuation?
     /// Per pane, the command a `term_propose` had queued — consumed by the
     /// next run whose command matches. See `markNextRunProposed`.
-    private var proposedCommands: [String: String] = [:]
+    private var proposedCommands: [TerminalKey: String] = [:]
 
     /// Where per-pane rc directories are made. The process temp dir in the
     /// shipped app; the test run's own root under test, so a pane a test
@@ -236,26 +237,29 @@ public actor TerminalStore {
         // Every re-check happens after a resumption, and the install below
         // it runs with no suspension in between, so exactly one open per
         // pane is ever in flight.
-        while let inFlight = openTasks[paneId] { _ = try? await inFlight.value }
+        let key = await key(paneId)
+        while let inFlight = openTasks[key] { _ = try? await inFlight.value }
         let task = Task<TerminalOpened, Error> {
             try await self.performOpen(
-                paneId: paneId, path: path, shell: shell, shellName: name,
+                key: key, path: path, shell: shell, shellName: name,
                 cols: cols, rows: rows, environment: environment)
         }
-        openTasks[paneId] = task
+        openTasks[key] = task
         return try await task.value
     }
 
     private func performOpen(
-        paneId: String, path: String, shell: String, shellName: String,
+        key: TerminalKey, path: String, shell: String, shellName: String,
         cols: Int, rows: Int, environment: [String: String]
     ) async throws -> TerminalOpened {
+        let paneId = key.paneId
         // Cleared here rather than in `open` so the slot is already empty
         // when the next caller resumes from `await inFlight.value`.
-        defer { openTasks[paneId] = nil }
-        await close(paneId: paneId)
+        defer { openTasks[key] = nil }
+        await close(key: key)
 
-        let rcDirectory = rcDirectory(for: paneId)
+        rcSerial += 1
+        let rcDirectory = rcDirectory(for: paneId, serial: rcSerial)
         // The caller's own `environment:` is layered on top of Wakil's
         // process environment for `shellLaunch`'s `base` too — not just
         // for the final `childEnvironment` below — so a caller CAN
@@ -284,14 +288,20 @@ public actor TerminalStore {
         guard session.spawn(argv: launch.argv, environment: childEnvironment, cwd: path) else {
             throw TerminalOpenError.spawnFailed(shell)
         }
-        sessions[paneId] = session
-        // A new shell is a new history: the old blocks belonged to a
-        // process that no longer exists, and leaving them under a fresh
-        // prompt would present another shell's output as this one's.
-        await panes?.clearTerminal(paneId: paneId)
-        await panes?.setTerminalLiveState(
-            paneId: paneId, cwd: path, shell: shellName, cols: cols, rows: rows,
-            screen: .blocks, grid: [])
+        sessions[key] = session
+        rcDirectories[key] = rcDirectory
+        if let panes {
+            let home = key.scope
+            // A new shell is a new history: the old blocks belonged to a
+            // process that no longer exists, and leaving them under a fresh
+            // prompt would present another shell's output as this one's.
+            await ScopeRouting.$home.withValue(home) {
+                await panes.clearTerminal(paneId: paneId)
+                await panes.setTerminalLiveState(
+                    paneId: paneId, cwd: path, shell: shellName, cols: cols, rows: rows,
+                    screen: .blocks, grid: [])
+            }
+        }
         startPublishing()
         return TerminalOpened(shell: shellName, cols: cols, rows: rows, cwd: path)
     }
@@ -356,8 +366,15 @@ public actor TerminalStore {
     /// rc impossible to add. `instanceId` is folded in so two different
     /// `TerminalStore`s never compute the same path for the same `paneId`
     /// — see `instanceId`'s doc comment.
-    private func rcDirectory(for paneId: String) -> URL {
-        scratchRoot.appendingPathComponent("wakil-terminal-\(instanceId)-\(paneId)")
+    private func rcDirectory(for paneId: String, serial: Int) -> URL {
+        scratchRoot.appendingPathComponent("wakil-terminal-\(instanceId)-\(paneId)-\(serial)")
+    }
+
+    /// The shell `paneId` names for the running caller: in its own scope (`ScopeRouting.home`),
+    /// else the one on screen. Pane ids repeat across scopes loaded from disk, so a pane id alone
+    /// would let one place's `term_open` close another place's shell.
+    private func key(_ paneId: String) async -> TerminalKey {
+        TerminalKey(scope: await panes?.activeScope, paneId: paneId)
     }
 
     /// Keystrokes, an accepted proposal, or the engine's own replies,
@@ -369,14 +386,14 @@ public actor TerminalStore {
     /// tty — see its own doc comment for the wedge that closed. What it
     /// gave up on is drained into `abandonedWrites` here rather than
     /// vanishing.
-    public func write(paneId: String, bytes: [UInt8]) {
-        guard let session = sessions[paneId] else { return }
+    public func write(paneId: String, bytes: [UInt8]) async {
+        guard let session = sessions[await key(paneId)] else { return }
         session.writeToPty(bytes)
         abandonedWrites.append(contentsOf: session.takeAbandonedWrites())
     }
 
-    public func resize(paneId: String, cols: Int, rows: Int) {
-        sessions[paneId]?.resize(cols: cols, rows: rows)
+    public func resize(paneId: String, cols: Int, rows: Int) async {
+        sessions[await key(paneId)]?.resize(cols: cols, rows: rows)
     }
 
     /// Whether this store still **holds a session** for `paneId` — a
@@ -397,18 +414,18 @@ public actor TerminalStore {
     /// So a test asserting that a shell was **reaped** must assert on the
     /// pid (`kill(pid, 0) == -1`), never on this; `pidForTesting` exists
     /// for that, and the live-shell tests use it for exactly this reason.
-    public func isRunning(paneId: String) -> Bool { sessions[paneId] != nil }
+    public func isRunning(paneId: String) async -> Bool { sessions[await key(paneId)] != nil }
 
-    public func dimensions(paneId: String) -> (cols: Int, rows: Int)? {
-        sessions[paneId].map { ($0.cols, $0.rows) }
+    public func dimensions(paneId: String) async -> (cols: Int, rows: Int)? {
+        sessions[await key(paneId)].map { ($0.cols, $0.rows) }
     }
 
     /// TEST-ONLY: the child's pid, so a test can assert it was **reaped**
     /// rather than merely dereferenced. The fourth clause of this
     /// sub-phase's exit criterion is its least-defended claim, and a
     /// classification test cannot prove it.
-    func pidForTesting(paneId: String) -> pid_t? {
-        sessions[paneId].map(\.pid)
+    func pidForTesting(paneId: String) async -> pid_t? {
+        sessions[await key(paneId)].map(\.pid)
     }
 
     /// TEST-ONLY: how many `open`s are in flight, so a test can sweep at a
@@ -418,7 +435,7 @@ public actor TerminalStore {
     func openInFlightCountForTesting() -> Int { openTasks.count }
 
     /// TEST-ONLY: the panes still holding a shell.
-    func runningPaneIdsForTesting() -> [String] { sessions.keys.sorted() }
+    func runningPaneIdsForTesting() -> [String] { sessions.keys.map(\.paneId).sorted() }
 
     /// TEST-ONLY: whether this pane's pty master is non-blocking — the
     /// mechanism that makes `TerminalSession.writeToPty`'s bound possible
@@ -426,8 +443,8 @@ public actor TerminalStore {
     /// cannot be bounded by any amount of care in the loop above it: the
     /// process is already parked inside `write(2)` before anything can
     /// check a deadline.
-    func masterIsNonBlockingForTesting(paneId: String) -> Bool {
-        guard let master = sessions[paneId]?.master, master >= 0 else { return false }
+    func masterIsNonBlockingForTesting(paneId: String) async -> Bool {
+        guard let master = sessions[await key(paneId)]?.master, master >= 0 else { return false }
         let flags = fcntl(master, F_GETFL, 0)
         return flags != -1 && (flags & O_NONBLOCK) != 0
     }
@@ -435,44 +452,68 @@ public actor TerminalStore {
     /// TEST-ONLY: every non-`.output` event this pane's shell has emitted,
     /// from Wakil's own scan of the raw pty bytes. For the live-shell
     /// tests that assert a real bash or zsh actually emits Wakil's marks.
-    func marksForTesting(_ paneId: String) -> [TerminalStreamEvent] {
-        sessions[paneId]?.marksForTesting() ?? []
+    func marksForTesting(_ paneId: String) async -> [TerminalStreamEvent] {
+        sessions[await key(paneId)]?.marksForTesting() ?? []
     }
 
     /// The shell's live working directory, from OSC 7 — empty until the
     /// first prompt.
-    public func cwd(paneId: String) -> String { sessions[paneId]?.cwd ?? "" }
+    public func cwd(paneId: String) async -> String { sessions[await key(paneId)]?.cwd ?? "" }
 
     /// TEST-ONLY: whether the live screen currently contains `needle`.
-    func screenContains(_ paneId: String, _ needle: String) -> Bool {
-        sessions[paneId]?.screenLines().contains { $0.contains(needle) } ?? false
+    func screenContains(_ paneId: String, _ needle: String) async -> Bool {
+        sessions[await key(paneId)]?.screenLines().contains { $0.contains(needle) } ?? false
     }
 
     /// TEST-ONLY (#365).
-    func inputLine(_ paneId: String) -> TerminalInputLine? { sessions[paneId]?.inputLine() }
+    func inputLine(_ paneId: String) async -> TerminalInputLine? { sessions[await key(paneId)]?.inputLine() }
     /// TEST-ONLY (#365).
-    func screenLines(_ paneId: String) -> [String] { sessions[paneId]?.screenLines() ?? [] }
+    func screenLines(_ paneId: String) async -> [String] { sessions[await key(paneId)]?.screenLines() ?? [] }
     /// TEST-ONLY (#365).
-    func bracketedPaste(_ paneId: String) -> Bool { sessions[paneId]?.bracketedPasteMode ?? false }
+    func bracketedPaste(_ paneId: String) async -> Bool { sessions[await key(paneId)]?.bracketedPasteMode ?? false }
     /// TEST-ONLY (#365).
-    func marks(_ paneId: String) -> [TerminalStreamEvent] { sessions[paneId]?.marksForTesting() ?? [] }
+    func marks(_ paneId: String) async -> [TerminalStreamEvent] { sessions[await key(paneId)]?.marksForTesting() ?? [] }
     /// TEST-ONLY (#365).
-    func lineEditSupported(_ paneId: String) -> Bool { sessions[paneId]?.lineEditSupportedForTesting() ?? false }
+    func lineEditSupported(_ paneId: String) async -> Bool { sessions[await key(paneId)]?.lineEditSupportedForTesting() ?? false }
 
     /// Kills one pane's shell and waits for it. Safe concurrently, twice,
     /// and on a pane that never opened.
     public func close(paneId: String) async {
-        if let existing = teardownTasks[paneId] {
+        await close(key: key(paneId))
+    }
+
+    /// Moves every shell opened in `outgoing` to `incoming`, for a scope whose panes moved
+    /// wholesale (`PaneStore.switchScope(to:adoptingFrom:)`): a shell opened on the Landing
+    /// keeps answering the operator's keys, and publishing into its pane, once the first turn
+    /// files that canvas under a conversation.
+    public func rehome(from outgoing: LayoutScope, to incoming: LayoutScope) {
+        func moved(_ key: TerminalKey) -> TerminalKey? {
+            key.scope == outgoing ? TerminalKey(scope: incoming, paneId: key.paneId) : nil
+        }
+        for key in sessions.keys { if let to = moved(key) { sessions[to] = sessions.removeValue(forKey: key) } }
+        for key in rcDirectories.keys {
+            if let to = moved(key) { rcDirectories[to] = rcDirectories.removeValue(forKey: key) }
+        }
+        for key in publishedCursors.keys {
+            if let to = moved(key) { publishedCursors[to] = publishedCursors.removeValue(forKey: key) }
+        }
+        for key in proposedCommands.keys {
+            if let to = moved(key) { proposedCommands[to] = proposedCommands.removeValue(forKey: key) }
+        }
+    }
+
+    private func close(key: TerminalKey) async {
+        if let existing = teardownTasks[key] {
             await existing.value
             return
         }
-        guard let session = sessions[paneId] else { return }
-        let task = Task { await self.performTeardown(paneId, session) }
-        teardownTasks[paneId] = task
+        guard let session = sessions[key] else { return }
+        let task = Task { await self.performTeardown(key, session) }
+        teardownTasks[key] = task
         await task.value
     }
 
-    private func performTeardown(_ paneId: String, _ session: TerminalSession) async {
+    private func performTeardown(_ key: TerminalKey, _ session: TerminalSession) async {
         // **Unreachable BEFORE the descriptor is touched.** Clearing this
         // after the await left the session findable for the whole teardown
         // window — the actor is free during that suspension — so a
@@ -481,8 +522,8 @@ public actor TerminalStore {
         // teardown thread had just closed. The failure is not EBADF:
         // descriptor numbers are recycled aggressively, so that writes
         // shell keystrokes into whatever reopened the number.
-        sessions[paneId] = nil
-        publishedCursors[paneId] = nil
+        sessions[key] = nil
+        publishedCursors[key] = nil
 
         // Off the cooperative pool: `teardown()` waits on a thread and on
         // a child, and the pool is small and shared by every
@@ -504,9 +545,11 @@ public actor TerminalStore {
         // into a block. Publishing here is what keeps the last command of
         // a pane's life from being lost between the final 60 Hz tick and
         // the teardown that made the session unreachable.
-        await publish(paneId: paneId, session: session, sealingOpenBlock: true)
-        try? FileManager.default.removeItem(at: rcDirectory(for: paneId))
-        teardownTasks[paneId] = nil
+        await publish(key, session: session, sealingOpenBlock: true)
+        if let rcDirectory = rcDirectories.removeValue(forKey: key) {
+            try? FileManager.default.removeItem(at: rcDirectory)
+        }
+        teardownTasks[key] = nil
     }
 
     // MARK: - Publishing
@@ -550,9 +593,7 @@ public actor TerminalStore {
     /// replacement had just filled and started a THIRD loop, leaving two
     /// running against one store. Harmless to correctness (blocks are
     /// taken-and-cleared, so neither loop can publish the same one twice)
-    /// and pure waste otherwise. `shutdownAll(runStream:)` made the window
-    /// reachable in ordinary use: before it, the publisher was only ever
-    /// cancelled at app quit, where nothing opens a pane afterwards.
+    /// and pure waste otherwise. An `open` landing after `shutdownAll()` reaches it.
     private var publisherGeneration = 0
 
     /// Clears the slot this task occupied, and starts a fresh loop if a
@@ -571,8 +612,8 @@ public actor TerminalStore {
     /// Returns false when nothing is left to publish, which stops the loop.
     private func publishOnce() async -> Bool {
         guard panes != nil, !sessions.isEmpty else { return false }
-        for (paneId, session) in sessions {
-            await publish(paneId: paneId, session: session, sealingOpenBlock: false)
+        for (key, session) in sessions {
+            await publish(key, session: session, sealingOpenBlock: false)
         }
         return true
     }
@@ -581,9 +622,24 @@ public actor TerminalStore {
     /// run for each, and refreshes the live state when the engine reports
     /// a dirty range.
     private func publish(
-        paneId: String, session: TerminalSession, sealingOpenBlock: Bool
+        _ key: TerminalKey, session: TerminalSession, sealingOpenBlock: Bool
+    ) async {
+        guard panes != nil else { return }
+        // Home, not the screen: the scope the shell was opened in (`TerminalKey`). The 60 Hz
+        // loop belongs to no dispatch, so without this it would write into whichever scope is on
+        // screen. Bound for the whole pass, so every write below lands in one scope whatever the
+        // window does between them.
+        await ScopeRouting.$home.withValue(key.scope) {
+            await publishHome(key, session: session, sealingOpenBlock: sealingOpenBlock)
+        }
+    }
+
+    /// `publish`'s body, run with the session's home bound.
+    private func publishHome(
+        _ key: TerminalKey, session: TerminalSession, sealingOpenBlock: Bool
     ) async {
         guard let panes else { return }
+        let paneId = key.paneId
         // Written from the drain thread by `flushEngineResponses`, so this
         // is the only place a give-up there is ever picked up.
         abandonedWrites.append(contentsOf: session.takeAbandonedWrites())
@@ -593,7 +649,7 @@ public actor TerminalStore {
         }
         for block in blocks {
             await panes.recordTerminal(paneId: paneId, block: block)
-            yieldRun(paneId: paneId, cwd: session.cwd, block: block)
+            yieldRun(key, cwd: session.cwd, block: block)
         }
         // Walk-defects D1. **After** the loop above, not before: a
         // `clear` earns a completed block the same as any other command
@@ -618,9 +674,9 @@ public actor TerminalStore {
         // cursor is a change of its own.
         let dirty = session.takeUpdateRange() != nil
         let cursor = session.cursorPosition()
-        let cursorMoved = publishedCursors[paneId].map { $0 != cursor } ?? true
+        let cursorMoved = publishedCursors[key].map { $0 != cursor } ?? true
         guard dirty || cursorMoved || sealingOpenBlock else { return }
-        publishedCursors[paneId] = cursor
+        publishedCursors[key] = cursor
         let onTheGrid = session.isAlternateScreenActive
         await panes.setTerminalLiveState(
             paneId: paneId, cwd: session.cwd, shell: session.shellName,
@@ -668,11 +724,11 @@ public actor TerminalStore {
     /// the pane's pending proposal flag whether or not anything is
     /// listening — a flag left behind would attach itself to some later,
     /// unrelated command.
-    private func yieldRun(paneId: String, cwd: String, block: TerminalBlock) {
-        let wasProposed = takeProposedFlag(for: paneId, command: block.command)
+    private func yieldRun(_ key: TerminalKey, cwd: String, block: TerminalBlock) {
+        let wasProposed = takeProposedFlag(for: key, command: block.command)
         runContinuation?.yield(TerminalRun(
-            paneId: paneId, command: block.command, cwd: cwd, exitCode: block.exitCode,
-            durationMs: block.durationMs, wasProposed: wasProposed))
+            paneId: key.paneId, command: block.command, cwd: cwd, exitCode: block.exitCode,
+            durationMs: block.durationMs, wasProposed: wasProposed, scope: key.scope))
     }
 
     /// Every command that finishes in any pane, in completion order.
@@ -710,8 +766,8 @@ public actor TerminalStore {
     /// operator's own prompt without a newline, and from that instant the
     /// command is theirs in every sense. Only Wakil's own memory of having
     /// put them there survives, and this is it.
-    public func markNextRunProposed(paneId: String, command: String) {
-        proposedCommands[paneId] = command
+    public func markNextRunProposed(paneId: String, command: String) async {
+        proposedCommands[await key(paneId)] = command
     }
 
     /// Consumes the pane's pending proposal flag if `command` is the one
@@ -722,33 +778,20 @@ public actor TerminalStore {
     /// The plan names this `takeProposedFlag(for:)`; it needs the command
     /// as well as the pane, because matching on the command is what the
     /// plan's own description of the flag requires.
-    func takeProposedFlag(for paneId: String, command: String) -> Bool {
-        guard let pending = proposedCommands.removeValue(forKey: paneId) else { return false }
+    func takeProposedFlag(for paneId: String, command: String) async -> Bool {
+        takeProposedFlag(for: await key(paneId), command: command)
+    }
+
+    private func takeProposedFlag(for key: TerminalKey, command: String) -> Bool {
+        guard let pending = proposedCommands.removeValue(forKey: key) else { return false }
         return pending == command
     }
 
-    /// Every shell, gone. The org switch's third awaited clear and app
-    /// quit's fifth line both land here — **and they do not mean the same
-    /// thing by it**, which is why `runStream` is a parameter with no
-    /// default rather than a decision this method makes for both.
-    ///
-    /// **The bug that made it one.** This method used to end with
-    /// `finishRunStream()` unconditionally, written for app quit, where
-    /// ending the consumer's `for await` is exactly right. The org switch
-    /// then reused the same call (`WindowModel.invalidateForOrgChange()`),
-    /// and `WindowModel` subscribes to `completedRuns()` **once, in
-    /// `init`** — so after one org switch the pump's loop had ended, the
-    /// continuation was `nil`, and no command run in any pane was ever
-    /// journalled again. `switchOrg` keeps the same store instance, so
-    /// that was the production path: a silent hole in Invariant 2's one
-    /// chokepoint, with no symptom at all except entries that stop
-    /// appearing. `runStreamSurvivesAnOrgSwitch` (`OrgSwitchTests`) is the
-    /// assertion that was missing.
-    ///
-    /// Making the caller name the disposition — rather than defaulting it
-    /// — is deliberate: the two call sites differ in exactly this, and a
-    /// default is how the difference went unnoticed the first time.
-    public func shutdownAll(runStream: TerminalRunStreamDisposition) async {
+    /// Every shell, gone, and the run stream finished: app quit and the window's own shutdown,
+    /// the end of every consumer's `for await`. Nothing else stops every shell — an org switch
+    /// keeps them all (background agents 3 of 4), so the stream the window subscribes to once,
+    /// in `init`, is never finished under a window that carries on.
+    public func shutdownAll() async {
         if let shutdownTask {
             await shutdownTask.value
             return
@@ -771,19 +814,14 @@ public actor TerminalStore {
             while !self.openTasks.isEmpty {
                 for inFlight in self.openTasks.values { _ = try? await inFlight.value }
             }
-            for paneId in self.sessions.keys.sorted() {
-                await self.close(paneId: paneId)
+            for key in self.sessions.keys.sorted(by: { $0.paneId < $1.paneId }) {
+                await self.close(key: key)
             }
             // After the last `close`, so the block a `tail -f` was still
-            // in has already been sealed and yielded — whichever
-            // disposition the caller chose, nothing sealed is dropped.
-            //
-            // The publisher stops either way: it has no pane left to
-            // publish for, and the next `open` starts it again
-            // (`publisherFinished`). Only the run STREAM distinguishes the
-            // two callers.
+            // in has already been sealed and yielded: nothing sealed is dropped.
+            // The publisher has no pane left to publish for.
             self.stopPublisher()
-            if runStream == .finish { self.finishRunStream() }
+            self.finishRunStream()
         }
         shutdownTask = task
         await task.value
@@ -796,8 +834,8 @@ public actor TerminalStore {
     }
 
     /// `finish()` is what ends the consumer's `for await`; without it the
-    /// run pump would outlive the store it reads. **App quit only** — see
-    /// `shutdownAll(runStream:)`.
+    /// run pump would outlive the store it reads. **The window's end only** — see
+    /// `shutdownAll()`.
     private func finishRunStream() {
         runContinuation?.finish()
         runContinuation = nil

@@ -6,9 +6,14 @@ public struct ResumeRequest: Sendable, Equatable {
     /// whoever performs the swap, because Wakil mints every session id it
     /// runs.
     public let sessionId: String
+    /// The place whose session the fork replaces: an agent caller's own (`pinnedPlace(of:)`),
+    /// so an agent's `session_resume` acts where it works whatever is on screen. Nil — the
+    /// operator, `--dispatch` — is the place on screen.
+    public let place: Place?
 
-    public init(sessionId: String) {
+    public init(sessionId: String, place: Place? = nil) {
         self.sessionId = sessionId
+        self.place = place
     }
 }
 

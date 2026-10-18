@@ -40,13 +40,17 @@ public final class WindowModel {
     public var place: Place {
         Place(organization: organization, project: projectKey, environment: environment)
     }
-    /// The place the live session's harness was built for: what the factory
-    /// was called with, committed and cleared together with `harness`. Nil
-    /// while no session is live.
-    public private(set) var agentPlace: Place?
+    /// One agent per place (background agents, 3 of 4): each with its own harness, session,
+    /// thread and turn, alive while the screen shows another place. Created on the first work
+    /// in a place; no switch of organisation, project or environment stops or drops one.
+    public private(set) var agents: [Place: PlaceAgent] = [:]
+    /// The agent of the place on screen, if work has begun there.
+    public var currentAgent: PlaceAgent? { agents[place] }
+    /// The places whose agent has a live harness: what the pool keeps clients for.
+    public var agentPlaces: Set<Place> { Set(agents.compactMap { $0.value.harness == nil ? nil : $0.key }) }
     /// The clients pinned to agent sessions' places (`WakilWiring.placeClients`). Told the places
-    /// still in use after every `agentPlace` change, so a client for a place no session holds
-    /// any more is stopped. Nil in tests that route no call; production passes the wiring's.
+    /// still in use after every harness change, so a client for a place no session holds any
+    /// more is stopped. Nil in tests that route no call; production passes the wiring's.
     private let placeClients: PlaceClients?
     /// What an agent's place's own `wakil-ctx` says about it — its roots and production
     /// flags — read through `placeClients`. Nil exactly when that is: a window that routes no
@@ -55,10 +59,6 @@ public final class WindowModel {
     /// The last `retain` handed to `placeClients`, so each waits for the one before it and
     /// the pool always ends on the latest place.
     private var placeRetain: Task<Void, Never>?
-    /// What the MCP server reads for an agent's call: the session's own place,
-    /// so a project switch on screen does not move a running agent. Before a
-    /// session exists it is the place on screen.
-    public var agentCaller: DispatchCaller { DispatchCaller(place: agentPlace ?? place, session: sessionId) }
     /// The active project's production declarations (Decision 26, #182).
     ///
     /// Held so the VIEW can hand them to `VoidPalette.forEnvironment` and
@@ -144,51 +144,19 @@ public final class WindowModel {
     /// nothing here reads them back out of the emulator's buffer. Git is not a pane's contents: the
     /// window's status (`gitStatus`, mirrored in `gitRoots`) is re-read only by the git watcher.
     public private(set) var paneCells: [String: PaneSnapshotCell] = [:]
-    public private(set) var thoughts: [ThoughtRow] = []
-    /// Monotonic row ids. **Not `thoughts.count`**, which was correct while
-    /// every event produced a row and repeats an id the moment one does not —
-    /// `ThoughtRow` is `Identifiable`, so a repeated id makes SwiftUI draw one
-    /// row twice and omit another.
-    private var nextThoughtId = 0
-    /// The agent's own `Bash` `toolUse`/`toolResult` events, retained so a
-    /// terminal pane opened after the fact can be backfilled — the record
-    /// predates the pane, and `mirroredBlocks(from:cap:)` is pure, so it
-    /// needs its own copy of the events rather than replaying `thoughts`
-    /// (already projected down to display text) or the harness's own
-    /// stream (already drained and gone). Task 15.
-    ///
-    /// **Each event is paired with the `Date()` `append(_:)` observed it
-    /// at (fix round 1, Critical).** The first cut kept plain
-    /// `[HarnessEvent]` and let `mirroredBlocks` synthesise an
-    /// index-derived `startedAt`, which sorted every mirrored block ahead
-    /// of every real operator block, unconditionally — see
-    /// `MirrorEvent`'s own doc comment. Arrival time is captured exactly
-    /// once, here, at the one place the event actually arrives, and
-    /// carried through rather than recomputed.
-    ///
-    /// **Org-derived, not org-independent.** These are the agent's own
-    /// commands in THIS organisation's session — the same boundary
-    /// `thoughts` and `harness` already sit behind — so
-    /// `invalidateForOrgChange()` clears this alongside them. Left set, a
-    /// terminal pane opened fresh in a new organisation would backfill
-    /// with the outgoing org's commands.
-    ///
-    /// **Capped at `TerminalBlock.historyCap * 2` events, not blocks.**
-    /// One mirrored block is two events (`toolUse` then `toolResult`), and
-    /// the cap must survive a long run of still-running calls whose result
-    /// has not arrived yet without prematurely evicting blocks
-    /// `mirroredBlocks` would otherwise still be able to pair.
-    private let mirror: TerminalMirrorFeed
+    /// The thread of the place on screen (`currentAgent`), empty where no work has begun.
+    /// Row ids are monotonic per thread, never `thoughts.count`: `ThoughtRow` is
+    /// `Identifiable`, and a repeated id makes SwiftUI draw one row twice and omit another.
+    public var thoughts: [ThoughtRow] { currentAgent?.thoughts ?? [] }
     /// Provider capacity — see `CapacityFeed`.
     public let capacity: CapacityFeed
-    /// Whether a turn is in flight: true from a successful `send`, false on
-    /// the `.result` event that ends it. The Core reads it through
-    /// `coreState` and nothing else does.
+    /// Whether the on-screen place's turn is in flight: true from a successful `send`, false
+    /// on the `.result` event that ends it. The Core reads it through `coreState`.
     ///
     /// Set on the *successful* path only. A `send` that failed — no harness,
     /// which is the ordinary degraded launch — never started a turn, and a
     /// Core left thinking forever is worse than one that never started.
-    public private(set) var turnInFlight = false
+    public var turnInFlight: Bool { currentAgent?.turnInFlight ?? false }
     /// True while push-to-talk is listening or finishing (2d-ii). Set only
     /// by `ComposerModel`. Org-independent: it describes the operator's
     /// hand on ⌥, not either organisation's state.
@@ -227,50 +195,6 @@ public final class WindowModel {
     /// (written, never read) must actually be read by the one surface it
     /// was kept for, or it should come out entirely.
     public private(set) var switching = false
-    /// The organisation a queued switch is waiting to move to, or `nil`.
-    ///
-    /// **Window state, not plane state** (spec §4.2): dismissing the org
-    /// plane does not cancel it and the status line carries it. Only
-    /// `cancelQueuedSwitch()` cancels it, and only the operator calls that.
-    /// Org-derived (`InvalidationContractTests`): a queue naming a
-    /// DESTINATION org is exactly the kind of state a fresh org must not
-    /// inherit, even though every real path that clears `queuedOrgSwitch`
-    /// already nils it before `invalidateForOrgChange()` ever runs —
-    /// reset here anyway as defence in depth, the same reasoning `pending`'s
-    /// own reset in that method gives for itself.
-    public private(set) var queuedOrgSwitch: String?
-    /// How many times `cancelQueuedSwitch()` has actually cancelled
-    /// something. Monotonic, and org-independent (`InvalidationContractTests`)
-    /// — it describes an event count, not either org's state.
-    ///
-    /// **Task 14, fix round 1 (Important 2).** Exists so the org plane can
-    /// tell "the queue was cancelled" from "the queue is about to fire"
-    /// without inferring it from the relative timing of two OTHER
-    /// properties. `fireQueuedSwitchIfReady()` clears `queuedOrgSwitch`
-    /// synchronously and only sets `switching = true` later, after a
-    /// further `await confirmations.current()` suspension inside
-    /// `setOrganization` — so a view watching "`queuedOrgSwitch` went
-    /// `nil` while `switching` is still `false`" cannot distinguish a
-    /// genuine cancel from a fire that simply has not reached `switching
-    /// = true` yet. Observed against SwiftUI's own change delivery, that
-    /// ambiguity silently dropped a switch's outcome: the plane inferred
-    /// "cancelled", reset itself to Choosing, and then never noticed
-    /// `switching` flip true→false for the switch that was actually
-    /// running — on failure, `organization` clears to `""` with nothing on
-    /// screen saying why. This counter is bumped ONLY by an actual
-    /// cancellation (never by a fire), so a view can watch it alone and
-    /// never has to guess.
-    public private(set) var queuedSwitchCancellationCount = 0
-    /// True from the moment `fireQueuedSwitchIfReady()` begins until it
-    /// returns, guarding the whole method against a second, concurrent
-    /// invocation. Two call sites can land back-to-back on the same
-    /// suspension point inside that method's own `await
-    /// confirmations.current()` — see its doc comment — and without this
-    /// flag both would observe `queuedOrgSwitch` still non-nil and both
-    /// call `setOrganization`, firing one queued request twice.
-    /// Org-independent: like `switching`, it describes the firing
-    /// transition itself, not either org's state.
-    private var firingQueuedSwitch = false
     /// The last thing that went wrong, as text. A SwiftUI control has
     /// nowhere to throw to, so a refusal or a transport failure has to
     /// become something on screen or it becomes nothing at all.
@@ -413,12 +337,16 @@ public final class WindowModel {
     /// cannot outlive its own premise.
     public private(set) var databaseChoices: [String: QueryLineDatabaseChoice] = [:]
 
-    /// The mutation currently waiting for this operator, or `nil`. The
-    /// confirmation plane renders from this. Mirrored from `confirmations`
+    /// Every proposal waiting for this operator, by place. Mirrored from `confirmations`
     /// by `confirmationPump`, started in `init` — not lazily, unlike
     /// `eventPump`, because a mutation can park before the operator ever
     /// sends anything to the agent.
-    public private(set) var pending: PendingMutation?
+    public private(set) var parkedProposals: [Place: PendingMutation] = [:]
+    /// The on-screen place's waiting proposal, or `nil`. The confirmation plane renders from
+    /// this; another place's waits, unseen, until the operator goes there.
+    public var pending: PendingMutation? { parkedProposals[place] }
+    /// The places with a proposal waiting, for the chips that say so (Plan 4).
+    public var waitingPlaces: Set<Place> { Set(parkedProposals.keys) }
 
     /// The arrangement the canvas draws. A cached copy of
     /// `LayoutStore.snapshot()`, refreshed after every dispatch that could
@@ -523,7 +451,20 @@ public final class WindowModel {
     /// — to every MCP server the agent talks to, pinning the session where
     /// it starts. A factory that captured the launch place would run a
     /// later session's servers in the place the window was opened in.
-    private let harnessFactory: @Sendable (Place, ProviderSelection) -> AgentHarness?
+    ///
+    /// **And the socket path** (background agents 3 of 4, Task 4): each session has a socket of
+    /// its own (`agentSocketFactory`), and its `--mcp-config` names that one.
+    private let harnessFactory: @Sendable (Place, ProviderSelection, String) -> AgentHarness?
+    /// Starts the socket one agent session's shim reaches Wakil on, answering for that session's
+    /// place wherever the screen is. One per session, opened when its place is first shown
+    /// (`openShownSocket`) and stopped with the session that took it.
+    private let agentSocketFactory: AgentSocketFactory
+    /// The socket each shown place opened before a session there took it, by place
+    /// (`openShownSocket`). A place's first session takes its socket and its id (`makeSession`);
+    /// a session replaced before then (`resume`, `setProvider`) stops it (`stopSession`).
+    @ObservationIgnored private var shownSockets: [Place: ShownSocket] = [:]
+    /// Set by `shutdown`: no place opens a socket after it.
+    @ObservationIgnored private var socketsClosed = false
     /// Builds a credentials lookup for a given org.
     ///
     /// A factory rather than an instance because `WakilCLICredentialsLookup`
@@ -596,7 +537,6 @@ public final class WindowModel {
     /// `var`, not `let`: a `let` cannot be reset, and this is on the
     /// invalidation contract's list (spec §5.3).
     private var lookup: ProviderCredentialsLookup
-    private var harness: AgentHarness?
     private let resumes: ResumeBroker
     private var resumePump: Task<Void, Never>?
     /// Where a `session_set_provider` request parks — the identical
@@ -737,18 +677,38 @@ public final class WindowModel {
     /// is active, and nothing writes it to disk.) One derivation is what
     /// keeps the three layers it keys from drifting; see `LayoutScope`.
     private var layoutScope: LayoutScope?
+    /// The scope the active context names: the place — organisation, the project's **registry
+    /// key** and the environment (Plan 3) — and the conversation. The one derivation
+    /// `activateLayout` installs and the watchers compare against. Before Plan 3 it was built
+    /// from the display name and carried no environment, so a switch of environment kept the
+    /// canvas and refetched it (D11); staging and production are now two canvases.
+    private var currentLayoutScope: LayoutScope {
+        LayoutScope(
+            organization: organization, project: projectKey, environment: environment,
+            lineageRoot: lineageRoot)
+    }
     /// Every scope whose saved layout has already been read this session.
     /// Separate from `layoutScope` because they answer different
     /// questions: that one is "which arrangement is on screen", this one
     /// is "which have been read from disk", and only the second may never
     /// be re-answered. See `activateLayout`.
     private var loadedLayoutScopes: Set<LayoutScope> = []
+    /// Scopes read off disk while off screen (`followConversation`), whose panes' contents are
+    /// re-run when the operator first comes back to them.
+    private var scopesAwaitingRestore: Set<LayoutScope> = []
+    /// The note an off-screen read gave with the arrangement it did read (a stale pane kind
+    /// dropped), said in `status` when the operator first comes back to that scope, as an
+    /// on-screen read says it (final review minor 6).
+    private var layoutNotesAwaitingReturn: [LayoutScope: String] = [:]
+    /// The arrangement last written for each place off screen (`persistBackgroundLayouts`), so
+    /// only a change costs a file.
+    private var backgroundLayouts: [LayoutScope: LayoutSnapshot] = [:]
     /// True from the moment `activateLayout` points the stores at the
     /// incoming scope until the arrangement that belongs to it is in hand.
     ///
     /// **It describes the swap, not either side of it**, which is why
     /// `invalidateForOrgChange()` never touches it — the same shape
-    /// `switching` and `firingQueuedSwitch` already have. An organisation
+    /// `switching` already has. An organisation
     /// switch does of course raise and clear it, by way of the
     /// `activateLayout` that follows: it is the swap's own flag, and an
     /// org switch is a swap like any other.
@@ -789,25 +749,10 @@ public final class WindowModel {
     /// so that a write which fails does not cancel the one chained behind
     /// it.
     private var pendingSave: Task<String?, Never>?
-    /// The id the current agent session was started under, or `nil` before
-    /// the first `send`. Per spec §3.3 a session starts fresh and keeps one
-    /// id; the second and later `send` calls reuse it rather than starting
-    /// another session.
-    ///
-    /// `private(set)`, not `private` — as of Task 9, `ProviderSwitchTests`
-    /// reads this directly (`model.sessionId`) to pin that a provider
-    /// switch mints a fresh id rather than forking, the same reason
-    /// `providerId` just below is already `private(set)` rather than
-    /// `private`.
-    private(set) var sessionId: String?
-    private var eventPump: Task<Void, Never>?
-    /// Bumped by `resume`, immediately before it stops the harness it is
-    /// leaving. `startEventPump` captures the value in effect when a pump
-    /// starts; the pump's loop compares its captured value against this on
-    /// every event and drops the event if they no longer match. See
-    /// `resume`'s doc comment (Finding 1, acceptance review 2026-09-10) for
-    /// why this exists rather than relying on `Task.cancel()` alone.
-    private var eventPumpGeneration = 0
+    /// The id the on-screen place's agent session was started under, or `nil` before its
+    /// first `send`. Per spec §3.3 a session starts fresh and keeps one id; the second and later
+    /// `send` calls reuse it rather than starting another session.
+    var sessionId: String? { currentAgent?.sessionId }
 
     /// - Parameters:
     ///   - confirmations: Where this window's own refused mutations park —
@@ -854,7 +799,7 @@ public final class WindowModel {
         layout: LayoutStore,
         persistence: LayoutPersistence? = nil,
         context: ContextStore?,
-        harnessFactory: @escaping @Sendable (Place, ProviderSelection) -> AgentHarness?,
+        harnessFactory: @escaping @Sendable (Place, ProviderSelection, String) -> AgentHarness?,
         resumes: ResumeBroker,
         rootPath: String,
         providerId: String,
@@ -930,16 +875,19 @@ public final class WindowModel {
         // Background agents, 2 of 4. Defaulted to nil here for `rootWatcher`'s reason; the
         // public initialiser production calls takes it with no default.
         placeClients: PlaceClients? = nil,
+        // Background agents, 3 of 4 (Task 4). Defaulted to no socket here for `rootWatcher`'s
+        // reason; the public initialiser production calls takes it with no default.
+        agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() },
         environment: String
     ) {
         self.registry = registry
+        self.agentSocketFactory = agentSocketFactory
         self.placeClients = placeClients
         self.placeContexts = placeClients.map { PlaceContexts(clients: $0) }
         self.paletteClients = paletteClients
         self.vocabulary = vocabulary
         self.panes = panes
         self.layout = layout
-        self.mirror = TerminalMirrorFeed(panes: panes, layout: layout)
         self.capacity = CapacityFeed()
         self.terminals = terminals
         self.persistence = persistence
@@ -993,11 +941,11 @@ public final class WindowModel {
             // already parked — it does not replay an initial `nil` (Task
             // 8's review finding). So this subscriber clears any stale
             // `pending` itself; otherwise a re-subscribe while holding a
-            // stale non-nil `pending` would never be told to clear it.
+            // stale `parkedProposals` would never be told to clear it.
             // Safe unforced here even though `self` is weak: this task is
             // created from inside `self`'s own `init`, so `self` cannot
             // have deallocated yet.
-            self?.pending = nil
+            self?.parkedProposals = [:]
             for await parked in await confirmations.updates() {
                 // Re-checked on every iteration, like `eventPump` below —
                 // `updates()` never terminates on its own, so hoisting a
@@ -1006,7 +954,7 @@ public final class WindowModel {
                 // the model → task → model cycle would break only by hand,
                 // in `shutdown()`.
                 guard let self else { return }
-                self.pending = parked
+                self.parkedProposals = parked
             }
         }
 
@@ -1074,23 +1022,18 @@ public final class WindowModel {
                 if name == "ctx_set_environment" {
                     // Fix round 1, item 5: the operator's own switch is seen here too, and
                     // `setEnvironment` is already handling it. Wait for it to finish, THEN
-                    // compare: the operator's switch reads as a no-op and is not done twice
-                    // (whose late clear wiped a reply already received under the new
-                    // environment), while a switch from any other route that landed meanwhile
-                    // still shows.
+                    // refresh: the operator's switch reads as a no-op and is not done twice,
+                    // while a switch from any other route that landed meanwhile still shows.
                     _ = await self.operatorEnvironmentSwitch?.value
-                    let before = self.environment
+                    // Such a switch does what the operator's does (Plan 3): the environment's
+                    // own canvas comes in through `activateLayout`, and nothing is cleared or
+                    // re-run. A switch to the active environment (W12) names the scope already
+                    // installed, which `activateLayout` leaves alone.
                     await self.refreshContext()
-                    // W12: a switch to the active environment changes nothing on screen.
-                    if !environmentSwitchIsNoOp(from: before, to: self.environment) {
-                        // Such a switch does what the operator's does, replies included.
-                        await self.panes.clearApiResponses(to: self.environment)
-                        await self.restorePaneContents()
-                    }
                 }
                 // **`ctx_set_project` refreshes and does NOT restore**, which
                 // is exactly what the operator's `setProject` does — it calls
-                // `refreshContext()` alone, where `setEnvironment` calls both.
+                // `refreshContext()` alone, as `setEnvironment` now does too.
                 // The branch above exists to make any other route do what the
                 // operator's does; doing MORE here would be this pump
                 // inventing a pane policy for project switches that the UI
@@ -1108,7 +1051,7 @@ public final class WindowModel {
                 // "starting empty" the backfill requirement exists to
                 // avoid.
                 if name == "term_open" {
-                    await self.mirror.backfill()
+                    await self.backfillTerminals()
                 }
                 // **An agent's settings write, and the pane it lands under.**
                 // Every operator edit goes through a wrapper here that calls
@@ -1132,6 +1075,7 @@ public final class WindowModel {
                 }
                 await self.refreshPanes()
                 await self.refreshLayout()
+                await self.persistBackgroundLayouts()
                 // **A canvas with something on it is work begun. #264.**
                 //
                 // The Landing draws while `!sessionStarted`, and
@@ -1158,7 +1102,18 @@ public final class WindowModel {
                 // **It only ever sets.** Closing the last pane returns to the
                 // room, not to the Landing: the axis is the session, and
                 // nothing clears this in-window (see `sessionStarted`).
-                if !self.sessionStarted, !self.layoutSnapshot.panes.isEmpty {
+                //
+                // **Only while the canvas drawn is the place's own.** An org switch names the
+                // incoming place (`refreshContext`) a few suspensions before `activateLayout`
+                // brings in its canvas, and a dispatch finishing in that gap found the outgoing
+                // canvas's panes here and marked work begun in a place that has none — so the
+                // incoming organisation lost its Landing. Asked of the store's screen, not
+                // `layoutScope`: that is nil both before any arrangement and on a no-project
+                // canvas, which is `bareScope`.
+                let shownScope = await self.panes.screenScope
+                let canvasIsThePlaces = !self.layoutSwapInFlight
+                    && shownScope == (self.projectKey.isEmpty ? self.bareScope : self.currentLayoutScope)
+                if canvasIsThePlaces, !self.sessionStarted, !self.layoutSnapshot.panes.isEmpty {
                     self.showTheWorkAlreadyOnTheCanvas()
                 }
             }
@@ -1171,18 +1126,7 @@ public final class WindowModel {
         resumePump = Task { [weak self, resumes] in
             for await request in await resumes.requests() {
                 guard let self else { return }
-                await self.resume(sessionId: request.sessionId)
-                // Fix round 2, Finding 1. This call site — NOT
-                // `resume(sessionId:)`'s own body — is where a queued
-                // switch is fired for THIS caller specifically: an
-                // agent-initiated `session_resume` (or `--dispatch`) is
-                // never nested inside `setOrganization`, unlike
-                // `autoResumeAfterSwitch()`'s own call to `resume`, and
-                // `resume`'s teardown sets `turnInFlight = false` with no
-                // `.result` ever coming afterwards for that turn. See
-                // `fireQueuedSwitchIfReady()`'s own doc comment for why
-                // this cannot live inside `resume(sessionId:)` instead.
-                await self.fireQueuedSwitchIfReady()
+                await self.resume(sessionId: request.sessionId, in: request.place)
             }
         }
 
@@ -1234,6 +1178,25 @@ public final class WindowModel {
 
         // The trees draw the place on screen: an agent session pinned to it lists into them.
         fileLists?.setScreenPlace { [weak self] in await self?.place }
+
+        // Background agents 3 of 4: an agent's dispatch reads and writes its own place's canvas
+        // (`ScopeRouting.home`), wherever the screen is; everything else is homed on the screen
+        // it began on.
+        registry.setScopeLookup { [weak self] caller in
+            guard let away = pinnedPlace(of: caller) else { return nil }
+            return await self?.agentScope(for: away)
+        }
+        registry.setScreenScope { [panes] in await panes.activeScope }
+    }
+
+    /// The scope an agent session in `place` works in: its agent's conversation, or the place's
+    /// own canvas before it has one. Never nil, so an agent is never homed on the screen's
+    /// canvas by default — a place's pane must not land in another place's. A place with no
+    /// project has no conversation's arrangement (`PlaceAgent.layoutScope`), so its agent works
+    /// in its organisation's own canvas, with project and environment empty (final review C1).
+    private func agentScope(for place: Place) -> LayoutScope {
+        agents[place]?.layoutScope
+            ?? LayoutScope(organization: place.organization, project: place.project, environment: place.environment)
     }
 
     /// Adapts the pre-2b-viii (org-oblivious) initialiser shape onto the
@@ -1270,7 +1233,7 @@ public final class WindowModel {
         self.init(
             registry: registry, panes: panes, layout: layout, persistence: persistence,
             context: context,
-            harnessFactory: { _, selection in harnessFactory(selection) },
+            harnessFactory: { _, selection, _ in harnessFactory(selection) },
             resumes: resumes, rootPath: rootPath, providerId: providerId,
             lookupFactory: { _ in lookup },
             confirmations: confirmations,
@@ -1324,7 +1287,7 @@ public final class WindowModel {
         layout: LayoutStore,
         persistence: LayoutPersistence? = nil,
         context: ContextStore?,
-        harnessFactory: @escaping @Sendable (Place, ProviderSelection) -> AgentHarness?,
+        harnessFactory: @escaping @Sendable (Place, ProviderSelection, String) -> AgentHarness?,
         resumes: ResumeBroker,
         rootPath: String,
         providerId: String,
@@ -1384,7 +1347,11 @@ public final class WindowModel {
         // Background agents, 2 of 4. No default, for `rootWatcher`'s reason: without it a
         // client pinned to a session's old place is never stopped, with nothing failing.
         // Production passes `wiring.placeClients`; a test that routes no call says `nil`.
-        placeClients: PlaceClients?
+        placeClients: PlaceClients?,
+        // Background agents, 3 of 4 (Task 4). No default, for `rootWatcher`'s reason: without
+        // it no agent reaches Wakil's own tools, with nothing failing. Production passes one
+        // that starts an `MCPSocketServer`.
+        agentSocketFactory: @escaping AgentSocketFactory
     ) {
         self.init(
             registry: registry, panes: panes, layout: layout, persistence: persistence,
@@ -1403,6 +1370,7 @@ public final class WindowModel {
             gitStatus: gitStatus,
             paletteClients: paletteClients,
             placeClients: placeClients,
+            agentSocketFactory: agentSocketFactory,
             environment: "")
     }
 
@@ -1448,13 +1416,15 @@ public final class WindowModel {
         // them) gets a switch that simply works.
         orgSwitcher: @escaping @Sendable (String) async -> [String] = { _ in [] },
         // Defaulted to a fresh broker for every existing call site. A
-        // test that needs to arm `armHoldNextCurrentForTesting()` on the
+        // test that needs to arm `holdNextCurrentForTesting()` on the
         // SAME broker instance the model actually calls (T11 fix round 2)
         // passes its own instance here and keeps a reference to it.
         confirmations: ConfirmationBroker = ConfirmationBroker(),
         // 2d-i. Nil by default, as in production's initialiser.
         vocabulary: VocabularyStore? = nil,
-        placeClients: PlaceClients? = nil
+        placeClients: PlaceClients? = nil,
+        persistence: LayoutPersistence? = nil,
+        agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() }
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1516,8 +1486,9 @@ public final class WindowModel {
             registry: registry,
             panes: panes,
             layout: layout,
+            persistence: persistence,
             context: context,
-            harnessFactory: harnessFactory,
+            harnessFactory: { place, selection, _ in harnessFactory(place, selection) },
             resumes: ResumeBroker(),
             rootPath: rootPath,
             providerId: providerId,
@@ -1531,7 +1502,8 @@ public final class WindowModel {
             fileLists: nil,
             gitStatus: nil,
             paletteClients: PaletteClients(),
-            placeClients: placeClients)
+            placeClients: placeClients,
+            agentSocketFactory: agentSocketFactory)
         model.setOrganizationForTesting(organization)
         shellContext.use { [weak model] in
             guard let model else { return ("", "", "", "") }
@@ -1571,8 +1543,33 @@ public final class WindowModel {
     /// TEST-ONLY: exposes the `private` `startHarness()` so a test can
     /// confirm what org `harnessFactory` was actually invoked with,
     /// without going through `send()`'s full turn machinery.
+    /// TEST-ONLY: brings the canvas in line with the place seeded on screen, as
+    /// `refreshContext` does once `wakil-ctx` has answered.
+    func activateLayoutForTesting() async {
+        await activateLayout()
+    }
+
+    /// TEST-ONLY: the session id `place`'s shown socket answers for, while no session has taken
+    /// it (`openShownSocket`).
+    func shownSocketSessionIdForTesting(_ place: Place) -> String? {
+        shownSockets[place]?.sessionId
+    }
+
+    /// TEST-ONLY: waits for every shown socket's start.
+    func settleShownSocketsForTesting() async {
+        for shown in shownSockets.values { _ = await shown.opening.value }
+    }
+
+    /// TEST-ONLY: waits for the pool to have been told the places in use.
+    func settlePlaceRetainForTesting() async {
+        await placeRetain?.value
+    }
+
     func startHarnessForTesting() async -> AgentHarness? {
-        await startHarness()
+        guard let started = await startHarness(in: place, provider: providerId, sessionId: UUID().uuidString)
+        else { return nil }
+        await started.socket?.stop()
+        return started.harness
     }
 
     /// TEST-ONLY: exposes the `private` `rootPath` so a test can assert
@@ -1636,19 +1633,21 @@ public final class WindowModel {
     ) {
         self.providerId = providerId
         self.rootPaths = [rootPath]
-        for i in 0..<thoughts {
-            self.thoughts.append(
-                ThoughtRow(id: nextThoughtId, label: "test", detail: "seed \(i)", isError: false))
-            nextThoughtId += 1
-        }
         self.databaseChoices = databaseChoices
-        self.pending = pending
         self.databases = databases
         self.databaseDrivers = databaseDrivers
         self.layoutSnapshot = layoutSnapshot
         self.project = project
         self.projectKey = project
         self.environment = environment
+        // On the place just seeded, so the plane draws it. Nil leaves what is parked alone,
+        // so a test that moves the screen does not clear other places' proposals.
+        if let pending { parkedProposals[place] = pending }
+        // Into the thread of the place just seeded, so the rows are on screen.
+        if thoughts > 0 {
+            let agent = agent(for: place)
+            for i in 0..<thoughts { agent.appendRow(label: "test", detail: "seed \(i)") }
+        }
     }
 
     /// What the view draws for the environment label. Never empty: Invariant
@@ -1784,6 +1783,9 @@ public final class WindowModel {
             // copy goes: the agent's next call is priced by what the project declares now, not
             // by what it declared then.
             await placeContexts?.forget(place)
+            // An agent with no project reads its organisation's active project (`pinnedPlace(of:)`),
+            // which this read may just have moved: its copy goes too.
+            await placeContexts?.forget(Place(organization: organization, project: "", environment: ""))
             // **Re-derived, not carried.** All three are org-derived
             // state that `invalidateForOrgChange` cleared, and this is
             // the one call that can rebuild them from the org this
@@ -1902,28 +1904,27 @@ public final class WindowModel {
         await refreshDatabases()
     }
 
-    /// Clears every piece of state that belongs to the organisation being
-    /// left. **The teardown contract 2c-iii inherits** (spec §5).
+    /// Resets what belongs to the organisation itself, and nothing that belongs to a place in
+    /// it. **The org switch's whole teardown** (background agents 3 of 4).
     ///
-    /// **Adding org-scoped state to this type means adding it here.**
-    /// `InvalidationContractTests` fails on any stored property that is
-    /// classified as neither org-derived nor org-independent, so a new
-    /// pane's state cannot be added without its author being told to make
-    /// the call. That test proves CLASSIFICATION, not behaviour — the
-    /// resets themselves are covered by the acceptance runbook's checks 3,
-    /// 4 and 14.
+    /// **What goes:** the context (`project`, `environment`, the production flags the gate
+    /// prices the screen by), the settings, accounts and login, `lookup`, `providerId` and the
+    /// roots, the palette's and the vocabulary's caches, capacity, and the editor's pending
+    /// requests and unsaved prompt, which name panes on the screen being left. The window's
+    /// clients are re-pointed by `orgSwitcher` after this, and `refreshContext` re-derives the
+    /// rest for the incoming org. **What stays:** every place's agent, thread, turn, waiting
+    /// approval and conversation; both stores' scopes, so each canvas and its rows; every shell;
+    /// every editor buffer, save and autosave; reads in flight. Each is keyed by its place or
+    /// scope, so nothing of the outgoing org is drawn or resolved under the incoming one, and
+    /// coming back finds it as it was left (`comingBackToAnOrgFindsItsCanvasAsLeft`).
+    ///
+    /// **Adding org-scoped state to this type means deciding here.**
+    /// `InvalidationContractTests` fails on any stored property not classified as org-derived
+    /// (reset here), kept per place, or org-independent.
     ///
     /// Called from `setOrganization` BEFORE the clients restart, so no
-    /// handler can write the outgoing org's data into a store while the
+    /// handler can resolve against the outgoing org's context while the
     /// new org's server is coming up.
-    ///
-    /// **`async`, and both store clears are awaited.** `layout` and
-    /// `panes` are actors; firing their clears from inside a detached
-    /// `Task` would let this method return — and a test's very next
-    /// assertion run — before either clear has actually happened, racing
-    /// the thing it exists to pin down. Awaiting both here is what makes
-    /// "call this, then look" a safe sequence for every caller, tests
-    /// included.
     func invalidateForOrgChange() async {
         // Invariant 4 for names: nothing of the old org resolves after this line.
         await vocabulary?.dropAll()
@@ -1939,46 +1940,21 @@ public final class WindowModel {
         // gate would price the incoming environments by the outgoing
         // org's flags — and a stale `production: false` is a production
         // mutation priced as staging. Invariant 4 (#182). The registry's
-        // copy is cleared with it, because the gate reads that one.
+        // copy is cleared with it, because the gate reads that one. An agent
+        // in the org left is priced by its own place's flags (`productionFlags(forCaller:)`).
         environmentProduction = .undeclared
         await registry.setEnvironmentProduction(.undeclared)
-        // **The session ends with the org, so the window is sessionless
-        // again.** An org switch closes every pane, respawns the servers a
-        // session carries, and crosses a credential boundary — there is no
-        // sense in which the work continues. Returning to an org auto-resumes
-        // its most recent session (open question 5, amended 2026-09-15), and
-        // `resume` sets this again when that fires; an org with nothing to
-        // resume correctly lands on the Landing instead. Leaving it set would
-        // put the operator in the new org with no panes, no thread and no way
-        // to reach either.
-        sessionStarted = false
-        assignedSessionId = nil
-        lineageRoot = nil
-        // 3b-i: the editor's save state names the outgoing org's panes, whose ids the next org
-        // reuses. A save in flight is abandoned (its buffer goes with the pane), a pending
-        // saved-tabs write would land the old tabs on a new pane, and a path field would open
-        // on one.
-        editorSaves.values.forEach { $0.cancel() }
-        editorSaves = [:]
-        editorTabsWrites.values.forEach { $0.cancel() }
-        editorTabsWrites = [:]
-        // Cancelled, not just dropped: a run waiting on a save, or between its checks, must not
-        // write into the next org's panes (each run checks `Task.isCancelled` before dispatching).
-        cancelAutosaveTimers()
-        editorAutosaveRuns.values.forEach { $0.cancel() }
-        editorAutosaveRuns = [:]
-        editorAutosave.reset()
+        // Requests addressed to a pane on the screen being left. Pane ids repeat across
+        // scopes, so carried over one would act on the incoming screen's pane of the same id:
+        // the path field, the keyboard (Rule 6) or a tree's selection.
         editorSaveAsRequest = nil
         editorColumnFocusRequest = nil
         editorTreeRevealRequest = nil
-        // The trees' listings are the outgoing project's roots; the list itself is emptied when
-        // `syncEditorWatcher` below finds no roots and stops watching.
-        editorFiles = .empty
-        // The unsaved prompt names the outgoing org's panes, whose ids the next org reuses. A quit
-        // it was holding is answered no, or AppKit would wait on it forever.
+        // The unsaved prompt names the screen's panes for the same reason. A quit it was
+        // holding is answered no, or AppKit would wait on it forever; the buffers it asked
+        // about stay dirty in their own scope.
         if unsavedPrompt?.intent == .quit { quitCancelled += 1 }
         unsavedPrompt = nil
-        unsavedSwitchApproved = nil
 
         // The settings tree describes the OUTGOING organisation — its
         // three strings, its accounts, its projects. Every one of those is
@@ -2020,80 +1996,14 @@ public final class WindowModel {
             await session.dismiss()
         }
 
-        // Panes and their contents.
-        tables = [:]
-        editables = [:]
-        paneCells = [:]
-        // The query line's per-pane state, all three parts: a refusal and
-        // a restore both describe a pane in the OUTGOING org, and the
-        // token is what orders restores within one window's life.
-        queryLineRefusals = [:]
-        queryLineRestores = [:]
-        queryLineRestoreToken = 0
-        // Keyed by pane id, which is sequential (`db-1`, `db-2`, …) and
-        // reused by a fresh session in the NEW org. Left set, a pane in
-        // org B would silently inherit org A's chosen database and
-        // subject — a query line pointed at the previous credential
-        // boundary's database, with nothing failing. The same shape as
-        // the same-project-name collision this task exists to close, one
-        // level down (fix round 1, Finding 1).
-        databaseChoices = [:]
-        layoutScope = nil
-        loadedLayoutScopes = []
-        // A cached projection `refreshContext`/`activateLayout` rebuild on
-        // the common path, so "it gets refreshed anyway" would normally be
-        // enough — except `refreshDatabases` explicitly PRESERVES a stale
-        // list when its dispatch fails, which is exactly the path where a
-        // switch has gone wrong. Reset here for the same reason `tables`
-        // and `editables` are above (fix round 1, Finding 3).
-        databases = []
-        databaseDrivers = [:]
-
-        // The agent.
-        thoughts = []
-        // The outgoing org's own `Bash` history — left set, a terminal
-        // pane opened fresh in the new organisation would backfill with
-        // commands that ran under the outgoing org's credentials (Task 15).
-        mirror.reset()
         // The outgoing org's readings (CapacityFeedTests.resetForgetsReadingsAndFailure).
         capacity.reset()
         providerId = ""
-        harness = nil
-        agentPlace = nil
-        retainAgentPlace()
-        sessionId = nil
-        turnInFlight = false
         // TEST-ONLY, but still a record of which session
         // `autoResumeAfterSwitch()` last picked for the OUTGOING org — left
         // set, a test could read a stale org A session id as if it were
         // org B's just-made selection (Task 12).
         resumedParentForTesting = nil
-        // The window's OWN mirror of the parked confirmation (set at
-        // `confirmationPump`'s subscription, cleared there too) — not the
-        // `confirmations` broker itself. The switch's guard 2 already
-        // refuses to start while a mutation is parked, so in the normal
-        // path this is already `nil`; cleared here anyway as defence in
-        // depth, because a contract that relies on a SEPARATE check
-        // staying correct is the kind of coupling this codebase has been
-        // bitten by before (fix round 1, Finding 2). Left set, the
-        // outgoing org's SQL statement would stay on the confirmation
-        // plane after the switch — an operator asked to type `confirm`
-        // for a mutation belonging to an org they have left.
-        pending = nil
-        // Every real path that clears this already sets it `nil` before
-        // this method ever runs (`fireQueuedSwitchIfReady()` clears it
-        // before calling `setOrganization`; `stopTurnAndSwitchNow()` does
-        // the same). Reset here anyway, for the identical defence-in-depth
-        // reason `pending` just above gives for itself — a queue naming a
-        // destination org must not be able to survive under a fresh one.
-        queuedOrgSwitch = nil
-        // Same reasoning as `databases` just above: a cached projection
-        // that self-heals on the common path, but not on every path, so
-        // "it gets refreshed anyway" is not sufficient on its own (fix
-        // round 1, Finding 3).
-        layoutSnapshot = LayoutSnapshot()
-        apiSendRequests = [:]
-        apiSendRequestToken = 0
         // The palette's cache of the outgoing org (Invariant 4): see `invalidatePalette`.
         invalidatePalette()
 
@@ -2113,37 +2023,11 @@ public final class WindowModel {
         rootPaths = []
         hasProjectRoot = false
 
-        // All three stores, wholesale. Awaited, not fired into a detached
-        // `Task`: see this method's own doc comment. Pinned by
-        // `invalidationClearsBothStoresAndNotJustTheModelsOwnProperties`
-        // (`OrgSwitchTests`), which seeds both stores THROUGH this model
-        // and asserts the projections come back empty — deleting either
-        // line fails it on its own. Until that test existed, both lines
-        // could be replaced with `_ = layout; _ = panes` with the whole
-        // suite still passing (final fix pass, Important 2).
-        //
-        // **The third is not like the other two.** They clear
-        // dictionaries; this one kills processes and closes file
-        // descriptors, and it is the reason the tripwire needed a third
-        // bucket (`orgDerivedBehindAReference`,
-        // `InvalidationContractTests`). The switch is deliberately NOT
-        // gated on a running shell — a `tail -f` the operator forgot about
-        // dies silently, because making a shell a parked mutation would
-        // let it block a switch indefinitely, which is the worse failure.
-        await layout.clearAllScopes()
-        await panes.cancelAllDBReads()   // stop the old org's reads on its database, not just forget them
-        await panes.clearAllScopes()
-        // **`.keepOpen`, and that word is the whole of final review's
-        // Critical 1.** This window subscribes to `completedRuns()`
-        // exactly once, in `init`; finishing the stream here — which is
-        // what this call did when it was written for app quit and reused
-        // here — ended `terminalRunPump`'s `for await` permanently, so
-        // after ONE org switch no command run in any pane was ever
-        // journalled again. The shells still die; only the stream
-        // survives. See `TerminalRunStreamDisposition`.
-        await terminals.shutdownAll(runStream: .keepOpen)
-        // No pane and no root survive the switch, so nothing of the outgoing org's is
-        // watched past it.
+        // The watchers follow the screen's roots, which are none until the incoming org's
+        // context is read (`refreshContext` syncs them again). A place left behind catches up
+        // when the operator returns (R4). The trees' mirror of their listing goes with it, and
+        // so does the window's git status, which is of the screen's roots only.
+        editorFiles = .empty
         await gitStatus?.reset()
         gitRoots = []
         await syncGitWatcher()
@@ -2223,6 +2107,8 @@ public final class WindowModel {
     /// nothing is read off disk — a brand-new conversation has no file of its own, and the seed
     /// is what is already on screen, minus every draft (re-walk finding #4).
     private func activateLayout(carrying overlay: Pane? = nil, adoptingCanvas: Bool = false) async {
+        // The place is on screen: it has a socket from now on, before any turn (`openShownSocket`).
+        openShownSocket()
         // No project, no arrangement. `refreshContext`'s error branch
         // clears `project` deliberately — keeping the outgoing org's would
         // draw the wrong credential boundary confidently (spec §6) — and
@@ -2230,8 +2116,25 @@ public final class WindowModel {
         // left behind: `persistLayout` writes under `layoutScope`, so a
         // stale one would file the canvas under the very project that
         // branch just refused to keep showing.
-        guard !project.isEmpty else {
+        //
+        // **Another organisation's canvas is put away, not drawn** (background agents 3 of 4):
+        // an org switch keeps every scope in memory, so landing in an org with no project — or
+        // in none, a failed restart — would otherwise leave the org left on screen under the new
+        // name (Invariant 4). It is committed and kept for the return, as any swap keeps it.
+        //
+        // **An organisation with no project shows its own canvas**, `LayoutScope(org, "", "")`
+        // (final review, ruling on concern 1): the one its no-project agent works in
+        // (`agentScope(for:)`), so that agent's panes are drawn while the operator is there,
+        // and two such organisations never share one. `.initial` — the same value with no
+        // organisation — is left only for a window with none. Nothing of it is written to disk.
+        guard !projectKey.isEmpty else {
+            let outgoing = layoutScope
             layoutScope = nil
+            if let outgoing, outgoing.organization != organization {
+                await putAwayCanvas(outgoing)
+            } else if outgoing == nil, await panes.screenScope != bareScope {
+                await showCanvas(bareScope)
+            }
             return
         }
         // The scope, not the project, is what a change is measured
@@ -2251,10 +2154,9 @@ public final class WindowModel {
         // operator had already arranged and `switchScope` would hand back
         // an empty one — which is why the guarantee is named here instead
         // of being re-derived by the next reader.
-        let scope = LayoutScope(
-            organization: organization, project: project, lineageRoot: lineageRoot)
-        // **Equal key means equal on all three fields** (#160): same
-        // organisation, same project, same conversation. It did not until
+        let scope = currentLayoutScope
+        // **Equal key means equal on all four fields** (#160, Plan 3): same
+        // organisation, same project, same environment, same conversation. It did not until
         // 2026-09-20 — inside a conversation the project was excluded from
         // the identity, so this branch caught a project switch and
         // returned without moving a pane, which is the defect the operator
@@ -2307,11 +2209,17 @@ public final class WindowModel {
         // nothing has switched it yet, and no other `activateLayout` can
         // be about to, per the claim above.
         if let outgoing {
-            let uncommitted = await layout.snapshot()
+            // Named, not read through `ScopeRouting.home`: the store still shows `outgoing`.
+            let uncommitted = await ScopeRouting.$home.withValue(outgoing) { await layout.snapshot() }
             if uncommitted.withoutTransientState != layoutSnapshot.withoutTransientState {
                 await persistLayout(uncommitted, for: outgoing)
             }
+            // From here its own agent's changes reach its file (`persistBackgroundLayouts`).
+            backgroundLayouts[outgoing] = uncommitted
         }
+        // Left earlier this session and kept in memory: a return, which catches up below.
+        let returning = backgroundLayouts[scope] != nil
+        backgroundLayouts[scope] = nil
 
         // Re-walk finding #4: a conversation minted over the conversation-less canvas takes it.
         let adopted = adoptingCanvas && outgoing.map {
@@ -2320,6 +2228,8 @@ public final class WindowModel {
         if adopted, let outgoing {
             await layout.switchScope(to: scope, adoptingFrom: outgoing)
             await panes.switchScope(to: scope, adoptingFrom: outgoing)
+            // Its shells too: they are keyed by the scope they were opened in.
+            await terminals.rehome(from: outgoing, to: scope)
             loadedLayoutScopes.insert(scope)
         } else {
             await layout.switchScope(to: scope)
@@ -2333,10 +2243,10 @@ public final class WindowModel {
         // database (final review Finding 6). Not under adoption: the contents moved with the
         // arrangement, and a listing in flight still describes them.
         if !adopted {
-            // A read in flight on the panes left behind would land nowhere — its reply is dropped —
-            // but it would keep running on the database. Stopped here (spec edge: a project switch
-            // mid-read cancels it). Under adoption the panes move with it, so it still lands.
-            await panes.cancelAllDBReads()
+            // **No read in flight is stopped** (background agents 3 of 4; the spec's "in-flight
+            // reads stay", ruled over the earlier "a project switch mid-read cancels it"). Every
+            // place stays alive while the operator is elsewhere, and a read on the canvas left
+            // behind may be that place's agent's. A restore cancels what it re-runs itself.
             await panes.switchScope(to: scope)
         }
         // The insert is last so that it only records a scope the read was
@@ -2344,7 +2254,9 @@ public final class WindowModel {
         // still unresolved would suppress the read that should follow.
         var loadedFromDisk = false
         if let persistence, !scope.organization.isEmpty, loadedLayoutScopes.insert(scope).inserted {
-            let saved = persistence.load(for: scope)
+            // `project`, the display name, is what this window filed under before the scope
+            // carried the registry key and the environment (R3): read, never written.
+            let saved = persistence.load(for: scope, legacyName: project)
             if let snapshot = saved.snapshot {
                 await layout.load(snapshot, for: scope)
                 loadedFromDisk = true
@@ -2354,6 +2266,8 @@ public final class WindowModel {
             // refused dispatch says so.
             if let note = saved.note { status = note }
         }
+        // Read off screen with a note (`followConversation`): said now, where it is shown.
+        if let note = layoutNotesAwaitingReturn.removeValue(forKey: scope) { status = note }
         // A plain read: what makes this snapshot differ from the one in
         // hand is the file that was just loaded, or another project's
         // arrangement being swapped out — neither is a change to commit.
@@ -2396,11 +2310,64 @@ public final class WindowModel {
         // every subject on an in-memory return would quietly repeal it.
         // Only a genuine read from disk has panes that hold no rows to
         // begin with, and only that case needs this.
-        if loadedFromDisk { await restorePaneContents() }
+        if loadedFromDisk || scopesAwaitingRestore.remove(scope) != nil {
+            await restorePaneContents()
+        } else if returning {
+            await catchUpReturnedCanvas()
+        }
         layoutActivating = false
         let waiters = layoutSwapWaiters
         layoutSwapWaiters = []
         for waiter in waiters { waiter.resume() }
+    }
+
+    /// R4's catch-up: a canvas come back to from memory re-reads what the disk may have changed
+    /// while it was off screen, because no watcher followed it there. Its editor panes re-read
+    /// their open files (`paths: []`: a tab is re-read, a search is not marked stale for nothing);
+    /// the window's git status is re-read by `syncGitWatcher`, whose watch starts on the returned
+    /// roots (3b-iii). Rows and subjects are not re-run — the canvas is as it was left. A canvas
+    /// read off disk is `restorePaneContents`' instead.
+    private func catchUpReturnedCanvas() async {
+        var refreshed = false
+        for pane in layoutSnapshot.panes where PaneKinds.is(pane.kind, EditorPaneKind.self) {
+            _ = try? await registry.dispatch(
+                name: "editor_refresh", params: .object(["pane": .string(pane.id), "paths": .array([])]),
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            refreshed = true
+        }
+        if refreshed { await refreshPanes() }
+    }
+
+    /// The canvas the screen shows while its organisation has no project: the organisation's
+    /// own, which is `.initial` when there is no organisation either.
+    private var bareScope: LayoutScope {
+        LayoutScope(organization: organization, project: "", environment: "")
+    }
+
+    /// Commits `outgoing`'s arrangement, as `activateLayout` commits the one it leaves, and
+    /// shows the canvas of the organisation now on screen with no project (`bareScope`). Both stores keep `outgoing` — its panes,
+    /// rows and shells — so a later `activateLayout` back to it finds it as it was left, and its
+    /// own agent's changes keep reaching its file (`persistBackgroundLayouts`).
+    private func putAwayCanvas(_ outgoing: LayoutScope) async {
+        // A Send asked of a pane on the canvas being left is not one to answer on the next.
+        apiSendRequests = [:]
+        let uncommitted = await ScopeRouting.$home.withValue(outgoing) { await layout.snapshot() }
+        if uncommitted.withoutTransientState != layoutSnapshot.withoutTransientState {
+            await persistLayout(uncommitted, for: outgoing)
+        }
+        backgroundLayouts[outgoing] = uncommitted
+        await showCanvas(bareScope)
+    }
+
+    /// Shows `scope`, an organisation's canvas with no project, as it is held in memory: no
+    /// file is read or written for it.
+    private func showCanvas(_ scope: LayoutScope) async {
+        // A Send asked of a pane on the canvas being left is not one to answer on the next.
+        apiSendRequests = [:]
+        await layout.switchScope(to: scope)
+        await panes.switchScope(to: scope)
+        await readLayoutSnapshot()
+        await refreshPanes()
     }
 
     // MARK: Controls
@@ -2444,23 +2411,15 @@ public final class WindowModel {
     private func switchEnvironment(to name: String) async -> Bool {
         guard await dispatch("ctx_set_environment", .object(["name": .string(name)])) != nil
         else { return false }
+        // **The incoming environment's own canvas, not this one refetched** (Plan 3; operator,
+        // 2026-10-16). `refreshContext` reads the new environment and `activateLayout` swaps to
+        // its scope: what it holds in memory as it was left, else what it saved — re-run on the
+        // way in, since a file holds no rows — else the project's legacy file (R3). D11 cleared
+        // every api reply and refetched every pane here, because one canvas served every
+        // environment and its rows described the one just left. Nothing on the outgoing canvas
+        // describes the incoming environment now, so nothing is cleared and nothing re-run: the
+        // canvas left keeps its rows and replies for the operator's return.
         await refreshContext()
-        // **Every api pane's reply describes the environment we just
-        // left**, so it is cleared before anything is refetched — D11's
-        // argument for this pane kind. The DRAFT is kept and nothing is
-        // re-sent: a switch that re-sent would put an unattended request
-        // on the wire in the new environment. A captured value dies here
-        // too, by `restorePaneContents` below bumping every source pane's
-        // generation (#137 ruling 2).
-        await panes.clearApiResponses(to: environment)
-        // D11. The panes on screen describe the environment we just left.
-        // This is the relaunch path, and a switch must leave the canvas
-        // exactly as reopening the app in the new environment would — the
-        // same argument that refuses rows a place on disk, applied to a
-        // change that guarantees they describe a different database. The
-        // `if` above is a `guard`: a REFUSED switch must not refetch,
-        // because the environment did not change.
-        await restorePaneContents()
         return true
     }
 
@@ -3311,8 +3270,14 @@ public final class WindowModel {
     /// must not stop the others.
     public func restorePaneContents() async {
         // A restore re-runs every pane's subject; a read still in flight would refuse it
-        // (Interaction Rule 5) and the pane would keep the environment just left. Cancelled first.
-        await panes.cancelAllDBReads()
+        // (Interaction Rule 5) and the pane would keep the environment just left. Cancelled first —
+        // only on the panes about to re-run, in the scope being restored: any other read is left
+        // to land (background agents 3 of 4).
+        for pane in layoutSnapshot.panes {
+            guard let kind = PaneKinds.kind(named: pane.kind),
+                  (kind as? PaneRestorable.Type)?.restoreStep(for: pane) != nil else { continue }
+            _ = await panes.cancelDBRead(paneId: pane.id)
+        }
         // The editor's watch starts before `editor_restore` runs (3b-ii), so the restored panes
         // share one kept listing per root instead of each listing every root fresh. Inside
         // `activateLayout` the swap's own layout read came too early to start it.
@@ -3631,20 +3596,12 @@ public final class WindowModel {
         guard let parked = pending else { return }
         guard typed == "confirm" else { return }
         await confirmations.approve(id: parked.id)
-        // Resolving the confirmation is one of the moments a switch that
-        // was HELD (rather than cancelled) behind a parked mutation is
-        // free to fire — see `fireQueuedSwitchIfReady()`'s doc comment.
-        await fireQueuedSwitchIfReady()
     }
 
     /// What Cancel and ESC call. Cancelling is always the safe default.
     public func cancelPending() async {
         guard let parked = pending else { return }
         await confirmations.cancel(id: parked.id)
-        // Same reasoning as `confirmPending` just above: cancelling the
-        // parked mutation is exactly as much "nothing is in the way now"
-        // as confirming it is.
-        await fireQueuedSwitchIfReady()
     }
 
     /// Re-reads every pane on the canvas out of `PaneStore`.
@@ -4077,8 +4034,7 @@ public final class WindowModel {
         guard let gitWatcher else { return }
         let roots = gitRootPaths
         let canvasIsCurrent = !layoutSwapInFlight
-            && layoutScope == LayoutScope(
-                organization: organization, project: project, lineageRoot: lineageRoot)
+            && layoutScope == currentLayoutScope
         guard canvasIsCurrent || roots.isEmpty else { return }
         let showsGit = layoutSnapshot.panes.contains { PaneKinds.is($0.kind, EditorPaneKind.self) }
         let wanted = showsGit ? roots : []
@@ -4114,8 +4070,7 @@ public final class WindowModel {
         }
         let roots = gitRootPaths
         let canvasIsCurrent = !layoutSwapInFlight
-            && layoutScope == LayoutScope(
-                organization: organization, project: project, lineageRoot: lineageRoot)
+            && layoutScope == currentLayoutScope
         guard canvasIsCurrent || roots.isEmpty else { return }
         let hasEditor = layoutSnapshot.panes.contains { PaneKinds.is($0.kind, EditorPaneKind.self) }
         let changed: @Sendable (String, [String]?) async -> Void = { [weak self] root, paths in
@@ -4261,9 +4216,85 @@ public final class WindowModel {
     /// first message to the agent. The arrangement and the pane contents are the same work, so
     /// they move into the conversation as they are.
     private func enterConversation() async {
-        let minting = lineageRoot == nil
-        markSessionStarted()
-        await activateLayout(adoptingCanvas: minting && lineageRoot != nil)
+        await enterConversation(agent(for: place))
+    }
+
+    /// `enterConversation` for the agent a turn was typed to. The canvas follows only while
+    /// that place is on screen.
+    private func enterConversation(_ agent: PlaceAgent) async {
+        let minting = agent.lineageRoot == nil
+        markSessionStarted(in: agent)
+        await followConversation(of: agent, adoptingCanvas: minting && agent.lineageRoot != nil)
+    }
+
+    /// The canvas follows a change of `agent`'s conversation. On screen that is
+    /// `activateLayout`. Off screen — an agent's own resume while the operator is elsewhere —
+    /// its arrangement is read into memory once, as `activateLayout` would, so its next write
+    /// lands on it rather than on an empty canvas a later return would then overwrite; the
+    /// contents are restored when the operator returns.
+    ///
+    /// **A file it cannot read is not marked read** (final review minor 6), so
+    /// `persistBackgroundLayouts` never writes the agent's changes over the arrangement the
+    /// operator made, and the operator's return reads it again — on screen — and says so in
+    /// `status`, as an on-screen read does. Said off screen, the note would name a place the
+    /// operator is not looking at, or be overwritten before they got there.
+    private func followConversation(
+        of agent: PlaceAgent, carrying overlay: Pane? = nil, adoptingCanvas: Bool = false
+    ) async {
+        guard agent.place != place else {
+            await activateLayout(carrying: overlay, adoptingCanvas: adoptingCanvas)
+            return
+        }
+        guard let scope = agent.layoutScope, let persistence, !scope.organization.isEmpty,
+              !loadedLayoutScopes.contains(scope) else { return }
+        let saved = persistence.load(for: scope)
+        // Unreadable: a note and no arrangement. Left unread for the return to read and report.
+        if saved.snapshot == nil, saved.note != nil { return }
+        loadedLayoutScopes.insert(scope)
+        if let note = saved.note { layoutNotesAwaitingReturn[scope] = note }
+        if let snapshot = saved.snapshot {
+            await layout.load(snapshot, for: scope)
+            scopesAwaitingRestore.insert(scope)
+        }
+    }
+
+    /// Every agent's `Bash` history into the terminal panes of its own canvas: the screen's
+    /// agent into the screen, each other agent into its place's scope.
+    private func backfillTerminals() async {
+        for agent in agents.values {
+            if agent.place == place {
+                await agent.mirror.backfill(into: nil)
+            } else if let scope = agent.layoutScope {
+                await agent.mirror.backfill(into: scope)
+            }
+        }
+    }
+
+    /// One harness event into the terminal panes of its agent's own canvas.
+    private func pumpMirror(_ event: HarnessEvent, for agent: PlaceAgent) async {
+        if agent.place == place {
+            await agent.mirror.pump(event, into: nil)
+        } else if let scope = agent.layoutScope {
+            await agent.mirror.pump(event, into: scope)
+        }
+    }
+
+    /// Ruling 2 of background agents 3 of 4: an agent's change to a canvas off screen reaches
+    /// that canvas's file, as the screen's changes reach its own through `refreshLayout`. Only
+    /// a scope this window has read (`loadedLayoutScopes`): writing one it never read would
+    /// replace a saved arrangement with an empty one. Read with the scope named, never through
+    /// whatever `ScopeRouting.home` the caller carries.
+    private func persistBackgroundLayouts() async {
+        for agent in agents.values where agent.place != place {
+            guard let scope = agent.layoutScope, scope != layoutScope,
+                  loadedLayoutScopes.contains(scope) else { continue }
+            let snapshot = await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }
+            guard snapshot.withoutTransientState != backgroundLayouts[scope]?.withoutTransientState else {
+                continue
+            }
+            backgroundLayouts[scope] = snapshot
+            await persistLayout(snapshot, for: scope)
+        }
     }
 
     /// The mouse's way into a terminal pane (walk-defects B1), dispatching
@@ -4655,42 +4686,22 @@ public final class WindowModel {
     /// Bumps when a quit prompt resolved to stay — Cancel, or a Save that could not finish — and
     /// the app replies no.
     public private(set) var quitCancelled = 0
-    /// What the operator already said a queued switch may drop (Don't Save on its prompt) while
-    /// it waits for the turn to end: the organisation, and each dirty tab's text as it stood. The
-    /// queue firing asks again only if something is dirty that is not in it, or has changed since.
-    @ObservationIgnored private var unsavedSwitchApproved: UnsavedDropApproval?
-
-    private struct UnsavedDropApproval {
-        /// `scope` nil is the scope on screen.
-        struct Tab: Hashable { let scope: LayoutScope?; let pane: String; let subject: EditorTabSubject }
-        let org: String
-        let texts: [Tab: String]
-    }
-
-    /// One dirty tab a quit or an organisation switch would lose, in any scope (final review I3).
+    /// One dirty tab a quit would lose, in any scope (final review I3).
     private struct UnsavedTab {
         /// nil: the scope on screen. Otherwise a project or conversation the window left, whose
         /// panes `PaneStore` keeps in memory.
         let scope: LayoutScope?
-        let pane: String
-        let subject: EditorTabSubject
         /// The tab's title, with where it is for a hidden scope: `confirm.go (billing)`.
         let title: String
-        let text: String
-        var key: UnsavedDropApproval.Tab { .init(scope: scope, pane: pane, subject: subject) }
     }
 
-    /// Every dirty tab in every scope of the organisation: the one on screen in canvas order, then
-    /// each hidden scope's (`PaneStore.editorDirtyTabsInHiddenScopes`). What a quit or an
-    /// organisation switch would lose — a project or conversation switch keeps them, so they must
-    /// be asked about here.
+    /// Every dirty tab in every scope: the one on screen in canvas order, then each hidden
+    /// scope's, in every organisation (`PaneStore.editorDirtyTabsInHiddenScopes`). What a quit
+    /// would lose — every switch keeps them, so only a quit must ask about them all.
     private func everyUnsavedTab() async -> [UnsavedTab] {
-        let visible = dirtyEditorTabs().map {
-            UnsavedTab(scope: nil, pane: $0.pane, subject: $0.subject, title: $0.title, text: $0.text)
-        }
+        let visible = dirtyEditorTabs().map { UnsavedTab(scope: nil, title: $0.title) }
         let hidden = await panes.editorDirtyTabsInHiddenScopes().map {
-            UnsavedTab(scope: $0.scope, pane: $0.paneId, subject: $0.subject, title: "\($0.title) (\($0.place))",
-                       text: $0.text)
+            UnsavedTab(scope: $0.scope, title: "\($0.title) (\($0.place))")
         }
         return visible + hidden
     }
@@ -4749,9 +4760,7 @@ public final class WindowModel {
         // Save wrote what it could reach and the rest is asked about again: nothing is answered yet.
         if saved == .reasked { return }
         guard saved == .proceed else {
-            // The app stays, so a queued switch held behind this prompt may go now.
             if prompt.intent == .quit { quitCancelled += 1 }
-            await fireQueuedSwitchIfReady()
             return
         }
         switch prompt.intent {
@@ -4766,21 +4775,14 @@ public final class WindowModel {
         case .closePane(let pane):
             // `discard`: the operator chose; `pane_close` refuses dirty tabs without it.
             _ = await dispatchLayout("pane_close", .object(["id": .string(pane), "discard": .bool(true)]))
-        case .switchOrganisation(let org):
-            var texts: [UnsavedDropApproval.Tab: String] = [:]
-            for t in await everyUnsavedTab() { texts[t.key] = t.text }
-            unsavedSwitchApproved = UnsavedDropApproval(org: org, texts: texts)
-            await performOrganisationSwitch(org)
-            if queuedOrgSwitch != org { unsavedSwitchApproved = nil }
         case .quit:
             quitApproved += 1
             await refreshLayout()
             await refreshPanes()
-            return   // the app is quitting; a queued switch has nowhere to go
+            return
         }
         await refreshLayout()
         await refreshPanes()
-        await fireQueuedSwitchIfReady()
     }
 
     private enum UnsavedSaveOutcome { case proceed, stop, reasked }
@@ -4789,7 +4791,7 @@ public final class WindowModel {
     /// to write. A scratch tab on screen is made active and opens its path field, and a failed save
     /// keeps everything (Rule 8: its error is in the tab); either answers `.stop`.
     ///
-    /// A quit or an organisation switch then asks again, alone, about the dirty tabs of hidden
+    /// A quit then asks again, alone, about the dirty tabs of hidden
     /// scopes (final review I3), with Don't Save and Cancel only (`.reasked`): Save cannot reach
     /// them (`saveCanReach`), and the window never jumps to another scope to save them (Rule 6).
     private func saveForUnsaved(_ prompt: UnsavedPrompt, _ choice: UnsavedChoice) async -> UnsavedSaveOutcome {
@@ -4797,7 +4799,7 @@ public final class WindowModel {
         let scope: String?
         switch prompt.intent {
         case .closeTab(let pane, _), .closePane(let pane): scope = pane
-        case .switchOrganisation, .quit: scope = nil
+        case .quit: scope = nil
         }
         var targets = dirtyEditorTabs(in: scope)
         if case .closeTab(let pane, let subject) = prompt.intent {
@@ -4853,18 +4855,6 @@ public final class WindowModel {
         return false
     }
 
-    /// A switch about to fire from the queue would drop unsaved tabs the operator has not been
-    /// asked about.
-    private func switchNeedsAsking(_ org: String) async -> [UnsavedTab]? {
-        let dirty = await everyUnsavedTab()
-        guard !dirty.isEmpty else { return nil }
-        if let approved = unsavedSwitchApproved, approved.org == org,
-           dirty.allSatisfy({ approved.texts[$0.key] == $0.text }) {
-            return nil
-        }
-        return dirty
-    }
-
     /// The operator's typing (the one non-action path) — straight to the store, then the cell.
     /// By the tab's subject, never its position; `basis` is the agent-edit serial the page had
     /// applied (`PaneStore.editorBufferDidChange`).
@@ -4894,8 +4884,8 @@ public final class WindowModel {
     @ObservationIgnored private var editorAutosaveTimers: [String: Task<Void, Never>] = [:]
     /// Autosaves dispatched (a test seam).
     @ObservationIgnored private(set) var editorAutosaveCount = 0
-    /// Autosaves running now, by id: each removes itself when it ends, an org change cancels
-    /// them all, and a test can wait for them.
+    /// Autosaves running now, by id: each removes itself when it ends, and a test can wait for
+    /// them.
     @ObservationIgnored private var editorAutosaveRuns: [UUID: Task<Void, Never>] = [:]
 
     /// What asked for an autosave: the mode it requires when it dispatches (M-3 — switching
@@ -4990,7 +4980,7 @@ public final class WindowModel {
             guard let tab = snapshot.tabs.first(where: { $0.path == path }), editorAutosaveEligible(tab) else { return }
             // The snapshot read above suspended: a ⌘S may have registered since — wait for it and
             // look again — or a prompt been raised, a switch begun, the mode changed, or this run
-            // cancelled by an org change. Nothing suspends between these checks and the dispatch.
+            // cancelled. Nothing suspends between these checks and the dispatch.
             if editorSaves[pane] != nil { continue }
             guard autosaveMayWrite(trigger) else { return }
             break
@@ -5024,7 +5014,7 @@ public final class WindowModel {
 
     /// Wakil stopped being the active app (WakilApp forwards the notification): in `focus` mode,
     /// every eligible tab in every editor pane on the canvas saves. Each pane's saves are a run,
-    /// so an org change cancels them like any other autosave.
+    /// like any other autosave.
     public func editorAppDidResignActive() async {
         for pane in layoutSnapshot.panes where pane.kind == "editor" {
             guard let snapshot = editor(pane.id) else { continue }
@@ -6121,8 +6111,8 @@ public final class WindowModel {
     /// `db_run_mutation` is selectable there exactly like any read — and
     /// running it that way dispatches with `.object([:])`, no `statement`
     /// at all. Parking that anyway would show the operator a red plane
-    /// asking them to confirm nothing, and would occupy the single-flight
-    /// broker for up to 120s while every unrelated agent proposal got
+    /// asking them to confirm nothing, and would occupy the screen's place's
+    /// slot in the broker for up to 120s while every unrelated agent proposal there got
     /// `.busy` in the meantime. `MCPServer.parkForConfirmation`'s doc
     /// comment already states the invariant this guards — "a blank
     /// confirmation reads as a bug to whoever is asked to approve it" —
@@ -6145,23 +6135,30 @@ public final class WindowModel {
             database: stringParam(params, "database"),
             statement: statement,
             affectsEveryRow: mutationAffectsEveryRow(statement),
-            origin: .ui)
+            origin: .ui,
+            // The screen's, where the operator asked: the plane shows it while they stay.
+            place: place)
 
         switch await confirmations.request(proposal) {
         case .approved:
-            // `place` is the property, read here rather than
-            // captured before the park, so the gate judges the environment
-            // as it stands at the moment the operator confirmed — a ⌘K
-            // switch into production while the plane was up must block
-            // this, not run it. `MCPServer.parkForConfirmation` re-reads
-            // its provider at this same point, for this same reason.
+            // **Run where it was asked, or not at all** (final review minor 4). `place` is the
+            // property, read here rather than captured before the park: a ⌘K switch while the
+            // plane was up — into production, or into another organisation — means the
+            // screen is no longer where the operator approved this, so nothing runs and the
+            // status says why. Otherwise it runs in the proposal's own place, which the gate
+            // judges as it stands now. `MCPServer.parkForConfirmation` re-reads its provider at
+            // this same point, for this same reason.
             //
             // Bound to a local rather than read once per use: the `"error"`
             // and `"uncertain"` lines this path can write are read as a
             // pair, and a pair that disagreed about the environment would
             // be worse than one that named none. The binding is outside the
             // `do` so the `catch` can see it.
-            let judged = place
+            guard place == proposal.place else {
+                status = "\(name): approved after the screen left the place it was asked in — nothing ran"
+                return .refused(status)
+            }
+            let judged = proposal.place
             do {
                 let result = try await registry.dispatch(
                     name: name, params: params, origin: .ui,
@@ -6202,7 +6199,15 @@ public final class WindowModel {
     /// failure reads the same way no matter which of the three triggered
     /// it. `nil` means `status` is already set and the caller should
     /// return without doing anything else.
-    private func resolveCredentials(forProvider id: String, statusPrefix: String) async -> ProviderCredentials? {
+    ///
+    /// **In `place`'s own organisation** (Invariant 4, background agents 3 of 4): an agent the
+    /// screen has left — its own resume, or a first turn whose start the operator switched away
+    /// from — resolves its account where it lives, never under the org on screen, whose
+    /// `lookup` would read another org's secret of the same name, or refuse.
+    private func resolveCredentials(
+        forProvider id: String, in place: Place, statusPrefix: String
+    ) async -> ProviderCredentials? {
+        let lookup = place.organization == organization ? lookup : lookupFactory(place.organization)
         do {
             return try await lookup.credentials(forProvider: id)
         } catch let ProviderCredentialsLookupError.refused(reason) {
@@ -6232,16 +6237,13 @@ public final class WindowModel {
     /// never run a switch), not a broken credential, and deserves its own
     /// legible message rather than whatever a lookup call for the empty
     /// string happens to fail with.
-    private func startHarness() async -> AgentHarness? {
-        await startHarnessInPlace()?.0
-    }
-
-    /// Tells the pool which places are still in use after `agentPlace` changed: the session's
-    /// own, or none. Chained, not awaited, so the switch that changed it never waits on a
-    /// child process stopping, and two retains in a row land in the order they were made.
+    /// Tells the pool which places are still in use after a harness changed: every place with a
+    /// live agent (`agentPlaces`). Chained, not awaited, so the switch that changed it never
+    /// waits on a child process stopping, and two retains in a row land in the order they were
+    /// made.
     private func retainAgentPlace() {
         guard let placeClients else { return }
-        let places = Set([agentPlace].compactMap { $0 })
+        let places = agentPlaces
         let previous = placeRetain
         let placeContexts = placeContexts
         placeRetain = Task {
@@ -6251,23 +6253,163 @@ public final class WindowModel {
         }
     }
 
-    /// `startHarness`, with the place the factory was called with, so `send`
-    /// commits it beside the harness.
-    private func startHarnessInPlace() async -> (AgentHarness, Place)? {
-        guard !providerId.isEmpty else {
+    ///
+    /// **The place, the provider and the session id are parameters**, not read here: `send`
+    /// captures the first two when the turn is typed, and the operator can have moved the screen
+    /// by the time this runs. The session id names the socket, which is started first.
+    private func startHarness(
+        in startPlace: Place, provider: String, sessionId: String
+    ) async -> StartedSession? {
+        guard !provider.isEmpty else {
             status = "no agent session: no provider is active for this window yet"
             return nil
         }
-        guard let credentials = await resolveCredentials(forProvider: providerId, statusPrefix: "no agent session")
+        guard let credentials = await resolveCredentials(
+            forProvider: provider, in: startPlace, statusPrefix: "no agent session")
         else {
             return nil
         }
-        let startPlace = place
-        guard let harness = harnessFactory(startPlace, ProviderSelection(id: providerId, credentials: credentials)) else {
-            status = "no agent session: no agent available for provider \(providerId)"
+        guard let started = await makeSession(
+            in: startPlace, ProviderSelection(id: provider, credentials: credentials), sessionId: sessionId)
+        else {
+            status = "no agent session: no agent available for provider \(provider)"
             return nil
         }
-        return (harness, startPlace)
+        return started
+    }
+
+    /// A session `makeSession` built and has not yet installed: its harness, its socket, and
+    /// why it has none if it would not start.
+    private struct StartedSession {
+        let harness: AgentHarness
+        let socket: (any AgentSocket)?
+        let socketFailure: String?
+    }
+
+    /// A socket a place opened when it was shown, before any session there took it: the session
+    /// id it answers for, and its start, which whoever takes or stops it awaits.
+    private struct ShownSocket {
+        let sessionId: String
+        let opening: Task<OpenedSocket, Never>
+    }
+
+    /// One socket's start: the socket, or why it would not start.
+    private struct OpenedSocket {
+        let socket: (any AgentSocket)?
+        let failure: String?
+    }
+
+    /// Starts the socket at `agentSocketPath(agentSessionId:)`, answering for `place` and
+    /// `sessionId` — every call on it is that session's, from its first frame to its last,
+    /// wherever the screen is. A throw is kept as the sentence the session's status shows.
+    private nonisolated static func openSocket(
+        _ factory: AgentSocketFactory, in place: Place, sessionId: String
+    ) async -> OpenedSocket {
+        let path = agentSocketPath(agentSessionId: sessionId)
+        let caller = DispatchCaller(place: place, session: sessionId)
+        do {
+            return OpenedSocket(socket: try await factory(path, { caller }), failure: nil)
+        } catch {
+            return OpenedSocket(
+                socket: nil,
+                failure: "MCP socket \(path): \(error) — the agent cannot reach Wakil's own tools this session")
+        }
+    }
+
+    /// Opens the socket of the place on screen, the moment it is shown — at launch and on every
+    /// switch, before any turn — so the place's agent channel is listening before its agent is
+    /// (the e2e harness drives the window through it). It reserves the session id the place's
+    /// first session then starts with, and that session takes this socket (`makeSession`).
+    ///
+    /// **Pinned to the place it opened for**, never one that follows the screen: a switch away
+    /// leaves it answering for its own place, and the place switched to opens its own. Once per
+    /// place, not per visit: a place with a socket waiting, or a live session, keeps what it has.
+    /// Not awaited — a switch waits on nothing (Rule 1); whoever takes or stops it awaits its start.
+    /// One that would not start refuses nothing (Rule 7): the session that takes it tries again,
+    /// and runs without Wakil's own tools if that fails too, its status saying why.
+    ///
+    /// **Not mid organisation switch** (`switching`): the window passes through the outgoing
+    /// organisation with its project cleared, which is no place the operator was shown.
+    /// `setOrganization` opens the place it lands on once the switch is over.
+    private func openShownSocket() {
+        let place = self.place
+        guard !socketsClosed, !switching, shownSockets[place] == nil else { return }
+        if let agent = agents[place], agent.harness != nil || agent.socket != nil { return }
+        let sessionId = agents[place]?.assignedSessionId ?? UUID().uuidString
+        let factory = agentSocketFactory
+        // One that would not start is forgotten, so the place's next showing tries again.
+        let opening = Task { [weak self] () -> OpenedSocket in
+            let opened = await Self.openSocket(factory, in: place, sessionId: sessionId)
+            if opened.socket == nil, let self, self.shownSockets[place]?.sessionId == sessionId {
+                self.shownSockets[place] = nil
+            }
+            return opened
+        }
+        shownSockets[place] = ShownSocket(sessionId: sessionId, opening: opening)
+    }
+
+    /// A new session's socket, then its harness, told that socket's path (background agents 3
+    /// of 4, Task 4). The socket answers for `place` and `sessionId` — the id the harness is
+    /// about to be started with — so every call on it is that session's, from its first frame
+    /// to its last, wherever the screen is. **The socket the place opened when it was shown,
+    /// when it was opened for this id** (`openShownSocket`): a place's first session reaches
+    /// Wakil on the socket that was already listening. Any other id — a resume's fork, a
+    /// provider switch's fresh session — opens its own. Nil when the factory has no harness for
+    /// `selection`, with the socket stopped again, or left to the place if it was the shown one.
+    ///
+    /// **A socket that will not start does not refuse the session** (Rule 7, and what the one
+    /// window-wide socket did before): the agent runs without Wakil's own tools, and
+    /// `socketFailure` is the sentence its status shows, the reason whole.
+    private func makeSession(
+        in place: Place, _ selection: ProviderSelection, sessionId: String
+    ) async -> StartedSession? {
+        let path = agentSocketPath(agentSessionId: sessionId)
+        var opened: OpenedSocket?
+        // Taken before the await, so nothing else can take or stop it meanwhile.
+        let shown = shownSockets[place].flatMap { $0.sessionId == sessionId ? $0 : nil }
+        if let shown {
+            shownSockets[place] = nil
+            opened = await shown.opening.value
+        }
+        // None shown for this id, or it would not start: once more, now.
+        if opened?.socket == nil {
+            opened = await Self.openSocket(agentSocketFactory, in: place, sessionId: sessionId)
+        }
+        let socket = opened?.socket
+        guard let harness = harnessFactory(place, selection, path) else {
+            if let shown, let opened, socket != nil, !socketsClosed, shownSockets[place] == nil {
+                shownSockets[place] = ShownSocket(sessionId: shown.sessionId, opening: Task { opened })
+            } else {
+                await socket?.stop()
+            }
+            return nil
+        }
+        return StartedSession(harness: harness, socket: socket, socketFailure: opened?.failure)
+    }
+
+    /// Installs `started` as `agent`'s live session: its harness and its socket.
+    private func install(_ started: StartedSession, in agent: PlaceAgent) {
+        agent.harness = started.harness
+        agent.socket = started.socket
+        agent.socketFailure = started.socketFailure
+    }
+
+    /// Stops an agent's harness, then the socket its shim reached Wakil on: the `claude` child,
+    /// and the shim with it, are gone before the socket closes. The approval its agent is waiting
+    /// on in that place, if any, is cancelled with it (final review I2): it belongs to the
+    /// session being stopped — `resume` and `setProvider` replace it, `shutdown` ends it — and,
+    /// never expiring (R1), it would otherwise answer the next session's every gated call `.busy`.
+    private func stopSession(of agent: PlaceAgent) async {
+        await agent.harness?.stop()
+        await agent.socket?.stop()
+        agent.socket = nil
+        agent.socketFailure = nil
+        // A socket the place opened for a session that never started: the one replacing it has
+        // its own, and two for one place would leave the place's channel ambiguous.
+        if let shown = shownSockets.removeValue(forKey: agent.place) {
+            await shown.opening.value.socket?.stop()
+        }
+        await confirmations.cancelAgentProposal(in: agent.place)
     }
 
     /// Sends one turn to the agent, starting the session on the first call.
@@ -6279,27 +6421,22 @@ public final class WindowModel {
     /// method's own doc comment — and says so instead of appearing to
     /// send.
     /// True only when a turn started: the harness accepted the text. A
-    /// queued switch, a missing harness or a failed send return false, and
-    /// the composer gives the operator's draft back.
+    /// missing harness or a failed send returns false, and the composer
+    /// gives the operator's draft back.
     @discardableResult
     public func send(_ text: String, via source: TurnSource = .typed) async -> Bool {
-        // Before the guard below, deliberately: an operator who typed a turn
-        // has started work whether or not a queued switch defers it, and
-        // bouncing them back to the Landing would lose what they typed.
-        //
-        // The canvas comes with it, for the same reason `openPane` does: a
-        // first turn mints the conversation, and the arrangement belongs to
-        // the conversation rather than to the window that happened to be
-        // open when it started.
-        //
-        // **Including when the guard below refuses the turn**, which looks
-        // wrong and is not. `markSessionStarted` has already run by then,
-        // so the window IS in a conversation; leaving the canvas keyed to
-        // the one it left would mean `persistLayout` writing these panes
-        // into another conversation's file. Nothing visible moves in any
-        // case: a conversation minted this moment over the canvas on screen
-        // ADOPTS that canvas, pane contents and drafts with it (re-walk #4),
-        // rather than re-reading the project seed, which holds no drafts.
+        // The place the operator typed in: its agent takes the turn, wherever the screen is by
+        // the time a suspension below returns. Its root and provider are captured with it: a
+        // first turn's harness starts after `enterConversation` suspends, and starting it with
+        // whatever the screen shows by then would run A's agent in B's root.
+        let agent = agent(for: place)
+        let (startRoot, startProvider) = (rootPath, providerId)
+        // The canvas comes with the conversation, for the same reason `openPane` does: a
+        // first turn mints the conversation, and the arrangement belongs to the conversation
+        // rather than to the window that happened to be open when it started. Nothing visible
+        // moves: a conversation minted this moment over the canvas on screen ADOPTS that
+        // canvas, pane contents and drafts with it (re-walk #4), rather than re-reading the
+        // project seed, which holds no drafts.
         // **The window says it is starting BEFORE the first thing that can
         // suspend, and `enterConversation()` is that thing. #284.**
         //
@@ -6325,19 +6462,21 @@ public final class WindowModel {
         // writes `status` itself — each `nil` from `startHarness()` carries
         // its reason, the `catch` carries the error, and a turn that gets
         // away ends at `status = ""`.
-        if harness == nil, sessionId == nil {
+        if agent.harness == nil, agent.sessionId == nil {
             status = "starting the agent…"
         }
-        await enterConversation()
-        // A queued switch wins the next gap and cannot be starved.
-        // `turnInFlight` is one flag with no "closing" state, so letting
-        // the next turn start would make "fires when the turn completes" a
-        // sentence with no bound on it (spec §4.2).
-        if let queued = queuedOrgSwitch {
-            status = "switching to \(queued) — cancel the switch, or wait for it"
-            return false
+        await enterConversation(agent)
+        // Rule 5: a turn typed while this place's session is still being started by an earlier
+        // one waits for that start, then goes to the same session — the way a turn typed while
+        // one is in flight goes to the running harness. Without this the two would each start a
+        // harness and a socket under the one assigned id, and the first pair would leak.
+        while agent.startWaiters != nil {
+            await withCheckedContinuation { agent.startWaiters?.append($0) }
         }
-        if harness == nil, sessionId == nil {
+        let startsSession = agent.sessionId == nil
+        if startsSession { agent.startWaiters = [] }
+        defer { if startsSession { agent.releaseStartWaiters() } }
+        if agent.harness == nil, agent.sessionId == nil {
             // **The window says it is starting before it starts. #284.**
             //
             // This is the slow part of a turn and, until now, the silent
@@ -6364,25 +6503,18 @@ public final class WindowModel {
             // carries the error, and a turn that gets away ends at
             // `status = ""`. A clear here would be a fourth answer to a
             // question three places already answer.
-            //
-            // **Not `turnInFlight` raised earlier instead**, which is the
-            // tidier-looking fix. That flag is what `requestOrganizationSwitch`
-            // reads to decide whether to queue, and what `fireQueuedSwitchIfReady`
-            // is owed by whoever lowers it — so raising it here would let a
-            // switch queue against a turn that may return early, with no
-            // `.result` ever coming to fire it. That is the starvation the
-            // `catch` below exists to prevent, and widening the flag wants
-            // its own change rather than a ride on this one.
-            if let started = await startHarnessInPlace() {
-                harness = started.0
-                agentPlace = started.1
-            } else {
-                harness = nil
-                agentPlace = nil
+            // The id is fixed here, before anything starts: it names the socket, which starts
+            // before the harness. `markSessionStarted` has assigned it already; the mint is the
+            // fallback described where the session starts below.
+            let id = agent.assignedSessionId ?? UUID().uuidString
+            agent.assignedSessionId = id
+            if let started = await startHarness(in: agent.place, provider: startProvider, sessionId: id) {
+                install(started, in: agent)
+                agent.providerId = startProvider
             }
             retainAgentPlace()
         }
-        guard let harness else {
+        guard let harness = agent.harness else {
             // Unreachable today — `harness` and `sessionId` are only ever
             // set together, below — but `startHarness()` already set
             // `status` on every path that can produce `nil` here, and
@@ -6397,22 +6529,22 @@ public final class WindowModel {
             return false
         }
         do {
-            if sessionId == nil {
+            if agent.sessionId == nil {
                 // `markSessionStarted()` above assigned this before anything
                 // else in `send` ran, so the `??` is a belt-and-braces
                 // fallback rather than a live path — and it mints rather than
                 // refusing, because a turn that failed over a missing id
                 // would be a worse outcome than a conversation whose first
                 // pane was filed under a different one.
-                let id = assignedSessionId ?? UUID().uuidString
-                try await harness.start(sessionId: id, resumingFrom: nil, workingDirectory: rootPath)
-                sessionId = id
-                assignedSessionId = id
+                let id = agent.assignedSessionId ?? UUID().uuidString
+                try await harness.start(sessionId: id, resumingFrom: nil, workingDirectory: startRoot)
+                agent.sessionId = id
+                agent.assignedSessionId = id
                 // Only if the fallback above actually fired: a conversation
                 // started fresh is its own root, and one resumed already has
                 // the root it inherited, which must not be overwritten here.
-                if lineageRoot == nil { lineageRoot = id }
-                startEventPump(harness)
+                if agent.lineageRoot == nil { agent.lineageRoot = id }
+                startEventPump(harness, for: agent)
             }
             // Set *before* the `await`s, not after: `textWithIdentifierNote`
             // suspends first (reading the vocabulary), then `harness.send`
@@ -6426,49 +6558,26 @@ public final class WindowModel {
             // ordering can only go the other way: if `.result` lands during
             // either suspension, `append` clears what is already there,
             // and nothing re-sets it once `send` returns.
-            turnInFlight = true
+            agent.turnInFlight = true
             // 2d-ii: the operator's own turn is a row, so what was actually
             // sent — a misheard sentence included — stays on screen.
-            thoughts.append(ThoughtRow(id: nextThoughtId, label: "you", detail: text, isError: false))
-            nextThoughtId += 1
-            try await harness.send(await textWithIdentifierNote(text))
+            agent.appendRow(label: "you", detail: text)
+            try await harness.send(await textWithIdentifierNote(text, for: agent))
             // After the send succeeded: a turn that never went leaves no
             // `voice_turn` line, and no suspension sits before the
             // org-switch generation guard in `textWithIdentifierNote`.
             if source == .voice {
-                try? await registry.journalVoiceTurn(caller: DispatchCaller(place: place, session: nil))
+                try? await registry.journalVoiceTurn(caller: DispatchCaller(place: agent.place, session: nil))
             }
-            status = ""
+            // A session running without its socket says so after each turn, not only once.
+            status = agent.socketFailure ?? ""
             return true
         } catch {
             // A failed send did not start a turn — including a failed
             // `harness.start` or `harness.send` after the line above already
             // set the flag — so nothing may be left in flight.
-            turnInFlight = false
+            agent.turnInFlight = false
             status = "agent: \(error)"
-            // T11-R7b. `turnInFlight = true` above runs synchronously
-            // right before the genuine suspensions — first inside
-            // `textWithIdentifierNote(text)`, then inside `try await
-            // harness.send(...)` — so a `requestOrganizationSwitch` can
-            // land in either window, see a turn genuinely in flight,
-            // and queue. If `harness.send` then throws, this `catch` is
-            // the only place `turnInFlight` ever becomes false for that
-            // attempt: no `.result` event is coming (the turn never
-            // really started), so nothing else will ever call
-            // `fireQueuedSwitchIfReady()` for it — and the top-of-`send`
-            // refusal now turns the operator away from starting a new
-            // turn to shake it loose. Without this call the queue would
-            // sit there, technically recoverable
-            // (`cancelQueuedSwitch()`/`stopTurnAndSwitchNow()` still
-            // work) but effectively starved, which is the one failure
-            // this queue exists to prevent. Placed after the `status`
-            // assignment above so that, when a switch really is queued,
-            // its own status ("switch to … held/…" or the successful
-            // switch's own seam) is what is left on screen rather than
-            // being overwritten by the send error a moment later. A
-            // no-op in the ordinary no-queue case — `fireQueuedSwitchIfReady()`
-            // already guards on `queuedOrgSwitch != nil`.
-            await fireQueuedSwitchIfReady()
             return false
         }
     }
@@ -6481,44 +6590,37 @@ public final class WindowModel {
     /// stream would leave the new one's events unread. Each instance still
     /// has exactly one consumer, which is what `events()`'s
     /// `preconditionFailure` requires.
-    private func startEventPump(_ harness: AgentHarness) {
-        eventPump?.cancel()
+    ///
+    /// **The pump belongs to its agent** (background agents 3 of 4): rows, the mirror and the
+    /// turn's end land in that place's entry wherever the screen is.
+    private func startEventPump(_ harness: AgentHarness, for agent: PlaceAgent) {
+        agent.eventPump?.cancel()
         // Captured now, not read fresh inside the loop: this is what makes
         // the check below compare THIS pump's generation against whatever
         // is current at the moment each event arrives, rather than always
         // trivially agreeing with itself. See `resume`'s doc comment.
-        let generation = eventPumpGeneration
-        let pumpProvider = providerId
+        let generation = agent.eventPumpGeneration
+        let pumpProvider = agent.providerId
         // The `Task` inherits this method's `@MainActor` isolation, so the
         // loop appends on the main actor with no hop — it is the `for
         // await` that suspends, not the append, so a long-running session
         // does not hold the main actor between events. `append(_:)` itself
-        // stays synchronous (Task 11): only the `.result` case below,
-        // AFTER it has already flipped `turnInFlight`, does anything
-        // `async` — the one genuine turn end this window has, and the
-        // seam `fireQueuedSwitchIfReady()` is called from in production
-        // (see that method's own doc comment for the sites it is
-        // deliberately NOT called from).
-        eventPump = Task { [weak self] in
+        // stays synchronous (Task 11): the mirror, capacity and the
+        // `.result` case's probe below are the loop's `async` steps.
+        agent.eventPump = Task { [weak self] in
             for await event in harness.events() {
                 // `Task.cancel()` above does not stop an `AsyncStream` from
                 // delivering values already sitting in its buffer — this
                 // check is what actually does, for a pump a resume has
                 // superseded. See `resume`'s doc comment for the full case.
-                guard let self, self.eventPumpGeneration == generation else { return }
-                self.append(event)
+                guard let self, agent.eventPumpGeneration == generation else { return }
+                self.append(event, to: agent)
                 // Task 15: the same event, projected a second time into
                 // every open terminal pane's mirror. `append(_:)` stays
-                // synchronous (Task 11); this is the one genuinely `async`
-                // step this loop takes per event other than `.result`'s
-                // own queued-switch check just below.
-                await self.mirror.pump(event)
-                await self.recordCapacity(event, provider: pumpProvider)
-                if case .result = event {
-                    await self.fireQueuedSwitchIfReady()
-                    // A queued switch must not wait on a network read.
-                    self.startCapacityProbe()
-                }
+                // synchronous (Task 11).
+                await self.pumpMirror(event, for: agent)
+                await self.recordCapacity(event, provider: pumpProvider, for: agent)
+                if case .result = event { self.startCapacityProbe() }
             }
         }
     }
@@ -6553,8 +6655,13 @@ public final class WindowModel {
     /// racing to write ONE transcript) cannot occur here — `next` writes
     /// to `child`, a freshly minted id nothing else can be operating on.
     /// Do not "fix" this back to stop-then-start.
-    public func resume(sessionId parent: String) async {
-        markSessionStarted()
+    ///
+    /// `place`: whose session is replaced — an agent's own `session_resume` names its place
+    /// (`ResumeRequest.place`), so the fork happens there wherever the screen is. Nil is the
+    /// place on screen, which every operator resume is.
+    public func resume(sessionId parent: String, in place: Place? = nil) async {
+        let agent = agent(for: place ?? self.place)
+        markSessionStarted(in: agent)
         // Checked first, before `readThread` even dispatches a read: the
         // live session's own transcript is filed under the project root as
         // soon as it starts (`ClaudeCodeCLIHarnessTests`'
@@ -6569,13 +6676,24 @@ public final class WindowModel {
         // does not cover this case — that argument rests on the fork
         // writing to a FRESH id nothing else touches, not on the PARENT
         // being read while a live process still owns it.
-        guard parent != sessionId else {
+        guard parent != agent.sessionId else {
             status = "resume \(parent): that is the session already running in this window"
             return
         }
+        // A running agent forks under its own account; a place with none takes the window's —
+        // only while it is the window's place: one the screen has left keeps the account it was
+        // given in its own organisation (Invariant 4).
+        let providerId = agent.harness == nil && agent.place == self.place ? self.providerId : agent.providerId
+        // **As the agent** (Invariant 4): its session store is its own place's, which only the
+        // client pinned to that place answers for once the screen is elsewhere. A caller is
+        // pinned only with a session id (`pinnedPlace(of:)`), and an agent with no session yet
+        // has none (`PlaceAgent.caller`), so this one carries the id `markSessionStarted` minted
+        // above: the reads and the fork's `session_record_parent` go to this place's client, not
+        // the window's.
+        let caller = DispatchCaller(place: agent.place, session: agent.sessionId ?? agent.assignedSessionId)
         let thread: SessionThreadSnapshot
         do {
-            thread = try await readThread(parent)
+            thread = try await readThread(parent, as: caller)
         } catch {
             status = "resume \(parent): \(error)"
             return
@@ -6593,28 +6711,33 @@ public final class WindowModel {
                 + "\(thread.provider), and this window's provider is \(runningDescription)"
             return
         }
-        guard let credentials = await resolveCredentials(forProvider: providerId, statusPrefix: "resume \(parent)")
+        guard let credentials = await resolveCredentials(
+            forProvider: providerId, in: agent.place, statusPrefix: "resume \(parent)")
         else {
             return
         }
-        let nextPlace = place
-        guard let next = harnessFactory(nextPlace, ProviderSelection(id: providerId, credentials: credentials)) else {
+        // Minted before the harness: it names the fork's own socket, started first.
+        let child = UUID().uuidString
+        guard let started = await makeSession(
+            in: agent.place, ProviderSelection(id: providerId, credentials: credentials), sessionId: child)
+        else {
             status = "resume \(parent): no agent session available"
             return
         }
+        let next = started.harness
 
         // Read BEFORE the swap and before `session_record_parent` below
         // adds this fork to the map, so it is the parent's own lineage
         // being asked about and not one this call has already altered.
-        let inheritedRoot = await lineageRootOfSession(parent)
+        let inheritedRoot = await lineageRootOfSession(parent, as: caller)
 
-        let child = UUID().uuidString
         do {
             try await next.start(
                 sessionId: child, resumingFrom: parent, workingDirectory: thread.cwd)
         } catch {
             // Nothing above this line touched the existing session — see
             // this method's own doc comment.
+            await started.socket?.stop()
             status = "resume \(parent): \(error)"
             return
         }
@@ -6637,39 +6760,39 @@ public final class WindowModel {
         // scheduled — compares its captured generation against a value
         // that has already moved on, and drops the event instead of
         // appending it after the seam.
-        eventPumpGeneration += 1
-        await harness?.stop()
+        agent.eventPumpGeneration += 1
+        await stopSession(of: agent)
 
-        thoughts = rebuiltThread(thread, parent: parent)
-        turnInFlight = false
+        agent.thoughts = rebuiltThread(thread, parent: parent, for: agent)
+        agent.turnInFlight = false
 
-        harness = next
-        agentPlace = nextPlace
+        install(started, in: agent)
+        agent.providerId = providerId
         retainAgentPlace()
-        self.sessionId = child
+        agent.sessionId = child
         // A resume is a fork: the child is a new conversation id, so the
         // window's assigned identity moves with it.
-        self.assignedSessionId = child
+        agent.assignedSessionId = child
         // **The conversation, unlike the id, does NOT move.** That is the
         // whole point of the root: six resumes are six session ids and one
         // workspace. `inheritedRoot` was read before the swap, from the
         // parent's own lineage, so a chain of any length resolves to the
         // same arrangement.
-        self.lineageRoot = inheritedRoot
-        startEventPump(next)
-        status = ""
+        agent.lineageRoot = inheritedRoot
+        startEventPump(next, for: agent)
+        status = agent.socketFailure ?? ""
         // Best effort, and after the swap: a lineage record that failed to
         // write costs ⌘P a grouping, while a resume that refused because
         // of it would cost the operator the session.
         _ = try? await registry.dispatch(
             name: "session_record_parent",
             params: .object(["child": .string(child), "parent": .string(parent)]),
-            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            origin: .ui, caller: caller, confirmation: nil)
         // Last, and only once the swap has actually happened: the canvas
         // follows the conversation. A resume that returned early above
         // never reaches here, so a refused resume leaves the arrangement
         // exactly as it was.
-        await activateLayout()
+        await followConversation(of: agent)
     }
 
     /// The lineage root `resume` files the forked conversation under: the
@@ -6705,10 +6828,10 @@ public final class WindowModel {
     /// `nil` means the project's seed — the same thing a brand-new
     /// conversation gets, which is a state the operator already
     /// understands.
-    private func lineageRootOfSession(_ id: String) async -> String? {
+    private func lineageRootOfSession(_ id: String, as caller: DispatchCaller) async -> String? {
         guard let result = try? await registry.dispatch(
             name: "session_get", params: .object(["id": .string(id)]),
-            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            origin: .ui, caller: caller, confirmation: nil)
         else { return nil }
         guard case .object(let object) = result,
             case .object(let structured)? = object["structuredContent"],
@@ -6832,13 +6955,17 @@ public final class WindowModel {
     /// which has nowhere to throw to.
     ///
     /// WHY A TURN IN FLIGHT AND A PARKED PROPOSAL BOTH REFUSE RATHER THAN
-    /// QUEUE. A queued switch needs a deferred-state machine nothing else
-    /// in this window has, and it defers a decision the operator can simply
-    /// re-make in a few seconds. A parked `.mutate` proposal is the sharper
-    /// case: it belongs to an agent that is about to stop existing, and
+    /// QUEUE. A queued provider switch would need a deferred-state machine
+    /// nothing in this window has, and it would defer a decision the operator can simply
+    /// re-make in a few seconds. A parked `.mutate` proposal in this place is the sharper
+    /// case: it belongs to the session about to be replaced, and
     /// expiring it on the operator's behalf reaches that agent as a refusal
     /// it cannot interpret.
     public func setProvider(_ id: String) async {
+        // The place on screen when the switch was asked for, with its root and the provider it
+        // leaves, for `send`'s reason: the lookup below suspends, and the operator can move the
+        // screen meanwhile. Its session is the one replaced; other places keep theirs.
+        let (startPlace, startRoot, previous) = (place, rootPath, providerId)
         guard id != providerId else {
             status = "set provider \(id): that provider is already running in this window"
             return
@@ -6847,39 +6974,30 @@ public final class WindowModel {
             status = "set provider \(id): a turn is in flight — wait for it to finish"
             return
         }
-        // `ConfirmationBroker.current()` is NOT `async` on its own — it is
-        // an ordinary actor method, `await`ed here only because calling
-        // ANY method on an actor from outside it hops across isolation.
-        // There is no `parked()` on this type; `current()` is what it
-        // actually exposes for "is something parked right now".
-        guard await confirmations.current() == nil else {
+        // Only this place's own waiting proposal refuses it: the session it belongs to is the
+        // one replaced. Another place's waits for its own agent, which keeps its provider.
+        guard await confirmations.current(for: startPlace) == nil else {
             status = "set provider \(id): a mutation is waiting for confirmation — "
                 + "confirm or cancel it first"
             return
         }
-        let credentials: ProviderCredentials
-        do {
-            credentials = try await lookup.credentials(forProvider: id)
-        } catch let ProviderCredentialsLookupError.refused(reason) {
-            // The lookup's own message names the fix (`decodeProviderCredentials`'s
-            // doc comment: "the exact `wakil secrets set` to run") — passed
-            // through verbatim rather than wrapped, exactly as
-            // `resolveCredentials` does for `send` and `resume`, so
-            // rewording it here does not lose that.
-            status = "set provider \(id): \(reason)"
-            return
-        } catch {
-            status = "set provider \(id): \(error)"
-            return
-        }
-        let nextPlace = place
-        guard let next = harnessFactory(
-            nextPlace, ProviderSelection(id: id, credentials: credentials)) else {
+        // In the starting place's organisation, as `send` and `resume` resolve (final review
+        // minor 5): the guard above suspended, and an org switch landing there has made the
+        // window's `lookup` another organisation's.
+        guard let credentials = await resolveCredentials(
+            forProvider: id, in: startPlace, statusPrefix: "set provider \(id)")
+        else { return }
+        let agent = agent(for: startPlace)
+        // Minted before the harness: it names the new session's own socket, started first.
+        let fresh = UUID().uuidString
+        guard let started = await makeSession(
+            in: agent.place, ProviderSelection(id: id, credentials: credentials), sessionId: fresh)
+        else {
             status = "set provider \(id): no agent session available"
             return
         }
+        let next = started.harness
 
-        let fresh = UUID().uuidString
         do {
             // START-THEN-SWAP. Nothing about the running session is touched
             // until `next.start` has returned. `resume(sessionId:)`'s doc
@@ -6888,8 +7006,9 @@ public final class WindowModel {
             // its process already stopped and its thread already replaced.
             // Do not "fix" this back to stop-then-start.
             try await next.start(
-                sessionId: fresh, resumingFrom: nil, workingDirectory: rootPath)
+                sessionId: fresh, resumingFrom: nil, workingDirectory: startRoot)
         } catch {
+            await started.socket?.stop()
             status = "set provider \(id): \(error)"
             return
         }
@@ -6901,8 +7020,8 @@ public final class WindowModel {
         // values already in its buffer. Bumping here means the old pump
         // compares against a value that has already moved on and drops
         // those events instead of appending them after the seam.
-        eventPumpGeneration += 1
-        await harness?.stop()
+        agent.eventPumpGeneration += 1
+        await stopSession(of: agent)
 
         // A FRESH SESSION, NOT A FORK. A resume forks from the parent's
         // transcript; a provider switch cannot, because transcripts live
@@ -6912,33 +7031,37 @@ public final class WindowModel {
         // fact `resume(sessionId:)` enforces when it refuses a session
         // belonging to another provider. So `resumingFrom` is nil above,
         // and the thread is cleared rather than rebuilt.
-        let previous = providerId
-        thoughts = []
+        agent.thoughts = []
         // Just the two names, no "account changed:" prefix. With the row's
         // own label reading `SESSION` beside it, the prefix said "account"
         // a second time in a row that is four words long — and the arrow
         // already says "changed". Both accounts still appear, which is what
         // the check-2 judgement ("does the seam claim continuity?") needs
         // and what `ProviderSwitchTests` asserts.
-        appendSeam("\(previous.isEmpty ? Self.unsetProviderLabel : previous) → \(id)")
-        turnInFlight = false
+        appendSeam("\(previous.isEmpty ? Self.unsetProviderLabel : previous) → \(id)", in: agent)
+        agent.turnInFlight = false
 
-        harness = next
-        agentPlace = nextPlace
+        install(started, in: agent)
+        agent.providerId = id
         retainAgentPlace()
-        sessionId = fresh
-        assignedSessionId = fresh
+        agent.sessionId = fresh
+        agent.assignedSessionId = fresh
         // A provider switch starts a new conversation, not a fork of the
         // one being left, so it is its own root.
         //
         // Review I3 of the re-walk fixes: a switch out of NO conversation mints one over the
         // canvas on screen, exactly as a first turn does, and adopts that canvas the same way
         // (re-walk #4) — re-reading the seed would rebuild every api pane from an empty draft.
-        let previousRoot = lineageRoot
-        lineageRoot = fresh
-        providerId = id
-        startEventPump(next)
-        status = ""
+        let previousRoot = agent.lineageRoot
+        agent.lineageRoot = fresh
+        // The window's provider, and the remembered default below, are the screen's place's:
+        // written only while that is still the place switched (Invariant 4). The lookup and the
+        // start suspended, and an org switch landing there moved the screen — and the window's
+        // `wakil-ctx` — to another organisation, whose `active.json` this is not.
+        let stillOnScreen = place == startPlace
+        if stillOnScreen { providerId = id }
+        startEventPump(next, for: agent)
+        status = agent.socketFailure ?? ""
 
         // Best effort, and after the swap: exactly the ordering
         // `resume(sessionId:)` uses for `session_record_parent` below, and
@@ -6948,10 +7071,12 @@ public final class WindowModel {
         // already happened by the time this runs, so a failed write here
         // costs a future launch its remembered default, never the session
         // the operator is looking at right now.
-        _ = try? await registry.dispatch(
-            name: "ctx_set_provider",
-            params: .object(["name": .string(id)]),
-            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        if stillOnScreen {
+            _ = try? await registry.dispatch(
+                name: "ctx_set_provider",
+                params: .object(["name": .string(id)]),
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        }
         // The new account's capacity, probed: a switch is one of the three
         // moments that asks for it (launch and a turn's end are the others).
         // Started after the canvas below, unawaited: it never holds the switch (Rule 4).
@@ -6969,54 +7094,25 @@ public final class WindowModel {
         // and `WakilWindow.settingsSelection` holds its node), so the only
         // change on screen is USE becoming RUNNING. An earlier version
         // reopened it, and the operator saw it close, redraw at the cascade
-        // position and jump back. An organisation switch still clears it.
+        // position and jump back. An organisation switch leaves it in the
+        // canvas it was open in, with the rest of that place.
         let settingsPane = layoutSnapshot.panes.first { $0.kind == Pane.settingsKind }
-        await activateLayout(carrying: settingsPane, adoptingCanvas: previousRoot == nil)
+        await followConversation(of: agent, carrying: settingsPane, adoptingCanvas: previousRoot == nil)
         startCapacityProbe()
     }
 
-    /// Switches the window to `org`, tearing down everything the outgoing
-    /// organisation owned. Spec §4.
+    /// Switches the window to `org`: the org-bound resets (`invalidateForOrgChange`), then the
+    /// window's own clients (`orgSwitcher`), then the context read (`refreshContext`). **It
+    /// never stops, holds or discards anything** (background agents 3 of 4): every place the
+    /// operator leaves — its agent, turn, waiting approval, canvas, rows, shells and buffers —
+    /// stays as it was, so nothing here waits on a turn or a confirmation, and nothing asks.
     ///
-    /// **Guards 1 and 2 mirror `setProvider`'s wording** so the two
-    /// switches refuse in one idiom. Guard 3 does NOT: a turn in flight
-    /// queues rather than refusing, because an org carries the operator's
-    /// whole context where a provider does not (spec §4.2). That branch
-    /// lives in `requestOrganizationSwitch`.
-    ///
-    /// **Fix round 3 (Critical, credential boundary).** The re-entrancy
-    /// guard below is what makes `switching` do real work rather than
-    /// merely being read by the org plane: this method has no lock of its
-    /// own otherwise, and two independent callers can both reach it
-    /// concurrently. Concretely: `fireQueuedSwitchIfReady()` reads
-    /// `queuedOrgSwitch`, suspends at `await confirmations.current()`, and
-    /// — once its OWN re-check (fix round 2, Finding 2) passes — calls
-    /// `await setOrganization("beta")`. If a fresh
-    /// `requestOrganizationSwitch("gamma")` lands anywhere in that window,
-    /// it sees `turnInFlight == false` (a queued switch only exists once a
-    /// turn already ended) and calls `await setOrganization("gamma")`
-    /// DIRECTLY — no queue involved at all, so the fix round 2 guards
-    /// never see it. Without THIS guard, both calls would run at once and
-    /// interleave at each other's own suspension points
-    /// (`await orgSwitcher(org)`, `await refreshContext()`, `await
-    /// autoResumeAfterSwitch()`) — each of which can itself suspend for a
-    /// real network/process round trip. That is not merely "the wrong
-    /// org's status message wins" the way the same-org and
-    /// parked-mutation guards below are: it is the SAME shape
-    /// `resume(sessionId:)`'s own doc comment on `eventPumpGeneration`
-    /// worries about, one level up — one call's `organization = org`
-    /// assignment, `providerId`/`harness`/`sessionId` writes and the
-    /// other's can land in any order, so the window can end up with
-    /// `organization` naming one org while the running provider, harness
-    /// and resumed session belong to the other. That is precisely the
-    /// cross-org credential pairing Invariant 4 exists to make
-    /// structurally impossible, and it is reachable through two
-    /// independent paths — the queue, and two operator-driven switches in
-    /// quick succession through Task 10's surface alone, no queue
-    /// involved. Refusing the second call outright, before it touches
-    /// ANYTHING (`invalidateForOrgChange()`, `orgSwitcher`,
-    /// `organization` itself), is what makes that pairing impossible
-    /// rather than merely unlikely.
+    /// **The re-entrancy guard is the credential boundary** (fix round 3, Invariant 4). Two
+    /// operator switches in quick succession would otherwise interleave at each other's
+    /// suspension points (`orgSwitcher`, `refreshContext`) and leave `organization` naming one
+    /// org while `lookup`, `providerId` and the window's clients belong to the other. Refusing
+    /// the second call before it touches anything makes that pairing impossible
+    /// (`twoConcurrentSetOrganizationCallsProduceExactlyOneCoherentSwitch`).
     public func setOrganization(_ org: String) async {
         guard !switching else {
             status = "switch org \(org): a switch is already in progress"
@@ -7026,34 +7122,21 @@ public final class WindowModel {
             status = "switch org \(org): that organisation is already open in this window"
             return
         }
-        guard await confirmations.current() == nil else {
-            status = "switch org \(org): a mutation is waiting for confirmation — "
-                + "confirm or cancel it first"
-            return
-        }
 
-        // Cleared before anything else, once both guards have passed: a
-        // stale sentence naming the OUTGOING org's provider must not be
-        // able to linger on screen through a successful switch. `status`
-        // is a window-scoped message surface, not org state — that is
-        // exactly why it is classified org-independent in
-        // `InvalidationContractTests` rather than reset by
-        // `invalidateForOrgChange()` — and clearing it here, rather than
-        // relying on that method, is what makes the classification honest.
+        // Cleared once both guards have passed: a stale sentence naming the outgoing org must
+        // not linger through a successful switch. `status` is a message surface, not org state
+        // (`InvalidationContractTests`), so it is cleared here rather than in the resets.
         status = ""
 
         switching = true
         defer { switching = false }
 
-        // The generation bump precedes `stop()`, exactly as `setProvider`
-        // does above and for the identical reason: `ClaudeCodeCLIHarness.stop()`
-        // waits for stdout to become buffered events, not for this window
-        // to have drained them, so the old pump must already be comparing
-        // against a moved-on value or it will append the dead org's
-        // events after the seam.
-        eventPumpGeneration += 1
-        await harness?.stop()
-
+        // The operator's reads and api sends in flight in the org being left went out on the
+        // window's clients, which `orgSwitcher` is about to re-point: stopped first, so none
+        // reaches the incoming org's process (Invariant 4). An agent's run on its own place's
+        // client: untouched.
+        await panes.cancelOperatorDBReads(inOrganization: organization)
+        await panes.cancelOperatorApiSends(inOrganization: organization)
         await invalidateForOrgChange()
 
         let diagnostics = await orgSwitcher(org)
@@ -7071,20 +7154,15 @@ public final class WindowModel {
             // fact STRONGER signal: the child is dead, so nothing can
             // have half-executed. Retryable from the plane either way.
             status = "switch org \(org): \(diagnostics.joined(separator: "; "))"
-            // `invalidateForOrgChange()` above has already wiped every
-            // org-scoped property this window held — `providerId`,
-            // `harness`, `rootPath`, `lookup`, `project`, `environment`,
-            // and both `panes`/`layout` stores — but `organization` still
-            // named the OUTGOING org until this line. Leaving it there
-            // would strand the operator: `organization` would claim an
-            // org of which nothing usable remains, AND the same-org guard
-            // above (`org != organization`) would refuse a retry of the
-            // very org whose state was just torn down, since `org` here
-            // still equals that name. Clearing it is the honest option —
-            // an org-less window is a real, designed state this sub-phase
-            // already renders (a launch with no org lands there too) —
-            // and it is what makes both the outgoing and the intended org
-            // reachable again by a subsequent `setOrganization` call.
+            // `invalidateForOrgChange()` above has already reset everything org-bound —
+            // `providerId`, `lookup`, `rootPath`, `project`, `environment` — but
+            // `organization` still named the OUTGOING org until this line. Left there, the
+            // window would claim an org whose context it no longer holds, AND the same-org
+            // guard above would refuse a retry of that very org. An org-less window is a real,
+            // designed state (a launch with no org lands there too), and clearing it makes both
+            // the outgoing and the intended org reachable again. Every place's own state — its
+            // agent, canvas and shells — is untouched, so a retry of the outgoing org finds it
+            // as it was left.
             //
             // **No `lookup` rebuild on this path, and none is owed.**
             // `invalidateForOrgChange()` already reset it to
@@ -7093,12 +7171,14 @@ public final class WindowModel {
             // which refuses every credential rather than resolving one
             // under a boundary the window no longer claims.
             organization = ""
+            await activateLayout()
+            switching = false
+            openShownSocket()
             return
         }
 
         // Authoritative in a way get_context is not: this is the string
         // Wakil itself put into the child environment (spec §6).
-        let previous = organization
         organization = org
         // Rebuilt from that same authoritative string, here and not only
         // in `refreshContext()` below (final fix pass, Critical 1).
@@ -7113,224 +7193,20 @@ public final class WindowModel {
         lookup = lookupFactory(org)
 
         await refreshContext(probe: true)
-        // **The switch no longer auto-resumes. Ruled 2026-09-20.**
-        //
-        // Open question 5's 2026-09-15 amendment made returning to an org
-        // resume its most recent session, and that was right when there was
-        // nowhere else to land. The Landing now exists, and the two rules
-        // collided in a way only the first operator walk could show: a switch
-        // that resumes sets `sessionStarted`, so the Landing never draws —
-        // and the Landing draws only when there was nothing to resume, which
-        // is exactly when its Continue column is empty. The one surface built
-        // to offer you a session to continue was unreachable whenever a
-        // session existed to continue.
-        //
-        // So the choice goes back to the operator: land sessionless, and
-        // Continue lists what `autoResumeAfterSwitch` would have picked, plus
-        // everything it would not have. Decision 12's drift argument is
-        // untouched — a resume is still a fork under a fresh Wakil-minted id
-        // with recorded lineage; what changed is who chooses it.
-        //
-        // `autoResumeAfterSwitch()` is kept, tested and unreachable from the
-        // switch on purpose: it is the whole of the behaviour a `session_new`
-        // action would need to offer as "resume the latest", and deleting it
-        // would throw away the provider filter and the two fallback paths
-        // that are the hard part.
-        appendSeam("\(previous.isEmpty ? "none" : previous) → \(org)")
+        // The place landed on is shown, and the switch is over: its socket (`openShownSocket`).
+        switching = false
+        openShownSocket()
+        // **No auto-resume and no seam.** Returning to an org lands where that place was left —
+        // its own agent and thread, or the Landing where no work has begun (whose Continue lists
+        // what `autoResumeAfterSwitch` would have picked; ruled 2026-09-20). A seam row naming
+        // the orgs would be written into a thread that never changed: each place's thread is its
+        // own, and the context line already says where the operator is.
     }
 
-    /// The operator asked to switch. Queues if a turn is in flight,
-    /// switches immediately otherwise — spec §4.2's three states.
-    /// Unsaved editor tabs ask first (`unsavedPrompt`); its Save or Don't Save switches.
+    /// The operator asked to switch: it happens at once. Nothing is asked about unsaved tabs
+    /// (R2) — they stay in their own place's canvas — and a turn in flight anywhere keeps
+    /// running (Rule 1: switching away asks nothing).
     public func requestOrganizationSwitch(_ org: String) async {
-        // Every scope (final review I3): the switch clears all of them.
-        let dirty = await everyUnsavedTab()
-        if !dirty.isEmpty {
-            askUnsaved(.switchOrganisation(org), tabs: dirty)
-            return
-        }
-        await performOrganisationSwitch(org)
-    }
-
-    private func performOrganisationSwitch(_ org: String) async {
-        guard turnInFlight else {
-            await setOrganization(org)
-            return
-        }
-        queuedOrgSwitch = org
-        status = "switching to \(org) when this turn finishes"
-    }
-
-    /// What the operator's own cancel control on the queued-switch
-    /// affordance calls. Only ever cancels — see `queuedOrgSwitch`'s own
-    /// doc comment for why nothing else may.
-    public func cancelQueuedSwitch() {
-        guard let org = queuedOrgSwitch else { return }
-        queuedOrgSwitch = nil
-        unsavedSwitchApproved = nil
-        queuedSwitchCancellationCount += 1
-        status = "switch to \(org) cancelled"
-    }
-
-    /// Cuts the running turn and switches at once. Same ordering
-    /// `setProvider` records: the generation bump precedes `stop()`.
-    ///
-    /// Unsaved editor tabs (3b-i Task 9): the turn is still cut — that is what was asked — and the
-    /// switch then asks Save / Don't Save / Cancel like any other. Held, touching nothing, while
-    /// another unsaved prompt is up.
-    public func stopTurnAndSwitchNow() async {
-        guard let org = queuedOrgSwitch else { return }
-        let unsaved = await switchNeedsAsking(org)
-        guard queuedOrgSwitch == org else { return }   // the await above let a cancel land
-        if unsaved != nil, unsavedPrompt != nil {
-            status = "switch to \(org) held: unsaved changes are being asked about"
-            return
-        }
-        queuedOrgSwitch = nil
-        eventPumpGeneration += 1
-        await harness?.stop()
-        turnInFlight = false
-        appendSeam("turn cut short")
-        if let unsaved {
-            askUnsaved(.switchOrganisation(org), tabs: unsaved)
-            return
-        }
-        unsavedSwitchApproved = nil
-        await setOrganization(org)
-    }
-
-    /// Fires a queued switch at the first moment nothing is in its way.
-    ///
-    /// Called wherever `turnInFlight` genuinely becomes false at a TURN
-    /// END — the `.result` case in the event pump that drives `append(_:)`,
-    /// `send(_:)`'s own `catch` (T11-R7b: a turn that never really started
-    /// still needs this, or a switch queued against it while
-    /// `harness.send` was suspended would never drain) — and wherever a
-    /// confirmation is resolved (`confirmPending`, `cancelPending`).
-    ///
-    /// Also called from `resumePump`'s closure, immediately after
-    /// `await self.resume(sessionId:)` — NOT from inside
-    /// `resume(sessionId:)` itself. That distinction matters:
-    /// `resume(sessionId:)` has two callers with different reentrancy
-    /// properties. Nested inside `setOrganization` via
-    /// `autoResumeAfterSwitch()`, firing from `resume`'s own body would be
-    /// reentrant — a switch calling into a switch. Called from
-    /// `resumePump` (the agent's own `session_resume`, or `--dispatch`),
-    /// it is never nested inside a switch and IS a genuine turn end (fix
-    /// round 2, Finding 1): a turn in flight, a switch queued, then the
-    /// agent resumes a different session — `resume`'s own teardown sets
-    /// `turnInFlight = false` with no `.result` ever coming for that turn,
-    /// so without a fire call at the `resumePump` call site specifically,
-    /// the queue would never drain and the top-of-`send` refusal would
-    /// turn the operator away from the one action (starting a new turn)
-    /// that would otherwise shake it loose. Putting the call in
-    /// `resume(sessionId:)` itself would fire on BOTH callers and break
-    /// the first.
-    ///
-    /// Deliberately NOT called from `invalidateForOrgChange()`'s own
-    /// `turnInFlight = false` (that is a reset mid-switch, not an end), nor
-    /// from `setProvider(_:)`'s teardown (not a turn ending — it hands the
-    /// window a fresh turn state for an unrelated reason).
-    ///
-    /// **A parked mutation HOLDS rather than cancels** — discarding the
-    /// operator's intent while they are looking at an unrelated SQL
-    /// statement would take the switch away at the one moment they have no
-    /// reason to connect the two (spec §4.2 state 2). Checks the
-    /// `confirmations` BROKER directly, not `self.pending`: `pending` is
-    /// this window's own mirror, updated asynchronously by a subscriber
-    /// (see `confirmationPump` in `init`), so immediately after
-    /// `confirmPending`/`cancelPending` resolve the broker, the broker's
-    /// own state is already clear while `pending` may still be stale for
-    /// one more loop iteration. Checking `pending` here would leave a held
-    /// switch stuck forever.
-    ///
-    /// **Reentrancy-guarded against a SECOND CALL TO THIS METHOD.** `await
-    /// confirmations.current()` below is a suspension point, so two calls
-    /// landing back-to-back (say the event pump's `.result` handling and a
-    /// `cancelPending` racing it) could otherwise both observe
-    /// `queuedOrgSwitch` non-nil, both pass the guard, and both call
-    /// `setOrganization` — two switches firing for one queued request.
-    /// `firingQueuedSwitch` makes every call after the first, while one is
-    /// already running, a no-op instead.
-    ///
-    /// **That flag does NOT cover an unrelated mutator racing the same
-    /// suspension** (fix round 2, Finding 2) — a different mechanism, not
-    /// a second call to this method. `WindowModel` is `@MainActor`, so
-    /// other MainActor work, including the plain synchronous
-    /// `cancelQueuedSwitch()`, can run during the `await
-    /// confirmations.current()` hop. Without the `queuedOrgSwitch == org`
-    /// re-check below, a cancel landing there would be silently
-    /// overridden: this method would resume holding the stale captured
-    /// `org`, clear nothing, and switch the operator to an org they had
-    /// just explicitly declined — a credential-boundary violation, not
-    /// merely a UI glitch. See the re-check's own comment.
-    ///
-    /// **`requestOrganizationSwitch` landing in the same window does NOT
-    /// re-target the queue the way it might look like it should.** By
-    /// construction, `turnInFlight` is already `false` by the time this
-    /// method reaches this suspension (its own guard just above requires
-    /// it), and `requestOrganizationSwitch`'s own `guard turnInFlight`
-    /// takes the OTHER branch when false — it calls `setOrganization`
-    /// directly rather than writing `queuedOrgSwitch` at all. So a
-    /// third-org request here does not retarget the stale `org`; it
-    /// reaches `setOrganization` directly while this method is still
-    /// suspended.
-    ///
-    /// **`setOrganization` refuses it, and that is where the safety
-    /// lives.** Fix round 3 gave that method a real reentrancy guard of
-    /// its own — `guard !switching` is its very first line, ahead of
-    /// `invalidateForOrgChange()`, `orgSwitcher` and the `organization`
-    /// assignment — so the second call returns with "a switch is already
-    /// in progress" having touched nothing. Two switches therefore cannot
-    /// interleave at each other's suspension points and leave
-    /// `organization` naming one org while the provider, harness and
-    /// resumed session belong to the other (Invariant 4).
-    /// `twoConcurrentSetOrganizationCallsProduceExactlyOneCoherentSwitch`
-    /// (`OrgSwitchTests.swift`) pins it against the real `wakil-ctx`
-    /// backend: it parks the first switch inside the org switcher, lands
-    /// a second one on top, and asserts the loser never reached the
-    /// backend at all. An earlier version of this comment called the race
-    /// "a real gap… flagged rather than patched here"; it was patched,
-    /// and this paragraph now describes the code as it is.
-    func fireQueuedSwitchIfReady() async {
-        guard !firingQueuedSwitch else { return }
-        firingQueuedSwitch = true
-        defer { firingQueuedSwitch = false }
-
-        guard let org = queuedOrgSwitch, !turnInFlight else { return }
-        guard await confirmations.current() == nil else {
-            status = "switch to \(org) held: a mutation is waiting for confirmation"
-            return
-        }
-        // Fix round 2, Finding 2. `org` was captured before the suspension
-        // just above; re-read `queuedOrgSwitch` now rather than trusting
-        // that capture. A plain synchronous mutator — `cancelQueuedSwitch()`
-        // — can run on this same `@MainActor` during that `await`, and
-        // `firingQueuedSwitch` above does not protect against it: that
-        // flag only stops a SECOND call to this method, not a different
-        // method altogether. If the queue no longer names `org`, this
-        // must not switch to the stale value: a cancel that got silently
-        // overridden would move credentials to an org the operator
-        // explicitly declined (Invariant 4). (`requestOrganizationSwitch`
-        // landing in this same window is a related but separate case,
-        // closed by `setOrganization`'s own `guard !switching` rather
-        // than by this re-check — see this method's own doc comment.)
-        guard queuedOrgSwitch == org else { return }
-        // 3b-i Task 9: unsaved editor tabs ask first, as a direct switch does — the queue leaves
-        // and the prompt's Save or Don't Save runs the switch. Held behind a prompt already up;
-        // `resolveUnsaved` fires again once it is answered.
-        if let unsaved = await switchNeedsAsking(org) {
-            guard unsavedPrompt == nil else {
-                status = "switch to \(org) held: unsaved changes are being asked about"
-                return
-            }
-            guard queuedOrgSwitch == org else { return }   // the await above let a cancel land
-            queuedOrgSwitch = nil
-            askUnsaved(.switchOrganisation(org), tabs: unsaved)
-            return
-        }
-        queuedOrgSwitch = nil
-        unsavedSwitchApproved = nil
         await setOrganization(org)
     }
 
@@ -7369,7 +7245,10 @@ public final class WindowModel {
     /// back to the Landing short of quitting. A `session_new` action is that
     /// return path; it is recorded here and on `LandingStates.dc.html` rather
     /// than invented.
-    public private(set) var sessionStarted = false
+    ///
+    /// Per place (`PlaceAgent.sessionStarted`): a place where no work has begun draws its
+    /// Landing, whatever has begun elsewhere.
+    public var sessionStarted: Bool { currentAgent?.sessionStarted ?? false }
 
     /// The id Wakil has assigned to this window's session, whether or not the
     /// agent has been started with it yet.
@@ -7395,8 +7274,8 @@ public final class WindowModel {
     /// second one.
     ///
     /// Follows `sessionId` wherever that moves, because a fork is a new
-    /// conversation id and a provider switch mints a fresh one.
-    public private(set) var assignedSessionId: String?
+    /// conversation id and a provider switch mints a fresh one. The on-screen place's.
+    public var assignedSessionId: String? { currentAgent?.assignedSessionId }
 
     /// The **lineage root** of the conversation this window is in: the
     /// oldest ancestor of its session, and the identity one conversation
@@ -7419,24 +7298,29 @@ public final class WindowModel {
     /// root of the session it forked from, which the listing *does* carry
     /// for a session old enough to be resumed.
     ///
-    /// Org-derived, and cleared by `invalidateForOrgChange` for the reason
-    /// `assignedSessionId` is: an org switch ends the session, and left
-    /// set, the next org's first pane would be filed under the outgoing
-    /// org's conversation.
-    public private(set) var lineageRoot: String?
+    /// The on-screen place's (`PlaceAgent.lineageRoot`): each place keeps its own across every
+    /// switch, so a place's panes are only ever filed under its own conversation.
+    public var lineageRoot: String? { currentAgent?.lineageRoot }
 
     /// Called by the three entrances into work. Idempotent on purpose — it is
     /// reached from a turn, a pane and a resume, and two of those can happen
     /// in the same gesture.
     public func markSessionStarted() {
-        sessionStarted = true
+        markSessionStarted(in: agent(for: place))
+    }
+
+    /// `markSessionStarted` for one place's agent, on screen or not.
+    private func markSessionStarted(in agent: PlaceAgent) {
+        agent.sessionStarted = true
         // Minted here rather than in `send`, so a pane opened from the
         // Landing belongs to a conversation before a turn exists. Idempotent
         // with the flag above: this is reached from a turn, a pane and a
         // resume, and two of those can happen in one gesture.
-        if assignedSessionId == nil {
-            let id = UUID().uuidString
-            assignedSessionId = id
+        if agent.assignedSessionId == nil {
+            // The id the place's shown socket answers for, so the session that starts here takes
+            // that socket (`openShownSocket`).
+            let id = shownSockets[agent.place]?.sessionId ?? UUID().uuidString
+            agent.assignedSessionId = id
             // **A conversation started fresh is its own root**, which is
             // the same answer `wakilcore.LineageRootIn` gives for an id
             // with no recorded parent. `resume` overwrites this with the
@@ -7444,8 +7328,17 @@ public final class WindowModel {
             // `markSessionStarted()` at its own first line, so a resume
             // that gets as far as swapping the harness has already minted
             // a throwaway root here and replaces it deliberately.
-            lineageRoot = id
+            agent.lineageRoot = id
         }
+    }
+
+    /// The place's agent, created the first time work begins there.
+    private func agent(for place: Place) -> PlaceAgent {
+        if let existing = agents[place] { return existing }
+        let created = PlaceAgent(
+            place: place, providerId: providerId, mirror: TerminalMirrorFeed(panes: panes, layout: layout))
+        agents[place] = created
+        return created
     }
 
     /// Stops the Landing being drawn over a canvas that already has panes on
@@ -7476,7 +7369,7 @@ public final class WindowModel {
     /// which is a change to where the MCP path meets this window, not to what
     /// it does afterwards. Recorded on #264 rather than guessed at here.
     private func showTheWorkAlreadyOnTheCanvas() {
-        sessionStarted = true
+        agent(for: place).sessionStarted = true
     }
 
     public var showOrgPlane = false
@@ -7757,42 +7650,6 @@ public final class WindowModel {
         return adopted ? nil : status
     }
 
-    // MARK: - Test-only queue helpers (Task 11)
-
-    /// TEST-ONLY: puts the window into the `turnInFlight` state a test
-    /// needs to observe `requestOrganizationSwitch` queue rather than
-    /// switch immediately, without driving a real `send()`/harness turn to
-    /// get there. Asserts its own precondition, the same way
-    /// `parkAProposalForTesting()` above does: calling this while a turn
-    /// is already in flight would silently paper over a test that set up
-    /// its fixture wrong.
-    func beginTurnForTesting() async {
-        precondition(!turnInFlight, "beginTurnForTesting: a turn is already in flight")
-        turnInFlight = true
-    }
-
-    /// TEST-ONLY: ends the turn `beginTurnForTesting()` started AND fires
-    /// a queued switch — the production event pump's `.result` handling
-    /// does both together (see `fireQueuedSwitchIfReady()`'s doc comment),
-    /// so a test exercising "the switch fires when the turn ends" needs
-    /// this, not two separate calls a real turn end never makes
-    /// separately.
-    func endTurnForTesting() async {
-        precondition(turnInFlight, "endTurnForTesting: no turn is in flight")
-        turnInFlight = false
-        await fireQueuedSwitchIfReady()
-    }
-
-    /// TEST-ONLY: ends the turn WITHOUT firing — for a test that needs to
-    /// land in between the two (a switch queued, the turn over, but the
-    /// fire not yet attempted), such as the send-refusal test, which must
-    /// prove `send` refuses while a switch is queued and turnInFlight is
-    /// already false, independent of whether the fire has run yet.
-    func endTurnForTestingWithoutFiring() async {
-        precondition(turnInFlight, "endTurnForTestingWithoutFiring: no turn is in flight")
-        turnInFlight = false
-    }
-
     /// Appends one seam row marking a provider switch, using the same
     /// monotonic `nextThoughtId` counter `rebuiltThread` draws from — see
     /// that method's doc comment for why the counter is never reset: this
@@ -7813,16 +7670,16 @@ public final class WindowModel {
     /// 2026-09-11 found exactly that collision. `session` names what this
     /// row actually marks — the session boundary — and leaves `ACCOUNT`
     /// meaning one thing in the window.
-    private func appendSeam(_ detail: String) {
-        thoughts.append(ThoughtRow(id: nextThoughtId, label: "session", detail: detail, isError: false))
-        nextThoughtId += 1
+    /// Into `agent`'s thread, or the on-screen place's.
+    private func appendSeam(_ detail: String, in agent: PlaceAgent? = nil) {
+        (agent ?? self.agent(for: place)).appendRow(label: "session", detail: detail)
     }
 
     /// Parks a throwaway `.mutate` proposal into `confirmations` and
     /// returns once it is either actually parked or definitively not
     /// going to be — built for `ProviderSwitchTests`' "a mutation is
     /// waiting for confirmation" refusal, which needs
-    /// `confirmations.current()` to answer non-`nil` without any human,
+    /// `confirmations.all()` to answer non-`nil` without any human,
     /// or any expiry, ever resolving it.
     ///
     /// `ConfirmationBroker.request(_:)` does not return until a decision
@@ -7846,10 +7703,10 @@ public final class WindowModel {
     func parkAProposalForTesting() async {
         let proposal = PendingMutation(
             action: "test_only_proposal", params: .object([:]), database: nil,
-            statement: "SELECT 1", affectsEveryRow: false, origin: .ui)
+            statement: "SELECT 1", affectsEveryRow: false, origin: .ui, place: place)
         Task { [confirmations] in _ = await confirmations.request(proposal) }
         for _ in 0..<1_000 {
-            if await confirmations.current()?.id == proposal.id { return }
+            if await confirmations.current(for: proposal.place)?.id == proposal.id { return }
             await Task.yield()
         }
         preconditionFailure(
@@ -7876,7 +7733,9 @@ public final class WindowModel {
     /// SwiftUI draw one row twice and omit another — the bug
     /// `droppedEventsDoNotCollapseRowIds` already pinned once for the live
     /// path, which a reset here would have reintroduced for the rebuilt one.
-    private func rebuiltThread(_ thread: SessionThreadSnapshot, parent: String) -> [ThoughtRow] {
+    private func rebuiltThread(
+        _ thread: SessionThreadSnapshot, parent: String, for agent: PlaceAgent
+    ) -> [ThoughtRow] {
         var rows: [ThoughtRow] = []
         for entry in thread.entries.suffix(Self.rebuiltThreadLimit) {
             // 2d-i: the transcript holds what was sent — the typed text
@@ -7885,25 +7744,24 @@ public final class WindowModel {
             var detail = entry.detail
             var resolvedRow: String?
             if entry.label == "you" { (detail, resolvedRow) = TurnNote.split(entry.detail) }
-            rows.append(ThoughtRow(id: nextThoughtId, label: entry.label, detail: detail, isError: entry.isError))
-            nextThoughtId += 1
+            rows.append(ThoughtRow(id: agent.nextThoughtId, label: entry.label, detail: detail, isError: entry.isError))
+            agent.nextThoughtId += 1
             if let resolvedRow {
-                rows.append(ThoughtRow(id: nextThoughtId, label: "resolved", detail: resolvedRow, isError: false))
-                nextThoughtId += 1
+                rows.append(ThoughtRow(id: agent.nextThoughtId, label: "resolved", detail: resolvedRow, isError: false))
+                agent.nextThoughtId += 1
             }
         }
         var seam = "resumed from \(parent)"
         if thread.truncated { seam += " (earlier turns not shown)" }
-        rows.append(ThoughtRow(id: nextThoughtId, label: "resumed", detail: seam, isError: false))
-        nextThoughtId += 1
+        rows.append(ThoughtRow(id: agent.nextThoughtId, label: "resumed", detail: seam, isError: false))
+        agent.nextThoughtId += 1
         return rows
     }
 
     /// 2d-ii: a speech engine's failure, whole, as a red thread row
     /// (interaction rule 8).
     public func appendSpeechFailure(_ message: String) {
-        thoughts.append(ThoughtRow(id: nextThoughtId, label: "speech", detail: message, isError: true))
-        nextThoughtId += 1
+        agent(for: place).appendRow(label: "speech", detail: message, isError: true)
     }
 
     /// The active organisation's speech engine id, `""` when unset. Reads
@@ -7924,22 +7782,26 @@ public final class WindowModel {
     /// it folds to a name in scope. Appends the `RESOLVED` row and journals
     /// the note whole; the row is one truncated line like every other.
     ///
-    /// A switch (or a "stop and switch now") that lands while `current()`
-    /// is suspended bumps `eventPumpGeneration` and appends its seam; the
-    /// old turn's row must not follow it, so a moved generation sends the
-    /// text unchanged, with no row and no journal entry.
-    private func textWithIdentifierNote(_ text: String) async -> String {
-        guard let vocabulary else { return text }
-        let generation = eventPumpGeneration
+    /// A resume or provider switch that lands while `current()` is suspended bumps
+    /// `eventPumpGeneration` and appends its seam; the old turn's row must not follow it, so a
+    /// moved generation sends the text unchanged, with no row and no journal entry.
+    ///
+    /// **The vocabulary is the screen's place's** (Invariant 4 for names). `send` suspends before
+    /// it gets here — the conversation, the credentials, the harness start — and a switch that
+    /// lands in between leaves the vocabulary describing another place, another organisation's
+    /// included. So a turn whose place is no longer on screen when the names are in hand goes
+    /// unchanged too: no note is better than another place's.
+    private func textWithIdentifierNote(_ text: String, for agent: PlaceAgent) async -> String {
+        guard let vocabulary, agent.place == place else { return text }
+        let generation = agent.eventPumpGeneration
         let current = await vocabulary.current()
-        guard generation == eventPumpGeneration else { return text }
+        guard generation == agent.eventPumpGeneration, agent.place == place else { return text }
         let resolutions = IdentifierResolver.resolve(text, in: current)
         guard let note = TurnNote.render(resolutions) else { return text }
-        thoughts.append(ThoughtRow(id: nextThoughtId, label: "resolved", detail: TurnNote.row(resolutions), isError: false))
-        nextThoughtId += 1
+        agent.appendRow(label: "resolved", detail: TurnNote.row(resolutions))
         try? await registry.journalIdentifierEvent(
             action: "identifiers_resolved", params: .object(["note": .string(note)]),
-            caller: DispatchCaller(place: place, session: nil), outcome: "ok")
+            caller: DispatchCaller(place: agent.place, session: nil), outcome: "ok")
         return text + "\n\n" + note
     }
 
@@ -7985,11 +7847,11 @@ public final class WindowModel {
     /// `user` → `"you"` is drawn the same way by live sends and the rebuilt
     /// thread (2d-ii), so the two read identically: a history of tool calls
     /// with no record of what was asked is a log, not a conversation.
-    private func readThread(_ id: String) async throws -> SessionThreadSnapshot {
+    private func readThread(_ id: String, as caller: DispatchCaller) async throws -> SessionThreadSnapshot {
         let result = try await registry.dispatch(
             name: "session_read",
             params: .object(["id": .string(id), "limit": .number(Double(Self.rebuiltThreadLimit))]),
-            origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            origin: .ui, caller: caller, confirmation: nil)
         guard case .object(let object) = result, case .object(let structured)? = object["structuredContent"] else {
             throw ReadThreadError.malformedResult("session_read: the result carried no structuredContent object")
         }
@@ -8098,19 +7960,19 @@ public final class WindowModel {
         debugEventSink("[WAKIL_DEBUG_EVENTS] \(line)")
     }
 
-    private func append(_ event: HarnessEvent) {
+    private func append(_ event: HarnessEvent, to agent: PlaceAgent) {
         debugLogIfEnabled(event)
-        if case .result = event { turnInFlight = false }
+        if case .result = event { agent.turnInFlight = false }
         // Task 15, fix round 1 (Critical): `Date()` is captured exactly
         // here, at the one place a harness event actually arrives, and
         // carried alongside it into `mirror.events` — not recomputed later,
         // and not synthesised at all inside `mirroredBlocks`, which is
         // what the first cut got wrong. See `MirrorEvent`'s own doc
         // comment for the regression this replaced.
-        mirror.retain(event, at: Date())
-        guard let row = thoughtRow(id: nextThoughtId, for: event) else { return }
-        nextThoughtId += 1
-        thoughts.append(row)
+        agent.mirror.retain(event, at: Date())
+        guard let row = thoughtRow(id: agent.nextThoughtId, for: event) else { return }
+        agent.nextThoughtId += 1
+        agent.thoughts.append(row)
     }
 
     // MARK: - Terminal mirror (Task 15) — see `TerminalMirrorFeed`
@@ -8122,8 +7984,9 @@ public final class WindowModel {
     /// result with no race to poll for. `startEventPump`'s own loop does
     /// the same two calls, in the same order, for the same reason.
     func receiveForTesting(_ event: HarnessEvent, provider: String? = nil) async {
-        append(event)
-        await mirror.pump(event)
+        let agent = agent(for: place)
+        append(event, to: agent)
+        await agent.mirror.pump(event, into: nil)
         await recordCapacity(event, provider: provider ?? providerId)
         // Awaited here so tests are deterministic; the live pump loop starts it unawaited.
         if case .result = event { await capacity.refresh(probe: true) }
@@ -8139,15 +8002,29 @@ public final class WindowModel {
         await capacityProbe?.value
     }
 
-    private func recordCapacity(_ event: HarnessEvent, provider: String) async {
-        if case .rateLimit(let windows) = event {
-            await capacity.receive(windows, provider: provider)
+    /// One stream reading, recorded against the account the producing session ran under.
+    ///
+    /// **An agent in an organisation the screen has left records under its own** (background
+    /// agents 3 of 4): its account is one of that org's providers, and the window's `wakil-ctx`
+    /// now answers for the org on screen, where the same id names another account or none.
+    /// Dispatched as that agent, so it reaches the client pinned to its place
+    /// (`PlaceRoutedCaller`). The window's readings are the screen's org's, so none is re-read.
+    private func recordCapacity(_ event: HarnessEvent, provider: String, for agent: PlaceAgent? = nil) async {
+        guard case .rateLimit(let windows) = event else { return }
+        if let agent, agent.place.organization != organization {
+            guard !provider.isEmpty else { return }
+            _ = try? await registry.dispatch(
+                name: "capacity_record",
+                params: capacityRecordParams(provider: provider, windows: windows, asOf: Date()),
+                origin: .ui, caller: agent.caller, confirmation: nil)
+            return
         }
+        await capacity.receive(windows, provider: provider)
     }
 
-    /// TEST-ONLY: the agent `Bash` events the mirror is holding for a terminal
-    /// pane opened later — what an org switch must leave empty.
-    var mirrorEventsForTesting: [MirrorEvent] { mirror.events }
+    /// TEST-ONLY: the on-screen place's agent's `Bash` events, held for a terminal pane opened
+    /// later — none of another place's.
+    var mirrorEventsForTesting: [MirrorEvent] { currentAgent?.mirror.events ?? [] }
 
     /// TEST-ONLY: the raw `PaneStore` this model reads and writes, for a
     /// test that wants its own narrower API (`terminalBlocks(paneId:)`,
@@ -8155,6 +8032,11 @@ public final class WindowModel {
     /// `...ForTesting` wrappers below, which exist for the handful of
     /// reads or writes common enough to be worth naming here.
     var panesForTesting: PaneStore { panes }
+
+    /// TEST-ONLY: the arrangement of `scope`, read with the scope named, whichever is on screen.
+    func layoutSnapshotForTesting(in scope: LayoutScope) async -> LayoutSnapshot {
+        await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }
+    }
 
     // MARK: - Terminal
 
@@ -8212,8 +8094,16 @@ public final class WindowModel {
     /// so there is nothing here to omit by hand — the journal cannot
     /// become where a `keychain` grep's secrets accumulate because the
     /// type reaching this method never held them.
+    ///
+    /// **Under the shell's own place** (background agents 3 of 4): a shell keeps running in the
+    /// place it was opened in while the screen goes elsewhere, so a run is journalled with that
+    /// place — the screen's only for a shell with no scope of its own.
     private func journalTerminalRun(_ run: TerminalRun) async {
-        let context = activeShellContext
+        let screen = activeShellContext
+        let home = run.scope.flatMap { $0.organization.isEmpty ? nil : $0 }
+        let context = home.map {
+            (org: $0.organization, project: $0.project, environment: $0.environment)
+        } ?? (org: screen.org, project: screen.project, environment: screen.environment)
         let params: JSONValue = .object([
             "pane": .string(run.paneId),
             "command": .string(run.command),
@@ -8345,7 +8235,7 @@ public final class WindowModel {
             origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil),
             case .object(let fields) = result, case .string(let pane)? = fields["pane"]
         else { return "" }
-        await mirror.backfill()
+        await currentAgent?.mirror.backfill(into: nil)
         return pane
     }
 
@@ -8406,7 +8296,8 @@ public final class WindowModel {
     /// alongside `WakilWiring.shutdown()`; without it the `claude` child
     /// outlives the window.
     public func shutdown() async {
-        eventPump?.cancel()
+        socketsClosed = true
+        for agent in agents.values { agent.eventPump?.cancel() }
         confirmationPump?.cancel()
         observationPump?.cancel()
         flightPump?.cancel()
@@ -8415,15 +8306,22 @@ public final class WindowModel {
         resumePump?.cancel()
         providerSwitchPump?.cancel()
         terminalRunPump?.cancel()
-        await harness?.stop()
+        // Every place's agent, and the socket each reached Wakil on: one left running would
+        // outlive the window.
+        for agent in agents.values { await stopSession(of: agent) }
+        // And every place's socket no session took.
+        let shown = shownSockets.values
+        shownSockets = [:]
+        for socket in shown { await socket.opening.value.socket?.stop() }
+        // And every approval still waiting, the operator's among them: each parked request
+        // returns rather than waiting on a window that is gone.
+        await confirmations.cancelAll()
         // No shell outlives the window. Without this line `terminals` was
         // the one live-resource store `shutdown()` forgot — every pump
         // above is cancelled, but a cancelled pump does not kill a child
-        // process, and neither does dropping this model.
-        //
-        // `.finish` here and `.keepOpen` in `invalidateForOrgChange()`:
-        // this is the end of the window, so the run stream ends with it.
-        await terminals.shutdownAll(runStream: .finish)
+        // process, and neither does dropping this model. The run stream
+        // ends with the window.
+        await terminals.shutdownAll()
     }
 }
 
@@ -8434,7 +8332,6 @@ public enum UnsavedIntent: Sendable, Equatable {
     /// One tab, named by its subject rather than its position, which can move while it waits.
     case closeTab(pane: String, subject: EditorTabSubject)
     case closePane(pane: String)
-    case switchOrganisation(String)
     case quit
 }
 

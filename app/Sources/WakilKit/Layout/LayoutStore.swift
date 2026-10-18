@@ -244,7 +244,12 @@ public actor LayoutStore {
     public static let defaultVoid = PaneFrame(x: 0, y: 0, width: 1440, height: 900)
 
     private var void: PaneFrame
-    private var scope: LayoutScope
+    /// The scope on screen: what `switchScope` installs.
+    private var screen: LayoutScope
+    /// The scope every implicit-current-scope method below reads and writes: the dispatching
+    /// caller's own (`ScopeRouting.home`, background agents 3 of 4), else the one on screen. An
+    /// agent working in a place the operator has left arranges that place's canvas, not this one.
+    private var scope: LayoutScope { ScopeRouting.home ?? screen }
     private var byScope: [LayoutScope: LayoutSnapshot]
     private var nextPaneNumber: Int
 
@@ -267,16 +272,15 @@ public actor LayoutStore {
     /// by construction. It describes something that happened, not an
     /// arrangement.
     ///
-    /// **Not in `byScope` either**, so `clearAllScopes` does not reset it.
+    /// **Not in `byScope` either**, so no scope's arrangement carries it.
     /// Nothing reads its value — a view reacts to it DIFFERING from the last
-    /// one it saw — so a reset to zero is a difference, and an organisation
-    /// switch would end by pulling first responder into a pane nobody asked
-    /// for.
+    /// one it saw — so a reset to zero is a difference, and a switch would
+    /// end by pulling first responder into a pane nobody asked for.
     private var focusRequests: Int
 
     public init(voidSize: PaneFrame = LayoutStore.defaultVoid) {
         void = voidSize
-        scope = .initial
+        screen = .initial
         byScope = [.initial: LayoutSnapshot()]
         nextPaneNumber = 1
         focusRequests = 0
@@ -513,7 +517,10 @@ public actor LayoutStore {
         // `requirePane` throws for an unknown id, and a refused focus is not
         // a request anything should answer: a view that took the keyboard on
         // one would be reacting to an action that did not happen.
-        focusRequests += 1
+        //
+        // **Nor for a canvas that is not on screen** (Rule 6): an agent focusing a pane in a
+        // place the operator has left moves that place's focus and never takes the keyboard.
+        if scope == screen { focusRequests += 1 }
 
         // Focusing also *recovers*. A pane can be outside the void without
         // `move` having put it there — a layout saved on a large canvas and
@@ -813,7 +820,7 @@ public actor LayoutStore {
 
     /// Makes `scope` the active arrangement, keeping the outgoing one.
     public func switchScope(to scope: LayoutScope) {
-        self.scope = scope
+        screen = scope
         if byScope[scope] == nil { byScope[scope] = LayoutSnapshot() }
     }
 
@@ -824,25 +831,9 @@ public actor LayoutStore {
         let carried = byScope[outgoing] ?? LayoutSnapshot()
         byScope[outgoing] = nil
         byScope[scope] = carried
-        self.scope = scope
+        screen = scope
     }
 
-    /// Forgets every scope's arrangement, not just the active one.
-    ///
-    /// **This no longer exists to close a collision — it exists to state a
-    /// policy.** Until `LayoutScope`, it was the only thing standing
-    /// between two orgs each holding a project called `core`: memory keyed
-    /// on the project NAME alone while `LayoutPersistence` keyed on
-    /// `(org, project)`, so disk was safe and memory was not. The scope
-    /// carries the organisation, so that collision cannot be expressed any
-    /// more. What survives is the behaviour it was protecting, which is
-    /// wanted on its own terms: an org switch invalidates every
-    /// arrangement, because an organisation is a credential boundary
-    /// (Invariant 4) and nothing arranged inside one may be drawn under
-    /// another's name. `switchScope` deliberately KEEPS the outgoing scope
-    /// so that returning to it finds it as it was left; this is the one
-    /// call that says otherwise, and `WindowModel.invalidateForOrgChange`
-    /// is its only caller.
     /// Puts `pane` into the current scope's arrangement exactly as it is:
     /// same id, same frame.
     ///
@@ -863,11 +854,6 @@ public actor LayoutStore {
             nextPaneNumber = max(nextPaneNumber, n + 1)
         }
         return true
-    }
-
-    public func clearAllScopes() {
-        byScope = [:]
-        scope = .initial
     }
 
     /// Replaces `scope`'s arrangement wholesale — what

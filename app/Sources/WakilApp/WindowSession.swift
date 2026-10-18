@@ -5,14 +5,14 @@ import SwiftUI
 
 // MARK: - Session
 
-/// One window's worth of assembled Wakil: the shared wiring, the MCP socket
-/// the agent's shim connects back to, and the model the view draws.
+/// One window's worth of assembled Wakil: the shared wiring, the MCP sockets
+/// the agents' shims connect back to, and the model the view draws.
 ///
 /// It builds no registry, pane store or MCP client of its own: all four come
 /// from `WakilWiring.build`, which is also what `--dispatch` calls — so an
 /// action name that works in a debug script works in this window, because
 /// there is exactly one action set and one place it is registered. What this
-/// type adds on top is the socket, the harness and the model.
+/// type adds on top is the socket and harness factories, and the model.
 @MainActor
 final class WindowSession {
     let wiring: WakilWiring
@@ -26,13 +26,10 @@ final class WindowSession {
     /// than silent.
     let notes: [String]
 
-    private let socketServer: MCPSocketServer?
-
-    private init(wiring: WakilWiring, model: WindowModel, composer: ComposerModel, socketServer: MCPSocketServer?, notes: [String]) {
+    private init(wiring: WakilWiring, model: WindowModel, composer: ComposerModel, notes: [String]) {
         self.wiring = wiring
         self.model = model
         self.composer = composer
-        self.socketServer = socketServer
         self.notes = notes
     }
 
@@ -53,22 +50,32 @@ final class WindowSession {
         let wiring = await WakilWiring.build(journalDirectory: journalDirectory, sessionId: sessionId)
         notes.append(contentsOf: wiring.diagnostics)
 
-        // The socket path carries the session id (spec §10's stale-socket
-        // risk) and lives in the per-user temporary directory, which is the
-        // closest thing an unsandboxed app has to §2.2's "the app's
-        // container" and is itself mode 0700; `MCPSocketServer.start`
-        // additionally binds the socket at 0700 and unlinks any stale file
-        // first.
-        //
-        // It has to fit `sockaddr_un`'s `sun_path`, which
-        // `makeUnixSocketAddress` rejects rather than truncates. Measured on
-        // this machine: the temporary directory is 48 characters and the
-        // whole path 96, against a 104-byte buffer — comfortable, but not
-        // unlimited, which is why `MCPServerTests` deliberately uses `/tmp`
-        // for its own longer test names. A path that did not fit surfaces as
-        // a note below rather than a crash.
-        let socketPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent("wakil-\(sessionId).sock").path
+        // Each agent session has a socket of its own (background agents 3 of 4, Task 4), at
+        // `agentSocketPath`: the agent's session id (spec §10's stale-socket risk), in the
+        // per-user temporary directory, which is the closest thing an unsandboxed
+        // app has to §2.2's "the app's container" and is itself mode 0700;
+        // `MCPSocketServer.start` additionally binds the socket at 0700 and unlinks any stale
+        // file first. The model opens a place's socket the moment the place is shown — at
+        // launch and on every switch, before any turn (`WindowModel.openShownSocket`) — and the
+        // place's first session takes it; a resume or provider switch starts its own. Each is
+        // stopped with the session that holds it. A socket that would not bind (a path too long
+        // for `sun_path`, say) leaves that session running without Wakil's own tools, and its
+        // status says why.
+        let surface = wiring.mcpSurface
+        // Filled once the model exists, below: `initialize` reports the place on screen beside
+        // the socket's own (`initializeMeta`), which is how the e2e harness picks its channel.
+        let screen = ScreenPlace()
+        let agentSocketFactory: AgentSocketFactory = { path, caller in
+            // The registry *and* the pane store the window itself draws
+            // from, as one value: `read_pane` answers the agent from the
+            // same `PaneStore` `WindowModel.refreshPanes` reads, so what the
+            // agent is told is on screen is what is on screen (Invariant 3).
+            // The gate judges the session's own place, whatever the screen shows.
+            let server = MCPSocketServer(
+                surface: surface, socketPath: path, caller: caller, screen: { await screen.place })
+            try await server.start()
+            return server
+        }
 
         let executableDirectory = WakilWiring.defaultExecutableDirectory()
         // The file that is actually running: `Contents/MacOS/Wakil` in a
@@ -116,7 +123,7 @@ final class WindowSession {
         // keep building the launch org's MCP config JSON and credentials
         // lookup for every harness after a live org switch, rather than
         // the org actually running by then.
-        let harnessFactory: @Sendable (Place, ProviderSelection) -> AgentHarness?
+        let harnessFactory: @Sendable (Place, ProviderSelection, String) -> AgentHarness?
         let lookupFactory: @Sendable (String) -> ProviderCredentialsLookup
         // 2e (#204). Built beside `lookupFactory` because it needs the
         // same `wakil` executable and the same per-org construction: the
@@ -179,7 +186,7 @@ final class WindowSession {
             // tools this config publishes (probe §6), so the two have to
             // describe the same surface. See `agentAllowedTools`.
             let allowedTools = agentAllowedTools(actions: await wiring.registry.all())
-            harnessFactory = { place, selection in
+            harnessFactory = { place, selection, socketPath in
                 // Rebuilt per call, never captured: this JSON carries
                 // WAKIL_PROVIDER and the session's whole place — WAKIL_ORG,
                 // WAKIL_PROJECT, WAKIL_ENVIRONMENT — to every MCP server, so
@@ -205,7 +212,7 @@ final class WindowSession {
             // still usable, and the reason the text field cannot send is on
             // screen.
             notes.append("\(error)")
-            harnessFactory = { _, _ in nil }
+            harnessFactory = { _, _, _ in nil }
             // No `wakil` binary means no mint either: the add-an-account
             // flow needs the same executable the credential lookup does.
             // `nil` rather than a stub that always fails, because
@@ -351,7 +358,8 @@ final class WindowSession {
                 files: wiring.fileLists.map { $0 as any ToolCaller } ?? wiring.filesClient),
             // Background agents, 2 of 4: the pool the registered handlers route an agent
             // session's calls through, told by the window which places are still in use.
-            placeClients: wiring.placeClients)
+            placeClients: wiring.placeClients,
+            agentSocketFactory: agentSocketFactory)
 
         // `term_open` now has a window to ask for the active organisation,
         // project and environment — the three `WAKIL_*` keys a shell in a
@@ -359,32 +367,15 @@ final class WindowSession {
         // exported at all (final review, Critical 3). Asked on every
         // open, never captured: see `ActiveShellContext`.
         wiring.useActiveContext(of: model)
+        screen.model = model
         let composer = ComposerModel(window: model, speech: wiring.speech)
 
-        var socketServer: MCPSocketServer?
-        let server = MCPSocketServer(
-            // The registry *and* the pane store the window itself draws
-            // from, as one value: `read_pane` answers the agent from the
-            // same `PaneStore` `WindowModel.refreshPanes` reads, so what the
-            // agent is told is on screen is what is on screen (Invariant 3).
-            surface: wiring.mcpSurface,
-            socketPath: socketPath,
-            // The gate judges the place the window shows, with the session the agent runs under.
-            caller: { await model.agentCaller })
-        do {
-            try await server.start()
-            socketServer = server
-        } catch {
-            notes.append("MCP socket \(socketPath): \(error) — the agent cannot reach Wakil's own tools this session")
-        }
-
-        return WindowSession(wiring: wiring, model: model, composer: composer, socketServer: socketServer, notes: notes)
+        return WindowSession(wiring: wiring, model: model, composer: composer, notes: notes)
     }
 
-    /// Stops the agent session, the MCP socket and every Wakil-owned Go child, in that
-    /// order: the `claude` child — and with it the shim `claude` spawned —
-    /// is gone before the socket that shim connects to is closed and
-    /// unlinked.
+    /// Stops every agent session and every shown place's MCP socket, then every Wakil-owned Go child:
+    /// `model.shutdown()` stops each `claude` child — and with it the shim
+    /// `claude` spawned — before the socket that shim connects to is closed.
     ///
     /// `wiring.shutdown()` is called for determinism rather than because
     /// the children would otherwise survive indefinitely; see its own doc
@@ -395,7 +386,6 @@ final class WindowSession {
     /// promptly.
     func shutdown() async {
         await model.shutdown()
-        await socketServer?.stop()
         await wiring.shutdown()
     }
 }
@@ -412,4 +402,12 @@ private struct FailingCredentialsLookup: ProviderCredentialsLookup {
     func credentials(forProvider id: String) async throws -> ProviderCredentials {
         throw ProviderCredentialsLookupError.refused(reason)
     }
+}
+
+/// The place the window shows, for a socket's `initialize` (`initializeMeta`). Weak, so a socket
+/// does not keep a closed window alive; a released model answers nil.
+@MainActor
+private final class ScreenPlace {
+    weak var model: WindowModel?
+    var place: Place? { model?.place }
 }

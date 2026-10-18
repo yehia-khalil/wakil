@@ -31,24 +31,14 @@ import Testing
 @Test func switchingScopeBumpsTheResolutionMarkBeforeAnyWrite() async {
     let store = PaneStore()
     let before = await store.apiResolutionMark()
-    await store.switchScope(to: LayoutScope(organization: "acme", project: "widgets"))
+    await store.switchScope(to: LayoutScope(organization: "acme", project: "widgets", environment: "dev"))
     #expect(await store.apiResolutionMark() != before)
-}
-
-@Test func clearingAllScopesBumpsTheMarkAndKeepsFlightSubscribers() async {
-    let store = PaneStore()
-    let flights = await store.apiFlights()
-    _ = flights
-    let before = await store.apiResolutionMark()
-    await store.clearAllScopes()
-    #expect(await store.apiResolutionMark() != before)
-    #expect(await store.apiFlightSubscriberCount == 1)
 }
 
 @Test func adoptingAScopeCarriesItsPanesWithoutBumpingTheMark() async {
     let store = PaneStore(kinds: PaneKinds.standard)
-    let seed = LayoutScope(organization: "acme", project: "widgets")
-    let conversation = LayoutScope(organization: "acme", project: "widgets", lineageRoot: "r")
+    let seed = LayoutScope(organization: "acme", project: "widgets", environment: "dev")
+    let conversation = LayoutScope(organization: "acme", project: "widgets", environment: "dev", lineageRoot: "r")
     await store.switchScope(to: seed)
     await store.setTerminalProposal(paneId: "g", nil)
     let mark = await store.apiResolutionMark()

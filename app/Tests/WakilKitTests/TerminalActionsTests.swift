@@ -84,7 +84,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
     #expect(opened?.title.isEmpty == false)
     #expect(await terminals.isRunning(paneId: paneId))
 
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 /// Walk-defects B2, part 1: `term_open` must leave the pane remembering
@@ -100,7 +100,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
     let opened = await layout.snapshot().panes.first { $0.id == paneId }
     #expect(opened?.terminalPath == path)
 
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 /// `term_open` naming an EXISTING pane at a new path updates the
@@ -118,7 +118,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
     let opened = await layout.snapshot().panes.first { $0.id == first }
     #expect(opened?.terminalPath == second.path)
 
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func termOpenIsAControlActionAllowedEverywhereIncludingProduction() async throws {
@@ -135,7 +135,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
     #expect(result != .null)
     let descriptor = await registry.all().first { $0.name == "term_open" }
     #expect(descriptor?.kind == .control)
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func aPathOutsideEveryProjectRootIsAcceptedSilently() async throws {
@@ -150,7 +150,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
         name: "term_open", params: .object(["path": .string("/usr/lib")]),
         origin: .agent, caller: .test("staging"), confirmation: nil)
 
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func termOpenOnAPaneThatAlreadyHasAShellReplacesItRatherThanLeaking() async throws {
@@ -166,7 +166,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
     #expect(await terminals.pidForTesting(paneId: first) != pidBefore)
     #expect(kill(pidBefore!, 0) == -1)
     #expect(await layout.snapshot().panes.count == 1)
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func anUnsupportedShellIsRefusedWithAReasonRatherThanOpeningDegraded() async throws {
@@ -178,7 +178,7 @@ private func openBarePane(_ layout: LayoutStore) async -> String {
             params: .object(["path": .string("/tmp"), "shell": .string("/bin/fish")]),
             origin: .agent, caller: .test("staging"), confirmation: nil)
     }
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 /// Polls `condition` until it holds or `seconds` elapse, recording an
@@ -219,7 +219,7 @@ private func waitUntil(
     #expect(snapshot.blocks.last?.origin == .proposed)
     #expect(snapshot.blocks.last?.command == "kubectl get pods")
     #expect(snapshot.blocks.last?.exitCode == nil)
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func atMostOneProposalIsPendingAndTheReplacementIsItselfJournalled() async throws {
@@ -240,7 +240,7 @@ private func waitUntil(
     // already moving to Enter — so the replacement leaves its own line.
     let entries = try await registry.journalEntries().filter { $0.action == "term_propose" }
     #expect(entries.count == 2)
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 /// **Drives the real `WindowModel.acceptProposal(pane:)`**, not a
@@ -420,7 +420,7 @@ private func waitUntil(
         origin: .agent, caller: .test("staging"), confirmation: nil)
 
     #expect(await panes.terminalScrollTarget(paneId: pane) == "b1")
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func termScrollDoesNotTakeARowBecauseThatWordAlreadyMeansSomethingElse() async throws {
@@ -438,7 +438,7 @@ private func waitUntil(
     }
     #expect(properties["row"] == nil)
     #expect(properties["block"] != nil)
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func termScrollWithNoBlockClearsThePendingTarget() async throws {
@@ -454,7 +454,7 @@ private func waitUntil(
         origin: .ui, caller: .test("staging"), confirmation: nil)
 
     #expect(await panes.terminalScrollTarget(paneId: pane) == nil)
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func termScrollRefusesABlockThePaneDoesNotHold() async throws {
@@ -470,7 +470,7 @@ private func waitUntil(
             params: .object(["pane": .string(pane), "block": .string("b-nope")]),
             origin: .agent, caller: .test("staging"), confirmation: nil)
     }
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 // MARK: - The pane carries the active context (final review, Critical 3)
@@ -594,7 +594,7 @@ private func waitUntil(
     }
     // Absent altogether is equally acceptable; either way `path` must not
     // be required.
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func termOpenDefaultsToTheActiveContextsRootPathWhenPathIsOmitted() async throws {
@@ -623,7 +623,7 @@ private func waitUntil(
     let opened = await layout.snapshot().panes.first { $0.id == paneId }
     #expect(opened?.title == terminalPaneTitle(forPath: root))
 
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 @Test func termOpenDefaultsToHomeWhenUnwiredAndNoPathIsGiven() async throws {
@@ -642,7 +642,7 @@ private func waitUntil(
     let opened = await layout.snapshot().panes.first { $0.id == paneId }
     #expect(opened?.title == "~")
 
-    await terminals.shutdownAll(runStream: .finish)
+    await terminals.shutdownAll()
 }
 
 /// Final fix wave, item 6 (ruling P11): `term_open`'s description names no control the window no

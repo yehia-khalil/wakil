@@ -52,7 +52,7 @@ private func replaceFixture() async throws -> EditorFixture {
     let subject = await f.snapshot().tabs[0].subject
     await f.panes.editorBufferDidChange(paneId: f.pane, subject: subject, text: "let foo = 1 // mine\n", basis: 0)
     let home = await f.panes.activeScope
-    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, lineageRoot: "conv-2"))
+    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, environment: home.environment, lineageRoot: "conv-2"))
     try await f.dispatch("editor_search", ["query": .string("foo")])          // the other conversation's Search view
     try await f.dispatch("editor_replace", ["replacement": .string("bar")])
     #expect(await f.files.text(of: "/p/api/a.go") == "let foo = 1\n")        // the hidden tab's file is not written
@@ -71,7 +71,7 @@ private func replaceFixture() async throws -> EditorFixture {
     let home = await f.panes.activeScope
     let run = Task { try await f.dispatch("editor_replace", ["replacement": .string("bar")]) }
     while !(await f.files.calls.contains("files_replace ")) { await Task.yield() }
-    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, lineageRoot: "conv-2"))
+    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, environment: home.environment, lineageRoot: "conv-2"))
     await f.files.releaseReplace()
     let reply = try await run.value
     let mine = await f.panes.editorSnapshot(in: home, paneId: f.pane).search.replace
@@ -90,7 +90,7 @@ private func replaceFixture() async throws -> EditorFixture {
     let home = await f.panes.activeScope
     let run = Task { try await f.dispatch("editor_replace_undo") }
     while !(await f.files.calls.contains { $0.hasPrefix("files_read") }) { await Task.yield() }
-    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, lineageRoot: "conv-2"))
+    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, environment: home.environment, lineageRoot: "conv-2"))
     await f.files.releaseRead()
     _ = try await run.value
     let mine = await f.panes.editorSnapshot(in: home, paneId: f.pane).search.replace
@@ -104,7 +104,7 @@ private func replaceFixture() async throws -> EditorFixture {
     let f = try await replaceFixture()
     try await f.dispatch("editor_open", ["path": .string("/p/api/a.go")])
     let home = await f.panes.activeScope
-    let other = LayoutScope(organization: home.organization, project: home.project, lineageRoot: "conv-2")
+    let other = LayoutScope(organization: home.organization, project: home.project, environment: home.environment, lineageRoot: "conv-2")
     await f.panes.switchScope(to: other)
     try await f.dispatch("editor_open", ["path": .string("/p/web/c.ts")])
     var seen: [String: [String]] = [:]
@@ -374,7 +374,7 @@ private func replaceFixture() async throws -> EditorFixture {
     let run = Task { try await f.dispatch("editor_replace", ["replacement": .string("bar")]) }
     while !(await f.files.calls.contains("files_replace ")) { await Task.yield() }
     await f.files.setActiveRoots(["/q/app"])
-    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: "q", lineageRoot: nil))
+    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: "q", environment: home.environment, lineageRoot: nil))
     await f.files.releaseReplace()
     _ = await run.result
     #expect(await f.files.text(of: "/q/app/d.go") == "foo\n")              // never searched, never written
@@ -435,7 +435,7 @@ private func replaceFixture() async throws -> EditorFixture {
     try await f.dispatch("editor_replace", ["replacement": .string("bar")])
     let home = await f.panes.activeScope
     try await f.dispatch("editor_open", ["path": .string("/p/api/b.go")])
-    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, lineageRoot: "conv-2"))
+    await f.panes.switchScope(to: LayoutScope(organization: home.organization, project: home.project, environment: home.environment, lineageRoot: "conv-2"))
     try await f.dispatch("editor_open", ["path": .string("/p/web/c.ts")])
     await f.panes.switchScope(to: home)
     try await f.dispatch("editor_replace_undo")

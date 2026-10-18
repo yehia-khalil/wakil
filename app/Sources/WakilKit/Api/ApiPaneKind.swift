@@ -104,6 +104,10 @@ struct ApiFlight {
     /// Whether the entry had a credential when the send left. An environment switch clears
     /// the pane's own `credentialed` until re-resolve, so the row takes it from here.
     let credentialed: Bool
+    /// Whether an agent session made it, through the client pinned to its own place
+    /// (`pinnedPlace(of:)`). An org switch cancels only the operator's
+    /// (`PaneStore.cancelOperatorApiSends`), as it does their db reads.
+    var byAgent = false
     /// Cancels the send's task. `nil` until `armApiSend`.
     var cancel: (@Sendable () -> Void)?
     /// A cancel that arrived before the canceller did, honoured when it arrives.
@@ -126,9 +130,27 @@ struct ApiRecentList {
 
 /// What the api kind keeps for the whole store.
 struct ApiShared: Sendable {
-    /// Bumped by every scope change and environment switch, so a listing read begun before one
-    /// cannot land after it (`reresolveApis(generation:)`).
-    var resolutionGeneration = 0
+    /// Each scope's resolution generation, bumped when its environment switches, so a listing
+    /// read begun before one cannot land after it (`reresolveApis(generation:)`). **Per scope,
+    /// and a screen switch bumps none** (background agents 3 of 4): every place stays alive, so
+    /// an agent's listing in flight in its own place lands there wherever the operator goes. A
+    /// listing for the scope left behind still cannot land on the new one — its mark is never
+    /// another scope's value.
+    var resolutionGenerations: [LayoutScope: Int] = [:]
+    /// Where every generation is drawn from, store-wide and never reset — not even by an org
+    /// switch — so no two scopes, and no scope before and after a clear, share a value: a mark
+    /// taken in one can never pass for another's.
+    var resolutionCounter = 0
+    /// `scope`'s generation, drawn fresh on first touch.
+    mutating func resolutionGeneration(in scope: LayoutScope) -> Int {
+        if let generation = resolutionGenerations[scope] { return generation }
+        bumpResolution(in: scope)
+        return resolutionCounter
+    }
+    mutating func bumpResolution(in scope: LayoutScope) {
+        resolutionCounter += 1
+        resolutionGenerations[scope] = resolutionCounter
+    }
     var flightSubscribers: [UUID: AsyncStream<String>.Continuation] = [:]
     /// Recent sends per organisation, project and environment (W15); memory only.
     var recent: [ApiRecentKey: ApiRecentList] = [:]
@@ -149,18 +171,12 @@ enum ApiPaneKind: PaneKind {
     static func snapshot(of contents: ApiContents, in store: isolated PaneStore) -> ApiSnapshot {
         store.apiSnapshot(of: contents)
     }
-    /// An org switch: recent sends belong to the outgoing org; any listing read in flight is stale.
-    /// Flight subscribers are the window's, not the org's, and stay.
-    static func sharedAfterClearingAllScopes(_ shared: ApiShared) -> ApiShared {
+    /// The same panes under a new key keep their generation: a listing in flight still lands.
+    static func sharedAfterAdoptingScope(
+        _ shared: ApiShared, from outgoing: LayoutScope, to incoming: LayoutScope
+    ) -> ApiShared {
         var next = shared
-        next.recent = [:]
-        next.resolutionGeneration += 1
-        return next
-    }
-    /// A listing read for the scope left behind must not land on this one's panes.
-    static func sharedAfterSwitchingScope(_ shared: ApiShared) -> ApiShared {
-        var next = shared
-        next.resolutionGeneration += 1
+        next.resolutionGenerations[incoming] = next.resolutionGenerations.removeValue(forKey: outgoing)
         return next
     }
 }

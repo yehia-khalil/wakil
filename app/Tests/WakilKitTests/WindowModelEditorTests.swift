@@ -44,11 +44,12 @@ func editorWindowFull(
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: persistence,
         context: ContextStore(client: context ?? GitRootsContext(roots: roots)),
-        harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
+        harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in EditorWindowLookup() },
         rootWatcher: withGit ? gitWatcher : nil, editorRootWatcher: watcher, fileLists: fileLists, gitStatus: status,
-        paletteClients: PaletteClients(files: fileLists), placeClients: nil)
+        paletteClients: PaletteClients(files: fileLists), placeClients: nil,
+        agentSocketFactory: { _, _ in NoAgentSocket() })
     box.model = model
     await registerEditorActions(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
@@ -460,7 +461,9 @@ func editorWindowWithFiles(
         #expect(model.editorColumnFocusRequest == nil)
     }
 
-    @Test func anOrgSwitchDropsTheEditorsSaveState() async throws {
+    /// The path field names a pane on the screen being left, so it closes; the pane's own
+    /// saved-tabs write is its scope's, which stays (background agents 3 of 4), so it lands.
+    @Test func anOrgSwitchClosesThePathFieldAndKeepsTheTabsWrite() async throws {
         let (model, _) = await editorWindow()
         model.editorTabsDelay = .milliseconds(50)
         await model.refreshContext()
@@ -472,8 +475,32 @@ func editorWindowWithFiles(
                                         selection: nil, visibleRange: nil, scrollTop: 0)
         await model.invalidateForOrgChange()
         #expect(model.editorSaveAsRequest == nil)
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(model.editorTabsWriteCount == 0)
+        await model.settleEditorTabsWrite(pane: pane)
+        #expect(model.editorTabsWriteCount == 1)
+    }
+
+    /// R4's catch-up (background agents 3 of 4, fix round 1): an editor pane on a canvas come
+    /// back to from memory re-reads its open files — no watcher followed it off screen, so a
+    /// file changed meanwhile would otherwise show its old text until the next wake.
+    @Test func returningToACanvasInMemoryReReadsItsEditorTabs() async throws {
+        let context = GitRootsContext(roots: ["/p/api"])
+        let (model, _, files) = await editorWindowParts(roots: ["/p/api"], context: context)
+        await model.refreshContext()
+        await files.put("/p/api/a.go", "a")
+        await model.dispatchFromSurface("editor_open", .object(["path": .string("/p/api/a.go")]))
+        await model.refreshLayout()
+        let pane = try #require(model.layoutSnapshot.panes.first { $0.kind == "editor" }?.id)
+        #expect(model.editor(pane)?.tabs.first?.text == "a")
+        await context.switchTo(environment: "dev")
+        await model.refreshContext()
+        #expect(model.editor(pane) == nil, "dev's canvas is its own")
+        await files.put("/p/api/a.go", "changed while away")
+
+        await context.switchTo(environment: "staging")
+        await model.refreshContext()
+
+        let tab = try #require(model.editor(pane)?.tabs.first)
+        #expect(tab.text == "changed while away" && !tab.dirty, "\(tab.text)")
     }
 
     @Test func anOrgSwitchStopsTheEditorWatcher() async throws {

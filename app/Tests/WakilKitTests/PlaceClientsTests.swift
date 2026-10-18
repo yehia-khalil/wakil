@@ -103,12 +103,28 @@ private func call(
         #expect(await log.starts.isEmpty)
     }
 
-    @Test func anIncompleteCallerPlaceUsesTheWindowsClient() async throws {
+    /// Final review C1: an agent whose organisation had no project is pinned by its
+    /// organisation, or the window's client — another organisation's after a switch — would
+    /// answer for it.
+    @Test func anAgentWithNoProjectUsesAClientPinnedToItsOrganisation() async throws {
+        let log = PoolLog()
+        let window = RecordingToolCaller(always: .object(["from": .string("window")]))
+        let routed = PlaceRoutedCaller(role: .database, window: window, pool: pool(log))
+        let bare = Place(organization: "initech", project: "", environment: "")
+
+        let result = try await call(routed, as: bare)
+
+        #expect(result == .object(["from": .string("pool")]))
+        #expect(await window.calls.isEmpty)
+        #expect(await log.starts.map(\.1) == [bare])
+    }
+
+    @Test func aCallerWithNoOrganisationUsesTheWindowsClient() async throws {
         let log = PoolLog()
         let window = RecordingToolCaller(always: .object([:]))
         let routed = PlaceRoutedCaller(role: .database, window: window, pool: pool(log))
 
-        _ = try await call(routed, as: Place(organization: "initech", project: "", environment: ""))
+        _ = try await call(routed, as: Place(organization: "", project: "api", environment: "staging"))
 
         #expect(await window.calls.count == 1)
         #expect(await log.starts.isEmpty)
@@ -199,5 +215,13 @@ private func call(
             for: Place(organization: "initech", project: "api", environment: ""), from: launch, provider: nil)
         #expect(noEnvironment["WAKIL_ENVIRONMENT"] == nil)
         #expect(noEnvironment["WAKIL_PROJECT"] == "api")
+
+        // A place with no project carries its organisation only, so its client reads that
+        // organisation's own `active.json`.
+        let bare = WakilWiring.pinnedEnvironment(
+            for: Place(organization: "initech", project: "", environment: ""), from: launch, provider: nil)
+        #expect(bare["WAKIL_ORG"] == "initech")
+        #expect(bare["WAKIL_PROJECT"] == nil)
+        #expect(bare["WAKIL_ENVIRONMENT"] == nil)
     }
 }

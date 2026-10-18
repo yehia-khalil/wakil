@@ -2000,7 +2000,10 @@ func apiSendInFlight(
     paneId: String, action: String, method: String, panes: PaneStore,
     send: @escaping @Sendable () async -> ApiRequestOutcome
 ) async throws -> ApiRequestOutcome {
-    guard let token = await panes.beginApiSend(paneId: paneId, method: method, at: Date()) else {
+    let byAgent = pinnedPlace(of: ActionRegistry.dispatchCaller) != nil
+    guard let token = await panes.beginApiSend(
+        paneId: paneId, method: method, at: Date(), byAgent: byAgent)
+    else {
         throw ApiActionError.sendInFlight(action: action)
     }
     let task = Task { await send() }

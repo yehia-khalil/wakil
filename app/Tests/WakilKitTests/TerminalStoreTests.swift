@@ -126,8 +126,8 @@ import SwiftTerm
             pids[id] = try #require(await store.pidForTesting(paneId: id))
         }
 
-        await store.shutdownAll(runStream: .finish)
-        await store.shutdownAll(runStream: .finish)
+        await store.shutdownAll()
+        await store.shutdownAll()
 
         for id in ["terminal-1", "terminal-2", "terminal-3"] {
             #expect(!(await store.isRunning(paneId: id)))
@@ -461,12 +461,12 @@ import SwiftTerm
         }
         #expect(inFlight > 0)
 
-        await store.shutdownAll(runStream: .finish)
+        await store.shutdownAll()
         await reopens
 
         let survivors = await store.runningPaneIdsForTesting()
         #expect(survivors.isEmpty, "\(survivors)")
-        await store.shutdownAll(runStream: .finish)
+        await store.shutdownAll()
     }
 }
 
@@ -1566,10 +1566,10 @@ func withTerminalStore<T>(
     let store = TerminalStore(scratchRoot: testScratchRoot, panes: panes)
     do {
         let value = try await body(store)
-        await store.shutdownAll(runStream: .finish)
+        await store.shutdownAll()
         return value
     } catch {
-        await store.shutdownAll(runStream: .finish)
+        await store.shutdownAll()
         throw error
     }
 }

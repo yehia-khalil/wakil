@@ -1,6 +1,6 @@
 import Foundation
 
-/// Holds at most one refused mutation while a human decides about it.
+/// Holds at most one refused mutation per place while a human decides about it.
 ///
 /// This is the whole of the answer to a problem
 /// `phase-2b-i-acceptance.md` recorded on 2026-09-08 and left open:
@@ -20,124 +20,116 @@ import Foundation
 /// `ActionRegistry.dispatch` knows nothing about any of this and is
 /// unchanged. Parking happens strictly above it.
 ///
-/// **Single-flight.** One proposal at a time; a second is refused `.busy`.
-/// A queue would need an ordering rule, a UI that can show more than one,
-/// and an answer for what happens when two confirmations contradict each
-/// other — none of it worth building before anyone has confirmed one
-/// mutation.
+/// **Single-flight per place.** Each place (one agent, background agents 3 of 4) holds one
+/// proposal at a time; a second in the same place is refused `.busy`. Two places' agents wait
+/// side by side, and the plane draws only the screen's. A queue within a place would need an
+/// ordering rule and an answer for two confirmations that contradict each other — none of it
+/// worth building.
+///
+/// **Only the operator's proposals expire (R1).** An agent's waits until the operator approves
+/// or cancels it — Rule 4: Cancel is how a wait ends, and an agent in a place the operator is
+/// not looking at would otherwise be told "nobody answered" while nobody could. A `.ui`
+/// proposal keeps `timeout`.
 public actor ConfirmationBroker {
-    private var pending: PendingMutation?
-    private var waiter: CheckedContinuation<ConfirmationDecision, Never>?
-    private var timeoutTask: Task<Void, Never>?
-    private var subscribers: [UUID: AsyncStream<PendingMutation?>.Continuation] = [:]
+    private var pending: [Place: PendingMutation] = [:]
+    private var waiters: [Place: CheckedContinuation<ConfirmationDecision, Never>] = [:]
+    private var timeoutTasks: [Place: Task<Void, Never>] = [:]
+    private var subscribers: [UUID: AsyncStream<[Place: PendingMutation]>.Continuation] = [:]
     private let timeout: Duration
 
-    /// 120 seconds. Long enough to read a statement and decide; short
-    /// enough that an agent whose operator walked away is eventually told
-    /// so rather than blocking forever. One constant, in one place, so the
-    /// tuning pass is a one-line edit.
+    /// 120 seconds, for the operator's own proposals. Long enough to read a statement and
+    /// decide; short enough that a plane they walked away from frees their place's slot. One
+    /// constant, in one place, so the tuning pass is a one-line edit.
     public static let defaultTimeout: Duration = .seconds(120)
 
     public init(timeout: Duration = ConfirmationBroker.defaultTimeout) {
         self.timeout = timeout
     }
 
-    /// Parks `proposal` and suspends until someone decides, or the timeout
-    /// expires. Returns `.busy` immediately, without parking, if another
-    /// proposal is already held.
+    /// Parks `proposal` in its place and suspends until someone decides, or — for a `.ui`
+    /// proposal only — the timeout expires. Returns `.busy` immediately, without parking, if
+    /// that place already holds one.
     public func request(_ proposal: PendingMutation) async -> ConfirmationDecision {
-        if pending != nil { return .busy }
-        pending = proposal
-        publish(proposal)
+        let place = proposal.place
+        if pending[place] != nil { return .busy }
+        pending[place] = proposal
+        publish()
 
-        // Nothing between here and the continuation suspends, so `waiter`
+        // Nothing between here and the continuation suspends, so the waiter
         // is set before any `approve`/`cancel`/expiry can run on this
         // actor — actor reentrancy needs a suspension point to interleave,
         // and creating a Task is not one.
-        let id = proposal.id
-        timeoutTask = Task { [weak self, timeout] in
-            try? await Task.sleep(for: timeout)
-            await self?.resolve(id: id, with: .expired)
+        if proposal.origin != .agent {
+            let id = proposal.id
+            timeoutTasks[place] = Task { [weak self, timeout] in
+                try? await Task.sleep(for: timeout)
+                await self?.resolve(id: id, with: .expired)
+            }
         }
         return await withCheckedContinuation { continuation in
-            waiter = continuation
+            waiters[place] = continuation
         }
     }
 
     public func approve(id: String) { resolve(id: id, with: .approved) }
     public func cancel(id: String) { resolve(id: id, with: .cancelled) }
 
-    /// What is parked right now, for the surface to render.
-    ///
-    /// `async` costs nothing on the ordinary path — `holdNextCurrentForTesting`
-    /// defaults `false`, and every real caller already writes `await
-    /// confirmations.current()` regardless (any actor call crossing
-    /// isolation needs `await` whether or not the method itself is marked
-    /// `async`). It exists so this one call can be held open on demand —
-    /// see `holdNextCurrentForTesting` below.
-    public func current() async -> PendingMutation? {
-        if holdNextCurrentForTesting {
-            holdNextCurrentForTesting = false
-            await withCheckedContinuation { (k: CheckedContinuation<Void, Never>) in
-                currentGateForTesting = k
-            }
+    /// Cancels the agent's proposal parked in `place`, if one is: its session is being stopped
+    /// or replaced (final review I2). An agent's never expires (R1), so one left by a session
+    /// that is gone would hold the place's slot for ever, and its successor's every gated call
+    /// would be `.busy`. The request returns `.cancelled` to the MCP call that is waiting on it.
+    /// The operator's own proposal in that place is theirs, not the session's, and stays.
+    public func cancelAgentProposal(in place: Place) {
+        guard let parked = pending[place], parked.origin == .agent else { return }
+        resolve(id: parked.id, with: .cancelled)
+    }
+
+    /// Cancels everything parked, in every place: the window is closing, and every request
+    /// waiting here must return.
+    public func cancelAll() {
+        for parked in pending.values { resolve(id: parked.id, with: .cancelled) }
+    }
+
+    /// What is parked in `place`, for the plane to render when that place is on screen.
+    public func current(for place: Place) async -> PendingMutation? {
+        if holdNextCurrent {
+            holdNextCurrent = false
+            await withCheckedContinuation { heldCurrent = $0 }
         }
-        return pending
+        return pending[place]
     }
 
-    /// TEST-ONLY. When armed via `armHoldNextCurrentForTesting()`, the
-    /// very next call to `current()` suspends here instead of answering
-    /// immediately, until `releaseHeldCurrentForTesting()` resumes it.
-    /// Cleared the moment it is consumed, so only the one armed call is
-    /// ever held — the same one-shot shape
-    /// `WindowModelTests.StubHarness.holdNextSend` uses.
-    ///
-    /// Built for `WindowModel.fireQueuedSwitchIfReady()`'s fix-round-2
-    /// test (Task 11): that method's only suspension point is exactly
-    /// `await confirmations.current()`, and proving a plain synchronous
-    /// mutator (`cancelQueuedSwitch()`) can land inside that window needs
-    /// the suspension held open deterministically — plain scheduling
-    /// (two `async let`s, or a bare `Task.yield()`) measured unreliable
-    /// once other tests were sharing the executor (see that test's own
-    /// doc comment).
-    private var holdNextCurrentForTesting = false
-    private var currentGateForTesting: CheckedContinuation<Void, Never>?
+    // MARK: Test hold
 
-    /// TEST-ONLY: arms the hold described above.
-    func armHoldNextCurrentForTesting() {
-        holdNextCurrentForTesting = true
-    }
+    /// TEST-ONLY: set, the next `current(for:)` waits until `releaseHeldCurrentForTesting`, so a
+    /// test can move the window while a caller is suspended there (`setProvider`'s guard).
+    private var holdNextCurrent = false
+    private var heldCurrent: CheckedContinuation<Void, Never>?
 
-    /// TEST-ONLY: releases a `current()` call parked by the armed hold. A
-    /// no-op if nothing is currently held.
+    func holdNextCurrentForTesting() { holdNextCurrent = true }
+    var holdingCurrentForTesting: Bool { heldCurrent != nil }
     func releaseHeldCurrentForTesting() {
-        currentGateForTesting?.resume()
-        currentGateForTesting = nil
+        heldCurrent?.resume()
+        heldCurrent = nil
     }
 
-    /// TEST-ONLY: whether a `current()` call armed by
-    /// `armHoldNextCurrentForTesting()` has actually reached the hold and
-    /// is parked there right now — what a test polls so it never acts on
-    /// the hold before the call it is meant to catch has genuinely
-    /// suspended inside it.
-    func isHoldingCurrentForTesting() -> Bool {
-        currentGateForTesting != nil
-    }
+    /// Everything parked, by place.
+    public func all() -> [Place: PendingMutation] { pending }
 
-    /// A stream of the parked proposal, or `nil` when nothing is parked.
+    /// A stream of everything parked, by place, after every park and release.
     ///
-    /// A subscriber that arrives while a proposal is already parked is
-    /// caught up immediately, so it sees the proposal without having to
+    /// A subscriber that arrives while something is already parked is
+    /// caught up immediately, so it sees it without having to
     /// wait for the next park/release edge. A subscriber that arrives when
     /// nothing is parked gets nothing until something actually happens —
-    /// emitting an initial `nil` unconditionally would put a spurious
+    /// emitting an initial empty value unconditionally would put a spurious
     /// "released" event ahead of the first real park, which is not a fact
     /// about anything that occurred.
-    public func updates() -> AsyncStream<PendingMutation?> {
+    public func updates() -> AsyncStream<[Place: PendingMutation]> {
         AsyncStream { continuation in
             let key = UUID()
             subscribers[key] = continuation
-            if let pending { continuation.yield(pending) }
+            if !pending.isEmpty { continuation.yield(pending) }
             continuation.onTermination = { [weak self] _ in
                 Task { await self?.unsubscribe(key) }
             }
@@ -146,24 +138,22 @@ public actor ConfirmationBroker {
 
     private func unsubscribe(_ key: UUID) { subscribers[key] = nil }
 
-    /// Resolves the parked proposal, but only if `id` names it.
+    /// Resolves the parked proposal `id` names, in whichever place holds it.
     ///
     /// The id check is what makes a stale decision harmless: a click on a
     /// plane that has already been dismissed, or a timeout that fires just
     /// after an approval, names a proposal that is no longer parked and is
     /// ignored — rather than approving whatever happens to be parked next.
     private func resolve(id: String, with decision: ConfirmationDecision) {
-        guard let parked = pending, parked.id == id else { return }
-        pending = nil
-        timeoutTask?.cancel()
-        timeoutTask = nil
-        let continuation = waiter
-        waiter = nil
-        publish(nil)
+        guard let place = pending.first(where: { $0.value.id == id })?.key else { return }
+        pending[place] = nil
+        timeoutTasks.removeValue(forKey: place)?.cancel()
+        let continuation = waiters.removeValue(forKey: place)
+        publish()
         continuation?.resume(returning: decision)
     }
 
-    private func publish(_ value: PendingMutation?) {
-        for continuation in subscribers.values { continuation.yield(value) }
+    private func publish() {
+        for continuation in subscribers.values { continuation.yield(pending) }
     }
 }

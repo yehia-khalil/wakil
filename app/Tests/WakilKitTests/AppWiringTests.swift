@@ -763,12 +763,13 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
     let model = WindowModel(
         registry: wiring.registry, panes: wiring.panes, layout: wiring.layout,
         context: wiring.contextClient.map(ContextStore.init(client:)),
-        harnessFactory: { _, _ in nil }, resumes: wiring.resumes,
+        harnessFactory: { _, _, _ in nil }, resumes: wiring.resumes,
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in FailingLookupForWiringTests() },
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
         fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
-        paletteClients: PaletteClients(), placeClients: wiring.placeClients)
+        paletteClients: PaletteClients(), placeClients: wiring.placeClients,
+        agentSocketFactory: { _, _ in NoAgentSocket() })
     let held = try #require(model.rootWatcherForTesting as? FSEventsRootWatcher)
     #expect(held === (wiring.rootWatcher as? FSEventsRootWatcher))
 }
@@ -814,12 +815,13 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
     let model = WindowModel(
         registry: wiring.registry, panes: wiring.panes, layout: wiring.layout,
         context: wiring.contextClient.map(ContextStore.init(client:)),
-        harnessFactory: { _, _ in nil }, resumes: wiring.resumes,
+        harnessFactory: { _, _, _ in nil }, resumes: wiring.resumes,
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in FailingLookupForWiringTests() },
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
         fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
-        paletteClients: PaletteClients(), placeClients: wiring.placeClients)
+        paletteClients: PaletteClients(), placeClients: wiring.placeClients,
+        agentSocketFactory: { _, _ in NoAgentSocket() })
     #expect(model.fileListsForTesting === lists)
 
     let emptyBin = try scratch()

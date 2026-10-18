@@ -74,7 +74,7 @@ public final class ComposerModel {
         caret = 0
         landedUnsent = false
         let started = await window.send(text, via: source)
-        // No turn started (a queued switch, no harness, a failed send): the
+        // No turn started (no harness, a failed send): the
         // operator's words come back. Not if they have typed since.
         if !started, draft.isEmpty {
             draft = text

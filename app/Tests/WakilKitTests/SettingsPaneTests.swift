@@ -90,7 +90,7 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
 @Test func aSavedLayoutNeverHoldsASettingsPane() async throws {
     let directory = try scratch()
     let persistence = LayoutPersistence(directory: directory)
-    let scope = LayoutScope(organization: "acme", project: "orders")
+    let scope = LayoutScope(organization: "acme", project: "orders", environment: "dev")
 
     let layout = LayoutStore()
     let db = await layout.open(kind: "db", title: "orders")
@@ -113,7 +113,7 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
 @Test func aCanvasOfOnlyASettingsPaneSavesAsAnEmptyOne() async throws {
     let directory = try scratch()
     let persistence = LayoutPersistence(directory: directory)
-    let scope = LayoutScope(organization: "acme", project: "orders")
+    let scope = LayoutScope(organization: "acme", project: "orders", environment: "dev")
 
     let layout = LayoutStore()
     _ = await layout.openSettings()
@@ -131,7 +131,7 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
 @Test func aHandWrittenLayoutHoldingASettingsPaneDoesNotRestoreIt() async throws {
     let directory = try scratch()
     let persistence = LayoutPersistence(directory: directory)
-    let scope = LayoutScope(organization: "acme", project: "orders")
+    let scope = LayoutScope(organization: "acme", project: "orders", environment: "dev")
 
     // Written by hand, the way an operator or an older build would.
     var snapshot = LayoutSnapshot()

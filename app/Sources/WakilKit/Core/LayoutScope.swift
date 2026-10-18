@@ -9,9 +9,9 @@ import Foundation
 /// organisations each holding a project called `core`, which is
 /// unremarkable, collided in memory and drew the first org's arrangement
 /// under the second org's name with nothing anywhere failing. That hazard
-/// was known and was carried by `LayoutStore.clearAllScopes`, whose whole
-/// reason for existing was to paper over it on an org switch. Carrying the
-/// organisation in the key subsumes the hazard rather than documenting it.
+/// was once papered over by forgetting every scope on an org switch.
+/// Carrying the organisation in the key subsumes the hazard rather than
+/// documenting it, which is what lets an org switch keep every scope.
 ///
 /// **Both stores treat it as an opaque key**, and that is what let the
 /// scope widen from `(org, project)` to carry a conversation without
@@ -36,7 +36,20 @@ public struct LayoutScope: Sendable {
     /// It also names the seed a conversation with no arrangement of its
     /// own *in this project* opens on, and the project whose own
     /// arrangement is kept fresh as work proceeds.
+    ///
+    /// **The registry key, not project.json's display name** (Plan 3). The
+    /// key is what a `Place` and `WAKIL_PROJECT` pin by; the name can be
+    /// edited under it, and an arrangement filed by name would be lost
+    /// with the edit. Files written by name before this are still read —
+    /// see `LayoutPersistence.load(for:legacyName:)`.
     public let project: String
+
+    /// The environment the arrangement belongs to (Plan 3). Staging and
+    /// production of one project are two places, each with its own canvas
+    /// (operator, 2026-10-16) — which replaced D11's refetch of one canvas
+    /// in place. `""` is a project that declares no environment, and is a
+    /// key like any other.
+    public let environment: String
 
     /// The conversation the arrangement belongs to — the **lineage root**
     /// of the session, which is the oldest ancestor reachable from it.
@@ -64,17 +77,20 @@ public struct LayoutScope: Sendable {
     /// `lineageRoot` defaults to `nil` — the project's arrangement — so
     /// that every caller that means "the project's panes" says so by
     /// saying nothing, and only the orchestrator names a conversation.
-    public init(organization: String, project: String, lineageRoot: String? = nil) {
+    /// The environment has no default: every scope is in one, and a caller
+    /// that forgot it would file two places' canvases as one.
+    public init(organization: String, project: String, environment: String, lineageRoot: String? = nil) {
         self.organization = organization
         self.project = project
+        self.environment = environment
         self.lineageRoot = lineageRoot
     }
 
     /// The same scope with the conversation dropped: the project's
-    /// arrangement, which is the seed a conversation opens on when it has
-    /// none of its own.
+    /// arrangement **in this environment**, which is the seed a
+    /// conversation opens on when it has none of its own.
     public var projectSeed: LayoutScope {
-        LayoutScope(organization: organization, project: project)
+        LayoutScope(organization: organization, project: project, environment: environment)
     }
 }
 
@@ -132,12 +148,12 @@ extension LayoutScope: Hashable {
     /// `refreshContext()` all write and read one consistent place rather
     /// than needing a context to exist first.
     ///
-    /// **It is never written to disk.** Both its fields are empty, and
+    /// **It is never written to disk.** Its fields are all empty, and
     /// `WindowModel.persistLayout` refuses a scope with no organisation —
     /// a layout filed under an empty org is filed where no later session
     /// will look for it. The empty strings are a starting point, not a
     /// name anything is saved under.
-    public static let initial = LayoutScope(organization: "", project: "")
+    public static let initial = LayoutScope(organization: "", project: "", environment: "")
 }
 
 extension LayoutScope: CustomStringConvertible {
@@ -146,7 +162,25 @@ extension LayoutScope: CustomStringConvertible {
     /// `LayoutPersistence` writes to, so a note can be matched against a
     /// file by eye.
     public var description: String {
-        guard let lineageRoot else { return "\(organization)/\(project)" }
-        return "\(organization)/\(project) (conversation \(lineageRoot))"
+        let place = "\(organization)/\(project)@\(environment)"
+        guard let lineageRoot else { return place }
+        return "\(place) (conversation \(lineageRoot))"
     }
+}
+
+/// The scope the running dispatch reads and writes, when it is not the one on screen
+/// (background agents, 3 of 4).
+///
+/// **A task-local, bound by `ActionRegistry.dispatch` around the handler** beside
+/// `dispatchCaller`, from the scope lookup the window installs: an agent working in a place the
+/// operator has left keeps writing into that place's canvas, and the screen is not touched.
+/// `LayoutStore` and `PaneStore` resolve every implicit-current-scope call through it — `home`
+/// when set, the on-screen scope otherwise — so ninety handlers did not each grow a scope
+/// parameter, and an operator dispatch (no lookup answer, `nil`) behaves exactly as before.
+///
+/// It reaches what a handler starts with `Task {}` (task-locals are inherited) and not what it
+/// starts with `Task.detached`. Work that outlives its dispatch and must still land home — a
+/// shell's output — records the scope it was started in instead (`TerminalStore`).
+enum ScopeRouting {
+    @TaskLocal static var home: LayoutScope?
 }

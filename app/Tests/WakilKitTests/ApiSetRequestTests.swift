@@ -914,7 +914,9 @@ func aStaleCrossEntryReopenClears() async throws {
         durationMs: 1, byteCount: 0, truncated: false)))
     let row = try #require(await panes.apiSnapshot(paneId: "api-1").recent.first)
     let generation = await panes.apiResolutionMark()
-    await panes.switchScope(to: .initial)   // anything that moves the generation
+    // Anything that moves this scope's generation. Not a screen switch any more (background
+    // agents 3 of 4, fix round 2): an environment switch is the one that does.
+    await panes.clearApiResponses(to: "staging")
     let listing = [ApiEntryListing(name: "billing", baseURL: "https://b.example", credentialed: true)]
     #expect(await panes.reopenApiRow(
         paneId: "api-1", rowId: row.id, listing: listing, generation: generation) != nil)

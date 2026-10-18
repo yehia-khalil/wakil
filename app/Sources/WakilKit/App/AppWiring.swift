@@ -266,9 +266,7 @@ public struct WakilWiring: Sendable {
         }
         await placeClients.stopAll()
         // No shell outlives the app. `--dispatch` can open one too.
-        // `.finish`: this is the process ending, not an org switch, so the
-        // run stream ends here as well (`TerminalRunStreamDisposition`).
-        await terminals.shutdownAll(runStream: .finish)
+        await terminals.shutdownAll()
     }
 
     /// Assembles everything, spawning whichever of `wakil-ctx`,

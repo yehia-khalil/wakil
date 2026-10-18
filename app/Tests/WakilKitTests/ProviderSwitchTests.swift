@@ -213,6 +213,24 @@ private func registryForTesting() async -> ActionRegistry {
     #expect(await model.status.contains("waiting for confirmation"))
 }
 
+/// Background agents 3 of 4: only the switching place's own waiting proposal holds its
+/// provider switch — the session it belongs to is the one replaced. Another place's waits for
+/// its own agent, which keeps its provider, and is still parked afterwards.
+@Test func aProposalParkedInAnotherPlaceDoesNotRefuseTheSwitch() async {
+    let model = await makeModel(providerId: "main")
+    await model.parkAProposalForTesting()
+    let parkedIn = await model.place
+    await model.seedForTesting(providerId: "main", rootPath: "/tmp", thoughts: 0,
+                               project: "billing", environment: "staging")
+    #expect(await model.place != parkedIn)
+
+    await model.setProvider("work")
+
+    let status = await model.status
+    #expect(await model.providerId == "work", "\(status)")
+    #expect(await model.waitingPlaces == [parkedIn], "the other place's proposal still waits")
+}
+
 @Test func surfacesTheLookupRefusalVerbatim() async {
     let model = await makeModel(providerId: "main", lookup: FakeLookup(
         refusal: "no credential stored for ref provider:work in org acme — store it with: wakil secrets set provider:work"))

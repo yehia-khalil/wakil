@@ -58,16 +58,18 @@ approves and the action is dispatched again with `confirmation: "confirm"`.
 5. **`handleToolsCall`**: `read_pane`, `read_layout` and `approve_tool_use` are answered in the
    window. Anything else is dispatched.
 6. **`registry.dispatch(..., origin: .agent, caller:, confirmation:)`**, where the caller is
-   `caller`, the window's live `model.agentCaller` (its place and session); the gate reads its environment. Steps 4 to 10 of flow 1 apply. For
+   `caller`, the one the session's own socket was started with (its place and session); the gate reads its environment, and its place pins its clients and its canvas (`ScopeRouting.home`), wherever the screen is. Steps 4 to 10 of flow 1 apply. For
    `.control` the gate differs by origin. The agent cannot switch project or environment at all:
    `ctx_set_project` and `ctx_set_environment` are operator-only, because an agent's place is fixed
    when its session starts.
-7. **On `needsConfirmation`, `parkForConfirmation`** builds a `PendingMutation` and calls
-   `confirmations.request`, holding the tool call open. `WindowModel`'s confirmation pump sets
-   `pending`, and `ConfirmationPlane` draws it.
+7. **On `needsConfirmation`, `parkForConfirmation`** builds a `PendingMutation` carrying its place and
+   calls `confirmations.request`, holding the tool call open. The broker holds one proposal per
+   place. `WindowModel`'s confirmation pump sets `parkedProposals`, and `ConfirmationPlane` draws
+   the on-screen place's `pending`; another place's waits unseen until the operator returns.
 8. **The operator decides.** `confirmPending(typed: "confirm")` → `.approved`: the environment is
    re-read and the same call is dispatched again with `confirmation: "confirm"`, origin still
-   `.agent`. Cancel → `.cancelled`; no answer → `.expired`; another already parked → `.busy`. Each
+   `.agent`. Cancel → `.cancelled`; another already parked in the same place → `.busy`. An agent's proposal
+   never expires (it waits until decided); only a UI proposal can resolve `.expired`. Each
    returns a JSON-RPC error to the agent.
 9. **The reply** goes back over the socket, through the shim, to `claude`, and the window reads its
    panes back as in flow 1. `read_pane` answers from the same `PaneStore` the window draws.
@@ -75,27 +77,29 @@ approves and the action is dispatched again with `confirmation: "confirm"`.
 ## 3. An org switch
 
 1. **The request.** `OrgPlane` (`WakilApp/OrgPlane.swift`) calls
-   **`WindowModel.requestOrganizationSwitch(_:)`**. During an agent turn it queues the switch
-   (`queuedOrgSwitch`) until the turn ends; otherwise it calls `setOrganization`.
-2. **`setOrganization(_:)`** refuses while a switch is in progress, for the org already open, or
-   while a mutation is waiting for confirmation.
-3. **`harness?.stop()`** ends the agent session (and with it the shim and agent servers `claude`
-   spawned).
-4. **`invalidateForOrgChange()`** clears everything derived from the outgoing org: the vocabulary,
-   context, production flags (in the registry too), session, settings, accounts, login state, pane
-   snapshots, query-line state, layout scope, thread, harness, pending confirmation, and the palette;
-   then `layout.clearAllScopes()`, `panes.clearAllScopes()`,
-   `terminals.shutdownAll(runStream: .keepOpen)` and `syncGitWatcher()` (the git watch runs while an
-   editor pane is open, 3b-iii; with the canvas cleared it stops, and the window's status and its
-   `gitRoots` mirror are emptied). See
+   **`WindowModel.requestOrganizationSwitch(_:)`**, which calls `setOrganization` at once. Nothing
+   waits on a turn and nothing asks about unsaved tabs: a switch stops, holds and discards nothing.
+2. **`setOrganization(_:)`** refuses only while a switch is in progress or for the org already open.
+   A waiting approval in any place does not hold it. It cancels the operator's db reads in flight in the org being left
+   (`PaneStore.cancelOperatorDBReads`); an agent's reads, on its pinned client, keep running.
+3. **`invalidateForOrgChange()`** resets what belongs to the organisation itself: the vocabulary,
+   context, production flags (in the registry too), settings, accounts, login state, provider id,
+   `lookup`, roots, capacity, the palette, the editor's pending requests and unsaved prompt, and the
+   window's git status and its `gitRoots` mirror (of the screen's roots only, 3b-iii).
+   Every place keeps its own state: its agent (harness, socket, thread, turn, conversation), its
+   waiting approval, both stores' scopes (canvas and rows), its shells and its editor buffers. See
    [state.md](state.md).
-5. **`orgSwitcher(org)`**, which is **`WakilWiring.switchOrg(to:)`**, stops and restarts each
+4. **`orgSwitcher(org)`**, which is **`WakilWiring.switchOrg(to:)`**, stops and restarts each
    Wakil-owned client under the new `WAKIL_ORG` with no provider. Any client that does not come back
-   puts a line in `status`, and the window is left with no organisation.
-6. **`organization = org`**, a fresh credentials lookup (`lookupFactory(org)`), and
+   puts a line in `status`, and the window is left with no organisation (its canvas put away, still
+   in memory).
+5. **`organization = org`**, a fresh credentials lookup (`lookupFactory(org)`), and
    **`refreshContext()`**, which reads `get_context` for the new org (project, environment,
-   production flags, provider, roots) and tells the vocabulary.
-7. A seam line (`appendSeam`) records `previous → org` in the thread.
+   production flags, provider, roots), tells the vocabulary, and activates that place's canvas. A
+   place already visited this session comes back from memory, as it was left, with no refetch;
+   only its git and editor panes re-read the disk (`catchUpReturnedCanvas`).
 
+An agent left in the outgoing org keeps working there: its clients are pinned to its place
+(`PlaceClients`), its credentials resolve in its own org, and its events land in its own thread.
 The next harness is built for the new org: `harnessFactory` takes the org as a parameter, so its MCP
 config carries the new `WAKIL_ORG`.

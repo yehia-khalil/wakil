@@ -2174,6 +2174,37 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
     #expect(terminal["WAKIL_PROJECT"] == "api")
 }
 
+/// Plan 3: the layout scope is the place, so it is filed under the registry key and the
+/// environment — never the display name, which project.json can change under it.
+@MainActor
+@Test func theScopeIsKeyedByRegistryKeyNotDisplayName() async throws {
+    let client = RecordingToolCaller { name, _ in
+        guard name == "get_context" else { return .object([:]) }
+        return .object(["structuredContent": .object([
+            "Org": .string("initech"),
+            "Project": .object(["name": .string("API Service")]),
+            "ProjectKey": .string("api"),
+            "Environment": .string("staging"),
+        ])])
+    }
+    let (registry, panes, layout) = try makeRegistry()
+    await registerLayoutActions(into: registry, layout: layout)
+    let directory = try windowScratchDirectory()
+    let model = WindowModel(
+        registry: registry, panes: panes, layout: layout,
+        persistence: LayoutPersistence(directory: directory), context: ContextStore(client: client),
+        harnessFactory: { _ in nil }, resumes: ResumeBroker(),
+        rootPath: "/Users/x/proj", providerId: "main", lookup: AlwaysSucceedsCredentialsLookup())
+    await model.refreshContext()
+
+    await model.openPane(kind: "db")
+
+    let org = directory.appendingPathComponent("initech")
+    #expect(FileManager.default.fileExists(atPath: org.appendingPathComponent("api@staging.json").path))
+    let written = try FileManager.default.contentsOfDirectory(atPath: org.path)
+    #expect(!written.contains { $0.hasPrefix("API Service") }, "\(written)")
+}
+
 /// Spec §2.1: `wakil-ctx`, `wakil-db` and `wakil-http` are "removed from the
 /// agent's configuration entirely" — the registry is their only caller, so
 /// that the pane is state rather than a reconstruction. With
@@ -2566,7 +2597,7 @@ private func windowRepoRoot() -> URL {
 
     await client.stop()
 
-    let (saved, note) = persistence.load(for: LayoutScope(organization: "acme", project: "widgets"))
+    let (saved, note) = persistence.load(for: LayoutScope(organization: "acme", project: "widgets", environment: ""))
     #expect(note == nil)
     #expect(saved == model.layoutSnapshot)
     #expect(saved?.panes.first?.frame.x == 240)
@@ -2618,7 +2649,7 @@ private func windowRepoRoot() -> URL {
     // after the inline one — the harmless double-write the re-review
     // parked. Draining it here is what makes the assertion below about the
     // resize and nothing else.
-    let file = directory.appendingPathComponent("acme/widgets.json")
+    let file = directory.appendingPathComponent("acme/widgets@_.json")
     #expect(FileManager.default.fileExists(atPath: file.path))
     let drainedBy = Date().addingTimeInterval(5)
     while Date() < drainedBy {
@@ -2666,7 +2697,7 @@ private func windowRepoRoot() -> URL {
             id: "db-9", kind: "db", title: "db",
             frame: PaneFrame(x: 11, y: 22, width: 300, height: 200))],
         focusedId: "db-9")
-    try persistence.save(earlier, for: LayoutScope(organization: "acme", project: "widgets"))
+    try persistence.save(earlier, for: LayoutScope(organization: "acme", project: "widgets", environment: ""))
     // …and a file for the other that is not a layout at all.
     try "not json".write(
         to: directory.appendingPathComponent("acme/gadgets.json"), atomically: true, encoding: .utf8)
@@ -2733,7 +2764,7 @@ private func windowRepoRoot() -> URL {
                     id: "db-1", kind: "db", title: "db",
                     frame: PaneFrame(x: 10, y: 10, width: 300, height: 200))],
                 focusedId: "db-1"),
-            for: LayoutScope(organization: "acme", project: project))
+            for: LayoutScope(organization: "acme", project: project, environment: ""))
     }
 
     let (registry, panes, layout) = try makeRegistry()
@@ -3249,32 +3280,6 @@ private func machineRow(
     #expect(candidates.count == 2, "\(candidates)")
 }
 
-// MARK: - `queuedSwitchCancellationCount` — Task 14, fix round 1 (Important 2)
-
-/// The one signal the org plane can watch to tell "the queue was
-/// cancelled" from "the queue is about to fire" without racing
-/// `queuedOrgSwitch`'s own timing against `switching`'s. Bumped only by an
-/// actual cancellation.
-@Test @MainActor func cancellingAQueuedSwitchBumpsTheCancellationCount() async throws {
-    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
-    #expect(model.queuedSwitchCancellationCount == 0)
-    await model.beginTurnForTesting()
-    await model.requestOrganizationSwitch("beta")
-    #expect(model.queuedOrgSwitch == "beta")
-    model.cancelQueuedSwitch()
-    #expect(model.queuedOrgSwitch == nil)
-    #expect(model.queuedSwitchCancellationCount == 1)
-}
-
-/// Calling it with nothing queued is a no-op — the count must not move for
-/// a cancel that cancelled nothing, or the plane would reset itself to
-/// Choosing on a control the operator never had a live queue to press.
-@Test @MainActor func cancellingWithNothingQueuedDoesNotBumpTheCount() async throws {
-    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
-    model.cancelQueuedSwitch()
-    #expect(model.queuedSwitchCancellationCount == 0)
-}
-
 // MARK: - Layout persistence, continued
 
 /// `LayoutStore` promises that "coming back to a project finds it as it was
@@ -3298,7 +3303,7 @@ private func machineRow(
             id: "db-9", kind: "db", title: "db",
             frame: PaneFrame(x: 11, y: 22, width: 300, height: 200))],
         focusedId: "db-9")
-    try persistence.save(earlier, for: LayoutScope(organization: "acme", project: "widgets"))
+    try persistence.save(earlier, for: LayoutScope(organization: "acme", project: "widgets", environment: ""))
 
     let (registry, panes, layout) = try makeRegistry()
     await registerStandardActions(into: registry, context: client, panes: panes, db: nil, resumes: ResumeBroker())
@@ -3374,7 +3379,7 @@ private func machineRow(
 
     await client.stop()
 
-    let saved = try #require(persistence.load(for: LayoutScope(organization: "acme", project: "widgets")).snapshot)
+    let saved = try #require(persistence.load(for: LayoutScope(organization: "acme", project: "widgets", environment: "")).snapshot)
     #expect(saved == model.layoutSnapshot)
 }
 
@@ -3408,7 +3413,7 @@ private func machineRow(
     let first = try #require(model.layoutSnapshot.panes.first).id
     let second = try #require(model.layoutSnapshot.panes.last).id
 
-    let file = directory.appendingPathComponent("acme").appendingPathComponent("widgets.json")
+    let file = directory.appendingPathComponent("acme").appendingPathComponent("widgets@_.json")
     try #require(FileManager.default.fileExists(atPath: file.path))
     try FileManager.default.removeItem(at: file)
 
@@ -3874,6 +3879,45 @@ private func registerNoOpRefetch(into registry: ActionRegistry) async {
     #expect(model.status == "")
 }
 
+// Final review minor 4: an approval is for the place the proposal was asked in. One that
+// arrives once the screen is elsewhere runs nowhere — not in the place now on screen, whose
+// environment was never judged for it — and says why.
+@Test @MainActor func anOperatorApprovalAfterTheScreenLeftTheProposalsPlaceRunsNothing() async throws {
+    let (registry, panes, layout) = try makeRegistry()
+    let broker = ConfirmationBroker()
+    let model = WindowModel(
+        registry: registry, panes: panes, layout: layout,
+        context: nil, harnessFactory: { _ in nil }, resumes: ResumeBroker(),
+        rootPath: "/Users/x/proj", providerId: "main", lookup: AlwaysSucceedsCredentialsLookup(),
+        confirmations: broker, environment: "staging")
+    model.setOrganizationForTesting("initech")
+    let ran = MutationRuns()
+    await registry.register(Action(
+        name: "db_run_mutation", description: "", kind: .mutate, schema: .object([:]),
+        handler: { _ in
+            await ran.bump()
+            return .object([:])
+        }))
+    await registerNoOpRefetch(into: registry)
+
+    async let run: Void = model.runMutation("DELETE FROM t WHERE id=1", database: "orders", pane: "db-1")
+    while model.pending == nil { await Task.yield() }
+    let parked = try #require(model.pending)
+    model.setOrganizationForTesting("umbrella")
+    #expect(model.place != parked.place)
+
+    await broker.approve(id: parked.id)
+    await run
+
+    #expect(await ran.count == 0, "nothing ran in umbrella")
+    #expect(model.status.contains("nothing ran"), "\(model.status)")
+}
+
+private actor MutationRuns {
+    private(set) var count = 0
+    func bump() { count += 1 }
+}
+
 // The wrong word does not confirm, and does not dismiss the plane either —
 // a typo must not cost the operator the proposal.
 @Test @MainActor func typingTheWrongWordDoesNotConfirm() async throws {
@@ -4213,19 +4257,23 @@ private func registerNoOpRefetch(into registry: ActionRegistry) async {
     _ = try? await read.value
 }
 
-// Final review, Minor 8: an org switch stops the old org's reads on its database, not just
-// forgets them — the read's canceller runs.
-@Test @MainActor func anOrgSwitchCancelsAReadInFlight() async throws {
+// Background agents 3 of 4 (the spec's "in-flight reads stay"): an org switch stops no read —
+// the read may be the outgoing place's agent's, through its own pinned client. It lands in the
+// scope it began in (`ScopeRouting`), or is cancelled from there.
+@Test @MainActor func anOrgSwitchLeavesAReadInFlightRunning() async throws {
     let (model, _, panes, db, read) = try await modelWithAReadInFlight()
     await model.invalidateForOrgChange()
-    #expect(await dbEventually { @Sendable in await db.cancelled == 1 })
-    #expect(await dbSnapshot(panes, "db-1").runningSince == nil)
+    #expect(await db.cancelled == 0)
+    #expect(await dbSnapshot(panes, "db-1").runningSince != nil, "still that pane's read")
+    _ = await panes.cancelDBRead(paneId: "db-1")
     _ = try? await read.value
 }
 
-// Final review, Minor 3: a project switch cancels a read in flight on the project left. The
-// reply would be dropped anyway; the read itself must stop on the server.
-@Test @MainActor func aProjectSwitchCancelsAReadInFlight() async throws {
+// Background agents 3 of 4, fix round 1 (ruling: the spec's "in-flight reads stay" over Final
+// review Minor 3): a project switch stops nothing. An agent's read in flight in its own place —
+// `widgets`, homed there by the scope lookup — keeps running while the screen goes to
+// `gadgets` and comes back, and is still that pane's read when it does.
+@Test @MainActor func aProjectSwitchLeavesABackgroundReadInFlightRunning() async throws {
     let bin = windowRepoRoot().appendingPathComponent("bin/wakil-ctx")
     try #require(FileManager.default.isExecutableFile(atPath: bin.path), "run `make build` first")
     let home = try makeTwoProjectFixture(
@@ -4241,7 +4289,7 @@ private func registerNoOpRefetch(into registry: ActionRegistry) async {
                          frame: PaneFrame(x: 10, y: 10, width: 300, height: 200),
                          fetch: PaneFetch(query: .sql(database: nil, raw: "SELECT 1")))],
             focusedId: "db-1"),
-        for: LayoutScope(organization: "acme", project: "widgets"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: ""))
     let (registry, panes, layout) = try makeRegistry()
     let db = StallingDB()
     await db.setStall(false)
@@ -4255,18 +4303,24 @@ private func registerNoOpRefetch(into registry: ActionRegistry) async {
         harnessFactory: { _ in nil }, resumes: ResumeBroker(),
         rootPath: "/Users/x/proj", providerId: "main", lookup: AlwaysSucceedsCredentialsLookup())
     await model.setProject("widgets")
+    let widgets = await panes.activeScope
+    registry.setScopeLookup { caller in caller.session == nil ? nil : widgets }
 
     await db.setStall(true)
     let read = Task {
         try await registry.dispatch(
             name: "db_refetch", params: .object(["pane": .string("db-1")]),
-            origin: .agent, caller: .test("dev"), confirmation: nil)
+            origin: .agent, caller: .test("dev", session: "agent-widgets"), confirmation: nil)
     }
     #expect(await dbEventually { @Sendable in await dbSnapshot(panes, "db-1").runningSince != nil })
     #expect(await dbEventually { @Sendable in await db.stalled == 1 })
     await model.setProject("gadgets")
     #expect(model.project == "gadgets", "\(model.status)")
-    #expect(await dbEventually { @Sendable in await db.cancelled == 1 })
+    await model.setProject("widgets")
+    #expect(model.project == "widgets", "\(model.status)")
+    #expect(await db.cancelled == 0)
+    #expect(await dbSnapshot(panes, "db-1").runningSince != nil)
+    read.cancel()
     _ = try? await read.value
     await client.stop()
 }
@@ -4424,53 +4478,61 @@ private func registerFakeRefetch(
     #expect(db2Failure == nil)
 }
 
-// MARK: - D11: an environment switch refetches every open pane
+// MARK: - D11, revised by Plan 3: each environment keeps its own canvas
 
-/// The walked failure, seen live: with the banner reading
-/// `environment: production`, three panes showed rows from `staging` —
-/// including a Mongo collection `production` does not have — and went on
-/// showing them until the app was quit. An environment switch is a
-/// relaunch into that environment, and a relaunch refetches; this proves
-/// the switch now does too.
-///
-/// Uses the registry's own journal — the same call-recording mechanism
-/// `relaunchOnlyRefetchesDbPanes` above already reads — rather than a new
-/// counter: a `db_refetch` journal entry appearing after the switch is
-/// proof a refetch was actually issued, not merely that `setEnvironment`
-/// was called.
-@Test @MainActor func switchingEnvironmentRefetchesEveryOpenPane() async throws {
-    let (registry, panes, layout) = try makeRegistry()
-    // `ctx_set_environment` is stood in directly, the same way
-    // `registerTestMutation` stands in for `db_run_mutation` elsewhere in
-    // this file: succeeding unconditionally is enough, since what is
-    // under test is whether a switch that DID happen triggers a refetch,
-    // not whether `wakil-ctx` accepts the name.
-    await registry.register(Action(
-        name: "ctx_set_environment", description: "", kind: .control, schema: .object([:]),
-        handler: { _ in .object([:]) }))
-    await registerFakeRefetch(
-        into: registry, panes: panes, failingPane: "", failureMessage: "")
-    let restored = LayoutSnapshot(
-        panes: [
-            Pane(id: "db-1", kind: "db", title: "main",
-                 frame: PaneFrame(x: 0, y: 0, width: 640, height: 420),
-                 fetch: PaneFetch(query: .sql(database: nil, raw: "SELECT 1"))),
-        ],
-        focusedId: "db-1")
-    await layout.load(restored, for: .initial)
-    let model = WindowModel(
-        registry: registry, panes: panes, layout: layout, context: nil,
-        harnessFactory: { _ in nil }, resumes: ResumeBroker(),
-        rootPath: "/Users/x/proj", providerId: "main",
-        lookup: AlwaysSucceedsCredentialsLookup(), environment: "staging")
+/// **Replaces D11's refetch-in-place** (operator, 2026-10-16). D11 was walked as a banner
+/// reading `production` over three panes of `staging` rows, and answered by refetching the
+/// canvas on screen. Staging and production of one project are now two places, each with its
+/// own canvas: the switch shows the incoming environment's canvas, and the one left keeps its
+/// rows — coming back finds them as they were, with nothing re-run.
+@Test @MainActor func twoEnvironmentsOfOneProjectKeepTwoCanvases() async throws {
+    let backend = EnvironmentBackend(environment: "staging", project: "api")
+    let (model, registry, panes, layout) = try await environmentWindow(backend)
+    await registerFakeRefetch(into: registry, panes: panes, failingPane: "", failureMessage: "")
+    let id = await layout.open(kind: "db", title: "orders").id
+    await layout.setFetch(PaneFetch(query: .sql(database: nil, raw: "SELECT 1")), id: id)
+    await panes.setRows(
+        paneId: id, columns: ["env"], columnTypes: ["TEXT"], columnTypesInferred: false,
+        rows: [[.string("staging row")]], millis: 1, truncated: false, pageable: false, offset: 0,
+        sort: [], listsTables: false, editable: nil)
     await model.refreshLayout()
-
-    let before = try await registry.journalEntries().filter { $0.action == "db_refetch" }.count
+    let stagingRows = await panes.snapshot(paneId: id, kind: "db")
 
     await model.setEnvironment("production")
 
-    let after = try await registry.journalEntries().filter { $0.action == "db_refetch" }.count
-    #expect(after > before)
+    #expect(model.environment == "production")
+    #expect(model.layoutSnapshot.panes.isEmpty, "production showed staging's canvas")
+
+    await model.setEnvironment("staging")
+
+    #expect(model.layoutSnapshot.panes.map(\.id) == [id])
+    #expect(await panes.snapshot(paneId: id, kind: "db") == stagingRows)
+    #expect(try await registry.journalEntries().filter { $0.action == "db_refetch" }.isEmpty,
+            "coming back re-ran staging's pane")
+}
+
+/// D11's relaunch argument still holds for the canvas the switch brings in: an environment's
+/// arrangement read off disk holds subjects and no rows, so its panes re-run — in the incoming
+/// environment, since that is the only one on screen.
+@Test @MainActor func anEnvironmentsSavedCanvasIsRefetchedWhenTheSwitchBringsItIn() async throws {
+    let backend = EnvironmentBackend(environment: "staging", project: "api")
+    let persistence = LayoutPersistence(directory: try windowScratchDirectory())
+    try persistence.save(
+        LayoutSnapshot(
+            panes: [Pane(id: "db-7", kind: "db", title: "orders",
+                         frame: PaneFrame(x: 0, y: 0, width: 640, height: 420),
+                         fetch: PaneFetch(query: .sql(database: nil, raw: "SELECT 1")))],
+            focusedId: "db-7"),
+        for: LayoutScope(organization: "acme", project: "api", environment: "production"))
+    let (model, registry, panes, _) = try await environmentWindow(backend, persistence: persistence)
+    await registerFakeRefetch(into: registry, panes: panes, failingPane: "", failureMessage: "")
+
+    await model.setEnvironment("production")
+
+    #expect(model.layoutSnapshot.panes.map(\.id) == ["db-7"])
+    let refetched = try await registry.journalEntries().filter { $0.action == "db_refetch" }
+    #expect(refetched.count == 1)
+    #expect(refetched.first?.environment == "production")
 }
 
 /// A REFUSED switch must not refetch — the environment did not change, so
@@ -4522,11 +4584,15 @@ private func registerFakeRefetch(
 /// like `anAgentsDispatchReachesTheScreenWithoutTheOperatorClicking` above
 /// does for `pane_select_cell` — never through `WindowModel.setEnvironment`,
 /// which is the operator's own route and already covered by
-/// `switchingEnvironmentRefetchesEveryOpenPane`. A real `wakil-ctx` is
+/// `twoEnvironmentsOfOneProjectKeepTwoCanvases`. A real `wakil-ctx` is
 /// required (unlike that test's stub) because part of what is under test is
 /// whether `model.environment` — read only out of `refreshContext()` — is
 /// caught up at all, and a stub `ctx_set_environment` control action would
 /// prove nothing about that.
+///
+/// **Plan 3 changed what "reaches the panes" means.** It used to be a refetch of the canvas on
+/// screen; staging and production of one project are now two places, so the agent's switch
+/// brings in the incoming environment's own canvas and leaves the one it left as it was.
 @Test @MainActor func anAgentsEnvironmentSwitchReachesTheWindowsPanesAndItsOwnEnvironment() async throws {
     let bin = windowRepoRoot().appendingPathComponent("bin/wakil-ctx")
     try #require(FileManager.default.isExecutableFile(atPath: bin.path), "run `make build` first")
@@ -4558,10 +4624,12 @@ private func registerFakeRefetch(
                  fetch: PaneFetch(query: .sql(database: nil, raw: "SELECT 1"))),
         ],
         focusedId: "db-1")
-    await layout.load(restored, for: LayoutScope(organization: "acme", project: "widgets"))
+    // Whatever environment `set_project` left active — this fixture declares two, so none is
+    // picked — is the scope the pane is loaded into.
+    await layout.load(restored, for: LayoutScope(
+        organization: "acme", project: "widgets", environment: model.environment))
     await model.refreshLayout()
-
-    let before = try await registry.journalEntries().filter { $0.action == "db_refetch" }.count
+    #expect(model.layoutSnapshot.panes.map(\.id) == ["db-1"])
 
     // The agent's own path, not `model.setEnvironment` — straight through
     // the registry, exactly what `MCPServer` does for a real `tools/call`.
@@ -4569,18 +4637,13 @@ private func registerFakeRefetch(
     // without a confirmation.
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-        origin: .agent, caller: model.agentCaller, confirmation: nil)
+        origin: .agent, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
 
     #expect(await waitUntil { model.environment == "staging" })
-    // `refreshContext()` and `restorePaneContents()` run one after another
-    // inside the SAME `observationPump` iteration — `model.environment`
-    // flipping is no proof `restorePaneContents()` has finished, or even
-    // started, so this polls the journal itself rather than assuming one
-    // `await` implies the other completed.
-    #expect(await waitUntil {
-        (try? await registry.journalEntries().filter { $0.action == "db_refetch" }.count)
-            .map { $0 > before } ?? false
-    })
+    // `environment` is written before the swap that follows it in the same `refreshContext`, so
+    // the canvas is polled on its own rather than assumed from the environment.
+    #expect(await waitUntil { model.layoutSnapshot.panes.isEmpty }, "staging showed the canvas left")
+    #expect(try await registry.journalEntries().filter { $0.action == "db_refetch" }.isEmpty)
 
     await client.stop()
 }
@@ -4654,7 +4717,7 @@ private actor SettingsBackend: ToolCaller {
             "name": .string("ledger"), "driver": .string("mysql"),
             "dsn": .string("mysql://u:p@h/ledger"),
         ]),
-        origin: .agent, caller: model.agentCaller, confirmation: nil)
+        origin: .agent, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
 
     #expect(await waitUntil {
         model.settings?.projects.first?.environments.first?.databases.map(\.name) == ["ledger"]
@@ -5164,13 +5227,16 @@ private final class OrgRecorder: @unchecked Sendable {
 }
 
 /// What the socket judges an agent's call against is the session's own place, so the operator
-/// switching project on screen does not move a running agent.
-@Test @MainActor func theAgentCallerKeepsTheSessionsPlaceAcrossAProjectSwitch() async {
+/// switching project on screen does not move a running agent. The caller is the one the
+/// agent's own socket was started with (Task 4).
+@Test @MainActor func theAgentCallerKeepsTheSessionsPlaceAcrossAProjectSwitch() async throws {
     let harnesses = HarnessBox()
+    let sessions = Sessions()
     let model = WindowModel.forTesting(
         scratchRoot: testScratchRoot,
         organization: "initech",
-        harnessFactory: { _, _ in harnesses.next() })
+        harnessFactory: { _, _ in harnesses.next() },
+        agentSocketFactory: sessions.socketFactory)
     model.seedForTesting(
         providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
         project: "api", environment: "staging")
@@ -5181,7 +5247,8 @@ private final class OrgRecorder: @unchecked Sendable {
         project: "billing", environment: "staging")
 
     #expect(model.place.project == "billing")
-    #expect(model.agentCaller.place
+    let socket = try #require(sessions.issuedSockets.first)
+    #expect(await socket.caller().place
         == Place(organization: "initech", project: "api", environment: "staging"))
 }
 
@@ -5196,15 +5263,17 @@ private final class OrgRecorder: @unchecked Sendable {
     model.seedForTesting(
         providerId: "main", rootPath: "/Users/x/proj", thoughts: 0,
         project: "billing", environment: "staging")
-    #expect(model.agentPlace == nil)
+    #expect(model.agentPlaces.isEmpty)
 
     await model.resume(sessionId: "parent-1")
 
-    #expect(model.agentPlace == model.place)
-    #expect(model.agentPlace?.project == "billing")
+    #expect(model.agentPlaces == [model.place])
+    #expect(model.agentPlaces.first?.project == "billing")
 }
 
-@Test @MainActor func anOrgSwitchClearsTheAgentPlace() async {
+/// Background agents 3 of 4: an org switch ends no place's agent, so the place stays one the
+/// pool keeps clients for.
+@Test @MainActor func anOrgSwitchKeepsTheAgentPlace() async throws {
     let harnesses = HarnessBox()
     let model = WindowModel.forTesting(
         scratchRoot: testScratchRoot,
@@ -5214,11 +5283,12 @@ private final class OrgRecorder: @unchecked Sendable {
         providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
         project: "api", environment: "staging")
     await model.send("hello")
-    #expect(model.agentPlace != nil)
+    let agentPlace = try #require(model.agentPlaces.first)
 
     await model.setOrganization("acme")
 
-    #expect(model.agentPlace == nil)
+    #expect(model.agentPlaces == [agentPlace], "initech's agent still runs")
+    #expect(model.agents[agentPlace]?.harness != nil)
 }
 
 /// A pool client that knows the place it was started for, and a log of the places stopped.
@@ -5241,19 +5311,10 @@ private func recordingPool(_ stopped: StoppedPlaces) -> PlaceClients {
         stop: { client in if let probe = client as? PlaceProbe { await stopped.record(probe.place) } })
 }
 
-/// Waits (bounded) until `stopped` holds `place`: `retain` runs on its own task after the
-/// change that drives it.
-private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -> Bool {
-    for _ in 0..<500 {
-        if await stopped.places.contains(place) { return true }
-        try? await Task.sleep(nanoseconds: 2_000_000)
-    }
-    return false
-}
-
 /// The window, not a test, tells the pool which places are still in use: an org switch ends
-/// the session, so the clients pinned to its place are stopped.
-@Test @MainActor func anOrgSwitchStopsTheAgentPlacesPinnedClients() async throws {
+/// no session, so the clients pinned to its place are kept — the agent left in the outgoing
+/// org keeps calling through them.
+@Test @MainActor func anOrgSwitchKeepsTheAgentPlacesPinnedClients() async throws {
     let stopped = StoppedPlaces()
     let pool = recordingPool(stopped)
     let harnesses = HarnessBox()
@@ -5264,16 +5325,18 @@ private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -
         providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
         project: "api", environment: "staging")
     await model.send("hello")
-    let agentPlace = try #require(model.agentPlace)
+    let agentPlace = try #require(model.agentPlaces.first)
     _ = try await pool.client(.database, for: agentPlace)
 
     await model.setOrganization("acme")
+    await model.settlePlaceRetainForTesting()
 
-    #expect(await waitUntilStopped(agentPlace, in: stopped))
+    #expect(await !stopped.places.contains(agentPlace))
 }
 
-/// A resume into another place moves the session there, so the old place's clients stop.
-@Test @MainActor func aResumeIntoAnotherPlaceStopsTheOldPlacesPinnedClients() async throws {
+/// A resume in another place starts that place's own agent (background agents 3 of 4); the
+/// first place's agent lives on, so its pinned clients are kept.
+@Test @MainActor func aResumeInAnotherPlaceKeepsTheFirstPlacesPinnedClients() async throws {
     let (registry, panes, layout) = try makeRegistry()
     await registerFakeReadSession(into: registry, cwd: "/Users/x/proj", entries: [])
     let stopped = StoppedPlaces()
@@ -5281,7 +5344,7 @@ private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -
     let harnesses = HarnessBox()
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, context: nil,
-        harnessFactory: { _, _ in harnesses.next() }, resumes: ResumeBroker(),
+        harnessFactory: { _, _, _ in harnesses.next() }, resumes: ResumeBroker(),
         rootPath: "/Users/x/proj", providerId: "main",
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookup() },
         placeClients: pool, environment: "staging")
@@ -5289,16 +5352,17 @@ private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -
         providerId: "main", rootPath: "/Users/x/proj", thoughts: 0,
         project: "billing", environment: "staging")
     await model.send("hello")
-    let old = try #require(model.agentPlace)
+    let old = try #require(model.agentPlaces.first)
     _ = try await pool.client(.database, for: old)
 
     model.seedForTesting(
         providerId: "main", rootPath: "/Users/x/proj", thoughts: 0,
         project: "api", environment: "staging")
     await model.resume(sessionId: "parent-1")
-    #expect(model.agentPlace?.project == "api")
+    #expect(model.agentPlaces == [old, model.place])
 
-    #expect(await waitUntilStopped(old, in: stopped))
+    await model.settlePlaceRetainForTesting()
+    #expect(await !stopped.places.contains(old), "the first place's agent still runs")
 }
 
 // MARK: - `slugForOrgIdentifier(from:)` — the Creating form's derived id (spec §8.1.1 / §9)
@@ -5437,13 +5501,13 @@ private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -
         focusedId: "db-2")
     try persistence.save(
         databaseWork,
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database"))
     // Saved second, so the project's seed now holds the ticket conversation's
     // panes — "the project's most recent arrangement", and the wrong answer.
     try persistence.save(
         ticketWork,
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-tickets"))
-    #expect(persistence.load(for: LayoutScope(organization: "acme", project: "widgets")).snapshot == ticketWork)
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-tickets"))
+    #expect(persistence.load(for: LayoutScope(organization: "acme", project: "widgets", environment: "")).snapshot == ticketWork)
 
     let model = try await windowModelForConversation(
         client: client, persistence: persistence, project: "widgets", conversation: "root-database")
@@ -5480,7 +5544,7 @@ private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -
         panes: [Pane(id: "db-7", kind: "db", title: "what was already there",
                      frame: PaneFrame(x: 1, y: 2, width: 300, height: 200))],
         focusedId: "db-7")
-    try persistence.save(seed, for: LayoutScope(organization: "acme", project: "widgets"))
+    try persistence.save(seed, for: LayoutScope(organization: "acme", project: "widgets", environment: ""))
 
     let model = try await windowModelForConversation(
         client: client, persistence: persistence, project: "widgets", conversation: nil)
@@ -5521,14 +5585,14 @@ private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -
             panes: [Pane(id: "db-1", kind: "db", title: "the widgets workspace",
                          frame: PaneFrame(x: 10, y: 20, width: 300, height: 200))],
             focusedId: "db-1"),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-a"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-a"))
     // And what `gadgets` itself looks like — the seed a conversation with
     // no arrangement in this project opens on.
     let gadgetsSeed = LayoutSnapshot(
         panes: [Pane(id: "db-9", kind: "db", title: "the gadgets seed",
                      frame: PaneFrame(x: 1, y: 2, width: 300, height: 200))],
         focusedId: "db-9")
-    try persistence.save(gadgetsSeed, for: LayoutScope(organization: "acme", project: "gadgets"))
+    try persistence.save(gadgetsSeed, for: LayoutScope(organization: "acme", project: "gadgets", environment: ""))
 
     // The same conversation, with the OTHER project active.
     let model = try await windowModelForConversation(
@@ -5541,7 +5605,7 @@ private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -
     // adopted as this project's or written over.
     #expect(
         persistence.load(
-            for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-a")
+            for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-a")
         ).snapshot?.panes.map(\.title) == ["the widgets workspace"])
 }
 
@@ -5558,13 +5622,14 @@ private func waitUntilStopped(_ place: Place, in stopped: StoppedPlaces) async -
     try persistence.save(
         LayoutSnapshot(panes: [Pane(id: "db-5", kind: "db", title: "the seed",
                                     frame: PaneFrame(x: 0, y: 0, width: 10, height: 10))]),
-        for: LayoutScope(organization: "acme", project: "widgets"))
-    // `<org>/conversations/<root>/<project>.json` since #160 — the project
-    // is in the path because it is in the key.
+        for: LayoutScope(organization: "acme", project: "widgets", environment: ""))
+    // `<org>/conversations/<root>/<project>@<env>.json` since #160 and Plan 3 —
+    // the project and environment are in the path because they are in the key.
+    // This fixture leaves no environment active, which flattens to `_`.
     let conversations = directory.appendingPathComponent("acme/conversations/root-a")
     try FileManager.default.createDirectory(at: conversations, withIntermediateDirectories: true)
     try "not json".write(
-        to: conversations.appendingPathComponent("widgets.json"), atomically: true, encoding: .utf8)
+        to: conversations.appendingPathComponent("widgets@_.json"), atomically: true, encoding: .utf8)
 
     let model = try await windowModelForConversation(
         client: client, persistence: persistence, project: "widgets", conversation: "root-a")
@@ -5787,14 +5852,14 @@ private func windowModelForConversation(
     // The first conversation's file still holds what it held, rather than
     // having been overwritten by the second conversation's panes.
     let first = persistence.load(
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-first"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-first"))
     #expect(first.snapshot?.panes.count == before)
     // And the new conversation has a file of its own. It opens on the
     // project's seed — which the first conversation's own saves kept up to
     // date — and the pane just opened is added to it, so it holds one more
     // than the seed rather than starting empty.
     let second = persistence.load(
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: root))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: root))
     #expect(second.snapshot?.panes.count == before + 1)
 }
 
@@ -5885,10 +5950,10 @@ private func arrangement(id: String, title: String, x: Double) -> LayoutSnapshot
     let ticketWork = arrangement(id: "db-2", title: "the ticket conversation", x: 30)
     try persistence.save(
         databaseWork,
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database"))
     try persistence.save(
         ticketWork,
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-tickets"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-tickets"))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -5919,10 +5984,10 @@ private func arrangement(id: String, title: String, x: Double) -> LayoutSnapshot
 
     try persistence.save(
         arrangement(id: "db-1", title: "the database conversation", x: 10),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database"))
     try persistence.save(
         arrangement(id: "db-2", title: "the ticket conversation", x: 30),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-tickets"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-tickets"))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -5975,11 +6040,11 @@ private func arrangement(id: String, title: String, x: Double) -> LayoutSnapshot
     let persistence = LayoutPersistence(directory: try windowScratchDirectory())
 
     let inMemory = LayoutScope(
-        organization: "acme", project: "widgets", lineageRoot: "root-database")
+        organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database")
     try persistence.save(arrangement(id: "db-1", title: "from memory", x: 10), for: inMemory)
     try persistence.save(
         arrangement(id: "db-2", title: "the ticket conversation", x: 30),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-tickets"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-tickets"))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -6038,7 +6103,7 @@ private func arrangement(id: String, title: String, x: Double) -> LayoutSnapshot
     let client = try await startedClient(bin: bin, home: home, org: "acme")
     let persistence = LayoutPersistence(directory: try windowScratchDirectory())
 
-    let seed = LayoutScope(organization: "acme", project: "widgets")
+    let seed = LayoutScope(organization: "acme", project: "widgets", environment: "")
     try persistence.save(arrangement(id: "db-1", title: "the project seed", x: 10), for: seed)
 
     let window = try await windowOnTheLanding(
@@ -6080,7 +6145,7 @@ private func arrangement(id: String, title: String, x: Double) -> LayoutSnapshot
 
     try persistence.save(
         arrangement(id: "db-1", title: "the database conversation", x: 10),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database"))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -6119,11 +6184,11 @@ private func arrangement(id: String, title: String, x: Double) -> LayoutSnapshot
     let client = try await startedClient(bin: bin, home: home, org: "acme")
     let persistence = LayoutPersistence(directory: try windowScratchDirectory())
 
-    let staying = LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database")
+    let staying = LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database")
     try persistence.save(arrangement(id: "db-1", title: "the database conversation", x: 10), for: staying)
     try persistence.save(
         arrangement(id: "db-2", title: "the ticket conversation", x: 30),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-tickets"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-tickets"))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -6168,10 +6233,10 @@ private func arrangement(id: String, title: String, x: Double) -> LayoutSnapshot
     let ticketWork = arrangement(id: "db-2", title: "the ticket conversation", x: 30)
     try persistence.save(
         databaseWork,
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database"))
     try persistence.save(
         ticketWork,
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-tickets"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-tickets"))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -6206,10 +6271,10 @@ private func arrangement(id: String, title: String, x: Double) -> LayoutSnapshot
 
     try persistence.save(
         arrangement(id: "db-1", title: "the database conversation", x: 10),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database"))
     try persistence.save(
         arrangement(id: "db-1", title: "the ticket conversation", x: 30),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-tickets"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-tickets"))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -6277,13 +6342,13 @@ private func oneCell(_ model: WindowModel) -> String {
 
     try persistence.save(
         arrangement(id: "db-1", title: "the database conversation", x: 10),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database"))
     // The seed a pre-#147 release left behind: project-keyed, no
     // conversation in it, and what a conversation with none of its own
     // opens on.
     try persistence.save(
         arrangement(id: "db-5", title: "the project seed", x: 50),
-        for: LayoutScope(organization: "acme", project: "widgets"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: ""))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -6306,12 +6371,12 @@ private func oneCell(_ model: WindowModel) -> String {
     // refreshes the project's seed, so BOTH of these came back `[]` and
     // every later conversation opened on nothing.
     #expect(
-        persistence.load(for: LayoutScope(organization: "acme", project: "widgets"))
+        persistence.load(for: LayoutScope(organization: "acme", project: "widgets", environment: ""))
             .snapshot?.panes.map(\.title) == ["the project seed"],
         "the seed must survive a switch onto it")
     #expect(
         persistence.load(
-            for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database")
+            for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database")
         ).snapshot?.panes.map(\.title) == ["the database conversation"],
         "and so must the conversation switched away from")
 }
@@ -6333,10 +6398,10 @@ private func oneCell(_ model: WindowModel) -> String {
     // test would pass for the wrong reason.
     try persistence.save(
         LayoutSnapshot(panes: []),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-empty"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-empty"))
     try persistence.save(
         arrangement(id: "db-1", title: "the database conversation", x: 10),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database"))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -6354,21 +6419,13 @@ private func oneCell(_ model: WindowModel) -> String {
         "nothing was open is a state: \(model.layoutSnapshot.panes.map(\.title))")
 }
 
-/// "An organisation switch still forgets every arrangement." The
-/// conversation-keyed ones too: an organisation is a credential boundary
-/// (Invariant 4), and a conversation's workspace is inside it.
+/// An organisation switch forgets no arrangement — the conversation-keyed ones included
+/// (background agents 3 of 4). Each scope carries its organisation, so none is drawn under
+/// another org's name, and the conversation and its canvas are still there to come back to.
 ///
-/// **Driven through `invalidateForOrgChange()`, the one named contract**,
-/// rather than by calling the stores' own `clearAllScopes` and asserting
-/// they cleared — which would be a tautology about `LayoutStore` that
-/// holds however the window behaves. What is under test is that the
-/// window still reaches them for a scope carrying a conversation.
-///
-/// It also pins `loadedLayoutScopes`, which a store-level test cannot
-/// see: cleared with the stores, so the conversation is read from disk
-/// again on the way back in rather than being believed already-read and
-/// drawn as the empty canvas `clearAllScopes` just left.
-@Test @MainActor func anOrganisationSwitchForgetsConversationArrangementsToo() async throws {
+/// **Driven through `invalidateForOrgChange()`, the one named contract**, and read back from
+/// the window's own stores, with the conversation it was filed under.
+@Test @MainActor func anOrganisationSwitchKeepsConversationArrangementsToo() async throws {
     let bin = windowRepoRoot().appendingPathComponent("bin/wakil-ctx")
     try #require(FileManager.default.isExecutableFile(atPath: bin.path), "run `make build` first")
     let home = try makeFixture(org: "acme", projectOrg: "acme", environments: ["dev"])
@@ -6377,7 +6434,7 @@ private func oneCell(_ model: WindowModel) -> String {
 
     try persistence.save(
         arrangement(id: "db-1", title: "the database conversation", x: 10),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-database"))
 
     let window = try await windowOnTheLanding(
         client: client, persistence: persistence, project: "widgets",
@@ -6388,17 +6445,15 @@ private func oneCell(_ model: WindowModel) -> String {
     try #require(await waitUntil { model.layoutSnapshot.panes.count == 1 })
     await setOneRow(window.panes, "the database conversation's rows")
     try #require(await window.panes.paneIds() == ["db-1"])
+    let place = model.place
+    let root = try #require(model.lineageRoot)
 
     await model.invalidateForOrgChange()
 
-    #expect(await window.layout.snapshot().panes.isEmpty, "the arrangement must not outlive the org")
-    #expect(await window.panes.paneIds().isEmpty, "nor its rows")
-    #expect(model.lineageRoot == nil, "nor the conversation it was filed under")
-    // The store holds nothing for the conversation either — not merely
-    // "the active scope is empty", which switching away would also give.
-    await window.layout.switchScope(
-        to: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-database"))
-    #expect(await window.layout.snapshot().panes.isEmpty)
+    #expect(await window.layout.snapshot().panes.map(\.title) == ["the database conversation"])
+    #expect(await window.panes.paneIds() == ["db-1"], "and its rows")
+    #expect(model.agents[place]?.lineageRoot == root, "and the conversation it was filed under")
+    await client.stop()
 }
 
 // MARK: - Switching project inside a conversation swaps the canvas (#160)
@@ -6422,10 +6477,10 @@ private func oneCell(_ model: WindowModel) -> String {
     let inGadgets = arrangement(id: "db-2", title: "the gadgets workspace", x: 30)
     try persistence.save(
         inWidgets,
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-a"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-a"))
     try persistence.save(
         inGadgets,
-        for: LayoutScope(organization: "acme", project: "gadgets", lineageRoot: "root-a"))
+        for: LayoutScope(organization: "acme", project: "gadgets", environment: "", lineageRoot: "root-a"))
 
     let model = try await windowModelForConversation(
         client: client, persistence: persistence, project: "widgets", conversation: "root-a")
@@ -6458,7 +6513,7 @@ private func oneCell(_ model: WindowModel) -> String {
 
     try persistence.save(
         arrangement(id: "db-1", title: "the widgets workspace", x: 10),
-        for: LayoutScope(organization: "acme", project: "widgets", lineageRoot: "root-a"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: "", lineageRoot: "root-a"))
 
     let model = try await windowModelForConversation(
         client: client, persistence: persistence, project: "widgets", conversation: "root-a")
@@ -6489,7 +6544,7 @@ private func oneCell(_ model: WindowModel) -> String {
     let persistence = LayoutPersistence(directory: try windowScratchDirectory())
 
     let gadgetsSeed = arrangement(id: "db-9", title: "the gadgets seed", x: 90)
-    try persistence.save(gadgetsSeed, for: LayoutScope(organization: "acme", project: "gadgets"))
+    try persistence.save(gadgetsSeed, for: LayoutScope(organization: "acme", project: "gadgets", environment: ""))
 
     let model = try await windowModelForConversation(
         client: client, persistence: persistence, project: "widgets", conversation: "root-a")
@@ -6497,7 +6552,7 @@ private func oneCell(_ model: WindowModel) -> String {
     try #require(await waitUntil { model.layoutSnapshot.panes.count == 1 })
 
     #expect(
-        persistence.load(for: LayoutScope(organization: "acme", project: "gadgets"))
+        persistence.load(for: LayoutScope(organization: "acme", project: "gadgets", environment: ""))
             .snapshot == gadgetsSeed,
         "the other project's seed must be untouched")
 }
@@ -6790,7 +6845,8 @@ private func environmentWindow(
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: persistence,
         context: ContextStore(client: backend),
-        harnessFactory: harnessFactory, resumes: ResumeBroker(),
+        harnessFactory: { place, selection, _ in harnessFactory(place, selection) },
+        resumes: ResumeBroker(),
         rootPath: "/Users/x/proj", providerId: "main",
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookup() },
         apiResolver: resolver, environment: await backend.environment)
@@ -6803,37 +6859,46 @@ private func environmentWindow(
 
 /// **The operator's walk** (W1): staging → production → staging left "no origin" on an entry
 /// both environments declare, because a switch cleared the origin and nothing re-resolved it.
-@Test @MainActor func aRoundTripThroughEnvironmentsKeepsAnApiPanePointed() async throws {
-    let backend = EnvironmentBackend(environment: "staging")
+/// **Plan 3:** the pane no longer travels. Production shows its own canvas, and staging's pane
+/// is found on return exactly as it was left — entry, origin and reply — because nothing touched
+/// it while the operator was elsewhere. A reply never crosses environments.
+@Test @MainActor func aRoundTripThroughEnvironmentsFindsTheApiPaneAsItWasLeft() async throws {
+    let backend = EnvironmentBackend(environment: "staging", project: "api")
     let (model, _, panes, _) = try await environmentWindow(backend)
+    let reply = ApiResponseSnapshot.refusal(ApiSendRefusal(failures: [
+        ApiSendFailure(region: nil, message: "staging's reply"),
+    ]))
+    await panes.setApiResponse(paneId: "api-1", response: reply)
 
-    // Polled, not read once: `observationPump` also sees the operator's own dispatch and runs
-    // the same clear-then-re-resolve a moment later, so a single read can land between them.
     await model.setEnvironment("production")
-    #expect(await waitUntil {
-        await panes.apiSnapshot(paneId: "api-1").request.origin == "https://catalog.example"
-    })
+    #expect(model.environment == "production")
+    #expect(await panes.apiSnapshot(paneId: "api-1").response != reply, "staging's reply crossed")
+
     await model.setEnvironment("staging")
-    #expect(await waitUntil {
-        let back = await panes.apiSnapshot(paneId: "api-1")
-        return back.request.origin == "https://catalog-staging.example" && back.credentialed
-            && back.environment == "staging"
-    })
+    let back = await panes.apiSnapshot(paneId: "api-1")
+    #expect(back.request.origin == "https://catalog-staging.example")
+    #expect(back.credentialed && back.environment == "staging")
+    #expect(back.response == reply)
 }
 
 /// W8: a re-resolve that points a pane at an entry retitles it, **and the window draws the new
-/// title** — the switch re-reads the arrangement after the resolver wrote it.
-@Test @MainActor func aSwitchThatPointsAnUnpointedPaneRetitlesItOnScreen() async throws {
-    let backend = EnvironmentBackend(environment: "staging")
-    let (model, _, panes, layout) = try await environmentWindow(backend)
-    let id = await layout.open(kind: "api", title: "api").id
-    await panes.openApi(paneId: id, entry: "", environment: "staging", origin: nil,
-                        credentialed: false, entries: ["catalog", "billing"])
-    await model.refreshLayout()
+/// title** — the switch re-reads the arrangement after the resolver wrote it. **Plan 3:** what a
+/// switch re-resolves is the incoming environment's own canvas read off disk, not the pane left
+/// behind; one saved unpointed, in an environment declaring one entry, is pointed and retitled.
+@Test @MainActor func aSwitchBringingInAnUnpointedPaneRetitlesItOnScreen() async throws {
+    let backend = EnvironmentBackend(environment: "staging", project: "api")
+    let persistence = LayoutPersistence(directory: try windowScratchDirectory())
+    try persistence.save(
+        LayoutSnapshot(
+            panes: [Pane(id: "api-5", kind: "api", title: "api",
+                         frame: PaneFrame(x: 0, y: 0, width: 640, height: 420))],
+            focusedId: "api-5"),
+        for: LayoutScope(organization: "acme", project: "api", environment: "qa"))
+    let (model, _, _, _) = try await environmentWindow(backend, persistence: persistence)
 
     await model.setEnvironment("qa")
     #expect(await waitUntil {
-        model.layoutSnapshot.panes.first { $0.id == id }?.title == "catalog"
+        model.layoutSnapshot.panes.first { $0.id == "api-5" }?.title == "catalog"
     })
 }
 
@@ -6870,19 +6935,23 @@ private func environmentWindow(
     #expect(await backend.listings == listings)
 }
 
-/// The agent's switch does what the operator's does (W1): every api pane re-resolves.
-@Test @MainActor func anAgentsEnvironmentSwitchReResolvesTheApiPanes() async throws {
-    let backend = EnvironmentBackend(environment: "staging")
+/// The agent's switch does what the operator's does (W1). **Plan 3:** that is now showing the
+/// incoming environment's canvas — staging's api pane is not re-resolved against qa, and is found
+/// pointed at staging when the operator returns.
+@Test @MainActor func anAgentsEnvironmentSwitchLeavesTheApiPaneInItsOwnEnvironment() async throws {
+    let backend = EnvironmentBackend(environment: "staging", project: "api")
     let (model, registry, panes, _) = try await environmentWindow(backend)
 
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("qa")]),
-        origin: .agent, caller: model.agentCaller, confirmation: nil)
+        origin: .agent, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
 
-    #expect(await waitUntil {
-        await panes.apiSnapshot(paneId: "api-1").request.origin == "https://catalog-qa.example"
-    })
-    #expect(await panes.apiSnapshot(paneId: "api-1").environment == "qa")
+    #expect(await waitUntil { model.environment == "qa" })
+    #expect(await panes.apiSnapshot(paneId: "api-1").request.origin != "https://catalog-qa.example")
+    await model.setEnvironment("staging")
+    let back = await panes.apiSnapshot(paneId: "api-1")
+    #expect(back.environment == "staging")
+    #expect(back.request.origin == "https://catalog-staging.example")
 }
 
 /// W1 at launch: an api pane restored from the layout holds nothing in the store — its draft is
@@ -6893,7 +6962,8 @@ private func environmentWindow(
     await layout.load(LayoutSnapshot(
         panes: [Pane(id: "api-9", kind: "api", title: "catalog",
                      frame: PaneFrame(x: 0, y: 0, width: 640, height: 420))],
-        focusedId: "api-9"), for: .initial)
+        // The screen's canvas: an organisation with no project shows its own (final review).
+        focusedId: "api-9"), for: LayoutScope(organization: model.organization, project: "", environment: ""))
     await model.refreshLayout()
 
     await model.restorePaneContents()
@@ -6908,46 +6978,49 @@ private func environmentWindow(
 // MARK: - Fix round 1 (Task 7)
 
 /// Fix 6: a switch to an environment that does not declare the pane's entry keeps the name,
-/// offers the new environment's entries, and says so on the URL line.
-@Test @MainActor func aSwitchToAnEnvironmentWithoutTheEntrySaysSo() async throws {
-    let backend = EnvironmentBackend(environment: "staging")
+/// offers the new environment's entries, and says so on the URL line. **Plan 3:** a pane no longer
+/// crosses into an environment, so it can no longer land in one that lacks its entry; the URL
+/// line's wording for that state stays covered at the store (`ApiEnvironmentTests`, W1). What the
+/// operator sees now: the pane stays pointed in its own environment, and qa does not show it.
+@Test @MainActor func aPaneOnAnEntryAnotherEnvironmentLacksStaysPointedInItsOwn() async throws {
+    let backend = EnvironmentBackend(environment: "staging", project: "api")
     let (model, _, panes, _) = try await environmentWindow(backend)
     await panes.openApi(
         paneId: "api-2", entry: "billing", environment: "staging",
         origin: "https://billing-staging.example", credentialed: true, entries: ["catalog", "billing"])
 
     await model.setEnvironment("qa")
+    #expect(await panes.apiSnapshot(paneId: "api-2").entry != "billing", "staging's pane crossed into qa")
 
-    #expect(await waitUntil {
-        let pane = await panes.apiSnapshot(paneId: "api-2")
-        return pane.environment == "qa" && pane.entries == ["catalog"]
-    })
+    await model.setEnvironment("staging")
     let pane = await panes.apiSnapshot(paneId: "api-2")
-    #expect(pane.entry == "billing")
-    #expect(pane.request.origin == nil)
-    #expect(!pane.credentialed)
-    #expect(apiOriginLine(pane) == .caution("qa declares no entry named billing — pick one"))
+    #expect(pane.entry == "billing" && pane.environment == "staging")
+    #expect(apiOriginLine(pane) == .origin("https://billing-staging.example"))
 }
 
 /// Fix 5: the operator's own switch is handled once. `observationPump` sees the window's own
 /// dispatch too, and used to clear every api reply a second time, late — wiping a reply that
-/// arrived under the new environment. Each round sets a reply as soon as the switch returns and
-/// checks it survives the pump.
+/// arrived under the new environment. **Plan 3:** neither the switch nor the pump clears a reply
+/// any more — each environment keeps its own canvas — so the check is that staging's reply
+/// survives every round trip and its pump wake-up, and that nothing is re-resolved in place.
 @Test @MainActor func theOperatorsSwitchIsHandledOnce() async throws {
-    let backend = EnvironmentBackend(environment: "staging")
+    let backend = EnvironmentBackend(environment: "staging", project: "api")
     let (model, _, panes, _) = try await environmentWindow(backend)
     let reply = ApiResponseSnapshot.refusal(ApiSendRefusal(failures: [
-        ApiSendFailure(region: nil, message: "arrived under the new environment"),
+        ApiSendFailure(region: nil, message: "arrived in staging"),
     ]))
-    for target in ["production", "staging", "qa", "staging", "production", "qa", "staging", "production"] {
-        let listings = await backend.listings
+    await panes.setApiResponse(paneId: "api-1", response: reply)
+    let listings = await backend.listings
+    for target in ["production", "staging", "qa", "staging", "production", "qa", "staging"] {
         await model.setEnvironment(target)
-        await panes.setApiResponse(paneId: "api-1", response: reply)
         // Let the pump drain its wake-up for this dispatch.
         try await Task.sleep(nanoseconds: 60_000_000)
-        #expect(await panes.apiSnapshot(paneId: "api-1").response == reply, "switch to \(target)")
-        #expect(await backend.listings - listings == 1, "switch to \(target)")
+        #expect(model.environment == target, "switch to \(target)")
+        if target == "staging" {
+            #expect(await panes.apiSnapshot(paneId: "api-1").response == reply, "switch to \(target)")
+        }
     }
+    #expect(await backend.listings == listings, "a switch re-resolved a pane in place")
 }
 
 // MARK: - Send's plan is built at its turn (Task 9 fix round 4)
@@ -7138,7 +7211,7 @@ private func seededApiWindow(
             panes: [Pane(id: "api-1", kind: "api", title: "catalog",
                          frame: PaneFrame(x: 0, y: 0, width: 640, height: 420))],
             focusedId: "api-1"),
-        for: LayoutScope(organization: "acme", project: "widgets"))
+        for: LayoutScope(organization: "acme", project: "widgets", environment: await backend.environment))
     return try await environmentWindow(
         backend, persistence: persistence, harnessFactory: harnessFactory)
 }
@@ -7157,7 +7230,7 @@ private func seededApiWindow(
 
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-        origin: .agent, caller: model.agentCaller, confirmation: nil)
+        origin: .agent, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
     // The pump runs after the dispatch: give it the room every agent-path test here gives it.
     _ = await waitUntil { await backend.listings != listings }
 

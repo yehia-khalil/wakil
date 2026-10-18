@@ -85,8 +85,8 @@ public actor PlaceClients {
 
 /// The client a handler is registered with: the pool's client pinned to the caller's place when
 /// an agent session made the dispatch it runs in (`pinnedPlace(of:)`), even while the screen
-/// shows that place; the window's own for anything else — the operator's dispatches, an
-/// incomplete place, or no caller at all (a read the window makes outside a dispatch). Read per
+/// shows that place; the window's own for anything else — the operator's dispatches, a place
+/// with no organisation, or no caller at all (a read the window makes outside a dispatch). Read per
 /// call from `ActionRegistry.dispatchCaller`, so the agent's tool schemas need no project or
 /// environment argument (Invariant 5).
 public struct PlaceRoutedCaller: ToolCaller {

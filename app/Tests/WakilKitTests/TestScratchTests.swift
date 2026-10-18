@@ -44,5 +44,5 @@ import Testing
     let made = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
     #expect(made.contains { $0.hasPrefix("wakil-terminal-") })
 
-    await store.shutdownAll(runStream: .finish)
+    await store.shutdownAll()
 }

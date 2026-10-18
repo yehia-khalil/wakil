@@ -32,21 +32,17 @@ private let bashResult = HarnessEvent.toolResult(id: "t1", content: .string("a\n
 }
 
 @MainActor
-@Test func resetForgetsEveryRetainedEvent() {
-    // The org-switch reset: the outgoing org's agent commands must not replay.
-    let feed = makeFeed()
-    feed.retain(bash, at: Date())
-    feed.reset()
-    #expect(feed.events.isEmpty)
-}
-
-@MainActor
-@Test func anOrgSwitchForgetsTheOutgoingOrgsAgentCommands() async {
-    // `resetForgetsEveryRetainedEvent` proves the reset; this proves the org switch calls it.
-    // Without it a terminal opened in the new org backfills with the outgoing org's commands.
+@Test func anOrgSwitchKeepsEachAgentsCommandsInItsOwnPlace() async {
+    // Each place's agent has its own mirror (background agents 3 of 4), and a switch drops none:
+    // a terminal opened in the incoming org backfills with nothing of the outgoing org's agent,
+    // and one opened back in the outgoing org still backfills with its commands.
     let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: "alpha")
     await model.receiveForTesting(bash)
     #expect(model.mirrorEventsForTesting.map(\.event) == [bash])
-    await model.invalidateForOrgChange()
-    #expect(model.mirrorEventsForTesting.isEmpty)
+
+    await model.setOrganization("beta")
+    #expect(model.mirrorEventsForTesting.isEmpty, "beta's agent ran nothing")
+
+    await model.setOrganization("alpha")
+    #expect(model.mirrorEventsForTesting.map(\.event) == [bash], "alpha's agent's commands are still its own")
 }

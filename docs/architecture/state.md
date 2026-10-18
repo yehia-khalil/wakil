@@ -41,7 +41,7 @@ never written to `project.json`, only the ref.
   result set is not persisted; the pane's page and sort (`PaneFetch`) are, with the layout.
 - **Recent api sends**, capped at `PaneStore.recentCap` (200) per list, gone with the session.
 - **Live PTYs** (`TerminalStore`).
-- **Pending confirmation** (`ConfirmationBroker`), resume and provider-switch requests (`ResumeBroker`,
+- **Pending confirmations** (`ConfirmationBroker`, one per place), resume and provider-switch requests (`ResumeBroker`,
   `ProviderSwitchBroker`).
 - **The window's own state** (`WindowModel`): context, snapshots, thought thread, status, palette.
 - **The window's git status** (`GitStatus`, mirrored in `WindowModel.gitRoots`, 3b-iii): one read
@@ -51,20 +51,23 @@ never written to `project.json`, only the ref.
 
 ## What an org switch resets
 
-`WindowModel.invalidateForOrgChange()` (`app/Sources/WakilKit/App/WindowModel.swift`) clears
-everything derived from the outgoing organisation: the vocabulary (`dropAll`), project and
-environment, production flags (here and in the registry), the session (`sessionStarted`,
-`assignedSessionId`, `lineageRoot`), settings and accounts, an in-flight sign-in (a mint in flight
-is left to finish), every pane snapshot and query-line state, database choices and layout scope,
-the thought thread and mirror, the provider id and harness, the pending confirmation and queued
-switch, the layout snapshot, api send requests, the palette, and the window's git status and its
-`gitRoots` mirror. Then it awaits
-`layout.clearAllScopes()`, `panes.clearAllScopes()`, `terminals.shutdownAll(runStream: .keepOpen)`
-and `syncGitWatcher()`. `organization` is set by the caller, `setOrganization`.
+`WindowModel.invalidateForOrgChange()` (`app/Sources/WakilKit/App/WindowModel.swift`) resets only
+what belongs to the organisation itself: the vocabulary (`dropAll`), project and environment,
+production flags (here and in the registry), settings and accounts, an in-flight sign-in (a mint in
+flight is left to finish), the provider id, `lookup` and roots, capacity, the palette, and the
+editor's pending requests and unsaved prompt (they name panes on the screen being left), and the
+window's git status and its `gitRoots` mirror (of the screen's roots). Then
+`syncGitWatcher()` and `syncEditorWatcher()` follow the empty roots. `organization` is set by the
+caller, `setOrganization`.
+
+**Nothing of a place is reset.** Every place's agent, thread, turn and conversation
+(`WindowModel.agents`), its waiting approval (`parkedProposals`), both stores' scopes, every shell,
+every editor buffer and agents' reads in flight survive the switch (the operator's db reads in the org left are cancelled first, `PaneStore.cancelOperatorDBReads`, since they went out on the window's clients), keyed by their place or scope; coming
+back to an org finds its canvas as it was left; its git and editor panes re-read the disk then (`catchUpReturnedCanvas`, R4).
 
 **The tripwire.** `everyWindowModelPropertyIsClassifiedForTheOrgSwitch` in
 `app/Tests/WakilKitTests/InvalidationContractTests.swift` reads every stored property of
-`WindowModel` by reflection and fails on one not classified as org-derived or org-independent. It
+`WindowModel` by reflection and fails on one not classified as org-derived, kept per place, or org-independent. It
 proves every property was thought about, not that the reset is right;
 `invalidationClearsEveryOrgDerivedValue` in `OrgSwitchTests.swift` covers the reset itself. Adding a stored property to `WindowModel` means
 classifying it there (and resetting it here if it is org-derived).

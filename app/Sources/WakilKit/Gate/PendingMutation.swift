@@ -26,6 +26,9 @@ public struct PendingMutation: Sendable, Equatable, Identifiable {
     /// delete these rows" and "you asked to delete these rows" are
     /// different things to be reading at 6pm.
     public let origin: ActionOrigin
+    /// Where it waits: the agent's own place, or the screen's for the operator's. The broker
+    /// holds one proposal per place, and the plane draws only the screen's.
+    public let place: Place
 
     public init(
         id: String = UUID().uuidString,
@@ -34,7 +37,8 @@ public struct PendingMutation: Sendable, Equatable, Identifiable {
         database: String?,
         statement: String,
         affectsEveryRow: Bool,
-        origin: ActionOrigin
+        origin: ActionOrigin,
+        place: Place
     ) {
         self.id = id
         self.action = action
@@ -43,6 +47,7 @@ public struct PendingMutation: Sendable, Equatable, Identifiable {
         self.statement = statement
         self.affectsEveryRow = affectsEveryRow
         self.origin = origin
+        self.place = place
     }
 }
 
@@ -55,8 +60,9 @@ public struct PendingMutation: Sendable, Equatable, Identifiable {
 public enum ConfirmationDecision: Sendable, Equatable {
     case approved
     case cancelled
+    /// Only an operator's proposal can expire; an agent's waits until answered (R1).
     case expired
-    /// Another proposal was already parked. The new one was never shown to
+    /// Another proposal was already parked in the same place. The new one was never shown to
     /// anyone and never ran.
     case busy
 }

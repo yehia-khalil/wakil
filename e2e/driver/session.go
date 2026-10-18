@@ -271,12 +271,14 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 	}()
 
 	// **The observation channel, opened before any check runs.** It is the
-	// socket `WindowSession.start` already listens on — Invariant 3's channel,
-	// the one a real agent speaks — found by asking `lsof` what THIS pid
-	// holds. Never a directory scan: the fixture's socket lands in the same
-	// per-user directory as the operator's (Foundation's `temporaryDirectory`
-	// ignores an injected TMPDIR), nothing unlinks one at exit, and a wrong
-	// choice here would dispatch actions into the operator's live window.
+	// socket the window opened for the place it shows — Invariant 3's channel,
+	// the one a real agent there speaks — found by asking `lsof` what THIS pid
+	// holds, and each socket which place it is pinned to (ScreenChannel), again
+	// whenever the screen moves. Never a directory scan: the fixture's sockets
+	// land in the same per-user directory as the operator's (Foundation's
+	// `temporaryDirectory` ignores an injected TMPDIR), nothing unlinks one at
+	// exit, and a wrong choice here would dispatch actions into the operator's
+	// live window.
 	//
 	// **A failure to open it fails the run.** The alternative is a pass that
 	// proves whatever the tree happened to show, with the channel that answers
@@ -294,7 +296,7 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
-	socket, err := SocketFor(instance.PID)
+	socket, err := client.Socket()
 	if err != nil {
 		return Result{}, err
 	}

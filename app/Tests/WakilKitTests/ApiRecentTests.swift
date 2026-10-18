@@ -156,11 +156,11 @@ func recentIsSharedAcrossPanes() async throws {
 @Test("W15: another project has its own Recent")
 func anotherProjectHasItsOwn() async throws {
     let panes = PaneStore()
-    await panes.switchScope(to: LayoutScope(organization: "initech", project: "a"))
+    await panes.switchScope(to: LayoutScope(organization: "initech", project: "a", environment: "dev"))
     await panes.openApi(
         paneId: "api1", entry: "billing", environment: "staging", origin: nil, credentialed: true)
     await panes.recordApiSend(paneId: "api1", draft: aDraft(), response: okResponse(1))
-    await panes.switchScope(to: LayoutScope(organization: "initech", project: "b"))
+    await panes.switchScope(to: LayoutScope(organization: "initech", project: "b", environment: "dev"))
     await panes.openApi(
         paneId: "api1", entry: "billing", environment: "staging", origin: nil, credentialed: true)
     #expect(await panes.apiSnapshot(paneId: "api1").recent.isEmpty)

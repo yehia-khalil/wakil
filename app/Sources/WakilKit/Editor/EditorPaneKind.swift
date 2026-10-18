@@ -6,8 +6,6 @@ enum EditorPaneKind: PaneKind {
     static let names = ["editor"]
     static var emptyContents: EditorSnapshot { .empty }
     static var emptyShared: EditorShared { EditorShared() }
-    /// The window's `editorChanges()` stream outlives an org switch, as `apiFlights()`'s does.
-    static func sharedAfterClearingAllScopes(_ shared: EditorShared) -> EditorShared { shared }
     static var emptySnapshot: EditorSnapshot? { .empty }
     static func snapshot(of contents: EditorSnapshot, in store: isolated PaneStore) -> EditorSnapshot { contents }
 

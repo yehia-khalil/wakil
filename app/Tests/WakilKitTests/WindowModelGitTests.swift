@@ -86,11 +86,12 @@ private func gitWindow(
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout,
         context: ContextStore(client: context),
-        harnessFactory: { _, _ in nil }, resumes: ResumeBroker(),
+        harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in GitWindowLookup() },
         rootWatcher: watcher, editorRootWatcher: nil, fileLists: nil,
-        gitStatus: status, paletteClients: PaletteClients(), placeClients: nil)
+        gitStatus: status, paletteClients: PaletteClients(), placeClients: nil,
+        agentSocketFactory: { _, _ in NoAgentSocket() })
     box.model = model
     await registerEditorActions(into: registry, panes: panes, layout: layout, files: nil, fileLists: nil,
                                 gitStatus: status, roots: { await box.model?.gitRootPaths ?? [] })
@@ -163,6 +164,31 @@ private func openEditorPanes(_ model: WindowModel) async -> [String] {
         try #require(await openEditorPanes(model).count == 2)
         #expect(model.gitRoots.map(\.root) == ["/p/api", "/p/portal"])
         #expect(await git.statusCount == before, "the window's status is read once, not per pane")
+    }
+
+    /// R4's catch-up (background agents 3 of 4, fix round 1), on 3b-iii's one status: a canvas
+    /// come back to from memory on the same roots needs no read of its own. Here the environment
+    /// left had an editor pane on the same roots, so the watch never stopped, and a change made
+    /// while the operator was there already reached the window's status the returned pane reads.
+    @Test func returningToACanvasInMemoryShowsWhatChangedWhileAway() async throws {
+        let (model, watcher, git, context) = await gitWindow()
+        await model.refreshContext()
+        await model.openPane(kind: "editor")
+        let staging = try #require(await openEditorPanes(model).first)
+        await context.switchTo(environment: "dev")
+        await model.refreshContext()
+        await model.openPane(kind: "editor")
+        let watches = await watcher.events.filter { $0.hasPrefix("watch") }.count
+        await git.set(status: "/p/api", files: [("a.php", "changed", "M")])
+        await watcher.fire("/p/api")
+
+        await context.switchTo(environment: "staging")
+        await model.refreshContext()
+
+        #expect(await openEditorPanes(model) == [staging])
+        #expect(await watcher.events.filter { $0.hasPrefix("watch") }.count == watches,
+                "the same roots: the watch did not restart")
+        #expect(model.gitRoots.first { $0.root == "/p/api" }?.files.map(\.path) == ["a.php"])
     }
 
     @Test func anOrgSwitchStopsTheWatcher() async {

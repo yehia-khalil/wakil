@@ -13,7 +13,8 @@ import Testing
 /// if a property is ever marked `@ObservationIgnored`.
 ///
 /// **What this proves, and what it does not.** This test proves every
-/// stored property on `WindowModel` has been CLASSIFIED as org-derived or
+/// stored property on `WindowModel` has been CLASSIFIED — org-derived (reset),
+/// kept per place (survives), org-derived behind a reference, or
 /// org-independent — not that `invalidateForOrgChange()` actually resets
 /// every org-derived one correctly. That behaviour is covered by Task 7's
 /// assertions and by the acceptance runbook. The failure mode this test
@@ -23,40 +24,9 @@ private let orgDerived: Set<String> = [
     "project", "projectKey", "environment", "environmentProduction",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
-    // Each open pane's snapshot lives in one cell of `paneCells` (pluggable pane kinds, PR 7),
-    // beside the data surface's derived `tables` and `editables`. Every one describes the
-    // outgoing org — an api draft names an entry of ONE org's environment, a git pane holds
-    // its project's roots — so `invalidateForOrgChange` empties `paneCells`.
-    "tables", "editables",
-    "paneCells",
-    "queryLineRefusals", "queryLineRestores", "queryLineRestoreToken",
-    "databaseChoices", "pending", "databases", "databaseDrivers", "layoutSnapshot",
-    "layoutScope", "loadedLayoutScopes", "thoughts", "providerId",
-    "harness", "agentPlace", "sessionId", "turnInFlight", "lookup", "rootPaths", "hasProjectRoot",
-    "organization", "resumedParentForTesting", "queuedOrgSwitch",
-    // 2026-09-20: `sessionStarted` gates the Landing, and a switch ends the
-    // session it describes — every pane closed, the servers respawned, a
-    // credential boundary crossed. Returning to an org auto-resumes its most
-    // recent session (open question 5, amended 2026-09-15) and `resume` sets
-    // it again when that fires; an org with nothing to resume lands on the
-    // Landing, which is correct. Left set, the operator would be in the new
-    // org with no panes, no thread and no way to reach either.
-    "sessionStarted",
-    // 2026-09-20: `assignedSessionId` is which conversation this window is
-    // in, and an org switch ends it — every pane closed, a credential
-    // boundary crossed. It follows `sessionId`, already `orgDerived` just
-    // above, and `invalidateForOrgChange()` clears both. Left set, the next
-    // org's first pane would be filed under the outgoing org's conversation.
-    "assignedSessionId",
-    // 2026-09-20 (#147): `lineageRoot` is which CONVERSATION this window is
-    // in — the identity that survives the resumes `assignedSessionId` does
-    // not — and it is what a pane arrangement is filed under. An org switch
-    // ends the conversation for the same reason it ends the session, and
-    // leaving it set would file the next org's panes under the outgoing
-    // org's conversation: the same credential-boundary leak as
-    // `assignedSessionId` above, one level up, and the one that reaches
-    // disk rather than only memory.
-    "lineageRoot",
+    "providerId",
+    "lookup", "rootPaths", "hasProjectRoot",
+    "organization", "resumedParentForTesting",
     // 2e (#198): `settings` is the active organisation's whole
     // configuration — its three strings, its accounts, its projects —
     // and `settingsFailure` is why the last read of THAT organisation did
@@ -107,12 +77,10 @@ private let orgDerived: Set<String> = [
     // ⌘K's Send asks per api pane, and the token that orders them — `queryLineRestores`' shape:
     // every pane closes with the org, and pane ids are reused by the next one.
     "apiSendRequests", "apiSendRequestToken",
-    // 3b-i PR 8: the editor's save state — the pane whose path field is open, the saves in
-    // flight and the pending debounced saved-tabs writes, each keyed by an outgoing pane id the
-    // next org reuses. Cancelled and emptied
-    // (WindowModelEditorTests.anOrgSwitchDropsTheEditorsSaveState).
-    "editorSaveAsRequest", "editorSaves", "editorTabsWrites", "editorAutosave", "editorAutosaveTimers", "editorAutosaveRuns",
-    // 3b-v: autosave's memory and pending timers name the outgoing org's panes.
+    // 3b-i PR 8: the pane whose path field is open names a pane on the screen being left, and
+    // pane ids repeat across scopes. Cleared
+    // (WindowModelEditorTests.anOrgSwitchClosesThePathFieldAndKeepsTheTabsWrite).
+    "editorSaveAsRequest",
     // 3b-ii PR 7: the trees' mirror of the file list — the outgoing project's listings. Emptied
     // (WindowModelEditorTests.anOrgSwitchEmptiesTheTreesAndTheirList).
     "editorFiles",
@@ -126,13 +94,46 @@ private let orgDerived: Set<String> = [
     // 3b-ii-b: the reveal button's or ⌘K's pending selection names an outgoing pane id the next org
     // reuses. Cleared (WindowModelEditorTests.anOrgSwitchClearsAPendingRevealRequest).
     "editorTreeRevealRequest",
-    // 3b-i Task 9: the Save / Don't Save / Cancel prompt names the outgoing org's panes, and pane
-    // ids are reused by the next one — a Don't Save after the switch would close a pane it never
-    // asked about. A quit prompt cleared this way counts as a Cancel (`quitCancelled`).
+    // 3b-i Task 9: the Save / Don't Save / Cancel prompt names the screen's panes, and pane
+    // ids repeat across scopes — a Don't Save after the switch would close a pane it never
+    // asked about. A quit prompt cleared this way counts as a Cancel (`quitCancelled`); the
+    // buffers it asked about stay dirty in their own scope.
     "unsavedPrompt",
-    // Fix round 1: the org a queued switch may drop unsaved tabs for — `queuedOrgSwitch`'s
-    // companion, cleared with it and by the switch itself.
-    "unsavedSwitchApproved",
+]
+
+/// **Kept per place: survives an org switch** (background agents 3 of 4). Each is keyed by its
+/// place or scope, or describes the screen's scope and is re-read when the incoming one is
+/// activated (`activateLayout` → `refreshPanes`), so nothing of the outgoing org is drawn or
+/// resolved under the incoming one, and coming back finds it as it was left
+/// (`OrgSwitchTests.comingBackToAnOrgFindsItsCanvasAsLeft`). `invalidateForOrgChange` must NOT
+/// reset these: doing so is the teardown this plan removed.
+private let keptPerPlace: Set<String> = [
+    // One `PlaceAgent` per place — harness, socket, session, thread, turn, conversation and
+    // `Bash` mirror (OrgSwitchTests.anOrgSwitchLeavesTheRunningAgentAlone).
+    "agents",
+    // The socket each shown place opened before a session took it, pinned to that place.
+    "shownSockets",
+    // Every proposal waiting, by place (OrgSwitchTests.anOrgSwitchWithAParkedApprovalSwitchesAnyway).
+    "parkedProposals",
+    // The screen's scope and every scope this window has read or written for an agent: kept so
+    // a return reads nothing off disk and re-runs no subject.
+    "layoutScope", "loadedLayoutScopes", "scopesAwaitingRestore", "backgroundLayouts",
+    // A note an off-screen read gave, keyed by its scope and said on the return to it.
+    "layoutNotesAwaitingReturn",
+    // Projections of the screen's scope, rebuilt from the stores whenever a scope is activated.
+    "tables", "editables", "paneCells", "layoutSnapshot", "databases", "databaseDrivers",
+    // Per pane of the screen's canvas, as on a project switch. `apiSendRequests` is emptied by
+    // the swap itself (`activateLayout`).
+    "queryLineRefusals", "queryLineRestores", "queryLineRestoreToken",
+    "databaseChoices", "apiSendRequests", "apiSendRequestToken",
+    // The editor's saves in flight, debounced saved-tabs writes and autosave: each acts on a
+    // buffer in its own scope, which stays (OrgSwitchTests.anOrgSwitchWithUnsavedTabsAsksNothingAndKeepsThem).
+    "editorSaves", "editorTabsWrites", "editorAutosave", "editorAutosaveTimers", "editorAutosaveRuns",
+    // The stores themselves: every scope's arrangement, contents and shells.
+    "panes", "layout", "terminals",
+    // The pool of clients pinned to agent places, and what their `wakil-ctx`s said: the places
+    // with a live agent are still in use after a switch.
+    "placeClients", "placeContexts",
 ]
 
 private let orgIndependent: Set<String> = [
@@ -164,14 +165,18 @@ private let orgIndependent: Set<String> = [
     "operatorEnvironmentSwitch",
     "registry", "persistence", "context",
     "harnessFactory", "lookupFactory", "resumes", "confirmations",
+    // Background agents 3 of 4, Task 4: how a session's socket is started. It names no
+    // organisation; a socket answers for the place it was started for.
+    "agentSocketFactory",
+    // Set by `shutdown`: no organisation's state, the window's end.
+    "socketsClosed",
     "providerSwitches", "providerSwitchPump", "resumePump",
-    "status", "eventPumpGeneration", "nextThoughtId",
+    "status",
     "dragCandidate", "confirmationPump", "observationPump",
-    "pendingSave", "eventPump", "debugEventSink", "debugEventsEnabledOverride",
+    "pendingSave", "debugEventSink", "debugEventsEnabledOverride",
     // Task 11: `terminalRunPump` describes the run-journalling transition
     // itself, not either org's state, the same shape `switching` below
-    // already is. (`terminals` itself moved to `orgDerivedBehindAReference`
-    // in Task 14 — see that set's doc comment for why.)
+    // already is. (`terminals` itself is `keptPerPlace`: every shell survives.)
     "terminalRunPump",
     // W14 (preflight F1): `flightPump` is `observationPump`'s sibling — a wake-up on the one
     // `PaneStore`, which an org switch clears in place rather than replacing.
@@ -184,20 +189,14 @@ private let orgIndependent: Set<String> = [
     // not either org's state; `orgSwitcher` is a capability
     // (`WakilWiring.switchOrg(to:)`, injected), not state at all.
     "switching", "orgSwitcher",
-    // Task 11: `firingQueuedSwitch` describes the fire-the-queue
-    // transition itself, the same shape as `switching` just above — not
-    // either org's state, so `invalidateForOrgChange()` never touches it.
-    "firingQueuedSwitch",
     // `capacityProbe` is the last capacity probe task, a handle for tests; not either org's state.
     "capacityProbe",
     // 2026-09-20 (#148): `layoutSwapInFlight` describes the canvas swap
     // itself — the window between the stores being pointed at the
     // incoming scope and the arrangement for it being in hand — and not
-    // either org's state, the same shape as `switching` above. An org
-    // switch invalidates the arrangements (`clearAllScopes`), which is
-    // `layoutScope` and `loadedLayoutScopes`' business; the flag is
-    // cleared by the `activateLayout` that set it, whichever org it ends
-    // up in.
+    // either org's state, the same shape as `switching` above. The flag
+    // is cleared by the `activateLayout` that set it, whichever org it
+    // ends up in.
     "layoutSwapInFlight",
     // 2026-10-08 (#328): `layoutActivating` and `layoutSwapWaiters` widen
     // the same guard — the activation in flight, and the callers waiting on
@@ -209,14 +208,9 @@ private let orgIndependent: Set<String> = [
     // must not open or close it as a side effect, so `invalidateForOrgChange()`
     // never touches it either.
     "showOrgPlane",
-    // Task 14, fix round 1 (Important 2): `queuedSwitchCancellationCount`
-    // is an event count — how many times a queued switch was actually
-    // cancelled — the same shape `switching`/`firingQueuedSwitch` already
-    // are: it describes a transition, not either org's state.
-    "queuedSwitchCancellationCount",
     // 3b-v final review I-2: `unsavedResolving` is the answer-the-prompt transition itself —
     // set and cleared by the `resolveUnsaved` that runs it, whichever org it ends in — the
-    // same shape as `firingQueuedSwitch`.
+    // same shape as `switching`.
     "unsavedResolving",
     // 3b-i PR 8: the saved-tabs debounce's length (configuration, shortened by tests) and the
     // count of writes it ran (a test seam). Neither describes an organisation.
@@ -265,41 +259,26 @@ private let orgIndependent: Set<String> = [
 ]
 
 /// **A stable reference whose CONTENTS are org-scoped and must be torn
-/// down.** The tripwire's two buckets were never enough, and the proof is
-/// that they already lie: `panes` and `layout` were filed under
-/// `orgIndependent`, while `invalidateForOrgChange()` clears **both**,
-/// explicitly and awaited, as its last two lines. So `orgIndependent` did
-/// not mean *"holds no org state"* — it meant *"this reference is not
-/// reassigned"*, and the two stores carrying the most org state in the
-/// window were filed under it.
+/// down.** `orgIndependent` does not mean *"this reference is not
+/// reassigned"*: a store whose contents belong to the org left would be
+/// misfiled there. (The stores and the terminals were this bucket's first
+/// members; they are `keptPerPlace` now that every scope survives a switch.)
 ///
-/// That misreading is not an accident of this test; it is how the app
-/// tears down. `WakilWiring.switchOrg(to:)` stops and restarts the SAME
+/// That reading is how the app tears down. `WakilWiring.switchOrg(to:)` stops and restarts the SAME
 /// `MCPClient` instances in place, never replacing them, because
 /// `registerStandardActions` closed over those instances. A live child
 /// process dying while its owning reference never changes is the shape
 /// this app uses everywhere, and the tripwire had no vocabulary for it.
 ///
-/// **`terminals` is why it needed one.** A `TerminalStore` inherits
-/// exactly that reading — the reference genuinely is stable — so an author
-/// doing precisely what the failure message asks would file it under
-/// `orgIndependent`, and org A's shell would survive the switch with this
-/// test green and the classification defensible.
-///
 /// **Widening the skip rule is still the wrong fix**, which is what the
-/// message below has always said. A third bucket is the right one, and its
-/// NAME is the instruction the next author needs.
+/// message below has always said. Each bucket's NAME is the instruction
+/// the next author needs.
 private let orgDerivedBehindAReference: Set<String> = [
     // PR 6 of the split. `claude` holds the operator's typed `claude` path (org-derived:
     // `invalidateForOrgChange` clears it through `claudePathOverride`,
     // ClaudeLocatorTests.anOrgSwitchClearsTheTypedOverride) and the machine lookup
     // (org-independent: one machine).
     "claude",
-    // PR 4 of the split. `mirror` holds `events`, the outgoing org's agent `Bash`
-    // calls (Task 15) — left set, a terminal pane opened fresh in the new org would
-    // backfill with the outgoing org's commands. `invalidateForOrgChange` calls `mirror.reset()`
-    // (TerminalMirrorFeedTests.anOrgSwitchForgetsTheOutgoingOrgsAgentCommands).
-    "mirror",
     // Provider capacity. `capacity` holds the outgoing org's readings; `invalidateForOrgChange`
     // calls `capacity.reset()` (CapacityFeedTests.resetForgetsReadingsAndFailure).
     "capacity",
@@ -318,10 +297,9 @@ private let orgDerivedBehindAReference: Set<String> = [
     // finds no roots and calls `setWatching(false)` on it, emptying it
     // (WindowModelEditorTests.anOrgSwitchEmptiesTheTreesAndTheirList).
     "fileLists",
-    // 3b-iii PR 1: one for the window's life (the wiring's), its CONTENTS the outgoing org's status.
-    // `invalidateForOrgChange` resets it (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
+    // 3b-iii PR 1: one for the window's life (the wiring's), its CONTENTS the status of the screen's
+    // roots. `invalidateForOrgChange` resets it (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
     "gitStatus",
-    "panes", "layout", "terminals",
     // 2e (#202). `providerLoginSession` is exactly the shape this third
     // bucket was created for: the reference is stable — every login goes
     // through the one session this window owns — while its CONTENTS are
@@ -336,13 +314,6 @@ private let orgDerivedBehindAReference: Set<String> = [
     // statement, `invalidateForOrgChange` calls `dropAll()` on it, so
     // nothing of the old org resolves after the switch (Invariant 4).
     "vocabulary",
-    // Background agents, 2 of 4. `placeClients` is the wiring's pool, one for the window's
-    // life, whose CONTENTS are clients pinned to the session's place in the outgoing org.
-    // `invalidateForOrgChange` clears `agentPlace` and retains no place, so the pool stops them.
-    "placeClients",
-    // Background agents, 2 of 4. `placeContexts` holds what those pinned `wakil-ctx`s said —
-    // the outgoing org's roots and production flags. The same `retainAgentPlace` drops them.
-    "placeContexts",
 ]
 
 @MainActor
@@ -355,7 +326,7 @@ private let orgDerivedBehindAReference: Set<String> = [
         if label.contains("$") { continue }
         if label.hasPrefix("_") { label.removeFirst() }
         if orgDerived.contains(label) || orgIndependent.contains(label)
-            || orgDerivedBehindAReference.contains(label) { continue }
+            || orgDerivedBehindAReference.contains(label) || keptPerPlace.contains(label) { continue }
         unclassified.append(label)
     }
 
@@ -368,7 +339,8 @@ private let orgDerivedBehindAReference: Set<String> = [
         An org change invalidates every credential boundary the window holds. \
         Add each name to orgDerived (and reset it in invalidateForOrgChange), \
         to orgDerivedBehindAReference (and TEAR ITS CONTENTS DOWN there — a \
-        cleared dictionary does not kill a shell), or to orgIndependent. Do \
-        not widen the skip rule instead — this test exists to make you choose.
+        cleared dictionary does not kill a shell), to keptPerPlace (keyed by \
+        its place or scope, so it survives), or to orgIndependent. Do not \
+        widen the skip rule instead — this test exists to make you choose.
         """)
 }

@@ -268,6 +268,10 @@ public func registerStandardActions(
     // (`WakilWiring.build`) always passes its own `layout` explicitly.
     layout: LayoutStore? = nil
 ) async {
+    // Every dispatch is homed in the canvas on screen when it began, unless its caller has one of
+    // its own (`ActionRegistry.setScreenScope`): a db read, a git status or a page whose reply
+    // lands after a switch writes where it was asked.
+    registry.setScreenScope { await panes.activeScope }
     await registry.register(Action(
         name: "ctx_list_projects",
         description: "List projects in the active organization, with any misfiled or unreadable entries named.",
@@ -1945,7 +1949,8 @@ public func registerStandardActions(
         ]),
         handler: { params in
             let id = try requireStringParam(params, "id", action: "session_resume")
-            await resumes.request(ResumeRequest(sessionId: id))
+            await resumes.request(ResumeRequest(
+                sessionId: id, place: pinnedPlace(of: ActionRegistry.dispatchCaller)))
             return .object([
                 "resuming": .string(id),
                 "note": .string("this session ends as the fork starts"),
@@ -2753,14 +2758,16 @@ enum DBReadOutcome {
 /// Runs a db read as `paneId`'s flight — the shape of `apiSendInFlight`. With no pane (a
 /// query that opens its own pane when it lands) it is a plain call: there is nothing to show
 /// `running` on yet. `.cancelled` when `db_cancel` ended the flight, whether the call then
-/// threw `CancellationError` or its reply arrived anyway — that reply is dropped. A reply for
-/// a project switched away from is dropped the same way (`finishDBRead` is false).
+/// threw `CancellationError` or its reply arrived anyway — that reply is dropped. Inside a
+/// dispatch it lands in the scope the dispatch began in however the screen has moved; outside
+/// one, a read whose project was switched away is dropped (`finishDBRead` is false).
 func dbReadInFlight(
     paneId: String?, action: String, panes: PaneStore,
     read: @escaping @Sendable () async throws -> JSONValue
 ) async throws -> DBReadOutcome {
     guard let paneId else { return .landed(try await read()) }
-    guard let token = await panes.beginDBRead(paneId: paneId, at: Date()) else {
+    let byAgent = pinnedPlace(of: ActionRegistry.dispatchCaller) != nil
+    guard let token = await panes.beginDBRead(paneId: paneId, at: Date(), byAgent: byAgent) else {
         throw StandardActionError.readInFlight(action: action, pane: paneId)
     }
     let task = Task { try await read() }

@@ -5,6 +5,10 @@ import Foundation
 struct DBFlight {
     let token: UUID
     let since: Date
+    /// Whether an agent session made the read, through the client pinned to its own place.
+    /// False for the operator's, which reach the window's clients — the ones an org switch
+    /// re-points (`PaneStore.cancelOperatorDBReads(inOrganization:)`).
+    var byAgent = false
     /// Cancels the read's task. `nil` until `armDBRead`. Unlike `ApiFlight` there is no
     /// `cancelRequested`: a cancel clears the flight, so an arm that finds none cancels itself.
     var cancel: (@Sendable () -> Void)?

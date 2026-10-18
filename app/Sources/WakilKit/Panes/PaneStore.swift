@@ -64,13 +64,24 @@ public actor PaneStore {
     /// dictionary does not kill a shell — `close(2)` on a pty master
     /// blocks forever while a thread is parked in `read(2)`.
     private var byScope: [LayoutScope: [String: PaneSlot]] = [:]
-    /// The scope whose panes every method below reads and writes.
+    /// The scope on screen: what `switchScope` installs.
     ///
     /// Starts on `LayoutScope.initial` — the same scope `LayoutStore`
     /// starts on — so that a `--dispatch` run, or a window before
     /// `refreshContext()` has answered, writes and reads one consistent
     /// place rather than needing a context to exist first.
-    private var scope = LayoutScope.initial
+    private var screen = LayoutScope.initial
+    /// The scope `inScope` has pinned for the body it is running, over everything else.
+    private var pinned: LayoutScope?
+    /// The scope whose panes every method below reads and writes — the one resolved-scope
+    /// accessor both forms of routing go through: `inScope`'s pin, synchronous, for a flight
+    /// landing where it left from; else the dispatching caller's own (`ScopeRouting.home`,
+    /// background agents 3 of 4), for an agent working in a place the operator has left; else
+    /// the one on screen.
+    private var scope: LayoutScope { pinned ?? ScopeRouting.home ?? screen }
+    /// The scope on screen, whatever scope the caller is routed to: the window asks it to tell
+    /// whether a swap is owed.
+    public var screenScope: LayoutScope { screen }
     /// Each kind's store-wide state, created on first touch (read or write) so that a scope change
     /// reaches state that has only been read so far.
     private var sharedByKind: [ObjectIdentifier: (kind: any PaneKind.Type, value: any Sendable)] = [:]
@@ -146,18 +157,20 @@ public actor PaneStore {
 
     /// Runs `body` with `home` as the active scope, synchronously, so nothing interleaves.
     func inScope<T>(_ home: LayoutScope, _ body: () -> T) -> T {
-        let active = scope
-        scope = home
-        defer { scope = active }
+        let outer = pinned
+        pinned = home
+        defer { pinned = outer }
         return body()
-    }
-
-    private func clearing<K: PaneKind>(_ kind: K.Type, _ value: any Sendable) -> any Sendable {
-        K.sharedAfterClearingAllScopes(value as! K.Shared)
     }
 
     private func switching<K: PaneKind>(_ kind: K.Type, _ value: any Sendable) -> any Sendable {
         K.sharedAfterSwitchingScope(value as! K.Shared)
+    }
+
+    private func adopting<K: PaneKind>(
+        _ kind: K.Type, _ value: any Sendable, from outgoing: LayoutScope, to incoming: LayoutScope
+    ) -> any Sendable {
+        K.sharedAfterAdoptingScope(value as! K.Shared, from: outgoing, to: incoming)
     }
 
     private func slotSnapshot<K: PaneKind>(_ kind: K.Type, _ contents: any Sendable, label: String) -> PaneSnapshot {
@@ -197,9 +210,10 @@ public actor PaneStore {
     /// question about the same panes: that one holds where they are, this
     /// one holds what is in them.
     public func switchScope(to scope: LayoutScope) {
-        self.scope = scope
-        // Each kind's store-wide state hears of it (Api: a listing read for the scope left
-        // behind must not land on this one's panes).
+        screen = scope
+        // Each kind's store-wide state hears of it. (Not Api's any more: its generations are per
+        // scope and never shared between two, so a switch leaves every listing in flight to land
+        // in its own scope — an agent's among them.)
         for (id, entry) in sharedByKind { sharedByKind[id] = (entry.kind, switching(entry.kind, entry.value)) }
     }
 
@@ -210,19 +224,13 @@ public actor PaneStore {
         let carried = byScope[outgoing] ?? [:]
         byScope[outgoing] = nil
         byScope[scope] = carried
-        self.scope = scope
+        screen = scope
         // **No generation bump** (review minor): the same panes, in the same org, project and
-        // environment, under a new key. A `list_apis` in flight still describes them.
-    }
-
-    /// Forgets every scope's pane contents. Same reasoning as
-    /// `LayoutStore.clearAllScopes` — this store holds what is IN the
-    /// panes, that one holds where they are, and an org change
-    /// invalidates both for the same reason.
-    public func clearAllScopes() {
-        byScope = [:]
-        for (id, entry) in sharedByKind { sharedByKind[id] = (entry.kind, clearing(entry.kind, entry.value)) }
-        scope = .initial
+        // environment, under a new key. A `list_apis` in flight still describes them, so each
+        // kind carries its per-scope state across to the new key.
+        for (id, entry) in sharedByKind {
+            sharedByKind[id] = (entry.kind, adopting(entry.kind, entry.value, from: outgoing, to: scope))
+        }
     }
 
     /// Forgets everything held for pane `paneId` in the active scope.
@@ -252,7 +260,7 @@ public actor PaneStore {
     /// Every pane id held in the active scope, in the dictionary's own order (the api kind's loops).
     var paneKeys: some Collection<String> { panes.keys }
 
-    /// The active scope (the api kind's Recent key).
+    /// The active scope: the caller's own, else the one on screen (the api kind's Recent key).
     var activeScope: LayoutScope { scope }
 
     /// Whether anything is held for `paneId` in the active scope.
@@ -306,11 +314,12 @@ public actor PaneStore {
     }
 
     /// Opens a flight on `paneId`, or refuses with `nil` when one is already in flight.
-    public func beginDBRead(paneId: String, at since: Date) -> UUID? {
+    /// `byAgent`: an agent session made it (`DBFlight.byAgent`).
+    public func beginDBRead(paneId: String, at since: Date, byAgent: Bool = false) -> UUID? {
         var contents = dataSurface(paneId)
         guard contents.flight == nil else { return nil }
         let token = UUID()
-        contents.flight = DBFlight(token: token, since: since)
+        contents.flight = DBFlight(token: token, since: since, byAgent: byAgent)
         setDataSurface(paneId, contents)
         publishFlight(paneId)
         return token
@@ -351,7 +360,9 @@ public actor PaneStore {
     /// Ends flight `token`. `true` only when it is still the pane's flight AND its scope is the
     /// active one — the caller writes the reply's rows into the active scope, and pane ids repeat
     /// across projects. A reply for a project switched away is dropped; that pane keeps its
-    /// previous rows. A landed read clears the last `cancelled after` line.
+    /// previous rows. A read made inside a dispatch — every one, since the registry homes each
+    /// dispatch where it began (`ScopeRouting`) — lands there however the screen has moved: its
+    /// active scope is that home. A landed read clears the last `cancelled after` line.
     public func finishDBRead(paneId: String, token: UUID) -> Bool {
         guard let home = dbFlightScope(paneId: paneId, token: token) else { return false }
         inScope(home) {
@@ -364,10 +375,13 @@ public actor PaneStore {
         return home == scope
     }
 
-    /// Cancels every db read in flight in every scope. Called before anything re-runs every
-    /// pane's subject (`restorePaneContents`) and before an org switch drops the panes.
-    public func cancelAllDBReads(at now: Date = Date()) {
-        for entry in everyScope(DataSurfacePaneKind.self) where entry.contents.flight != nil {
+    /// Cancels the operator's db reads in flight in every scope of `organization` — called by an
+    /// org switch before the window's clients are re-pointed, so a read the operator started in
+    /// the org left cannot reach the incoming org's restarted process (Invariant 4). An agent's
+    /// read goes through the client pinned to its own place and is left to land.
+    public func cancelOperatorDBReads(inOrganization organization: String, at now: Date = Date()) {
+        for entry in everyScope(DataSurfacePaneKind.self)
+        where entry.scope.organization == organization && entry.contents.flight?.byAgent == false {
             inScope(entry.scope) { _ = cancelDBRead(paneId: entry.paneId, at: now) }
         }
     }

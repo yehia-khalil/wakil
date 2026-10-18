@@ -213,17 +213,27 @@ final class TerminalMirrorFeed {
         if overflow > 0 { events.removeFirst(overflow) }
     }
 
-    func pump(_ event: HarnessEvent) async {
+    /// `event`'s block, into every terminal pane of `scope` — the canvas of the place whose agent
+    /// ran it; `nil` is the one on screen. Each place's agent mirrors into its own place's panes
+    /// (background agents, 3 of 4), not into whatever the operator is looking at.
+    func pump(_ event: HarnessEvent, into scope: LayoutScope?) async {
         guard let id = Self.id(of: event),
               let block = mirroredBlocks(from: events, cap: TerminalBlock.historyCap)
                   .first(where: { $0.id == id })
         else { return }
-        for pane in await layout.snapshot().panes where pane.kind == "terminal" {
-            await panes.appendMirrored(paneId: pane.id, block: block)
+        await ScopeRouting.$home.withValue(scope) {
+            for pane in await layout.snapshot().panes where pane.kind == "terminal" {
+                await panes.appendMirrored(paneId: pane.id, block: block)
+            }
         }
     }
 
-    func backfill() async {
+    /// Every retained block, into every terminal pane of `scope` (`pump`'s target).
+    func backfill(into scope: LayoutScope?) async {
+        await ScopeRouting.$home.withValue(scope) { await backfillHome() }
+    }
+
+    private func backfillHome() async {
         let blocks = mirroredBlocks(from: events, cap: TerminalBlock.historyCap)
         guard !blocks.isEmpty else { return }
         // Captured once, before the loop, rather than per pane: every block in
@@ -237,8 +247,6 @@ final class TerminalMirrorFeed {
             await panes.setTerminalBackfilledAt(paneId: pane.id, backfilledAt)
         }
     }
-
-    func reset() { events = [] }
 
     private static func id(of event: HarnessEvent) -> String? {
         switch event {

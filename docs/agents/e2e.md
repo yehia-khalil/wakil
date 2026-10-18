@@ -92,6 +92,13 @@ Run it when a ticket's implementation is otherwise finished: `make test` and
    answer, wants a `dispatch` step in a seeded file — that drives the same MCP
    socket a real agent speaks, with no child process.
 
+   **That socket is the on-screen place's.** The window opens one socket per
+   place it shows, pinned to that place, and the harness dispatches on the one
+   whose place is the screen's, chosen again after every switch
+   (`ScreenChannel`). So a dispatch acts *as that place's agent*: an
+   `ctx_set_project` or `ctx_set_environment` sent this way is refused (an agent
+   cannot move its own place). Switch with a `do` step instead.
+
    **Cover the interaction rules as well as the actions.** For each rule in
    `PRODUCT.md` §Interaction Rules that a touched surface can break, write a
    check: for example, type into a field, move focus away and expect the value

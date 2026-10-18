@@ -91,35 +91,10 @@ struct DBFlightTests {
         #expect(await panes.cancelDBRead(paneId: "db-1") == false)
     }
 
-    @Test func cancelAllEndsEveryFlight() async {
-        let panes = await storeWithRows()
-        _ = await panes.beginDBRead(paneId: "db-1", at: Date())
-        await panes.cancelAllDBReads()
-        #expect(await dbSnapshot(panes, "db-1").runningSince == nil)
-    }
-
-    @Test func cancelAllEndsFlightsInEveryScope() async {
-        let panes = await storeWithRows()
-        let a = LayoutScope(organization: "acme", project: "a")
-        let b = LayoutScope(organization: "acme", project: "b")
-        let fired = FiredCount()
-        await panes.switchScope(to: a)
-        let tokenA = try! #require(await panes.beginDBRead(paneId: "db-1", at: Date()))
-        await panes.armDBRead(paneId: "db-1", token: tokenA) { Task { await fired.bump() } }
-        await panes.switchScope(to: b)
-        let tokenB = try! #require(await panes.beginDBRead(paneId: "db-1", at: Date()))
-        await panes.armDBRead(paneId: "db-1", token: tokenB) { Task { await fired.bump() } }
-        await panes.cancelAllDBReads()
-        #expect(await dbSnapshot(panes, "db-1").runningSince == nil)
-        await panes.switchScope(to: a)
-        #expect(await dbSnapshot(panes, "db-1").runningSince == nil)
-        #expect(await dbEventually { await fired.count == 2 })
-    }
-
     @Test func aReplyForAProjectSwitchedAwayIsDropped() async {
         let panes = PaneStore()
-        let a = LayoutScope(organization: "acme", project: "a")
-        let b = LayoutScope(organization: "acme", project: "b")
+        let a = LayoutScope(organization: "acme", project: "a", environment: "dev")
+        let b = LayoutScope(organization: "acme", project: "b", environment: "dev")
         func rows(_ n: Int64) async {
             await panes.setRows(
                 paneId: "db-1", columns: ["id"], columnTypes: ["int"], columnTypesInferred: false,
@@ -140,11 +115,6 @@ struct DBFlightTests {
     }
 }
 
-private actor FiredCount {
-    var count = 0
-    func bump() { count += 1 }
-}
-
 private actor Fired {
     var value = false
     func set() { value = true }
@@ -163,3 +133,46 @@ func dbSnapshot(_ panes: PaneStore, _ id: String) async -> DataSurfaceSnapshot {
     (await panes.snapshot(paneId: id, kind: "db")).dataSurface ?? .empty
 }
 
+
+/// Whether a flight records an agent as its maker is read from who is calling
+/// (`pinnedPlace(of: ActionRegistry.dispatchCaller)`): an org switch cancels the operator's
+/// reads and leaves an agent's alone (`PaneStore.cancelOperatorDBReads`), so a flight marked
+/// by the wrong caller is cancelled or kept wrongly.
+struct DBFlightMakerTests {
+    private func makerOfFlight(caller: DispatchCaller, origin: ActionOrigin) async throws -> Bool? {
+        let panes = await storeWithRows()
+        let registry = ActionRegistry(
+            journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString),
+            sessionId: "db-flight-maker")
+        let seen = FlightMarks()
+        await registry.register(Action(
+            name: "probe_read", description: "reads inside a flight", kind: .read,
+            schema: .object(["type": .string("object")]),
+            handler: { _ in
+                let outcome = try await dbReadInFlight(paneId: "db-1", action: "probe_read", panes: panes) {
+                    await seen.record(await panes.dataSurface("db-1").flight?.byAgent)
+                    return .object([:])
+                }
+                if case .landed(let value) = outcome { return value }
+                return .object([:])
+            }))
+        _ = try await registry.dispatch(
+            name: "probe_read", params: .object([:]), origin: origin, caller: caller, confirmation: nil)
+        return await seen.mark
+    }
+
+    @Test func anAgentDispatchRecordsTheFlightAsTheAgents() async throws {
+        let caller = DispatchCaller.test("staging", session: "agent-session")
+        #expect(try await makerOfFlight(caller: caller, origin: .agent) == true)
+    }
+
+    @Test func anOperatorDispatchRecordsTheFlightAsTheOperators() async throws {
+        let caller = DispatchCaller.test("staging")
+        #expect(try await makerOfFlight(caller: caller, origin: .ui) == false)
+    }
+}
+
+private actor FlightMarks {
+    private(set) var mark: Bool?
+    func record(_ value: Bool?) { mark = value }
+}

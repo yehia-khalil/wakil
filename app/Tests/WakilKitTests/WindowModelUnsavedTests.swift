@@ -3,7 +3,8 @@ import Testing
 @testable import WakilKit
 
 /// Task 9: unsaved edits are never dropped silently. Closing a dirty tab, closing a pane with
-/// dirty tabs, switching organisation and quitting each ask Save / Don't Save / Cancel first.
+/// dirty tabs and quitting each ask Save / Don't Save / Cancel first. An organisation switch
+/// drops nothing, so it asks nothing (R2: `OrgSwitchTests.anOrgSwitchWithUnsavedTabsAsksNothingAndKeepsThem`).
 @Suite @MainActor struct WindowModelUnsavedTests {
     private let aGo = EditorTabSubject.file(path: "/p/api/a.go", root: "/p/api")
 
@@ -109,26 +110,6 @@ import Testing
         #expect(model.editor(pane)?.tabs.first?.dirty == true)
     }
 
-    /// The fake context answers `acme` whatever the window switched to, so the switch is read
-    /// from what it does: it tears the outgoing organisation's panes down.
-    @Test func switchingOrganisationWithDirtyTabsAsksFirst() async throws {
-        let (model, _, pane) = try await dirtyFileWindow()
-        await model.requestOrganizationSwitch("beta")
-        #expect(model.unsavedPrompt == UnsavedPrompt(intent: .switchOrganisation("beta"), files: ["a.go"]))
-        #expect(model.editor(pane)?.tabs.first?.dirty == true && !model.switching)
-        await model.resolveUnsaved(.dontSave)
-        #expect(model.unsavedPrompt == nil)
-        #expect(model.layoutSnapshot.panes.isEmpty && model.editor(pane) == nil)
-    }
-
-    @Test func cancellingAnOrganisationSwitchStaysPut() async throws {
-        let (model, _, pane) = try await dirtyFileWindow()
-        await model.requestOrganizationSwitch("beta")
-        await model.resolveUnsaved(.cancel)
-        #expect(model.layoutSnapshot.panes.contains { $0.id == pane })
-        #expect(model.editor(pane)?.tabs.first?.dirty == true)
-    }
-
     @Test func quitWithNothingUnsavedQuitsAndWithDirtyTabsAsks() async throws {
         let (model, _) = await editorWindowWithFiles()
         await model.refreshContext()
@@ -158,51 +139,6 @@ import Testing
     }
 
     // MARK: Fix round 1
-
-    /// A switch queued while the tabs were clean asks when it fires, once they are dirty.
-    @Test func aQueuedSwitchFiringOverDirtyTabsAsksFirst() async throws {
-        let (model, _) = await editorWindowWithFiles()
-        await model.refreshContext()
-        await model.newScratch()
-        let pane = try #require(model.layoutSnapshot.focusedId)
-        await model.beginTurnForTesting()
-        await model.requestOrganizationSwitch("beta")
-        #expect(model.queuedOrgSwitch == "beta" && model.unsavedPrompt == nil)
-        await model.editorBufferDidChange(pane: pane, tab: 0, text: "x", basis: 0)
-        await model.endTurnForTesting()
-        #expect(model.unsavedPrompt == UnsavedPrompt(intent: .switchOrganisation("beta"), files: ["Untitled-1"]))
-        #expect(model.queuedOrgSwitch == nil && model.layoutSnapshot.panes.contains { $0.id == pane })
-        await model.resolveUnsaved(.dontSave)
-        #expect(model.layoutSnapshot.panes.isEmpty)
-    }
-
-    /// Don't Save while a turn runs queues the switch; the queue firing does not ask again.
-    @Test func aSwitchApprovedWhileATurnRunsFiresWithoutAskingAgain() async throws {
-        let (model, _, pane) = try await dirtyFileWindow()
-        await model.beginTurnForTesting()
-        await model.requestOrganizationSwitch("beta")
-        await model.resolveUnsaved(.dontSave)
-        #expect(model.queuedOrgSwitch == "beta" && model.unsavedPrompt == nil)
-        #expect(model.editor(pane)?.tabs.first?.dirty == true)
-        await model.endTurnForTesting()
-        #expect(model.unsavedPrompt == nil && model.layoutSnapshot.panes.isEmpty)
-    }
-
-    @Test func stopAndSwitchNowOverDirtyTabsCutsTheTurnThenAsks() async throws {
-        let (model, _) = await editorWindowWithFiles()
-        await model.refreshContext()
-        await model.newScratch()
-        let pane = try #require(model.layoutSnapshot.focusedId)
-        await model.beginTurnForTesting()
-        await model.requestOrganizationSwitch("beta")
-        await model.editorBufferDidChange(pane: pane, tab: 0, text: "x", basis: 0)
-        await model.stopTurnAndSwitchNow()
-        #expect(!model.turnInFlight && model.queuedOrgSwitch == nil)
-        #expect(model.unsavedPrompt?.intent == .switchOrganisation("beta"))
-        #expect(model.layoutSnapshot.panes.contains { $0.id == pane })
-        await model.resolveUnsaved(.dontSave)
-        #expect(model.layoutSnapshot.panes.isEmpty)
-    }
 
     /// A prompt up is never replaced: ⌘W on a dirty tab under a quit prompt leaves the quit asking.
     @Test func aQuitPromptIsNotReplacedByALaterAsk() async throws {
@@ -267,37 +203,6 @@ import Testing
         #expect(!model.layoutSnapshot.panes.contains { $0.id == pane })
     }
 
-    // MARK: Fix round 2
-
-    /// The approval covers what the operator saw: typing after it means the queue asks again.
-    @Test func editsAfterApprovingAQueuedSwitchAreAskedAboutAgain() async throws {
-        let (model, _, pane) = try await dirtyFileWindow()
-        await model.beginTurnForTesting()
-        await model.requestOrganizationSwitch("beta")
-        await model.resolveUnsaved(.dontSave)
-        #expect(model.queuedOrgSwitch == "beta")
-        await model.editorBufferDidChange(pane: pane, tab: 0, text: "bc", basis: 0)
-        await model.endTurnForTesting()
-        #expect(model.unsavedPrompt == UnsavedPrompt(intent: .switchOrganisation("beta"), files: ["a.go"]))
-        #expect(model.layoutSnapshot.panes.contains { $0.id == pane })
-        #expect(model.editor(pane)?.tabs.first?.text == "bc")
-    }
-
-    /// A quit approved over a held queued switch does not fire the switch on its way out.
-    @Test func approvingAQuitDoesNotFireAHeldSwitch() async throws {
-        let (model, _) = await editorWindowWithFiles()
-        await model.refreshContext()
-        await model.newScratch()
-        let pane = try #require(model.layoutSnapshot.focusedId)
-        await model.beginTurnForTesting()
-        await model.requestOrganizationSwitch("beta")   // clean: queues
-        await model.editorBufferDidChange(pane: pane, tab: 0, text: "x", basis: 0)
-        #expect(await !model.requestQuit())
-        await model.endTurnForTestingWithoutFiring()
-        await model.resolveUnsaved(.dontSave)
-        #expect(model.quitApproved == 1 && model.unsavedPrompt == nil)
-        #expect(model.queuedOrgSwitch == "beta" && model.layoutSnapshot.panes.contains { $0.id == pane })
-    }
 }
 
 /// Final review I1: Don't Save closes the tab the prompt named, by its subject, in one dispatch —

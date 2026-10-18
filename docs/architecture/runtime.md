@@ -55,20 +55,24 @@ What the wiring offers:
 
 1. Picks a session id (a UUID) and the journal directory `~/.wakil/journal` (from `HOME`).
 2. Calls `WakilWiring.build`; its `diagnostics` become the window's `notes`.
-3. Chooses the socket path: `wakil-<sessionId>.sock` in the per-user temporary directory.
+3. Builds `agentSocketFactory`: given a path and a caller, it starts an
+   `MCPSocketServer(surface: wiring.mcpSurface, socketPath:, caller:, screen:)`. `screen` reads the
+   model's place, filled in once the model exists; `initialize` reports it beside the socket's own
+   place (`initializeMeta`), which is how the e2e harness picks its channel.
 4. Reads the active context once through `ContextStore` for the first project root and the active
    provider id.
 5. Locates the `wakil` CLI and builds three factories: `lookupFactory` (per org,
    `WakilCLICredentialsLookup`), `mintFactory` (`WakilCLIProviderMint`), and `harnessFactory`. The
-   harness factory builds, per selection, `agentMCPConfigJSON` (the shim plus `agentFacingServers`)
+   harness factory builds, per selection and socket path, `agentMCPConfigJSON` (the shim plus
+   `agentFacingServers`)
    and a `ClaudeCodeCLIHarness` with `agentAllowedTools` computed from the registry. If the `wakil`
    binary is missing, the window opens with no agent and a note says why.
 6. Creates the `WindowModel`, handing it the wiring's registry, stores, brokers, vocabulary, root
    watcher and palette clients, a `LayoutPersistence` under `~/.wakil/layouts`, the factories, and
    `orgSwitcher: { wiring.switchOrg(to:) }`.
 7. Calls `wiring.useActiveContext(of: model)` and creates the `ComposerModel`.
-8. Creates and starts `MCPSocketServer(surface: wiring.mcpSurface, socketPath:,
-   caller: { model.agentCaller })`. A socket that will not bind becomes a note.
+
+No socket is started here: the model opens one for each place it shows (see below).
 
 ## `WindowModel`
 
@@ -84,13 +88,28 @@ thought thread, status).
     `panes.clearApiResponses(to:)` on an environment change;
   - a terminal proposal accepted or discarded: `panes.setTerminalProposal(paneId:, nil)`;
   - scopes: `panes.switchScope(to:)` / `switchScope(to:adoptingFrom:)` when the window activates a layout
-    scope (`activateLayout`), and `panes.clearAllScopes()` in `invalidateForOrgChange()`.
+    scope (`activateLayout`), and `.initial` when an org switch lands where there is no project
+    (`putAwayCanvas`). No switch forgets a scope.
 
   The window then reads everything back: `refreshPanes()` walks `LayoutStore`'s panes and asks
   `PaneStore.snapshot(paneId:kind:)` for each, filling `tables` and `editables` and each pane's
   `PaneSnapshotCell` in `paneCells`. This is the same store `read_pane` answers the agent from
   (`PaneStore.readPane(paneId:kind:)`).
   *Convention*; no test enforces it.
+- **One agent per place** (`App/PlaceAgent.swift`): `WindowModel.agents` holds a `PlaceAgent` per
+  `Place` — its harness, session, thread, turn, conversation (`lineageRoot`) and `Bash` mirror —
+  and keeps each alive while the screen shows another place. The window's `thoughts`,
+  `turnInFlight`, `sessionId`, `sessionStarted` and `lineageRoot` read the on-screen place's
+  entry (`currentAgent`). Each entry's event pump writes to that entry, and mirrors into that
+  place's canvas, wherever the screen is. An agent's `session_resume` names its place
+  (`ResumeRequest.place`), so the fork replaces that place's session. A place has at most one
+  agent, and `resume` reads and records as that agent (a caller carrying `agent.sessionId ??
+  agent.assignedSessionId`), so an agent with no session yet still reaches its own place's store.
+- **One waiting approval per place** (`ConfirmationBroker`, `Gate/ConfirmationBroker.swift`): the
+  broker keys what it parks by `Place` and refuses a second in the same place (`.busy`).
+  `WindowModel.parkedProposals` mirrors it; `pending` is the on-screen place's entry and the plane
+  draws only that, while `waitingPlaces` marks the others. An agent's proposal never expires: it
+  waits until the operator approves or cancels it (Rule 4). Only a UI-origin proposal times out.
 - **It starts a harness per session** through `harnessFactory`: first turn, every resume, every
   provider switch. A stopped `ClaudeCodeCLIHarness` is spent.
 - **It runs the pumps** that consume the harness's events, confirmations, resumes, provider switches
@@ -99,8 +118,20 @@ thought thread, status).
 ## An agent's calls follow its own place
 
 An agent session is pinned to the place (organisation, project registry key, environment) it
-started in, and `model.agentCaller` hands the socket that place with the session's id. Every call
-the session makes acts there, wherever the screen is:
+started in. Each session has its own socket, at `agentSocketPath` (`wakil-<agent session id>.sock`
+in the per-user temporary directory: the directory plus 48 bytes, so a directory of up to 55
+characters fits `sun_path`'s 104), whose caller is that place with the session's id. **A place's
+socket opens when the place is shown**, at launch and on every switch, before any turn
+(`WindowModel.openShownSocket`, from `activateLayout`; after an org switch lands, not during it).
+It reserves the session id the place's first session then starts with, and that session takes the
+socket (`makeSession`); once per place, never per visit, and never one that follows the screen. A
+resume or provider switch starts its fork's or fresh session's own socket before the harness and
+stops the one it replaces. The harness's MCP config names the session's socket; it is stopped after
+the harness on a resume, a provider switch and shutdown; an org, project or environment switch
+stops none of them. A socket that will not start
+does not refuse the session: the session tries once more, then runs without Wakil's own tools and
+its status says why. Every call the
+session makes acts there, wherever the screen is:
 
 - **The task-local.** `ActionRegistry.dispatch` binds `ActionRegistry.dispatchCaller` around every
   handler, so anything a handler calls can ask whom the dispatch is for without a parameter
@@ -129,8 +160,20 @@ the session makes acts there, wherever the screen is:
   read the window makes itself) take the window's own clients, roots and flags. `--dispatch`
   dispatches with no session, so nothing routes.
 
-`WindowModel` retains the session's place in `PlaceContexts` and `PlaceClients` whenever
-`agentPlace` changes, and the pool stops the clients of places no session holds any more.
+`WindowModel` retains every place with a live agent (`agentPlaces`) in `PlaceContexts` and
+`PlaceClients` whenever a harness changes, and the pool stops the clients of places no session
+holds any more.
+
+**A switch tears nothing down.** Changing organisation, project or environment moves the screen
+and re-reads the new place; it stops no agent, socket, pump, shell or waiting approval and discards
+no canvas (flow 3). What a switch does touch is the operator's own db reads in the organisation
+left (`PaneStore.cancelOperatorDBReads`), which went out on the window's clients.
+
+**Writes follow the place too.** The window installs `setScopeLookup`: an agent caller's dispatch
+is bound (`ScopeRouting.home`) to its `PlaceAgent.layoutScope`, so its panes land in its own
+place's canvas. Every other dispatch is bound to the scope on screen when it began
+(`setScreenScope`), so a reply after a switch still lands where it was asked. After each dispatch
+the window writes any off-screen agent's changed arrangement to that place's file.
 
 ## Where binaries are found
 
@@ -166,12 +209,15 @@ from `agentMCPConfigJSON`. The `claude` process itself gets `CLAUDE_CONFIG_DIR`,
 |---|---|---|
 | The four Wakil-owned `MCPClient`s | `WakilWiring.build` | `WakilWiring.shutdown`; restarted in place by `switchOrg` |
 | Pool clients (`PlaceClients`) | an agent's first call for its place | `retain` when no session holds the place; `WakilWiring.shutdown` |
-| `MCPSocketServer` | `WindowSession.start` | `WindowSession.shutdown` |
-| `ClaudeCodeCLIHarness` (and the shim and agent servers `claude` spawns) | `WindowModel` on a session start, resume or provider switch | `harness.stop()`: org switch, next harness, `WindowModel.shutdown` |
-| Terminal PTYs (`TerminalStore`) | `term_open` | `pane_close`, an org switch (`shutdownAll(runStream: .keepOpen)`), shutdown (`.finish`) |
-| Pane contents (`PaneStore`), arrangements (`LayoutStore`) | first write | `clearAllScopes()` on an org switch; arrangements also persist to disk |
+| `PlaceAgent`, one per place | the place's first turn, pane or resume | `WindowModel.shutdown` (a switch never drops it) |
+| `MCPSocketServer`, one per agent session | `WindowModel`, when its place is first shown (a resume's or provider switch's: before its harness) | after that harness stops: next harness, `WindowModel.shutdown` for every place's agent and every shown place's socket |
+| `ClaudeCodeCLIHarness` (and the shim and agent servers `claude` spawns) | `WindowModel` on a session start, resume or provider switch | `harness.stop()`: next harness, `WindowModel.shutdown` |
+| Terminal PTYs (`TerminalStore`) | `term_open` | `pane_close`, shutdown (`shutdownAll()`) |
+| Pane contents (`PaneStore`), arrangements (`LayoutStore`) | first write | the window (no switch forgets a scope); arrangements also persist to disk |
 
-**Shutdown order** (`WindowSession.shutdown`): `model.shutdown()` (pumps cancelled, harness stopped,
-terminals closed) → `socketServer.stop()` → `wiring.shutdown()`. The `claude` child, and the shim it
-spawned, is gone before the socket the shim connects to is closed. `--dispatch` calls
+**Shutdown order** (`WindowSession.shutdown`): `model.shutdown()` (every place's event pump and the
+window's pumps cancelled, then every agent's harness stopped and then its socket, then every
+shown place's socket no session took, then terminals
+closed; `quittingStopsEveryPlacesAgent`, `ShutdownContractTests`) → `wiring.shutdown()`. Each `claude` child, and the
+shim it spawned, is gone before the socket the shim connects to is closed. `--dispatch` calls
 `wiring.shutdown()` before it exits.

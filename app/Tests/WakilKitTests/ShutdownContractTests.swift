@@ -88,3 +88,38 @@ import Testing
 
     for pid in pids { #expect(kill(pid, 0) == -1) }
 }
+
+/// Quit stops every place's agent, not just the one on screen (background agents 3 of 4,
+/// Task 7). Three agents in three places: each one's harness, the socket its shim reaches
+/// Wakil on, and its event pump all end with the window, however the screen has moved since
+/// they started — an agent left running would outlive the app.
+@MainActor
+@Test func quittingStopsEveryPlacesAgent() async throws {
+    let org = "initech"
+    let places = ["api", "billing", "ledger"].map {
+        Place(organization: org, project: $0, environment: "staging")
+    }
+    let sessions = Sessions()
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot, organization: org,
+        harnessFactory: { place, _ in sessions.harnesses.make(place) },
+        agentSocketFactory: sessions.socketFactory)
+    for place in places {
+        model.seedForTesting(
+            providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+            project: place.project, environment: place.environment)
+        #expect(await model.send("hello \(place.project)"))
+    }
+    try #require(model.agents.count == 3)
+    let pumps = try places.map { try #require(model.agents[$0]?.eventPump, "\($0.project) has no pump") }
+    #expect(sessions.harnesses.issued.allSatisfy { !$0.stopped })
+    #expect(sessions.issuedSockets.allSatisfy { !$0.stopped })
+
+    await model.shutdown()
+
+    #expect(sessions.harnesses.issued.count == 3)
+    #expect(sessions.harnesses.issued.allSatisfy { $0.stopped }, "every harness stopped")
+    #expect(sessions.issuedSockets.count == 3)
+    #expect(sessions.issuedSockets.allSatisfy { $0.stopped }, "every agent's socket stopped")
+    #expect(pumps.allSatisfy { $0.isCancelled }, "every agent's event pump cancelled")
+}

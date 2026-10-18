@@ -28,6 +28,32 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
     #expect(out?.error == nil)
 }
 
+/// `initialize` names the place every call on this socket is made for, and the place the window
+/// shows: what the e2e harness picks its channel by among a window's sockets.
+@Test func initializeReportsTheSocketsPlaceAndTheScreens() async throws {
+    let m = JSONRPCMessage(id: .number(1), method: "initialize", params: .object([:]), result: nil, error: nil)
+    let pinned = Place(organization: "initech", project: "api", environment: "staging")
+    let screen = Place(organization: "initech", project: "billing", environment: "qa")
+    let out = await handle(
+        m, surface: await surface(), caller: { DispatchCaller(place: pinned, session: "s-1") },
+        screen: { screen })
+    guard case .object(let result)? = out?.result, case .object(let meta)? = result["_meta"] else {
+        Issue.record("no _meta: \(String(describing: out?.result))"); return
+    }
+    #expect(meta["wakil/place"] == .object([
+        "organization": .string("initech"), "project": .string("api"), "environment": .string("staging"),
+    ]))
+    #expect(meta["wakil/screen"] == .object([
+        "organization": .string("initech"), "project": .string("billing"), "environment": .string("qa"),
+    ]))
+
+    let unknown = await handle(m, surface: await surface(), caller: { .test("staging") })
+    guard case .object(let bare)? = unknown?.result, case .object(let bareMeta)? = bare["_meta"] else {
+        Issue.record("no _meta without a screen"); return
+    }
+    #expect(bareMeta["wakil/screen"] == .null, "no screen known: said, not invented")
+}
+
 /// Probe §8: the CLI refuses at its first permission check if the name
 /// given to `--permission-prompt-tool` is not in this list, and puts that
 /// error in front of the agent. So `approve_tool_use`'s presence here is
@@ -761,7 +787,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
     // Never reached the broker at all -- not parked-then-rejected, refused
     // by `parkForConfirmation` before the single-flight slot was ever
     // occupied.
-    #expect(await broker.current() == nil)
+    #expect(await broker.all().isEmpty)
     // `dispatch` itself still ran first and gated the call normally --
     // `writeGate` has no way to know the statement is blank, only
     // `parkForConfirmation` does -- so exactly one "gated" line is
@@ -795,8 +821,8 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         params: .object(["name": .string("test_mutate"), "arguments": arguments]))
 
     async let reply = handle(call, surface: surface, caller: { .test("staging") })
-    while await broker.current() == nil { await Task.yield() }
-    let parked = await broker.current()
+    while await broker.all().isEmpty { await Task.yield() }
+    let parked = await broker.all().values.first
     #expect(parked?.statement == "DELETE FROM t WHERE id=1")
     #expect(parked?.origin == .agent)
     await broker.approve(id: parked!.id)
@@ -836,8 +862,8 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         ]))
 
     async let reply = handle(call, surface: surface, caller: { .test("staging") })
-    while await broker.current() == nil { await Task.yield() }
-    await broker.cancel(id: (await broker.current())!.id)
+    while await broker.all().isEmpty { await Task.yield() }
+    await broker.cancel(id: (await broker.all().values.first)!.id)
 
     #expect(await reply?.error?.code == -32002)
 
@@ -845,7 +871,10 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
     #expect(entries.map(\.outcome) == ["gated"])
 }
 
-@Test func anExpiredConfirmationIsDistinguishableFromARefusal() async throws {
+// R1: an agent's proposal does not expire. Under a broker whose timeout has long passed it is
+// still parked, in the caller's place, until the operator cancels it — and a cancel is the
+// refusal code, not the old expiry one.
+@Test func anAgentsParkedProposalWaitsInItsPlaceUntilAnswered() async throws {
     let dir = testScratchRoot
         .appendingPathComponent("wakil-test-\(UUID().uuidString)")
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
@@ -857,7 +886,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
     let surface = MCPSurface(
         registry: registry, panes: PaneStore(), layout: LayoutStore(), confirmations: broker)
 
-    let reply = await handle(
+    async let reply = handle(
         JSONRPCMessage(
             id: .number(1), method: "tools/call",
             params: .object([
@@ -865,9 +894,13 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
                 "arguments": .object(["statement": .string("DELETE FROM t")]),
             ])),
         surface: surface, caller: { .test("staging") })
+    while await broker.all().isEmpty { await Task.yield() }
+    try await Task.sleep(for: .milliseconds(200))
+    let parked = await broker.current(for: DispatchCaller.test("staging").place)
+    #expect(parked != nil)
+    await broker.cancel(id: parked!.id)
 
-    #expect(reply?.error?.code == -32004)
-    #expect(reply?.error?.code != -32002)
+    #expect(await reply?.error?.code == -32002)
 }
 
 // Production is blocked, not parked. Nothing reaches the broker, because
@@ -894,7 +927,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         surface: surface, caller: { .test("production") })
 
     #expect(reply?.error?.code == -32003)
-    #expect(await broker.current() == nil)
+    #expect(await broker.all().isEmpty)
 }
 
 // `writeGate` gates more than mutations: a `.control` action from the
@@ -930,8 +963,8 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         ]))
 
     async let reply = handle(call, surface: surface, caller: { .test("staging") })
-    while await broker.current() == nil { await Task.yield() }
-    let parked = await broker.current()
+    while await broker.all().isEmpty { await Task.yield() }
+    let parked = await broker.all().values.first
     #expect(parked?.statement.isEmpty == false)
     #expect(parked?.statement.contains("test_set_environment") == true)
     #expect(parked?.statement.contains("production") == true)
@@ -988,8 +1021,8 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
     // Active environment "production", target "staging" — D10's leaving
     // direction.
     async let reply = handle(call, surface: surface, caller: { .test("production") })
-    while await broker.current() == nil { await Task.yield() }
-    let parked = await broker.current()
+    while await broker.all().isEmpty { await Task.yield() }
+    let parked = await broker.all().values.first
     #expect(parked?.statement == "switch the active environment to staging")
     #expect(parked?.affectsEveryRow == false)
     await broker.approve(id: parked!.id)
@@ -1040,8 +1073,8 @@ private actor EnvironmentBox {
         params: .object(["name": .string("test_mutate"), "arguments": arguments]))
 
     async let reply = handle(call, surface: surface, caller: { .test(await env.current()) })
-    while await broker.current() == nil { await Task.yield() }
-    let parked = await broker.current()
+    while await broker.all().isEmpty { await Task.yield() }
+    let parked = await broker.all().values.first
     #expect(parked?.statement == "DELETE FROM t WHERE id=1")
 
     // The operator switches to production WHILE the plane is parked, then
@@ -1062,8 +1095,9 @@ private actor EnvironmentBox {
 
 /// The socket reads the caller afresh after a park, and what it reads is the agent's own
 /// place. The screen moving to production while the call is parked changes nothing the
-/// agent's call is judged against. `caller` is the window's own `agentCaller`, the closure
-/// `WindowSession` hands the socket, so this fails if that reads the screen.
+/// agent's call is judged against. `caller` is the one the window started the agent's own
+/// socket with (`agentSocketFactory`, what `WindowSession` builds an `MCPSocketServer` from), so
+/// this fails if that reads the screen.
 @MainActor
 @Test func aParkedAgentMutationIsJudgedInTheAgentsPlace() async throws {
     let dir = testScratchRoot
@@ -1078,14 +1112,16 @@ private actor EnvironmentBox {
     let surface = MCPSurface(
         registry: registry, panes: PaneStore(), layout: LayoutStore(),
         confirmations: broker)
+    let sessions = Sessions()
     let model = WindowModel.forTesting(
         scratchRoot: testScratchRoot, organization: "initech",
-        harnessFactory: { _, _ in RecordingHarness() })
+        harnessFactory: { _, _ in RecordingHarness() },
+        agentSocketFactory: sessions.socketFactory)
     model.seedForTesting(
         providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
         project: "api", environment: "staging")
     await model.send("hello")
-    #expect(model.agentPlace?.environment == "staging")
+    #expect(model.agentPlaces.first?.environment == "staging")
 
     let call = JSONRPCMessage(
         id: .number(1), method: "tools/call",
@@ -1094,9 +1130,10 @@ private actor EnvironmentBox {
             "arguments": .object(["statement": .string("DELETE FROM t WHERE id=1")]),
         ]))
 
-    async let reply = handle(call, surface: surface, caller: { await model.agentCaller })
-    while await broker.current() == nil { await Task.yield() }
-    let parked = await broker.current()
+    let socket = try #require(sessions.issuedSockets.first)
+    async let reply = handle(call, surface: surface, caller: socket.caller)
+    while await broker.all().isEmpty { await Task.yield() }
+    let parked = await broker.all().values.first
 
     // The operator moves the screen to production while the call is parked.
     model.seedForTesting(
