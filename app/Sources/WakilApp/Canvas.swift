@@ -345,7 +345,12 @@ extension WakilWindow {
                             pane: pane, rowKey: rowKey, column: column, columnType: columnType,
                             value: value)
                     },
-                    dialect: model.queryDialect(pane: pane))
+                    dialect: model.queryDialect(pane: pane),
+                    // 3b-viii: ghost-text on the window's quick tasks, one session per pane.
+                    ghostTextEnabled: model.ghostTextEnabled,
+                    ghostSchema: { await model.ghostSchema() },
+                    ghostSuggest: { request in await model.ghostSuggestion(pane: pane.id, request: request) },
+                    ghostCancel: { model.ghostCancel(pane: pane.id) })
             case "terminal":
                 TerminalPane(
                     snapshot: model.terminal(pane.id) ?? .empty,

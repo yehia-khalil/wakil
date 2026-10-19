@@ -71,6 +71,12 @@ struct DBPane: View {
     /// What the chosen database's driver speaks — `WindowModel.queryDialect(pane:)`. Picks how
     /// the query line is styled and how Format reflows it.
     let dialect: QueryDialect
+    /// 3b-viii ghost-text in the query line, for THIS pane: whether it is on, the schema a request
+    /// names tables from, the window's suggestion, and the release of a pending request.
+    var ghostTextEnabled = false
+    var ghostSchema: () async -> [GhostTable] = { [] }
+    var ghostSuggest: (InfillRequest) async -> String? = { _ in nil }
+    var ghostCancel: () -> Void = {}
 
     @State private var text: String = ""
     /// What `text` last agreed with the pane's own subject — either
@@ -247,7 +253,17 @@ struct DBPane: View {
                         dispatch("db_cancel", .object(["pane": .string(pane.id)]))
                         return true
                     },
-                    focusChanged: { lineFocused = $0 })
+                    focusChanged: { lineFocused = $0 },
+                    readRunning: table.runningSince != nil,
+                    ghostTextEnabled: ghostTextEnabled,
+                    ghostPrepare: { [dialect, ghostSchema] text, caret in
+                        // The line is a file of its dialect to the model.
+                        let (path, language) = dialect == .sql ? ("query.sql", "sql") : ("query.js", "javascript")
+                        return ghostRequest(
+                            text: text, caret: caret, path: path, language: language, schema: await ghostSchema())
+                    },
+                    ghostSuggest: ghostSuggest,
+                    ghostCancel: ghostCancel)
                     // The field always fills the row up to Format and Run, so formatting changes
                     // its height and never its width.
                     .frame(maxWidth: .infinity, alignment: .leading)
