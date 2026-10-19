@@ -17,9 +17,10 @@ public func quickTaskNote(_ tree: SettingsTree, activeProvider: String) -> Strin
     return "Ghost-text needs a Claude or local provider"
 }
 
-/// A local provider's status line: its last error whole (Rule 8), else "reachable".
-public func localProviderStatus(id: String, errors: [String: String]) -> String {
-    errors[id] ?? "reachable"
+/// A local provider's status line: its last error whole (Rule 8), else "reachable" once it has
+/// answered, else "not tried yet".
+public func localProviderStatus(id: String, errors: [String: String], answered: Set<String>) -> String {
+    errors[id] ?? (answered.contains(id) ? "reachable" : "not tried yet")
 }
 
 /// What a new local model serves until the operator ticks more: code completion only.

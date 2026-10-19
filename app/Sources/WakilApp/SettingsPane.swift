@@ -71,8 +71,9 @@ struct SettingsPane: View {
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
     /// Saves a local model: id, label, URL, the operations it serves (3b-viii). Answers the refusal or nil.
     var saveLocalProvider: (String, String, String, Set<QuickOperation>) async -> String? = { _, _, _, _ in nil }
-    /// Each quick-task endpoint's last error whole, by provider id; "config" is an unreadable tree.
-    var quickTaskErrors: () async -> [String: String] = { [:] }
+    /// Each quick-task provider's last error whole and which have answered, by id; the provider
+    /// code completion goes to; and why the configuration could not be read.
+    var quickTaskStatus: () async -> QuickTaskStatus = { QuickTaskStatus() }
     /// Every account on this machine, or `nil` before the first read.
     ///
     /// Read in the same refresh as `tree`, so the two halves of the pane
@@ -171,8 +172,8 @@ struct SettingsPane: View {
     /// organisation plane, so it also stops borrowing that plane's error
     /// area.
     @State private var adoptRefusals: [String: String] = [:]
-    /// What `quickTaskErrors()` last answered, read when the pane appears and after each save.
-    @State private var quickErrors: [String: String]?
+    /// What `quickTaskStatus()` last answered, read when the pane appears and after each save.
+    @State private var quickStatus: QuickTaskStatus?
 
     /// The value being typed, per field, while an editor is open. Absent
     /// means the field is not being edited and draws what is on disk.
@@ -234,7 +235,7 @@ struct SettingsPane: View {
                 .padding(.leading, Scale.gutter)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: tree) { quickErrors = await quickTaskErrors() }
+        .task(id: tree) { quickStatus = await quickTaskStatus() }
     }
 
     // MARK: - The tree
@@ -442,10 +443,10 @@ struct SettingsPane: View {
         case .providers:
             accountTable()
             LocalProvidersSection(
-                providers: tree.providers, errors: quickErrors,
+                providers: tree.providers, status: quickStatus,
                 save: { id, label, url, serves in
                     let refusal = await saveLocalProvider(id, label, url, serves)
-                    quickErrors = await quickTaskErrors()
+                    quickStatus = await quickTaskStatus()
                     return refusal
                 })
         case .editor:
@@ -727,12 +728,21 @@ struct SettingsPane: View {
                     .foregroundStyle(caution)
                     .accessibilityIdentifier("settings.org.quickProvider.note")
             }
-            if let configError = quickErrors?["config"] {
+            if let configError = quickStatus?.configError {
                 Text(configError)
                     .font(.system(size: Scale.body))
                     .foregroundStyle(caution)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("settings.org.quickProvider.configError")
+            }
+            // The provider code completion goes to first, when its last call failed: the error
+            // whole (Rule 8), whatever kind it is — a local row repeats it under its URL.
+            if let routed = quickStatus?.routedInfill, let error = quickStatus?.errors[routed] {
+                Text(error)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.org.quickProvider.error")
             }
             if let refusal = refusals[.quickProvider] {
                 Text(refusal)
@@ -765,7 +775,7 @@ struct SettingsPane: View {
             let refusal = await saveOrganisationField(field, value)
             saving = nil
             refusals[field] = refusal
-            quickErrors = await quickTaskErrors()
+            quickStatus = await quickTaskStatus()
             // The draft is cleared only on success, so a refused value
             // stays in front of the operator to be corrected rather than
             // vanishing along with the explanation of why it was refused.

@@ -160,8 +160,9 @@ private func makeSettingsWindow(
         }
         let r = InfillRequest(prefix: "b.", suffix: "", path: "a.go", language: "go", extras: [], multiline: false)
         #expect(model.ghostTextEnabled)
-        #expect(await model.ghostSuggestion(pane: "p1", request: r) == "ConfirmedAt = time.Now()")
+        #expect(await model.ghostSuggestion(pane: "p1", request: r, generation: model.quickTasksGeneration) == "ConfirmedAt = time.Now()")
         #expect(await model.ghostDebounce() == .milliseconds(250))
+        #expect(await model.quickTaskStatus() == QuickTaskStatus(answered: ["qwen"], routedInfill: "qwen"))
     }
 
     /// With no quick provider the active one answers, and a session-backed model waits longer.
@@ -172,7 +173,7 @@ private func makeSettingsWindow(
             await log.note(record, org)
             return fake
         }
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "x")
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "x")
         let asked = await log.asked
         #expect(asked.map(\.record.id) == ["main"])
         #expect(asked.map(\.org) == ["initech"])
@@ -184,14 +185,14 @@ private func makeSettingsWindow(
         let fake = ScriptedQuickModel(serves: [.infill], reply: "x")
         let model = await makeWindow(tree: treeJSON(quick: "qwen", ghost: false)) { _, _ in fake }
         #expect(!model.ghostTextEnabled)
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == nil)
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == nil)
         #expect(await fake.calls == 0)
     }
 
     @Test func orgSwitchCancelsAndRebuilds() async throws {
         let slow = ScriptedQuickModel(serves: [.infill], reply: "old org", delay: .seconds(5))
         let model = await makeWindow(tree: treeJSON(quick: "qwen", ghost: true)) { _, _ in slow }
-        let pending = Task { await model.ghostSuggestion(pane: "p1", request: anyRequest) }
+        let pending = Task { await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) }
         // Past the debounce and into the model call, however loaded the machine is.
         while await slow.calls == 0 { try await Task.sleep(for: .milliseconds(20)) }
         await model.rebuildQuickTasks()          // what the org-switch path calls
@@ -213,14 +214,14 @@ private func makeSettingsWindow(
                 return org == "alpha" ? old : new
             })
         await model.rebuildQuickTasks()
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "alpha")
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "alpha")
 
         await backend.use(org: "beta", tree: treeJSON(org: "beta", quick: "qwen", ghost: true))
         await model.setOrganization("beta")
 
         #expect(model.organization == "beta")
         #expect(await old.shutdowns == 1)
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "beta")
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "beta")
         #expect(await log.asked.map(\.org) == ["alpha", "beta"])
     }
 
@@ -234,7 +235,7 @@ private func makeSettingsWindow(
         #expect(await model.saveEditorSettings(["ghostText": .bool(false)]) == nil)
 
         #expect(!model.ghostTextEnabled)
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == nil)
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == nil)
     }
 
     /// A local model's new URL is what the next request reaches, and the old model is shut down.
@@ -247,14 +248,14 @@ private func makeSettingsWindow(
             await log.note(record, "")
             return record.baseURL == "http://127.0.0.1:8012" ? first : second
         }
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "first")
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "first")
 
         let refusal = await model.setLocalProvider(
             id: "qwen", label: "Qwen", baseURL: "http://127.0.0.1:9000", serves: [.infill])
 
         #expect(refusal == nil)
         #expect(await first.shutdowns == 1)
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "second")
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "second")
         #expect(await log.asked.last?.record.baseURL == "http://127.0.0.1:9000")
     }
 
@@ -262,11 +263,11 @@ private func makeSettingsWindow(
     @Test func ghostCancelReleasesThePendingRequestOnly() async throws {
         let model0 = ScriptedQuickModel(serves: [.infill], reply: "next", delay: .seconds(5), slowCalls: 1)
         let model = await makeWindow(tree: treeJSON(quick: "qwen", ghost: true)) { _, _ in model0 }
-        let pending = Task { await model.ghostSuggestion(pane: "p1", request: anyRequest) }
+        let pending = Task { await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) }
         while await model0.calls == 0 { try await Task.sleep(for: .milliseconds(20)) }
         model.ghostCancel(pane: "p1")
         #expect(await pending.value == nil)
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "next")
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "next")
     }
 
     /// A closed pane's ghost session goes with it — whoever closed it — and an open pane's stays.
@@ -306,13 +307,14 @@ private func makeSettingsWindow(
             scratchRoot: testScratchRoot, organization: "initech",
             context: ContextStore(client: backend), quickModelFactory: { _, _ in fake })
         await model.rebuildQuickTasks()
-        #expect(await model.quickTaskErrors() == ["config": why])
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == nil)
+        #expect(await model.quickTaskStatus().configError == why)
+        #expect(await model.quickTaskStatus().errors == [:])
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == nil)
 
         await backend.fail(nil)
         await model.rebuildQuickTasks()
-        #expect(await model.quickTaskErrors() == [:])
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "x")
+        #expect(await model.quickTaskStatus().configError == nil)
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "x")
     }
 
     @Test func endpointErrorsReachTheWindow() async throws {
@@ -325,8 +327,59 @@ private func makeSettingsWindow(
             func shutdown() async {}
         }
         let model = await makeWindow(tree: treeJSON(quick: "qwen", ghost: true)) { _, _ in Down() }
-        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == nil)
-        #expect(await model.quickTaskErrors() == ["qwen": "connection refused at http://127.0.0.1:8012"])
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == nil)
+        let status = await model.quickTaskStatus()
+        #expect(status.errors == ["qwen": "connection refused at http://127.0.0.1:8012"])
+        #expect(status.routedInfill == "qwen")
+        #expect(status.answered.isEmpty)
+    }
+
+    /// A provider named "config" keeps its own error: the configuration's is not in the same map.
+    @Test func aProviderIdConfigDoesNotCollideWithTheConfigurationError() async throws {
+        struct Down: QuickModel {
+            let serves: Set<QuickOperation> = [.infill]
+            func infill(_ request: InfillRequest) async throws -> String { throw QuickModelError.failed("HTTP 500") }
+            func respond(_ request: RespondRequest) async throws -> String { "" }
+            func shutdown() async {}
+        }
+        let tree: JSONValue = .object([
+            "org": .object(["id": .string("initech"), "quickProvider": .string("config")]),
+            "providers": .array([.object([
+                "id": .string("config"), "kind": .string("local"),
+                "baseURL": .string("http://127.0.0.1:8012"), "serves": .array([.string("infill")]),
+            ])]),
+            "projects": .array([]),
+            "editor": .object(["ghostText": .bool(true)]),
+        ])
+        let model = await makeWindow(tree: tree) { _, _ in Down() }
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == nil)
+        let status = await model.quickTaskStatus()
+        #expect(status.errors == ["config": "HTTP 500"])
+        #expect(status.configError == nil)
+    }
+
+    /// A request built in one organisation is never asked of the next one's model (Invariant 4):
+    /// the scope it was built in carries the generation, and a rebuild in between makes it stale.
+    @Test func aRequestBuiltBeforeAnOrgSwitchIsNeverAskedOfTheNewOrg() async throws {
+        let old = ScriptedQuickModel(serves: [.infill], reply: "alpha")
+        let new = ScriptedQuickModel(serves: [.infill], reply: "beta")
+        let backend = QuickBackend(tree: treeJSON(org: "alpha", quick: "qwen", ghost: true), org: "alpha")
+        let model = WindowModel.forTesting(
+            scratchRoot: testScratchRoot, organization: "alpha",
+            context: ContextStore(client: backend),
+            quickModelFactory: { _, org in org == "alpha" ? old : new })
+        await model.rebuildQuickTasks()
+        let scope = await model.ghostSchema()
+
+        await backend.use(org: "beta", tree: treeJSON(org: "beta", quick: "qwen", ghost: true))
+        await model.setOrganization("beta")
+
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: scope.generation) == nil)
+        #expect(await new.calls == 0)
+        #expect(await old.calls == 0)
+        // A request built now, in the new organisation, is asked.
+        let fresh = await model.ghostSchema()
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: fresh.generation) == "beta")
     }
 
     /// The schema's tables regroup from the vocabulary's names in the order they were gathered, so a

@@ -6,7 +6,7 @@ extension WindowModel {
     /// Shuts the old quick tasks down, releases every pane's pending ghost request, and builds new
     /// ones from the configuration on disk (Ruling R4). With no factory, no organisation or no
     /// readable tree, none are built and every ghost request answers nil; an unreadable tree's
-    /// reason is kept whole for Settings (`quickTaskErrors()["config"]`).
+    /// reason is kept whole for Settings (`quickTaskStatus().configError`).
     public func rebuildQuickTasks() async {
         quickTasksGeneration += 1
         let mine = quickTasksGeneration
@@ -57,10 +57,12 @@ extension WindowModel {
         await old?.shutdown()
     }
 
-    /// The suggestion for `pane` at `request`, or nil when ghost-text is off, nothing is built, a
-    /// newer request on the same pane superseded this one, or the model answered nothing.
-    public func ghostSuggestion(pane: String, request: InfillRequest) async -> String? {
-        guard ghostTextEnabled, let tasks = quickTasks else { return nil }
+    /// The suggestion for `pane` at `request`, or nil when ghost-text is off, nothing is built, the
+    /// request was built in an earlier generation (`ghostSchema()`: another organisation's, or before
+    /// a rebuild — Invariant 4), a newer request on the same pane superseded this one, or the model
+    /// answered nothing.
+    public func ghostSuggestion(pane: String, request: InfillRequest, generation: Int) async -> String? {
+        guard generation == quickTasksGeneration, ghostTextEnabled, let tasks = quickTasks else { return nil }
         let session: GhostTextSession
         if let existing = ghostSessions[pane] {
             session = existing
@@ -98,18 +100,23 @@ extension WindowModel {
         return await Self.ghostDebounce(for: quickTasks)
     }
 
-    /// Each endpoint's last error, whole, by provider id — what Settings draws under the row — and,
-    /// under "config", why the configuration the quick tasks are built from could not be read.
-    public func quickTaskErrors() async -> [String: String] {
-        var errors = await quickTasks?.endpointErrors() ?? [:]
-        if let quickTasksConfigError { errors["config"] = quickTasksConfigError }
-        return errors
+    /// What Settings draws for the quick tasks: each provider's last error whole and which have
+    /// answered, the provider code completion goes to, and why the configuration the quick tasks are
+    /// built from could not be read.
+    public func quickTaskStatus() async -> QuickTaskStatus {
+        guard let quickTasks else { return QuickTaskStatus(configError: quickTasksConfigError) }
+        return QuickTaskStatus(
+            errors: await quickTasks.endpointErrors(), answered: await quickTasks.answered(),
+            routedInfill: await quickTasks.routedId(.infill), configError: quickTasksConfigError)
     }
 
-    /// The schema tables in scope, from the vocabulary the window's turns already resolve against.
-    public func ghostSchema() async -> [GhostTable] {
-        guard let vocabulary else { return [] }
-        return GhostSchema.tables(from: await vocabulary.current().names)
+    /// The schema tables in scope, from the vocabulary the window's turns already resolve against,
+    /// and the quick-tasks generation they were read in — read before the await, so a request built
+    /// across a rebuild carries the old one and is never asked.
+    public func ghostSchema() async -> GhostScope {
+        let generation = quickTasksGeneration
+        guard let vocabulary else { return GhostScope(generation: generation, tables: []) }
+        return GhostScope(generation: generation, tables: GhostSchema.tables(from: await vocabulary.current().names))
     }
 
     /// Saves a local model endpoint, then re-reads Settings and rebuilds (Ruling R4). Answers the

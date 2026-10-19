@@ -72,10 +72,11 @@ struct DBPane: View {
     /// the query line is styled and how Format reflows it.
     let dialect: QueryDialect
     /// 3b-viii ghost-text in the query line, for THIS pane: whether it is on, the schema a request
-    /// names tables from, the window's suggestion, and the release of a pending request.
+    /// names tables from with the quick-tasks generation it was read in, the window's suggestion for
+    /// a request built in that generation, and the release of a pending request.
     var ghostTextEnabled = false
-    var ghostSchema: () async -> [GhostTable] = { [] }
-    var ghostSuggest: (InfillRequest) async -> String? = { _ in nil }
+    var ghostSchema: () async -> GhostScope = { GhostScope(generation: 0, tables: []) }
+    var ghostSuggest: (InfillRequest, Int) async -> String? = { _, _ in nil }
     var ghostCancel: () -> Void = {}
 
     @State private var text: String = ""
@@ -259,8 +260,10 @@ struct DBPane: View {
                     ghostPrepare: { [dialect, ghostSchema] text, caret in
                         // The line is a file of its dialect to the model.
                         let (path, language) = dialect == .sql ? ("query.sql", "sql") : ("query.js", "javascript")
-                        return ghostRequest(
-                            text: text, caret: caret, path: path, language: language, schema: await ghostSchema())
+                        let scope = await ghostSchema()
+                        return (ghostRequest(
+                            text: text, caret: caret, path: path, language: language, schema: scope.tables),
+                                scope.generation)
                     },
                     ghostSuggest: ghostSuggest,
                     ghostCancel: ghostCancel)

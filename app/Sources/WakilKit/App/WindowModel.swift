@@ -418,7 +418,7 @@ public final class WindowModel {
     /// Bumped by every rebuild, so a slower one that started earlier installs nothing.
     @ObservationIgnored var quickTasksGeneration = 0
     /// Why the last rebuild could not read the organisation's configuration, whole; nil once one
-    /// has. Settings shows it under `quickTaskErrors()`'s "config" key (Rule 8).
+    /// has. Settings shows it as `quickTaskStatus().configError` (Rule 8).
     @ObservationIgnored var quickTasksConfigError: String?
     /// The operator's ghost-text switch, as the last rebuild read it. Off until a tree has been read.
     public internal(set) var ghostTextEnabled = false

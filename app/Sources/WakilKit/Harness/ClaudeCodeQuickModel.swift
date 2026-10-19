@@ -100,6 +100,8 @@ public actor ClaudeCodeQuickModel: QuickModel {
     private var queue: [CheckedContinuation<Void, Never>] = []
     private var idleTask: Task<Void, Never>?
     private var idleGeneration = 0
+    /// Set by `shutdown()`: every later operation ends at once, and no session is launched again.
+    private var closed = false
 
     public init(recycleAfter: Int = 20, idleTimeout: Duration = .seconds(600), turnTimeout: Duration = .seconds(15),
                 makeHarness: @escaping @Sendable () -> any QuickHarness) {
@@ -127,6 +129,7 @@ public actor ClaudeCodeQuickModel: QuickModel {
     }
 
     public func shutdown() async {
+        closed = true
         idleTask?.cancel()
         idleTask = nil
         let sessions = [current, spare].compactMap { $0 }
@@ -154,6 +157,8 @@ public actor ClaudeCodeQuickModel: QuickModel {
             }
         }
         try Task.checkCancellation()
+        // After the queue, and inside the defer, so a shut-down model still hands the turn on.
+        if closed { throw CancellationError() }
         return try await body()
     }
 
@@ -254,6 +259,8 @@ public actor ClaudeCodeQuickModel: QuickModel {
     }
 
     private func ensureStarted() async throws -> Session {
+        // Shut down mid-operation (a respond's re-ask): no session is launched again.
+        if closed { throw CancellationError() }
         if let current, current.ended { retireNow(current) }
         let session = current ?? launch()
         current = session
@@ -321,6 +328,7 @@ public actor ClaudeCodeQuickModel: QuickModel {
     }
 
     private func armIdle() {
+        guard !closed else { return }
         idleGeneration += 1
         let generation = idleGeneration
         let timeout = idleTimeout

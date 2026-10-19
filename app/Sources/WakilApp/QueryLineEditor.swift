@@ -28,11 +28,12 @@ struct QueryLineEditor: NSViewRepresentable {
     var focusChanged: (Bool) -> Void = { _ in }
     /// Whether a read runs on this pane now: Esc cancels it once no ghost shows.
     var readRunning = false
-    /// 3b-viii ghost-text, for THIS pane: whether it is on, the request for the text at a caret,
-    /// the window's suggestion for it, and the release of a request no longer wanted.
+    /// 3b-viii ghost-text, for THIS pane: whether it is on, the request for the text at a caret
+    /// with the quick-tasks generation it was built in, the window's suggestion for it (nil for a
+    /// request built in an earlier generation), and the release of a request no longer wanted.
     var ghostTextEnabled = false
-    var ghostPrepare: (String, String.Index) async -> InfillRequest? = { _, _ in nil }
-    var ghostSuggest: (InfillRequest) async -> String? = { _ in nil }
+    var ghostPrepare: (String, String.Index) async -> (InfillRequest, Int)? = { _, _ in nil }
+    var ghostSuggest: (InfillRequest, Int) async -> String? = { _, _ in nil }
     var ghostCancel: () -> Void = {}
 
     static let maxLines = 6
@@ -307,16 +308,17 @@ struct QueryLineEditor: NSViewRepresentable {
             let suggest = parent.ghostSuggest
             startPulse()
             ghostTask = Task { @MainActor [weak self] in
-                var request = await prepare(text, caret)
-                // Not at the end of the whole text: one line only, asked and shown.
-                if !multiline { request?.multiline = false }
-                guard let self, let request, !Task.isCancelled, self.ghostOrder.admit(id) else {
+                let prepared = await prepare(text, caret)
+                guard let self, let prepared, !Task.isCancelled, self.ghostOrder.admit(id) else {
                     // Nothing was asked: the same text and caret may ask again.
                     if let self, id == self.ghostId { self.ghostAt = nil }
                     self?.settle(id)
                     return
                 }
-                let suggestion = await suggest(request)
+                var request = prepared.0
+                // Not at the end of the whole text: one line only, asked and shown.
+                if !multiline { request.multiline = false }
+                let suggestion = await suggest(request, prepared.1)
                 // Only onto the text and caret it was asked for: a newer request owns the line.
                 guard !Task.isCancelled, id == self.ghostId, let view = self.textView,
                       let at = self.ghostAt, at == here,

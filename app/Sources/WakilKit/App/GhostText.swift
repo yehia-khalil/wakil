@@ -11,6 +11,18 @@ public struct GhostTable: Sendable, Equatable {
     }
 }
 
+/// The schema a ghost request is built against, and the quick-tasks generation it was read in:
+/// a request built in one organisation is never asked of the next (Invariant 4).
+public struct GhostScope: Sendable, Equatable {
+    public let generation: Int
+    public let tables: [GhostTable]
+
+    public init(generation: Int, tables: [GhostTable]) {
+        self.generation = generation
+        self.tables = tables
+    }
+}
+
 /// Which schema tables the file in front of the caret talks about, and how they travel to the model.
 public enum GhostSchema {
     /// A `.table` or `.collection` opens a table; the `.column`s after it join it.

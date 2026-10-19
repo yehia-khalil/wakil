@@ -5,9 +5,9 @@ import WakilKit
 /// "Add local model" control at the end of the list. Drawn in the Providers node.
 struct LocalProvidersSection: View {
     let providers: [SettingsProvider]
-    /// Each provider's last error whole, by id (`WindowModel.quickTaskErrors()`).
+    /// Each provider's last error whole and which have answered (`WindowModel.quickTaskStatus()`).
     /// Nil until the first read lands: no status is drawn before then.
-    let errors: [String: String]?
+    let status: QuickTaskStatus?
     /// Saves one local provider (id, label, URL, ticked operations); answers the refusal or nil.
     let save: (String, String, String, Set<QuickOperation>) async -> String?
 
@@ -26,8 +26,9 @@ struct LocalProvidersSection: View {
                 LocalProviderRow(
                     id: provider.id, label: provider.label, baseURL: provider.baseURL,
                     serves: Set(provider.serves.compactMap(QuickOperation.init(rawValue:))),
-                    isNew: false, status: errors.map { localProviderStatus(id: provider.id, errors: $0) },
-                    failing: errors?[provider.id] != nil, save: save, onSaved: {}, onDismiss: {})
+                    isNew: false,
+                    status: status.map { localProviderStatus(id: provider.id, errors: $0.errors, answered: $0.answered) },
+                    failing: status?.errors[provider.id] != nil, save: save, onSaved: {}, onDismiss: {})
             }
             if let adding, !local.contains(where: { $0.id == adding }) {
                 LocalProviderRow(
@@ -157,6 +158,9 @@ private struct LocalProviderRow: View {
                 .foregroundStyle(SettingsPalette.coolWhite.opacity(0.70))
         }
         .toggleStyle(.checkbox)
+        // Rule 9: a local model serves something, so the last ticked box cannot be unticked — an
+        // empty set would be saved as code completion and snap back. Ticking the other frees it.
+        .disabled(ticked == [operation])
         .accessibilityIdentifier(identifier)
     }
 

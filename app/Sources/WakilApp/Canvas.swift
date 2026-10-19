@@ -349,7 +349,9 @@ extension WakilWindow {
                     // 3b-viii: ghost-text on the window's quick tasks, one session per pane.
                     ghostTextEnabled: model.ghostTextEnabled,
                     ghostSchema: { await model.ghostSchema() },
-                    ghostSuggest: { request in await model.ghostSuggestion(pane: pane.id, request: request) },
+                    ghostSuggest: { request, generation in
+                        await model.ghostSuggestion(pane: pane.id, request: request, generation: generation)
+                    },
                     ghostCancel: { model.ghostCancel(pane: pane.id) })
             case "terminal":
                 TerminalPane(
@@ -483,7 +485,9 @@ extension WakilWindow {
                     // 3b-viii: ghost-text on the window's quick tasks, one session per pane.
                     ghostTextEnabled: model.ghostTextEnabled,
                     ghostSchema: { await model.ghostSchema() },
-                    ghostSuggest: { request in await model.ghostSuggestion(pane: pane.id, request: request) },
+                    ghostSuggest: { request, generation in
+                        await model.ghostSuggestion(pane: pane.id, request: request, generation: generation)
+                    },
                     ghostCancel: { model.ghostCancel(pane: pane.id) })
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw
@@ -509,7 +513,7 @@ extension WakilWindow {
                     saveLocalProvider: { id, label, url, serves in
                         await model.setLocalProvider(id: id, label: label, baseURL: url, serves: serves)
                     },
-                    quickTaskErrors: { await model.quickTaskErrors() },
+                    quickTaskStatus: { await model.quickTaskStatus() },
                     accounts: model.accounts,
                     capacity: model.capacity.readings,
                     adopt: { account in await model.adoptAccount(account) },

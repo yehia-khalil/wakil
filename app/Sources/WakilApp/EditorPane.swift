@@ -66,11 +66,12 @@ struct EditorPane: View {
     /// Save / Don't Save / Cancel for that prompt.
     let resolveUnsaved: (UnsavedChoice) -> Void
     /// 3b-viii ghost-text, for THIS pane: whether it is on (the page asks nothing while it is
-    /// off), the schema tables in scope, the suggestion for a request (nil: nothing to draw), and
-    /// the release of the pending one.
+    /// off), the schema tables in scope with the quick-tasks generation they were read in, the
+    /// suggestion for a request built in that generation (nil: nothing to draw), and the release
+    /// of the pending one.
     let ghostTextEnabled: Bool
-    let ghostSchema: () async -> [GhostTable]
-    let ghostSuggest: (InfillRequest) async -> String?
+    let ghostSchema: () async -> GhostScope
+    let ghostSuggest: (InfillRequest, Int) async -> String?
     let ghostCancel: () -> Void
 
     @State private var host = EditorHost()
@@ -167,7 +168,9 @@ struct EditorPane: View {
             host.viewReported = viewReported
             host.findReported = findReported
             host.ghostPrepare = { text, caret, path, language in
-                ghostRequest(text: text, caret: caret, path: path, language: language, schema: await ghostSchema())
+                let scope = await ghostSchema()
+                return (ghostRequest(text: text, caret: caret, path: path, language: language, schema: scope.tables),
+                        scope.generation)
             }
             host.ghostSuggest = ghostSuggest
             host.ghostCancel = ghostCancel
@@ -741,10 +744,11 @@ final class EditorHost {
     /// Monaco's find bar state, a view report like the cursor's (`PaneStore.editorFindDidReport`).
     @ObservationIgnored var findReported: ((EditorFindReport) async -> Void)?
     /// 3b-viii ghost-text: the request for the text at a caret in the tab at a path in a language
-    /// (built across the schema's await), its suggestion (nil: draw nothing), and the release of
-    /// the pane's pending request.
-    @ObservationIgnored var ghostPrepare: ((String, String.Index, String, String) async -> InfillRequest)?
-    @ObservationIgnored var ghostSuggest: ((InfillRequest) async -> String?)?
+    /// (built across the schema's await) with the quick-tasks generation it was built in, its
+    /// suggestion (nil: draw nothing; also for a request built in an earlier generation), and the
+    /// release of the pane's pending request.
+    @ObservationIgnored var ghostPrepare: ((String, String.Index, String, String) async -> (InfillRequest, Int))?
+    @ObservationIgnored var ghostSuggest: ((InfillRequest, Int) async -> String?)?
     @ObservationIgnored var ghostCancel: (() -> Void)?
     /// Which page requests may still be asked: a cancel can land while one is being built.
     @ObservationIgnored private var ghostOrder = GhostRequestOrder()
@@ -859,13 +863,13 @@ final class EditorHost {
                 return
             }
             Task { @MainActor [weak self] in
-                let request = await prepare(text, caret, context.path, context.language)
+                let (request, generation) = await prepare(text, caret, context.path, context.language)
                 guard let self else { return }
                 guard self.ghostOrder.admit(id) else {
                     self.renderer?.resolveGhost(id: id, text: nil)
                     return
                 }
-                let suggestion = await suggest(request)
+                let suggestion = await suggest(request, generation)
                 self.renderer?.resolveGhost(id: id, text: suggestion)
             }
         }

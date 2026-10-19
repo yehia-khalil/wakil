@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import WakilKit
 
@@ -97,6 +98,76 @@ private let respondReq = RespondRequest(instructions: "title", input: "x", jsonS
         #expect(await tasks.endpointErrors() == ["qwen": "connection refused"])
     }
 
+    /// Every failure but a cancellation is kept whole for its provider (Rule 8) — a failed turn, an
+    /// invalid reply, a model that could not be made — and the provider's next success clears it.
+    @Test func everyNonCancellationErrorIsRecordedAndClearedOnSuccess() async throws {
+        let localModel = FakeModel(serves: [.infill], replies: [
+            .failure(.failed("HTTP 500: boom")), .failure(.invalidReply("not JSON")), .success("ok"),
+        ])
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: local, active: nil)) { _ in localModel }
+        #expect(await tasks.answered().isEmpty)
+        _ = try? await tasks.infill(infillReq)
+        #expect(await tasks.endpointErrors() == ["qwen": "HTTP 500: boom"])
+        _ = try? await tasks.infill(infillReq)
+        #expect(await tasks.endpointErrors() == ["qwen": "not JSON"])
+        #expect(try await tasks.infill(infillReq) == "ok")
+        #expect(await tasks.endpointErrors().isEmpty)
+        #expect(await tasks.answered() == ["qwen"])
+    }
+
+    @Test func aModelThatCannotBeMadeIsRecordedWhole() async {
+        struct NoCredentials: Error, CustomStringConvertible {
+            var description: String { "Keychain: no credentials for main" }
+        }
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: nil, active: claude)) { _ in throw NoCredentials() }
+        await #expect(throws: NoCredentials.self) { try await tasks.infill(infillReq) }
+        #expect(await tasks.endpointErrors() == ["main": "Keychain: no credentials for main"])
+        #expect(await tasks.answered().isEmpty)
+    }
+
+    @Test func aCancelledCallRecordsNothing() async {
+        struct Cancelled: QuickModel {
+            let serves: Set<QuickOperation> = [.infill]
+            func infill(_ r: InfillRequest) async throws -> String { throw CancellationError() }
+            func respond(_ r: RespondRequest) async throws -> String { throw CancellationError() }
+            func shutdown() async {}
+        }
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: local, active: nil)) { _ in Cancelled() }
+        await #expect(throws: CancellationError.self) { try await tasks.infill(infillReq) }
+        #expect(await tasks.endpointErrors().isEmpty)
+    }
+
+    /// Each error is logged once when it changes, not on every call that repeats it.
+    @Test func eachErrorIsLoggedOncePerChange() async {
+        let lines = Lines()
+        let localModel = FakeModel(serves: [.infill], replies: [
+            .failure(.failed("boom")), .failure(.failed("boom")), .failure(.failed("bang")),
+            .success("ok"), .failure(.failed("bang")),
+        ])
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: local, active: nil),
+                               log: { line in lines.append(line) }) { _ in localModel }
+        for _ in 0..<5 { _ = try? await tasks.infill(infillReq) }
+        #expect(lines.all == ["quick-tasks: qwen: boom", "quick-tasks: qwen: bang", "quick-tasks: qwen: bang"])
+    }
+
+    @Test func theRoutedProviderIsNamedPerOperation() async {
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: local, active: claude)) { _ in nil }
+        #expect(await tasks.routedId(.infill) == "qwen")
+        #expect(await tasks.routedId(.respond) == "main")
+    }
+
+    /// Once shut down, no model is made: a dead organisation's credentials are never read.
+    @Test func nothingIsMadeAfterShutdown() async {
+        let counter = Counter()
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: nil, active: claude)) { _ in
+            await counter.bump()
+            return FakeModel(serves: [.infill], replies: [.success("x")])
+        }
+        await tasks.shutdown()
+        await #expect(throws: CancellationError.self) { try await tasks.infill(infillReq) }
+        #expect(await counter.value == 0)
+    }
+
     /// A model whose creation finishes after the quick tasks were shut down is shut down itself, and
     /// the call that asked for it ends: nothing outlives a rebuild.
     @Test func aModelMadeAfterShutdownIsShutDownAndTheCallEnds() async throws {
@@ -117,6 +188,13 @@ private let respondReq = RespondRequest(instructions: "title", input: "x", jsonS
 }
 
 private actor Counter { var value = 0; func bump() { value += 1 } }
+
+private final class Lines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    func append(_ line: String) { lock.withLock { lines.append(line) } }
+    var all: [String] { lock.withLock { lines } }
+}
 
 private actor Gate {
     private var waiter: CheckedContinuation<Void, Never>?

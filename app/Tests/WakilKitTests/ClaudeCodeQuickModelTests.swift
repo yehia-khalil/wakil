@@ -127,6 +127,21 @@ import Foundation
         #expect(await made.harness(0).stops == 1)
         #expect(await made.harness(1).stops == 1)
     }
+
+    /// A shut-down model stays down: a later call ends at once and no session is launched.
+    @Test func aCallAfterShutdownThrowsCancellationAndLaunchesNothing() async throws {
+        let made = HarnessLog()
+        let m = ClaudeCodeQuickModel { made.next(replies: ["x", "y"]) }
+        _ = try await m.infill(InfillRequest(prefix: "", suffix: "", path: "", language: "", extras: [], multiline: false))
+        await m.shutdown()
+        await #expect(throws: CancellationError.self) {
+            try await m.infill(InfillRequest(prefix: "", suffix: "", path: "", language: "", extras: [], multiline: false))
+        }
+        await #expect(throws: CancellationError.self) {
+            try await m.respond(RespondRequest(instructions: "i", input: "x", jsonSchema: nil, maxTokens: 8))
+        }
+        #expect(made.count == 1)
+    }
 }
 
 // MARK: - Doubles

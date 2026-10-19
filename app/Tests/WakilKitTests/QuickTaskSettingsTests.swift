@@ -27,11 +27,14 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
     #expect(quickTaskNote(withLocal, activeProvider: "codex") == nil)
 }
 
-@Test func localProviderStatusReturnsTheErrorWholeOrReachable() {
+@Test func localProviderStatusReturnsTheErrorWholeReachableOrNotTriedYet() {
     let long = String(repeating: "connection refused ", count: 16)
     #expect(long.count > 250)
-    #expect(localProviderStatus(id: "local", errors: ["local": long]) == long)
-    #expect(localProviderStatus(id: "local", errors: ["other": "x"]) == "reachable")
+    #expect(localProviderStatus(id: "local", errors: ["local": long], answered: ["local"]) == long)
+    #expect(localProviderStatus(id: "local", errors: ["other": "x"], answered: ["local"]) == "reachable")
+    // Nothing has been asked of it yet: no claim that it answers.
+    #expect(localProviderStatus(id: "local", errors: [:], answered: []) == "not tried yet")
+    #expect(localProviderStatus(id: "local", errors: ["other": "x"], answered: ["other"]) == "not tried yet")
 }
 
 @Test func aNewLocalProviderServesCodeCompletionOnly() {
