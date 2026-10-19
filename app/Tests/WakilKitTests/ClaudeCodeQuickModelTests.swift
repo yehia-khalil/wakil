@@ -62,6 +62,7 @@ import Foundation
         first.cancel()
         await #expect(throws: CancellationError.self) { try await first.value }
         #expect(await h.interrupts == 1)
+        #expect(await h.sigints == 0)
         await h.release()
         #expect(try await m.infill(InfillRequest(prefix: "b", suffix: "", path: "", language: "", extras: [], multiline: false)) == "fresh")
     }
@@ -101,9 +102,9 @@ import Foundation
 // MARK: - Doubles
 
 /// Answers each `send` with an `.assistantText` then a `.result` carrying the next scripted reply.
-/// `holdFirst`: the first reply waits for `release()`, and is yielded even after `interrupt()` —
+/// `holdFirst`: the first reply waits for `release()`, and is yielded even after `interruptTurn()` —
 /// a real session's interrupted turn still ends in a `result`, which the model must drop.
-private actor FakeHarness: AgentHarness {
+private actor FakeHarness: QuickHarness {
     nonisolated let stream: AsyncStream<HarnessEvent>
     private nonisolated let continuation: AsyncStream<HarnessEvent>.Continuation
     private var replies: [String]
@@ -115,7 +116,10 @@ private actor FakeHarness: AgentHarness {
     private(set) var sent: [String] = []
     private(set) var starts = 0
     private(set) var stops = 0
+    /// `interruptTurn()` calls — the control request.
     private(set) var interrupts = 0
+    /// `interrupt()` calls — `SIGINT`, which ends a real session; the model must not use it.
+    private(set) var sigints = 0
 
     init(replies: [String], holdFirst: Bool = false, errorText: String? = nil) {
         (stream, continuation) = AsyncStream.makeStream(of: HarnessEvent.self)
@@ -144,7 +148,9 @@ private actor FakeHarness: AgentHarness {
 
     nonisolated func events() -> AsyncStream<HarnessEvent> { stream }
 
-    func interrupt() async { interrupts += 1 }
+    func interruptTurn() async throws { interrupts += 1 }
+
+    func interrupt() async { sigints += 1 }
 
     func stop() async {
         stops += 1

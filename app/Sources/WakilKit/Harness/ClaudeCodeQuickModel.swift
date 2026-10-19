@@ -21,14 +21,19 @@ public enum QuickPrompts {
 }
 
 /// The flags that make a `claude` session a quick-tasks one: the small model, no tools, nothing
-/// kept on disk, and `QuickPrompts.system` in place of Claude Code's own prompt. Passed as
-/// `buildLaunch`'s `extraArguments`; the empty `--mcp-config`/`--strict-mcp-config` pair comes
-/// from that function's `mcpConfigJSON`, so it is not repeated here.
+/// kept on disk, and `QuickPrompts.system` in place of Claude Code's own prompt. The tail of
+/// `buildQuickLaunch`, which emits the empty `--mcp-config`/`--strict-mcp-config` pair itself.
 public func quickLaunchArguments() -> [String] {
     ["--model", "haiku", "--tools", "", "--no-session-persistence", "--system-prompt", QuickPrompts.system]
 }
 
-/// A `QuickModel` on one warm `claude` session per provider, driven through `AgentHarness`.
+/// A session a quick turn can be cut short in without ending it.
+public protocol QuickHarness: AgentHarness {
+    /// Ends the turn in flight; the session stays up, and that turn still ends in a `result`.
+    func interruptTurn() async throws
+}
+
+/// A `QuickModel` on one warm `claude` session per provider, driven through `QuickHarness`.
 ///
 /// One turn at a time: turns queue behind each other, since a session answers in order.
 /// After `recycleAfter` turns the session is stopped and a spare — started one turn earlier,
@@ -37,6 +42,8 @@ public func quickLaunchArguments() -> [String] {
 ///
 /// A cancelled turn interrupts the session, and the `result` that interrupted turn still
 /// produces is dropped, so the next turn never reads a stale reply.
+///
+/// `RespondRequest.maxTokens` is ignored here: the CLI has no per-turn token limit flag.
 public actor ClaudeCodeQuickModel: QuickModel {
     public nonisolated let serves: Set<QuickOperation> = [.infill, .respond]
 
@@ -48,7 +55,7 @@ public actor ClaudeCodeQuickModel: QuickModel {
     /// One harness, its event pump, and the turn waiting on it.
     private final class Session {
         let id: Int
-        let harness: any AgentHarness
+        let harness: any QuickHarness
         var startup: Task<Void, Error>?
         var pump: Task<Void, Never>?
         var turns = 0
@@ -59,7 +66,7 @@ public actor ClaudeCodeQuickModel: QuickModel {
         var stale = 0
         var ended = false
 
-        init(id: Int, harness: any AgentHarness) {
+        init(id: Int, harness: any QuickHarness) {
             self.id = id
             self.harness = harness
         }
@@ -67,7 +74,7 @@ public actor ClaudeCodeQuickModel: QuickModel {
 
     private let recycleAfter: Int
     private let idleTimeout: Duration
-    private let makeHarness: @Sendable () -> any AgentHarness
+    private let makeHarness: @Sendable () -> any QuickHarness
 
     private var current: Session?
     private var spare: Session?
@@ -78,7 +85,7 @@ public actor ClaudeCodeQuickModel: QuickModel {
     private var idleTask: Task<Void, Never>?
     private var idleGeneration = 0
 
-    public init(recycleAfter: Int = 20, idleTimeout: Duration = .seconds(600), makeHarness: @escaping @Sendable () -> any AgentHarness) {
+    public init(recycleAfter: Int = 20, idleTimeout: Duration = .seconds(600), makeHarness: @escaping @Sendable () -> any QuickHarness) {
         self.recycleAfter = max(1, recycleAfter)
         self.idleTimeout = idleTimeout
         self.makeHarness = makeHarness
@@ -172,7 +179,13 @@ public actor ClaudeCodeQuickModel: QuickModel {
         guard let session = live(sessionID), let waiter = session.waiter, waiter.turn == turnID else { return }
         session.waiter = nil
         session.stale += 1
-        await session.harness.interrupt()
+        do {
+            try await session.harness.interruptTurn()
+        } catch {
+            // No interrupt reached it, so no stale `result` will either; the session is unusable.
+            session.stale -= 1
+            await retire(session)
+        }
         waiter.continuation.resume(throwing: CancellationError())
     }
 

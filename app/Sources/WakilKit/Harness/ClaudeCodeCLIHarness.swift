@@ -108,28 +108,10 @@ public func buildLaunch(
     mcpConfigJSON: String,
     allowedTools: [String],
     workingDirectory: String,
-    resumingFrom parentSessionId: String? = nil,
-    extraArguments: [String] = []
+    resumingFrom parentSessionId: String? = nil
 ) -> HarnessLaunch {
-    let currentEnvironment = ProcessInfo.processInfo.environment
-    let environment: [String: String] = [
-        "CLAUDE_CONFIG_DIR": configDir,
-        "CLAUDE_CODE_OAUTH_TOKEN": oauthToken,
-        "HOME": currentEnvironment["HOME"] ?? NSHomeDirectory(),
-        "PATH": currentEnvironment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin",
-    ]
-
-    var arguments: [String] = [
-        "-p",
-        "--input-format", "stream-json",
-        "--output-format", "stream-json",
-        // Not optional, and not verbosity for its own sake: Task 1's live
-        // probe found `claude` 2.1.263 refusing the invocation outright
-        // without it — `Error: When using --print, --output-format=stream-json
-        // requires --verbose` (docs/wakil/phase-2a-probe.md §1).
-        "--verbose",
-        "--include-partial-messages",
-    ]
+    let environment = harnessEnvironment(configDir: configDir, oauthToken: oauthToken)
+    var arguments = streamingArguments
 
     // Exactly two shapes, and never a third: the CLI refuses `--session-id`
     // alongside `--resume` unless `--fork-session` is also passed, at
@@ -188,14 +170,58 @@ public func buildLaunch(
     if !allowedTools.isEmpty {
         arguments.append(contentsOf: ["--allowedTools", allowedTools.joined(separator: ",")])
     }
-    // 3b-viii: a caller's own flags (the quick-tasks session's model, tools and
-    // system prompt — see `quickLaunchArguments`), last so nothing above depends on them.
-    arguments += extraArguments
 
     return HarnessLaunch(
         executable: claudePath,
         arguments: arguments,
         environment: environment,
+        workingDirectory: workingDirectory
+    )
+}
+
+/// The only environment a `claude` child gets — four keys, built from nothing; see
+/// `buildLaunch`'s doc comment for why nothing is inherited.
+func harnessEnvironment(configDir: String, oauthToken: String) -> [String: String] {
+    let currentEnvironment = ProcessInfo.processInfo.environment
+    return [
+        "CLAUDE_CONFIG_DIR": configDir,
+        "CLAUDE_CODE_OAUTH_TOKEN": oauthToken,
+        "HOME": currentEnvironment["HOME"] ?? NSHomeDirectory(),
+        "PATH": currentEnvironment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+    ]
+}
+
+/// The stream-json I/O flags every launch opens with.
+let streamingArguments: [String] = [
+    "-p",
+    "--input-format", "stream-json",
+    "--output-format", "stream-json",
+    // Not optional, and not verbosity for its own sake: Task 1's live
+    // probe found `claude` 2.1.263 refusing the invocation outright
+    // without it — `Error: When using --print, --output-format=stream-json
+    // requires --verbose` (docs/wakil/phase-2a-probe.md §1).
+    "--verbose",
+    "--include-partial-messages",
+]
+
+/// 3b-viii: the launch for a quick-tasks session. The same environment and stream-json
+/// flags as `buildLaunch`, no MCP servers, then `quickLaunchArguments()` — and none of
+/// the agent's flags: no `--append-system-prompt` (the agent's instructions),
+/// no `--permission-prompt-tool` (it names a server this launch does not have) and no
+/// `--allowedTools` (the session has no tools). Pure, like `buildLaunch`.
+public func buildQuickLaunch(
+    claudePath: String,
+    configDir: String,
+    oauthToken: String,
+    sessionId: String,
+    workingDirectory: String
+) -> HarnessLaunch {
+    HarnessLaunch(
+        executable: claudePath,
+        arguments: streamingArguments
+            + ["--session-id", sessionId, "--mcp-config", #"{"mcpServers":{}}"#, "--strict-mcp-config"]
+            + quickLaunchArguments(),
+        environment: harnessEnvironment(configDir: configDir, oauthToken: oauthToken),
         workingDirectory: workingDirectory
     )
 }
@@ -254,12 +280,8 @@ extension ClaudeCodeCLIHarnessError: CustomStringConvertible {
 /// events, on the expectation (not enforced by this type) that whatever
 /// consumes `events()` drains it continuously rather than batching.
 public final class ClaudeCodeCLIHarness: AgentHarness, Sendable {
-    private let claudePath: String
-    private let configDir: String
-    private let oauthToken: String
-    private let mcpConfigJSON: String
-    private let allowedTools: [String]
-    private let extraArguments: [String]
+    /// What `start` spawns, given its session id, fork parent and working directory.
+    private let makeLaunch: @Sendable (_ sessionId: String, _ parentSessionId: String?, _ workingDirectory: String) -> HarnessLaunch
     private let stream: AsyncStream<HarnessEvent>
     private let engine: Engine
     /// Guards `events()` against being called more than once — see that
@@ -267,20 +289,31 @@ public final class ClaudeCodeCLIHarness: AgentHarness, Sendable {
     /// than served.
     private let eventsGate = SingleConsumerGate()
 
-    public init(
+    public convenience init(
         claudePath: String,
         configDir: String,
         oauthToken: String,
         mcpConfigJSON: String,
-        allowedTools: [String],
-        extraArguments: [String] = []
+        allowedTools: [String]
     ) {
-        self.claudePath = claudePath
-        self.configDir = configDir
-        self.oauthToken = oauthToken
-        self.mcpConfigJSON = mcpConfigJSON
-        self.allowedTools = allowedTools
-        self.extraArguments = extraArguments
+        self.init { sessionId, parentSessionId, workingDirectory in
+            buildLaunch(
+                claudePath: claudePath,
+                sessionId: sessionId,
+                configDir: configDir,
+                oauthToken: oauthToken,
+                mcpConfigJSON: mcpConfigJSON,
+                allowedTools: allowedTools,
+                workingDirectory: workingDirectory,
+                resumingFrom: parentSessionId
+            )
+        }
+    }
+
+    /// 3b-viii: a harness whose launch the caller builds — `buildQuickLaunch` for a
+    /// quick-tasks session. The agent's sessions use the init above.
+    public init(launch makeLaunch: @escaping @Sendable (_ sessionId: String, _ parentSessionId: String?, _ workingDirectory: String) -> HarnessLaunch) {
+        self.makeLaunch = makeLaunch
 
         var capturedContinuation: AsyncStream<HarnessEvent>.Continuation!
         self.stream = AsyncStream { continuation in
@@ -318,18 +351,7 @@ public final class ClaudeCodeCLIHarness: AgentHarness, Sendable {
     /// session that does not exist. See
     /// `ClaudeCodeCLIHarnessTests.startAfterStopThrowsAlreadyStopped`.
     public func start(sessionId: String, resumingFrom parentSessionId: String?, workingDirectory: String) async throws {
-        let launch = buildLaunch(
-            claudePath: claudePath,
-            sessionId: sessionId,
-            configDir: configDir,
-            oauthToken: oauthToken,
-            mcpConfigJSON: mcpConfigJSON,
-            allowedTools: allowedTools,
-            workingDirectory: workingDirectory,
-            resumingFrom: parentSessionId,
-            extraArguments: extraArguments
-        )
-        try await engine.start(launch: launch)
+        try await engine.start(launch: makeLaunch(sessionId, parentSessionId, workingDirectory))
     }
 
     public func send(_ text: String) async throws {
@@ -369,6 +391,20 @@ public final class ClaudeCodeCLIHarness: AgentHarness, Sendable {
 
     public func stop() async {
         await engine.stop()
+    }
+}
+
+extension ClaudeCodeCLIHarness: QuickHarness {
+    /// Ends the turn in flight with a stream-json `interrupt` control request, not
+    /// `SIGINT`: measured on the real CLI, `SIGINT` ends the turn *and the process*,
+    /// while the control request is answered by a `control_response` (decoded as
+    /// `.unknown`), then a `result` with `is_error: true`, and the session lives on.
+    public func interruptTurn() async throws {
+        try await engine.writeFrame(.object([
+            "type": .string("control_request"),
+            "request_id": .string(UUID().uuidString.lowercased()),
+            "request": .object(["subtype": .string("interrupt")]),
+        ]))
     }
 }
 
@@ -520,10 +556,7 @@ private actor Engine {
     /// `claude` process does with it, which this task does not run and so
     /// cannot observe.
     func send(_ text: String) throws {
-        guard let stdinHandle, let process, process.isRunning else {
-            throw ClaudeCodeCLIHarnessError.notRunning
-        }
-        let frame = JSONValue.object([
+        try writeFrame(.object([
             "type": .string("user"),
             "message": .object([
                 "role": .string("user"),
@@ -531,7 +564,14 @@ private actor Engine {
                     .object(["type": .string("text"), "text": .string(text)])
                 ]),
             ]),
-        ])
+        ]))
+    }
+
+    /// Writes one stream-json frame, newline-terminated, to the child's stdin.
+    func writeFrame(_ frame: JSONValue) throws {
+        guard let stdinHandle, let process, process.isRunning else {
+            throw ClaudeCodeCLIHarnessError.notRunning
+        }
         var data = try JSONEncoder().encode(frame)
         data.append(UInt8(ascii: "\n"))
         try stdinHandle.write(contentsOf: data)
