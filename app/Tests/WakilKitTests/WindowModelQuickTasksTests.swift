@@ -285,6 +285,16 @@ private func makeSettingsWindow(
         #expect(model.ghostSessions[panes[1]] != nil)
     }
 
+    /// Only a pane that LEFT the canvas loses its session: a refresh (the one every dispatch
+    /// triggers) never drops one for a pane it has not seen go — its request may be in flight.
+    @Test func aRefreshKeepsTheSessionOfAPaneItNeverSawClose() async throws {
+        let (model, _) = await editorWindowWithFiles()
+        await model.refreshContext()
+        model.ghostSessions["p1"] = GhostTextSession(suggest: { _ in "" }, debounce: { .zero })
+        await model.refreshLayout()
+        #expect(model.ghostSessions["p1"] != nil)
+    }
+
     /// A configuration that cannot be read stops ghost-text, and Settings is told why, whole (Rule 8);
     /// the next rebuild that reads it clears the reason.
     @Test func anUnreadableConfigurationIsReportedWholeAndClearedOnRecovery() async throws {

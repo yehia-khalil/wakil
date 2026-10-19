@@ -20,3 +20,28 @@ public func ghostTabContext(_ tab: EditorTab) -> (path: String, language: String
     case .diff: return nil
     }
 }
+
+/// Which of a pane's page requests may still go to the model. Swift builds a request across an
+/// await (the schema), so a cancel can land before the request is asked, and two requests can
+/// finish building out of order. Page ids only grow; the newest admitted or cancelled id is the
+/// floor, and nothing at or under it is asked.
+public struct GhostRequestOrder: Sendable, Equatable {
+    private var newest = 0
+
+    public init() {}
+
+    /// The page cancelled `id`: it is never asked. True when it may be the request now asked (or
+    /// one not yet asked), so the pane's session is released; false for a late cancel of an
+    /// older one, which must not drop the newer request.
+    public mutating func cancel(_ id: Int) -> Bool {
+        defer { newest = max(newest, id) }
+        return id >= newest
+    }
+
+    /// Whether `id`, built, may be asked now; if so it becomes the newest.
+    public mutating func admit(_ id: Int) -> Bool {
+        guard id > newest else { return false }
+        newest = id
+        return true
+    }
+}

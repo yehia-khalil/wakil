@@ -14,14 +14,22 @@ private actor GhostCounter { var value = 0; func bump() { value += 1 } }
 private actor Gate {
     private var waiting: [String: CheckedContinuation<Void, Never>] = [:]
     private var opened: Set<String> = []
+    /// Keys a call has parked on, and the tests waiting to hear it: no polling, so no load outruns it.
+    private var parked: Set<String> = []
+    private var watchers: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     func wait(_ key: String) async {
         if opened.contains(key) { return }
-        await withCheckedContinuation { waiting[key] = $0 }
+        await withCheckedContinuation { cont in
+            waiting[key] = cont
+            parked.insert(key)
+            watchers.removeValue(forKey: key)?.forEach { $0.resume() }
+        }
     }
 
     func waitUntilWaiting(_ key: String) async {
-        while waiting[key] == nil { try? await Task.sleep(for: .milliseconds(2)) }
+        if parked.contains(key) { return }
+        await withCheckedContinuation { watchers[key, default: []].append($0) }
     }
 
     func open(_ key: String) {
@@ -131,6 +139,9 @@ private func req(_ prefix: String) -> InfillRequest {
         async let first = s.request(req("a"))
         await gate.waitUntilWaiting("a")
         async let second = s.request(req("ab"))
+        // The second request's model call is parked only after it superseded the first, so "a"
+        // is released only once nothing can answer it (it used to race `async let`'s start).
+        await gate.waitUntilWaiting("ab")
         await gate.open("a"); await gate.open("ab")
         #expect(await first == nil)
         #expect(await second == "ab!")

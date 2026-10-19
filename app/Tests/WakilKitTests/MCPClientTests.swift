@@ -33,6 +33,7 @@ private func repoRoot() -> URL {
     // list_machine_providers and adopt_provider added by Phase 2b-viii for
     // the org plane's Adopting state, which binds an account that already
     // exists on the machine into another organisation via shared registration.
+    // set_local_provider added by 3b-viii for a local model endpoint (Decision 42).
     // The pin grows with the server, layer by layer. It is here because
     // the Swift side speaks to whatever binary `bin/` holds, and
     // `make app-test` does not depend on `make build` — so a tool added
@@ -43,7 +44,8 @@ private func repoRoot() -> URL {
                       "list_accounts", "list_environments", "list_machine_providers",
                       "list_orgs", "list_projects", "list_providers", "list_sessions",
                       "read_session", "record_capacity", "record_session_parent", "remove_database",
-                      "set_database_dsn", "set_editor_settings", "set_environment", "set_project",
+                      "set_database_dsn", "set_editor_settings", "set_environment", "set_local_provider",
+                      "set_project",
                       "set_project_editor_settings", "set_provider", "unlink_provider", "update_org"])
 }
 

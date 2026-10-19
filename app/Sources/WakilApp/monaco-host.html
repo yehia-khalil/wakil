@@ -416,6 +416,10 @@
     // lands over newer typing. Tab accepts, ⌘→ a word, Esc dismisses — Monaco's own keys; an
     // accept is an edit like a keystroke, so it reaches the app as typing (`text`).
     let ghostSeq = 0;
+    // Off until Swift says it is on (wakilGhostEnabled, sent at start and on every change): while
+    // off, a trigger asks nothing and posts no buffer.
+    let ghostOn = false;
+    window.wakilGhostEnabled = function (on) { ghostOn = !!on; };
     const ghostPending = new Map();   // id -> its resolver
     // The pulse: a request still unanswered after 400 ms shows a dot at the caret it asked from.
     let pulse = null;                 // { id, model, timer, ids }
@@ -444,7 +448,7 @@
     };
     monaco.languages.registerInlineCompletionsProvider({ pattern: '**' }, {
       provideInlineCompletions: function (model, position, context, token) {
-        if (model !== ed.getModel() || ed.getOption(monaco.editor.EditorOption.readOnly)) return { items: [] };
+        if (!ghostOn || model !== ed.getModel() || ed.getOption(monaco.editor.EditorOption.readOnly)) return { items: [] };
         const key = keyOfModel(model);
         if (!key) return { items: [] };
         const id = ++ghostSeq;

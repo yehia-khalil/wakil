@@ -45,4 +45,26 @@ import Testing
         #expect(ghostTabContext(tail) == nil)
         #expect(ghostTabContext(EditorTab.diff(root: "/p/api", path: "a.go", group: .changed)) == nil)
     }
+
+    /// A request the page cancelled while Swift was still building it never reaches the model.
+    @Test func aRequestCancelledBeforeItIsAskedIsNeverAsked() {
+        var order = GhostRequestOrder()
+        let steps = [order.cancel(4), order.admit(4), order.admit(5)]
+        #expect(steps == [true, false, true])
+    }
+
+    /// An older request that finishes building after a newer one was asked never supersedes it.
+    @Test func anOlderRequestNeverOvertakesANewerOne() {
+        var order = GhostRequestOrder()
+        let steps = [order.admit(6), order.admit(5)]
+        #expect(steps == [true, false])
+    }
+
+    /// Cancelling the request now asked releases the pane's session; a late cancel of an older
+    /// one does not, or it would drop the newer request.
+    @Test func onlyACancelOfTheLiveRequestReleasesTheSession() {
+        var order = GhostRequestOrder()
+        let steps = [order.admit(7), order.cancel(6), order.cancel(7), order.admit(7)]
+        #expect(steps == [true, false, true, false])
+    }
 }

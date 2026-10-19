@@ -65,9 +65,10 @@ struct EditorPane: View {
     let unsavedPrompt: UnsavedPrompt?
     /// Save / Don't Save / Cancel for that prompt.
     let resolveUnsaved: (UnsavedChoice) -> Void
-    /// 3b-viii ghost-text, for THIS pane: whether it is on now, the schema tables in scope, the
-    /// suggestion for a request (nil: nothing to draw), and the release of the pending one.
-    let ghostEnabled: () -> Bool
+    /// 3b-viii ghost-text, for THIS pane: whether it is on (the page asks nothing while it is
+    /// off), the schema tables in scope, the suggestion for a request (nil: nothing to draw), and
+    /// the release of the pending one.
+    let ghostTextEnabled: Bool
     let ghostSchema: () async -> [GhostTable]
     let ghostSuggest: (InfillRequest) async -> String?
     let ghostCancel: () -> Void
@@ -140,6 +141,9 @@ struct EditorPane: View {
         .onChange(of: viewOptions, initial: true) { _, o in
             host.setOptions(o)
         }
+        .onChange(of: ghostTextEnabled, initial: true) { _, on in
+            host.setGhostEnabled(on)
+        }
         // The keys the page takes follow the pane's state (R13): the peek's, or Compare's Esc.
         .onChange(of: editorCapturedKeys(comparing: comparing != nil, peek: comparing == nil && activeTab.flatMap(editorPeekView) != nil), initial: true) { _, keys in
             host.renderer?.captureKeys(keys)
@@ -162,12 +166,10 @@ struct EditorPane: View {
             host.bufferChanged = bufferChanged
             host.viewReported = viewReported
             host.findReported = findReported
-            host.ghostAsk = { text, caret, path, language in
-                guard ghostEnabled() else { return nil }
-                let request = ghostRequest(text: text, caret: caret, path: path, language: language,
-                                           schema: await ghostSchema())
-                return await ghostSuggest(request)
+            host.ghostPrepare = { text, caret, path, language in
+                ghostRequest(text: text, caret: caret, path: path, language: language, schema: await ghostSchema())
             }
+            host.ghostSuggest = ghostSuggest
             host.ghostCancel = ghostCancel
             // Handed in first, so `start` applies the newest snapshot, never this one if a newer
             // one landed while the renderer was being made.
@@ -738,10 +740,16 @@ final class EditorHost {
     @ObservationIgnored var viewReported: ((EditorTabSubject, EditorPosition, EditorRange?, ClosedRange<Int>?, Double) async -> Void)?
     /// Monaco's find bar state, a view report like the cursor's (`PaneStore.editorFindDidReport`).
     @ObservationIgnored var findReported: ((EditorFindReport) async -> Void)?
-    /// 3b-viii: the ghost-text suggestion for the text at a caret in the tab at a path in a language
-    /// (nil: draw nothing), and the release of the pane's pending request.
-    @ObservationIgnored var ghostAsk: ((String, String.Index, String, String) async -> String?)?
+    /// 3b-viii ghost-text: the request for the text at a caret in the tab at a path in a language
+    /// (built across the schema's await), its suggestion (nil: draw nothing), and the release of
+    /// the pane's pending request.
+    @ObservationIgnored var ghostPrepare: ((String, String.Index, String, String) async -> InfillRequest)?
+    @ObservationIgnored var ghostSuggest: ((InfillRequest) async -> String?)?
     @ObservationIgnored var ghostCancel: (() -> Void)?
+    /// Which page requests may still be asked: a cancel can land while one is being built.
+    @ObservationIgnored private var ghostOrder = GhostRequestOrder()
+    @ObservationIgnored private var ghostEnabled = false
+    @ObservationIgnored private var ghostEnabledSent: Bool?
     /// The last snapshot's tabs, subject by key: a post is addressed by the subject its key names,
     /// never by a position that a close or open may have moved (final review I1).
     @ObservationIgnored private var subjects: [String: EditorTabSubject] = [:]
@@ -838,9 +846,12 @@ final class EditorHost {
         // The page waits on every ghost request until it is resolved or it cancels it, so a request
         // that cannot be asked (a tab that never asks, a caret that splits a character) is resolved
         // empty at once. The page drops a resolve for a request it no longer waits on.
+        // A request cancelled, or overtaken by a newer one, while it was being built is never asked
+        // (`GhostRequestOrder`).
         made.onGhost = { [weak self] key, id, text, offset in
             guard let self else { return }
-            guard let ask = self.ghostAsk, let subject = self.subjects[key],
+            guard self.ghostEnabled, let prepare = self.ghostPrepare, let suggest = self.ghostSuggest,
+                  let subject = self.subjects[key],
                   let tab = self.latest?.tabs.first(where: { $0.subject == subject }),
                   let context = ghostTabContext(tab),
                   let caret = ghostCaret(text: text, utf16Offset: offset) else {
@@ -848,23 +859,45 @@ final class EditorHost {
                 return
             }
             Task { @MainActor [weak self] in
-                let suggestion = await ask(text, caret, context.path, context.language)
-                self?.renderer?.resolveGhost(id: id, text: suggestion)
+                let request = await prepare(text, caret, context.path, context.language)
+                guard let self else { return }
+                guard self.ghostOrder.admit(id) else {
+                    self.renderer?.resolveGhost(id: id, text: nil)
+                    return
+                }
+                let suggestion = await suggest(request)
+                self.renderer?.resolveGhost(id: id, text: suggestion)
             }
         }
-        made.onGhostCancel = { [weak self] _ in self?.ghostCancel?() }
+        made.onGhostCancel = { [weak self] id in
+            guard let self, self.ghostOrder.cancel(id) else { return }
+            self.ghostCancel?()
+        }
         made.onFind = { [weak self] report in
             guard let send = self?.findReported else { return }
             Task { @MainActor in await send(report) }
         }
         renderer = made
         applyOptions()
+        applyGhostEnabled()
         if let latest { apply(latest) }
     }
 
     /// The options last asked for, applied when the renderer exists and again whenever they change.
     private var wantedOptions: EditorViewOptions?
     private var appliedOptions: EditorViewOptions?
+
+    /// Ghost-text on or off: the page asks nothing while it is off (3b-viii).
+    func setGhostEnabled(_ on: Bool) {
+        ghostEnabled = on
+        applyGhostEnabled()
+    }
+
+    private func applyGhostEnabled() {
+        guard let renderer, ghostEnabledSent != ghostEnabled else { return }
+        renderer.setGhostEnabled(ghostEnabled)
+        ghostEnabledSent = ghostEnabled
+    }
 
     func setOptions(_ o: EditorViewOptions) {
         wantedOptions = o

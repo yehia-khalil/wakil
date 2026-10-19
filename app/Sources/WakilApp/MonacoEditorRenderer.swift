@@ -147,6 +147,9 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
         run("wakilSetOptions({fontSize:\(o.fontSize),wordWrap:\(o.wordWrap),tabSize:\(o.tabSize),insertSpaces:\(o.insertSpaces)})")
     }
 
+    /// Ghost-text on or off: while it is off the page asks nothing and posts no text.
+    func setGhostEnabled(_ on: Bool) { run("wakilGhostEnabled(\(on))") }
+
     /// Answers the page's ghost request `id`: `text` is drawn at the caret it asked from, nil draws
     /// nothing. The page ignores an answer for a request it no longer waits on.
     func resolveGhost(id: Int, text: String?) {

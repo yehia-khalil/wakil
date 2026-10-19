@@ -80,12 +80,15 @@ extension WindowModel {
         Task { await session.cancel() }
     }
 
-    /// Releases the ghost session of every pane no longer on the canvas — closed by the operator or
-    /// an agent — so none outlives its pane. Run wherever the canvas is read back.
-    func pruneGhostSessions() {
+    /// Releases the ghost session of every pane that was on the canvas in `before` and is gone now —
+    /// closed by the operator or an agent — so none outlives its pane. Run wherever the canvas is
+    /// read back. A pane the refresh never saw leave keeps its session: every dispatch triggers a
+    /// refresh, and its request may be in flight.
+    func pruneGhostSessions(before: LayoutSnapshot) {
         guard !ghostSessions.isEmpty else { return }
         let open = Set(layoutSnapshot.panes.map(\.id))
-        for pane in ghostSessions.keys where !open.contains(pane) { ghostCancel(pane: pane) }
+        let gone = before.panes.map(\.id).filter { !open.contains($0) }
+        for pane in gone where ghostSessions[pane] != nil { ghostCancel(pane: pane) }
     }
 
     /// How long a pane waits after a keystroke before asking: a local endpoint answers in tens of
