@@ -189,6 +189,15 @@ type addProviderArgs struct {
 	ClaudePath string `json:"claudePath,omitempty" jsonschema:"absolute path to the agent executable this account runs; required for claude-code"`
 }
 
+// setLocalProviderArgs creates or overrides the active organisation's local model endpoint
+// (3b-viii, Decision 42). No org field, for the same reason addProviderArgs has none.
+type setLocalProviderArgs struct {
+	ID      string   `json:"id" jsonschema:"the local provider id to create or override"`
+	Label   string   `json:"label,omitempty" jsonschema:"optional human-readable name"`
+	BaseURL string   `json:"baseURL" jsonschema:"the endpoint's http or https URL, e.g. http://127.0.0.1:8012"`
+	Serves  []string `json:"serves,omitempty" jsonschema:"quick operations the model is fit for: infill, respond; defaults to [infill]"`
+}
+
 // unlinkProviderArgs removes one organisation's binding.
 //
 // `Org` defaults to the active one. Unlike `adopt_provider`, which binds
@@ -605,6 +614,31 @@ func newServer() *mcp.Server {
 				return toolErr(err), wakilcore.Account{}, nil
 			}
 			return nil, row, nil
+		})
+
+	// Added by 3b-viii (Decision 42): an upsert, because an operator points the one local
+	// endpoint somewhere else far more often than they add a second.
+	mcp.AddTool(s, &mcp.Tool{Name: "set_local_provider", Description: "Create or override a local model endpoint for the ACTIVE organisation: its id, optional label, baseURL (http or https) and the quick operations it serves (infill, respond; default infill). Refuses a bad URL, an unknown operation, and an id that is already another kind of account. Returns the provider's config_tree row."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setLocalProviderArgs) (*mcp.CallToolResult, wakilcore.ConfigTreeProvider, error) {
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return toolErr(err), wakilcore.ConfigTreeProvider{}, nil
+			}
+			if err := wakilcore.SetLocalProvider(org, wakilcore.Provider{
+				ID: a.ID, Label: a.Label, BaseURL: a.BaseURL, Serves: a.Serves,
+			}); err != nil {
+				return toolErr(err), wakilcore.ConfigTreeProvider{}, nil
+			}
+			tree, err := wakilcore.LoadConfigTreeFor(org)
+			if err != nil {
+				return toolErr(err), wakilcore.ConfigTreeProvider{}, nil
+			}
+			for _, p := range tree.Providers {
+				if p.ID == a.ID {
+					return nil, p, nil
+				}
+			}
+			return toolErr(wakilcore.UserError("provider " + a.ID + " was written but is not in the config tree")), wakilcore.ConfigTreeProvider{}, nil
 		})
 
 	// Added by Phase 2e (#206). **An organisation unlinks a BINDING; it

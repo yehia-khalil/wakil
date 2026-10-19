@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/yehia-khalil/wakil/internal/wakilcore"
 )
@@ -74,6 +75,9 @@ func runProviderAdd(args []string, stderr io.Writer) int {
 	fs.StringVar(&p.ConfigDir, "config-dir", "", "the CLAUDE_CONFIG_DIR that account uses (--kind claude-code only)")
 	fs.StringVar(&p.Label, "label", "", "a human label for this provider")
 	fs.StringVar(&p.ClaudePath, "claude-path", "", "the agent binary this provider launches (--kind claude-code only)")
+	fs.StringVar(&p.BaseURL, "base-url", "", "a local endpoint's URL (--kind local only)")
+	var serves string
+	fs.StringVar(&serves, "serves", "", "comma-separated quick operations a local endpoint serves: infill, respond (--kind local only)")
 	// "--kind claude-code only" is not merely advisory here: AddProvider
 	// refuses the combination rather than ignoring it. Flag help that
 	// states a restriction nothing enforces is how `--share --kind codex`
@@ -89,6 +93,9 @@ func runProviderAdd(args []string, stderr io.Writer) int {
 		return 2
 	}
 	p.ID = id
+	if serves != "" {
+		p.Serves = strings.Split(serves, ",")
+	}
 
 	org, err := wakilcore.CurrentOrg()
 	if err != nil {
