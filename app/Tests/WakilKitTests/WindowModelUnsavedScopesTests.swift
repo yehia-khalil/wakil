@@ -31,7 +31,7 @@ import Testing
             rootPath: "/tmp", providerId: "",
             lookupFactory: { _ in EditorWindowLookup() },
             rootWatcher: nil, editorRootWatcher: RecordingRootWatcher(), fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(files: files), placeClients: nil,
-            agentSocketFactory: { _, _ in NoAgentSocket() })
+            agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
         await registerEditorActions(
             into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
             gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })

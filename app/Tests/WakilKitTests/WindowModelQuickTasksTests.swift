@@ -7,18 +7,21 @@ private actor ScriptedQuickModel: QuickModel {
     nonisolated let serves: Set<QuickOperation>
     private let reply: String
     private let delay: Duration
+    /// How many calls wait `delay`; the rest answer at once.
+    private let slowCalls: Int
     private(set) var calls = 0
     private(set) var shutdowns = 0
 
-    init(serves: Set<QuickOperation>, reply: String, delay: Duration = .zero) {
+    init(serves: Set<QuickOperation>, reply: String, delay: Duration = .zero, slowCalls: Int = .max) {
         self.serves = serves
         self.reply = reply
         self.delay = delay
+        self.slowCalls = slowCalls
     }
 
     func infill(_ request: InfillRequest) async throws -> String {
         calls += 1
-        if delay > .zero { try await Task.sleep(for: delay) }
+        if delay > .zero, calls <= slowCalls { try await Task.sleep(for: delay) }
         return reply
     }
 
@@ -40,6 +43,10 @@ private actor QuickBackend: ToolCaller {
     var tree: JSONValue
     var org: String
     var active: String
+    /// When set, `config_tree` answers this tool error instead of the tree.
+    var configFailure: String?
+
+    func fail(_ message: String?) { configFailure = message }
 
     init(tree: JSONValue, org: String = "initech", active: String = "") {
         self.tree = tree
@@ -55,6 +62,12 @@ private actor QuickBackend: ToolCaller {
     func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
         switch name {
         case "config_tree":
+            if let configFailure {
+                return .object([
+                    "isError": .bool(true),
+                    "content": .array([.object(["type": .string("text"), "text": .string(configFailure)])]),
+                ])
+            }
             return .object(["structuredContent": tree])
         case "get_context":
             return .object(["structuredContent": .object([
@@ -247,12 +260,33 @@ private func makeSettingsWindow(
 
     /// A cancelled pane's request comes back empty, and the next request on that pane still answers.
     @Test func ghostCancelReleasesThePendingRequestOnly() async throws {
-        let slow = ScriptedQuickModel(serves: [.infill], reply: "late", delay: .seconds(5))
-        let model = await makeWindow(tree: treeJSON(quick: "qwen", ghost: true)) { _, _ in slow }
+        let model0 = ScriptedQuickModel(serves: [.infill], reply: "next", delay: .seconds(5), slowCalls: 1)
+        let model = await makeWindow(tree: treeJSON(quick: "qwen", ghost: true)) { _, _ in model0 }
         let pending = Task { await model.ghostSuggestion(pane: "p1", request: anyRequest) }
-        while await slow.calls == 0 { try await Task.sleep(for: .milliseconds(20)) }
+        while await model0.calls == 0 { try await Task.sleep(for: .milliseconds(20)) }
         model.ghostCancel(pane: "p1")
         #expect(await pending.value == nil)
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "next")
+    }
+
+    /// A configuration that cannot be read stops ghost-text, and Settings is told why, whole (Rule 8);
+    /// the next rebuild that reads it clears the reason.
+    @Test func anUnreadableConfigurationIsReportedWholeAndClearedOnRecovery() async throws {
+        let backend = QuickBackend(tree: treeJSON(quick: "qwen", ghost: true))
+        let why = "config_tree: org.json: unexpected end of JSON input at line 7"
+        await backend.fail(why)
+        let fake = ScriptedQuickModel(serves: [.infill], reply: "x")
+        let model = WindowModel.forTesting(
+            scratchRoot: testScratchRoot, organization: "initech",
+            context: ContextStore(client: backend), quickModelFactory: { _, _ in fake })
+        await model.rebuildQuickTasks()
+        #expect(await model.quickTaskErrors() == ["config": why])
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == nil)
+
+        await backend.fail(nil)
+        await model.rebuildQuickTasks()
+        #expect(await model.quickTaskErrors() == [:])
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "x")
     }
 
     @Test func endpointErrorsReachTheWindow() async throws {

@@ -769,7 +769,7 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
         fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
         paletteClients: PaletteClients(), placeClients: wiring.placeClients,
-        agentSocketFactory: { _, _ in NoAgentSocket() })
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
     let held = try #require(model.rootWatcherForTesting as? FSEventsRootWatcher)
     #expect(held === (wiring.rootWatcher as? FSEventsRootWatcher))
 }
@@ -821,7 +821,7 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
         fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
         paletteClients: PaletteClients(), placeClients: wiring.placeClients,
-        agentSocketFactory: { _, _ in NoAgentSocket() })
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
     #expect(model.fileListsForTesting === lists)
 
     let emptyBin = try scratch()

@@ -43,6 +43,8 @@ public actor QuickTasks {
     private var models: [String: any QuickModel] = [:]
     private var creating: [String: Task<(any QuickModel)?, Error>] = [:]
     private var errors: [String: String] = [:]
+    /// Set by `shutdown()`: a model whose creation lands afterwards is shut down, not kept.
+    private var closed = false
 
     public init(config: QuickTasksConfig, makeModel: @escaping @Sendable (QuickProviderRecord) async throws -> (any QuickModel)?) {
         self.config = config
@@ -55,8 +57,10 @@ public actor QuickTasks {
     public func endpointErrors() -> [String: String] { errors }
 
     public func shutdown() async {
-        for model in models.values { await model.shutdown() }
+        closed = true
+        let open = models.values
         models = [:]
+        for model in open { await model.shutdown() }
     }
 
     private func model(for record: QuickProviderRecord) async throws -> (any QuickModel)? {
@@ -72,6 +76,14 @@ public actor QuickTasks {
         }
         defer { creating[record.id] = nil }
         guard let m = try await task.value else { return nil }
+        // Shut down while it was being made: nobody would ever stop it, so it stops now.
+        if closed {
+            if models[record.id] == nil, creating[record.id] != nil {
+                creating[record.id] = nil
+                await m.shutdown()
+            }
+            throw CancellationError()
+        }
         models[record.id] = m
         return m
     }

@@ -96,6 +96,40 @@ private let respondReq = RespondRequest(instructions: "title", input: "x", jsonS
         await #expect(throws: QuickModelError.unreachable("connection refused")) { try await tasks.infill(infillReq) }
         #expect(await tasks.endpointErrors() == ["qwen": "connection refused"])
     }
+
+    /// A model whose creation finishes after the quick tasks were shut down is shut down itself, and
+    /// the call that asked for it ends: nothing outlives a rebuild.
+    @Test func aModelMadeAfterShutdownIsShutDownAndTheCallEnds() async throws {
+        let gate = Gate()
+        let model = ClosingModel()
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: nil, active: claude)) { _ in
+            await gate.wait()
+            return model
+        }
+        let call = Task { try await tasks.infill(infillReq) }
+        while await !gate.isWaiting { try await Task.sleep(for: .milliseconds(10)) }
+        await tasks.shutdown()
+        await gate.open()
+        await #expect(throws: CancellationError.self) { try await call.value }
+        #expect(await model.shutdowns == 1)
+        #expect(await model.calls == 0)
+    }
 }
 
 private actor Counter { var value = 0; func bump() { value += 1 } }
+
+private actor Gate {
+    private var waiter: CheckedContinuation<Void, Never>?
+    var isWaiting: Bool { waiter != nil }
+    func wait() async { await withCheckedContinuation { waiter = $0 } }
+    func open() { waiter?.resume(); waiter = nil }
+}
+
+private actor ClosingModel: QuickModel {
+    nonisolated let serves: Set<QuickOperation> = [.infill, .respond]
+    private(set) var calls = 0
+    private(set) var shutdowns = 0
+    func infill(_ r: InfillRequest) async throws -> String { calls += 1; return "x" }
+    func respond(_ r: RespondRequest) async throws -> String { calls += 1; return "x" }
+    func shutdown() async { shutdowns += 1 }
+}

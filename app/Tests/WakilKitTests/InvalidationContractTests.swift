@@ -26,7 +26,7 @@ private let orgDerived: Set<String> = [
     "editorSettings",
     // 3b-viii: the quick tasks route to the org's providers on its credentials, and each pane's
     // ghost session asks them; `invalidateForOrgChange` shuts both down, and the switch rebuilds.
-    "quickTasks", "ghostSessions", "ghostTextEnabled",
+    "quickTasks", "ghostSessions", "ghostTextEnabled", "quickTasksConfigError",
     "providerId",
     "lookup", "rootPaths", "hasProjectRoot",
     "organization", "resumedParentForTesting",

@@ -5,18 +5,36 @@ import Foundation
 extension WindowModel {
     /// Shuts the old quick tasks down, releases every pane's pending ghost request, and builds new
     /// ones from the configuration on disk (Ruling R4). With no factory, no organisation or no
-    /// readable tree, none are built and every ghost request answers nil.
+    /// readable tree, none are built and every ghost request answers nil; an unreadable tree's
+    /// reason is kept whole for Settings (`quickTaskErrors()["config"]`).
     public func rebuildQuickTasks() async {
         quickTasksGeneration += 1
         let mine = quickTasksGeneration
         await shutDownQuickTasks()
         let org = organization
         let active = providerId
-        guard let factory = quickModelFactory, let context, !org.isEmpty,
-              let reply = try? await context.configTree(),
-              let tree = decodeSettingsTree(fromResult: reply),
-              mine == quickTasksGeneration, org == organization
-        else { return }
+        guard let factory = quickModelFactory, let context, !org.isEmpty else { return }
+        let read: Result<SettingsTree, Error>
+        do {
+            let reply = try await context.configTree()
+            if let tree = decodeSettingsTree(fromResult: reply) {
+                read = .success(tree)
+            } else {
+                read = .failure(QuickModelError.failed("config_tree: the reply was not a configuration tree"))
+            }
+        } catch {
+            read = .failure(error)
+        }
+        guard mine == quickTasksGeneration, org == organization else { return }
+        let tree: SettingsTree
+        switch read {
+        case .success(let read):
+            tree = read
+            quickTasksConfigError = nil
+        case .failure(let error):
+            quickTasksConfigError = statusDescribingFailure("config_tree", error)
+            return
+        }
         let records = tree.providers.map { provider in
             QuickProviderRecord(
                 id: provider.id, kind: provider.kind, baseURL: provider.baseURL,
@@ -69,9 +87,12 @@ extension WindowModel {
         return await Self.ghostDebounce(for: quickTasks)
     }
 
-    /// Each endpoint's last error, whole, by provider id — what Settings draws under the row.
+    /// Each endpoint's last error, whole, by provider id — what Settings draws under the row — and,
+    /// under "config", why the configuration the quick tasks are built from could not be read.
     public func quickTaskErrors() async -> [String: String] {
-        await quickTasks?.endpointErrors() ?? [:]
+        var errors = await quickTasks?.endpointErrors() ?? [:]
+        if let quickTasksConfigError { errors["config"] = quickTasksConfigError }
+        return errors
     }
 
     /// The schema tables in scope, from the vocabulary the window's turns already resolve against.

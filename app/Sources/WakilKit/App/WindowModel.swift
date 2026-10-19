@@ -417,6 +417,9 @@ public final class WindowModel {
     @ObservationIgnored var ghostSessions: [String: GhostTextSession] = [:]
     /// Bumped by every rebuild, so a slower one that started earlier installs nothing.
     @ObservationIgnored var quickTasksGeneration = 0
+    /// Why the last rebuild could not read the organisation's configuration, whole; nil once one
+    /// has. Settings shows it under `quickTaskErrors()`'s "config" key (Rule 8).
+    @ObservationIgnored var quickTasksConfigError: String?
     /// The operator's ghost-text switch, as the last rebuild read it. Off until a tree has been read.
     public internal(set) var ghostTextEnabled = false
     private let panes: PaneStore
@@ -1370,8 +1373,10 @@ public final class WindowModel {
         // it no agent reaches Wakil's own tools, with nothing failing. Production passes one
         // that starts an `MCPSocketServer`.
         agentSocketFactory: @escaping AgentSocketFactory,
-        // 3b-viii. Production passes the factory `WindowSession.start` builds beside `harnessFactory`.
-        quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil
+        // 3b-viii. No default, for `rootWatcher`'s reason: without it no ghost request is ever
+        // answered, with nothing failing. Production passes the factory `WindowSession.start` builds
+        // beside `harnessFactory`; a test that asks none says `nil` out loud.
+        quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)?
     ) {
         self.init(
             registry: registry, panes: panes, layout: layout, persistence: persistence,
@@ -1960,6 +1965,7 @@ public final class WindowModel {
         // still reading its tree installs nothing (`quickTasksGeneration`). The switch rebuilds.
         quickTasksGeneration += 1
         ghostTextEnabled = false
+        quickTasksConfigError = nil
         await shutDownQuickTasks()
         // Context. `organization` is deliberately NOT cleared here: the
         // caller assigns it from the id it switched to, which is more
