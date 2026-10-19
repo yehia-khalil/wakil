@@ -1,0 +1,29 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"LOCAL MODELS"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[0].kind","equals":"claude-code"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[0].serves[1]","equals":"respond"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1]","present":false}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":" http://127.0.0.1:8012/ "}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].id","equals":"qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].kind","equals":"local"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:8012"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[0]","equals":"infill"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[1]","present":false}}
+{"expect":{"journal":{"contains":"ctx_set_local_provider"}}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"QWEN 1.5B"}}
+{"expect":{"tree":"contains","text":"http://127.0.0.1:8012"}}
+{"expect":{"tree":"contains","text":"not tried yet"}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"http://127.0.0.1:8013","serves":["respond","infill","respond"]}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:8013"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[0]","equals":"infill"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[1]","equals":"respond"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[2]","present":false}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","baseURL":"ftp://x"},"refuses":"baseURL must be an http or https URL"}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","baseURL":"http://127.0.0.1:8012","serves":["summarise"]},"refuses":"serves: unknown operation"}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"e2e-provider","baseURL":"http://127.0.0.1:8012"},"refuses":"is a claude-code account, not a local endpoint"}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"../x","baseURL":"http://127.0.0.1:8012"},"refuses":"unusable provider id"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:8013"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[0].kind","equals":"claude-code"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[2]","present":false}}

@@ -1,0 +1,24 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"do":{"click":"settings.localProvider.add"}}
+{"do":{"type":{"into":"settings.localProvider.local.url","text":"http://127.0.0.1:1"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:1"}}
+{"expect":{"tree":"contains","text":"not tried yet"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"do":{"click":"settings.org.quickProvider.local"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"local"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].scratch","equals":"1"}}
+{"do":{"click":"rail.editor-2"}}
+{"do":{"keys":"const total = "}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"pane_close","params":{"id":"settings-1"}}}
+{"expect":{"tree":"absent","text":"QUICK TASKS"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"Could not connect to the server."}}
+{"expect":{"tree":"absent","text":"not tried yet"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"expect":{"tree":"contains","text":"Could not connect to the server."}}

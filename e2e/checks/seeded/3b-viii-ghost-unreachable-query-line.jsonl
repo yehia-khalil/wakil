@@ -1,0 +1,20 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"do":{"click":"settings.localProvider.add"}}
+{"do":{"type":{"into":"settings.localProvider.local.url","text":"http://127.0.0.1:1"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:1"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"do":{"click":"settings.org.quickProvider.local"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"local"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
+{"do":{"focus":"db.db-2.queryLine"}}
+{"do":{"keys":"SELECT id, "}}
+{"expect":{"tree":"contains","text":"SELECT id,"}}
+{"dispatch":{"action":"pane_close","params":{"id":"settings-1"}}}
+{"expect":{"tree":"absent","text":"QUICK TASKS"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"Could not connect to the server."}}
+{"expect":{"tree":"absent","text":"not tried yet"}}
