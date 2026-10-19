@@ -69,6 +69,10 @@ struct SettingsPane: View {
     var saveEditorSettings: ([String: JSONValue]) async -> String? = { _ in nil }
     /// Saves one project's editor fields: the project file's path, then the fields.
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
+    /// Saves a local model: id, label, URL, the operations it serves (3b-viii). Answers the refusal or nil.
+    var saveLocalProvider: (String, String, String, Set<QuickOperation>) async -> String? = { _, _, _, _ in nil }
+    /// Each quick-task endpoint's last error whole, by provider id; "config" is an unreadable tree.
+    var quickTaskErrors: () async -> [String: String] = { [:] }
     /// Every account on this machine, or `nil` before the first read.
     ///
     /// Read in the same refresh as `tree`, so the two halves of the pane
@@ -167,6 +171,8 @@ struct SettingsPane: View {
     /// organisation plane, so it also stops borrowing that plane's error
     /// area.
     @State private var adoptRefusals: [String: String] = [:]
+    /// What `quickTaskErrors()` last answered, read when the pane appears and after each save.
+    @State private var quickErrors: [String: String] = [:]
 
     /// The value being typed, per field, while an editor is open. Absent
     /// means the field is not being edited and draws what is on disk.
@@ -228,6 +234,7 @@ struct SettingsPane: View {
                 .padding(.leading, Scale.gutter)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task(id: tree) { quickErrors = await quickTaskErrors() }
     }
 
     // MARK: - The tree
@@ -423,16 +430,24 @@ struct SettingsPane: View {
             // be written and no way for the two to disagree. Not a
             // setting, and drawn as the fact it is.
             fields([("Id", tree.org.id, true)])
-            ForEach(WindowModel.OrganisationField.allCases.filter { $0 != .speechProvider }, id: \.self) { field in
+            ForEach(WindowModel.OrganisationField.allCases.filter { $0 != .speechProvider && $0 != .quickProvider }, id: \.self) { field in
                 organisationEditor(field, in: tree)
             }
             speechRow(tree: tree)
+            quickTasksRow(tree: tree)
             readOnlyNote(
                 "Saved one field at a time, read-modify-write from disk — so an edit you make "
                     + "to org.json by hand while this pane is open survives a save here.")
 
         case .providers:
             accountTable()
+            LocalProvidersSection(
+                providers: tree.providers, errors: quickErrors,
+                save: { id, label, url, serves in
+                    let refusal = await saveLocalProvider(id, label, url, serves)
+                    quickErrors = await quickTaskErrors()
+                    return refusal
+                })
         case .editor:
             EditorAppSettingsForm(editor: tree.editor, error: tree.editorError, save: saveEditorSettings)
         case .projectEditor(let name):
@@ -677,6 +692,59 @@ struct SettingsPane: View {
         .padding(.bottom, 4)
     }
 
+    /// 3b-viii: the provider quick tasks run on. One segment per provider that serves anything,
+    /// "Same as agent" first; a stored id no provider answers to is held, not dropped (Rule 7).
+    private func quickTasksRow(tree: SettingsTree) -> some View {
+        let options = quickTaskOptions(tree)
+        let stored = tree.org.quickProvider
+        let known = options.first(where: { $0.id == stored })
+        func labelFor(_ id: String) -> String { options.first(where: { $0.id == id })?.label ?? id }
+        func idFor(_ label: String) -> String { options.first(where: { $0.label == label })?.id ?? label }
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("QUICK TASKS")
+                .font(.system(size: Scale.micro, weight: .medium))
+                .tracking(Scale.microTracking)
+                .foregroundStyle(coolWhite.opacity(0.32))
+            SegmentedChoice(
+                options: options.map(\.label),
+                selection: Binding(
+                    get: { known?.label ?? labelFor(stored) },
+                    set: { label in
+                        let id = idFor(label)
+                        guard id != stored else { return }
+                        drafts[.quickProvider] = id
+                        save(.quickProvider, tree: tree)
+                    }),
+                identifier: { label in
+                    let id = idFor(label)
+                    let key = id.isEmpty ? "same" : id
+                    return "settings.org.quickProvider.\(key)"
+                },
+                held: known == nil ? stored : nil)
+            if let note = quickTaskNote(tree, activeProvider: runningAccountId) {
+                Text(note)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .accessibilityIdentifier("settings.org.quickProvider.note")
+            }
+            if let configError = quickErrors["config"] {
+                Text(configError)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.org.quickProvider.configError")
+            }
+            if let refusal = refusals[.quickProvider] {
+                Text(refusal)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.org.quickProvider.refusal")
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
     private func storedValue(
         _ field: WindowModel.OrganisationField, in tree: SettingsTree
     ) -> String {
@@ -685,6 +753,7 @@ struct SettingsPane: View {
         case .jiraBase: return tree.org.jiraBase
         case .defaultProvider: return tree.org.defaultProvider
         case .speechProvider: return tree.org.speechProvider
+        case .quickProvider: return tree.org.quickProvider
         }
     }
 
@@ -696,6 +765,7 @@ struct SettingsPane: View {
             let refusal = await saveOrganisationField(field, value)
             saving = nil
             refusals[field] = refusal
+            quickErrors = await quickTaskErrors()
             // The draft is cleared only on success, so a refused value
             // stays in front of the operator to be corrected rather than
             // vanishing along with the explanation of why it was refused.

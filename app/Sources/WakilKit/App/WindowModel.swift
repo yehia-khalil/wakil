@@ -2737,6 +2737,7 @@ public final class WindowModel {
         case jiraBase
         case defaultProvider
         case speechProvider
+        case quickProvider
 
         /// A stable fragment for this field's accessibility identifier —
         /// the case name, not the label, which is prose and may be
@@ -2750,6 +2751,7 @@ public final class WindowModel {
             case .jiraBase: return "Jira site"
             case .defaultProvider: return "Default provider"
             case .speechProvider: return "Speech"
+            case .quickProvider: return "Quick tasks"
             }
         }
     }

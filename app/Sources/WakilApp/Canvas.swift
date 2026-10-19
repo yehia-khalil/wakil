@@ -506,6 +506,10 @@ extension WakilWindow {
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },
+                    saveLocalProvider: { id, label, url, serves in
+                        await model.setLocalProvider(id: id, label: label, baseURL: url, serves: serves)
+                    },
+                    quickTaskErrors: { await model.quickTaskErrors() },
                     accounts: model.accounts,
                     capacity: model.capacity.readings,
                     adopt: { account in await model.adoptAccount(account) },
