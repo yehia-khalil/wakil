@@ -66,8 +66,7 @@ neighboring product could not truthfully copy (§1):
   dispatch the same actions (Invariant 2, Decision 9). Two code paths to one state is
   forbidden.
 
-Downstream of those: the editor's AI ghost-text runs on the org's own Claude account with
-project, schema and ticket context, which is the stated edge over generic completion
+Downstream of those: the editor's AI ghost-text runs on the org's quick-tasks provider (its Claude account by default, a local model when the operator adds one; Decision 42) with file and schema context, which is the stated edge over generic completion
 (`design-language.md` §11). Claude access is subscription-only, never an API key (§5).
 
 ## Operating Context

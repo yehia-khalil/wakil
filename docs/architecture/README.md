@@ -49,6 +49,9 @@ flowchart LR
   (`agentFacingServers`). `wakil-git` is started by both.
 - **The agent** is the `claude` CLI, driven by `ClaudeCodeCLIHarness` (`Harness/`). It reaches
   Wakil's own actions only through the shim.
+- **Quick tasks** (one-shot model calls, ghost-text first) go through `QuickTasks` (`App/QuickTasks.swift`),
+  which picks a `QuickModel` (`Harness/QuickModel.swift`): a warm `claude` session or a local
+  llama.cpp-style endpoint. Decision 42.
 
 ## How they talk
 

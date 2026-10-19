@@ -205,6 +205,8 @@ Each entry: the call, why, and what would change our mind.
     Proactivity is the fastest route to building something you mute. The one exception
     is a morning brief you explicitly ask for. Add proactive behaviour only where its
     absence has actually been felt.
+    *Clarified 2026-10-19 (3b-viii):* ghost-text is reactive — it answers the operator's
+    own typing, never moves focus, makes no sound, and is gone on the next keystroke.
 
 15. **Recall ships as grouped per-source results, not unified ranking.**
     Searching each bound source and showing cited, grouped lists delivers most of the
@@ -261,6 +263,11 @@ Each entry: the call, why, and what would change our mind.
     means writing the loop yourself, which is real work rather than configuration. And
     small local models use tools markedly worse no matter how clean the plumbing, so
     "locally hosted" buys privacy and cost, not parity.
+    *Amended 2026-10-19 (3b-viii):* the harness axis has two seams — `AgentHarness` for
+    sessions and `QuickModel` for one-shot quick tasks, with two operations, `infill` and
+    `respond`. `ClaudeCodeQuickModel` runs a warm `claude` session through `buildLaunch`'s
+    whitelist; `LocalEndpointQuickModel` speaks a llama.cpp-style `/infill` and the OpenAI
+    chat shape. Decision 42 says how a call picks between them.
 
 17. **Native Monaco editor, dual-driven — not embedded VS Code.**
     *(Revised 2026-09-03. Originally: embedded `code-server`, black box, built last.)*
@@ -1403,6 +1410,24 @@ Each entry: the call, why, and what would change our mind.
     they repeatedly stop an agent and restart the same job in the place they moved to — or if
     the per-place cost (up to five pinned child processes per live agent) is measured as the
     reason the app is slow.
+
+42. **Quick tasks run on one provider per org, and a local model is the operator's to run.**
+    *(2026-10-19, operator, during the 3b-viii design —
+    `docs/superpowers/specs/2026-10-19-3b-viii-ghost-text-design.md`.)*
+    The org's `quickProvider`, else its active provider; each call routes to the first of the
+    two that serves its operation, and an unreachable endpoint falls back once. A `local`
+    provider is a URL plus what it serves (`infill` by default); Wakil installs, starts and
+    downloads nothing. A new quick task is a caller of `QuickTasks` — a prompt and a parser —
+    and adds no harness work. Measured 2026-10-19 on an M5 Pro: one-shot `claude -p` ~4.5 s,
+    a warm session 1.0–1.8 s, Apple's on-device model fast but poor, `llama-server` with
+    Qwen2.5-Coder 1.5B 30–210 ms. The Anthropic API with the subscription token stays
+    excluded (§5).
+    **Next quick tasks:** the ⌘K fast path (must amend Decision 10 first), then agent status
+    lines. **Candidates, unscheduled:** shrinking what the agent reads (lossy; opt-in at
+    most), session titles and commit drafts, voice cleanup. **Never a quick task:** the write
+    gate, statement classification, anything touching credentials.
+    *Reverse if:* quick tasks on the default provider cost enough quota to crowd out agent
+    turns — then ghost-text defaults off without a local provider.
 
 ## Invariant 6 — the writes that have earned in
 

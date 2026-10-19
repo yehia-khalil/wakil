@@ -513,8 +513,9 @@ no full debugger.
   1. Basic — Monaco built-in (word/snippet), free, v1.
   2. Type-aware — per-language LSP (Intelephense, tsserver, …); real per-language work
      Wakil owns; added on demand starting with PHP/Laravel and TS.
-  3. AI ghost-text — powered by the org's Claude account, context-aware (project, schema,
-     ticket); v1, and Wakil's edge over generic Copilot.
+  3. AI ghost-text — runs on the org's quick-tasks provider: its Claude account by default,
+     a local model when the operator adds one (Decision 42). Context: the file and the
+     active environment's schema. Wakil's edge over generic Copilot.
 - **Change indicators** in the editor gutter and the peek shipped in 3b-iii (Decision 40); see
   the Editor row above. A file past 10,000 lines shows no marks.
 
