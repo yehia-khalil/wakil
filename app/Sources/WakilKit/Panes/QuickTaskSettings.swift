@@ -17,6 +17,15 @@ public func quickTaskNote(_ tree: SettingsTree, activeProvider: String) -> Strin
     return "Ghost-text needs a Claude or local provider"
 }
 
+/// The line under the Quick tasks picker: which provider code completion goes to first, by its
+/// label or, without one, its id. Nil until quick tasks are built.
+public func quickTaskRouteLine(_ tree: SettingsTree, routed: String?) -> String? {
+    guard let routed else { return nil }
+    let provider = tree.providers.first { $0.id == routed }
+    let name = provider.map { $0.label.isEmpty ? $0.id : $0.label } ?? routed
+    return "Code completion goes to \(name)"
+}
+
 /// A local provider's status line: its last error whole (Rule 8), else "reachable" once it has
 /// answered, else "not tried yet".
 public func localProviderStatus(id: String, errors: [String: String], answered: Set<String>) -> String {

@@ -39,13 +39,13 @@ environment has a SQL database with a `bookings` table (the `events` SQLite data
 `db-query-line-acceptance.md` works if it has one; otherwise any SQL environment). Open a project
 with a few source files, and a DB pane on that environment.
 
-Settings is ⌘, ; the org's choices are under the organisation node, Providers.
+Settings is ⌘, ; **Quick tasks** and **LOCAL MODELS** are on the organisation's Providers page.
 
 ## 1. The walk on Claude (Quick tasks: Same as agent)
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 1 | Settings, organisation: read the **Quick tasks** row | **Same as agent** is selected. `qwen` is listed beside it | |
+| 1 | Settings, Providers: read the **QUICK TASKS** row | **Same as agent** is selected. `Qwen 1.5B` is listed beside it. The accounts table above lists Claude accounts only: no `qwen` row, and no "no stored credential" warning for it | |
 | 2 | Open a source file in an editor tab, put the caret at the end of a line, type `const x = ` and stop | A pulse shows at the caret after about 0.4 s; a dim suggestion replaces it after about 1.5 to 2.5 s | |
 | 3 | Look at the suggestion and the pulse | The ghost text is dim cool white (about 34% opacity), starts exactly at the caret, and does not shift the text after it. The pulse is faint, at the caret, and gone when the text lands | |
 | 4 | Press Tab | The suggestion becomes real text, the caret sits after it, the tab is marked unsaved | |
@@ -67,7 +67,7 @@ Settings is ⌘, ; the org's choices are under the organisation node, Providers.
 
 ## 2. The walk on the local model (Quick tasks: Qwen 1.5B)
 
-Select `Qwen 1.5B` in the **Quick tasks** row first.
+Select `Qwen 1.5B` in the **QUICK TASKS** row (Settings, Providers) first.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
@@ -83,8 +83,8 @@ Select `Qwen 1.5B` in the **Quick tasks** row first.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 27 | Open Settings, Providers | **QUICK TASKS** row shows the choices as one segmented control, **Same as agent** first; **LOCAL MODELS** below it lists local providers as table rows with a hairline between them, then **+ Add local model** | |
-| 28 | Look at the layout and the accessibility ids (Accessibility Inspector) | `settings.org.quickProvider.same`, `settings.org.quickProvider.qwen`, `settings.localProvider.add`, `settings.localProvider.qwen.url`, `.serves.infill`, `.serves.respond`, `.status` are present | |
+| 27 | Open Settings, Providers | Below the accounts table, the **QUICK TASKS** row shows the choices as one segmented control, **Same as agent** first, with *Code completion goes to …* under it; **LOCAL MODELS** below it lists local providers as table rows with a hairline between them, then **+ Add local model**. The organisation page has no Quick tasks row | |
+| 28 | Look at the layout and the accessibility ids (Accessibility Inspector) | `settings.org.quickProvider.same`, `settings.org.quickProvider.qwen`, `settings.org.quickProvider.route`, `settings.localProvider.add`, `settings.localProvider.qwen.url`, `.serves.infill`, `.serves.respond`, `.status` are present | |
 | 29 | Click **+ Add local model** | A *New model* row appears with an empty URL field, focused, with *Code completion* ticked and *Instructions* unticked, and **CANCEL** at the right; **+ Add local model** is dimmed and disabled | |
 | 30 | Press Esc with the new row empty; click **+ Add local model** again and click elsewhere; add once more, type a URL and press **CANCEL** | The new row goes away all three ways and **+ Add local model** comes back; nothing was saved, even with a URL typed | |
 | 30a | Press **REMOVE** on a saved local model that **Quick tasks** has selected | The row goes at once, with no confirmation (it holds no credential); **Quick tasks** falls back to **Same as agent** | |

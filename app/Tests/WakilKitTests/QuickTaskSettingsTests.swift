@@ -54,3 +54,13 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
     #expect(choices.first?.display == "Same as agent")
     #expect(choices.last?.display == "d")
 }
+
+@Test func quickTaskRouteLineNamesTheProviderCodeCompletionGoesTo() {
+    let t = tree(quick: "local", [
+        SettingsProvider(id: "local", kind: "local", label: "Qwen", baseURL: "http://127.0.0.1:8012", serves: ["infill"]),
+        SettingsProvider(id: "work", kind: "claude-code", serves: ["infill", "respond"]),
+    ])
+    #expect(quickTaskRouteLine(t, routed: "local") == "Code completion goes to Qwen")
+    #expect(quickTaskRouteLine(t, routed: "work") == "Code completion goes to work")
+    #expect(quickTaskRouteLine(t, routed: nil) == nil)
+}

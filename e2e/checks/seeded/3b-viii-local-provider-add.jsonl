@@ -22,6 +22,7 @@
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[0]","equals":"infill"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[1]","present":false}}
 {"expect":{"tree":"contains","text":"not tried yet"}}
+{"expect":{"tree":"absent","text":"no config dir"}}
 {"expect":{"tree":"contains","text":"Value: http://127.0.0.1:1"}}
 {"expect":{"tree":"contains","text":"checkbox (disabled), Value: 1"}}
 {"parity":{"action":"ctx_set_local_provider","params":{"id":"local","label":"","baseURL":"http://127.0.0.1:1","serves":["infill","respond"]},"click":"settings.localProvider.local.serves.respond","assert":"tree"}}

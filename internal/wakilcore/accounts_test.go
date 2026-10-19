@@ -430,6 +430,30 @@ func addAccount(t *testing.T, org, id string) string {
 	return configDir
 }
 
+// TestListAccountsLeavesLocalModelsOut — a `local` provider is an endpoint
+// the operator runs, with no sign-in and no credential (3b-viii): Settings
+// draws it under LOCAL MODELS, so a row here, and a "no stored credential"
+// warning for it, would name a repair that does not exist.
+func TestListAccountsLeavesLocalModelsOut(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	useFakeSecurity(t, `exit 44`)
+	if err := CreateOrg("acme", Org{}); err != nil {
+		t.Fatal(err)
+	}
+	addAccount(t, "acme", "main")
+	if err := SetLocalProvider("acme", Provider{ID: "qwen", BaseURL: "http://127.0.0.1:8012"}); err != nil {
+		t.Fatal(err)
+	}
+
+	listing, err := listAccountsFor("acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing.Accounts) != 1 || listing.Accounts[0].ID != "main" {
+		t.Fatalf("accounts = %+v, want only main", listing.Accounts)
+	}
+}
+
 // TestListAccountsDrawsEveryAccountOnTheMachineWithKindAsAColumn — one
 // flat table, including accounts registered in OTHER organisations, so
 // adopting one later is a gesture rather than a search.

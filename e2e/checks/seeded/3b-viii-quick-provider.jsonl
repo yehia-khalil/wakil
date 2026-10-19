@@ -1,5 +1,5 @@
 {"do":{"hotkey":"cmd+,"}}
-{"do":{"click":"settings.tree.organisation"}}
+{"do":{"click":"settings.tree.providers"}}
 {"expect":{"tree":"contains","text":"QUICK TASKS"}}
 {"expect":{"frame":"settings.org.quickProvider.same","maxHeight":30}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":""}}

@@ -437,13 +437,16 @@ struct SettingsPane: View {
                 organisationEditor(field, in: tree)
             }
             speechRow(tree: tree)
-            quickTasksRow(tree: tree)
             readOnlyNote(
                 "Saved one field at a time, read-modify-write from disk — so an edit you make "
                     + "to org.json by hand while this pane is open survives a save here.")
 
         case .providers:
             accountTable()
+            // Above the local models it chooses between, so the choice and what it chooses from
+            // are read together; the organisation node does not repeat it.
+            quickTasksRow(tree: tree)
+                .padding(.top, 14)
             LocalProvidersSection(
                 providers: tree.providers, status: quickStatus,
                 save: { id, label, url, serves in
@@ -729,6 +732,12 @@ struct SettingsPane: View {
                     return "settings.org.quickProvider.\(key)"
                 },
                 held: known == nil ? stored : nil)
+            if let route = quickTaskRouteLine(tree, routed: quickStatus?.routedInfill) {
+                Text(route)
+                    .font(.system(size: Scale.meta))
+                    .foregroundStyle(coolWhite.opacity(0.45))
+                    .accessibilityIdentifier("settings.org.quickProvider.route")
+            }
             if let note = quickTaskNote(tree, activeProvider: runningAccountId) {
                 Text(note)
                     .font(.system(size: Scale.body))
