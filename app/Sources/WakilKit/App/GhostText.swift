@@ -39,23 +39,34 @@ public enum GhostSchema {
 
     /// Tables the text names, in schema order: singular or plural, snake (`booking_item`) or camel (`BookingItem`).
     public static func matching(_ tables: [GhostTable], in text: String, limit: Int = 5) -> [GhostTable] {
-        // Every spelling a table can take: plural, singular, and each with the underscores dropped (camel).
+        // Every spelling a table can take: plural, each singular, and each with the underscores dropped (camel).
         func forms(_ table: GhostTable) -> Set<String> {
             let plural = table.name.lowercased()
-            let singular = singularForm(plural)
-            return [plural, singular, plural.replacingOccurrences(of: "_", with: ""), singular.replacingOccurrences(of: "_", with: "")]
+            var out: Set<String> = [plural, plural.replacingOccurrences(of: "_", with: "")]
+            for singular in singularForms(plural) {
+                out.insert(singular)
+                out.insert(singular.replacingOccurrences(of: "_", with: ""))
+            }
+            return out
         }
         let known = tables.reduce(into: Set<String>()) { $0.formUnion(forms($1)) }
-        // A compound (`BookingItem`, `booking_item`) that names a table stays whole, so it does not also
-        // count as its first part (`booking`); any other compound (`guest_id`) falls apart into words.
+        // The longest run of leading parts that names a table wins and the rest is a trailing part
+        // (`booking_item_id` -> booking_item); with no such prefix every part counts as a word (`guest_id`).
         var seen = Set<String>()
         for run in splitRuns(text, keepUnderscore: true) {
             let parts = camelParts(run).map { $0.lowercased() }
-            let whole = run.lowercased()
-            let squashed = parts.joined()
-            seen.insert(whole)
-            seen.insert(squashed)
-            if !(known.contains(whole) || known.contains(squashed)) { seen.formUnion(parts) }
+            guard !parts.isEmpty else { continue }
+            let hit = stride(from: parts.count, through: 1, by: -1).lazy
+                .map { Array(parts.prefix($0)) }
+                .first { known.contains($0.joined(separator: "_")) || known.contains($0.joined()) }
+            if let hit {
+                seen.insert(hit.joined(separator: "_"))
+                seen.insert(hit.joined())
+            } else {
+                seen.insert(run.lowercased())
+                seen.insert(parts.joined())
+                seen.formUnion(parts)
+            }
         }
         var found: [GhostTable] = []
         for table in tables {
@@ -101,11 +112,13 @@ public enum GhostSchema {
         return parts
     }
 
-    private static func singularForm(_ n: String) -> String {
-        if n.hasSuffix("ies"), n.count > 3 { return String(n.dropLast(3)) + "y" }
-        for tail in ["ses", "xes", "ches", "shes"] where n.hasSuffix(tail) { return String(n.dropLast(2)) }
-        if n.hasSuffix("s"), !n.hasSuffix("ss"), n.count > 1 { return String(n.dropLast()) }
-        return n
+    /// Candidate singulars; "-ses" is ambiguous (`statuses` -> status, `databases` -> database), so it gives both.
+    private static func singularForms(_ n: String) -> [String] {
+        if n.hasSuffix("ies"), n.count > 3 { return [String(n.dropLast(3)) + "y"] }
+        if n.hasSuffix("sses") || n.hasSuffix("xes") || n.hasSuffix("ches") || n.hasSuffix("shes") { return [String(n.dropLast(2))] }
+        if n.hasSuffix("ses") { return [String(n.dropLast(2)), String(n.dropLast())] }
+        if n.hasSuffix("s"), !n.hasSuffix("ss"), n.count > 1 { return [String(n.dropLast())] }
+        return [n]
     }
 }
 
@@ -119,12 +132,16 @@ public func ghostRequest(text: String, caret: String.Index, path: String, langua
     var prefix = String(text[..<caret])
     if prefix.count > prefixWindow {
         let window = prefix.suffix(prefixWindow)
-        prefix = window.firstIndex(where: \.isNewline).map { String(window[window.index(after: $0)...]) } ?? String(window)
+        let startsLine = prefix[prefix.index(prefix.endIndex, offsetBy: -prefixWindow - 1)].isNewline
+        prefix = startsLine ? String(window)
+            : window.firstIndex(where: \.isNewline).map { String(window[window.index(after: $0)...]) } ?? String(window)
     }
     var suffix = String(text[caret...])
     if suffix.count > suffixWindow {
         let window = suffix.prefix(suffixWindow)
-        suffix = window.lastIndex(where: \.isNewline).map { String(window[..<$0]) } ?? String(window)
+        let endsLine = suffix[suffix.index(suffix.startIndex, offsetBy: suffixWindow)].isNewline
+        suffix = endsLine ? String(window)
+            : window.lastIndex(where: \.isNewline).map { String(window[..<$0]) } ?? String(window)
     }
     let lineBefore = text[..<caret].reversed().prefix(while: { !$0.isNewline })
     let lineAfter = text[caret...].prefix(while: { !$0.isNewline })
@@ -136,6 +153,7 @@ public func ghostRequest(text: String, caret: String.Index, path: String, langua
 /// Trims what the model echoed from the suffix, trailing whitespace, and anything past the line allowance.
 public func ghostClean(_ reply: String, suffix: String, multiline: Bool) -> String {
     var text = reply
+    while let last = text.last, last.isWhitespace { text.removeLast() }
     let limit = min(text.count, suffix.count)
     if limit > 0 {
         for n in stride(from: limit, through: 1, by: -1) where text.hasSuffix(suffix.prefix(n)) {
@@ -148,6 +166,7 @@ public func ghostClean(_ reply: String, suffix: String, multiline: Bool) -> Stri
         while let last = l.last, last.isWhitespace { l = l.dropLast() }
         return String(l)
     }
+    while let first = lines.first, first.isEmpty { lines.removeFirst() }
     while let last = lines.last, last.isEmpty { lines.removeLast() }
     lines = Array(lines.prefix(multiline ? multilineMaxLines : 1))
     let out = lines.joined(separator: "\n")

@@ -51,6 +51,21 @@ private func req(_ prefix: String) -> InfillRequest {
         #expect(GhostSchema.extra([]) == nil)
     }
 
+    @Test func matchingHandlesSesPluralsAndTrailingParts() {
+        func match(_ names: [String], _ text: String) -> [String] {
+            GhostSchema.matching(names.map { GhostTable(name: $0, columns: ["id"]) }, in: text).map(\.name)
+        }
+        #expect(match(["databases"], "Database") == ["databases"])
+        #expect(match(["responses"], "Response") == ["responses"])
+        #expect(match(["statuses"], "Status") == ["statuses"])
+        #expect(match(["purchases"], "Purchase") == ["purchases"])
+        #expect(match(["boxes"], "Box") == ["boxes"])
+        let both = ["bookings", "booking_items"]
+        #expect(match(both, "booking_item_id") == ["booking_items"])
+        #expect(match(both, "BookingItemId") == ["booking_items"])
+        #expect(match(both, "booking_id") == ["bookings"])
+    }
+
     @Test func matchingStopsAtFive() {
         let many = (0..<8).map { GhostTable(name: "t\($0)s", columns: ["id"]) }
         let text = (0..<8).map { "t\($0)" }.joined(separator: " ")
@@ -76,6 +91,17 @@ private func req(_ prefix: String) -> InfillRequest {
         #expect(ghostRequest(text: blank, caret: at, path: "a.go", language: "go", schema: []).multiline)
     }
 
+    @Test func windowsKeepALineWhenTheCutIsAlreadyOnABoundary() {
+        // 6,000 chars of "xxxxxxxxx\n" lines: the window starts exactly at a line start.
+        let line = "xxxxxxxxx\n"
+        let text = String(repeating: line, count: 700)
+        let r = ghostRequest(text: text, caret: text.endIndex, path: "", language: "", schema: [])
+        #expect(r.prefix.count == 6_000 && r.prefix.hasPrefix(line))
+        let tailText = "a\n" + String(repeating: "y", count: 1_998) + "\nnext\n"
+        let s = ghostRequest(text: tailText, caret: tailText.startIndex, path: "", language: "", schema: [])
+        #expect(s.suffix.count == 2_000)
+    }
+
     @Test func windowsKeepCRLFAndEmoji() {
         let text = "a = \"🙂\"\r\nb."
         let r = ghostRequest(text: text, caret: text.endIndex, path: "a.go", language: "go", schema: [])
@@ -95,6 +121,8 @@ private func req(_ prefix: String) -> InfillRequest {
         #expect(ghostClean("a\nb", suffix: "", multiline: false) == "a")
         #expect(ghostClean((1...9).map(String.init).joined(separator: "\n"), suffix: "", multiline: true).split(separator: "\n").count == 6)
         #expect(ghostClean("   ", suffix: "", multiline: false) == "")
+        #expect(ghostClean("\nstatus", suffix: "", multiline: false) == "status")
+        #expect(ghostClean("x FROM y  ", suffix: " FROM y", multiline: false) == "x")
     }
 
     @Test func staleReplyIsDropped() async {
@@ -137,7 +165,7 @@ private func req(_ prefix: String) -> InfillRequest {
 
     @Test func debounceSupersedesWithoutAsking() async {
         let asked = GhostCounter()
-        let s = GhostTextSession(suggest: { _ in await asked.bump(); return "x" }, debounce: { .milliseconds(50) })
+        let s = GhostTextSession(suggest: { _ in await asked.bump(); return "x" }, debounce: { .milliseconds(300) })
         async let a = s.request(req("a"))
         try? await Task.sleep(for: .milliseconds(5))
         async let b = s.request(req("ab"))
