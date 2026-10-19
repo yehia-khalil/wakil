@@ -80,6 +80,14 @@ extension WindowModel {
         Task { await session.cancel() }
     }
 
+    /// Releases the ghost session of every pane no longer on the canvas — closed by the operator or
+    /// an agent — so none outlives its pane. Run wherever the canvas is read back.
+    func pruneGhostSessions() {
+        guard !ghostSessions.isEmpty else { return }
+        let open = Set(layoutSnapshot.panes.map(\.id))
+        for pane in ghostSessions.keys where !open.contains(pane) { ghostCancel(pane: pane) }
+    }
+
     /// How long a pane waits after a keystroke before asking: a local endpoint answers in tens of
     /// milliseconds, a session-backed model in about a second.
     public func ghostDebounce() async -> Duration {

@@ -474,7 +474,12 @@ extension WakilWindow {
                     unsavedPrompt: model.unsavedPrompt.flatMap { prompt in
                         if case .closeTab(pane.id, _) = prompt.intent { prompt } else { nil }
                     },
-                    resolveUnsaved: { choice in Task { await model.resolveUnsaved(choice) } })
+                    resolveUnsaved: { choice in Task { await model.resolveUnsaved(choice) } },
+                    // 3b-viii: ghost-text on the window's quick tasks, one session per pane.
+                    ghostEnabled: { model.ghostTextEnabled },
+                    ghostSchema: { await model.ghostSchema() },
+                    ghostSuggest: { request in await model.ghostSuggestion(pane: pane.id, request: request) },
+                    ghostCancel: { model.ghostCancel(pane: pane.id) })
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw
                 // its kind — the rule `Pane.kinds` has always stated.

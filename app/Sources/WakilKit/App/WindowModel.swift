@@ -4013,6 +4013,7 @@ public final class WindowModel {
         // 3b-v: focus leaving an editor pane is `focus` mode's trigger.
         if let left = before.focusedId, left != layoutSnapshot.focusedId { autosaveFocusLeft(pane: left) }
         pruneApiSendRequests()
+        pruneGhostSessions()
         keyboardFocusRequests = reading.focusRequests
         // Every pane opened or closed — the operator's or the agent's — passes through here
         // or `readLayoutSnapshot`, so the watchers follow the editor panes from these two.
@@ -4048,6 +4049,7 @@ public final class WindowModel {
         let reading = await layout.reading()
         layoutSnapshot = reading.snapshot
         pruneApiSendRequests()
+        pruneGhostSessions()
         keyboardFocusRequests = reading.focusRequests
         await syncGitWatcher()
         await syncEditorWatcher()

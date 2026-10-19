@@ -65,6 +65,12 @@ struct EditorPane: View {
     let unsavedPrompt: UnsavedPrompt?
     /// Save / Don't Save / Cancel for that prompt.
     let resolveUnsaved: (UnsavedChoice) -> Void
+    /// 3b-viii ghost-text, for THIS pane: whether it is on now, the schema tables in scope, the
+    /// suggestion for a request (nil: nothing to draw), and the release of the pending one.
+    let ghostEnabled: () -> Bool
+    let ghostSchema: () async -> [GhostTable]
+    let ghostSuggest: (InfillRequest) async -> String?
+    let ghostCancel: () -> Void
 
     @State private var host = EditorHost()
     /// Compare, open: the path and the disk text it shows against the buffer.
@@ -156,6 +162,13 @@ struct EditorPane: View {
             host.bufferChanged = bufferChanged
             host.viewReported = viewReported
             host.findReported = findReported
+            host.ghostAsk = { text, caret, path, language in
+                guard ghostEnabled() else { return nil }
+                let request = ghostRequest(text: text, caret: caret, path: path, language: language,
+                                           schema: await ghostSchema())
+                return await ghostSuggest(request)
+            }
+            host.ghostCancel = ghostCancel
             // Handed in first, so `start` applies the newest snapshot, never this one if a newer
             // one landed while the renderer was being made.
             host.apply(snapshot)
@@ -725,6 +738,10 @@ final class EditorHost {
     @ObservationIgnored var viewReported: ((EditorTabSubject, EditorPosition, EditorRange?, ClosedRange<Int>?, Double) async -> Void)?
     /// Monaco's find bar state, a view report like the cursor's (`PaneStore.editorFindDidReport`).
     @ObservationIgnored var findReported: ((EditorFindReport) async -> Void)?
+    /// 3b-viii: the ghost-text suggestion for the text at a caret in the tab at a path in a language
+    /// (nil: draw nothing), and the release of the pane's pending request.
+    @ObservationIgnored var ghostAsk: ((String, String.Index, String, String) async -> String?)?
+    @ObservationIgnored var ghostCancel: (() -> Void)?
     /// The last snapshot's tabs, subject by key: a post is addressed by the subject its key names,
     /// never by a position that a close or open may have moved (final review I1).
     @ObservationIgnored private var subjects: [String: EditorTabSubject] = [:]
@@ -818,6 +835,24 @@ final class EditorHost {
             guard let self, let s = self.subjects[key] else { return }
             self.markClicked?(s, line)
         }
+        // The page waits on every ghost request until it is resolved or it cancels it, so a request
+        // that cannot be asked (a tab that never asks, a caret that splits a character) is resolved
+        // empty at once. The page drops a resolve for a request it no longer waits on.
+        made.onGhost = { [weak self] key, id, text, offset in
+            guard let self else { return }
+            guard let ask = self.ghostAsk, let subject = self.subjects[key],
+                  let tab = self.latest?.tabs.first(where: { $0.subject == subject }),
+                  let context = ghostTabContext(tab),
+                  let caret = ghostCaret(text: text, utf16Offset: offset) else {
+                self.renderer?.resolveGhost(id: id, text: nil)
+                return
+            }
+            Task { @MainActor [weak self] in
+                let suggestion = await ask(text, caret, context.path, context.language)
+                self?.renderer?.resolveGhost(id: id, text: suggestion)
+            }
+        }
+        made.onGhostCancel = { [weak self] _ in self?.ghostCancel?() }
         made.onFind = { [weak self] report in
             guard let send = self?.findReported else { return }
             Task { @MainActor in await send(report) }

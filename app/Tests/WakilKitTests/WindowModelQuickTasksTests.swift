@@ -269,6 +269,22 @@ private func makeSettingsWindow(
         #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest) == "next")
     }
 
+    /// A closed pane's ghost session goes with it — whoever closed it — and an open pane's stays.
+    @Test func closingAPaneReleasesItsGhostSession() async throws {
+        let (model, _) = await editorWindowWithFiles()
+        await model.refreshContext()
+        #expect(await model.openPane(kind: "editor"))
+        #expect(await model.openPane(kind: "editor"))
+        let panes = model.layoutSnapshot.panes.map(\.id)
+        try #require(panes.count == 2)
+        for pane in panes {
+            model.ghostSessions[pane] = GhostTextSession(suggest: { _ in "" }, debounce: { .zero })
+        }
+        #expect(await model.closePane(id: panes[0]))
+        #expect(model.ghostSessions[panes[0]] == nil)
+        #expect(model.ghostSessions[panes[1]] != nil)
+    }
+
     /// A configuration that cannot be read stops ghost-text, and Settings is told why, whole (Rule 8);
     /// the next rebuild that reads it clears the reason.
     @Test func anUnreadableConfigurationIsReportedWholeAndClearedOnRecovery() async throws {

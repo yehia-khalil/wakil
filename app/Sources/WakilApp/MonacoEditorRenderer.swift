@@ -30,6 +30,12 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     var onKey: ((String) -> Void)?
     /// A peek control pressed in `key`: "up", "down", "revert" or "close".
     var onPeek: ((String, String) -> Void)?
+    /// 3b-viii: the page asks for ghost-text in `key`'s model — request `id`, the model's whole text
+    /// and the caret as a UTF-16 offset into it. Answered by `resolveGhost(id:text:)`.
+    var onGhost: ((String, Int, String, Int) -> Void)?
+    /// The page dropped request `id` (Monaco cancelled it: more typing, the caret moved). It has
+    /// already resolved it empty; nothing is owed back.
+    var onGhostCancel: ((Int) -> Void)?
     private var capturing: [String] = []
 
     /// Held so `tearDown` can reach it from `deinit`, which is not main-actor isolated.
@@ -141,6 +147,12 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
         run("wakilSetOptions({fontSize:\(o.fontSize),wordWrap:\(o.wordWrap),tabSize:\(o.tabSize),insertSpaces:\(o.insertSpaces)})")
     }
 
+    /// Answers the page's ghost request `id`: `text` is drawn at the caret it asked from, nil draws
+    /// nothing. The page ignores an answer for a request it no longer waits on.
+    func resolveGhost(id: Int, text: String?) {
+        run("wakilGhostResolve(\(id),\(text.map(Self.jsString) ?? "null"))")
+    }
+
     private static func js(_ s: String) -> String { jsString(s) }
 
     /// `s` as a JavaScript string literal.
@@ -208,6 +220,12 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
             if let key = body["key"] as? String, let op = body["op"] as? String { onPeek?(key, op) }
         case "mark":
             if let key = body["key"] as? String, let line = Self.int(body["line"]) { onMark?(key, line) }
+        case "ghost":
+            guard let key = body["key"] as? String, let id = Self.int(body["id"]),
+                  let text = body["text"] as? String, let offset = Self.int(body["offset"]) else { return }
+            onGhost?(key, id, text, offset)
+        case "ghostCancel":
+            if let id = Self.int(body["id"]) { onGhostCancel?(id) }
         case "find":
             onFind?(EditorFindReport(query: body["query"] as? String ?? "",
                                      caseSensitive: (body["matchCase"] as? NSNumber)?.boolValue ?? false,
