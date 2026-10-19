@@ -265,9 +265,11 @@ Each entry: the call, why, and what would change our mind.
     "locally hosted" buys privacy and cost, not parity.
     *Amended 2026-10-19 (3b-viii):* the harness axis has two seams — `AgentHarness` for
     sessions and `QuickModel` for one-shot quick tasks, with two operations, `infill` and
-    `respond`. `ClaudeCodeQuickModel` runs a warm `claude` session through `buildLaunch`'s
-    whitelist; `LocalEndpointQuickModel` speaks a llama.cpp-style `/infill` and the OpenAI
-    chat shape. Decision 42 says how a call picks between them.
+    `respond`. `ClaudeCodeQuickModel` runs a warm `claude` session launched through
+    `buildQuickLaunch` — `buildLaunch`'s environment whitelist and stream-json flags, with no MCP
+    servers, and without the agent's prompt (`--append-system-prompt`), permission tool
+    (`--permission-prompt-tool`) or `--allowedTools`; `LocalEndpointQuickModel` speaks a
+    llama.cpp-style `/infill` and the OpenAI chat shape. Decision 42 says how a call picks between them.
 
 17. **Native Monaco editor, dual-driven — not embedded VS Code.**
     *(Revised 2026-09-03. Originally: embedded `code-server`, black box, built last.)*
@@ -276,9 +278,9 @@ Each entry: the call, why, and what would change our mind.
     which embedded VS Code, a black box in a webview, cannot. Cost: no extension
     marketplace, no full debugger. Includes a collapsible multi-root file tree, multi-tab
     files, and three-tier autocomplete (Monaco basic → per-language LSP on demand → AI
-    ghost-text from the org's Claude account). Git is a *separate* dual-driven pane (git
-    is project-level across roots; the editor is per-file) that reuses Monaco's diff
-    renderer and opens files into the editor. Full pane roster and layout model:
+    ghost-text from the org's Claude account (since 3b-viii: the org's quick-tasks provider,
+    Decision 42)). Git is a *separate* dual-driven pane (git is project-level across roots;
+    the editor is per-file) that reuses Monaco's diff renderer and opens files into the editor. Full pane roster and layout model:
     `design-language.md` §10–11. *Reverse if:* the lack of the VS Code ecosystem proves
     disqualifying for real work — then embed `code-server` as the black-box exception and
     keep the native editor for dual-driven edits.

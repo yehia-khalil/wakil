@@ -71,11 +71,11 @@ Select `Qwen 1.5B` in the **Quick tasks** row first.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 20 | Settings, Providers: read the `qwen` row under **LOCAL MODELS** | URL `http://127.0.0.1:8012`; **Serves** has *Code completion* ticked and *Instructions* unticked; a status line reads *reachable* | |
+| 20 | Settings, Providers: read the `qwen` row under **LOCAL MODELS** | URL `http://127.0.0.1:8012`; **Serves** has *Code completion* ticked and *Instructions* unticked; the *Code completion* box is greyed out (the last ticked one cannot be unticked); a status line reads *not tried yet* until a suggestion is asked, then *reachable* | |
 | 21 | Type in an editor tab and pause | A suggestion lands in about 100 to 300 ms after the 250 ms pause; the pulse (0.4 s) never shows | |
 | 22 | In the DB query line, type `SELECT id, ` after naming `bookings`, pause | A suggestion with real `bookings` columns | |
 | 23 | Tab, Esc, typing and ⌘Z behave as in rows 4 to 8 | Same results | |
-| 24 | Stop the server (Ctrl-C in its Terminal), then type and pause in the editor | The suggestion still arrives once, from Claude (the one fallback), after about 2 s. In Settings the `qwen` status line shows the connection error whole, not shortened | |
+| 24 | Stop the server (Ctrl-C in its Terminal), then type and pause in the editor | The suggestion still arrives once, from Claude (the one fallback), after about 2 s. In Settings the `qwen` status line, and the line under the **Quick tasks** row, show the connection error whole, not shortened; stderr has one `quick-tasks: qwen:` line for it | |
 | 25 | Start the server again, type and pause | The suggestion comes from the local model again (fast), and the status line goes back to *reachable* | |
 | 26 | Quick tasks back to **Same as agent**, then to `Qwen 1.5B` | Each change takes effect on the next suggestion; no restart needed | |
 
@@ -89,7 +89,7 @@ Select `Qwen 1.5B` in the **Quick tasks** row first.
 | 30 | Press Esc with the new row empty; click **Add local model** again and click elsewhere | The empty row goes away both ways and **Add local model** comes back; nothing was saved | |
 | 31 | Add a row, type `http://127.0.0.1:8012`, press Return | The row stays and is saved as `local`; its status line shows | |
 | 32 | Tab to a *Serves* checkbox and press Space | The checkbox takes focus from the keyboard and toggles; the change is saved (reopen Settings to confirm) | |
-| 33 | Untick both Serves boxes, or type a URL like `ftp://x` | A refusal in the warning colour, said whole, under the row; what you typed stays on screen | |
+| 33 | Try to untick both Serves boxes; then type a URL like `ftp://x` | The last ticked box is greyed out and cannot be unticked. The URL gets a refusal in the warning colour, said whole, under the row; what you typed stays on screen | |
 | 34 | Set Quick tasks to a provider, then unlink that provider (`WAKIL_ORG=personal ./bin/wakil provider rm qwen`) | The row falls back to **Same as agent**; nothing crashes | |
 
 ## 4. Known and not fixed
