@@ -24,3 +24,23 @@ public func queryLineAsksForGhost(text: String, caret: String.Index) -> Bool {
     let lineRest = rest.prefix { !$0.isNewline }
     return lineRest.allSatisfy(\.isWhitespace)
 }
+
+/// Whether `key` drops the ghost and its pending request before it does anything else. Every Esc
+/// does — dismissing, cancelling a read or leaving the line — so no suggestion lands after one
+/// (Rule 4); Tab does too, accepting or leaving. Return runs what was typed and moves no caret.
+public func queryLineKeyDropsGhost(_ key: QueryLineKey) -> Bool {
+    key != .returnKey
+}
+
+/// Whether a ghost at `caret` may run past its first line: only with nothing but whitespace after
+/// the caret in the whole text, so its further lines never draw over real text below.
+public func queryLineGhostIsMultiline(text: String, caret: String.Index) -> Bool {
+    text[caret...].allSatisfy(\.isWhitespace)
+}
+
+/// What of `suggestion` the line shows: its first line alone unless `multiline`, and nil when
+/// that leaves nothing.
+public func queryLineGhostShown(_ suggestion: String, multiline: Bool) -> String? {
+    let shown = multiline ? suggestion : String(suggestion.prefix { !$0.isNewline })
+    return shown.isEmpty ? nil : shown
+}

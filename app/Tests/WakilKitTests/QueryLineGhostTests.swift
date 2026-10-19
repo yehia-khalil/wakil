@@ -46,4 +46,32 @@ import Testing
         #expect(!queryLineAsksForGhost(text: "", caret: "".endIndex))
         #expect(!queryLineAsksForGhost(text: "   ", caret: "   ".endIndex))
     }
+
+    // Fix round 1 (Rule 4): every Esc drops the ghost and its pending request, whichever of
+    // dismiss, cancel-read or leave-line it does; Tab drops it too (accepting or leaving).
+    // Return leaves it: it runs what was typed and the caret has not moved.
+    @Test func everyEscapeDropsTheGhost() {
+        #expect(queryLineKeyDropsGhost(.escape))
+        #expect(queryLineKeyDropsGhost(.tab))
+        #expect(!queryLineKeyDropsGhost(.returnKey))
+    }
+
+    // Controller ruling: a ghost runs past its first line only with nothing but whitespace
+    // after the caret in the whole text, so it is never drawn over real text below.
+    @Test func multilineOnlyAtTheEndOfTheWholeText() {
+        let t = "SELECT *\nFROM bookings\n"
+        let afterFirstLine = t.index(t.startIndex, offsetBy: 8)
+        #expect(!queryLineGhostIsMultiline(text: t, caret: afterFirstLine))
+        #expect(queryLineGhostIsMultiline(text: t, caret: t.endIndex))
+        let lastLineEnd = t.index(t.startIndex, offsetBy: 22)
+        #expect(queryLineGhostIsMultiline(text: t, caret: lastLineEnd))
+        #expect(queryLineGhostIsMultiline(text: "SELECT ", caret: "SELECT ".endIndex))
+    }
+
+    @Test func aSingleLineGhostKeepsOnlyItsFirstLine() {
+        #expect(queryLineGhostShown("status = 'x'\nLIMIT 1", multiline: false) == "status = 'x'")
+        #expect(queryLineGhostShown("status = 'x'\nLIMIT 1", multiline: true) == "status = 'x'\nLIMIT 1")
+        #expect(queryLineGhostShown("\nLIMIT 1", multiline: false) == nil)
+        #expect(queryLineGhostShown("", multiline: true) == nil)
+    }
 }

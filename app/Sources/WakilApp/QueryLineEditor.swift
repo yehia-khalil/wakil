@@ -39,6 +39,9 @@ struct QueryLineEditor: NSViewRepresentable {
     static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
     static let keywordFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
     static let commentFont = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+    /// One line's height in `font`, measured once. (Never through the view's `layoutManager`: on a
+    /// TextKit 2 view that call drops it to TextKit 1.)
+    static let lineHeight = NSLayoutManager().defaultLineHeight(for: font)
     static let ink = NSColor(red: 0.910, green: 0.925, blue: 0.965, alpha: 1)
     /// What untyped text and a Mongo line are drawn at: the identifier step.
     static let plainOpacity = 0.85
@@ -133,7 +136,7 @@ struct QueryLineEditor: NSViewRepresentable {
         _ proposal: ProposedViewSize, nsView: NSScrollView, context: Context
     ) -> CGSize? {
         let padding = (nsView.documentView as? NSTextView)?.textContainer?.lineFragmentPadding ?? 5
-        let line = NSLayoutManager().defaultLineHeight(for: Self.font)
+        let line = Self.lineHeight
         let measured = NSMutableAttributedString(
             string: text, attributes: [.font: Self.font])
         Self.applyStyle(to: measured, dialect: dialect)
@@ -226,10 +229,12 @@ struct QueryLineEditor: NSViewRepresentable {
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
                 // Esc drops a ghost first, then cancels a running read, then leaves the line. The
-                // text stays either way (Interaction Rule 2).
-                switch queryLineGhostKey(.escape, ghostShowing: ghostShowing, readRunning: parent.readRunning) {
+                // text stays either way (Interaction Rule 2). Every Esc also drops what is pending,
+                // so no suggestion lands after it (Rule 4).
+                let decision = queryLineGhostKey(.escape, ghostShowing: ghostShowing, readRunning: parent.readRunning)
+                if queryLineKeyDropsGhost(.escape) { dismissGhost() }
+                switch decision {
                 case .dismiss:
-                    dismissGhost()
                     return true
                 case .cancelRead:
                     if parent.cancel() { return true }
@@ -297,12 +302,17 @@ struct QueryLineEditor: NSViewRepresentable {
             ghostId += 1
             let id = ghostId
             ghostAt = here
+            let multiline = queryLineGhostIsMultiline(text: text, caret: caret)
             let prepare = parent.ghostPrepare
             let suggest = parent.ghostSuggest
             startPulse()
             ghostTask = Task { @MainActor [weak self] in
-                let request = await prepare(text, caret)
+                var request = await prepare(text, caret)
+                // Not at the end of the whole text: one line only, asked and shown.
+                if !multiline { request?.multiline = false }
                 guard let self, let request, !Task.isCancelled, self.ghostOrder.admit(id) else {
+                    // Nothing was asked: the same text and caret may ask again.
+                    if let self, id == self.ghostId { self.ghostAt = nil }
                     self?.settle(id)
                     return
                 }
@@ -313,8 +323,9 @@ struct QueryLineEditor: NSViewRepresentable {
                       view.string == here.text, view.selectedRange() == NSRange(location: here.caret, length: 0)
                 else { return }
                 self.settle(id)
-                guard let suggestion, !suggestion.isEmpty else { return }
-                view.ghost = suggestion
+                guard let suggestion, let shown = queryLineGhostShown(suggestion, multiline: multiline)
+                else { return }
+                view.ghost = shown
                 view.needsDisplay = true
             }
         }
@@ -428,7 +439,7 @@ final class QueryLineTextView: NSTextView {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: QueryLineEditor.font, .foregroundColor: QueryLineEditor.ghostInk,
         ]
-        let lineHeight = NSLayoutManager().defaultLineHeight(for: QueryLineEditor.font)
+        let lineHeight = QueryLineEditor.lineHeight
         let left = textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0)
         // The first line beside the caret; any further lines below it at the line height.
         for (n, line) in ghost.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
