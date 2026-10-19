@@ -34,8 +34,6 @@ Command -> Registry
 Context -> MCP
 Editor -> Context
 Editor -> Git
-Editor -> Harness
-Editor -> Identifiers
 Editor -> Layout
 Editor -> MCP
 Editor -> Panes
