@@ -251,10 +251,18 @@ func backfillSharers(org, id string, departing Provider) []string {
 func clearStalePointers(org, id string) []string {
 	var cleared []string
 
-	if record, err := LoadOrgFor(org); err == nil && record.DefaultProvider == id {
-		record.DefaultProvider = ""
+	if record, err := LoadOrgFor(org); err == nil && (record.DefaultProvider == id || record.QuickProvider == id) {
+		var names []string
+		if record.DefaultProvider == id {
+			record.DefaultProvider = ""
+			names = append(names, "org.json defaultProvider")
+		}
+		if record.QuickProvider == id {
+			record.QuickProvider = ""
+			names = append(names, "org.json quickProvider")
+		}
 		if err := SaveOrg(org, *record); err == nil {
-			cleared = append(cleared, "org.json defaultProvider")
+			cleared = append(cleared, names...)
 		}
 	}
 

@@ -17,12 +17,13 @@ type OrgPatch struct {
 	JiraBase        *string
 	DefaultProvider *string
 	SpeechProvider  *string
+	QuickProvider   *string
 }
 
 // isEmpty reports whether this patch would change nothing.
 func (p OrgPatch) isEmpty() bool {
 	return p.DisplayName == nil && p.JiraBase == nil && p.DefaultProvider == nil &&
-		p.SpeechProvider == nil
+		p.SpeechProvider == nil && p.QuickProvider == nil
 }
 
 // apply returns o with this patch's named fields replaced.
@@ -38,6 +39,9 @@ func (p OrgPatch) apply(o Org) Org {
 	}
 	if p.SpeechProvider != nil {
 		o.SpeechProvider = *p.SpeechProvider
+	}
+	if p.QuickProvider != nil {
+		o.QuickProvider = *p.QuickProvider
 	}
 	return o
 }

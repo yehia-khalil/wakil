@@ -17,6 +17,7 @@ type ConfigTreeOrg struct {
 	JiraBase        string `json:"jiraBase"`
 	DefaultProvider string `json:"defaultProvider"`
 	SpeechProvider  string `json:"speechProvider"`
+	QuickProvider   string `json:"quickProvider"`
 }
 
 // ConfigTreeProvider is a provider binding as the settings tree draws it.
@@ -195,6 +196,7 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 		JiraBase:        record.JiraBase,
 		DefaultProvider: record.DefaultProvider,
 		SpeechProvider:  record.SpeechProvider,
+		QuickProvider:   record.QuickProvider,
 	}
 
 	providers, skipped, err := listProvidersFor(org)

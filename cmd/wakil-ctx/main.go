@@ -154,6 +154,7 @@ type updateOrgArgs struct {
 	JiraBase        *string `json:"jiraBase,omitempty" jsonschema:"optional Atlassian site, absolute https; omit to leave unchanged, send \"\" to clear"`
 	DefaultProvider *string `json:"defaultProvider,omitempty" jsonschema:"optional account id, which must already be registered in this organisation; omit to leave unchanged, send \"\" to clear"`
 	SpeechProvider  *string `json:"speechProvider,omitempty" jsonschema:"optional speech engine id (apple); omit to leave unchanged, send \"\" to clear"`
+	QuickProvider   *string `json:"quickProvider,omitempty" jsonschema:"optional provider id quick tasks run on; omit to leave unchanged, send \"\" for the active provider"`
 }
 
 // setEditorSettingsArgs is the app-wide editor tier's edit (3b-v). Pointers for updateOrgArgs'
@@ -163,6 +164,7 @@ type setEditorSettingsArgs struct {
 	WordWrap    *bool   `json:"wordWrap,omitempty" jsonschema:"omit to leave unchanged"`
 	Autosave    *string `json:"autosave,omitempty" jsonschema:"off, pause or focus; omit to leave unchanged"`
 	ShowIgnored *bool   `json:"showIgnored,omitempty" jsonschema:"false hides gitignored files from the tree and from ⌘P; omit to leave unchanged"`
+	GhostText   *bool   `json:"ghostText,omitempty" jsonschema:"false turns AI ghost-text off in every editor and query line; omit to leave unchanged"`
 }
 
 // setProjectEditorSettingsArgs is one project's editor tier's edit (3b-v).
@@ -492,6 +494,7 @@ func newServer() *mcp.Server {
 				JiraBase:        a.JiraBase,
 				DefaultProvider: a.DefaultProvider,
 				SpeechProvider:  a.SpeechProvider,
+				QuickProvider:   a.QuickProvider,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
@@ -509,7 +512,7 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "set_editor_settings", Description: "Change the app-wide editor settings: font size (9 to 24), word wrap, autosave (off, pause or focus), showIgnored. Read-modify-write: omit a field to leave it unchanged. Refuses an out-of-range value, and refuses to write over a settings.json that does not parse."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setEditorSettingsArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.UpdateEditorAppSettings(wakilcore.EditorAppPatch{
-				FontSize: a.FontSize, WordWrap: a.WordWrap, Autosave: a.Autosave, ShowIgnored: a.ShowIgnored,
+				FontSize: a.FontSize, WordWrap: a.WordWrap, Autosave: a.Autosave, ShowIgnored: a.ShowIgnored, GhostText: a.GhostText,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}

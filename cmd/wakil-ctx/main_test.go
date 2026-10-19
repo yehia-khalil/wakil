@@ -1061,7 +1061,7 @@ func TestEditorSettingsRoundTrip(t *testing.T) {
 	}
 
 	got := wakilcore.LoadEditorSettings()
-	want := wakilcore.EditorSettings{FontSize: 16, WordWrap: false, Autosave: "pause", ShowIgnored: false, TabSize: 2, InsertSpaces: true, HeavyFolders: []string{"storage"}}
+	want := wakilcore.EditorSettings{FontSize: 16, WordWrap: false, Autosave: "pause", ShowIgnored: false, GhostText: true, TabSize: 2, InsertSpaces: true, HeavyFolders: []string{"storage"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("LoadEditorSettings() = %+v, want %+v", got, want)
 	}

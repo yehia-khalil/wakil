@@ -36,6 +36,10 @@ type Org struct {
 	// engines exist is the app's knowledge, and the app falls back to
 	// Apple and says so when the id is one it does not know.
 	SpeechProvider string `json:"speechProvider,omitempty"`
+
+	// QuickProvider is the provider quick tasks run on (3b-viii, Decision 42);
+	// empty means the active provider.
+	QuickProvider string `json:"quickProvider,omitempty"`
 }
 
 const orgFileName = "org.json"
@@ -181,6 +185,15 @@ func normaliseOrg(org string, o Org) (Org, error) {
 		// and LoadProviderFor already raises the right message for it
 		// ("no provider ... — register it with: wakil provider add ...").
 		if _, err := LoadProviderFor(org, o.DefaultProvider); err != nil {
+			return Org{}, err
+		}
+	}
+	o.QuickProvider = strings.TrimSpace(o.QuickProvider)
+	if o.QuickProvider != "" {
+		if err := validateProviderToken(o.QuickProvider); err != nil {
+			return Org{}, UserError("quickProvider: " + err.Error())
+		}
+		if _, err := LoadProviderFor(org, o.QuickProvider); err != nil {
 			return Org{}, err
 		}
 	}
