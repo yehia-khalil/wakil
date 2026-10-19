@@ -35,7 +35,7 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
 }
 
 @Test func aNewLocalProviderServesCodeCompletionOnly() {
-    #expect(newLocalProviderServes() == [.infill])
+    #expect(newLocalProviderServes() == ["infill"])
 }
 
 @Test func quickTaskChoicesStayDistinctWhenLabelsCollide() {

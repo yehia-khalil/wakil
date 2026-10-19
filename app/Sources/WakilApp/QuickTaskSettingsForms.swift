@@ -31,7 +31,7 @@ struct LocalProvidersSection: View {
             }
             if let adding, !local.contains(where: { $0.id == adding }) {
                 LocalProviderRow(
-                    id: adding, label: "", baseURL: "", serves: newLocalProviderServes(),
+                    id: adding, label: "", baseURL: "", serves: Set(newLocalProviderServes().compactMap(QuickOperation.init(rawValue:))),
                     isNew: true, status: nil, failing: false, save: save,
                     onSaved: { self.adding = nil }, onDismiss: { self.adding = nil })
             }

@@ -23,7 +23,7 @@ public func localProviderStatus(id: String, errors: [String: String]) -> String 
 }
 
 /// What a new local model serves until the operator ticks more: code completion only.
-public func newLocalProviderServes() -> Set<QuickOperation> { [.infill] }
+public func newLocalProviderServes() -> [String] { ["infill"] }
 
 /// The picker's segments keyed by provider id. A display text two segments share, or a provider
 /// labelled like the "Same as agent" segment, is suffixed with its id so every segment is distinct.
