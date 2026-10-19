@@ -134,8 +134,9 @@ private struct LocalProviderRow: View {
             loaded = true
             draft = baseURL
             ticked = serves
-            // Rule 3: a new input arrives focused.
-            if isNew { focused = true }
+            // Rule 3, one turn late: set in the update that inserts the row, the field has no
+            // AppKit view yet and the keyboard stays on the settings tree.
+            if isNew { DispatchQueue.main.async { focused = true } }
         }
         .onChange(of: baseURL) { _, new in if !focused, refusal == nil { draft = new } }
         .onChange(of: serves) { _, new in ticked = new }
