@@ -236,3 +236,45 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
 @Test func organisationFieldNamesTheSpeechEngine() {
     #expect(WindowModel.OrganisationField.speechProvider.rawValue == "speechProvider")
 }
+
+// MARK: - Quick tasks (3b-viii)
+
+/// The org's quick provider travels like the other three strings: only when sent, empty included.
+@Test func theQuickProviderIsForwardedOnlyWhenSent() async throws {
+    let (registry, caller) = try await registryWithRecordingContext()
+    _ = try await registry.dispatch(
+        name: "ctx_update_org", params: .object(["id": .string("acme"), "quickProvider": .string("qwen")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_update_org", params: .object(["id": .string("acme"), "displayName": .string("Acme")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    let calls = await caller.recorded()
+    #expect(calls.map(\.arguments) == [
+        .object(["id": .string("acme"), "quickProvider": .string("qwen")]),
+        .object(["id": .string("acme"), "displayName": .string("Acme")]),
+    ])
+}
+
+/// A local model is the operator's to add: `ctx_set_local_provider` is a `.control` the agent cannot
+/// reach, and it forwards the four fields, `serves` as a list of strings, to `set_local_provider`.
+@Test func setLocalProviderForwardsTheFourFieldsAndIsOperatorOnly() async throws {
+    let (registry, caller) = try await registryWithRecordingContext()
+    let descriptor = try #require(await registry.all().first { $0.name == "ctx_set_local_provider" })
+    #expect(descriptor.kind == .control)
+    #expect(descriptor.audience == .operatorOnly)
+    #expect(operatorOnlyActions.contains("ctx_set_local_provider"))
+
+    _ = try await registry.dispatch(
+        name: "ctx_set_local_provider",
+        params: .object([
+            "id": .string("qwen"), "label": .string("Qwen"), "baseURL": .string("http://127.0.0.1:8012"),
+            "serves": .array([.string("infill"), .string("respond")]), "org": .string("other"),
+        ]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    let calls = await caller.recorded()
+    #expect(calls.first?.tool == "set_local_provider")
+    #expect(calls.first?.arguments == .object([
+        "id": .string("qwen"), "label": .string("Qwen"), "baseURL": .string("http://127.0.0.1:8012"),
+        "serves": .array([.string("infill"), .string("respond")]),
+    ]))
+}

@@ -1,0 +1,109 @@
+import Foundation
+
+/// The window's quick tasks (3b-viii, Decision 42): one `QuickTasks` built from the organisation's
+/// `config_tree`, and the ghost-text requests each pane makes of it.
+extension WindowModel {
+    /// Shuts the old quick tasks down, releases every pane's pending ghost request, and builds new
+    /// ones from the configuration on disk (Ruling R4). With no factory, no organisation or no
+    /// readable tree, none are built and every ghost request answers nil.
+    public func rebuildQuickTasks() async {
+        quickTasksGeneration += 1
+        let mine = quickTasksGeneration
+        await shutDownQuickTasks()
+        let org = organization
+        let active = providerId
+        guard let factory = quickModelFactory, let context, !org.isEmpty,
+              let reply = try? await context.configTree(),
+              let tree = decodeSettingsTree(fromResult: reply),
+              mine == quickTasksGeneration, org == organization
+        else { return }
+        let records = tree.providers.map { provider in
+            QuickProviderRecord(
+                id: provider.id, kind: provider.kind, baseURL: provider.baseURL,
+                serves: Set(provider.serves.compactMap(QuickOperation.init(rawValue:))))
+        }
+        let quick = tree.org.quickProvider.isEmpty ? nil : records.first { $0.id == tree.org.quickProvider }
+        let config = QuickTasksConfig(quickProvider: quick, active: records.first { $0.id == active })
+        quickTasks = QuickTasks(config: config) { record in try await factory(record, org) }
+        ghostTextEnabled = tree.editor.ghostText
+    }
+
+    /// Releases every pane's pending request, then shuts the models down. Also the window's own
+    /// shutdown.
+    func shutDownQuickTasks() async {
+        let old = quickTasks
+        let sessions = Array(ghostSessions.values)
+        quickTasks = nil
+        ghostSessions = [:]
+        for session in sessions { await session.cancel() }
+        await old?.shutdown()
+    }
+
+    /// The suggestion for `pane` at `request`, or nil when ghost-text is off, nothing is built, a
+    /// newer request on the same pane superseded this one, or the model answered nothing.
+    public func ghostSuggestion(pane: String, request: InfillRequest) async -> String? {
+        guard ghostTextEnabled, let tasks = quickTasks else { return nil }
+        let session: GhostTextSession
+        if let existing = ghostSessions[pane] {
+            session = existing
+        } else {
+            session = GhostTextSession(
+                suggest: { try await tasks.infill($0) },
+                debounce: { await Self.ghostDebounce(for: tasks) })
+            ghostSessions[pane] = session
+        }
+        return await session.request(request)
+    }
+
+    /// Releases `pane`'s pending request. The session is dropped at once, so a request the pane
+    /// makes next starts a new one and the late cancel cannot reach it.
+    public func ghostCancel(pane: String) {
+        guard let session = ghostSessions.removeValue(forKey: pane) else { return }
+        Task { await session.cancel() }
+    }
+
+    /// How long a pane waits after a keystroke before asking: a local endpoint answers in tens of
+    /// milliseconds, a session-backed model in about a second.
+    public func ghostDebounce() async -> Duration {
+        guard let quickTasks else { return Self.sessionDebounce }
+        return await Self.ghostDebounce(for: quickTasks)
+    }
+
+    /// Each endpoint's last error, whole, by provider id — what Settings draws under the row.
+    public func quickTaskErrors() async -> [String: String] {
+        await quickTasks?.endpointErrors() ?? [:]
+    }
+
+    /// The schema tables in scope, from the vocabulary the window's turns already resolve against.
+    public func ghostSchema() async -> [GhostTable] {
+        guard let vocabulary else { return [] }
+        return GhostSchema.tables(from: await vocabulary.current().names)
+    }
+
+    /// Saves a local model endpoint, then re-reads Settings and rebuilds (Ruling R4). Answers the
+    /// refusal's own sentence, or nil — `saveOrganisationField`'s shape.
+    public func setLocalProvider(id: String, label: String, baseURL: String, serves: Set<QuickOperation>) async -> String? {
+        let params: JSONValue = .object([
+            "id": .string(id), "label": .string(label), "baseURL": .string(baseURL),
+            "serves": .array(QuickOperation.allCases.filter(serves.contains).map { .string($0.rawValue) }),
+        ])
+        do {
+            _ = try await registry.dispatch(
+                name: "ctx_set_local_provider", params: params, origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure("ctx_set_local_provider", error)
+        }
+        await refreshSettings()
+        await rebuildQuickTasks()
+        return nil
+    }
+
+    private static let localDebounce: Duration = .milliseconds(250)
+    private static let sessionDebounce: Duration = .milliseconds(500)
+
+    private static func ghostDebounce(for tasks: QuickTasks) async -> Duration {
+        await tasks.routedKind(.infill) == "local" ? localDebounce : sessionDebounce
+    }
+}

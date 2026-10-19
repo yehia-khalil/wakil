@@ -264,6 +264,32 @@ final class WindowSession {
             rootPath = first
         }
 
+        // 3b-viii (Decision 42). A quick model per provider record: HTTP to the operator's own
+        // endpoint for a `local` one, a warm `claude` session on the record's credentials for a
+        // Claude one, none for anything else. Built per call, like `harnessFactory`, because the
+        // credentials are the organisation's and a switch changes it.
+        let quickModelFactory: @Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)? = {
+            [lookupFactory] record, org in
+            switch record.kind {
+            case "local":
+                // An empty or malformed URL makes no model: the route falls through to the next candidate.
+                guard !record.baseURL.isEmpty, let url = URL(string: record.baseURL), url.scheme != nil
+                else { return nil }
+                return LocalEndpointQuickModel(baseURL: url, serves: record.serves)
+            case ClaudeCodeProviderLogin.kind:
+                let c = try await lookupFactory(org).credentials(forProvider: record.id)
+                return ClaudeCodeQuickModel {
+                    ClaudeCodeCLIHarness(launch: { sid, _, wd in
+                        buildQuickLaunch(
+                            claudePath: c.claudePath, configDir: c.configDir, oauthToken: c.oauthToken,
+                            sessionId: sid, workingDirectory: wd)
+                    })
+                }
+            default:
+                return nil
+            }
+        }
+
         let model = WindowModel(
             registry: wiring.registry,
             panes: wiring.panes,
@@ -359,7 +385,9 @@ final class WindowSession {
             // Background agents, 2 of 4: the pool the registered handlers route an agent
             // session's calls through, told by the window which places are still in use.
             placeClients: wiring.placeClients,
-            agentSocketFactory: agentSocketFactory)
+            agentSocketFactory: agentSocketFactory,
+            // 3b-viii. Without it no ghost request is ever answered, and nothing fails.
+            quickModelFactory: quickModelFactory)
 
         // `term_open` now has a window to ask for the active organisation,
         // project and environment — the three `WAKIL_*` keys a shell in a

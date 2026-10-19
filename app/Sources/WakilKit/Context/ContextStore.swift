@@ -227,6 +227,13 @@ public actor ContextStore {
         return try Self.parseActiveContext(.object(structured))
     }
 
+    /// `config_tree`'s whole reply (3b-viii): what the window builds its quick tasks from. Read here
+    /// rather than dispatched as `ctx_config_tree`, because a rebuild is not the operator reading
+    /// settings and journals nothing — `read_pane`'s reason.
+    public func configTree() async throws -> JSONValue {
+        try await callChecked("config_tree", arguments: .object([:]))
+    }
+
     /// Parses `get_context`'s `structuredContent` object into an
     /// `ActiveContext`, factored out of `current()` so it can be tested
     /// against a literal `JSONValue` without a live `wakil-ctx` process.

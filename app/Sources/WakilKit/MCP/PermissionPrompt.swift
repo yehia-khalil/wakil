@@ -108,6 +108,8 @@ public let operatorOnlyActions: Set<String> = [
     // but autosave decides when the operator's files are written, and showing ignored files
     // and the heavy folders decide what search covers; the operator, not the agent, chooses.
     "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+    // 3b-viii (Decision 42). Which model reads the operator's code is the operator's choice.
+    "ctx_set_local_provider",
     // 2c-iii. The seventh member, and the one whose reason is NOT that the
     // agent could move a boundary by calling it — it is that the shell in
     // a terminal pane carries the active organisation, project and

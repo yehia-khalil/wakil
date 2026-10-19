@@ -526,6 +526,8 @@ struct WakilWindow: View {
             let started = await startup.value
             session = started
             await started.model.refreshContext(probe: true)
+            // 3b-viii: the quick tasks this organisation routes to, once its context is known.
+            await started.model.rebuildQuickTasks()
             await started.model.refreshPanes()
             // `refreshContext` already refreshes the canvas through
             // `activateLayout`, but only once it has an active project to

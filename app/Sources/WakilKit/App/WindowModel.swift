@@ -402,11 +402,23 @@ public final class WindowModel {
     /// `previewDrag`, cleared by `endDrag` and by `commitDrag`.
     public private(set) var dragCandidate: SnapCandidate?
 
-    private let registry: ActionRegistry
+    let registry: ActionRegistry
     /// 2d-i: the names in scope this window's turns resolve against. Nil
     /// means no hint is ever added; production always passes
     /// `wiring.vocabulary` (`WindowSession.start`).
-    private let vocabulary: VocabularyStore?
+    let vocabulary: VocabularyStore?
+    /// 3b-viii: makes a quick model for a provider record in an organisation. Nil means this
+    /// window runs no quick task and answers no ghost request.
+    @ObservationIgnored let quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)?
+    /// The quick tasks the window's organisation and provider route to, rebuilt whole on every
+    /// change that could move them (`rebuildQuickTasks`, Ruling R4). Nil until the first build.
+    @ObservationIgnored var quickTasks: QuickTasks?
+    /// One ghost-text conversation per pane id, so a new request supersedes only its own pane's.
+    @ObservationIgnored var ghostSessions: [String: GhostTextSession] = [:]
+    /// Bumped by every rebuild, so a slower one that started earlier installs nothing.
+    @ObservationIgnored var quickTasksGeneration = 0
+    /// The operator's ghost-text switch, as the last rebuild read it. Off until a tree has been read.
+    public internal(set) var ghostTextEnabled = false
     private let panes: PaneStore
     private let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per
@@ -429,7 +441,7 @@ public final class WindowModel {
     /// nothing — which is what a test that must not touch the filesystem
     /// asks for.
     private let persistence: LayoutPersistence?
-    private let context: ContextStore?
+    let context: ContextStore?
     /// Builds a harness for a given (org, provider) pair. A factory rather
     /// than an instance, because a resume is a new process: `stop()` makes
     /// a `ClaudeCodeCLIHarness` spent, and `events()` refuses a second
@@ -879,9 +891,13 @@ public final class WindowModel {
         // Background agents, 3 of 4 (Task 4). Defaulted to no socket here for `rootWatcher`'s
         // reason; the public initialiser production calls takes it with no default.
         agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() },
+        // 3b-viii. Record and organisation in, a quick model out. Defaulted to nil: a window with no
+        // factory answers no ghost request, which is what a test that asks none wants.
+        quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil,
         environment: String
     ) {
         self.registry = registry
+        self.quickModelFactory = quickModelFactory
         self.agentSocketFactory = agentSocketFactory
         self.placeClients = placeClients
         self.placeContexts = placeClients.map { PlaceContexts(clients: $0) }
@@ -1353,7 +1369,9 @@ public final class WindowModel {
         // Background agents, 3 of 4 (Task 4). No default, for `rootWatcher`'s reason: without
         // it no agent reaches Wakil's own tools, with nothing failing. Production passes one
         // that starts an `MCPSocketServer`.
-        agentSocketFactory: @escaping AgentSocketFactory
+        agentSocketFactory: @escaping AgentSocketFactory,
+        // 3b-viii. Production passes the factory `WindowSession.start` builds beside `harnessFactory`.
+        quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil
     ) {
         self.init(
             registry: registry, panes: panes, layout: layout, persistence: persistence,
@@ -1373,6 +1391,7 @@ public final class WindowModel {
             paletteClients: paletteClients,
             placeClients: placeClients,
             agentSocketFactory: agentSocketFactory,
+            quickModelFactory: quickModelFactory,
             environment: "")
     }
 
@@ -1426,7 +1445,8 @@ public final class WindowModel {
         vocabulary: VocabularyStore? = nil,
         placeClients: PlaceClients? = nil,
         persistence: LayoutPersistence? = nil,
-        agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() }
+        agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() },
+        quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1505,7 +1525,8 @@ public final class WindowModel {
             gitStatus: nil,
             paletteClients: PaletteClients(),
             placeClients: placeClients,
-            agentSocketFactory: agentSocketFactory)
+            agentSocketFactory: agentSocketFactory,
+            quickModelFactory: quickModelFactory)
         model.setOrganizationForTesting(organization)
         shellContext.use { [weak model] in
             guard let model else { return ("", "", "", "") }
@@ -1935,6 +1956,11 @@ public final class WindowModel {
     func invalidateForOrgChange() async {
         // Invariant 4 for names: nothing of the old org resolves after this line.
         await vocabulary?.dropAll()
+        // 3b-viii: nothing answers a ghost request on the outgoing org's providers, and a rebuild
+        // still reading its tree installs nothing (`quickTasksGeneration`). The switch rebuilds.
+        quickTasksGeneration += 1
+        ghostTextEnabled = false
+        await shutDownQuickTasks()
         // Context. `organization` is deliberately NOT cleared here: the
         // caller assigns it from the id it switched to, which is more
         // authoritative than anything get_context will say (spec §6).
@@ -2636,6 +2662,7 @@ public final class WindowModel {
                 params: .object(["id": .string(organisation), field.rawValue: .string(value)]),
                 origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             await refreshSettings()
+            await rebuildQuickTasks()
             return nil
         } catch {
             // The pane still re-reads. A refused write changed nothing,
@@ -2689,6 +2716,8 @@ public final class WindowModel {
         }
         await refreshSettings()
         await refreshEditorSettings()
+        // The ghost-text switch is app-wide; a project's editor fields move no quick task.
+        if refusal == nil, action == "ctx_set_editor_settings" { await rebuildQuickTasks() }
         return refusal
     }
 
@@ -3017,6 +3046,8 @@ public final class WindowModel {
         if account.accountId == providerId {
             await refreshContext()
         }
+        // The unlinked account may have been the quick provider or the active one (Ruling R4).
+        await rebuildQuickTasks()
         return decodeUnlinkReport(fromResult: result)
     }
 
@@ -6003,7 +6034,7 @@ public final class WindowModel {
     /// action, and would silently start stuttering again with no test here
     /// to catch it; asking "does this sentence already say which action
     /// failed?" keeps working whoever throws.
-    private func statusDescribingFailure(_ name: String, _ error: Error) -> String {
+    func statusDescribingFailure(_ name: String, _ error: Error) -> String {
         let described = "\(error)"
         return described.hasPrefix("\(name):") ? described : "\(name): \(described)"
     }
@@ -7142,6 +7173,8 @@ public final class WindowModel {
         let settingsPane = layoutSnapshot.panes.first { $0.kind == Pane.settingsKind }
         await followConversation(of: agent, carrying: settingsPane, adoptingCanvas: previousRoot == nil)
         startCapacityProbe()
+        // The active provider is the quick tasks' fallback, so they follow it (Ruling R4).
+        if stillOnScreen { await rebuildQuickTasks() }
     }
 
     /// Switches the window to `org`: the org-bound resets (`invalidateForOrgChange`), then the
@@ -7217,6 +7250,8 @@ public final class WindowModel {
             await activateLayout()
             switching = false
             openShownSocket()
+            // No organisation is open: the old one's quick tasks go, and none are built.
+            await rebuildQuickTasks()
             return
         }
 
@@ -7244,6 +7279,7 @@ public final class WindowModel {
         // what `autoResumeAfterSwitch` would have picked; ruled 2026-09-20). A seam row naming
         // the orgs would be written into a thread that never changed: each place's thread is its
         // own, and the context line already says where the operator is.
+        await rebuildQuickTasks()
     }
 
     /// One chip per agent whose place is not the screen's and has something to show, ordered by
@@ -8425,6 +8461,8 @@ public final class WindowModel {
         // process, and neither does dropping this model. The run stream
         // ends with the window.
         await terminals.shutdownAll()
+        // And the quick models: a warm `claude` session is a child process too.
+        await shutDownQuickTasks()
     }
 }
 

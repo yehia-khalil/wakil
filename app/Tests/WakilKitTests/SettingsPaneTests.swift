@@ -368,3 +368,45 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
             "a structuredContent with no org is not a config tree")
     #expect(decodeSettingsTree(fromResult: .string("nope")) == nil)
 }
+
+// MARK: - Quick tasks and ghost-text (3b-viii)
+
+/// The quick-tasks keys Go publishes: the org's quick provider, a local provider's URL and what it
+/// serves, and the operator's ghost-text switch.
+@Test func theQuickTaskKeysDecode() throws {
+    let reply = JSONValue.object([
+        "structuredContent": .object([
+            "org": .object(["id": .string("initech"), "quickProvider": .string("qwen")]),
+            "providers": .array([.object([
+                "id": .string("qwen"), "kind": .string("local"),
+                "baseURL": .string("http://127.0.0.1:8012"), "serves": .array([.string("infill")]),
+            ])]),
+            "projects": .array([]),
+            "editor": .object(["ghostText": .bool(false)]),
+        ]),
+    ])
+    let tree = try #require(decodeSettingsTree(fromResult: reply))
+    #expect(tree.org.quickProvider == "qwen")
+    #expect(tree.providers.first?.baseURL == "http://127.0.0.1:8012")
+    #expect(tree.providers.first?.serves == ["infill"])
+    #expect(tree.editor.ghostText == false)
+}
+
+/// An older `wakil-ctx` publishes none of them: no quick provider, no URL, serving nothing, and
+/// ghost-text on.
+@Test func absentQuickTaskKeysDecodeToTheirDefaults() throws {
+    let reply = JSONValue.object([
+        "structuredContent": .object([
+            "org": .object(["id": .string("initech")]),
+            "providers": .array([.object(["id": .string("main"), "kind": .string("claude-code")])]),
+            "projects": .array([]),
+            "editor": .object(["fontSize": .integer(13)]),
+        ]),
+    ])
+    let tree = try #require(decodeSettingsTree(fromResult: reply))
+    #expect(tree.org.quickProvider == "")
+    #expect(tree.providers.first?.baseURL == "")
+    #expect(tree.providers.first?.serves == [])
+    #expect(tree.editor.ghostText == true)
+    #expect(SettingsEditor.defaults.ghostText == true)
+}
