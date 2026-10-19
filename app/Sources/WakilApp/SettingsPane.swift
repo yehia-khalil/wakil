@@ -71,6 +71,8 @@ struct SettingsPane: View {
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
     /// Saves a local model: id, label, URL, the operations it serves (3b-viii). Answers the refusal or nil.
     var saveLocalProvider: (String, String, String, Set<QuickOperation>) async -> String? = { _, _, _, _ in nil }
+    /// Removes a local model by id (3b-viii). Answers the refusal or nil.
+    var removeLocalProvider: (String) async -> String? = { _ in nil }
     /// Each quick-task provider's last error whole and which have answered, by id; the provider
     /// code completion goes to; and why the configuration could not be read.
     var quickTaskStatus: () async -> QuickTaskStatus = { QuickTaskStatus() }
@@ -446,6 +448,11 @@ struct SettingsPane: View {
                 providers: tree.providers, status: quickStatus,
                 save: { id, label, url, serves in
                     let refusal = await saveLocalProvider(id, label, url, serves)
+                    quickStatus = await quickTaskStatus()
+                    return refusal
+                },
+                remove: { id in
+                    let refusal = await removeLocalProvider(id)
                     quickStatus = await quickTaskStatus()
                     return refusal
                 })

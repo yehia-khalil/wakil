@@ -139,6 +139,24 @@ extension WindowModel {
         return nil
     }
 
+    /// Removes a local model from this organisation (Settings' REMOVE): `unlink_provider`, which
+    /// also clears it from `quickProvider`, so quick tasks fall back to the agent's provider. No
+    /// confirmation: a local model holds no credential, and adding it again restores it. Answers
+    /// the refusal's own sentence, or nil.
+    public func removeLocalProvider(id: String) async -> String? {
+        do {
+            _ = try await registry.dispatch(
+                name: "ctx_unlink_provider", params: .object(["id": .string(id), "org": .string(organization)]),
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure("ctx_unlink_provider", error)
+        }
+        await refreshSettings()
+        await rebuildQuickTasks()
+        return nil
+    }
+
     private static let localDebounce: Duration = .milliseconds(250)
     private static let sessionDebounce: Duration = .milliseconds(500)
 

@@ -513,6 +513,7 @@ extension WakilWindow {
                     saveLocalProvider: { id, label, url, serves in
                         await model.setLocalProvider(id: id, label: label, baseURL: url, serves: serves)
                     },
+                    removeLocalProvider: { id in await model.removeLocalProvider(id: id) },
                     quickTaskStatus: { await model.quickTaskStatus() },
                     accounts: model.accounts,
                     capacity: model.capacity.readings,

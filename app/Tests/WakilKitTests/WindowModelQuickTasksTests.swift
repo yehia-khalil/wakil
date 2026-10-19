@@ -45,6 +45,8 @@ private actor QuickBackend: ToolCaller {
     var active: String
     /// When set, `config_tree` answers this tool error instead of the tree.
     var configFailure: String?
+    /// The provider ids `unlink_provider` was asked to remove.
+    var removed: [String] = []
 
     func fail(_ message: String?) { configFailure = message }
 
@@ -89,6 +91,20 @@ private actor QuickBackend: ToolCaller {
                 tree = .object(root)
             }
             return .object(["structuredContent": .object([:])])
+        case "unlink_provider":
+            // Go clears the gone provider from `quickProvider` too (`UnlinkProvider`'s pointers).
+            if case .object(let fields) = arguments, case .string(let id)? = fields["id"],
+               case .object(var root) = tree, case .array(let providers)? = root["providers"],
+               case .object(var org)? = root["org"] {
+                root["providers"] = .array(providers.filter {
+                    if case .object(let p) = $0 { return p["id"] != .string(id) } else { return true }
+                })
+                if org["quickProvider"] == .string(id) { org["quickProvider"] = .string("") }
+                root["org"] = .object(org)
+                tree = .object(root)
+                removed.append(id)
+            }
+            return .object(["structuredContent": .object(["recordRemoved": .bool(true)])])
         default:
             return .object(["structuredContent": .object([:])])
         }
@@ -257,6 +273,24 @@ private func makeSettingsWindow(
         #expect(await first.shutdowns == 1)
         #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "second")
         #expect(await log.asked.last?.record.baseURL == "http://127.0.0.1:9000")
+    }
+
+    /// Removing the local model in Settings unlinks it in its own organisation, shuts its model
+    /// down, and the next request goes to the agent's provider.
+    @Test func removingALocalProviderUnlinksItAndFallsBack() async throws {
+        let backend = QuickBackend(tree: treeJSON(quick: "qwen", ghost: true))
+        let local = ScriptedQuickModel(serves: [.infill], reply: "local")
+        let agent = ScriptedQuickModel(serves: [.infill], reply: "agent")
+        let model = try await makeSettingsWindow(backend: backend) { record, _ in
+            record.id == "qwen" ? local : agent
+        }
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "local")
+
+        #expect(await model.removeLocalProvider(id: "qwen") == nil)
+
+        #expect(await backend.removed == ["qwen"])
+        #expect(await local.shutdowns == 1)
+        #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "agent")
     }
 
     /// A cancelled pane's request comes back empty, and the next request on that pane still answers.

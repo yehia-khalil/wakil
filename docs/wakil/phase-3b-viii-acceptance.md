@@ -71,7 +71,7 @@ Select `Qwen 1.5B` in the **Quick tasks** row first.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 20 | Settings, Providers: read the `qwen` row under **LOCAL MODELS** | URL `http://127.0.0.1:8012`; **Serves** has *Code completion* ticked and *Instructions* unticked; the *Code completion* box is greyed out (the last ticked one cannot be unticked); a status line reads *not tried yet* until a suggestion is asked, then *reachable* | |
+| 20 | Settings, Providers: read the `Qwen 1.5B` row under **LOCAL MODELS** | One table row, as the database rows are drawn: the name, the URL `http://127.0.0.1:8012` as plain monospace text (a box only on hover or focus) with a dot and *not tried yet* beside it until a suggestion is asked, then *reachable*; *Code completion* ticked and greyed out (the last ticked one cannot be unticked), *Instructions* unticked; **REMOVE** at the right | |
 | 21 | Type in an editor tab and pause | A suggestion lands in about 100 to 300 ms after the 250 ms pause; the pulse (0.4 s) never shows | |
 | 22 | In the DB query line, type `SELECT id, ` after naming `bookings`, pause | A suggestion with real `bookings` columns | |
 | 23 | Tab, Esc, typing and ⌘Z behave as in rows 4 to 8 | Same results | |
@@ -83,10 +83,11 @@ Select `Qwen 1.5B` in the **Quick tasks** row first.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 27 | Open Settings, Providers | **QUICK TASKS** row shows the choices as one segmented control, **Same as agent** first; **LOCAL MODELS** below it lists local providers, then **Add local model** | |
+| 27 | Open Settings, Providers | **QUICK TASKS** row shows the choices as one segmented control, **Same as agent** first; **LOCAL MODELS** below it lists local providers as table rows with a hairline between them, then **+ Add local model** | |
 | 28 | Look at the layout and the accessibility ids (Accessibility Inspector) | `settings.org.quickProvider.same`, `settings.org.quickProvider.qwen`, `settings.localProvider.add`, `settings.localProvider.qwen.url`, `.serves.infill`, `.serves.respond`, `.status` are present | |
-| 29 | Click **Add local model** | A new row appears with an empty URL field, focused, with *Code completion* ticked and *Instructions* unticked; **Add local model** is disabled | |
-| 30 | Press Esc with the new row empty; click **Add local model** again and click elsewhere | The empty row goes away both ways and **Add local model** comes back; nothing was saved | |
+| 29 | Click **+ Add local model** | A *New model* row appears with an empty URL field, focused, with *Code completion* ticked and *Instructions* unticked, and **CANCEL** at the right; **+ Add local model** is dimmed and disabled | |
+| 30 | Press Esc with the new row empty; click **+ Add local model** again and click elsewhere; add once more, type a URL and press **CANCEL** | The new row goes away all three ways and **+ Add local model** comes back; nothing was saved, even with a URL typed | |
+| 30a | Press **REMOVE** on a saved local model that **Quick tasks** has selected | The row goes at once, with no confirmation (it holds no credential); **Quick tasks** falls back to **Same as agent** | |
 | 31 | Add a row, type `http://127.0.0.1:8012`, press Return | The row stays and is saved as `local`; its status line shows | |
 | 32 | Tab to a *Serves* checkbox and press Space | The checkbox takes focus from the keyboard and toggles; the change is saved (reopen Settings to confirm) | |
 | 33 | Try to untick both Serves boxes; then type a URL like `ftp://x` | The last ticked box is greyed out and cannot be unticked. The URL gets a refusal in the warning colour, said whole, under the row; what you typed stays on screen | |

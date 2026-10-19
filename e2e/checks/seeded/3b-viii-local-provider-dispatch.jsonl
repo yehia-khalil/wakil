@@ -12,7 +12,7 @@
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[1]","present":false}}
 {"expect":{"journal":{"contains":"ctx_set_local_provider"}}}
 {"do":{"click":"settings.reload"}}
-{"expect":{"tree":"contains","text":"QWEN 1.5B"}}
+{"expect":{"tree":"contains","text":"Qwen 1.5B"}}
 {"expect":{"tree":"contains","text":"http://127.0.0.1:8012"}}
 {"expect":{"tree":"contains","text":"not tried yet"}}
 {"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"http://127.0.0.1:8013","serves":["respond","infill","respond"]}}}
