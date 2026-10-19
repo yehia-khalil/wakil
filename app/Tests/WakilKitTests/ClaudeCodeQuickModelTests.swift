@@ -47,11 +47,41 @@ import Foundation
         for _ in 0..<5 { _ = try await m.infill(InfillRequest(prefix: "", suffix: "", path: "", language: "", extras: [], multiline: false)) }
         // turns 1-2 on #0, 3-4 on #1 (the spare started at turn 2), 5 on #2; #0 and #1 stopped.
         #expect(made.count >= 3)
-        #expect(await made.harness(0).stops == 1)
-        #expect(await made.harness(1).stops == 1)
+        // Retired sessions are torn down in the background.
+        #expect(await eventually { await made.harness(0).stops == 1 })
+        #expect(await eventually { await made.harness(1).stops == 1 })
         #expect(await made.harness(0).sent.count == 2)
         #expect(await made.harness(1).sent.count == 2)
         #expect(await made.harness(2).sent.count == 1)
+    }
+
+    /// The re-ask is part of the same operation, so it reaches the session that saw the question
+    /// even when the first reply was that session's `recycleAfter`th turn.
+    @Test func respondsReaskStaysOnTheSessionThatSawTheQuestion() async throws {
+        let made = HarnessLog()
+        let m = ClaudeCodeQuickModel(recycleAfter: 2) { made.next(replies: ["x", "not json", #"{"a":1}"#]) }
+        _ = try await m.infill(InfillRequest(prefix: "", suffix: "", path: "", language: "", extras: [], multiline: false))
+        let out = try await m.respond(RespondRequest(instructions: "i", input: "x", jsonSchema: #"{"type":"object"}"#, maxTokens: 32))
+        #expect(out == #"{"a":1}"#)
+        #expect(await made.harness(0).sent.count == 3)
+        #expect(await made.harness(1).sent.isEmpty)
+        #expect(await eventually { await made.harness(0).stops == 1 })
+    }
+
+    @Test(.timeLimit(.minutes(1))) func aTurnWithNoResultTimesOutAndTheNextRequestGetsAFreshSession() async throws {
+        let made = HarnessLog()
+        let m = ClaudeCodeQuickModel(turnTimeout: .milliseconds(50)) {
+            made.count == 0 ? made.next(replies: [], silent: true) : made.next(replies: ["ok"])
+        }
+        let clock = ContinuousClock()
+        let began = clock.now
+        await #expect(throws: QuickModelError.failed("quick turn timed out after 0.05 s")) {
+            try await m.infill(InfillRequest(prefix: "", suffix: "", path: "", language: "", extras: [], multiline: false))
+        }
+        #expect(clock.now - began < .seconds(2))
+        #expect(try await m.infill(InfillRequest(prefix: "", suffix: "", path: "", language: "", extras: [], multiline: false)) == "ok")
+        #expect(made.count == 2)
+        #expect(await eventually { await made.harness(0).stops == 1 })
     }
 
     @Test func cancellingInterruptsTheTurnAndTheNextRequestIsNotStale() async throws {
@@ -101,6 +131,15 @@ import Foundation
 
 // MARK: - Doubles
 
+/// Polls `condition` for up to two seconds.
+private func eventually(_ condition: () async -> Bool) async -> Bool {
+    for _ in 0..<200 {
+        if await condition() { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return await condition()
+}
+
 /// Answers each `send` with an `.assistantText` then a `.result` carrying the next scripted reply.
 /// `holdFirst`: the first reply waits for `release()`, and is yielded even after `interruptTurn()` —
 /// a real session's interrupted turn still ends in a `result`, which the model must drop.
@@ -110,6 +149,8 @@ private actor FakeHarness: QuickHarness {
     private var replies: [String]
     private let holdFirst: Bool
     private let errorText: String?
+    /// Never answers at all — a wedged session.
+    private let silent: Bool
     private var held: String?
     private var sentWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
@@ -121,7 +162,8 @@ private actor FakeHarness: QuickHarness {
     /// `interrupt()` calls — `SIGINT`, which ends a real session; the model must not use it.
     private(set) var sigints = 0
 
-    init(replies: [String], holdFirst: Bool = false, errorText: String? = nil) {
+    init(replies: [String], holdFirst: Bool = false, errorText: String? = nil, silent: Bool = false) {
+        self.silent = silent
         (stream, continuation) = AsyncStream.makeStream(of: HarnessEvent.self)
         self.replies = replies
         self.holdFirst = holdFirst
@@ -137,6 +179,7 @@ private actor FakeHarness: QuickHarness {
         let ready = sentWaiters.filter { $0.count <= sent.count }
         sentWaiters.removeAll { $0.count <= sent.count }
         ready.forEach { $0.continuation.resume() }
+        if silent { return }
         if let errorText {
             continuation.yield(.result(isError: true, text: errorText))
             return
@@ -178,8 +221,8 @@ private final class HarnessLog: @unchecked Sendable {
     private let lock = NSLock()
     private var made: [FakeHarness] = []
 
-    func next(replies: [String]) -> FakeHarness {
-        let h = FakeHarness(replies: replies)
+    func next(replies: [String], silent: Bool = false) -> FakeHarness {
+        let h = FakeHarness(replies: replies, silent: silent)
         lock.withLock { made.append(h) }
         return h
     }

@@ -36,12 +36,16 @@ public protocol QuickHarness: AgentHarness {
 /// A `QuickModel` on one warm `claude` session per provider, driven through `QuickHarness`.
 ///
 /// One turn at a time: turns queue behind each other, since a session answers in order.
-/// After `recycleAfter` turns the session is stopped and a spare — started one turn earlier,
-/// so it is already warm — takes over; the context of a long session is cost, not help.
+/// Once an operation leaves the session at `recycleAfter` turns or more, the session is stopped
+/// and a spare — started when it reached `recycleAfter - 1`, so it is already warm — takes over;
+/// the context of a long session is cost, not help. Recycling happens between operations, never
+/// inside one, so `respond`'s re-ask always reaches the session that saw the question.
 /// After `idleTimeout` with no turn, everything is stopped and the next turn starts afresh.
 ///
 /// A cancelled turn interrupts the session, and the `result` that interrupted turn still
-/// produces is dropped, so the next turn never reads a stale reply.
+/// produces is dropped, so the next turn never reads a stale reply. A turn with no `result`
+/// after `turnTimeout` fails, and its session is retired: a wedged session would otherwise
+/// hold up every quick task queued behind it. Retired sessions are torn down in the background.
 ///
 /// `RespondRequest.maxTokens` is ignored here: the CLI has no per-turn token limit flag.
 public actor ClaudeCodeQuickModel: QuickModel {
@@ -62,6 +66,8 @@ public actor ClaudeCodeQuickModel: QuickModel {
         /// Results that arrived with no turn waiting on them.
         var ready: [Reply] = []
         var waiter: (turn: Int, continuation: CheckedContinuation<Reply, Error>)?
+        /// Fails `waiter` after `turnTimeout`; cancelled whenever the waiter is taken.
+        var deadline: Task<Void, Never>?
         /// Results still owed by interrupted turns; each is dropped on arrival.
         var stale = 0
         var ended = false
@@ -70,10 +76,20 @@ public actor ClaudeCodeQuickModel: QuickModel {
             self.id = id
             self.harness = harness
         }
+
+        /// Clears the waiting turn, if any, and its deadline, and hands back its continuation.
+        func takeWaiter(turn turnID: Int? = nil) -> CheckedContinuation<Reply, Error>? {
+            guard let waiter, turnID == nil || waiter.turn == turnID else { return nil }
+            self.waiter = nil
+            deadline?.cancel()
+            deadline = nil
+            return waiter.continuation
+        }
     }
 
     private let recycleAfter: Int
     private let idleTimeout: Duration
+    private let turnTimeout: Duration
     private let makeHarness: @Sendable () -> any QuickHarness
 
     private var current: Session?
@@ -85,9 +101,11 @@ public actor ClaudeCodeQuickModel: QuickModel {
     private var idleTask: Task<Void, Never>?
     private var idleGeneration = 0
 
-    public init(recycleAfter: Int = 20, idleTimeout: Duration = .seconds(600), makeHarness: @escaping @Sendable () -> any QuickHarness) {
+    public init(recycleAfter: Int = 20, idleTimeout: Duration = .seconds(600), turnTimeout: Duration = .seconds(15),
+                makeHarness: @escaping @Sendable () -> any QuickHarness) {
         self.recycleAfter = max(1, recycleAfter)
         self.idleTimeout = idleTimeout
+        self.turnTimeout = turnTimeout
         self.makeHarness = makeHarness
     }
 
@@ -114,12 +132,12 @@ public actor ClaudeCodeQuickModel: QuickModel {
         let sessions = [current, spare].compactMap { $0 }
         current = nil
         spare = nil
-        for session in sessions { await end(session) }
+        for session in sessions { await end(session).value }
     }
 
     // MARK: - Turns
 
-    /// Runs `body` with no other turn in flight, then re-arms the idle timer.
+    /// Runs `body` with no other operation in flight, then recycles if due and re-arms the idle timer.
     private func exclusively<T: Sendable>(_ body: () async throws -> T) async throws -> T {
         if busy {
             await withCheckedContinuation { queue.append($0) }
@@ -127,6 +145,7 @@ public actor ClaudeCodeQuickModel: QuickModel {
         busy = true
         idleTask?.cancel()
         defer {
+            recycleIfDue()
             if queue.isEmpty {
                 busy = false
                 armIdle()
@@ -144,12 +163,11 @@ public actor ClaudeCodeQuickModel: QuickModel {
         do {
             try await session.harness.send(text)
         } catch {
-            await retire(session)
+            retire(session)
             throw QuickModelError.unreachable("claude quick session did not take the turn: \(error)")
         }
         let reply = try await awaitReply(on: session)
         session.turns += 1
-        await recycleIfDue(session)
         if reply.isError { throw QuickModelError.failed(reply.text ?? "claude quick turn failed") }
         return reply.text ?? ""
     }
@@ -166,6 +184,12 @@ public actor ClaudeCodeQuickModel: QuickModel {
                     continuation.resume(returning: session.ready.removeFirst())
                 } else {
                     session.waiter = (turnID, continuation)
+                    let timeout = turnTimeout
+                    session.deadline = Task { [weak self] in
+                        try? await Task.sleep(for: timeout)
+                        guard !Task.isCancelled else { return }
+                        await self?.timeOut(turn: turnID, onSession: sessionID)
+                    }
                     if Task.isCancelled { Task { await self.cancel(turn: turnID, onSession: sessionID) } }
                 }
             }
@@ -176,17 +200,29 @@ public actor ClaudeCodeQuickModel: QuickModel {
 
     /// Interrupts the session and fails `turn`'s waiter, if it is still the one waiting.
     private func cancel(turn turnID: Int, onSession sessionID: Int) async {
-        guard let session = live(sessionID), let waiter = session.waiter, waiter.turn == turnID else { return }
-        session.waiter = nil
+        guard let session = live(sessionID), let waiter = session.takeWaiter(turn: turnID) else { return }
         session.stale += 1
         do {
             try await session.harness.interruptTurn()
         } catch {
             // No interrupt reached it, so no stale `result` will either; the session is unusable.
             session.stale -= 1
-            await retire(session)
+            retire(session)
         }
-        waiter.continuation.resume(throwing: CancellationError())
+        waiter.resume(throwing: CancellationError())
+    }
+
+    /// Fails `turn` if it is still waiting after `turnTimeout`, and retires its session.
+    private func timeOut(turn turnID: Int, onSession sessionID: Int) {
+        guard let session = live(sessionID), let waiter = session.takeWaiter(turn: turnID) else { return }
+        retire(session)
+        waiter.resume(throwing: QuickModelError.failed("quick turn timed out after \(Self.seconds(turnTimeout)) s"))
+    }
+
+    /// `15` for fifteen seconds, `0.05` for fifty milliseconds.
+    private static func seconds(_ d: Duration) -> String {
+        let value = Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
+        return String(format: "%g", value)
     }
 
     private func deliver(_ event: HarnessEvent, to sessionID: Int) {
@@ -196,9 +232,8 @@ public actor ClaudeCodeQuickModel: QuickModel {
             return
         }
         let reply = Reply(isError: isError, text: text)
-        if let waiter = session.waiter {
-            session.waiter = nil
-            waiter.continuation.resume(returning: reply)
+        if let waiter = session.takeWaiter() {
+            waiter.resume(returning: reply)
         } else {
             session.ready.append(reply)
         }
@@ -207,12 +242,8 @@ public actor ClaudeCodeQuickModel: QuickModel {
     private func streamEnded(_ sessionID: Int) {
         guard let session = live(sessionID) else { return }
         session.ended = true
-        if let waiter = session.waiter {
-            session.waiter = nil
-            waiter.continuation.resume(throwing: QuickModelError.unreachable("claude quick session ended"))
-        }
-        if current === session { current = nil }
-        if spare === session { spare = nil }
+        session.takeWaiter()?.resume(throwing: QuickModelError.unreachable("claude quick session ended"))
+        retireNow(session)
     }
 
     // MARK: - Sessions
@@ -229,7 +260,7 @@ public actor ClaudeCodeQuickModel: QuickModel {
         do {
             try await session.startup?.value
         } catch {
-            await retire(session)
+            retire(session)
             throw QuickModelError.unreachable("claude quick session did not start: \(error)")
         }
         return session
@@ -253,36 +284,40 @@ public actor ClaudeCodeQuickModel: QuickModel {
         return session
     }
 
-    /// One turn before the limit a spare starts warming; at the limit it takes over.
-    private func recycleIfDue(_ session: Session) async {
-        guard session === current else { return }
-        if session.turns == recycleAfter - 1, spare == nil { spare = launch() }
-        if session.turns >= recycleAfter {
-            current = spare
-            spare = nil
-            await end(session)
-        }
+    /// Run between operations. One turn before the limit a spare starts warming; at the limit it
+    /// takes over, and the old session is torn down in the background.
+    private func recycleIfDue() {
+        if let session = current, session.turns >= recycleAfter { retire(session) }
+        if let session = current, session.turns >= recycleAfter - 1, spare == nil { spare = launch() }
     }
 
-    private func retire(_ session: Session) async {
+    /// Takes `session` out of service — the spare, if any, steps up — and tears it down in the background.
+    private func retire(_ session: Session) {
         retireNow(session)
-        await end(session)
+        end(session)
     }
 
     private func retireNow(_ session: Session) {
-        if current === session { current = nil }
+        if current === session {
+            current = spare
+            spare = nil
+        }
         if spare === session { spare = nil }
     }
 
-    private func end(_ session: Session) async {
+    /// Fails any turn still waiting on `session`, then stops it; the returned task is the teardown.
+    @discardableResult
+    private func end(_ session: Session) -> Task<Void, Never> {
         session.ended = true
-        if let waiter = session.waiter {
-            session.waiter = nil
-            waiter.continuation.resume(throwing: QuickModelError.unreachable("claude quick session ended"))
+        session.takeWaiter()?.resume(throwing: QuickModelError.unreachable("claude quick session ended"))
+        let startup = session.startup
+        let harness = session.harness
+        let pump = session.pump
+        return Task {
+            _ = try? await startup?.value
+            await harness.stop()
+            pump?.cancel()
         }
-        _ = try? await session.startup?.value
-        await session.harness.stop()
-        session.pump?.cancel()
     }
 
     private func armIdle() {
@@ -296,12 +331,12 @@ public actor ClaudeCodeQuickModel: QuickModel {
         }
     }
 
-    private func idleExpired(_ generation: Int) async {
+    private func idleExpired(_ generation: Int) {
         guard generation == idleGeneration, !busy else { return }
         idleTask = nil
         let sessions = [current, spare].compactMap { $0 }
         current = nil
         spare = nil
-        for session in sessions { await end(session) }
+        for session in sessions { end(session) }
     }
 }
