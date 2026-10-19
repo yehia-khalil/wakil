@@ -21,3 +21,17 @@ public func quickTaskNote(_ tree: SettingsTree, activeProvider: String) -> Strin
 public func localProviderStatus(id: String, errors: [String: String]) -> String {
     errors[id] ?? "reachable"
 }
+
+/// What a new local model serves until the operator ticks more: code completion only.
+public func newLocalProviderServes() -> Set<QuickOperation> { [.infill] }
+
+/// The picker's segments keyed by provider id. A display text two segments share, or a provider
+/// labelled like the "Same as agent" segment, is suffixed with its id so every segment is distinct.
+public func quickTaskChoices(_ tree: SettingsTree) -> [(id: String, display: String)] {
+    let options = quickTaskOptions(tree)
+    return options.map { option in
+        if option.id.isEmpty { return (id: option.id, display: option.label) }
+        let clash = option.label == "Same as agent" || options.filter { $0.label == option.label }.count > 1
+        return (id: option.id, display: clash ? "\(option.label) (\(option.id))" : option.label)
+    }
+}

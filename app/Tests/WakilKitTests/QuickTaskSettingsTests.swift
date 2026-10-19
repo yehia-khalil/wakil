@@ -33,3 +33,21 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
     #expect(localProviderStatus(id: "local", errors: ["local": long]) == long)
     #expect(localProviderStatus(id: "local", errors: ["other": "x"]) == "reachable")
 }
+
+@Test func aNewLocalProviderServesCodeCompletionOnly() {
+    #expect(newLocalProviderServes() == [.infill])
+}
+
+@Test func quickTaskChoicesStayDistinctWhenLabelsCollide() {
+    let t = tree([
+        SettingsProvider(id: "a", kind: "local", label: "Qwen", serves: ["infill"]),
+        SettingsProvider(id: "b", kind: "local", label: "Qwen", serves: ["infill"]),
+        SettingsProvider(id: "c", kind: "local", label: "Same as agent", serves: ["infill"]),
+        SettingsProvider(id: "d", kind: "claude-code", serves: ["infill"]),
+    ])
+    let choices = quickTaskChoices(t)
+    #expect(Set(choices.map(\.display)).count == choices.count)
+    #expect(choices.map(\.id) == ["", "a", "b", "c", "d"])
+    #expect(choices.first?.display == "Same as agent")
+    #expect(choices.last?.display == "d")
+}

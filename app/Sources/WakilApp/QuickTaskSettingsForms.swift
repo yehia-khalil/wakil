@@ -6,7 +6,8 @@ import WakilKit
 struct LocalProvidersSection: View {
     let providers: [SettingsProvider]
     /// Each provider's last error whole, by id (`WindowModel.quickTaskErrors()`).
-    let errors: [String: String]
+    /// Nil until the first read lands: no status is drawn before then.
+    let errors: [String: String]?
     /// Saves one local provider (id, label, URL, ticked operations); answers the refusal or nil.
     let save: (String, String, String, Set<QuickOperation>) async -> String?
 
@@ -25,14 +26,14 @@ struct LocalProvidersSection: View {
                 LocalProviderRow(
                     id: provider.id, label: provider.label, baseURL: provider.baseURL,
                     serves: Set(provider.serves.compactMap(QuickOperation.init(rawValue:))),
-                    isNew: false, status: localProviderStatus(id: provider.id, errors: errors),
-                    failing: errors[provider.id] != nil, save: save, onSaved: {})
+                    isNew: false, status: errors.map { localProviderStatus(id: provider.id, errors: $0) },
+                    failing: errors?[provider.id] != nil, save: save, onSaved: {}, onDismiss: {})
             }
             if let adding, !local.contains(where: { $0.id == adding }) {
                 LocalProviderRow(
-                    id: adding, label: "", baseURL: "", serves: Set(QuickOperation.allCases),
-                    isNew: true, status: "", failing: false, save: save,
-                    onSaved: { self.adding = nil })
+                    id: adding, label: "", baseURL: "", serves: newLocalProviderServes(),
+                    isNew: true, status: nil, failing: false, save: save,
+                    onSaved: { self.adding = nil }, onDismiss: { self.adding = nil })
             }
             Button("Add local model") { adding = firstUnusedId() }
                 .buttonStyle(.plain)
@@ -61,10 +62,12 @@ private struct LocalProviderRow: View {
     let baseURL: String
     let serves: Set<QuickOperation>
     let isNew: Bool
-    let status: String
+    let status: String?
     let failing: Bool
     let save: (String, String, String, Set<QuickOperation>) async -> String?
     let onSaved: () -> Void
+    /// An empty new row is dismissed (Esc, or focus leaving it with no URL), so Add comes back.
+    let onDismiss: () -> Void
 
     /// What is typed. Kept when focus leaves, and when a save is refused (Rule 2).
     @State private var draft: String = ""
@@ -97,6 +100,7 @@ private struct LocalProviderRow: View {
                                     .stroke(SettingsPalette.coolWhite.opacity(0.14), lineWidth: 0.5)))
                     .focused($focused)
                     .onSubmit { commit() }
+                    .onExitCommand { if isNew, draft.trimmingCharacters(in: .whitespaces).isEmpty { onDismiss() } }
                     .accessibilityLabel("local model URL")
                     .accessibilityIdentifier("settings.localProvider.\(id).url")
             }
@@ -107,7 +111,7 @@ private struct LocalProviderRow: View {
                 serveToggle("Code completion", .infill, identifier: "settings.localProvider.\(id).serves.infill")
                 serveToggle("Instructions", .respond, identifier: "settings.localProvider.\(id).serves.respond")
             }
-            if !isNew {
+            if !isNew, let status {
                 // The error whole (Rule 8): wrapped, never truncated.
                 Text(status)
                     .font(.system(size: SettingsScale.body))
@@ -135,7 +139,10 @@ private struct LocalProviderRow: View {
         .onChange(of: baseURL) { _, new in if !focused, refusal == nil { draft = new } }
         .onChange(of: serves) { _, new in ticked = new }
         // Rule 2: leaving the field saves what was typed, and keeps it on screen.
-        .onChange(of: focused) { _, now in if !now { commit() } }
+        .onChange(of: focused) { _, now in
+            guard !now else { return }
+            if isNew, draft.trimmingCharacters(in: .whitespaces).isEmpty { onDismiss() } else { commit() }
+        }
     }
 
     private func serveToggle(_ title: String, _ operation: QuickOperation, identifier: String) -> some View {

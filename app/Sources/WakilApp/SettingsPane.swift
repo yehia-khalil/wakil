@@ -172,7 +172,7 @@ struct SettingsPane: View {
     /// area.
     @State private var adoptRefusals: [String: String] = [:]
     /// What `quickTaskErrors()` last answered, read when the pane appears and after each save.
-    @State private var quickErrors: [String: String] = [:]
+    @State private var quickErrors: [String: String]?
 
     /// The value being typed, per field, while an editor is open. Absent
     /// means the field is not being edited and draws what is on disk.
@@ -695,20 +695,20 @@ struct SettingsPane: View {
     /// 3b-viii: the provider quick tasks run on. One segment per provider that serves anything,
     /// "Same as agent" first; a stored id no provider answers to is held, not dropped (Rule 7).
     private func quickTasksRow(tree: SettingsTree) -> some View {
-        let options = quickTaskOptions(tree)
+        let options = quickTaskChoices(tree)
         let stored = tree.org.quickProvider
         let known = options.first(where: { $0.id == stored })
-        func labelFor(_ id: String) -> String { options.first(where: { $0.id == id })?.label ?? id }
-        func idFor(_ label: String) -> String { options.first(where: { $0.label == label })?.id ?? label }
+        func labelFor(_ id: String) -> String { options.first(where: { $0.id == id })?.display ?? id }
+        func idFor(_ label: String) -> String { options.first(where: { $0.display == label })?.id ?? label }
         return VStack(alignment: .leading, spacing: 2) {
             Text("QUICK TASKS")
                 .font(.system(size: Scale.micro, weight: .medium))
                 .tracking(Scale.microTracking)
                 .foregroundStyle(coolWhite.opacity(0.32))
             SegmentedChoice(
-                options: options.map(\.label),
+                options: options.map(\.display),
                 selection: Binding(
-                    get: { known?.label ?? labelFor(stored) },
+                    get: { known?.display ?? labelFor(stored) },
                     set: { label in
                         let id = idFor(label)
                         guard id != stored else { return }
@@ -727,7 +727,7 @@ struct SettingsPane: View {
                     .foregroundStyle(caution)
                     .accessibilityIdentifier("settings.org.quickProvider.note")
             }
-            if let configError = quickErrors["config"] {
+            if let configError = quickErrors?["config"] {
                 Text(configError)
                     .font(.system(size: Scale.body))
                     .foregroundStyle(caution)
