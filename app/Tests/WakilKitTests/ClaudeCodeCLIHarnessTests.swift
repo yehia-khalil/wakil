@@ -28,6 +28,16 @@ private func launch(
     #expect(Set(env.keys) == ["CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN", "HOME", "PATH"])
 }
 
+/// 3b-viii: the quick-tasks session's flags ride at the end, and add nothing to the environment.
+@Test func extraArgumentsAreAppendedLastAndLeaveTheEnvironmentAlone() {
+    let l = buildLaunch(claudePath: "/opt/homebrew/bin/claude", sessionId: "abc-123",
+                        configDir: "/Users/x/.claude-personal", oauthToken: "tok",
+                        mcpConfigJSON: #"{"mcpServers":{}}"#, allowedTools: [],
+                        workingDirectory: "/tmp", extraArguments: ["--model", "haiku"])
+    #expect(Array(l.arguments.suffix(2)) == ["--model", "haiku"])
+    #expect(Set(l.environment.keys) == ["CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN", "HOME", "PATH"])
+}
+
 @Test func executableIsPinnedByAbsolutePath() {
     #expect(launch().executable == "/opt/homebrew/bin/claude")
 }

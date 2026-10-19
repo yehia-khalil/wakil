@@ -108,7 +108,8 @@ public func buildLaunch(
     mcpConfigJSON: String,
     allowedTools: [String],
     workingDirectory: String,
-    resumingFrom parentSessionId: String? = nil
+    resumingFrom parentSessionId: String? = nil,
+    extraArguments: [String] = []
 ) -> HarnessLaunch {
     let currentEnvironment = ProcessInfo.processInfo.environment
     let environment: [String: String] = [
@@ -187,6 +188,9 @@ public func buildLaunch(
     if !allowedTools.isEmpty {
         arguments.append(contentsOf: ["--allowedTools", allowedTools.joined(separator: ",")])
     }
+    // 3b-viii: a caller's own flags (the quick-tasks session's model, tools and
+    // system prompt — see `quickLaunchArguments`), last so nothing above depends on them.
+    arguments += extraArguments
 
     return HarnessLaunch(
         executable: claudePath,
@@ -255,6 +259,7 @@ public final class ClaudeCodeCLIHarness: AgentHarness, Sendable {
     private let oauthToken: String
     private let mcpConfigJSON: String
     private let allowedTools: [String]
+    private let extraArguments: [String]
     private let stream: AsyncStream<HarnessEvent>
     private let engine: Engine
     /// Guards `events()` against being called more than once — see that
@@ -267,13 +272,15 @@ public final class ClaudeCodeCLIHarness: AgentHarness, Sendable {
         configDir: String,
         oauthToken: String,
         mcpConfigJSON: String,
-        allowedTools: [String]
+        allowedTools: [String],
+        extraArguments: [String] = []
     ) {
         self.claudePath = claudePath
         self.configDir = configDir
         self.oauthToken = oauthToken
         self.mcpConfigJSON = mcpConfigJSON
         self.allowedTools = allowedTools
+        self.extraArguments = extraArguments
 
         var capturedContinuation: AsyncStream<HarnessEvent>.Continuation!
         self.stream = AsyncStream { continuation in
@@ -319,7 +326,8 @@ public final class ClaudeCodeCLIHarness: AgentHarness, Sendable {
             mcpConfigJSON: mcpConfigJSON,
             allowedTools: allowedTools,
             workingDirectory: workingDirectory,
-            resumingFrom: parentSessionId
+            resumingFrom: parentSessionId,
+            extraArguments: extraArguments
         )
         try await engine.start(launch: launch)
     }
