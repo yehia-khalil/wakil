@@ -1,0 +1,84 @@
+import Foundation
+
+/// A quick-tasks provider as the router sees it: what it is and which operations it serves.
+public struct QuickProviderRecord: Sendable, Equatable {
+    public var id: String
+    public var kind: String
+    public var baseURL: String
+    public var serves: Set<QuickOperation>
+
+    public init(id: String, kind: String, baseURL: String, serves: Set<QuickOperation>) {
+        self.id = id
+        self.kind = kind
+        self.baseURL = baseURL
+        self.serves = serves
+    }
+}
+
+public struct QuickTasksConfig: Sendable, Equatable {
+    public var quickProvider: QuickProviderRecord?
+    public var active: QuickProviderRecord?
+
+    public init(quickProvider: QuickProviderRecord?, active: QuickProviderRecord?) {
+        self.quickProvider = quickProvider
+        self.active = active
+    }
+}
+
+public func quickRoute(_ op: QuickOperation, _ config: QuickTasksConfig) -> [QuickProviderRecord] {
+    var out: [QuickProviderRecord] = []
+    for record in [config.quickProvider, config.active].compactMap({ $0 })
+    where record.serves.contains(op) && !out.contains(where: { $0.id == record.id }) {
+        out.append(record)
+    }
+    return out
+}
+
+/// The one entry point every quick task calls (Decision 42). It picks the model per operation,
+/// falls back once from an unreachable endpoint to the next candidate, and keeps each endpoint's
+/// last error whole for Settings (Interaction Rule 8). A new quick task is a caller of this, nothing more.
+public actor QuickTasks {
+    private let config: QuickTasksConfig
+    private let makeModel: @Sendable (QuickProviderRecord) async throws -> (any QuickModel)?
+    private var models: [String: any QuickModel] = [:]
+    private var errors: [String: String] = [:]
+
+    public init(config: QuickTasksConfig, makeModel: @escaping @Sendable (QuickProviderRecord) async throws -> (any QuickModel)?) {
+        self.config = config
+        self.makeModel = makeModel
+    }
+
+    public func infill(_ r: InfillRequest) async throws -> String { try await run(.infill) { try await $0.infill(r) } }
+    public func respond(_ r: RespondRequest) async throws -> String { try await run(.respond) { try await $0.respond(r) } }
+    public func routedKind(_ op: QuickOperation) -> String? { quickRoute(op, config).first?.kind }
+    public func endpointErrors() -> [String: String] { errors }
+
+    public func shutdown() async {
+        for model in models.values { await model.shutdown() }
+        models = [:]
+    }
+
+    private func model(for record: QuickProviderRecord) async throws -> (any QuickModel)? {
+        if let m = models[record.id] { return m }
+        guard let m = try await makeModel(record) else { return nil }
+        models[record.id] = m
+        return m
+    }
+
+    private func run(_ op: QuickOperation, _ call: (any QuickModel) async throws -> String) async throws -> String {
+        let candidates = quickRoute(op, config)
+        guard !candidates.isEmpty else { throw QuickModelError.noProvider(op) }
+        for (index, record) in candidates.enumerated() {
+            try Task.checkCancellation()
+            guard let m = try await model(for: record), m.serves.contains(op) else { continue }
+            do {
+                let reply = try await call(m)
+                errors[record.id] = nil
+                return reply
+            } catch QuickModelError.unreachable(let why) where index < candidates.count - 1 {
+                errors[record.id] = why
+            }
+        }
+        throw QuickModelError.noProvider(op)
+    }
+}
