@@ -41,6 +41,7 @@ public actor QuickTasks {
     private let config: QuickTasksConfig
     private let makeModel: @Sendable (QuickProviderRecord) async throws -> (any QuickModel)?
     private var models: [String: any QuickModel] = [:]
+    private var creating: [String: Task<(any QuickModel)?, Error>] = [:]
     private var errors: [String: String] = [:]
 
     public init(config: QuickTasksConfig, makeModel: @escaping @Sendable (QuickProviderRecord) async throws -> (any QuickModel)?) {
@@ -60,7 +61,17 @@ public actor QuickTasks {
 
     private func model(for record: QuickProviderRecord) async throws -> (any QuickModel)? {
         if let m = models[record.id] { return m }
-        guard let m = try await makeModel(record) else { return nil }
+        // Concurrent callers share one creation, so no model is made twice and leaked.
+        let task: Task<(any QuickModel)?, Error>
+        if let inFlight = creating[record.id] {
+            task = inFlight
+        } else {
+            let make = makeModel
+            task = Task { try await make(record) }
+            creating[record.id] = task
+        }
+        defer { creating[record.id] = nil }
+        guard let m = try await task.value else { return nil }
         models[record.id] = m
         return m
     }
@@ -75,8 +86,9 @@ public actor QuickTasks {
                 let reply = try await call(m)
                 errors[record.id] = nil
                 return reply
-            } catch QuickModelError.unreachable(let why) where index < candidates.count - 1 {
+            } catch QuickModelError.unreachable(let why) {
                 errors[record.id] = why
+                if index == candidates.count - 1 { throw QuickModelError.unreachable(why) }
             }
         }
         throw QuickModelError.noProvider(op)

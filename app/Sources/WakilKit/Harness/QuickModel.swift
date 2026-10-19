@@ -1,8 +1,5 @@
 import Foundation
 
-/// The harness axis's second seam (Decision 16, amended 3b-viii): one-shot quick tasks.
-/// `AgentHarness` is for sessions.
-
 /// What a quick task asks of a model.
 public enum QuickOperation: String, Sendable, CaseIterable, Codable { case infill, respond }
 
@@ -66,6 +63,8 @@ public enum QuickModelError: Error, Equatable, CustomStringConvertible {
     }
 }
 
+/// The harness axis's second seam (Decision 16, amended 3b-viii): one-shot quick tasks.
+/// `AgentHarness` is for sessions.
 public protocol QuickModel: Sendable {
     var serves: Set<QuickOperation> { get }
     func infill(_ request: InfillRequest) async throws -> String

@@ -75,6 +75,27 @@ private let respondReq = RespondRequest(instructions: "title", input: "x", jsonS
         #expect(await counter.value == 1)
         #expect(await tasks.routedKind(.infill) == "claude-code")
     }
+
+    @Test func concurrentCallsShareOneModelCreation() async throws {
+        let counter = Counter()
+        let model = FakeModel(serves: [.infill, .respond], replies: [.success("a"), .success("b")])
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: nil, active: claude)) { _ in
+            await counter.bump()
+            try await Task.sleep(for: .milliseconds(100))
+            return model
+        }
+        async let one = tasks.infill(infillReq)
+        async let two = tasks.infill(infillReq)
+        _ = try await (one, two)
+        #expect(await counter.value == 1)
+    }
+
+    @Test func anUnreachableLastCandidateIsRecordedAndRethrown() async {
+        let localModel = FakeModel(serves: [.infill], replies: [.failure(.unreachable("connection refused"))])
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: local, active: nil)) { _ in localModel }
+        await #expect(throws: QuickModelError.unreachable("connection refused")) { try await tasks.infill(infillReq) }
+        #expect(await tasks.endpointErrors() == ["qwen": "connection refused"])
+    }
 }
 
 private actor Counter { var value = 0; func bump() { value += 1 } }
