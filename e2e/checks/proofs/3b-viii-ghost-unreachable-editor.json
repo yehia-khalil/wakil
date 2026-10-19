@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-viii-ghost-unreachable-editor.jsonl",
+  "baseCommit": "8ebeb01dfcd203b07a6b088d565d21bd3199134f",
+  "provedAt": "2026-10-19T15:07:17.348559Z",
+  "checkBlob": "35f5cc4b4f909f0e76fa4c841a3b92c6d7a7ef9a"
+}

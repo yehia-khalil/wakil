@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-viii-quick-provider-unlinked.jsonl",
+  "baseCommit": "8ebeb01dfcd203b07a6b088d565d21bd3199134f",
+  "provedAt": "2026-10-19T15:07:17.348559Z",
+  "checkBlob": "31703e22743ffac5a9c23833d8899fe1a6354d5b"
+}

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-viii-ghost-unreachable-query-line.jsonl",
+  "baseCommit": "8ebeb01dfcd203b07a6b088d565d21bd3199134f",
+  "provedAt": "2026-10-19T15:07:17.348559Z",
+  "checkBlob": "6b434d5d2010ab9bc937a7cc094a0674c4a0eca5"
+}
