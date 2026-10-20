@@ -200,6 +200,16 @@ private func treeFixture() async throws -> (EditorFixture, EditorFileLists) {
     #expect(await lists.listing(root: "/p/api").files == ["a.go", "b.go"])
 }
 
+// 3b-ix walk: the first editor pane after launch draws its Files column with nothing listed yet;
+// watching its roots lists them, or the tree shows "listing" until the operator switches views.
+@Test func watchingARootNothingListedListsIt() async throws {
+    let f = try await editorFixture()
+    let lists = EditorFileLists(files: f.files)
+    await f.files.setListing("/p/api", ["a.go"])
+    await lists.watch(roots: ["/p/api"]).value
+    #expect(await lists.state().listings["/p/api"]?.files == ["a.go"])
+}
+
 // 3b-ix walk: a pane opening briefly stops watching (no editor in the layout yet), which drops the
 // lists; watching the same roots again must re-read them, or the tree waits on "listing" forever.
 @Test func aRootListedBeforeWatchingStoppedIsReadAgainWhenWatched() async throws {

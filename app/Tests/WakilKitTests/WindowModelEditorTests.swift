@@ -258,19 +258,23 @@ func editorWindowWithFiles(
         let pane = try #require(model.layoutSnapshot.focusedId)
         let lists = try #require(model.fileListsForTesting)
 
+        #expect(try await drawn { model.editorFiles.listings["/p/api"]?.files == ["a.go"] },
+                "opening the editor lists its roots")
+        await files.setListing("/p/api", ["a.go", "b.go"])
+
         let elsewhere = Place(organization: model.place.organization, project: "other", environment: "qa")
         _ = await ActionRegistry.$dispatchCaller.withValue(DispatchCaller(place: elsewhere, session: "s0")) {
             await lists.listing(root: "/p/api")
         }
-        #expect(await lists.state().listings["/p/api"] == nil, "another place's read is not the screen's tree")
+        #expect(await lists.state().listings["/p/api"]?.files == ["a.go"], "another place's read is not the screen's tree")
 
         _ = try await model.registryForTesting.dispatch(
             name: "editor_tree",
             params: .object(["pane": .string(pane), "shown": .bool(true), "view": .string("files")]),
             origin: .agent, caller: DispatchCaller(place: model.place, session: "s1"), confirmation: nil)
 
-        #expect(try await drawn { model.editorFiles.listings["/p/api"]?.files == ["a.go"] },
-                "the column draws the root as still listing")
+        #expect(try await drawn { model.editorFiles.listings["/p/api"]?.files == ["a.go", "b.go"] },
+                "the screen's own agent lists into the tree")
     }
 
     // Final review I1: both projects have an editor pane, so the list stays watched across the
@@ -347,21 +351,20 @@ func editorWindowWithFiles(
         #expect(model.editor(pane)?.search.results.count == 1)
     }
 
-    // Final review C1 (and T5 #8): ⌘B draws the column at once, with each root's "listing" tick,
-    // while the roots list — not only once every root has listed.
-    @Test func cmdBDrawsTheColumnWhileItsRootsAreStillListing() async throws {
+    // Final review C1 (and T5 #8): opening an editor draws it at once, with each root's "listing"
+    // tick, while the roots list — not only once every root has listed. Since the 3b-ix walk the
+    // open lists the roots itself (the first pane after launch was left on its ticks).
+    @Test func openingAnEditorDrawsItWhileItsRootsAreStillListing() async throws {
         let (model, files) = await editorWindowWithFiles()
         await model.refreshContext()
-        await model.openPane(kind: "editor")
-        let pane = try #require(model.layoutSnapshot.focusedId)
         await files.setListing("/p/api", ["a.go"])
         await files.setSlowList(true)
-        let toggle = Task { await model.toggleEditorColumn(.files) }
+        let open = Task { await model.openPane(kind: "editor") }
         while await !files.calls.contains("files_list /p/api") { await Task.yield() }
-        #expect(try await drawn { model.editor(pane)?.column?.shown == true }, "the column waited for every root")
+        await open.value
+        #expect(model.layoutSnapshot.focusedId != nil, "the pane waited for every root")
         #expect(model.editorFiles.listings["/p/api"] == nil, "the root still shows its listing tick")
         await files.releaseList()
-        await toggle.value
         #expect(try await drawn { model.editorFiles.listings["/p/api"]?.files == ["a.go"] })
     }
 
