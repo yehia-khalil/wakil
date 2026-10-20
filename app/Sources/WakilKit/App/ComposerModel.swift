@@ -104,11 +104,17 @@ public final class ComposerModel {
     }
 
     /// Sends the line a receipt answered to the agent after all: to the place it was typed in, with
-    /// its source.
+    /// its source. No turn started (no harness, a failed send): the line comes back, as `submit`'s
+    /// does (Rule 2), unless the operator has typed since.
     public func askAgentInstead() async {
         guard let r = receipt else { return }
         receipt = nil
-        _ = await window.send(r.line, via: r.source, scope: r.scope)
+        let started = await window.send(r.line, via: r.source, scope: r.scope)
+        if !started, draft.isEmpty {
+            draft = r.line
+            caret = (r.line as NSString).length
+            landedUnsent = r.source == .voice
+        }
     }
 
     /// Clears the receipt (the bar calls it on Esc in an empty composer).

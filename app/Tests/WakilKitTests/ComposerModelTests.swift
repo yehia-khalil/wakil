@@ -299,6 +299,21 @@ private func makeComposerWithFastPath(outcome: FastPathOutcome) -> (composer: Co
 }
 
 @MainActor
+@Test func askingTheAgentWithNoAgentBringsTheLineBack() async {
+    let window = WindowModel.forTesting(scratchRoot: testScratchRoot)
+    window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
+    let composer = ComposerModel(window: window, speech: SpeechRegistry(engines: []), fastPathRunner: { _, _ in
+        .ran(FastPathReceipt(line: "go to qa", text: "Ran: switch environment to qa", refused: false))
+    })
+    composer.edited(draft: "go to qa", caret: 8)
+    await composer.submit()
+    #expect(composer.draft == "")
+    await composer.askAgentInstead()
+    #expect(composer.receipt == nil)
+    #expect(composer.draft == "go to qa", "Rule 2: a line no turn took comes back to the composer")
+}
+
+@MainActor
 @Test func dismissingTheReceiptClearsItAndSendsNothing() async {
     let made = makeComposerWithFastPath(outcome: .ran(FastPathReceipt(line: "x", text: "Ran: x", refused: false)))
     made.composer.edited(draft: "x", caret: 1)
