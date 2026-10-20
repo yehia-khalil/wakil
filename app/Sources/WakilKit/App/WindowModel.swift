@@ -5148,7 +5148,7 @@ public final class WindowModel {
 
     /// The clients ⌘P reads directly: tables, API entries and changed files are listed without
     /// drawing a pane, so none of them is a dispatch.
-    private let paletteClients: PaletteClients
+    let paletteClients: PaletteClients
 
     /// Bumped by every root build and by `paletteClosed()`. A late answer — a slow source, a
     /// background table refresh — carries the number it was asked under and is dropped unless
@@ -5655,6 +5655,14 @@ public final class WindowModel {
         return (Self.environmentListings(from: structured), nil)
     }
 
+    /// The project's files as ⌘P lists them; the fast path ranks the same entries.
+    func paletteFilesSource() -> FilesSource? {
+        paletteClients.files.map { files in
+            FilesSource(files: files, roots: { [weak self] in await self?.gitRootPaths ?? [] },
+                        showIgnored: { [weak self] in await self?.editorSettings.app.showIgnored ?? true })
+        }
+    }
+
     /// ⌘P's sources, in group order.
     private func paletteOpenSources(tables: TablesSource?) -> [any PaletteSource] {
         var sources: [any PaletteSource] = [
@@ -5667,10 +5675,7 @@ public final class WindowModel {
             sources.append(ApiEntriesSource(http: http, environment: { environment }))
         }
         let changed = ChangedFilesSource(status: { [weak self] in await self?.paletteGitStatus() ?? [] })
-        let fileSource: FilesSource? = paletteClients.files.map { files in
-            FilesSource(files: files, roots: { [weak self] in await self?.gitRootPaths ?? [] },
-                        showIgnored: { [weak self] in await self?.editorSettings.app.showIgnored ?? true })
-        }
+        let fileSource = paletteFilesSource()
         // An editor in focus puts the project's files first: sources keep their own order within a group.
         let editorFocused = layoutSnapshot.panes.first { $0.id == layoutSnapshot.focusedId }?.kind == "editor"
         if let fileSource, editorFocused { sources.append(fileSource) }

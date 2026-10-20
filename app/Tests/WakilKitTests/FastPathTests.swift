@@ -85,3 +85,36 @@ private let schemas: [String: JSONValue] = [
     #expect(!a.contains("staging"))
     #expect(FastPath.input("switch to staging", scope: scope).contains("staging"))
 }
+
+@Test func everyAllowedActionExistsIsNotAMutationAndTakesItsParams() async throws {
+    let dir = testScratchRoot.appendingPathComponent("fast-path-pin-\(UUID().uuidString)")
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "fast-path-pin")
+    let panes = PaneStore(kinds: PaneKinds.standard)
+    let layout = LayoutStore()
+    let context = GitRootsContext(roots: ["/p"])
+    await registerStandardActions(
+        into: registry, context: context, panes: panes, db: nil, resumes: ResumeBroker(), layout: layout)
+    await registerLayoutActions(
+        into: registry, layout: layout, panes: panes, terminals: TerminalStore(panes: panes),
+        unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
+    await registerPaneContentActions(into: registry, panes: panes, layout: layout)
+    await registerTerminalActions(
+        into: registry, terminals: TerminalStore(panes: panes), panes: panes, layout: layout,
+        activeContext: { ("", "", "", "") })
+    _ = await registerApiActions(into: registry, panes: panes, layout: layout)
+    await registerEditorActions(
+        into: registry, panes: panes, layout: layout, files: nil, fileLists: nil, gitStatus: nil,
+        roots: { ["/p"] })
+    for (name, action) in FastPath.allowed {
+        let d = try #require(await registry.descriptor(named: name), "\(name) is not registered")
+        #expect(d.kind != .mutate, "\(name) is a mutation")
+        guard case .object(let s) = d.schema, case .object(let props)? = s["properties"] else {
+            #expect(action.params.isEmpty, "\(name) has no properties but allows params")
+            continue
+        }
+        for key in action.params.keys {
+            #expect(props[key] != nil, "\(name) has no param \(key)")
+        }
+    }
+    #expect(FastPath.allowed.count == 26)
+}
