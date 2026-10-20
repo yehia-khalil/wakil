@@ -174,6 +174,16 @@ public final class WindowModel {
 
     /// Where a turn's text came from, for the journal.
     public enum TurnSource: String, Sendable { case typed, voice }
+
+    /// What `send` pins to the place the operator typed in (3b-ix): the composer reads it at
+    /// Return and hands it back, so a turn that waits on the fast path still goes to that place.
+    public struct TurnScope: Sendable, Equatable {
+        public let place: Place
+        public let rootPath: String
+        public let providerId: String
+    }
+
+    public var turnScope: TurnScope { TurnScope(place: place, rootPath: rootPath, providerId: providerId) }
     /// True from the moment `setOrganization`'s OTHER guards pass until
     /// its whole sequence (success or failure) finishes. Org-independent:
     /// it describes the transition itself, not either the outgoing or the
@@ -6484,13 +6494,14 @@ public final class WindowModel {
     /// missing harness or a failed send returns false, and the composer
     /// gives the operator's draft back.
     @discardableResult
-    public func send(_ text: String, via source: TurnSource = .typed) async -> Bool {
+    public func send(_ text: String, via source: TurnSource = .typed, scope: TurnScope? = nil) async -> Bool {
         // The place the operator typed in: its agent takes the turn, wherever the screen is by
         // the time a suspension below returns. Its root and provider are captured with it: a
         // first turn's harness starts after `enterConversation` suspends, and starting it with
         // whatever the screen shows by then would run A's agent in B's root.
-        let agent = agent(for: place)
-        let (startRoot, startProvider) = (rootPath, providerId)
+        let typedIn = scope ?? turnScope
+        let agent = agent(for: typedIn.place)
+        let (startRoot, startProvider) = (typedIn.rootPath, typedIn.providerId)
         // The canvas comes with the conversation, for the same reason `openPane` does: a
         // first turn mints the conversation, and the arrangement belongs to the conversation
         // rather than to the window that happened to be open when it started. Nothing visible

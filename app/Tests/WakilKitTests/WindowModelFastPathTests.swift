@@ -129,6 +129,16 @@ private func makeFastPathWindow(
         #expect(await calls.all().isEmpty)
     }
 
+    @Test func aPlaceSwitchDuringTheWaitDispatchesNothing() async throws {
+        let (window, calls, _) = await makeFastPathWindow(
+            reply: #"{"action":"settings_open","params":{}}"#, delay: .milliseconds(100))
+        let outcome = Task { await window.runFastPath("open settings") }
+        try await Task.sleep(for: .milliseconds(30))
+        window.seedForTesting(providerId: "", rootPath: "/p", thoughts: 0, project: "other", environment: "qa")
+        #expect(await outcome.value == .toAgent)
+        #expect(await calls.all().isEmpty)
+    }
+
     @Test func rebuildingWithTheFastPathOnWarmsThePrompt() async {
         let (window, _, model) = await makeFastPathWindow(reply: #"{"action":"agent","params":{}}"#)
         await window.rebuildQuickTasks()

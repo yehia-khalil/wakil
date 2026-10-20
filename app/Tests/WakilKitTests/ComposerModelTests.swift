@@ -316,3 +316,39 @@ private func makeComposerWithFastPath(outcome: FastPathOutcome) -> (composer: Co
     #expect(made.harness.sent == ["why is it slow?"])
     #expect(made.composer.receipt == nil)
 }
+
+/// One harness per place the window asked one for, so a test can see whose agent took a turn.
+private final class HarnessesByPlace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var map: [Place: AcceptingHarness] = [:]
+    func harness(for place: Place) -> AcceptingHarness {
+        lock.withLock {
+            if let h = map[place] { return h }
+            let h = AcceptingHarness()
+            map[place] = h
+            return h
+        }
+    }
+    func sent(in place: Place) -> [String] { lock.withLock { map[place]?.sent ?? [] } }
+}
+
+@MainActor
+@Test func aToAgentLineGoesToThePlaceItWasTypedInEvenIfTheScreenMovedDuringTheWait() async {
+    let harnesses = HarnessesByPlace()
+    let window = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { place, _ in harnesses.harness(for: place) })
+    window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
+    window.seedForTesting(providerId: "main", rootPath: "/a", thoughts: 0, project: "a", environment: "qa")
+    let placeA = window.place
+    let composer = ComposerModel(window: window, speech: SpeechRegistry(engines: []), fastPathRunner: { _ in
+        try? await Task.sleep(for: .milliseconds(60))
+        return .toAgent
+    })
+    composer.edited(draft: "why is it slow?", caret: 15)
+    let submitting = Task { await composer.submit() }
+    try? await Task.sleep(for: .milliseconds(20))
+    window.seedForTesting(providerId: "main", rootPath: "/b", thoughts: 0, project: "b", environment: "qa")
+    #expect(window.place != placeA)
+    await submitting.value
+    #expect(harnesses.sent(in: placeA) == ["why is it slow?"])
+    #expect(harnesses.sent(in: window.place).isEmpty)
+}

@@ -76,6 +76,8 @@ public final class ComposerModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let source: WindowModel.TurnSource = landedUnsent ? .voice : .typed
+        // Read before the first await: the line belongs to the place it was typed in.
+        let scope = window.turnScope
         draft = ""
         caret = 0
         landedUnsent = false
@@ -87,7 +89,7 @@ public final class ComposerModel {
         case .toAgent:
             break
         }
-        let started = await window.send(text, via: source)
+        let started = await window.send(text, via: source, scope: scope)
         // No turn started (no harness, a failed send): the
         // operator's words come back. Not if they have typed since.
         if !started, draft.isEmpty {

@@ -69,16 +69,17 @@ extension WindowModel {
         guard fastPathEnabled, let tasks = quickTasks else { return .toAgent }
         let generation = quickTasksGeneration
         let org = organization
+        let typedIn = place     // where the operator pressed Return: the action is theirs there, or not at all
         let scope = await fastPathScope(for: line)
         let schemas = await fastPathSchemas()
         let deadline = await tasks.routedKind(.respond) == "local" ? Self.fastPathLocalDeadline : Self.fastPathSessionDeadline
         let route = await FastPath.route(line, scope: scope, schemas: schemas, deadline: deadline) { try await tasks.respond($0) }
-        guard generation == quickTasksGeneration, org == organization,
+        guard generation == quickTasksGeneration, org == organization, place == typedIn,
               case .action(let name, let params) = route else { return .toAgent }
         do {
             _ = try await registry.dispatch(
                 name: name, params: params, origin: .ui,
-                caller: DispatchCaller(place: place, session: nil, via: "fastPath"), confirmation: nil)
+                caller: DispatchCaller(place: typedIn, session: nil, via: "fastPath"), confirmation: nil)
             return .ran(FastPathReceipt(line: line, text: Self.fastPathReceiptText(action: name, params: params), refused: false))
         } catch {
             return .refused(FastPathReceipt(line: line, text: statusDescribingFailure(name, error), refused: true))
