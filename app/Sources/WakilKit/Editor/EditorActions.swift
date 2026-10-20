@@ -301,10 +301,14 @@ public func registerEditorActions(
     }
 
     /// The standardized `path` and the root holding it, or the refusal Rule 7 allows (an invariant
-    /// forbids it). Standardized first, so `/p/api/../web/x` is `/p/web/x`, in root `/p/web`.
+    /// forbids it). Standardized first, so `/p/api/../web/x` is `/p/web/x`, in root `/p/web`. A root
+    /// nested in another holds its own paths (the innermost wins), as the tree draws it (#37): else
+    /// expanding the nested root opened the outer one too (3b-ix walk).
     @Sendable func confine(_ path: String, action: String) async throws -> (path: String, root: String) {
         let clean = (path as NSString).standardizingPath
-        for r in await roots() where clean == r || clean.hasPrefix(r + "/") { return (clean, r) }
+        if let r = await roots().filter({ clean == $0 || clean.hasPrefix($0 + "/") }).max(by: { $0.count < $1.count }) {
+            return (clean, r)
+        }
         throw EditorFilesError(description: "\(action): \(clean) is outside the active project's roots; "
             + "editor reads and writes are confined to them (Invariant 6, Decision 36)")
     }

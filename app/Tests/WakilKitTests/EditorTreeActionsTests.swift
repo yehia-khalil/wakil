@@ -41,6 +41,14 @@ private func treeFixture() async throws -> (EditorFixture, EditorFileLists) {
     #expect(await f.snapshot().column?.open == ["/p/api", "/p/api/app/Models"])
 }
 
+// 3b-ix walk: a root nested in another (#37) is its own root, so expanding it opens it alone —
+// not the outer root, which the first matching root used to name.
+@Test func expandingANestedRootOpensItAloneNotTheRootAroundIt() async throws {
+    let f = try await editorFixture(roots: ["/p/api", "/p/api/src"])
+    try await f.dispatch("editor_tree_expand", ["path": .string("/p/api/src")])
+    #expect(await f.snapshot().column?.open == ["/p/api/src"])
+}
+
 // Final review I2: tree actions in flight together each read the column, await, then write it —
 // so without one writer at a time a later write drops an earlier one's open folder, and the pane
 // store and the layout can end on different copies.
