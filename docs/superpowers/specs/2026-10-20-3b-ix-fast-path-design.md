@@ -52,7 +52,8 @@ Measured on the operator's Mac (M5 Pro, 2026-10-20), llama-server, Q4_K_M, promp
   the model, in one place.
 - **Fast path defaults on only when the model is a local one.** On *Same as agent* it would add
   1 to 1.8 s and quota to every agent turn, so it defaults off there; the operator may turn it on.
-- **A 300 ms deadline** on the model's answer; past it the line goes to the agent.
+- **A deadline** of 300 ms on a local model and 2.5 s otherwise (Ruling R1, plan 2026-10-20) on the
+  model's answer; past it the line goes to the agent.
 - **Voice is covered by the composer path** (dictation lands there, Return sends). Voice
   cleanup stays an unscheduled candidate.
 
@@ -118,8 +119,10 @@ One system prompt, built per line:
 - The 26 actions with their params.
 - Fixed worked examples (about nine, as measured), including four that answer `agent`.
 - The scope:
-  - files: the top 20 of the active project's files by fuzzy match against the line's words,
-    using the same file entries and matcher ⌘P uses (`PaletteSearch.rank`);
+  - files: the top 20 of the active project's files. Each word of the line is ranked with the
+    same file entries and matcher ⌘P uses (`PaletteSearch.rank`), and the per-word lists are
+    interleaved. ⌘P's matcher needs every word to match, so ranking the whole line would match
+    nothing;
   - in full: projects of the org, environments of the active project and the active one, tables
     of the active environment's databases (the vocabulary ghost-text already reads), open panes
     (id, kind, title), API entries of the active environment.
@@ -141,13 +144,15 @@ public struct FastPath: Sendable {
 }
 ```
 
-- Calls `QuickTasks.respond` with the prompt and the schema, under a 300 ms deadline. The deadline
+- Calls `QuickTasks.respond` with the prompt and the schema, under a deadline of 300 ms on a local
+  model and 2.5 s otherwise (Ruling R1). The deadline
   cancels the request.
 - Checks, in order; the first that fails answers `.agent`:
   1. the reply parses and matches the schema;
   2. the action is on the list (`agent` answers `.agent`);
   3. the params fit that action's registry schema, after dropping params not on the list;
-  4. every name param is in scope exactly: `path` among the files sent, `name` among the projects
+  4. every name param is in scope exactly: `path` among the files sent (except `term_open`, whose `path` is a directory and is not checked
+     against the file scope), `name` among the projects
      or environments, `table` among the tables, `id` among the open panes, `entry` among the API
      entries.
 - Never throws to the composer: a model error, a timeout or a refusal is `.agent`, and the
@@ -202,7 +207,7 @@ public struct FastPath: Sendable {
 - **Rule 1:** nothing on the list destroys, so nothing is confirmed. `discard` is never sent.
 - **Rule 2:** the composer's line is never lost: an `.agent` route sends it; a refused action
   keeps it in the receipt with *Ask the agent instead*.
-- **Rule 4 and 5:** the wait is at most 300 ms and shows nothing; the composer cannot send twice
+- **Rule 4 and 5:** the wait is at most 300 ms on a local model, 2.5 s otherwise, and shows nothing; the composer cannot send twice
   meanwhile (the draft is already cleared, as today).
 - **Rule 6:** the composer keeps focus after a fast-path action.
 - **Rule 8:** a refusal is shown whole in the receipt; a model error is shown whole in Settings.
@@ -213,7 +218,7 @@ public struct FastPath: Sendable {
 | Case | Result |
 |---|---|
 | Local server down | `respond` fails fast, the line goes to the agent; Settings shows the error whole |
-| Model slower than 300 ms | the request is cancelled, the line goes to the agent |
+| Model slower than its deadline (300 ms local, 2.5 s otherwise) | the request is cancelled, the line goes to the agent |
 | Malformed or off-schema reply | agent |
 | Name not in scope (invented file) | agent |
 | A file outside the top 20 | the model cannot name it: agent |
@@ -245,7 +250,7 @@ public struct FastPath: Sendable {
   first be offered to the org's quick-tasks model. The model may answer with exactly one action
   from a fixed list of 26 navigation actions, and no writes. Wakil runs it as the operator's own
   dispatch only if the action is on the list, its params fit the schema and every name it uses
-  exists. Anything else, a late answer (past 300 ms) or any doubt sends the line to the agent
+  exists. Anything else, a late answer (past 300 ms on a local model, 2.5 s otherwise) or any doubt sends the line to the agent
   unchanged. There is still no grammar and no voice-only path. *Reverse if:* operators often have
   to undo what the fast path ran.
 - **Decision 42, amended:** one model per org does every quick task; a `local` provider is a URL

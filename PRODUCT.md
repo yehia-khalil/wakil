@@ -85,6 +85,8 @@ Downstream of those: the editor's AI ghost-text runs on the org's quick-tasks pr
   default as of open question 10; audio never leaves the machine. Voice is a transport,
   not a command language: it produces the exact string the ⌘K box would send, through one
   code path (Invariant 10). Release lands the transcript in the composer unsent; Return sends.
+  A line Return sends may run one navigation action at once on the org's quick-tasks model
+  (the fast path, 3b-ix); anything else is an agent turn.
 - Projects have **1..n roots**, not one repository (Decision 7). A microservice project
   has several.
 
