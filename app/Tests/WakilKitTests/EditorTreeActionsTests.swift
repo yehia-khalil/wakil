@@ -200,6 +200,20 @@ private func treeFixture() async throws -> (EditorFixture, EditorFileLists) {
     #expect(await lists.listing(root: "/p/api").files == ["a.go", "b.go"])
 }
 
+// 3b-ix walk: a pane opening briefly stops watching (no editor in the layout yet), which drops the
+// lists; watching the same roots again must re-read them, or the tree waits on "listing" forever.
+@Test func aRootListedBeforeWatchingStoppedIsReadAgainWhenWatched() async throws {
+    let f = try await editorFixture()
+    let lists = EditorFileLists(files: f.files)
+    await lists.watch(roots: ["/p/api"])
+    await f.files.setListing("/p/api", ["a.go"])
+    _ = await lists.listing(root: "/p/api")
+    await lists.watch(roots: [])                         // stops watching: the lists are dropped
+    #expect(await lists.state().listings["/p/api"] == nil)
+    await lists.watch(roots: ["/p/api"]).value
+    #expect(await lists.state().listings["/p/api"]?.files == ["a.go"], "re-read when watched again")
+}
+
 // A watcher wake while a files_list is in flight: the stale read lands after the invalidate and
 // must not be kept, or the tree never catches up.
 @Test func aReadInFlightAcrossAnInvalidateIsNeverKept() async throws {

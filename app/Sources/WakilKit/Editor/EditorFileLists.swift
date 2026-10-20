@@ -18,6 +18,10 @@ public struct EditorFileListsState: Sendable, Equatable {
 public actor EditorFileLists: ToolCaller {
     private let files: any ToolCaller
     private var watching = false
+    /// The roots that were listed when watching last stopped, which dropped their lists: a root
+    /// among them that is watched again is re-read, or its tree would wait on a listing nothing
+    /// asks for (3b-ix walk: a pane opening briefly stops watching).
+    private var listedWhenStopped: Set<String> = []
     /// The roots `watch(roots:)` last named; `setWatching` alone leaves it empty.
     private var watchedRoots: Set<String> = []
     private var kept: [String: JSONValue] = [:]            // root -> files_list's raw result, while watched
@@ -88,6 +92,7 @@ public actor EditorFileLists: ToolCaller {
         watchedRoots = []
         // Nothing would tell an unwatched list the disk changed: no folder load lands afterwards.
         for key in Array(dirLoads.keys) { dropLoad(key) }
+        listedWhenStopped = Set(current.listings.keys).union(inFlight.keys)
         kept = [:]; current = EditorFileListsState()
     }
 
@@ -132,6 +137,7 @@ public actor EditorFileLists: ToolCaller {
     @discardableResult
     public func invalidate(root: String) async -> Task<Void, Never> {
         let wasListed = current.listings[root] != nil || inFlight[root] != nil
+            || listedWhenStopped.remove(root) != nil
         generation[root, default: 0] += 1
         kept[root] = nil
         inFlight[root] = nil
