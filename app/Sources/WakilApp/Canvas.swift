@@ -510,9 +510,10 @@ extension WakilWindow {
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },
-                    saveLocalProvider: { id, label, url, _ in
+                    saveLocalProvider: { id, label, url in
                         await model.setLocalProvider(id: id, label: label, baseURL: url)
                     },
+                    saveOrganisationSwitch: { key, on in await model.saveOrganisationSwitch(key, on: on) },
                     removeLocalProvider: { id in await model.removeLocalProvider(id: id) },
                     quickTaskStatus: { await model.quickTaskStatus() },
                     accounts: model.accounts,

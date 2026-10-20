@@ -16,11 +16,14 @@ struct ComposerBar: View {
     private let violet = Color(red: 0.620, green: 0.510, blue: 1.0)
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            RoundedRectangle(cornerRadius: 1).fill(violet).frame(width: 1.5, height: 18)
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-            hint
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 12) {
+                RoundedRectangle(cornerRadius: 1).fill(violet).frame(width: 1.5, height: 18)
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                hint
+            }
+            receiptRow
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
@@ -72,6 +75,27 @@ struct ComposerBar: View {
                     .foregroundStyle(coolWhite.opacity(0.62))
                     .accessibilityIdentifier("window.composer.heard")
             }
+        }
+    }
+
+    /// The fast path's receipt (3b-ix): what ran, or the refusal whole (Rule 8), under the field. The
+    /// keyboard stays in the composer (Rule 6); Esc in an empty composer dismisses it.
+    @ViewBuilder private var receiptRow: some View {
+        if let receipt = composer.receipt {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(receipt.text)
+                    .font(.system(size: 11))
+                    .foregroundStyle(receipt.refused ? SettingsPalette.caution : coolWhite.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("window.composer.receipt")
+                Button("Ask the agent instead") { Task { await composer.askAgentInstead() } }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(coolWhite.opacity(0.70))
+                    .accessibilityIdentifier("window.composer.askAgent")
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 13.5)
         }
     }
 
@@ -145,6 +169,11 @@ struct ComposerBar: View {
                     if !hold.flags.isEmpty { hold.spoiled = true }
                     if event.keyCode == 53 {   // Esc
                         if composer.escape() { return true }
+                        // An empty composer's Esc clears the receipt; a draft keeps its Esc.
+                        if composer.receipt != nil, composer.draft.isEmpty, escapeBelongsToComposer(host) {
+                            composer.dismissReceipt()
+                            return true
+                        }
                         // The thread folds on any unconsumed Esc, but the event is
                         // swallowed only when focus is the composer or nowhere:
                         // otherwise another surface (org plane, palette, API pane,

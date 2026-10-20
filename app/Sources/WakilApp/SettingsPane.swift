@@ -69,8 +69,10 @@ struct SettingsPane: View {
     var saveEditorSettings: ([String: JSONValue]) async -> String? = { _ in nil }
     /// Saves one project's editor fields: the project file's path, then the fields.
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
-    /// Saves a local model: id, label, URL, the operations it serves (3b-viii). Answers the refusal or nil.
-    var saveLocalProvider: (String, String, String, Set<QuickOperation>) async -> String? = { _, _, _, _ in nil }
+    /// Saves a local model: id, label, URL (3b-viii). Answers the refusal or nil.
+    var saveLocalProvider: (String, String, String) async -> String? = { _, _, _ in nil }
+    /// Saves the org's ghost-text or fast-path switch (3b-ix). Answers the refusal or nil.
+    var saveOrganisationSwitch: (WindowModel.OrganisationSwitch, Bool) async -> String? = { _, _ in nil }
     /// Removes a local model by id (3b-viii). Answers the refusal or nil.
     var removeLocalProvider: (String) async -> String? = { _ in nil }
     /// Each quick-task provider's last error whole and which have answered, by id; the provider
@@ -176,6 +178,8 @@ struct SettingsPane: View {
     @State private var adoptRefusals: [String: String] = [:]
     /// What `quickTaskStatus()` last answered, read when the pane appears and after each save.
     @State private var quickStatus: QuickTaskStatus?
+    /// A refused ghost-text or fast-path switch, whole under its row, by switch key.
+    @State private var switchRefusals: [String: String] = [:]
 
     /// The value being typed, per field, while an editor is open. Absent
     /// means the field is not being edited and draws what is on disk.
@@ -453,8 +457,8 @@ struct SettingsPane: View {
                 .padding(.top, 14)
             LocalProvidersSection(
                 providers: tree.providers, status: quickStatus,
-                save: { id, label, url, serves in
-                    let refusal = await saveLocalProvider(id, label, url, serves)
+                save: { id, label, url in
+                    let refusal = await saveLocalProvider(id, label, url)
                     quickStatus = await quickTaskStatus()
                     return refusal
                 },
@@ -725,6 +729,10 @@ struct SettingsPane: View {
             // a chevron (the system's menu chrome would be the only bezel on the page), and where
             // code completion goes beside it.
             HStack(alignment: .firstTextBaseline, spacing: Scale.columnGap) {
+                Text("Model")
+                    .font(.system(size: Scale.body, weight: .medium))
+                    .foregroundStyle(coolWhite.opacity(0.86))
+                    .frame(width: 120, alignment: .leading)
                 // Same as agent, then the accounts, then the local models, each group headed.
                 Menu {
                     quickTaskItems(options.filter { $0.id.isEmpty }, stored: stored, tree: tree)
@@ -765,6 +773,10 @@ struct SettingsPane: View {
             }
             .frame(minHeight: Scale.rowHeight, alignment: .leading)
             .overlay(alignment: .bottom) { Rectangle().fill(coolWhite.opacity(0.06)).frame(height: 0.5) }
+            quickTaskSwitchRow(
+                "Ghost-text", hint: "suggestions as you type", on: tree.org.ghostText, key: .ghostText)
+            quickTaskSwitchRow(
+                "Fast path", hint: fastPathHint(tree, isLocal: isLocal), on: tree.org.fastPath, key: .fastPath)
             if let note = quickTaskNote(tree, activeProvider: runningAccountId) {
                 Text(note)
                     .font(.system(size: Scale.body))
@@ -796,6 +808,63 @@ struct SettingsPane: View {
             }
         }
         .padding(.bottom, 4)
+    }
+
+    /// Fast path's hint: what it is, and, when the value is the default for the current model, why.
+    /// A hint only: either value can be chosen (Rule 9).
+    private func fastPathHint(_ tree: SettingsTree, isLocal: (String) -> Bool) -> String {
+        let base = "one-line commands without the agent"
+        let local = isLocal(tree.org.quickProvider)
+        guard tree.org.fastPath == local else { return base }
+        return local
+            ? base + " · on: the model is local"
+            : base + " · off: on Same as agent each line would wait for Claude first"
+    }
+
+    /// One Off/On row under QUICK TASKS, written on click (Rule 2) and kept where it stands (Rule 6).
+    private func quickTaskSwitchRow(
+        _ label: String, hint: String, on: Bool, key: WindowModel.OrganisationSwitch
+    ) -> some View {
+        let name = key.rawValue
+        let refusalKey = name
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: Scale.columnGap) {
+                Text(label)
+                    .font(.system(size: Scale.body, weight: .medium))
+                    .foregroundStyle(coolWhite.opacity(0.86))
+                    .frame(width: 120, alignment: .leading)
+                SegmentedChoice(
+                    options: ["Off", "On"],
+                    selection: Binding(
+                        get: { on ? "On" : "Off" },
+                        set: { option in
+                            let want = option == "On"
+                            guard want != on else { return }
+                            Task {
+                                switchRefusals[refusalKey] = await saveOrganisationSwitch(key, want)
+                                quickStatus = await quickTaskStatus()
+                            }
+                        }),
+                    identifier: { option in
+                        let side = option.lowercased()
+                        return "settings.org.\(name).\(side)"
+                    })
+                Text(hint)
+                    .font(.system(size: Scale.meta))
+                    .foregroundStyle(coolWhite.opacity(0.40))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: Scale.rowHeight, alignment: .leading)
+            .overlay(alignment: .bottom) { Rectangle().fill(coolWhite.opacity(0.06)).frame(height: 0.5) }
+            if let refusal = switchRefusals[refusalKey] {
+                Text(refusal)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.org.\(name).refusal")
+            }
+        }
     }
 
     /// One Quick tasks menu item per option, named `settings.org.quickProvider.<id>` (`same` for
