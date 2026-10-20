@@ -776,7 +776,7 @@ struct SettingsPane: View {
             quickTaskSwitchRow(
                 "Ghost-text", hint: "suggestions as you type", on: tree.org.ghostText, key: .ghostText)
             quickTaskSwitchRow(
-                "Fast path", hint: fastPathHint(tree, isLocal: isLocal), on: tree.org.fastPath, key: .fastPath)
+                "Fast path", hint: fastPathHint(tree), on: tree.org.fastPath, key: .fastPath)
             if let note = quickTaskNote(tree, activeProvider: runningAccountId) {
                 Text(note)
                     .font(.system(size: Scale.body))
@@ -808,17 +808,6 @@ struct SettingsPane: View {
             }
         }
         .padding(.bottom, 4)
-    }
-
-    /// Fast path's hint: what it is, and, when the value is the default for the current model, why.
-    /// A hint only: either value can be chosen (Rule 9).
-    private func fastPathHint(_ tree: SettingsTree, isLocal: (String) -> Bool) -> String {
-        let base = "one-line commands without the agent"
-        let local = isLocal(tree.org.quickProvider)
-        guard tree.org.fastPath == local else { return base }
-        return local
-            ? base + " · on: the model is local"
-            : base + " · off: on Same as agent each line would wait for Claude first"
     }
 
     /// One Off/On row under QUICK TASKS, written on click (Rule 2) and kept where it stands (Rule 6).

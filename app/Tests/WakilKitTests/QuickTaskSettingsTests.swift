@@ -71,3 +71,17 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
     #expect(org.ghostText == true)
     #expect(org.fastPath == false)
 }
+
+@Test func fastPathHintNamesTheModelActuallyChosen() {
+    let providers = [
+        SettingsProvider(id: "main", kind: "claude-code", label: "Work", serves: ["infill", "respond"]),
+        SettingsProvider(id: "qwen", kind: "local", baseURL: "http://127.0.0.1:8012", serves: ["infill", "respond"]),
+    ]
+    func hint(quick: String, on: Bool) -> String {
+        fastPathHint(SettingsTree(org: SettingsOrg(id: "acme", quickProvider: quick, fastPath: on), providers: providers))
+    }
+    #expect(hint(quick: "", on: false) == "one-line commands without the agent · off: on Same as agent each line would wait for Claude first")
+    #expect(hint(quick: "main", on: false) == "one-line commands without the agent · off: on Work each line would wait for Claude first")
+    #expect(hint(quick: "qwen", on: true) == "one-line commands without the agent · on: the model is local")
+    #expect(hint(quick: "main", on: true) == "one-line commands without the agent", "a value the operator changed needs no why")
+}
