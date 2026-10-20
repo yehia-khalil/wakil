@@ -7,7 +7,8 @@ private let scope = FastPathScope(
     environments: ["staging", "qa", "production"], activeEnvironment: "qa",
     tables: ["bookings", "users"],
     panes: [FastPathPane(id: "editor-1", kind: "editor", title: "confirm.go"),
-            FastPathPane(id: "db-1", kind: "db", title: "bookings")],
+            FastPathPane(id: "db-1", kind: "db", title: "bookings"),
+            FastPathPane(id: "terminal-1", kind: "terminal", title: "zsh")],
     apiEntries: ["billing"])
 
 private let schemas: [String: JSONValue] = [
@@ -24,6 +25,20 @@ private let schemas: [String: JSONValue] = [
         "properties": .object(["root": .object(["type": .string("string")]), "path": .object(["type": .string("string")]),
                                "group": .object(["type": .string("string")])]),
         "required": .array([.string("root"), .string("path"), .string("group")])]),
+    "pane_focus": .object(["type": .string("object"),
+        "properties": .object(["id": .object(["type": .string("string")])]), "required": .array([.string("id")])]),
+    "pane_open": .object(["type": .string("object"),
+        "properties": .object(["kind": .object(["type": .string("string"),
+                                                "enum": .array([.string("db"), .string("editor"), .string("terminal")])])]),
+        "required": .array([.string("kind")])]),
+    "pane_sort": .object(["type": .string("object"),
+        "properties": .object(["pane": .object(["type": .string("string")]), "column": .object(["type": .string("string")]),
+                               "direction": .object(["type": .string("string"),
+                                                     "enum": .array([.string("asc"), .string("desc"), .string("drop")])])]),
+        "required": .array([.string("pane")])]),
+    "db_page": .object(["type": .string("object"),
+        "properties": .object(["pane": .object(["type": .string("string")]), "to": .object(["type": .string("string")])]),
+        "required": .array([.string("pane"), .string("to")])]),
 ]
 
 @Test func aValidReplyRunsItsAction() {
@@ -117,4 +132,84 @@ private let schemas: [String: JSONValue] = [
         }
     }
     #expect(FastPath.allowed.count == 26)
+}
+
+/// A model that never answers and never looks at cancellation: it parks until the test lets it go.
+private final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiting: CheckedContinuation<Void, Never>?
+    private var opened = false
+    func wait() async {
+        await withCheckedContinuation { c in
+            let resumeNow = lock.withLock { () -> Bool in
+                if opened { return true }
+                waiting = c
+                return false
+            }
+            if resumeNow { c.resume() }
+        }
+    }
+    func open() {
+        let c = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            opened = true
+            defer { waiting = nil }
+            return waiting
+        }
+        c?.resume()
+    }
+}
+
+@Test func aModelThatIgnoresCancellationStillLosesAtTheDeadline() async {
+    let gate = Gate()
+    let started = ContinuousClock.now
+    let r = await FastPath.route("switch to staging", scope: scope, schemas: schemas, deadline: .milliseconds(50)) { _ in
+        await gate.wait()
+        return #"{"action":"ctx_set_environment","params":{"name":"staging"}}"#
+    }
+    let waited = ContinuousClock.now - started
+    gate.open()
+    #expect(r == .agent)
+    // Returning at all is the proof (the model never answers until the gate opens); the bound is
+    // loose so a loaded full-suite run does not flake on the timer's scheduling.
+    #expect(waited < .seconds(10), "route waited \(waited) for a model that ignores cancellation")
+}
+
+@Test func aTerminalPaneIsNeverClosedButCanBeFocused() {
+    #expect(FastPath.check(reply: #"{"action":"pane_close","params":{"id":"terminal-1"}}"#,
+                           scope: scope, schemas: schemas) == .agent)
+    #expect(FastPath.check(reply: #"{"action":"pane_focus","params":{"id":"terminal-1"}}"#, scope: scope, schemas: schemas)
+            == .action(name: "pane_focus", params: .object(["id": .string("terminal-1")])))
+    // The worked example teaches closing a table pane, not a terminal.
+    let instructions = FastPath.instructions(actions: schemas)
+    #expect(!instructions.contains(#""pane_close", "params": {"id": "terminal"#))
+    #expect(instructions.contains(#""pane_close", "params": {"id": "db-1"}"#))
+}
+
+@Test func aValueOutsideItsEnumGoesToTheAgent() {
+    #expect(FastPath.check(reply: #"{"action":"pane_open","params":{"kind":"database"}}"#, scope: scope, schemas: schemas) == .agent)
+    #expect(FastPath.check(reply: #"{"action":"pane_open","params":{"kind":"db"}}"#, scope: scope, schemas: schemas)
+            == .action(name: "pane_open", params: .object(["kind": .string("db")])))
+    #expect(FastPath.check(reply: #"{"action":"pane_sort","params":{"pane":"db-1","column":"id","direction":"up"}}"#,
+                           scope: scope, schemas: schemas) == .agent)
+    #expect(FastPath.check(reply: #"{"action":"pane_sort","params":{"pane":"db-1","column":"id","direction":"desc"}}"#,
+                           scope: scope, schemas: schemas)
+            == .action(name: "pane_sort", params: .object(["pane": .string("db-1"), "column": .string("id"), "direction": .string("desc")])))
+}
+
+@Test func aNumberForAStringParamBecomesItsString() {
+    // "page 3": the model answers the page as a number; db_page takes it as a string.
+    #expect(FastPath.check(reply: #"{"action":"db_page","params":{"pane":"db-1","to":3}}"#, scope: scope, schemas: schemas)
+            == .action(name: "db_page", params: .object(["pane": .string("db-1"), "to": .string("3")])))
+    #expect(FastPath.conform(.number(3), to: "string") == .string("3"))
+}
+
+@Test func aWholeNumberArrivingAsANumberIsAnInteger() {
+    #expect(FastPath.conform(.number(40), to: "integer") == .integer(40))
+    #expect(FastPath.conform(.number(40.5), to: "integer") == nil)
+}
+
+@Test func aChangesSelectPathOutsideEveryRootGoesToTheAgent() {
+    let wide = FastPathScope(files: ["/elsewhere/a.go"], roots: ["/p"])
+    #expect(FastPath.check(reply: #"{"action":"editor_changes_select","params":{"path":"/elsewhere/a.go"}}"#,
+                           scope: wide, schemas: schemas) == .agent)
 }

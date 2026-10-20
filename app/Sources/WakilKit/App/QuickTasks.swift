@@ -79,7 +79,11 @@ public actor QuickTasks {
     }
 
     public func infill(_ r: InfillRequest) async throws -> String { try await run(.infill) { try await $0.infill(r) } }
-    public func respond(_ r: RespondRequest) async throws -> String { try await run(.respond) { try await $0.respond(r) } }
+    /// `fallback: false` asks the routed provider alone: the fast path's line goes to the agent
+    /// rather than wait on the session provider when a local server is down.
+    public func respond(_ r: RespondRequest, fallback: Bool = true) async throws -> String {
+        try await run(.respond, fallback: fallback) { try await $0.respond(r) }
+    }
     public func routedKind(_ op: QuickOperation) -> String? { quickRoute(op, config).first?.kind }
     public func endpointErrors() -> [String: String] { errors }
     public func answered() -> Set<String> { succeeded }
@@ -124,8 +128,11 @@ public actor QuickTasks {
         return m
     }
 
-    private func run(_ op: QuickOperation, _ call: (any QuickModel) async throws -> String) async throws -> String {
-        let candidates = quickRoute(op, config)
+    private func run(
+        _ op: QuickOperation, fallback: Bool = true, _ call: (any QuickModel) async throws -> String
+    ) async throws -> String {
+        let route = quickRoute(op, config)
+        let candidates = fallback ? route : Array(route.prefix(1))
         guard !candidates.isEmpty else { throw QuickModelError.noProvider(op) }
         for (index, record) in candidates.enumerated() {
             try Task.checkCancellation()

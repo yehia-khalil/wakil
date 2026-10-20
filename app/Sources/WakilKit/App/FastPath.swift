@@ -33,7 +33,8 @@ public enum FastPathRoute: Sendable, Equatable {
 }
 
 /// What a param must name: something in scope, or anything (`free`: a search query, a line).
-public enum FastPathParam: Sendable { case file, project, environment, table, pane, apiEntry, free }
+/// `closablePane` is an open pane that is not a terminal: closing one ends its shell.
+public enum FastPathParam: Sendable { case file, project, environment, table, pane, closablePane, apiEntry, free }
 
 public struct FastPathAction: Sendable {
     public var params: [String: FastPathParam]
@@ -63,7 +64,7 @@ public enum FastPath {
         "db_refetch": .init(["pane": .pane]),
         "pane_open": .init(["kind": .free]),
         "pane_focus": .init(["id": .pane]),
-        "pane_close": .init(["id": .pane]),
+        "pane_close": .init(["id": .closablePane]),
         "pane_maximize": .init(["id": .pane]),
         "pane_restore": .init([:]),
         "pane_sort": .init(["pane": .pane, "column": .free, "direction": .free]),
@@ -99,7 +100,7 @@ public enum FastPath {
         - "go to qa" -> {"action": "ctx_set_environment", "params": {"name": "qa"}}
         - "show payments" -> {"action": "db_read_table", "params": {"table": "payments"}}
         - "what columns does invoices have" -> {"action": "db_describe_table", "params": {"table": "invoices"}}
-        - "close the terminal" -> {"action": "pane_close", "params": {"id": "terminal-1"}}
+        - "close the bookings table" -> {"action": "pane_close", "params": {"id": "db-1"}}
         - "line 40" -> {"action": "editor_goto", "params": {"line": 40}}
         - "how does refund work?" -> {"action": "agent", "params": {}}
         - "rename Confirm to Accept" -> {"action": "agent", "params": {}}
@@ -136,7 +137,9 @@ public enum FastPath {
         var params: [String: JSONValue] = [:]
         for (key, kind) in action.params {
             guard let raw = given[key] else { continue }
-            guard let typed = conform(raw, to: propertyType(schema, key)) else { return .agent }
+            let property = property(schema, key)
+            guard let typed = conform(raw, to: property.type) else { return .agent }
+            if let allowed = property.values, !allowed.contains(typed) { return .agent }
             guard inScope(typed, kind, scope) else { return .agent }
             params[key] = typed
         }
@@ -156,23 +159,35 @@ public enum FastPath {
                              respond: @escaping @Sendable (RespondRequest) async throws -> String) async -> FastPathRoute {
         let request = RespondRequest(instructions: instructions(actions: schemas), input: input(line, scope: scope),
                                      jsonSchema: replySchema, maxTokens: 80)
-        let reply: String? = await withTaskGroup(of: String?.self) { group in
-            group.addTask { try? await respond(request) }
-            group.addTask { try? await Task.sleep(for: deadline); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
-        guard let reply else { return .agent }
+        guard let reply = await within(deadline, { try? await respond(request) }) else { return .agent }
         return check(reply: reply, scope: scope, schemas: schemas)
+    }
+
+    /// `work`'s answer, or nil once `deadline` passes, whichever comes first. The loser is cancelled
+    /// and left to finish on its own: a model that ignores cancellation (a session-backed one parked
+    /// behind another turn) cannot hold the line past the deadline.
+    public static func within<T: Sendable>(_ deadline: Duration, _ work: @escaping @Sendable () async -> T?) async -> T? {
+        let first = FirstAnswer<T>()
+        return await withCheckedContinuation { continuation in
+            first.arm(continuation)
+            first.race([
+                Task { first.answer(await work()) },
+                Task { try? await Task.sleep(for: deadline); first.answer(nil) },
+            ])
+        }
     }
 
     // MARK: - Checks
 
-    private static func propertyType(_ schema: JSONValue, _ key: String) -> String? {
+    /// The registry schema's `type` for `key`, and its `enum` when it has one.
+    private static func property(_ schema: JSONValue, _ key: String) -> (type: String?, values: [JSONValue]?) {
         guard case .object(let s) = schema, case .object(let props)? = s["properties"],
-              case .object(let p)? = props[key], case .string(let t)? = p["type"] else { return nil }
-        return t
+              case .object(let p)? = props[key] else { return (nil, nil) }
+        var type: String?
+        if case .string(let t)? = p["type"] { type = t }
+        var values: [JSONValue]?
+        if case .array(let e)? = p["enum"] { values = e }
+        return (type, values)
     }
 
     private static func required(_ schema: JSONValue) -> [String] {
@@ -180,11 +195,15 @@ public enum FastPath {
         return r.compactMap { if case .string(let k) = $0 { return k } else { return nil } }
     }
 
-    /// The value as the schema's type, converting a string of digits for a number (R3), or nil.
-    private static func conform(_ v: JSONValue, to type: String?) -> JSONValue? {
+    /// The value as the schema's type, converting a string of digits for a number (R3) and a number
+    /// for a string ("page 3"), or nil.
+    static func conform(_ v: JSONValue, to type: String?) -> JSONValue? {
         switch (type, v) {
         case (nil, _): return v
         case ("string", .string): return v
+        case ("string", .integer(let n)): return .string(String(n))
+        case ("string", .number(let n)):
+            return .string(n.rounded() == n && abs(n) < 1e15 ? String(Int64(n)) : String(n))
         case ("integer", .integer), ("number", .integer), ("number", .number): return v
         case ("integer", .number(let n)) where n.rounded() == n: return .integer(Int64(n))
         case ("integer", .string(let s)):
@@ -207,8 +226,40 @@ public enum FastPath {
         case .environment: return scope.environments.contains(s)
         case .table: return scope.tables.contains(s)
         case .pane: return scope.panes.contains { $0.id == s }
+        case .closablePane: return scope.panes.contains { $0.id == s && $0.kind != "terminal" }
         case .apiEntry: return scope.apiEntries.contains(s)
         case .free: return true
         }
+    }
+}
+
+/// The one answer `FastPath.within` takes: the first `answer` resumes the caller and cancels both
+/// racers; every later one is dropped.
+private final class FirstAnswer<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T?, Never>?
+    private var racers: [Task<Void, Never>] = []
+    private var done = false
+
+    func arm(_ c: CheckedContinuation<T?, Never>) { lock.withLock { continuation = c } }
+
+    func race(_ tasks: [Task<Void, Never>]) {
+        let finished = lock.withLock { () -> Bool in
+            if !done { racers = tasks }
+            return done
+        }
+        if finished { tasks.forEach { $0.cancel() } }
+    }
+
+    func answer(_ value: T?) {
+        let (c, losers) = lock.withLock { () -> (CheckedContinuation<T?, Never>?, [Task<Void, Never>]) in
+            guard !done else { return (nil, []) }
+            done = true
+            defer { continuation = nil; racers = [] }
+            return (continuation, racers)
+        }
+        guard let c else { return }
+        c.resume(returning: value)
+        losers.forEach { $0.cancel() }
     }
 }
