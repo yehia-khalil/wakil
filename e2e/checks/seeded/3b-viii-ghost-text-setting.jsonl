@@ -1,6 +1,6 @@
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.providers"}}
-{"expect":{"tree":"contains","text":"GHOST-TEXT"}}
+{"expect":{"tree":"contains","text":"Ghost-text"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.ghostText","equals":"true"}}
 {"parity":{"action":"ctx_update_org","params":{"id":"e2e-fixture","ghostText":false},"click":"settings.org.ghostText.off","assert":"tree"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.ghostText","equals":"false"}}
