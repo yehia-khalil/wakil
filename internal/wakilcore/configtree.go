@@ -18,6 +18,8 @@ type ConfigTreeOrg struct {
 	DefaultProvider string `json:"defaultProvider"`
 	SpeechProvider  string `json:"speechProvider"`
 	QuickProvider   string `json:"quickProvider"`
+	GhostText       bool   `json:"ghostText"`
+	FastPath        bool   `json:"fastPath"`
 }
 
 // ConfigTreeProvider is a provider binding as the settings tree draws it.
@@ -198,6 +200,8 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 		SpeechProvider:  record.SpeechProvider,
 		QuickProvider:   record.QuickProvider,
 	}
+	tree.Org.GhostText = resolveOrgSwitch(record.GhostText, app.Editor.Resolved().GhostText)
+	tree.Org.FastPath = resolveOrgSwitch(record.FastPath, quickProviderIsLocal(org, record.QuickProvider))
 
 	providers, skipped, err := listProvidersFor(org)
 	if err != nil {
@@ -296,4 +300,22 @@ func configTreeProviderRow(p Provider) ConfigTreeProvider {
 		ConfigDir: p.ConfigDir, Shared: p.Shared,
 		BaseURL: p.BaseURL, Serves: resolvedServes(p),
 	}
+}
+
+// resolveOrgSwitch is an org switch's value: the org's own, else the default it falls back to.
+func resolveOrgSwitch(own *bool, fallback bool) bool {
+	if own != nil {
+		return *own
+	}
+	return fallback
+}
+
+// quickProviderIsLocal reports whether the org's quick provider is a local endpoint: the fast
+// path's default (3b-ix), because over Claude every line would wait for it first.
+func quickProviderIsLocal(org, id string) bool {
+	if id == "" {
+		return false
+	}
+	p, err := LoadProviderFor(org, id)
+	return err == nil && p.Kind == ProviderKindLocal
 }

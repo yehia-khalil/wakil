@@ -40,6 +40,12 @@ type Org struct {
 	// QuickProvider is the provider quick tasks run on (3b-viii, Decision 42);
 	// empty means the active provider.
 	QuickProvider string `json:"quickProvider,omitempty"`
+
+	// GhostText and FastPath switch the org's quick tasks (3b-ix, Decision 42 amended). Nil is
+	// the default, resolved on config_tree: ghost-text falls back to the app-wide setting, then
+	// on; the fast path is on when QuickProvider names a local provider.
+	GhostText *bool `json:"ghostText,omitempty"`
+	FastPath  *bool `json:"fastPath,omitempty"`
 }
 
 const orgFileName = "org.json"

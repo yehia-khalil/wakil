@@ -155,6 +155,8 @@ type updateOrgArgs struct {
 	DefaultProvider *string `json:"defaultProvider,omitempty" jsonschema:"optional account id, which must already be registered in this organisation; omit to leave unchanged, send \"\" to clear"`
 	SpeechProvider  *string `json:"speechProvider,omitempty" jsonschema:"optional speech engine id (apple); omit to leave unchanged, send \"\" to clear"`
 	QuickProvider   *string `json:"quickProvider,omitempty" jsonschema:"optional provider id quick tasks run on; omit to leave unchanged, send \"\" for the active provider"`
+	GhostText       *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
+	FastPath        *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
 }
 
 // setEditorSettingsArgs is the app-wide editor tier's edit (3b-v). Pointers for updateOrgArgs'
@@ -495,6 +497,8 @@ func newServer() *mcp.Server {
 				DefaultProvider: a.DefaultProvider,
 				SpeechProvider:  a.SpeechProvider,
 				QuickProvider:   a.QuickProvider,
+				GhostText:       a.GhostText,
+				FastPath:        a.FastPath,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
