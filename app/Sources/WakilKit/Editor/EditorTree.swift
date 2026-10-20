@@ -95,6 +95,9 @@ public func editorTreeRows(_ listings: [EditorRootListing], open: Set<String>,
                            dirs: [String: [EditorDirEntry]], loading: Set<String>,
                            dirErrors: [String: String], showIgnored: Bool = true) -> [EditorTreeRow] {
     var rows: [EditorTreeRow] = []
+    // A folder that is itself another root (`/x/src` beside `/x`) is shown once, as its own root:
+    // row ids are paths, so a second row for it would share the root row's id.
+    let roots = Set(listings.map(\.root))
     for l in listings {
         let rootOpen = open.contains(l.root)
         rows.append(EditorTreeRow(id: l.root, root: l.root, relative: "", name: (l.root as NSString).lastPathComponent,
@@ -119,6 +122,7 @@ public func editorTreeRows(_ listings: [EditorRootListing], open: Set<String>,
             for (name, child) in sorted {
                 let rel = prefix.isEmpty ? name : "\(prefix)/\(name)"
                 let id = "\(l.root)/\(rel)"
+                if roots.contains(id) { continue }
                 let dim = dimmed || child.ignored || child.heavy
                 let isOpen = child.isDir && open.contains(id)
                 let kind: EditorTreeRowKind = repos.contains(rel) ? .repo : (child.isDir ? .folder : .file)

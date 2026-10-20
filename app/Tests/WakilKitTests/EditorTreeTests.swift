@@ -163,3 +163,14 @@ private func names(_ rows: [EditorTreeRow]) -> [String] {
     #expect(made?.kind == .folder && made?.open == false)
     #expect(rows.firstIndex { $0.id == "/p/api/made" }! < rows.firstIndex { $0.id == "/p/api/a.go" }!)   // folders first
 }
+
+// A root nested inside another root (`/x` and `/x/src`) is shown once, as its own root: repeated as
+// a folder of the outer root, the two rows shared one id, so opening one opened both and SwiftUI
+// drew each with the other's children.
+@Test func aRootInsideAnotherRootIsShownOnceAsItsOwnRoot() {
+    let outer = listing("/x", files: ["events.db", "src/app.ts", "src/lib/b.ts"])
+    let inner = listing("/x/src", files: ["app.ts", "lib/b.ts"])
+    let rows = editorTreeRows([outer, inner], open: ["/x", "/x/src"], dirs: [:], loading: [], dirErrors: [:])
+    #expect(names(rows) == ["x", " events.db", "src", " lib", " app.ts"])
+    #expect(Set(rows.map(\.id)).count == rows.count)
+}
