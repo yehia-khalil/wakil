@@ -729,20 +729,23 @@ struct SettingsPane: View {
                 Menu {
                     quickTaskItems(options.filter { $0.id.isEmpty }, stored: stored, tree: tree)
                     Divider()
-                    Section("Accounts") {
-                        quickTaskItems(options.filter { !$0.id.isEmpty && !isLocal($0.id) }, stored: stored, tree: tree)
-                    }
-                    Section("Local models") {
-                        quickTaskItems(options.filter { isLocal($0.id) }, stored: stored, tree: tree)
-                    }
+                    // Headed by disabled items, not `Section`: a menu item inside a SwiftUI
+                    // Section loses its accessibility identifier (measured by the e2e, 2026-10-20).
+                    Text("Accounts")
+                    quickTaskItems(options.filter { !$0.id.isEmpty && !isLocal($0.id) }, stored: stored, tree: tree)
+                    Divider()
+                    Text("Local models")
+                    quickTaskItems(options.filter { isLocal($0.id) }, stored: stored, tree: tree)
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(known?.display ?? stored)
                             .font(.system(size: Scale.body, weight: .medium))
                             .foregroundStyle(coolWhite.opacity(0.86))
+                        // Decoration: drawn, but not a second menu button carrying the same id.
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(coolWhite.opacity(0.40))
+                            .accessibilityHidden(true)
                     }
                     .contentShape(Rectangle())
                 }
