@@ -145,16 +145,21 @@ public struct FastPath: Sendable {
 ```
 
 - Calls `QuickTasks.respond` with the prompt and the schema, under a deadline of 300 ms on a local
-  model and 2.5 s otherwise (Ruling R1). The deadline
-  cancels the request.
+  model and 2.5 s otherwise (Ruling R1). The deadline bounds gathering the scope and the model's
+  answer together, and returns without waiting for either: the losing request is cancelled and
+  left to finish on its own. The scope is read from what the window holds (the settings tree's
+  projects, the trees' file listings), so a line journals nothing but its own dispatch. Only the
+  routed `respond` provider is asked: a local server that is down sends the line to the agent,
+  not to the session's provider (ghost-text keeps its fall-back).
 - Checks, in order; the first that fails answers `.agent`:
   1. the reply parses and matches the schema;
   2. the action is on the list (`agent` answers `.agent`);
-  3. the params fit that action's registry schema, after dropping params not on the list;
+  3. the params fit that action's registry schema, its `type` and any `enum`, after dropping params
+     not on the list (a number for a string param becomes its string: "page 3");
   4. every name param is in scope exactly: `path` among the files sent (except `term_open`, whose `path` is a directory and is not checked
      against the file scope), `name` among the projects
-     or environments, `table` among the tables, `id` among the open panes, `entry` among the API
-     entries.
+     or environments, `table` among the tables, `id` among the open panes (for `pane_close`, never a
+     terminal: closing one ends its shell), `entry` among the API entries.
 - Never throws to the composer: a model error, a timeout or a refusal is `.agent`, and the
   model's error is kept for Settings as ghost-text's is (Rule 8).
 
@@ -188,13 +193,14 @@ public struct FastPath: Sendable {
    switched) is what was asked.
 4. A dispatch refused or thrown: the receipt shows the error whole and *Ask the agent instead*.
 5. `.agent`: `window.send(line, via:)`, unchanged.
-6. *Ask the agent instead* sends the original line through `window.send` and clears the receipt.
+6. *Ask the agent instead* sends the original line through `window.send`, to the place it was
+   typed in and with its source (a spoken line stays a voice turn), and clears the receipt.
    The receipt also clears on the next send or on Esc in an empty composer.
 
 ### WakilApp
 
-- `ComposerBar`: the receipt line, `composer.fastPath.receipt` and
-  `composer.fastPath.askAgent`.
+- `ComposerBar`: the receipt line, `window.composer.receipt` and
+  `window.composer.askAgent`.
 - `SettingsPane`, Providers: QUICK TASKS becomes three rows — **Model** (the 3b-viii dropdown,
   unchanged), **Ghost-text** and **Fast path** switches (`settings.org.ghostText`,
   `settings.org.fastPath`), each with a one-line hint. A default shown comes with why: *On: the
