@@ -25,6 +25,24 @@ public struct FastPathScope: Sendable, Equatable {
         self.activeEnvironment = activeEnvironment; self.tables = tables; self.panes = panes
         self.apiEntries = apiEntries
     }
+
+    /// What the model sees for each file, and the path it stands for: the path relative to its
+    /// root (the longest that holds it), and the root's name in front where two roots share the
+    /// rest. A short name is a few tokens to copy back, where an absolute path is dozens and
+    /// misses a local model's deadline (3b-ix walk). A file under no root keeps its path.
+    public var fileNames: [(name: String, path: String)] {
+        let relative = files.map { path -> (rel: String, root: String?) in
+            guard let root = roots.filter({ path.hasPrefix($0 + "/") }).max(by: { $0.count < $1.count })
+            else { return (path, nil) }
+            return (String(path.dropFirst(root.count + 1)), root)
+        }
+        var count: [String: Int] = [:]
+        for r in relative { count[r.rel, default: 0] += 1 }
+        return zip(files, relative).map { path, r in
+            guard let root = r.root, count[r.rel]! > 1 else { return (r.rel, path) }
+            return ((root as NSString).lastPathComponent + "/" + r.rel, path)
+        }
+    }
 }
 
 public enum FastPathRoute: Sendable, Equatable {
@@ -115,7 +133,7 @@ public enum FastPath {
             let active_environment: String; let tables: [String]; let open_panes: [FastPathPane]
             let api_entries: [String]
         }
-        let wire = Wire(files: scope.files, projects: scope.projects, environments: scope.environments,
+        let wire = Wire(files: scope.fileNames.map(\.name), projects: scope.projects, environments: scope.environments,
                         active_environment: scope.activeEnvironment, tables: scope.tables,
                         open_panes: scope.panes, api_entries: scope.apiEntries)
         let enc = JSONEncoder()
@@ -141,7 +159,7 @@ public enum FastPath {
             guard let typed = conform(raw, to: property.type) else { return .agent }
             if let allowed = property.values, !allowed.contains(typed) { return .agent }
             guard inScope(typed, kind, scope) else { return .agent }
-            params[key] = typed
+            params[key] = kind == .file ? filePath(typed, scope).map(JSONValue.string) ?? typed : typed
         }
         if name == "editor_changes_select" {
             guard case .string(let path)? = params["path"],
@@ -217,11 +235,19 @@ public enum FastPath {
         }
     }
 
+    /// The absolute path a file name the model gave stands for: a name from `fileNames`, or (as
+    /// before) a path in scope copied whole.
+    private static func filePath(_ v: JSONValue, _ scope: FastPathScope) -> String? {
+        guard case .string(let s) = v else { return nil }
+        if let hit = scope.fileNames.first(where: { $0.name == s }) { return hit.path }
+        return scope.files.contains(s) ? s : nil
+    }
+
     private static func inScope(_ v: JSONValue, _ kind: FastPathParam, _ scope: FastPathScope) -> Bool {
         guard kind != .free else { return true }
         guard case .string(let s) = v else { return false }
         switch kind {
-        case .file: return scope.files.contains(s)
+        case .file: return filePath(v, scope) != nil
         case .project: return scope.projects.contains(s)
         case .environment: return scope.environments.contains(s)
         case .table: return scope.tables.contains(s)

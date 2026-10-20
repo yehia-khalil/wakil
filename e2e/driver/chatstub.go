@@ -23,6 +23,8 @@ var FastPathReplies = map[string]string{
 	"open a terminal": `{"action":"term_open","params":{}}`,
 	"line 40":         `{"action":"editor_goto","params":{"line":40}}`,
 	"open nowhere.go": `{"action":"editor_open","params":{"path":"nowhere.go"}}`,
+	// A name relative to the project root, as Wakil now shows a model its files.
+	"open fastpath-target.txt": `{"action":"editor_open","params":{"path":"fastpath-target.txt"}}`,
 }
 
 // SlowPrefix makes the stub answer late: "slow go to qa" answers as "go to

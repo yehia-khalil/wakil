@@ -1,0 +1,21 @@
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"{chatStub}"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"do":{"click":"settings.org.quickProvider.qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.fastPath","equals":"true"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-2","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"opened by the fast path"}}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-2","as":"{fixtureRoot}/e2e-project/fastpath-target.txt"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-2"}}}
+{"expect":{"pane":"editor-2","field":"tabs","equals":"[]"}}
+{"do":{"type":{"into":"window.composer","text":"open fastpath-target.txt"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Ran: open fastpath-target.txt"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"/e2e-project/fastpath-target.txt"}}
+{"expect":{"journal":{"contains":"\"via\":\"fastPath\""}}}
+{"expect":{"tree":"absent","text":"no agent session"}}
+{"expect":{"focus":"window.composer"}}
