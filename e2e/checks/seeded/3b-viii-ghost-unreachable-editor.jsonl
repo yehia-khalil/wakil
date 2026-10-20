@@ -5,6 +5,7 @@
 {"do":{"press":"Return"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:1"}}
 {"expect":{"tree":"contains","text":"not tried yet"}}
+{"do":{"click":"settings.org.quickProvider"}}
 {"do":{"click":"settings.org.quickProvider.local"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"local"}}
 {"dispatch":{"action":"editor_new_scratch","params":{}}}

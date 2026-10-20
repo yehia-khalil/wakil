@@ -445,6 +445,10 @@ struct SettingsPane: View {
             accountTable()
             // Above the local models it chooses between, so the choice and what it chooses from
             // are read together; the organisation node does not repeat it.
+            // Accounts above, the models quick tasks run on below.
+            Rectangle().fill(coolWhite.opacity(0.10)).frame(height: 0.5)
+                .padding(.top, 18)
+                .accessibilityHidden(true)
             quickTasksRow(tree: tree)
                 .padding(.top, 14)
             LocalProvidersSection(
@@ -703,35 +707,43 @@ struct SettingsPane: View {
         .padding(.bottom, 4)
     }
 
-    /// 3b-viii: the provider quick tasks run on. One segment per provider that serves anything,
-    /// "Same as agent" first; a stored id no provider answers to is held, not dropped (Rule 7).
+    /// 3b-viii: the provider quick tasks run on, as a dropdown. One item per provider that serves
+    /// anything, "Same as agent" first; a stored id no provider answers to is held as the label,
+    /// not dropped (Rule 7).
     private func quickTasksRow(tree: SettingsTree) -> some View {
         let options = quickTaskChoices(tree)
         let stored = tree.org.quickProvider
         let known = options.first(where: { $0.id == stored })
-        func labelFor(_ id: String) -> String { options.first(where: { $0.id == id })?.display ?? id }
-        func idFor(_ label: String) -> String { options.first(where: { $0.display == label })?.id ?? label }
-        return VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .leading, spacing: 4) {
             Text("QUICK TASKS")
                 .font(.system(size: Scale.micro, weight: .medium))
                 .tracking(Scale.microTracking)
                 .foregroundStyle(coolWhite.opacity(0.32))
-            SegmentedChoice(
-                options: options.map(\.display),
-                selection: Binding(
-                    get: { known?.display ?? labelFor(stored) },
-                    set: { label in
-                        let id = idFor(label)
-                        guard id != stored else { return }
-                        drafts[.quickProvider] = id
+            Menu {
+                ForEach(options, id: \.id) { option in
+                    Button(option.display) {
+                        guard option.id != stored else { return }
+                        drafts[.quickProvider] = option.id
                         save(.quickProvider, tree: tree)
-                    }),
-                identifier: { label in
-                    let id = idFor(label)
-                    let key = id.isEmpty ? "same" : id
-                    return "settings.org.quickProvider.\(key)"
-                },
-                held: known == nil ? stored : nil)
+                    }
+                    .accessibilityIdentifier("settings.org.quickProvider.\(option.id.isEmpty ? "same" : option.id)")
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(known?.display ?? stored)
+                    Text("▾").foregroundStyle(coolWhite.opacity(0.45))
+                }
+                .font(.system(size: Scale.body))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(coolWhite.opacity(0.05)))
+            .foregroundStyle(coolWhite.opacity(0.86))
+            .padding(.horizontal, -6)
+            .accessibilityIdentifier("settings.org.quickProvider")
             if let route = quickTaskRouteLine(tree, routed: quickStatus?.routedInfill) {
                 Text(route)
                     .font(.system(size: Scale.meta))

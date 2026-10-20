@@ -2,13 +2,15 @@
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.providers"}}
 {"expect":{"tree":"contains","text":"QUICK TASKS"}}
-{"expect":{"frame":"settings.org.quickProvider.qwen","maxHeight":30}}
+{"expect":{"frame":"settings.org.quickProvider","maxHeight":30}}
+{"do":{"click":"settings.org.quickProvider"}}
 {"do":{"click":"settings.org.quickProvider.qwen"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
 {"dispatch":{"action":"ctx_unlink_provider","params":{"id":"qwen"}}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":""}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1]","present":false}}
 {"expect":{"tree":"contains","text":"QUICK TASKS"}}
-{"expect":{"frame":"settings.org.quickProvider.same","maxHeight":30}}
+{"expect":{"frame":"settings.org.quickProvider","maxHeight":30}}
+{"do":{"click":"settings.org.quickProvider"}}
 {"do":{"click":"settings.org.quickProvider.e2e-provider"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"e2e-provider"}}
