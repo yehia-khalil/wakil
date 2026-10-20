@@ -985,6 +985,8 @@ public func registerStandardActions(
                 "defaultProvider": .object(["type": .string("string")]),
                 "speechProvider": .object(["type": .string("string")]),
                 "quickProvider": .object(["type": .string("string")]),
+                "ghostText": .object(["type": .string("boolean")]),
+                "fastPath": .object(["type": .string("boolean")]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1004,6 +1006,9 @@ public func registerStandardActions(
             var arguments: [String: JSONValue] = ["id": .string(id)]
             for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
+            }
+            for key in ["ghostText", "fastPath"] {
+                if let value = fields[key], case .bool = value { arguments[key] = value }
             }
             return try await callChecked(
                 context, tool: "update_org", arguments: .object(arguments),

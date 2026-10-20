@@ -64,3 +64,10 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
     #expect(quickTaskRouteLine(t, routed: "work") == "Code completion goes to work")
     #expect(quickTaskRouteLine(t, routed: nil) == nil)
 }
+
+@Test func anOrgWithoutTheSwitchesDecodesTheirDefaults() throws {
+    let json = #"{"id":"acme"}"#.data(using: .utf8)!
+    let org = try JSONDecoder().decode(SettingsOrg.self, from: json)
+    #expect(org.ghostText == true)
+    #expect(org.fastPath == false)
+}

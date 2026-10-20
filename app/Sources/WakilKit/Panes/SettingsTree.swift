@@ -174,10 +174,15 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var speechProvider: String
     /// The provider quick tasks run on (3b-viii, Decision 42). Empty means the active provider.
     public var quickProvider: String
+    /// The organisation's ghost-text switch (3b-ix), resolved by Go. On unless the org turned it off.
+    public var ghostText: Bool
+    /// The organisation's fast-path switch (3b-ix): one-line composer commands without an agent turn.
+    public var fastPath: Bool
 
     public init(
         id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
-        speechProvider: String = "", quickProvider: String = ""
+        speechProvider: String = "", quickProvider: String = "", ghostText: Bool = true,
+        fastPath: Bool = false
     ) {
         self.id = id
         self.displayName = displayName
@@ -185,6 +190,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         self.defaultProvider = defaultProvider
         self.speechProvider = speechProvider
         self.quickProvider = quickProvider
+        self.ghostText = ghostText
+        self.fastPath = fastPath
     }
 
     public init(from decoder: Decoder) throws {
@@ -195,10 +202,12 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         defaultProvider = try container.decodeIfPresent(String.self, forKey: .defaultProvider) ?? ""
         speechProvider = try container.decodeIfPresent(String.self, forKey: .speechProvider) ?? ""
         quickProvider = try container.decodeIfPresent(String.self, forKey: .quickProvider) ?? ""
+        ghostText = try container.decodeIfPresent(Bool.self, forKey: .ghostText) ?? true
+        fastPath = try container.decodeIfPresent(Bool.self, forKey: .fastPath) ?? false
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider
+        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath
     }
 
     /// What the tree's Organisation node is labelled with: the display

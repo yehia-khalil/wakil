@@ -422,6 +422,8 @@ public final class WindowModel {
     @ObservationIgnored var quickTasksConfigError: String?
     /// The operator's ghost-text switch, as the last rebuild read it. Off until a tree has been read.
     public internal(set) var ghostTextEnabled = false
+    /// The organisation's fast-path switch (3b-ix), as the last rebuild read it. Off until a tree has been read.
+    public internal(set) var fastPathEnabled = false
     private let panes: PaneStore
     private let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per
