@@ -1426,7 +1426,9 @@ Each entry: the call, why, and what would change our mind.
     excluded (§5).
     **Next quick tasks:** the ⌘K fast path (must amend Decision 10 first), then agent status
     lines. **Candidates, unscheduled:** shrinking what the agent reads (lossy; opt-in at
-    most), session titles and commit drafts, voice cleanup. **Never a quick task:** the write
+    most), session titles and commit drafts, voice cleanup, and a natural-language query in the
+    DB query line (plain English drafted into SQL the operator reviews before it runs; added by
+    the operator 2026-10-20). **Never a quick task:** the write
     gate, statement classification, anything touching credentials.
     *Reverse if:* quick tasks on the default provider cost enough quota to crowd out agent
     turns — then ghost-text defaults off without a local provider.
