@@ -34,6 +34,12 @@ type Provider struct {
 	// entirely, not a different account for the same one.
 	ClaudePath string `json:"claudePath,omitempty"`
 
+	// BaseURL and Serves are a local endpoint's (3b-viii, Decision 42): where the operator's
+	// model server listens, and which quick operations its model is fit for. A server cannot
+	// say the second itself — a code model answers a chat request badly, not with an error.
+	BaseURL string   `json:"baseURL,omitempty"`
+	Serves  []string `json:"serves,omitempty"`
+
 	// Shared records that this binding did NOT claim the config dir's
 	// headless home — another org's registration did. It exists so
 	// ConfigDirHome can name the org whose WAKIL_ORG is pinned inside the
@@ -140,6 +146,9 @@ func AddProvider(org string, p Provider) error {
 	if err := validateProviderToken(p.ID); err != nil {
 		return err
 	}
+	if p.Kind == ProviderKindClaudeCode && (p.BaseURL != "" || len(p.Serves) > 0) {
+		return UserError(errLocalOnly)
+	}
 	switch p.Kind {
 	case ProviderKindClaudeCode:
 		if p.ConfigDir == "" {
@@ -163,6 +172,16 @@ func AddProvider(org string, p Provider) error {
 	case ProviderKindCodex, ProviderKindLocal:
 		if p.ConfigDir != "" {
 			return UserError("configDir applies only to --kind claude-code")
+		}
+		if p.Kind == ProviderKindLocal {
+			// A local record with no URL stays valid: it simply has no quick model.
+			if p.BaseURL != "" || len(p.Serves) > 0 {
+				if err := normaliseLocal(&p); err != nil {
+					return err
+				}
+			}
+		} else if p.BaseURL != "" || len(p.Serves) > 0 {
+			return UserError(errLocalOnly)
 		}
 		// --share is refused here rather than ignored. What is shared is a
 		// config dir's headless home, and these kinds have no config dir at
@@ -305,6 +324,11 @@ func AddProvider(org string, p Provider) error {
 			// Nobody homes it and no --share: this record becomes the home.
 		}
 	}
+	return writeProviderFile(path, p)
+}
+
+// writeProviderFile marshals p and writes it atomically at path.
+func writeProviderFile(path string, p Provider) error {
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err

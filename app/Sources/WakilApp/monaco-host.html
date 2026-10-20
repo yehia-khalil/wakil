@@ -13,6 +13,11 @@
 .wakil-peek-head button{all:unset;cursor:pointer;color:rgba(232,236,246,.9)}
 .wakil-peek-old{color:rgba(232,236,246,.45);padding-left:8px;white-space:pre}
 .wakil-peek-new{color:#8be0c8;padding-left:8px;white-space:pre}
+/* 3b-viii: the dot that pulses at the caret while a slow ghost-text request waits (the ghost's own
+   ink is the theme's editorGhostText.foreground: Monaco's !important rule loads after this sheet). */
+.ghost-pending{position:relative}
+.ghost-pending::after{content:'';position:absolute;left:1px;top:45%;width:2px;height:2px;border-radius:50%;background:rgba(232,236,246,0.34);animation:ghost-pulse 1s ease-in-out infinite}
+@keyframes ghost-pulse{0%,100%{opacity:.25}50%{opacity:1}}
 </style></head>
 <body><div id="d"></div>
 <script>
@@ -89,7 +94,9 @@
         'focusBorder': '#7c5cff',
         'editor.findMatchBackground': '#7c5cff55',
         'editor.findMatchHighlightBackground': '#7c5cff26',
-        'editor.findRangeHighlightBackground': '#7c5cff14'
+        'editor.findRangeHighlightBackground': '#7c5cff14',
+        // 3b-viii: ghost-text in §5's dim ink, rgba(232,236,246,0.34).
+        'editorGhostText.foreground': '#e8ecf657'
       }
     });
     // One editable editor, one model per tab key, each keeping its own undo, and (3b-iii) the
@@ -98,7 +105,8 @@
     const post = function (m) { window.webkit.messageHandlers.wakil.postMessage(m); };
     const ed = monaco.editor.create(document.getElementById('d'), {
       theme: 'wakil', automaticLayout: true, minimap: { enabled: false },
-      fontFamily: 'Menlo, monospace', fontSize: 12, model: null, lineDecorationsWidth: 10
+      fontFamily: 'Menlo, monospace', fontSize: 12, model: null, lineDecorationsWidth: 10,
+      inlineSuggest: { enabled: true, mode: 'subword' }
     });
     // 3b-iii: the pane's diff editor, in the same page as the code editor — a diff tab and Compare
     // show here. The active tab chooses which is visible; no second page is ever loaded.
@@ -170,6 +178,11 @@
       post({ type: 'key', key: key });
     }, true);
     const models = {};          // key -> model
+    // The tab key a model is shown under (a rename moves the model to its new key, wakilRekey).
+    function keyOfModel(model) {
+      for (const k in models) if (models[k] === model) return k;
+      return null;
+    }
     let current = null;         // key shown in the code editor
     let applying = false;       // true while the app's own edit lands: not reported back as typing
     let typingTimer = null;
@@ -398,6 +411,61 @@
                  options: { isWholeLine: true, linesDecorationsClassName: 'wakil-mark-' + x.kind } };
       }));
     };
+    // 3b-viii: ghost-text. Swift owns the debounce, the model and the clean-up; the page asks
+    // and draws. A resolve for an id that is no longer pending is ignored, so a stale reply never
+    // lands over newer typing. Tab accepts, ⌘→ a word, Esc dismisses — Monaco's own keys; an
+    // accept is an edit like a keystroke, so it reaches the app as typing (`text`).
+    let ghostSeq = 0;
+    // Off until Swift says it is on (wakilGhostEnabled, sent at start and on every change): while
+    // off, a trigger asks nothing and posts no buffer.
+    let ghostOn = false;
+    window.wakilGhostEnabled = function (on) { ghostOn = !!on; };
+    const ghostPending = new Map();   // id -> its resolver
+    // The pulse: a request still unanswered after 400 ms shows a dot at the caret it asked from.
+    let pulse = null;                 // { id, model, timer, ids }
+    function endPulse(id) {
+      if (!pulse || (id !== undefined && pulse.id !== id)) return;
+      clearTimeout(pulse.timer);
+      if (!pulse.model.isDisposed()) pulse.model.deltaDecorations(pulse.ids, []);
+      pulse = null;
+    }
+    function startPulse(id, model, position) {
+      endPulse();
+      const p = { id: id, model: model, timer: null, ids: [] };
+      p.timer = setTimeout(function () {
+        if (pulse !== p || model.isDisposed()) return;
+        p.ids = model.deltaDecorations([], [{ range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+                                             options: { afterContentClassName: 'ghost-pending' } }]);
+      }, 400);
+      pulse = p;
+    }
+    window.wakilGhostResolve = function (id, text) {
+      const p = ghostPending.get(id);
+      if (!p) return;
+      ghostPending.delete(id);
+      endPulse(id);
+      p(text);
+    };
+    monaco.languages.registerInlineCompletionsProvider({ pattern: '**' }, {
+      provideInlineCompletions: function (model, position, context, token) {
+        if (!ghostOn || model !== ed.getModel() || ed.getOption(monaco.editor.EditorOption.readOnly)) return { items: [] };
+        const key = keyOfModel(model);
+        if (!key) return { items: [] };
+        const id = ++ghostSeq;
+        const offset = model.getOffsetAt(position);
+        return new Promise(function (resolve) {
+          ghostPending.set(id, function (text) {
+            resolve({ items: text ? [{ insertText: text, range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column) }] : [] });
+          });
+          token.onCancellationRequested(function () {
+            if (ghostPending.delete(id)) { endPulse(id); post({ type: 'ghostCancel', id: id }); resolve({ items: [] }); }
+          });
+          startPulse(id, model, position);
+          post({ type: 'ghost', key: key, id: id, text: model.getValue(), offset: offset });
+        });
+      },
+      freeInlineCompletions: function () {}
+    });
     // A click on a mark opens the peek on its hunk (editor_peek).
     ed.onMouseDown(function (e) {
       if (!current || !e.target || e.target.type !== monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS) return;

@@ -69,6 +69,13 @@ struct SettingsPane: View {
     var saveEditorSettings: ([String: JSONValue]) async -> String? = { _ in nil }
     /// Saves one project's editor fields: the project file's path, then the fields.
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
+    /// Saves a local model: id, label, URL, the operations it serves (3b-viii). Answers the refusal or nil.
+    var saveLocalProvider: (String, String, String, Set<QuickOperation>) async -> String? = { _, _, _, _ in nil }
+    /// Removes a local model by id (3b-viii). Answers the refusal or nil.
+    var removeLocalProvider: (String) async -> String? = { _ in nil }
+    /// Each quick-task provider's last error whole and which have answered, by id; the provider
+    /// code completion goes to; and why the configuration could not be read.
+    var quickTaskStatus: () async -> QuickTaskStatus = { QuickTaskStatus() }
     /// Every account on this machine, or `nil` before the first read.
     ///
     /// Read in the same refresh as `tree`, so the two halves of the pane
@@ -167,6 +174,8 @@ struct SettingsPane: View {
     /// organisation plane, so it also stops borrowing that plane's error
     /// area.
     @State private var adoptRefusals: [String: String] = [:]
+    /// What `quickTaskStatus()` last answered, read when the pane appears and after each save.
+    @State private var quickStatus: QuickTaskStatus?
 
     /// The value being typed, per field, while an editor is open. Absent
     /// means the field is not being edited and draws what is on disk.
@@ -228,6 +237,7 @@ struct SettingsPane: View {
                 .padding(.leading, Scale.gutter)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task(id: tree) { quickStatus = await quickTaskStatus() }
     }
 
     // MARK: - The tree
@@ -423,7 +433,7 @@ struct SettingsPane: View {
             // be written and no way for the two to disagree. Not a
             // setting, and drawn as the fact it is.
             fields([("Id", tree.org.id, true)])
-            ForEach(WindowModel.OrganisationField.allCases.filter { $0 != .speechProvider }, id: \.self) { field in
+            ForEach(WindowModel.OrganisationField.allCases.filter { $0 != .speechProvider && $0 != .quickProvider }, id: \.self) { field in
                 organisationEditor(field, in: tree)
             }
             speechRow(tree: tree)
@@ -433,6 +443,26 @@ struct SettingsPane: View {
 
         case .providers:
             accountTable()
+            // Above the local models it chooses between, so the choice and what it chooses from
+            // are read together; the organisation node does not repeat it.
+            // Accounts above, the models quick tasks run on below.
+            Rectangle().fill(coolWhite.opacity(0.10)).frame(height: 0.5)
+                .padding(.top, 18)
+                .accessibilityHidden(true)
+            quickTasksRow(tree: tree)
+                .padding(.top, 14)
+            LocalProvidersSection(
+                providers: tree.providers, status: quickStatus,
+                save: { id, label, url, serves in
+                    let refusal = await saveLocalProvider(id, label, url, serves)
+                    quickStatus = await quickTaskStatus()
+                    return refusal
+                },
+                remove: { id in
+                    let refusal = await removeLocalProvider(id)
+                    quickStatus = await quickTaskStatus()
+                    return refusal
+                })
         case .editor:
             EditorAppSettingsForm(editor: tree.editor, error: tree.editorError, save: saveEditorSettings)
         case .projectEditor(let name):
@@ -677,6 +707,113 @@ struct SettingsPane: View {
         .padding(.bottom, 4)
     }
 
+    /// 3b-viii: the provider quick tasks run on, as a dropdown. One item per provider that serves
+    /// anything, "Same as agent" first; a stored id no provider answers to is held as the label,
+    /// not dropped (Rule 7).
+    private func quickTasksRow(tree: SettingsTree) -> some View {
+        let options = quickTaskChoices(tree)
+        let stored = tree.org.quickProvider
+        let known = options.first(where: { $0.id == stored })
+        let localIds = Set(tree.providers.filter { $0.kind == "local" }.map(\.id))
+        func isLocal(_ id: String) -> Bool { localIds.contains(id) }
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("QUICK TASKS")
+                .font(.system(size: Scale.micro, weight: .medium))
+                .tracking(Scale.microTracking)
+                .foregroundStyle(coolWhite.opacity(0.32))
+            // One table row, as the local models under it are drawn: the choice as plain text with
+            // a chevron (the system's menu chrome would be the only bezel on the page), and where
+            // code completion goes beside it.
+            HStack(alignment: .firstTextBaseline, spacing: Scale.columnGap) {
+                // Same as agent, then the accounts, then the local models, each group headed.
+                Menu {
+                    quickTaskItems(options.filter { $0.id.isEmpty }, stored: stored, tree: tree)
+                    Divider()
+                    // Headed by disabled items, not `Section`: a menu item inside a SwiftUI
+                    // Section loses its accessibility identifier (measured by the e2e, 2026-10-20).
+                    Text("Accounts")
+                    quickTaskItems(options.filter { !$0.id.isEmpty && !isLocal($0.id) }, stored: stored, tree: tree)
+                    Divider()
+                    Text("Local models")
+                    quickTaskItems(options.filter { isLocal($0.id) }, stored: stored, tree: tree)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(known?.display ?? stored)
+                            .font(.system(size: Scale.body, weight: .medium))
+                            .foregroundStyle(coolWhite.opacity(0.86))
+                        // Decoration: drawn, but not a second menu button carrying the same id.
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(coolWhite.opacity(0.40))
+                            .accessibilityHidden(true)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityIdentifier("settings.org.quickProvider")
+                if let route = quickTaskRouteLine(tree, routed: quickStatus?.routedInfill) {
+                    Text(route)
+                        .font(.system(size: Scale.meta))
+                        .foregroundStyle(coolWhite.opacity(0.40))
+                        .lineLimit(1)
+                        .accessibilityIdentifier("settings.org.quickProvider.route")
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: Scale.rowHeight, alignment: .leading)
+            .overlay(alignment: .bottom) { Rectangle().fill(coolWhite.opacity(0.06)).frame(height: 0.5) }
+            if let note = quickTaskNote(tree, activeProvider: runningAccountId) {
+                Text(note)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .accessibilityIdentifier("settings.org.quickProvider.note")
+            }
+            if let configError = quickStatus?.configError {
+                Text(configError)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.org.quickProvider.configError")
+            }
+            // The provider code completion goes to first, when its last call failed: the error
+            // whole (Rule 8), whatever kind it is — a local row repeats it under its URL.
+            if let routed = quickStatus?.routedInfill, let error = quickStatus?.errors[routed] {
+                Text(error)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.org.quickProvider.error")
+            }
+            if let refusal = refusals[.quickProvider] {
+                Text(refusal)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.org.quickProvider.refusal")
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    /// One Quick tasks menu item per option, named `settings.org.quickProvider.<id>` (`same` for
+    /// Same as agent).
+    private func quickTaskItems(
+        _ options: [(id: String, display: String)], stored: String, tree: SettingsTree
+    ) -> some View {
+        ForEach(options, id: \.id) { option in
+            let key = option.id.isEmpty ? "same" : option.id
+            Button(option.display) {
+                guard option.id != stored else { return }
+                drafts[.quickProvider] = option.id
+                save(.quickProvider, tree: tree)
+            }
+            .accessibilityIdentifier("settings.org.quickProvider.\(key)")
+        }
+    }
+
     private func storedValue(
         _ field: WindowModel.OrganisationField, in tree: SettingsTree
     ) -> String {
@@ -685,6 +822,7 @@ struct SettingsPane: View {
         case .jiraBase: return tree.org.jiraBase
         case .defaultProvider: return tree.org.defaultProvider
         case .speechProvider: return tree.org.speechProvider
+        case .quickProvider: return tree.org.quickProvider
         }
     }
 
@@ -696,6 +834,7 @@ struct SettingsPane: View {
             let refusal = await saveOrganisationField(field, value)
             saving = nil
             refusals[field] = refusal
+            quickStatus = await quickTaskStatus()
             // The draft is cleared only on success, so a refused value
             // stays in front of the operator to be corrected rather than
             // vanishing along with the explanation of why it was refused.

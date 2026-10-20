@@ -345,7 +345,14 @@ extension WakilWindow {
                             pane: pane, rowKey: rowKey, column: column, columnType: columnType,
                             value: value)
                     },
-                    dialect: model.queryDialect(pane: pane))
+                    dialect: model.queryDialect(pane: pane),
+                    // 3b-viii: ghost-text on the window's quick tasks, one session per pane.
+                    ghostTextEnabled: model.ghostTextEnabled,
+                    ghostSchema: { await model.ghostSchema() },
+                    ghostSuggest: { request, generation in
+                        await model.ghostSuggestion(pane: pane.id, request: request, generation: generation)
+                    },
+                    ghostCancel: { model.ghostCancel(pane: pane.id) })
             case "terminal":
                 TerminalPane(
                     snapshot: model.terminal(pane.id) ?? .empty,
@@ -474,7 +481,14 @@ extension WakilWindow {
                     unsavedPrompt: model.unsavedPrompt.flatMap { prompt in
                         if case .closeTab(pane.id, _) = prompt.intent { prompt } else { nil }
                     },
-                    resolveUnsaved: { choice in Task { await model.resolveUnsaved(choice) } })
+                    resolveUnsaved: { choice in Task { await model.resolveUnsaved(choice) } },
+                    // 3b-viii: ghost-text on the window's quick tasks, one session per pane.
+                    ghostTextEnabled: model.ghostTextEnabled,
+                    ghostSchema: { await model.ghostSchema() },
+                    ghostSuggest: { request, generation in
+                        await model.ghostSuggestion(pane: pane.id, request: request, generation: generation)
+                    },
+                    ghostCancel: { model.ghostCancel(pane: pane.id) })
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw
                 // its kind — the rule `Pane.kinds` has always stated.
@@ -496,6 +510,11 @@ extension WakilWindow {
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },
+                    saveLocalProvider: { id, label, url, serves in
+                        await model.setLocalProvider(id: id, label: label, baseURL: url, serves: serves)
+                    },
+                    removeLocalProvider: { id in await model.removeLocalProvider(id: id) },
+                    quickTaskStatus: { await model.quickTaskStatus() },
                     accounts: model.accounts,
                     capacity: model.capacity.readings,
                     adopt: { account in await model.adoptAccount(account) },

@@ -967,7 +967,8 @@ public func registerStandardActions(
     // something wrong with the account that IS running.
     await registry.register(Action(
         name: "ctx_update_org",
-        description: "Change an organisation's display name, Jira site, default account or speech engine. "
+        description: "Change an organisation's display name, Jira site, default account, speech engine or "
+            + "quick-tasks provider. "
             + "Read-modify-write: omit a field to leave what is on disk unchanged, or send an "
             + "empty string to clear it — so an edit made to the file by hand while a pane was "
             + "open survives a save of a different field. Refuses a Jira site that is not an "
@@ -983,6 +984,7 @@ public func registerStandardActions(
                 "jiraBase": .object(["type": .string("string")]),
                 "defaultProvider": .object(["type": .string("string")]),
                 "speechProvider": .object(["type": .string("string")]),
+                "quickProvider": .object(["type": .string("string")]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1000,12 +1002,51 @@ public func registerStandardActions(
                 throw StandardActionError.missingParam(action: "ctx_update_org", param: "id")
             }
             var arguments: [String: JSONValue] = ["id": .string(id)]
-            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider"] {
+            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
             return try await callChecked(
                 context, tool: "update_org", arguments: .object(arguments),
                 action: "ctx_update_org", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    // 3b-viii (Decision 42). A local model endpoint the operator runs: its URL and the quick
+    // operations it serves. Operator-only on `ctx_update_org`'s reason: which model reads the
+    // operator's code is theirs to choose. Go resolves the active organisation itself, so no org
+    // travels; forwarded key by key, so only the four fields reach Go.
+    await registry.register(Action(
+        name: "ctx_set_local_provider",
+        description: "Create or change a local model endpoint for the active organisation: id, optional "
+            + "label, baseURL (http or https) and serves, the quick operations it is fit for (infill, "
+            + "respond; infill when omitted). Wakil installs and starts nothing. Refuses a bad URL, an "
+            + "unknown operation, and an id already used by another kind of account. Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "id": .object(["type": .string("string")]),
+                "label": .object(["type": .string("string")]),
+                "baseURL": .object(["type": .string("string")]),
+                "serves": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+            ]),
+            "required": .array([.string("id")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_set_local_provider", role: "context")
+            }
+            guard case .object(let fields) = params, case .string(let id)? = fields["id"] else {
+                throw StandardActionError.missingParam(action: "ctx_set_local_provider", param: "id")
+            }
+            var arguments: [String: JSONValue] = ["id": .string(id)]
+            if case .string? = fields["label"] { arguments["label"] = fields["label"] }
+            if case .string? = fields["baseURL"] { arguments["baseURL"] = fields["baseURL"] }
+            if case .array? = fields["serves"] { arguments["serves"] = fields["serves"] }
+            return try await callChecked(
+                context, tool: "set_local_provider", arguments: .object(arguments),
+                action: "ctx_set_local_provider", timeout: MCPClient.readReplyTimeout)
         }
     ))
 
@@ -1037,7 +1078,9 @@ public func registerStandardActions(
     await registry.register(Action(
         name: "ctx_set_editor_settings",
         description: "Change the app-wide editor settings: fontSize (9 to 24), wordWrap, autosave "
-            + "(off, pause or focus), showIgnored (false hides gitignored files from the tree and ⌘P). Read-modify-write: omit a field to leave it. Operator-only.",
+            + "(off, pause or focus), showIgnored (false hides gitignored files from the tree and ⌘P), "
+            + "ghostText (false turns AI ghost-text off in every editor and query line). "
+            + "Read-modify-write: omit a field to leave it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1047,6 +1090,7 @@ public func registerStandardActions(
                 "wordWrap": .object(["type": .string("boolean")]),
                 "autosave": .object(["type": .string("string"), "enum": .array([.string("off"), .string("pause"), .string("focus")])]),
                 "showIgnored": .object(["type": .string("boolean")]),
+                "ghostText": .object(["type": .string("boolean")]),
             ]),
         ]),
         handler: { params in
@@ -1063,6 +1107,7 @@ public func registerStandardActions(
             if case .bool? = fields["wordWrap"] { arguments["wordWrap"] = fields["wordWrap"] }
             if case .string? = fields["autosave"] { arguments["autosave"] = fields["autosave"] }
             if case .bool? = fields["showIgnored"] { arguments["showIgnored"] = fields["showIgnored"] }
+            if case .bool? = fields["ghostText"] { arguments["ghostText"] = fields["ghostText"] }
             return try await callChecked(
                 context, tool: "set_editor_settings", arguments: .object(arguments),
                 action: "ctx_set_editor_settings", timeout: MCPClient.readReplyTimeout)

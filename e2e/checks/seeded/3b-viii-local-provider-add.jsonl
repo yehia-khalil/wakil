@@ -1,0 +1,45 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"LOCAL MODELS"}}
+{"do":{"click":"settings.localProvider.add"}}
+{"expect":{"tree":"contains","text":"local model URL"}}
+{"do":{"focus":"settings.localProvider.local.url"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"local model URL"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1]","present":false}}
+{"do":{"click":"settings.localProvider.add"}}
+{"expect":{"tree":"contains","text":"local model URL"}}
+{"do":{"focus":"settings.localProvider.local.url"}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"tree":"absent","text":"local model URL"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1]","present":false}}
+{"do":{"click":"settings.localProvider.add"}}
+{"do":{"type":{"into":"settings.localProvider.local.url","text":"http://127.0.0.1:1"}}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].id","equals":"local"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].kind","equals":"local"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:1"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[0]","equals":"infill"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[1]","present":false}}
+{"expect":{"tree":"contains","text":"not tried yet"}}
+{"expect":{"tree":"absent","text":"no config dir"}}
+{"expect":{"tree":"contains","text":"Value: http://127.0.0.1:1"}}
+{"expect":{"tree":"contains","text":"checkbox (disabled), Value: 1"}}
+{"parity":{"action":"ctx_set_local_provider","params":{"id":"local","label":"","baseURL":"http://127.0.0.1:1","serves":["infill","respond"]},"click":"settings.localProvider.local.serves.respond","assert":"tree"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[1]","equals":"respond"}}
+{"expect":{"tree":"absent","text":"checkbox (disabled)"}}
+{"do":{"click":"settings.localProvider.local.serves.infill"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[0]","equals":"respond"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[1]","present":false}}
+{"expect":{"tree":"contains","text":"checkbox (disabled), Value: 1"}}
+{"do":{"focus":"settings.localProvider.local.url"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"ftp://x"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"baseURL must be an http or https URL, e.g. http://127.0.0.1:8012; got \"ftp://x\""}}
+{"expect":{"tree":"contains","text":"Value: ftp://x"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:1"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"settings.localProvider.local.serves.infill","clear":"settings.localProvider.local.serves.respond","maxHeight":30}}
+{"expect":{"frame":"settings.localProvider.local.url","minWidth":200,"maxHeight":40}}
+{"expect":{"frame":"settings.localProvider.local.refusal","clear":"settings.localProvider.local.url"}}

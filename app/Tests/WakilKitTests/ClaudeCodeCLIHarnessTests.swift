@@ -28,6 +28,77 @@ private func launch(
     #expect(Set(env.keys) == ["CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN", "HOME", "PATH"])
 }
 
+// MARK: - 3b-viii: the quick-tasks launch
+
+private func quickLaunch() -> HarnessLaunch {
+    buildQuickLaunch(claudePath: "/opt/homebrew/bin/claude", configDir: "/Users/x/.claude-personal",
+                     oauthToken: "tok", sessionId: "q-1", workingDirectory: "/tmp")
+}
+
+@Test func theQuickLaunchIsExactlyTheStreamFlagsNoMCPAndTheQuickConstraint() {
+    let l = quickLaunch()
+    #expect(l.executable == "/opt/homebrew/bin/claude")
+    #expect(l.workingDirectory == "/tmp")
+    #expect(l.arguments == [
+        "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+        "--include-partial-messages", "--session-id", "q-1",
+        "--mcp-config", #"{"mcpServers":{}}"#, "--strict-mcp-config",
+    ] + quickLaunchArguments())
+}
+
+@Test func theQuickLaunchSharesTheFourKeyEnvironment() {
+    let env = quickLaunch().environment
+    #expect(Set(env.keys) == ["CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN", "HOME", "PATH"])
+    #expect(env["CLAUDE_CONFIG_DIR"] == "/Users/x/.claude-personal")
+    #expect(env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok")
+    #expect(env == launch().environment)
+}
+
+@Test func theQuickLaunchCarriesNoneOfTheAgentsFlags() {
+    let a = quickLaunch().arguments
+    for flag in ["--append-system-prompt", "--permission-prompt-tool", "--allowedTools"] {
+        #expect(!a.contains(flag), "carries \(flag)")
+    }
+}
+
+/// The interrupt's acknowledgement is not an event anything acts on, and not a malformed line.
+@Test func aControlResponseDecodesToUnknownNotAnError() throws {
+    let line = #"{"type":"control_response","response":{"subtype":"success","request_id":"r1"}}"#
+    #expect(try decodeHarnessEvents(Data(line.utf8)) == [.unknown(type: "control_response")])
+}
+
+/// `interruptTurn` writes the stream-json interrupt control request on stdin — not `SIGINT`,
+/// which the real CLI answers by exiting. The fake child copies its first stdin line to a file.
+@Test(.timeLimit(.minutes(1)))
+func interruptTurnWritesTheControlRequestToStdin() async throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let out = dir.appendingPathComponent("stdin.txt")
+    let script = dir.appendingPathComponent("fake-claude.sh")
+    try "#!/bin/sh\nhead -n 1 > \"\(out.path)\"\nexec sleep 30\n".write(to: script, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+
+    let harness = ClaudeCodeCLIHarness { sessionId, _, workingDirectory in
+        buildQuickLaunch(claudePath: script.path, configDir: dir.path, oauthToken: "t",
+                         sessionId: sessionId, workingDirectory: workingDirectory)
+    }
+    try await harness.start(sessionId: UUID().uuidString, resumingFrom: nil, workingDirectory: dir.path)
+    try await harness.interruptTurn()
+
+    var line = ""
+    for _ in 0..<200 {
+        line = (try? String(contentsOf: out, encoding: .utf8)) ?? ""
+        if line.hasSuffix("\n") { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    await harness.stop()
+    let frame = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+    #expect(frame["type"] as? String == "control_request")
+    #expect((frame["request_id"] as? String)?.isEmpty == false)
+    #expect((frame["request"] as? [String: Any])?["subtype"] as? String == "interrupt")
+}
+
 @Test func executableIsPinnedByAbsolutePath() {
     #expect(launch().executable == "/opt/homebrew/bin/claude")
 }

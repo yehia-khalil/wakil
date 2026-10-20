@@ -80,6 +80,8 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		"editor_settings",
 		"set_editor_settings",
 		"set_project_editor_settings",
+		// set_local_provider added by 3b-viii — a local endpoint's URL and operations.
+		"set_local_provider",
 	})
 }
 

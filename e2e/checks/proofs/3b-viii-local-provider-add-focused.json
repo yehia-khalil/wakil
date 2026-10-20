@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-viii-local-provider-add-focused.jsonl",
+  "baseCommit": "8ebeb01dfcd203b07a6b088d565d21bd3199134f",
+  "provedAt": "2026-10-20T07:36:05.868547Z",
+  "checkBlob": "dd4f026a598d42a73ff086484f4ca44fc5a92442"
+}

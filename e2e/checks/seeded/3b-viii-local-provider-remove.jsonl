@@ -1,0 +1,17 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"LOCAL MODELS"}}
+{"do":{"click":"settings.localProvider.add"}}
+{"do":{"type":{"into":"settings.localProvider.local.url","text":"http://127.0.0.1:1"}}}
+{"do":{"click":"settings.localProvider.local.cancel"}}
+{"expect":{"tree":"absent","text":"local model URL"}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1]","present":false}}
+{"do":{"click":"settings.localProvider.add"}}
+{"do":{"type":{"into":"settings.localProvider.local.url","text":"http://127.0.0.1:1"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].id","equals":"local"}}
+{"do":{"click":"settings.localProvider.local.remove"}}
+{"expect":{"tree":"absent","text":"local model URL"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1]","present":false}}
+{"expect":{"journal":{"contains":"ctx_unlink_provider"}}}

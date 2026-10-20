@@ -581,7 +581,7 @@ private actor SharedClientOrgSwitcherForTesting {
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForOrgSwitch() },
         orgSwitcher: { org in await switcher.attempt(org) },
         rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil,
-        agentSocketFactory: { _, _ in NoAgentSocket() })
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
     model.setOrganizationForTesting("alpha")
 
     await switcher.armHold()
@@ -687,7 +687,7 @@ private final class LookupOrgRecorder: @unchecked Sendable {
             return AlwaysSucceedsCredentialsLookupForOrgSwitch()
         },
         rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil,
-        agentSocketFactory: { _, _ in NoAgentSocket() })
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
     #expect(
         seen.orgs == [""],
         "init's org-less placeholder is all a window has before it has learned its org")
@@ -794,7 +794,7 @@ private final class LookupOrgRecorder: @unchecked Sendable {
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForOrgSwitch() },
         rootWatcher: nil, editorRootWatcher: nil, fileLists: nil, gitStatus: nil, paletteClients: PaletteClients(), placeClients: nil,
-        agentSocketFactory: { _, _ in NoAgentSocket() })
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
 
     // The project switch, through the one path that makes one: this is
     // what puts both stores on project "widgets".
@@ -1360,7 +1360,7 @@ private func twoOrgWindow(
         },
         rootWatcher: nil, editorRootWatcher: nil, fileLists: fileLists, gitStatus: nil,
         paletteClients: PaletteClients(files: fileLists), placeClients: nil,
-        agentSocketFactory: { _, _ in NoAgentSocket() })
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
     await registerEditorActions(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
         gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })

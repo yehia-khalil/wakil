@@ -307,3 +307,34 @@ func TestOrgJSONWithoutSpeechProviderStillReads(t *testing.T) {
 		t.Errorf("LoadOrgFor = %+v, %v", o, err)
 	}
 }
+
+func TestUpdateOrgSetsAndClearsQuickProvider(t *testing.T) {
+	localOrg(t)
+	if err := SetLocalProvider("initech", Provider{ID: "qwen", BaseURL: "http://127.0.0.1:8012"}); err != nil {
+		t.Fatal(err)
+	}
+	id := "qwen"
+	if err := UpdateOrg("initech", OrgPatch{QuickProvider: &id}); err != nil {
+		t.Fatal(err)
+	}
+	o, _ := LoadOrgFor("initech")
+	if o.QuickProvider != "qwen" {
+		t.Fatalf("quickProvider = %q", o.QuickProvider)
+	}
+	empty := ""
+	if err := UpdateOrg("initech", OrgPatch{QuickProvider: &empty}); err != nil {
+		t.Fatal(err)
+	}
+	o, _ = LoadOrgFor("initech")
+	if o.QuickProvider != "" {
+		t.Errorf("not cleared: %q", o.QuickProvider)
+	}
+}
+
+func TestUpdateOrgRefusesAnUnboundQuickProvider(t *testing.T) {
+	localOrg(t)
+	id := "ghost"
+	if err := UpdateOrg("initech", OrgPatch{QuickProvider: &id}); err == nil {
+		t.Error("accepted a quickProvider that names no provider")
+	}
+}

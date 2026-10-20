@@ -44,6 +44,9 @@ public func identifierFold(_ s: String) -> String {
 public struct Vocabulary: Sendable {
     private let byFold: [String: [Identifier]]
     public let count: Int
+    /// Every name as gathered, in order and with repeats. Ghost-text regroups a schema's columns
+    /// under the table before them (`GhostSchema.tables`), which the folded index cannot give back.
+    public let names: [Identifier]
 
     public static let empty = Vocabulary([])
 
@@ -57,6 +60,7 @@ public struct Vocabulary: Sendable {
         }
         self.byFold = byFold
         self.count = seen.count
+        self.names = identifiers
     }
 
     public func names(folded: String) -> [Identifier] { byFold[folded] ?? [] }

@@ -1,0 +1,16 @@
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"http://127.0.0.1:8012"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"expect":{"frame":"settings.org.quickProvider","maxHeight":30}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"do":{"click":"settings.org.quickProvider.qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
+{"dispatch":{"action":"ctx_unlink_provider","params":{"id":"qwen"}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":""}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1]","present":false}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"expect":{"frame":"settings.org.quickProvider","maxHeight":30}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"do":{"click":"settings.org.quickProvider.e2e-provider"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"e2e-provider"}}

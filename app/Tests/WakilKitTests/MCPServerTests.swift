@@ -1116,7 +1116,7 @@ private actor EnvironmentBox {
     let model = WindowModel.forTesting(
         scratchRoot: testScratchRoot, organization: "initech",
         harnessFactory: { _, _ in RecordingHarness() },
-        agentSocketFactory: sessions.socketFactory)
+        agentSocketFactory: sessions.socketFactory, quickModelFactory: nil)
     model.seedForTesting(
         providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
         project: "api", environment: "staging")

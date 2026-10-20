@@ -1,0 +1,10 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.editor"}}
+{"expect":{"tree":"contains","text":"GHOST-TEXT"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.ghostText","equals":"true"}}
+{"parity":{"action":"ctx_set_editor_settings","params":{"ghostText":false},"click":"settings.editor.ghostText.off","assert":"tree"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.ghostText","equals":"false"}}
+{"expect":{"journal":{"contains":"ghostText"}}}
+{"do":{"click":"settings.editor.ghostText.on"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.ghostText","equals":"true"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.wordWrap","equals":"false"}}

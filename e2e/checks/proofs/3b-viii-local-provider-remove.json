@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-viii-local-provider-remove.jsonl",
+  "baseCommit": "8ebeb01dfcd203b07a6b088d565d21bd3199134f",
+  "provedAt": "2026-10-20T07:36:05.868547Z",
+  "checkBlob": "2a9c8f769439f4983e63e31a0079337ea4f50a42"
+}

@@ -728,3 +728,21 @@ func TestProjectRmRefusesUnknownName(t *testing.T) {
 		t.Fatalf("stderr = %q, want it to say the name is not registered", stderr.String())
 	}
 }
+
+func TestProviderAddLocalWithBaseURLAndServes(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "initech")
+	var stderr bytes.Buffer
+	if code := run([]string{"org", "create", "initech"}, strings.NewReader(""), io.Discard, &stderr, failingStore(t), failingReader(t)); code != 0 {
+		t.Fatalf("org create: exit = %d, stderr = %q", code, stderr.String())
+	}
+	stderr.Reset()
+	if code := run([]string{"provider", "add", "qwen", "--kind", "local", "--base-url", "http://127.0.0.1:8012", "--serves", "infill,respond"}, strings.NewReader(""), io.Discard, &stderr, failingStore(t), failingReader(t)); code != 0 {
+		t.Fatalf("provider add: exit = %d, stderr = %q", code, stderr.String())
+	}
+	var out bytes.Buffer
+	stderr.Reset()
+	if code := run([]string{"provider", "list"}, strings.NewReader(""), &out, &stderr, failingStore(t), failingReader(t)); code != 0 || !strings.Contains(out.String()+stderr.String(), "qwen") {
+		t.Fatalf("provider list: exit = %d, out = %q, stderr = %q", code, out.String(), stderr.String())
+	}
+}

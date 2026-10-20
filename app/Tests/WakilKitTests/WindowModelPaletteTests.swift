@@ -944,6 +944,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
     // 3b-v (Decision 38): the editor settings read, and the two operator-only writes.
     "ctx_editor_settings", "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+    // 3b-viii (Decision 42): the operator-only write for a local model endpoint.
+    "ctx_set_local_provider",
     "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs", "ctx_list_projects",
     "ctx_list_providers", "ctx_provider_login", "ctx_set_environment", "ctx_set_project",
     "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",

@@ -1,0 +1,77 @@
+import Testing
+@testable import WakilKit
+
+// 3b-viii ghost-text in the DB pane's query line: what Tab, Esc and Return do while a ghost shows,
+// and where the line asks for one (Ruling R2: only at the end of a line).
+
+@Suite struct QueryLineGhostTests {
+    @Test func tabAcceptsOnlyWhileAGhostShows() {
+        #expect(queryLineGhostKey(.tab, ghostShowing: true, readRunning: false) == .accept)
+        #expect(queryLineGhostKey(.tab, ghostShowing: true, readRunning: true) == .accept)
+    }
+
+    @Test func tabWithoutSuggestionLeavesLine() {
+        #expect(queryLineGhostKey(.tab, ghostShowing: false, readRunning: false) == .leaveLine)
+        #expect(queryLineGhostKey(.tab, ghostShowing: false, readRunning: true) == .leaveLine)
+    }
+
+    @Test func escapeDismissesThenCancelsThenLeaves() {
+        #expect(queryLineGhostKey(.escape, ghostShowing: true, readRunning: true) == .dismiss)
+        #expect(queryLineGhostKey(.escape, ghostShowing: true, readRunning: false) == .dismiss)
+        #expect(queryLineGhostKey(.escape, ghostShowing: false, readRunning: true) == .cancelRead)
+        #expect(queryLineGhostKey(.escape, ghostShowing: false, readRunning: false) == .leaveLine)
+    }
+
+    @Test func returnNeverAccepts() {
+        #expect(queryLineGhostKey(.returnKey, ghostShowing: true, readRunning: false) == .passThrough)
+        #expect(queryLineGhostKey(.returnKey, ghostShowing: false, readRunning: true) == .passThrough)
+    }
+
+    @Test func asksOnlyAtTheEndOfALine() {
+        let t = "SELECT * FROM bookings WHERE \nLIMIT 10"
+        #expect(queryLineAsksForGhost(text: t, caret: t.index(t.startIndex, offsetBy: 29)))
+        #expect(!queryLineAsksForGhost(text: t, caret: t.index(t.startIndex, offsetBy: 7)))
+        #expect(queryLineAsksForGhost(text: "SELECT ", caret: "SELECT ".endIndex))
+    }
+
+    @Test func trailingWhitespaceOnTheLineStillAsks() {
+        let t = "SELECT *   \t\nFROM x"
+        #expect(queryLineAsksForGhost(text: t, caret: t.index(t.startIndex, offsetBy: 8)))
+        #expect(queryLineAsksForGhost(text: t, caret: t.endIndex))
+        // Mid-word on the last line: text follows the caret.
+        #expect(!queryLineAsksForGhost(text: t, caret: t.index(t.startIndex, offsetBy: 15)))
+    }
+
+    @Test func anEmptyLineDoesNotAsk() {
+        #expect(!queryLineAsksForGhost(text: "", caret: "".endIndex))
+        #expect(!queryLineAsksForGhost(text: "   ", caret: "   ".endIndex))
+    }
+
+    // Fix round 1 (Rule 4): every Esc drops the ghost and its pending request, whichever of
+    // dismiss, cancel-read or leave-line it does; Tab drops it too (accepting or leaving).
+    // Return leaves it: it runs what was typed and the caret has not moved.
+    @Test func everyEscapeDropsTheGhost() {
+        #expect(queryLineKeyDropsGhost(.escape))
+        #expect(queryLineKeyDropsGhost(.tab))
+        #expect(!queryLineKeyDropsGhost(.returnKey))
+    }
+
+    // Controller ruling: a ghost runs past its first line only with nothing but whitespace
+    // after the caret in the whole text, so it is never drawn over real text below.
+    @Test func multilineOnlyAtTheEndOfTheWholeText() {
+        let t = "SELECT *\nFROM bookings\n"
+        let afterFirstLine = t.index(t.startIndex, offsetBy: 8)
+        #expect(!queryLineGhostIsMultiline(text: t, caret: afterFirstLine))
+        #expect(queryLineGhostIsMultiline(text: t, caret: t.endIndex))
+        let lastLineEnd = t.index(t.startIndex, offsetBy: 22)
+        #expect(queryLineGhostIsMultiline(text: t, caret: lastLineEnd))
+        #expect(queryLineGhostIsMultiline(text: "SELECT ", caret: "SELECT ".endIndex))
+    }
+
+    @Test func aSingleLineGhostKeepsOnlyItsFirstLine() {
+        #expect(queryLineGhostShown("status = 'x'\nLIMIT 1", multiline: false) == "status = 'x'")
+        #expect(queryLineGhostShown("status = 'x'\nLIMIT 1", multiline: true) == "status = 'x'\nLIMIT 1")
+        #expect(queryLineGhostShown("\nLIMIT 1", multiline: false) == nil)
+        #expect(queryLineGhostShown("", multiline: true) == nil)
+    }
+}

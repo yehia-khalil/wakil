@@ -112,14 +112,19 @@ public struct SettingsEditor: Sendable, Equatable, Decodable {
     public var autosave: EditorAutosaveMode
     /// Off hides gitignored files from the tree and ⌘P (3b-v part 2). On by default.
     public var showIgnored: Bool
+    /// Off asks no model for a suggestion in any editor or query line (3b-viii). On by default.
+    public var ghostText: Bool
 
     public static let defaults = SettingsEditor(fontSize: 12, wordWrap: false, autosave: .off)
 
-    public init(fontSize: Int, wordWrap: Bool, autosave: EditorAutosaveMode, showIgnored: Bool = true) {
+    public init(
+        fontSize: Int, wordWrap: Bool, autosave: EditorAutosaveMode, showIgnored: Bool = true, ghostText: Bool = true
+    ) {
         self.fontSize = fontSize
         self.wordWrap = wordWrap
         self.autosave = autosave
         self.showIgnored = showIgnored
+        self.ghostText = ghostText
     }
 
     public init(from decoder: Decoder) throws {
@@ -128,9 +133,10 @@ public struct SettingsEditor: Sendable, Equatable, Decodable {
         wordWrap = try c.decodeIfPresent(Bool.self, forKey: .wordWrap) ?? Self.defaults.wordWrap
         autosave = (try c.decodeIfPresent(String.self, forKey: .autosave)).flatMap(EditorAutosaveMode.init(rawValue:)) ?? .off
         showIgnored = try c.decodeIfPresent(Bool.self, forKey: .showIgnored) ?? Self.defaults.showIgnored
+        ghostText = try c.decodeIfPresent(Bool.self, forKey: .ghostText) ?? Self.defaults.ghostText
     }
 
-    private enum CodingKeys: String, CodingKey { case fontSize, wordWrap, autosave, showIgnored }
+    private enum CodingKeys: String, CodingKey { case fontSize, wordWrap, autosave, showIgnored, ghostText }
 }
 
 /// One project's editor tier (`project.json`'s `editor`), defaults filled by Go.
@@ -166,16 +172,19 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var jiraBase: String
     public var defaultProvider: String
     public var speechProvider: String
+    /// The provider quick tasks run on (3b-viii, Decision 42). Empty means the active provider.
+    public var quickProvider: String
 
     public init(
         id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
-        speechProvider: String = ""
+        speechProvider: String = "", quickProvider: String = ""
     ) {
         self.id = id
         self.displayName = displayName
         self.jiraBase = jiraBase
         self.defaultProvider = defaultProvider
         self.speechProvider = speechProvider
+        self.quickProvider = quickProvider
     }
 
     public init(from decoder: Decoder) throws {
@@ -185,9 +194,12 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         jiraBase = try container.decodeIfPresent(String.self, forKey: .jiraBase) ?? ""
         defaultProvider = try container.decodeIfPresent(String.self, forKey: .defaultProvider) ?? ""
         speechProvider = try container.decodeIfPresent(String.self, forKey: .speechProvider) ?? ""
+        quickProvider = try container.decodeIfPresent(String.self, forKey: .quickProvider) ?? ""
     }
 
-    private enum CodingKeys: String, CodingKey { case id, displayName, jiraBase, defaultProvider, speechProvider }
+    private enum CodingKeys: String, CodingKey {
+        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider
+    }
 
     /// What the tree's Organisation node is labelled with: the display
     /// name when there is one, the id otherwise. The same fallback
@@ -213,13 +225,23 @@ public struct SettingsProvider: Sendable, Equatable, Decodable {
     /// remove-and-re-add is the honest gesture and there is nothing here
     /// to edit.
     public var shared: Bool
+    /// A `local` provider's endpoint (3b-viii). Empty for every other kind.
+    public var baseURL: String
+    /// The quick-task operations this provider serves (`infill`, `respond`), resolved by Go from
+    /// the kind when the record does not say.
+    public var serves: [String]
 
-    public init(id: String, kind: String, label: String = "", configDir: String = "", shared: Bool = false) {
+    public init(
+        id: String, kind: String, label: String = "", configDir: String = "", shared: Bool = false,
+        baseURL: String = "", serves: [String] = []
+    ) {
         self.id = id
         self.kind = kind
         self.label = label
         self.configDir = configDir
         self.shared = shared
+        self.baseURL = baseURL
+        self.serves = serves
     }
 
     public init(from decoder: Decoder) throws {
@@ -229,9 +251,11 @@ public struct SettingsProvider: Sendable, Equatable, Decodable {
         label = try container.decodeIfPresent(String.self, forKey: .label) ?? ""
         configDir = try container.decodeIfPresent(String.self, forKey: .configDir) ?? ""
         shared = try container.decodeIfPresent(Bool.self, forKey: .shared) ?? false
+        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? ""
+        serves = try container.decodeIfPresent([String].self, forKey: .serves) ?? []
     }
 
-    private enum CodingKeys: String, CodingKey { case id, kind, label, configDir, shared }
+    private enum CodingKeys: String, CodingKey { case id, kind, label, configDir, shared, baseURL, serves }
 }
 
 public struct SettingsProject: Sendable, Equatable, Decodable {

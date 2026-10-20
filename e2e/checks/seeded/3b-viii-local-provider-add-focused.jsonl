@@ -1,0 +1,8 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"LOCAL MODELS"}}
+{"do":{"click":"settings.localProvider.add"}}
+{"expect":{"tree":"contains","text":"local model URL"}}
+{"expect":{"focus":"settings.localProvider.local.url"}}
+{"do":{"keys":"http://127.0.0.1:1"}}
+{"expect":{"tree":"contains","text":"Value: http://127.0.0.1:1"}}

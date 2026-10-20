@@ -240,7 +240,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "ctx_config_tree", "ctx_create_org", "ctx_editor_settings", "ctx_list_accounts",
              "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs",
              "ctx_list_projects", "ctx_list_providers", "ctx_provider_login",
-             "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_project",
+             "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_local_provider", "ctx_set_project",
              "ctx_set_project_editor_settings", "ctx_set_provider",
              "ctx_unlink_provider", "ctx_update_org", "db_cancel", "db_classify_statement",
              "db_describe_table",
@@ -769,7 +769,7 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
         fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
         paletteClients: PaletteClients(), placeClients: wiring.placeClients,
-        agentSocketFactory: { _, _ in NoAgentSocket() })
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
     let held = try #require(model.rootWatcherForTesting as? FSEventsRootWatcher)
     #expect(held === (wiring.rootWatcher as? FSEventsRootWatcher))
 }
@@ -821,7 +821,7 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         rootWatcher: wiring.rootWatcher, editorRootWatcher: wiring.editorRootWatcher,
         fileLists: wiring.fileLists, gitStatus: wiring.gitStatus,
         paletteClients: PaletteClients(), placeClients: wiring.placeClients,
-        agentSocketFactory: { _, _ in NoAgentSocket() })
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
     #expect(model.fileListsForTesting === lists)
 
     let emptyBin = try scratch()

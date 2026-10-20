@@ -15,6 +15,7 @@ Each rule below names the test that enforces it, or says *convention*.
 | Something the operator or the agent can do | An `Action`, registered by the `register*Actions` function of the folder that owns it (for example `registerEditorActions` in `Editor/EditorActions.swift`) | `ActionClassificationTests` (it declares an audience) |
 | State a pane shows | That pane kind's folder (`Api/`, `Editor/`, `Terminal/`; the db and settings kinds in `Panes/`): its `PaneKind` conformance and `PaneStore+<Kind>.swift`; see "A new pane kind" | *convention* (`PaneKindsTests` checks a kind is registered, not where its state lives) |
 | A pure decision a view needs (a label, a layout number, a key rule) | `WakilKit`, beside the kind or folder it belongs to; **never `WakilApp`**, which has no test target | *convention* |
+| A new quick task (a short model call: a status line, a title, a fast edit) | A caller of `QuickTasks.respond` or `.infill` (`App/QuickTasks.swift`): a prompt and a parser, nothing in `Harness/` (Decision 42) | *convention* (`QuickTasksTests` pins the routing) |
 | Drawing | `app/Sources/WakilApp/` | *convention* |
 | A shared value type with no dependencies | `Core/` | `wakilKitKeepsItsLayering` (`Core/` may use no other folder) |
 | Window orchestration that must see everything | `App/` (`WindowModel`, `WakilWiring`). The last resort: nothing in WakilKit may use `App/` | `wakilKitKeepsItsLayering` |

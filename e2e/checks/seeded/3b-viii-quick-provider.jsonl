@@ -1,0 +1,21 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"expect":{"frame":"settings.org.quickProvider","maxHeight":30}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":""}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"parity":{"action":"ctx_update_org","params":{"id":"e2e-fixture","quickProvider":"e2e-provider"},"click":"settings.org.quickProvider.e2e-provider","assert":"tree"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"e2e-provider"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","quickProvider":"nobody"},"refuses":"nobody"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"e2e-provider"}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"http://127.0.0.1:8012"}}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"frame":"settings.org.quickProvider","maxHeight":30}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"parity":{"action":"ctx_update_org","params":{"id":"e2e-fixture","quickProvider":"qwen"},"click":"settings.org.quickProvider.qwen","assert":"tree"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"parity":{"action":"ctx_update_org","params":{"id":"e2e-fixture","quickProvider":""},"click":"settings.org.quickProvider.same","assert":"tree"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":""}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"settings.org.quickProvider","maxHeight":30}}

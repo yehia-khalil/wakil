@@ -453,3 +453,21 @@ func TestUnlinkInAPinnedProcessDoesNotPersistThePins(t *testing.T) {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
+
+func TestUnlinkClearsQuickProvider(t *testing.T) {
+	localOrg(t)
+	if err := SetLocalProvider("initech", Provider{ID: "qwen", BaseURL: "http://127.0.0.1:8012"}); err != nil {
+		t.Fatal(err)
+	}
+	id := "qwen"
+	if err := UpdateOrg("initech", OrgPatch{QuickProvider: &id}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UnlinkProvider("initech", "qwen"); err != nil {
+		t.Fatal(err)
+	}
+	o, _ := LoadOrgFor("initech")
+	if o.QuickProvider != "" {
+		t.Errorf("org.json still names the gone provider: %q", o.QuickProvider)
+	}
+}

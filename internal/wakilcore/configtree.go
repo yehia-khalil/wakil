@@ -17,6 +17,7 @@ type ConfigTreeOrg struct {
 	JiraBase        string `json:"jiraBase"`
 	DefaultProvider string `json:"defaultProvider"`
 	SpeechProvider  string `json:"speechProvider"`
+	QuickProvider   string `json:"quickProvider"`
 }
 
 // ConfigTreeProvider is a provider binding as the settings tree draws it.
@@ -44,6 +45,10 @@ type ConfigTreeProvider struct {
 	// a setting — remove-and-re-add is the honest gesture — so the pane
 	// draws it as a fact rather than as a control.
 	Shared bool `json:"shared,omitempty"`
+	// BaseURL and Serves are a local provider's endpoint and what it is fit for. Serves is
+	// resolved by kind (resolvedServes) and always present, [] when the kind serves nothing.
+	BaseURL string   `json:"baseURL,omitempty"`
+	Serves  []string `json:"serves"`
 }
 
 // ConfigTreeDatabase is a database as the tree draws it.
@@ -191,6 +196,7 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 		JiraBase:        record.JiraBase,
 		DefaultProvider: record.DefaultProvider,
 		SpeechProvider:  record.SpeechProvider,
+		QuickProvider:   record.QuickProvider,
 	}
 
 	providers, skipped, err := listProvidersFor(org)
@@ -199,10 +205,7 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 	}
 	tree.ProvidersSkipped = skipped
 	for _, p := range providers {
-		tree.Providers = append(tree.Providers, ConfigTreeProvider{
-			ID: p.ID, Kind: p.Kind, Label: p.Label,
-			ConfigDir: p.ConfigDir, Shared: p.Shared,
-		})
+		tree.Providers = append(tree.Providers, configTreeProviderRow(p))
 	}
 	sort.Slice(tree.Providers, func(i, j int) bool { return tree.Providers[i].ID < tree.Providers[j].ID })
 
@@ -283,5 +286,14 @@ func emptyConfigTree(org string) ConfigTree {
 		Providers: []ConfigTreeProvider{},
 		Projects:  []ConfigTreeProject{},
 		Editor:    EditorAppSettings{}.Resolved(),
+	}
+}
+
+// configTreeProviderRow is one provider as the tree draws it.
+func configTreeProviderRow(p Provider) ConfigTreeProvider {
+	return ConfigTreeProvider{
+		ID: p.ID, Kind: p.Kind, Label: p.Label,
+		ConfigDir: p.ConfigDir, Shared: p.Shared,
+		BaseURL: p.BaseURL, Serves: resolvedServes(p),
 	}
 }

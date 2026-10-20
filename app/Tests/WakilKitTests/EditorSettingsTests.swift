@@ -202,3 +202,26 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         #expect(refusal?.isEmpty == false)
     }
 }
+
+/// The ghost-text switch travels with the other app-wide editor fields, and only as a boolean.
+@Test func theGhostTextSwitchIsForwarded() async throws {
+    let caller = GhostRecordingCaller()
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "ghost-switch")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    _ = try await registry.dispatch(
+        name: "ctx_set_editor_settings", params: .object(["ghostText": .bool(false)]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_set_editor_settings", params: .object(["ghostText": .string("off")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    #expect(await caller.arguments == [.object(["ghostText": .bool(false)]), .object([:])])
+}
+
+private actor GhostRecordingCaller: ToolCaller {
+    private(set) var arguments: [JSONValue] = []
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        self.arguments.append(arguments)
+        return .object(["structuredContent": .object([:])])
+    }
+}

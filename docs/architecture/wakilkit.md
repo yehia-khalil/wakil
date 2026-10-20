@@ -83,6 +83,12 @@ see everything (see `CONTRIBUTING.md`, "Where does my code go?").
   only for a few window-side marks (failure lines, api focus, response clears, a cleared terminal
   proposal, scope switches and the org-switch clear); see [runtime.md](runtime.md).
 - `WindowModelSupport.swift` — `apiSurfaceCallDetaches`.
+- `QuickTasks.swift` — `QuickTasks` (3b-viii, Decision 42): the one entry point for quick tasks.
+  `infill` and `respond` route to the org's `quickProvider`, else the active provider, fall back once
+  when a local endpoint will not connect, keep the endpoint's error whole, and refuse after shutdown.
+  `WindowModel+QuickTasks.swift` builds it per org and stops it on org switch and quit.
+- `GhostText.swift` — ghost-text's logic, the same for both surfaces: the context window, schema table
+  matching, reply clean-up and `GhostTextSession` (debounce, one request per pane, stale replies dropped).
   The editor's window side is in `WindowModel` too: a watcher on the project's roots while an editor
   pane is open (a change dispatches `editor_refresh`), ⌘T / ⌘S / ⌘W methods, saved-tab writes
   debounced after the last view report (`editorTabsDelay`), and **the unsaved prompt** —
@@ -198,6 +204,9 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
   `editor_replace_undo`, `editor_move_tab` and `editor_tree_reveal`, and `editor_search`'s `replace`.
   3b-iii adds `editor_changes_select`, `editor_changes_step`, `editor_changes_collapse`,
   `editor_changes_expand`, `editor_open_file`, and `editor_refresh`'s `what`.
+- `GhostBridge.swift` (3b-viii) — the editor's side of ghost-text: `ghostCaret`, `ghostTabContext`
+  (which tab and caret a request is for) and `GhostRequestOrder` (a reply is dropped once a newer
+  request was made).
 - `EditorChanges.swift` (3b-iii) — the Changes view's rows over the window's `GitStatus`:
   `editorChangesRows` (step order, a collapsed root left out), `editorChangesStep`,
   `editorChangesResolve` (where the highlight goes after a refresh, Rule 6), `editorChangesFile` and
@@ -285,9 +294,16 @@ Tests: `GitStatusTests`, `GitPaneLinesTests`, `GitRootWatcherTests`, `GitSourceT
 - `AgentInstructions.swift` — `agentSystemPrompt`.
 - `ResumeBroker.swift`, `ProviderSwitchBroker.swift` — where `session_resume` and
   `session_set_provider` requests park for the window.
+- `QuickModel.swift` — `QuickModel` (protocol; Decision 42), `QuickOperation` (`infill`, `respond`),
+  their request types and `QuickModels.make(for:)`. The second seam beside `AgentHarness`.
+- `ClaudeCodeQuickModel.swift` — a warm `claude` session through `buildQuickLaunch` (no agent prompt,
+  permission tool or allowed tools); interrupts with a stream-json `control_request`, recycles every
+  20 turns, 15 s per-turn deadline, stops after 10 idle minutes.
+- `LocalEndpointQuickModel.swift` — HTTP `/infill` and `/v1/chat/completions` against a `local`
+  provider's `baseURL`.
 
 Uses: `MCP`.
-Tests: `ClaudeCodeCLIHarnessTests`, `StreamJSONTests`, `ResumeBrokerTests`, `ProviderSwitchTests`,
+Tests: `ClaudeCodeQuickModelTests`, `LocalEndpointQuickModelTests`, `ClaudeCodeCLIHarnessTests`, `StreamJSONTests`, `ResumeBrokerTests`, `ProviderSwitchTests`,
 `AgentSpawnTests`.
 
 ### Identifiers/ — the names in scope for a turn
@@ -373,6 +389,8 @@ Terminal, Api and Editor keep their conformance and store methods in their own f
   snapshot), `PaneSnapshot.dataSurface`, `DataSurfaceSnapshot`, `PaneEditableSummary`.
 - `DataSurfacePaneKind.swift` — `DataSurfaceContents` and `DataSurfacePaneKind` (name `db`; its
   subject, a read, re-runs on restore).
+- `QuickTaskSettings.swift` (3b-viii) — the Settings choices for quick tasks: the org's Quick tasks
+  list, a local provider's URL and what it serves, and the reachable-or-error line.
 - `SettingsPaneKind.swift` — `SettingsPaneKind` (name `settings`): no contents in the store;
   `read_pane` builds a settings pane from the config tree (`MCP/MCPServer.swift`).
 - `GridCopy.swift` — the grid's Copy formats (one cell, TSV with a header, JSON keeping types;
@@ -392,10 +410,11 @@ Tests: `PaneStoreTests`, `PaneKindStorageTests`, `PaneFetchTests`, `PaneEditable
 ### Query/ — the db pane's query line
 
 - `SQLTokenizer.swift`, `SQLStyle.swift`, `SQLFormat.swift` (`QueryDialect`, `SQLFormat`),
-  `QueryLineKeys.swift`.
+  `QueryLineKeys.swift`, `QueryLineGhost.swift` (3b-viii: when the query line asks — caret at the end
+  of its line, multi-line only at the end of the text — and what Tab, Esc and Return do with a ghost).
 
 Uses: nothing but `Core`.
-Tests: `SQLTokenizerTests`, `SQLStyleTests`, `SQLFormatTests`, `QueryLineKeysTests`,
+Tests: `SQLTokenizerTests`, `SQLStyleTests`, `SQLFormatTests`, `QueryLineKeysTests`, `QueryLineGhostTests`,
 `QueryDialectTests`.
 
 ### Registry/ — the one place every state change runs

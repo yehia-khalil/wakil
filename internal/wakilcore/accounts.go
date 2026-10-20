@@ -160,6 +160,11 @@ func listAccountsFor(current string) (AccountListing, error) {
 			out.Skipped = append(out.Skipped, org+"/"+name)
 		}
 		for _, p := range providers {
+			// A local model is an endpoint the operator runs, with no sign-in and no
+			// credential (3b-viii): Settings draws it under LOCAL MODELS, not as an account.
+			if p.Kind == ProviderKindLocal {
+				continue
+			}
 			out.Accounts = append(out.Accounts, accountRow(org, current, p, out.KeychainUnavailable))
 		}
 	}

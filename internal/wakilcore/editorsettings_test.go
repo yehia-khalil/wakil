@@ -29,7 +29,7 @@ func TestNoSettingsFileReadsAsDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := s.Editor.Resolved()
-	want := EditorAppValues{FontSize: 12, WordWrap: false, Autosave: AutosaveOff, ShowIgnored: true}
+	want := EditorAppValues{FontSize: 12, WordWrap: false, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true}
 	if got != want {
 		t.Errorf("Resolved() = %+v, want %+v", got, want)
 	}
@@ -64,7 +64,7 @@ func TestUpdateEditorAppSettingsWritesOnlyWhatItWasGiven(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Editor.Resolved(); got != (EditorAppValues{FontSize: 14, WordWrap: true, Autosave: AutosaveOff, ShowIgnored: true}) {
+	if got := s.Editor.Resolved(); got != (EditorAppValues{FontSize: 14, WordWrap: true, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true}) {
 		t.Errorf("Resolved() = %+v", got)
 	}
 }
@@ -298,5 +298,23 @@ func TestHeavyNamesPutsGitFirst(t *testing.T) {
 	}
 	if got := HeavyNames(nil); !reflect.DeepEqual(got, []string{".git"}) {
 		t.Errorf("HeavyNames(nil) = %v", got)
+	}
+}
+
+func TestGhostTextDefaultsOnAndIsWrittenAndRead(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, err := LoadAppSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Editor.Resolved().GhostText {
+		t.Fatal("ghostText must default on")
+	}
+	if err := UpdateEditorAppSettings(EditorAppPatch{GhostText: boolp(false)}); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = LoadAppSettings()
+	if s.Editor.Resolved().GhostText {
+		t.Error("ghostText stayed on after writing off")
 	}
 }

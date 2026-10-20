@@ -49,7 +49,7 @@ func editorWindowFull(
         lookupFactory: { _ in EditorWindowLookup() },
         rootWatcher: withGit ? gitWatcher : nil, editorRootWatcher: watcher, fileLists: fileLists, gitStatus: status,
         paletteClients: PaletteClients(files: fileLists), placeClients: nil,
-        agentSocketFactory: { _, _ in NoAgentSocket() })
+        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
     box.model = model
     await registerEditorActions(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,

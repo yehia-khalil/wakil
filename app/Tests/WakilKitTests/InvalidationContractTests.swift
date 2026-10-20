@@ -24,6 +24,9 @@ private let orgDerived: Set<String> = [
     "project", "projectKey", "environment", "environmentProduction",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
+    // 3b-viii: the quick tasks route to the org's providers on its credentials, and each pane's
+    // ghost session asks them; `invalidateForOrgChange` shuts both down, and the switch rebuilds.
+    "quickTasks", "ghostSessions", "ghostTextEnabled", "quickTasksConfigError",
     "providerId",
     "lookup", "rootPaths", "hasProjectRoot",
     "organization", "resumedParentForTesting",
@@ -169,6 +172,9 @@ private let orgIndependent: Set<String> = [
     "goTosInFlight",
     "registry", "persistence", "context",
     "harnessFactory", "lookupFactory", "resumes", "confirmations",
+    // 3b-viii: takes the organisation per call, like `harnessFactory`; the generation only orders
+    // rebuilds, whichever org each was for.
+    "quickModelFactory", "quickTasksGeneration",
     // Background agents 3 of 4, Task 4: how a session's socket is started. It names no
     // organisation; a socket answers for the place it was started for.
     "agentSocketFactory",

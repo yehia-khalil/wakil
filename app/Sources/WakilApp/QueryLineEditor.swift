@@ -26,14 +26,28 @@ struct QueryLineEditor: NSViewRepresentable {
     var cancel: () -> Bool = { false }
     /// Told when the line gains or loses keyboard focus, so the pane can brighten its field.
     var focusChanged: (Bool) -> Void = { _ in }
+    /// Whether a read runs on this pane now: Esc cancels it once no ghost shows.
+    var readRunning = false
+    /// 3b-viii ghost-text, for THIS pane: whether it is on, the request for the text at a caret
+    /// with the quick-tasks generation it was built in, the window's suggestion for it (nil for a
+    /// request built in an earlier generation), and the release of a request no longer wanted.
+    var ghostTextEnabled = false
+    var ghostPrepare: (String, String.Index) async -> (InfillRequest, Int)? = { _, _ in nil }
+    var ghostSuggest: (InfillRequest, Int) async -> String? = { _, _ in nil }
+    var ghostCancel: () -> Void = {}
 
     static let maxLines = 6
     static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
     static let keywordFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
     static let commentFont = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+    /// One line's height in `font`, measured once. (Never through the view's `layoutManager`: on a
+    /// TextKit 2 view that call drops it to TextKit 1.)
+    static let lineHeight = NSLayoutManager().defaultLineHeight(for: font)
     static let ink = NSColor(red: 0.910, green: 0.925, blue: 0.965, alpha: 1)
     /// What untyped text and a Mongo line are drawn at: the identifier step.
     static let plainOpacity = 0.85
+    /// A ghost suggestion and its pending dot: never in the text storage.
+    static let ghostInk = NSColor(red: 232 / 255, green: 236 / 255, blue: 246 / 255, alpha: 0.34)
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -107,6 +121,8 @@ struct QueryLineEditor: NSViewRepresentable {
         } else if dialectChanged {
             Self.applyStyle(to: textView.textStorage, dialect: dialect)
         }
+        // Ghost-text switched off: drop what shows and what is pending.
+        if !ghostTextEnabled { coordinator.refreshGhost() }
         if coordinator.formatSeen != formatRequest {
             coordinator.formatSeen = formatRequest
             // A turn later: formatting writes the binding and the "not formatted" line, and
@@ -121,7 +137,7 @@ struct QueryLineEditor: NSViewRepresentable {
         _ proposal: ProposedViewSize, nsView: NSScrollView, context: Context
     ) -> CGSize? {
         let padding = (nsView.documentView as? NSTextView)?.textContainer?.lineFragmentPadding ?? 5
-        let line = NSLayoutManager().defaultLineHeight(for: Self.font)
+        let line = Self.lineHeight
         let measured = NSMutableAttributedString(
             string: text, attributes: [.font: Self.font])
         Self.applyStyle(to: measured, dialect: dialect)
@@ -181,6 +197,13 @@ struct QueryLineEditor: NSViewRepresentable {
             else { return }
             parent.text = view.string
             QueryLineEditor.applyStyle(to: view.textStorage, dialect: parent.dialect)
+            refreshGhost()
+        }
+
+        /// A caret move drops the ghost and may ask anew (typing moves it too; the same text and
+        /// caret keep the request already made).
+        func textViewDidChangeSelection(_ notification: Notification) {
+            refreshGhost()
         }
 
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -194,21 +217,180 @@ struct QueryLineEditor: NSViewRepresentable {
                 parent.run(textView.string)
                 return true
             case #selector(NSResponder.insertTab(_:)):
-                // Tab leaves the line, as the TextField it replaced did.
-                textView.window?.selectNextKeyView(nil)
+                switch queryLineGhostKey(.tab, ghostShowing: ghostShowing, readRunning: parent.readRunning) {
+                case .accept:
+                    acceptGhost()
+                default:
+                    // Tab leaves the line, as the TextField it replaced did.
+                    textView.window?.selectNextKeyView(nil)
+                }
                 return true
             case #selector(NSResponder.insertBacktab(_:)):
                 textView.window?.selectPreviousKeyView(nil)
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
-                // Esc cancels a running read first; otherwise it leaves the line. The text stays
-                // either way (Interaction Rule 2).
-                if parent.cancel() { return true }
+                // Esc drops a ghost first, then cancels a running read, then leaves the line. The
+                // text stays either way (Interaction Rule 2). Every Esc also drops what is pending,
+                // so no suggestion lands after it (Rule 4).
+                let decision = queryLineGhostKey(.escape, ghostShowing: ghostShowing, readRunning: parent.readRunning)
+                if queryLineKeyDropsGhost(.escape) { dismissGhost() }
+                switch decision {
+                case .dismiss:
+                    return true
+                case .cancelRead:
+                    if parent.cancel() { return true }
+                default:
+                    break
+                }
                 textView.window?.makeFirstResponder(nil)
                 return true
             default:
                 return false
             }
+        }
+
+        // MARK: Ghost-text (3b-viii)
+
+        /// The text and caret (UTF-16) the request in flight, or the ghost showing, was made at.
+        private var ghostAt: (text: String, caret: Int)?
+        private var ghostTask: Task<Void, Never>?
+        private var ghostOrder = GhostRequestOrder()
+        private var ghostId = 0
+        /// A dismissed ghost stays gone until the text or caret moves.
+        private var ghostDismissedAt: (text: String, caret: Int)?
+        private var pulseStart: Timer?
+        private var pulse: Timer?
+
+        var ghostShowing: Bool { textView?.ghost != nil }
+
+        /// Every text or caret change: a ghost made for other text or another caret goes, a request
+        /// for them is released, and the line asks again when the caret ends its line (Ruling R2).
+        /// The same text and caret keep what is pending or showing.
+        func refreshGhost() {
+            guard let textView else { return }
+            let range = textView.selectedRange()
+            let here = (text: textView.string, caret: range.location)
+            let wanted = parent.ghostTextEnabled && range.length == 0 && !textView.hasMarkedText()
+                && textView.window?.firstResponder === textView
+                && !(ghostDismissedAt.map { $0 == here } ?? false)
+                && Self.caret(in: here.text, utf16: here.caret).map {
+                    queryLineAsksForGhost(text: here.text, caret: $0)
+                } == true
+            if wanted, let at = ghostAt, at == here { return }
+            dropGhost()
+            if ghostDismissedAt.map({ $0 != here }) ?? false { ghostDismissedAt = nil }
+            guard wanted, let caret = Self.caret(in: here.text, utf16: here.caret) else { return }
+            ask(text: here.text, caret: caret, at: here)
+        }
+
+        /// Drops what shows and releases what is pending.
+        func dropGhost() {
+            if ghostTask != nil {
+                ghostTask?.cancel()
+                ghostTask = nil
+                // A late cancel of an older request must not drop a newer one (`GhostRequestOrder`).
+                if ghostOrder.cancel(ghostId) { parent.ghostCancel() }
+            }
+            ghostAt = nil
+            stopPulse()
+            if textView?.ghost != nil {
+                textView?.ghost = nil
+                textView?.needsDisplay = true
+            }
+        }
+
+        private func ask(text: String, caret: String.Index, at here: (text: String, caret: Int)) {
+            ghostId += 1
+            let id = ghostId
+            ghostAt = here
+            let multiline = queryLineGhostIsMultiline(text: text, caret: caret)
+            let prepare = parent.ghostPrepare
+            let suggest = parent.ghostSuggest
+            startPulse()
+            ghostTask = Task { @MainActor [weak self] in
+                let prepared = await prepare(text, caret)
+                guard let self, let prepared, !Task.isCancelled, self.ghostOrder.admit(id) else {
+                    // Nothing was asked: the same text and caret may ask again.
+                    if let self, id == self.ghostId { self.ghostAt = nil }
+                    self?.settle(id)
+                    return
+                }
+                var request = prepared.0
+                // Not at the end of the whole text: one line only, asked and shown.
+                if !multiline { request.multiline = false }
+                let suggestion = await suggest(request, prepared.1)
+                // Only onto the text and caret it was asked for: a newer request owns the line.
+                guard !Task.isCancelled, id == self.ghostId, let view = self.textView,
+                      let at = self.ghostAt, at == here,
+                      view.string == here.text, view.selectedRange() == NSRange(location: here.caret, length: 0)
+                else { return }
+                self.settle(id)
+                guard let suggestion, let shown = queryLineGhostShown(suggestion, multiline: multiline)
+                else { return }
+                view.ghost = shown
+                view.needsDisplay = true
+            }
+        }
+
+        /// The request `id` came back (or never went): no longer pending.
+        private func settle(_ id: Int) {
+            guard id == ghostId else { return }
+            ghostTask = nil
+            stopPulse()
+        }
+
+        /// Tab: the ghost goes in through the text system at the caret, so it is typed — one undo
+        /// step, reported to the binding — and the line may ask again from its end.
+        private func acceptGhost() {
+            guard let textView, let ghost = textView.ghost else { return }
+            dropGhost()
+            textView.breakUndoCoalescing()
+            textView.insertText(ghost, replacementRange: textView.selectedRange())
+            textView.breakUndoCoalescing()
+            textView.scrollRangeToVisible(textView.selectedRange())
+        }
+
+        /// Esc: the ghost goes and is not asked for again until the text or caret moves.
+        private func dismissGhost() {
+            guard let textView else { return }
+            ghostDismissedAt = (textView.string, textView.selectedRange().location)
+            dropGhost()
+        }
+
+        /// After 400 ms with no reply, a dot pulses at the caret until the reply or a cancel.
+        private func startPulse() {
+            stopPulse()
+            pulseStart = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let view = self.textView else { return }
+                    view.pendingDot = true
+                    view.needsDisplay = true
+                    self.pulse = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak view] _ in
+                        MainActor.assumeIsolated {
+                            guard let view, let shown = view.pendingDot else { return }
+                            view.pendingDot = !shown
+                            view.needsDisplay = true
+                        }
+                    }
+                }
+            }
+        }
+
+        private func stopPulse() {
+            pulseStart?.invalidate()
+            pulseStart = nil
+            pulse?.invalidate()
+            pulse = nil
+            if textView?.pendingDot != nil {
+                textView?.pendingDot = nil
+                textView?.needsDisplay = true
+            }
+        }
+
+        private static func caret(in text: String, utf16: Int) -> String.Index? {
+            guard utf16 >= 0, utf16 <= text.utf16.count else { return nil }
+            let index = String.Index(utf16Offset: utf16, in: text)
+            return index.samePosition(in: text.unicodeScalars) == nil ? nil : index
         }
 
         /// Format: whitespace only, or nothing and the reason. The whole string is replaced as
@@ -242,6 +424,40 @@ struct QueryLineEditor: NSViewRepresentable {
 /// The text view the query line draws.
 final class QueryLineTextView: NSTextView {
     weak var coordinator: QueryLineEditor.Coordinator?
+    /// 3b-viii: the suggestion drawn after the caret. Drawn over the text, never in its storage,
+    /// so `string`, undo and the agent never see it.
+    var ghost: String?
+    /// While a suggestion is pending past 400 ms: whether the pulsing dot is lit (nil: no dot).
+    var pendingDot: Bool?
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard ghost != nil || pendingDot == true, let caret = caretRect() else { return }
+        if pendingDot == true {
+            QueryLineEditor.ghostInk.setFill()
+            NSBezierPath(ovalIn: NSRect(x: caret.maxX + 2, y: caret.midY - 1, width: 2, height: 2)).fill()
+        }
+        guard let ghost else { return }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: QueryLineEditor.font, .foregroundColor: QueryLineEditor.ghostInk,
+        ]
+        let lineHeight = QueryLineEditor.lineHeight
+        let left = textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0)
+        // The first line beside the caret; any further lines below it at the line height.
+        for (n, line) in ghost.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            let origin = NSPoint(x: n == 0 ? caret.maxX : left, y: caret.minY + CGFloat(n) * lineHeight)
+            NSAttributedString(string: String(line), attributes: attributes).draw(at: origin)
+        }
+    }
+
+    /// The caret's rect in this view's coordinates.
+    private func caretRect() -> NSRect? {
+        guard let window else { return nil }
+        let at = NSRange(location: selectedRange().location, length: 0)
+        let screen = firstRect(forCharacterRange: at, actualRange: nil)
+        guard screen != .zero else { return nil }
+        return convert(window.convertFromScreen(screen), from: nil)
+    }
 
     /// Ruling 12: the text storage is where typing registers its undo, and the view registers
     /// its own. Both go — and nothing else in the window's undo stack.
@@ -262,13 +478,20 @@ final class QueryLineTextView: NSTextView {
 
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
-        if became { coordinator?.parent.focusChanged(true) }
+        if became {
+            coordinator?.parent.focusChanged(true)
+            coordinator?.refreshGhost()
+        }
         return became
     }
 
     override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
-        if resigned { coordinator?.parent.focusChanged(false) }
+        if resigned {
+            coordinator?.parent.focusChanged(false)
+            // A line without focus shows no ghost and waits on none.
+            coordinator?.dropGhost()
+        }
         return resigned
     }
 
