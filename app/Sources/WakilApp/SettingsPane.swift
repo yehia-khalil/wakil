@@ -721,12 +721,13 @@ struct SettingsPane: View {
                 .foregroundStyle(coolWhite.opacity(0.32))
             Menu {
                 ForEach(options, id: \.id) { option in
+                    let key = option.id.isEmpty ? "same" : option.id
                     Button(option.display) {
                         guard option.id != stored else { return }
                         drafts[.quickProvider] = option.id
                         save(.quickProvider, tree: tree)
                     }
-                    .accessibilityIdentifier("settings.org.quickProvider.\(option.id.isEmpty ? "same" : option.id)")
+                    .accessibilityIdentifier("settings.org.quickProvider.\(key)")
                 }
             } label: {
                 HStack(spacing: 4) {
