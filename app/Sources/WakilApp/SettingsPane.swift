@@ -719,38 +719,47 @@ struct SettingsPane: View {
                 .font(.system(size: Scale.micro, weight: .medium))
                 .tracking(Scale.microTracking)
                 .foregroundStyle(coolWhite.opacity(0.32))
-            Menu {
-                ForEach(options, id: \.id) { option in
-                    let key = option.id.isEmpty ? "same" : option.id
-                    Button(option.display) {
-                        guard option.id != stored else { return }
-                        drafts[.quickProvider] = option.id
-                        save(.quickProvider, tree: tree)
+            // One table row, as the local models under it are drawn: the choice as plain text with
+            // a chevron (the system's menu chrome would be the only bezel on the page), and where
+            // code completion goes beside it.
+            HStack(alignment: .firstTextBaseline, spacing: Scale.columnGap) {
+                Menu {
+                    ForEach(options, id: \.id) { option in
+                        let key = option.id.isEmpty ? "same" : option.id
+                        Button(option.display) {
+                            guard option.id != stored else { return }
+                            drafts[.quickProvider] = option.id
+                            save(.quickProvider, tree: tree)
+                        }
+                        .accessibilityIdentifier("settings.org.quickProvider.\(key)")
                     }
-                    .accessibilityIdentifier("settings.org.quickProvider.\(key)")
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(known?.display ?? stored)
+                            .font(.system(size: Scale.body, weight: .medium))
+                            .foregroundStyle(coolWhite.opacity(0.86))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(coolWhite.opacity(0.40))
+                    }
+                    .contentShape(Rectangle())
                 }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(known?.display ?? stored)
-                    Text("▾").foregroundStyle(coolWhite.opacity(0.45))
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityIdentifier("settings.org.quickProvider")
+                if let route = quickTaskRouteLine(tree, routed: quickStatus?.routedInfill) {
+                    Text(route)
+                        .font(.system(size: Scale.meta))
+                        .foregroundStyle(coolWhite.opacity(0.40))
+                        .lineLimit(1)
+                        .accessibilityIdentifier("settings.org.quickProvider.route")
                 }
-                .font(.system(size: Scale.body))
+                Spacer(minLength: 0)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(coolWhite.opacity(0.05)))
-            .foregroundStyle(coolWhite.opacity(0.86))
-            .padding(.horizontal, -6)
-            .accessibilityIdentifier("settings.org.quickProvider")
-            if let route = quickTaskRouteLine(tree, routed: quickStatus?.routedInfill) {
-                Text(route)
-                    .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.45))
-                    .accessibilityIdentifier("settings.org.quickProvider.route")
-            }
+            .frame(minHeight: Scale.rowHeight, alignment: .leading)
+            .overlay(alignment: .bottom) { Rectangle().fill(coolWhite.opacity(0.06)).frame(height: 0.5) }
             if let note = quickTaskNote(tree, activeProvider: runningAccountId) {
                 Text(note)
                     .font(.system(size: Scale.body))
