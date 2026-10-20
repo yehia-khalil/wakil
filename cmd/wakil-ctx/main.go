@@ -625,7 +625,7 @@ func newServer() *mcp.Server {
 
 	// Added by 3b-viii (Decision 42): an upsert, because an operator points the one local
 	// endpoint somewhere else far more often than they add a second.
-	mcp.AddTool(s, &mcp.Tool{Name: "set_local_provider", Description: "Create or override a local model endpoint for the ACTIVE organisation: its id, optional label, baseURL (http or https) (a local provider serves every quick task). Refuses a bad URL and an id that is already another kind of account. Returns the provider's config_tree row."},
+	mcp.AddTool(s, &mcp.Tool{Name: "set_local_provider", Description: "Create or override a local model endpoint for the ACTIVE organisation: its id, optional label and baseURL (http or https); a local provider serves every quick task. Refuses a bad URL and an id that is already another kind of account. Returns the provider's config_tree row."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setLocalProviderArgs) (*mcp.CallToolResult, wakilcore.ConfigTreeProvider, error) {
 			org, err := wakilcore.CurrentOrg()
 			if err != nil {
