@@ -9,7 +9,7 @@
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].kind","equals":"local"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].baseURL","equals":"http://127.0.0.1:8012"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[0]","equals":"infill"}}
-{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[1]","present":false}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.providers[1].serves[1]","equals":"respond"}}
 {"expect":{"journal":{"contains":"ctx_set_local_provider"}}}
 {"do":{"click":"settings.reload"}}
 {"expect":{"tree":"contains","text":"Qwen 1.5B"}}
