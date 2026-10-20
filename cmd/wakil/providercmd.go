@@ -77,7 +77,7 @@ func runProviderAdd(args []string, stderr io.Writer) int {
 	fs.StringVar(&p.ClaudePath, "claude-path", "", "the agent binary this provider launches (--kind claude-code only)")
 	fs.StringVar(&p.BaseURL, "base-url", "", "a local endpoint's URL (--kind local only)")
 	var serves string
-	fs.StringVar(&serves, "serves", "", "comma-separated quick operations a local endpoint serves: infill, respond (--kind local only)")
+	fs.StringVar(&serves, "serves", "", "ignored since 3b-ix: a local endpoint serves every quick task (kept so old scripts parse)")
 	// "--kind claude-code only" is not merely advisory here: AddProvider
 	// refuses the combination rather than ignoring it. Flag help that
 	// states a restriction nothing enforces is how `--share --kind codex`

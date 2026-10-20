@@ -146,7 +146,8 @@ func AddProvider(org string, p Provider) error {
 	if err := validateProviderToken(p.ID); err != nil {
 		return err
 	}
-	if p.Kind == ProviderKindClaudeCode && (p.BaseURL != "" || len(p.Serves) > 0) {
+	p.Serves = nil // retired in 3b-ix: a local provider serves every quick task
+	if p.Kind == ProviderKindClaudeCode && p.BaseURL != "" {
 		return UserError(errLocalOnly)
 	}
 	switch p.Kind {
@@ -175,12 +176,12 @@ func AddProvider(org string, p Provider) error {
 		}
 		if p.Kind == ProviderKindLocal {
 			// A local record with no URL stays valid: it simply has no quick model.
-			if p.BaseURL != "" || len(p.Serves) > 0 {
+			if p.BaseURL != "" {
 				if err := normaliseLocal(&p); err != nil {
 					return err
 				}
 			}
-		} else if p.BaseURL != "" || len(p.Serves) > 0 {
+		} else if p.BaseURL != "" {
 			return UserError(errLocalOnly)
 		}
 		// --share is refused here rather than ignored. What is shared is a
