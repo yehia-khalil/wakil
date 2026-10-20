@@ -50,6 +50,10 @@ public struct JournalEntry: Codable, Sendable, Equatable {
     public var session: String?
     public var outcome: String
     public var reason: String?
+    /// The route a dispatch took when it was not the default (3b-ix: `"fastPath"`).
+    /// Optional for the same reason `environment` is: lines written before it existed omit it,
+    /// and synthesized Codable omits a nil one rather than writing `null`.
+    public var via: String?
 
     public init(
         id: String,
@@ -63,7 +67,8 @@ public struct JournalEntry: Codable, Sendable, Equatable {
         environment: String? = nil,
         session: String? = nil,
         outcome: String,
-        reason: String? = nil
+        reason: String? = nil,
+        via: String? = nil
     ) {
         self.id = id
         self.ts = ts
@@ -77,5 +82,6 @@ public struct JournalEntry: Codable, Sendable, Equatable {
         self.session = session
         self.outcome = outcome
         self.reason = reason
+        self.via = via
     }
 }
