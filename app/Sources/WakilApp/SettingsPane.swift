@@ -714,6 +714,8 @@ struct SettingsPane: View {
         let options = quickTaskChoices(tree)
         let stored = tree.org.quickProvider
         let known = options.first(where: { $0.id == stored })
+        let localIds = Set(tree.providers.filter { $0.kind == "local" }.map(\.id))
+        func isLocal(_ id: String) -> Bool { localIds.contains(id) }
         return VStack(alignment: .leading, spacing: 4) {
             Text("QUICK TASKS")
                 .font(.system(size: Scale.micro, weight: .medium))
@@ -723,15 +725,15 @@ struct SettingsPane: View {
             // a chevron (the system's menu chrome would be the only bezel on the page), and where
             // code completion goes beside it.
             HStack(alignment: .firstTextBaseline, spacing: Scale.columnGap) {
+                // Same as agent, then the accounts, then the local models, each group headed.
                 Menu {
-                    ForEach(options, id: \.id) { option in
-                        let key = option.id.isEmpty ? "same" : option.id
-                        Button(option.display) {
-                            guard option.id != stored else { return }
-                            drafts[.quickProvider] = option.id
-                            save(.quickProvider, tree: tree)
-                        }
-                        .accessibilityIdentifier("settings.org.quickProvider.\(key)")
+                    quickTaskItems(options.filter { $0.id.isEmpty }, stored: stored, tree: tree)
+                    Divider()
+                    Section("Accounts") {
+                        quickTaskItems(options.filter { !$0.id.isEmpty && !isLocal($0.id) }, stored: stored, tree: tree)
+                    }
+                    Section("Local models") {
+                        quickTaskItems(options.filter { isLocal($0.id) }, stored: stored, tree: tree)
                     }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -791,6 +793,22 @@ struct SettingsPane: View {
             }
         }
         .padding(.bottom, 4)
+    }
+
+    /// One Quick tasks menu item per option, named `settings.org.quickProvider.<id>` (`same` for
+    /// Same as agent).
+    private func quickTaskItems(
+        _ options: [(id: String, display: String)], stored: String, tree: SettingsTree
+    ) -> some View {
+        ForEach(options, id: \.id) { option in
+            let key = option.id.isEmpty ? "same" : option.id
+            Button(option.display) {
+                guard option.id != stored else { return }
+                drafts[.quickProvider] = option.id
+                save(.quickProvider, tree: tree)
+            }
+            .accessibilityIdentifier("settings.org.quickProvider.\(key)")
+        }
     }
 
     private func storedValue(
