@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-viii-ghost-text-setting.jsonl",
   "baseCommit": "2a491bfe7b06ddfdff753560ebb58cd6bd321c97",
-  "provedAt": "2026-10-20T17:44:49.305416Z",
+  "provedAt": "2026-10-20T18:18:59.506488Z",
   "checkBlob": "a8b3f23af0a58b7e2fc79d5d942e100b83fa5544"
 }

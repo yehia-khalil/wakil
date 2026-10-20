@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-ix-fast-path-refused.jsonl",
   "baseCommit": "2a491bfe7b06ddfdff753560ebb58cd6bd321c97",
-  "provedAt": "2026-10-20T17:44:49.305416Z",
+  "provedAt": "2026-10-20T18:18:59.506488Z",
   "checkBlob": "758b4ec72bbf377676d5ca3e222efa5b289ff9a6"
 }
