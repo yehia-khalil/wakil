@@ -251,3 +251,68 @@ private func settle(until done: () -> Bool) async {
     #expect(composer.otherInput() == true)
     #expect(composer.machine.isCapturing)
 }
+
+// MARK: - The fast path (3b-ix)
+
+/// A composer whose fast path answers `outcome` for every line, over the file's window and harness.
+@MainActor
+private func makeComposerWithFastPath(outcome: FastPathOutcome) -> (composer: ComposerModel, harness: AcceptingHarness) {
+    let harness = AcceptingHarness()
+    let window = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { _, _ in harness })
+    window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
+    let speech = SpeechRegistry(engines: [])
+    return (ComposerModel(window: window, speech: speech, fastPathRunner: { _ in outcome }), harness)
+}
+
+@MainActor
+@Test func aFastPathLineStartsNoTurnAndLeavesAReceipt() async {
+    let made = makeComposerWithFastPath(outcome: .ran(FastPathReceipt(
+        line: "switch to staging", text: "Ran: switch environment to staging", refused: false)))
+    made.composer.edited(draft: "switch to staging", caret: 17)
+    await made.composer.submit()
+    #expect(made.harness.sent.isEmpty)
+    #expect(made.composer.receipt?.text == "Ran: switch environment to staging")
+    #expect(made.composer.draft == "")
+}
+
+@MainActor
+@Test func aRefusedFastPathLineKeepsItsReceiptAndConsumesAVoiceLine() async {
+    let made = makeComposerWithFastPath(outcome: .refused(FastPathReceipt(
+        line: "close confirm.go", text: "editor_close: unsaved changes", refused: true)))
+    made.composer.edited(draft: "close confirm.go", caret: 16)
+    await made.composer.submit()
+    #expect(made.harness.sent.isEmpty)
+    #expect(made.composer.receipt?.refused == true)
+    #expect(made.composer.draft == "")
+    #expect(!made.composer.landedUnsent)
+}
+
+@MainActor
+@Test func askTheAgentInsteadSendsTheOriginalLine() async {
+    let made = makeComposerWithFastPath(outcome: .ran(FastPathReceipt(
+        line: "switch to staging", text: "Ran: switch environment to staging", refused: false)))
+    made.composer.edited(draft: "switch to staging", caret: 17)
+    await made.composer.submit()
+    await made.composer.askAgentInstead()
+    #expect(made.harness.sent == ["switch to staging"])
+    #expect(made.composer.receipt == nil)
+}
+
+@MainActor
+@Test func dismissingTheReceiptClearsItAndSendsNothing() async {
+    let made = makeComposerWithFastPath(outcome: .ran(FastPathReceipt(line: "x", text: "Ran: x", refused: false)))
+    made.composer.edited(draft: "x", caret: 1)
+    await made.composer.submit()
+    made.composer.dismissReceipt()
+    #expect(made.composer.receipt == nil)
+    #expect(made.harness.sent.isEmpty)
+}
+
+@MainActor
+@Test func aLineTheFastPathDoesNotTakeIsSentAsToday() async {
+    let made = makeComposerWithFastPath(outcome: .toAgent)
+    made.composer.edited(draft: "why is it slow?", caret: 15)
+    await made.composer.submit()
+    #expect(made.harness.sent == ["why is it slow?"])
+    #expect(made.composer.receipt == nil)
+}

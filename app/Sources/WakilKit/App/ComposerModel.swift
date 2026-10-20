@@ -18,7 +18,11 @@ public final class ComposerModel {
     /// Bumped on every landing; the bar focuses its field when it changes.
     public private(set) var focusToken = 0
 
+    /// What a fast-path line did (3b-ix): kept until the next line, "Ask the agent instead" or Esc.
+    public private(set) var receipt: FastPathReceipt?
+
     private let window: WindowModel
+    private let fastPathRunner: (String) async -> FastPathOutcome
     private let speech: SpeechRegistry
     private let now: @MainActor () -> Double
     private var provider: (any SpeechProvider)?
@@ -29,9 +33,11 @@ public final class ComposerModel {
 
     public init(
         window: WindowModel, speech: SpeechRegistry,
-        now: @escaping @MainActor () -> Double = { ProcessInfo.processInfo.systemUptime }
+        now: @escaping @MainActor () -> Double = { ProcessInfo.processInfo.systemUptime },
+        fastPathRunner: ((String) async -> FastPathOutcome)? = nil
     ) {
         self.window = window
+        self.fastPathRunner = fastPathRunner ?? { [window] in await window.runFastPath($0) }
         self.speech = speech
         self.now = now
     }
@@ -73,6 +79,14 @@ public final class ComposerModel {
         draft = ""
         caret = 0
         landedUnsent = false
+        receipt = nil
+        switch await fastPathRunner(text) {
+        case .ran(let r), .refused(let r):
+            receipt = r          // Rule 2: a refused line is kept here, with Ask the agent instead
+            return
+        case .toAgent:
+            break
+        }
         let started = await window.send(text, via: source)
         // No turn started (no harness, a failed send): the
         // operator's words come back. Not if they have typed since.
@@ -82,6 +96,16 @@ public final class ComposerModel {
             landedUnsent = source == .voice
         }
     }
+
+    /// Sends the line a receipt answered to the agent after all.
+    public func askAgentInstead() async {
+        guard let line = receipt?.line else { return }
+        receipt = nil
+        _ = await window.send(line, via: .typed)
+    }
+
+    /// Clears the receipt (the bar calls it on Esc in an empty composer).
+    public func dismissReceipt() { receipt = nil }
 
     private func run(_ effects: [ListeningMachine.Effect]) {
         window.setListening(machine.isListening)

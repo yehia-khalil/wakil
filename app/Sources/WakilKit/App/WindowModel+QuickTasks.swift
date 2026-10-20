@@ -46,6 +46,13 @@ extension WindowModel {
         quickTasks = QuickTasks(config: config) { record in try await factory(record, org) }
         ghostTextEnabled = tree.org.ghostText
         fastPathEnabled = tree.org.fastPath
+        if fastPathEnabled, let tasks = quickTasks {
+            let schemas = await fastPathSchemas()
+            let warm = RespondRequest(instructions: FastPath.instructions(actions: schemas),
+                                      input: FastPath.input("open settings", scope: FastPathScope()),
+                                      jsonSchema: FastPath.replySchema, maxTokens: 8)
+            Task { _ = try? await tasks.respond(warm) }   // fills the server's prompt cache; the reply is not used
+        }
     }
 
     /// Releases every pane's pending request, then shuts the models down. Also the window's own
