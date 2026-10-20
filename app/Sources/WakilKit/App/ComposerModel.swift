@@ -22,7 +22,7 @@ public final class ComposerModel {
     public private(set) var receipt: FastPathReceipt?
 
     private let window: WindowModel
-    private let fastPathRunner: (String) async -> FastPathOutcome
+    private let fastPathRunner: (String, WindowModel.TurnScope) async -> FastPathOutcome
     private let speech: SpeechRegistry
     private let now: @MainActor () -> Double
     private var provider: (any SpeechProvider)?
@@ -34,10 +34,10 @@ public final class ComposerModel {
     public init(
         window: WindowModel, speech: SpeechRegistry,
         now: @escaping @MainActor () -> Double = { ProcessInfo.processInfo.systemUptime },
-        fastPathRunner: ((String) async -> FastPathOutcome)? = nil
+        fastPathRunner: ((String, WindowModel.TurnScope) async -> FastPathOutcome)? = nil
     ) {
         self.window = window
-        self.fastPathRunner = fastPathRunner ?? { [window] in await window.runFastPath($0) }
+        self.fastPathRunner = fastPathRunner ?? { [window] line, scope in await window.runFastPath(line, scope: scope) }
         self.speech = speech
         self.now = now
     }
@@ -82,9 +82,13 @@ public final class ComposerModel {
         caret = 0
         landedUnsent = false
         receipt = nil
-        switch await fastPathRunner(text) {
-        case .ran(let r), .refused(let r):
-            receipt = r          // Rule 2: a refused line is kept here, with Ask the agent instead
+        switch await fastPathRunner(text, scope) {
+        case .ran(var r), .refused(var r):
+            // Rule 2: a refused line is kept here, with Ask the agent instead, which re-sends it
+            // where it was typed and as it came (a spoken line stays a voice turn).
+            r.scope = scope
+            r.source = source
+            receipt = r
             return
         case .toAgent:
             break
@@ -99,11 +103,12 @@ public final class ComposerModel {
         }
     }
 
-    /// Sends the line a receipt answered to the agent after all.
+    /// Sends the line a receipt answered to the agent after all: to the place it was typed in, with
+    /// its source.
     public func askAgentInstead() async {
-        guard let line = receipt?.line else { return }
+        guard let r = receipt else { return }
         receipt = nil
-        _ = await window.send(line, via: .typed)
+        _ = await window.send(r.line, via: r.source, scope: r.scope)
     }
 
     /// Clears the receipt (the bar calls it on Esc in an empty composer).

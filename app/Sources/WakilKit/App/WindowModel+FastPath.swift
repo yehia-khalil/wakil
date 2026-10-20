@@ -3,18 +3,28 @@ import Foundation
 extension WindowModel {
     /// What the fast path's model may name for `line` (spec §The prompt and the scope): the top 20
     /// file matches by ⌘P's matcher, and every project, environment, table, open pane and api entry.
+    /// Read from what the window holds — no dispatch, so a line journals nothing and leaves the
+    /// status line alone (Rule 8).
     public func fastPathScope(for line: String) async -> FastPathScope {
-        let entries = await paletteFilesSource()?.entries() ?? []
-        let files = Self.fastPathFiles(for: line, in: entries)
+        let files = Self.fastPathFiles(for: line, in: await fastPathFileEntries())
         let environments = settings?.projects.first { $0.name == project }?.environments.map(\.name) ?? []
         var seen = Set<String>()
         let tables = (await vocabulary?.current().names ?? [])
             .filter { $0.kind == .table }.map(\.text).filter { seen.insert($0).inserted }
         return FastPathScope(
-            files: files, roots: rootPaths, projects: await listProjects().map(\.name),
+            files: files, roots: rootPaths, projects: settings?.projects.map(\.name) ?? [],
             environments: environments, activeEnvironment: environment, tables: tables,
             panes: layoutSnapshot.panes.map { FastPathPane(id: $0.id, kind: $0.kind, title: $0.title) },
             apiEntries: (await apiListing(http: paletteClients.http))?.map(\.name) ?? [])
+    }
+
+    /// ⌘P's file rows, from the listings the trees already hold; a `files_list` per root only when
+    /// the window holds none.
+    func fastPathFileEntries() async -> [PaletteEntry] {
+        let held = gitRootPaths.compactMap { editorFiles.listings[$0] }.filter { $0.error == nil }
+        guard !held.isEmpty else { return await paletteFilesSource()?.entries() ?? [] }
+        let withIgnored = editorSettings.app.showIgnored
+        return held.flatMap { FilesSource.rows(root: $0.root, files: $0.files, ignored: withIgnored ? $0.ignored : []) }
     }
 
     /// `rank` wants every word to match, and a line leads with a verb no file name holds, so each
@@ -49,12 +59,18 @@ extension WindowModel {
 }
 
 /// What the composer shows after a fast-path line: the operator's words, and either what ran or the
-/// refusal whole. "Ask the agent instead" re-sends `line`.
+/// refusal whole. "Ask the agent instead" re-sends `line` to `scope`, the place it was typed in,
+/// with its `source` (the composer stamps both).
 public struct FastPathReceipt: Sendable, Equatable {
     public var line: String
     public var text: String
     public var refused: Bool
-    public init(line: String, text: String, refused: Bool) { self.line = line; self.text = text; self.refused = refused }
+    public var scope: WindowModel.TurnScope?
+    public var source: WindowModel.TurnSource
+    public init(line: String, text: String, refused: Bool,
+                scope: WindowModel.TurnScope? = nil, source: WindowModel.TurnSource = .typed) {
+        self.line = line; self.text = text; self.refused = refused; self.scope = scope; self.source = source
+    }
 }
 
 public enum FastPathOutcome: Sendable, Equatable { case ran(FastPathReceipt), refused(FastPathReceipt), toAgent }
@@ -65,15 +81,22 @@ extension WindowModel {
 
     /// Asks the org's quick model whether `line` is one allowed action and, if every check holds,
     /// dispatches it as the operator's own click (Invariant 2). Anything else is `.toAgent`.
-    public func runFastPath(_ line: String) async -> FastPathOutcome {
-        guard fastPathEnabled, let tasks = quickTasks else { return .toAgent }
+    /// `typed` is where the operator pressed Return (the composer reads it then): the action is
+    /// theirs there, or not at all. The scope, the schemas and the model's answer all fit inside
+    /// the deadline; the routed model alone is asked, never the session's as a fall-back.
+    public func runFastPath(_ line: String, scope typed: TurnScope? = nil) async -> FastPathOutcome {
+        let typedIn = (typed ?? turnScope).place
+        guard fastPathEnabled, let tasks = quickTasks, place == typedIn else { return .toAgent }
         let generation = quickTasksGeneration
         let org = organization
-        let typedIn = place     // where the operator pressed Return: the action is theirs there, or not at all
-        let scope = await fastPathScope(for: line)
-        let schemas = await fastPathSchemas()
         let deadline = await tasks.routedKind(.respond) == "local" ? Self.fastPathLocalDeadline : Self.fastPathSessionDeadline
-        let route = await FastPath.route(line, scope: scope, schemas: schemas, deadline: deadline) { try await tasks.respond($0) }
+        let route = await FastPath.within(deadline) { [self] in
+            let scope = await fastPathScope(for: line)
+            let schemas = await fastPathSchemas()
+            return await FastPath.route(line, scope: scope, schemas: schemas, deadline: deadline) {
+                try await tasks.respond($0, fallback: false)
+            }
+        } ?? .agent
         guard generation == quickTasksGeneration, org == organization, place == typedIn,
               case .action(let name, let params) = route else { return .toAgent }
         do {
@@ -115,14 +138,16 @@ extension WindowModel {
         case "db_read_table": said = "show \(p("table"))"
         case "db_describe_table": said = "describe \(p("table"))"
         case "db_list_tables": said = "list the tables"
-        case "db_page": said = "page \(p("to"))"
+        case "db_page":       // `to` is "next", "previous", "first" or a page number
+            let to = p("to")
+            said = to.isEmpty ? "next page" : Int(to) == nil ? "\(to) page" : "page \(to)"
         case "db_refetch": said = "refresh \(p("pane"))"
         case "pane_open": said = "open a \(p("kind")) pane"
         case "pane_focus": said = "focus \(p("id"))"
         case "pane_close": said = "close \(p("id"))"
         case "pane_maximize": said = "maximize \(p("id"))"
         case "pane_restore": said = "restore the layout"
-        case "pane_sort": said = "sort by \(p("column"))"
+        case "pane_sort": said = p("column").isEmpty ? "clear the sort" : "sort by \(p("column"))"
         case "term_open": said = "open a terminal"
         case "api_open": said = "open the \(p("entry")) api"
         case "settings_open": said = "open settings"

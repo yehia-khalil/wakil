@@ -23,6 +23,7 @@ private actor CannedQuickModel: QuickModel {
 /// `wakil-ctx` as far as the fast path needs it: a tree with the switch on or off, and a context.
 private struct FastPathBackend: ToolCaller {
     let fastPath: Bool
+    var kind = "local"
 
     func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
         switch name {
@@ -31,7 +32,7 @@ private struct FastPathBackend: ToolCaller {
                 "org": .object(["id": .string("test-org"), "quickProvider": .string("qwen"),
                                 "ghostText": .bool(false), "fastPath": .bool(fastPath)]),
                 "providers": .array([.object([
-                    "id": .string("qwen"), "kind": .string("local"), "baseURL": .string("http://127.0.0.1:8012"),
+                    "id": .string("qwen"), "kind": .string(kind), "baseURL": .string("http://127.0.0.1:8012"),
                     "serves": .array([.string("infill"), .string("respond")])])]),
                 "projects": .array([]),
             ])])
@@ -43,6 +44,15 @@ private struct FastPathBackend: ToolCaller {
         default:
             return .object(["structuredContent": .object([:])])
         }
+    }
+}
+
+/// A `wakil-http` that answers `list_apis` only after `delay`.
+private struct SlowHTTP: ToolCaller {
+    let delay: Duration
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        try await Task.sleep(for: delay)
+        return .object(["structuredContent": .object(["apis": .array([])])])
     }
 }
 
@@ -67,12 +77,13 @@ private struct FastPathRefusal: Error, CustomStringConvertible { let description
 /// `settings_open` and `db_page` and a `db_page` that refuses.
 @MainActor
 private func makeFastPathWindow(
-    reply: String, fastPath: Bool = true, delay: Duration = .zero
+    reply: String, fastPath: Bool = true, delay: Duration = .zero, kind: String = "local",
+    paletteClients: PaletteClients = PaletteClients()
 ) async -> (WindowModel, FastPathCalls, CannedQuickModel) {
     let model = CannedQuickModel(reply: reply, delay: delay)
     let window = WindowModel.forTesting(
-        scratchRoot: testScratchRoot, context: ContextStore(client: FastPathBackend(fastPath: fastPath)),
-        quickModelFactory: { _, _ in model })
+        scratchRoot: testScratchRoot, context: ContextStore(client: FastPathBackend(fastPath: fastPath, kind: kind)),
+        quickModelFactory: { _, _ in model }, paletteClients: paletteClients)
     let registry = window.registryForTesting
     func fake(_ name: String, _ schema: JSONValue, _ handler: @escaping @Sendable (JSONValue) async throws -> JSONValue) async {
         await registry.register(Action(name: name, description: "", kind: .control, audience: .operatorOnly,
@@ -184,5 +195,79 @@ private func makeFastPathWindow(
         let schemas = await window.fastPathSchemas()
         #expect(schemas["editor_open"] != nil)
         #expect(schemas.keys.allSatisfy { FastPath.allowed[$0] != nil })
+    }
+
+    @Test func aLineJournalsOnlyItsOwnDispatchAndLeavesTheStatusAlone() async throws {
+        let (window, calls, _) = await makeFastPathWindow(reply: #"{"action":"settings_open","params":{}}"#)
+        window.setStatusForTesting("db_run: connection refused")
+        let before = try await calls.registry.journalEntries().count
+        #expect(await window.runFastPath("open settings") != .toAgent)
+        let added = Array(try await calls.registry.journalEntries().dropFirst(before))
+        #expect(added.map(\.action) == ["settings_open"])
+        #expect(added.first?.via == "fastPath")
+        #expect(window.status == "db_run: connection refused")
+    }
+
+    @Test func aLineForTheAgentJournalsNothing() async throws {
+        let (window, calls, _) = await makeFastPathWindow(reply: #"{"action":"agent","params":{}}"#)
+        window.setStatusForTesting("kept")
+        let before = try await calls.registry.journalEntries().count
+        #expect(await window.runFastPath("why is it slow?") == .toAgent)
+        #expect(try await calls.registry.journalEntries().count == before)
+        #expect(window.status == "kept")
+    }
+
+    @Test func theProjectsComeFromSettingsWithoutARoundTrip() async {
+        let (window, _, _) = await makeFastPathWindow(reply: #"{"action":"agent","params":{}}"#)
+        #expect(await window.fastPathScope(for: "go to shop").projects == ["shop"])
+    }
+
+    @Test func aScopeNotReadyByTheDeadlineSendsTheLineToTheAgent() async {
+        let (window, calls, model) = await makeFastPathWindow(
+            reply: #"{"action":"settings_open","params":{}}"#,
+            paletteClients: PaletteClients(http: SlowHTTP(delay: .seconds(30))))
+        for _ in 0..<40 where await model.respondCalls == 0 { try? await Task.sleep(for: .milliseconds(10)) }
+        let warmed = await model.respondCalls      // the rebuild's warm-up, not a line
+        let started = ContinuousClock.now
+        #expect(await window.runFastPath("open settings") == .toAgent)
+        #expect(ContinuousClock.now - started < .seconds(10), "the 300 ms deadline, loosely: not the 30 s read")
+        #expect(await calls.all().isEmpty)
+        #expect(await model.respondCalls == warmed, "the model is not asked without a scope")
+    }
+
+    @Test func theFilesComeFromTheListingTheWindowHolds() async throws {
+        let (window, _, files) = await editorWindowParts(roots: ["/p"])
+        await window.refreshContext()
+        await files.setListing("/p", ["api/confirm.go"])
+        await window.openPane(kind: "editor")
+        await window.toggleEditorColumn(.files)
+        #expect(window.editorFiles.listings["/p"]?.files == ["api/confirm.go"])
+        func reads() async -> Int { await files.calls.filter { $0.hasPrefix("files_list ") }.count }
+        let before = await reads()
+        #expect(await window.fastPathScope(for: "open confirm.go").files == ["/p/api/confirm.go"])
+        #expect(await reads() == before, "a line makes no files_list round trip")
+    }
+
+    @Test func aLineTypedInAnotherPlaceDispatchesNothing() async {
+        let (window, calls, _) = await makeFastPathWindow(reply: #"{"action":"settings_open","params":{}}"#)
+        let typedIn = window.turnScope
+        window.seedForTesting(providerId: "", rootPath: "/p", thoughts: 0, project: "other", environment: "qa")
+        #expect(await window.runFastPath("open settings", scope: typedIn) == .toAgent)
+        #expect(await calls.all().isEmpty)
+    }
+
+    @Test func aSessionBackedModelIsNotWarmed() async {
+        let (_, _, model) = await makeFastPathWindow(reply: #"{"action":"agent","params":{}}"#, kind: "claude-code")
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(await model.respondCalls == 0)
+    }
+
+    @Test func aReceiptNeverEndsOnAMissingParam() {
+        #expect(WindowModel.fastPathReceiptText(action: "pane_sort", params: .object(["pane": .string("db-1")])) == "Ran: clear the sort")
+        #expect(WindowModel.fastPathReceiptText(action: "pane_sort", params: .object(["pane": .string("db-1"), "column": .string("id")]))
+                == "Ran: sort by id")
+        #expect(WindowModel.fastPathReceiptText(action: "db_page", params: .object(["pane": .string("db-1")])) == "Ran: next page")
+        #expect(WindowModel.fastPathReceiptText(action: "db_page", params: .object(["pane": .string("db-1"), "to": .string("3")]))
+                == "Ran: page 3")
     }
 }

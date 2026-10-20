@@ -46,12 +46,14 @@ extension WindowModel {
         quickTasks = QuickTasks(config: config) { record in try await factory(record, org) }
         ghostTextEnabled = tree.org.ghostText
         fastPathEnabled = tree.org.fastPath
-        if fastPathEnabled, let tasks = quickTasks {
+        // Only a local server has a prompt cache to fill; a session-backed model would spend a turn.
+        if fastPathEnabled, let tasks = quickTasks, await tasks.routedKind(.respond) == "local" {
             let schemas = await fastPathSchemas()
+            guard mine == quickTasksGeneration else { return }
             let warm = RespondRequest(instructions: FastPath.instructions(actions: schemas),
                                       input: FastPath.input("open settings", scope: FastPathScope()),
                                       jsonSchema: FastPath.replySchema, maxTokens: 8)
-            Task { _ = try? await tasks.respond(warm) }   // fills the server's prompt cache; the reply is not used
+            Task { _ = try? await tasks.respond(warm, fallback: false) }   // the reply is not used
         }
     }
 

@@ -1463,7 +1463,8 @@ public final class WindowModel {
         placeClients: PlaceClients? = nil,
         persistence: LayoutPersistence? = nil,
         agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() },
-        quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil
+        quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil,
+        paletteClients: PaletteClients = PaletteClients()
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1540,7 +1541,7 @@ public final class WindowModel {
             editorRootWatcher: nil,
             fileLists: nil,
             gitStatus: nil,
-            paletteClients: PaletteClients(),
+            paletteClients: paletteClients,
             placeClients: placeClients,
             agentSocketFactory: agentSocketFactory,
             quickModelFactory: quickModelFactory)
@@ -1660,6 +1661,9 @@ public final class WindowModel {
     func seedEnvironmentProductionForTesting(_ production: EnvironmentProduction) {
         environmentProduction = production
     }
+
+    /// Puts `text` on the status line, for a test asserting something leaves it alone.
+    func setStatusForTesting(_ text: String) { status = text }
 
     func seedForTesting(
         providerId: String, rootPath: String, thoughts: Int,

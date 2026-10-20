@@ -261,7 +261,7 @@ private func makeComposerWithFastPath(outcome: FastPathOutcome) -> (composer: Co
     let window = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { _, _ in harness })
     window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
     let speech = SpeechRegistry(engines: [])
-    return (ComposerModel(window: window, speech: speech, fastPathRunner: { _ in outcome }), harness)
+    return (ComposerModel(window: window, speech: speech, fastPathRunner: { _, _ in outcome }), harness)
 }
 
 @MainActor
@@ -339,7 +339,7 @@ private final class HarnessesByPlace: @unchecked Sendable {
     window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
     window.seedForTesting(providerId: "main", rootPath: "/a", thoughts: 0, project: "a", environment: "qa")
     let placeA = window.place
-    let composer = ComposerModel(window: window, speech: SpeechRegistry(engines: []), fastPathRunner: { _ in
+    let composer = ComposerModel(window: window, speech: SpeechRegistry(engines: []), fastPathRunner: { _, _ in
         try? await Task.sleep(for: .milliseconds(60))
         return .toAgent
     })
@@ -351,4 +351,37 @@ private final class HarnessesByPlace: @unchecked Sendable {
     await submitting.value
     #expect(harnesses.sent(in: placeA) == ["why is it slow?"])
     #expect(harnesses.sent(in: window.place).isEmpty)
+}
+
+@MainActor
+@Test func askTheAgentInsteadSendsAVoiceLineToThePlaceItWasSpokenIn() async throws {
+    let harnesses = HarnessesByPlace()
+    let window = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { place, _ in harnesses.harness(for: place) })
+    window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
+    window.seedForTesting(providerId: "main", rootPath: "/a", thoughts: 0, project: "a", environment: "qa")
+    let placeA = window.place
+    let clock = Clock()
+    let speech = SpeechRegistry(engines: [SpeechEngine(id: "apple", name: "Apple", make: {
+        RecordingProvider(steps: [.init(after: 0, event: .partial(settled: "close confirm.go", volatile: ""))])
+    })])
+    var runnerScope: WindowModel.TurnScope?
+    let composer = ComposerModel(window: window, speech: speech, now: { clock.t }, fastPathRunner: { line, scope in
+        runnerScope = scope
+        return .refused(FastPathReceipt(line: line, text: "editor_close: unsaved changes", refused: true))
+    })
+    composer.optionDown(); clock.t = 0.2; composer.tick()
+    await settle(until: { !composer.machine.settled.isEmpty })
+    clock.t = 1; composer.optionUp()
+    await settle(until: { composer.machine.phase == .idle })
+    #expect(composer.landedUnsent)
+    await composer.submit()
+    #expect(runnerScope?.place == placeA, "the runner is handed the place the line was typed in")
+    #expect(composer.receipt?.refused == true)
+    window.seedForTesting(providerId: "main", rootPath: "/b", thoughts: 0, project: "b", environment: "qa")
+    #expect(window.place != placeA)
+    await composer.askAgentInstead()
+    #expect(harnesses.sent(in: placeA) == ["close confirm.go"])
+    #expect(harnesses.sent(in: window.place).isEmpty)
+    let entries = try await window.registryForTesting.journalEntries()
+    #expect(entries.contains { $0.action == "voice_turn" }, "the re-send keeps the line's voice provenance")
 }
