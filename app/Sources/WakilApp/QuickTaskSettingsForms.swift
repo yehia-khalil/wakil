@@ -20,12 +20,8 @@ struct LocalProvidersSection: View {
     private var local: [SettingsProvider] { providers.filter { $0.kind == "local" } }
 
     var body: some View {
+        // Headed by the page's LOCAL MODELS section (`SettingsSection`), not by itself.
         VStack(alignment: .leading, spacing: 0) {
-            Text("LOCAL MODELS")
-                .font(.system(size: SettingsScale.micro, weight: .medium))
-                .tracking(SettingsScale.microTracking)
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.32))
-                .padding(.bottom, 4)
             ForEach(local, id: \.id) { provider in
                 LocalProviderRow(
                     id: provider.id, label: provider.label, baseURL: provider.baseURL,
@@ -47,7 +43,6 @@ struct LocalProvidersSection: View {
                 .padding(.top, 10)
                 .accessibilityIdentifier("settings.localProvider.add")
         }
-        .padding(.top, 14)
     }
 
     /// `local`, else `local-2`, `local-3`, … the first no provider uses.
@@ -92,7 +87,7 @@ private struct LocalProviderRow: View {
                 .font(.system(size: SettingsScale.body, weight: .medium))
                 .foregroundStyle(coolWhite.opacity(isNew ? 0.45 : 0.86))
                 .lineLimit(1)
-                .frame(width: 120, alignment: .leading)
+                .frame(width: SettingsScale.labelWidth, alignment: .leading)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 14) {
                     urlField

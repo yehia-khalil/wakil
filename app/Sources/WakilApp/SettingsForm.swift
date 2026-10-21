@@ -17,6 +17,8 @@ import SwiftUI
 // | `Chip`           | `.chip`: uppercase, tracked, on a tint, with no border            |
 // | `FormButton`     | the confirmation's filled button (**Store it**)                   |
 // | `FormHint`       | the artboard's `.note`: one plain sentence under a setting saying what it does |
+// | `SettingsSection`| the QUICK TASKS header: a hairline above, the micro label, 12pt rhythm (2026-10-21) |
+// | `SettingsRow`    | the QUICK TASKS rows: label left at a fixed width, the value right, one line |
 //
 // design-language.md §2: *"Panels are slabs … defined by drop shadow and a
 // half-pixel luminous edge rather than a border. No panel has a visible
@@ -41,6 +43,10 @@ enum SettingsScale {
     static let rowHeight: CGFloat = 44
     static let gutter: CGFloat = 22
     static let columnGap: CGFloat = 20
+    /// A page row's label column (`SettingsRow`), as the QUICK TASKS rows first drew it.
+    static let labelWidth: CGFloat = 120
+    /// The rhythm between a page's sections, and from a section's hairline to its header.
+    static let sectionGap: CGFloat = 12
 }
 
 /// §5's colours, as the settings pane uses them. Text is cool white stepped
@@ -260,5 +266,125 @@ struct FormButton: View {
                             .stroke(tone.opacity(filled ? 0.38 : 0.20), lineWidth: 0.5)))
             .contentShape(Rectangle())
             .accessibilityIdentifier(identifier)
+    }
+}
+
+// MARK: - The sectioned page (2026-10-21)
+
+/// One headed group on a settings page: a hairline above it, its micro header, and its rows.
+///
+/// **A page with more than one group is drawn as these, one after another** — the operator found
+/// the pages bland with nothing separating one group from the next. The header is QUICK TASKS'
+/// style, which every section now shares; `accessory` sits beside it (QUICK TASKS' ⓘ).
+struct SettingsSection<Accessory: View, Content: View>: View {
+    let title: String
+    let accessory: Accessory
+    let content: Content
+
+    init(_ title: String, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.accessory = accessory()
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle().fill(SettingsPalette.coolWhite.opacity(0.10)).frame(height: 0.5)
+                .accessibilityHidden(true)
+            HStack(alignment: .center, spacing: 6) {
+                Text(title.uppercased())
+                    .font(.system(size: SettingsScale.micro, weight: .medium))
+                    .tracking(SettingsScale.microTracking)
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.32))
+                accessory
+            }
+            .padding(.top, SettingsScale.sectionGap)
+            .padding(.bottom, 4)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, SettingsScale.sectionGap - 10)
+    }
+}
+
+extension SettingsSection where Accessory == EmptyView {
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.init(title, accessory: { EmptyView() }, content: content)
+    }
+}
+
+/// One setting on one line: its label left at `labelWidth`, its value right, a faint hairline
+/// under it — the QUICK TASKS rows' shape, which every sectioned page uses.
+struct SettingsRow<Value: View>: View {
+    let label: String
+    let value: Value
+
+    init(_ label: String, @ViewBuilder value: () -> Value) {
+        self.label = label
+        self.value = value()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: SettingsScale.columnGap) {
+            Text(label)
+                .font(.system(size: SettingsScale.body, weight: .medium))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
+                .lineLimit(1)
+                .frame(width: SettingsScale.labelWidth, alignment: .leading)
+            value
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: SettingsScale.rowHeight, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(SettingsPalette.coolWhite.opacity(0.06)).frame(height: 0.5)
+        }
+    }
+}
+
+/// A read value in a row: monospace for identifiers (§6), `—` for an empty one.
+struct SettingsValue: View {
+    let text: String
+    var monospaced: Bool = true
+
+    var body: some View {
+        Text(text.isEmpty ? "—" : text)
+            .font(.system(size: monospaced ? SettingsScale.identifier : SettingsScale.body,
+                          design: monospaced ? .monospaced : .default))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(text.isEmpty ? 0.30 : 0.85))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+    }
+}
+
+extension View {
+    /// Under a row, in its value column: a refusal, a hint, a note about that one setting.
+    func underRowValue() -> some View {
+        padding(.leading, SettingsScale.labelWidth + SettingsScale.columnGap)
+    }
+
+    /// A field edited where it stands: plain text until hovered or focused, when the box shows —
+    /// the local model URL's treatment, so a row of values does not read as a row of inputs.
+    func inPlaceField(focused: Bool) -> some View {
+        modifier(InPlaceField(focused: focused))
+    }
+}
+
+private struct InPlaceField: ViewModifier {
+    let focused: Bool
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(SettingsPalette.coolWhite.opacity(focused || hovering ? 0.05 : 0))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(SettingsPalette.coolWhite.opacity(focused ? 0.18 : hovering ? 0.10 : 0),
+                                    lineWidth: 0.5)))
+            .padding(.horizontal, -6)
+            .onHover { hovering = $0 }
     }
 }

@@ -590,50 +590,57 @@ struct SettingsPane: View {
     private func subject(of tree: SettingsTree) -> some View {
         switch selection {
         case .organisation:
-            // The id is the directory name, so there is one place it can
-            // be written and no way for the two to disagree. Not a
-            // setting, and drawn as the fact it is.
-            fields([("Id", tree.org.id, true)])
-            ForEach(WindowModel.OrganisationField.allCases.filter { $0 != .speechProvider && $0 != .quickProvider && $0 != .gitName && $0 != .gitEmail }, id: \.self) { field in
-                organisationEditor(field, in: tree)
+            // Four headed sections (2026-10-21), each a hairline, a micro header and its rows.
+            SettingsSection("Identity") {
+                // The id is the directory name, so there is one place it can
+                // be written and no way for the two to disagree. Not a
+                // setting, and drawn as the fact it is.
+                SettingsRow("ID") { SettingsValue(text: tree.org.id) }
+                organisationEditor(.displayName, label: "Display name", in: tree)
             }
-            speechRow(tree: tree)
-            // 3a-ii: who commits from the Changes view. Drawn as QUICK TASKS' header is.
-            VStack(alignment: .leading, spacing: 8) {
-                Text("GIT")
-                    .font(.system(size: Scale.micro, weight: .medium))
-                    .tracking(Scale.microTracking)
-                    .foregroundStyle(coolWhite.opacity(0.32))
-                organisationEditor(.gitName, in: tree)
-                organisationEditor(.gitEmail, in: tree)
+            SettingsSection("Accounts") {
+                organisationEditor(.defaultProvider, label: "Default", in: tree)
+                speechRow(tree: tree)
             }
-            .padding(.top, 14)
+            SettingsSection("Jira") {
+                organisationEditor(.jiraBase, label: "Site", in: tree)
+            }
+            // 3a-ii: who commits from the Changes view.
+            SettingsSection("Git") {
+                organisationEditor(.gitName, label: "Name", in: tree)
+                organisationEditor(.gitEmail, label: "Email", in: tree)
+                FormHint("Used for every commit from Wakil; empty uses git config.")
+                    .underRowValue()
+                    .padding(.top, 6)
+            }
             readOnlyNote(
                 "Saved one field at a time, read-modify-write from disk — so an edit you make "
                     + "to org.json by hand while this pane is open survives a save here.")
 
         case .providers:
-            accountTable()
-            // Above the local models it chooses between, so the choice and what it chooses from
-            // are read together; the organisation node does not repeat it.
-            // Accounts above, the models quick tasks run on below.
-            Rectangle().fill(coolWhite.opacity(0.10)).frame(height: 0.5)
-                .padding(.top, 18)
-                .accessibilityHidden(true)
-            quickTasksRow(tree: tree)
-                .padding(.top, 14)
-            LocalProvidersSection(
-                providers: tree.providers, status: quickStatus,
-                save: { id, label, url in
-                    let refusal = await saveLocalProvider(id, label, url)
-                    quickStatus = await quickTaskStatus()
-                    return refusal
-                },
-                remove: { id in
-                    let refusal = await removeLocalProvider(id)
-                    quickStatus = await quickTaskStatus()
-                    return refusal
-                })
+            // Three headed sections (2026-10-21): the accounts, the local models, and the choice
+            // quick tasks make between them — after both, so what it chooses from is read first.
+            SettingsSection("Accounts") {
+                // The subject column's own spacing, which the table's notes and rows were drawn in.
+                VStack(alignment: .leading, spacing: 10) { accountTable() }
+            }
+            SettingsSection("Local models") {
+                LocalProvidersSection(
+                    providers: tree.providers, status: quickStatus,
+                    save: { id, label, url in
+                        let refusal = await saveLocalProvider(id, label, url)
+                        quickStatus = await quickTaskStatus()
+                        return refusal
+                    },
+                    remove: { id in
+                        let refusal = await removeLocalProvider(id)
+                        quickStatus = await quickTaskStatus()
+                        return refusal
+                    })
+            }
+            SettingsSection("Quick tasks", accessory: { QuickTasksAboutButton() }) {
+                quickTasksRow(tree: tree)
+            }
         case .editor:
             EditorAppSettingsForm(editor: tree.editor, error: tree.editorError, save: saveEditorSettings)
         case .projectEditor(let name):
@@ -778,65 +785,65 @@ struct SettingsPane: View {
     /// belongs under the Jira site.
     @ViewBuilder
     private func organisationEditor(
-        _ field: WindowModel.OrganisationField, in tree: SettingsTree
+        _ field: WindowModel.OrganisationField, label: String, in tree: SettingsTree
     ) -> some View {
         let stored = storedValue(field, in: tree)
         let draft = drafts[field]
         VStack(alignment: .leading, spacing: 2) {
-            Text(field.label.uppercased())
-                .font(.system(size: Scale.micro, weight: .medium))
-                .tracking(Scale.microTracking)
-                .foregroundStyle(coolWhite.opacity(0.32))
-            HStack(spacing: 8) {
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { draft ?? stored },
-                        set: { drafts[field] = $0 }))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.88))
-                    .onSubmit { save(field, tree: tree) }
-                    .focused($focusedOrgField, equals: field)
-                    // 3a-ii, Rule 2: Git name and email save when the field is left, through Save's
-                    // path. A Return that saved already cleared the draft (or is still saving), so
-                    // leaving after it writes nothing twice. The other fields keep Return / Save.
-                    .onChange(of: focusedOrgField) { old, _ in
-                        guard old == field, field == .gitName || field == .gitEmail,
-                              let d = drafts[field], d != storedValue(field, in: tree), saving != field else { return }
-                        save(field, tree: tree)
+            SettingsRow(label) {
+                HStack(spacing: 8) {
+                    // Empty, it reads `—` until it is typed in; the field is there all along, so a
+                    // click edits it where it stands.
+                    TextField(
+                        "",
+                        text: Binding(
+                            get: { draft ?? stored },
+                            set: { drafts[field] = $0 }),
+                        prompt: Text("—").foregroundStyle(coolWhite.opacity(0.30)))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: Scale.body))
+                        .foregroundStyle(coolWhite.opacity(0.88))
+                        .frame(maxWidth: 320)
+                        .inPlaceField(focused: focusedOrgField == field)
+                        .onSubmit { save(field, tree: tree) }
+                        .focused($focusedOrgField, equals: field)
+                        // 3a-ii, Rule 2: Git name and email save when the field is left, through Save's
+                        // path. A Return that saved already cleared the draft (or is still saving), so
+                        // leaving after it writes nothing twice. The other fields keep Return / Save.
+                        .onChange(of: focusedOrgField) { old, _ in
+                            guard old == field, field == .gitName || field == .gitEmail,
+                                  let d = drafts[field], d != storedValue(field, in: tree), saving != field else { return }
+                            save(field, tree: tree)
+                        }
+                        .accessibilityIdentifier("settings.org.\(field.identifierFragment)")
+                    if draft != nil, draft != stored {
+                        Button(saving == field ? "Saving…" : "Save") { save(field, tree: tree) }
+                            .buttonStyle(.plain)
+                            .font(.system(size: Scale.body))
+                            .foregroundStyle(coolWhite.opacity(saving == field ? 0.35 : 0.70))
+                            .disabled(saving == field)
+                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).save")
+                        // Revert is the escape from a typed value the
+                        // operator has changed their mind about. It clears
+                        // the draft rather than writing anything, so the
+                        // field goes back to showing disk.
+                        Button("Revert") { drafts[field] = nil; refusals[field] = nil }
+                            .buttonStyle(.plain)
+                            .font(.system(size: Scale.body))
+                            .foregroundStyle(coolWhite.opacity(0.40))
+                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).revert")
                     }
-                    .accessibilityIdentifier("settings.org.\(field.identifierFragment)")
-                if draft != nil, draft != stored {
-                    Button(saving == field ? "Saving…" : "Save") { save(field, tree: tree) }
-                        .buttonStyle(.plain)
-                        .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(saving == field ? 0.35 : 0.70))
-                        .disabled(saving == field)
-                        .accessibilityIdentifier("settings.org.\(field.identifierFragment).save")
-                    // Revert is the escape from a typed value the
-                    // operator has changed their mind about. It clears
-                    // the draft rather than writing anything, so the
-                    // field goes back to showing disk.
-                    Button("Revert") { drafts[field] = nil; refusals[field] = nil }
-                        .buttonStyle(.plain)
-                        .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.40))
-                        .accessibilityIdentifier("settings.org.\(field.identifierFragment).revert")
                 }
-            }
-            .padding(.vertical, 3)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(coolWhite.opacity(0.12)).frame(height: 0.5)
             }
             if let refusal = refusals[field] {
                 Text(refusal)
                     .font(.system(size: Scale.body))
                     .foregroundStyle(caution)
                     .fixedSize(horizontal: false, vertical: true)
+                    .underRowValue()
+                    .padding(.vertical, 4)
             }
         }
-        .padding(.bottom, 4)
     }
 
     /// 2d-ii: the organisation's speech engine (Invariant 11). One segment
@@ -850,41 +857,42 @@ struct SettingsPane: View {
         let known = engines.first(where: { $0.id == current })
         func idFor(_ name: String) -> String { engines.first(where: { $0.name == name })?.id ?? name }
         return VStack(alignment: .leading, spacing: 2) {
-            Text("SPEECH")
-                .font(.system(size: Scale.micro, weight: .medium))
-                .tracking(Scale.microTracking)
-                .foregroundStyle(coolWhite.opacity(0.32))
-            SegmentedChoice(
-                options: engines.map(\.name),
-                selection: Binding(
-                    get: { known?.name ?? current },
-                    set: { name in
+            SettingsRow("Speech") {
+                SegmentedChoice(
+                    options: engines.map(\.name),
+                    selection: Binding(
+                        get: { known?.name ?? current },
+                        set: { name in
+                            let id = idFor(name)
+                            guard id != current else { return }
+                            drafts[.speechProvider] = id
+                            save(.speechProvider, tree: tree)
+                        }),
+                    // Hoisted: the identifier harvest reads `\(…)` up to the first
+                    // `)`, so a call inside the literal harvested as
+                    // `settings.org.speechProvider.<…>)` — a family no check could
+                    // ever name, and so a control the coverage gate could never see
+                    // covered.
+                    identifier: { name in
                         let id = idFor(name)
-                        guard id != current else { return }
-                        drafts[.speechProvider] = id
-                        save(.speechProvider, tree: tree)
-                    }),
-                // Hoisted: the identifier harvest reads `\(…)` up to the first
-                // `)`, so a call inside the literal harvested as
-                // `settings.org.speechProvider.<…>)` — a family no check could
-                // ever name, and so a control the coverage gate could never see
-                // covered.
-                identifier: { name in
-                    let id = idFor(name)
-                    return "settings.org.speechProvider.\(id)"
-                },
-                held: known == nil ? current : nil)
+                        return "settings.org.speechProvider.\(id)"
+                    },
+                    held: known == nil ? current : nil)
+            }
             if let note = registry.note(for: stored) {
                 Text(note)
                     .font(.system(size: Scale.body))
                     .foregroundStyle(caution)
+                    .underRowValue()
+                    .padding(.vertical, 4)
                     .accessibilityIdentifier("settings.org.speechProvider.note")
             }
             if let refusal = refusals[.speechProvider] {
                 Text(refusal).font(.system(size: Scale.body)).foregroundStyle(caution)
+                    .underRowValue()
+                    .padding(.vertical, 4)
             }
         }
-        .padding(.bottom, 4)
     }
 
     /// 3b-viii: the provider quick tasks run on, as a dropdown. One item per provider that serves
@@ -896,14 +904,8 @@ struct SettingsPane: View {
         let known = options.first(where: { $0.id == stored })
         let localIds = Set(tree.providers.filter { $0.kind == "local" }.map(\.id))
         func isLocal(_ id: String) -> Bool { localIds.contains(id) }
+        // Under its section's header (`SettingsSection`), which carries the ⓘ.
         return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 6) {
-                Text("QUICK TASKS")
-                    .font(.system(size: Scale.micro, weight: .medium))
-                    .tracking(Scale.microTracking)
-                    .foregroundStyle(coolWhite.opacity(0.32))
-                QuickTasksAboutButton()
-            }
             // One table row, as the local models under it are drawn: the choice as plain text with
             // a chevron (the system's menu chrome would be the only bezel on the page), and where
             // code completion goes beside it.
@@ -911,7 +913,7 @@ struct SettingsPane: View {
                 Text("Model")
                     .font(.system(size: Scale.body, weight: .medium))
                     .foregroundStyle(coolWhite.opacity(0.86))
-                    .frame(width: 120, alignment: .leading)
+                    .frame(width: Scale.labelWidth, alignment: .leading)
                 // Same as agent, then the accounts, then the local models, each group headed.
                 Menu {
                     quickTaskItems(options.filter { $0.id.isEmpty }, stored: stored, tree: tree)
@@ -1000,7 +1002,7 @@ struct SettingsPane: View {
                 Text(label)
                     .font(.system(size: Scale.body, weight: .medium))
                     .foregroundStyle(coolWhite.opacity(0.86))
-                    .frame(width: 120, alignment: .leading)
+                    .frame(width: Scale.labelWidth, alignment: .leading)
                 SegmentedChoice(
                     options: ["Off", "On"],
                     selection: Binding(
@@ -2184,6 +2186,8 @@ struct SettingsPane: View {
         note("\(name) is no longer in this organisation's configuration.", tone: caution)
     }
 
+    /// Read values as page rows: the label left, the value right, `—` for an empty one. The
+    /// third element says whether the value is an identifier, drawn monospace (§6).
     private func fields(_ rows: [(String, String, Bool)]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(rows, id: \.0) { row in
