@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -151,19 +152,112 @@ func TestDiffWithAnEscapingPathIsAToolError(t *testing.T) {
 	}
 }
 
-func TestToolListIsExactlyTheThreeReads(t *testing.T) {
+func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
 	cs := connectedClient(t)
-	tools, err := cs.ListTools(context.Background(), nil)
+	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var names []string
-	for _, tl := range tools.Tools {
-		names = append(names, tl.Name)
+	for _, tool := range res.Tools {
+		names = append(names, tool.Name)
 	}
-	slices.Sort(names)
-	if !slices.Equal(names, []string{"git_diff", "git_show", "git_status"}) {
-		t.Fatalf("%v", names)
+	sort.Strings(names)
+	want := []string{"git_amend", "git_blob", "git_commit", "git_diff", "git_discard", "git_identity",
+		"git_show", "git_stage", "git_stage_hunk", "git_status", "git_undo_commit", "git_unstage"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("tools %v", names)
+	}
+}
+
+func TestCommitThroughTheToolUsesTheOrganisationsIdentity(t *testing.T) {
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	name, email := "Org Person", "org@example.test"
+	if err := wakilcore.UpdateOrg("initech", wakilcore.OrgPatch{GitName: &name, GitEmail: &email}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, "seed.txt"), []byte("changed\n"), 0o644)
+	cs := connectedClient(t)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_commit",
+		Arguments: map[string]any{"root": root, "message": "via tool", "all": true}})
+	if err != nil || res.IsError {
+		t.Fatalf("%v %+v", err, res)
+	}
+	out, _ := exec.Command("git", "-C", root, "log", "-1", "--format=%ae|%s").Output()
+	if strings.TrimSpace(string(out)) != "org@example.test|via tool" {
+		t.Fatalf("log %q", out)
+	}
+	id, _ := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_identity",
+		Arguments: map[string]any{"root": root}})
+	if !strings.Contains(fmt.Sprint(id.StructuredContent), "organisation") {
+		t.Fatalf("identity %+v", id.StructuredContent)
+	}
+}
+
+func TestIdentityFallsBackToGitConfig(t *testing.T) {
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	exec.Command("git", "-C", root, "config", "user.name", "Cfg Person").Run()
+	exec.Command("git", "-C", root, "config", "user.email", "cfg@example.test").Run()
+	cs := connectedClient(t)
+	id, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_identity",
+		Arguments: map[string]any{"root": root}})
+	if err != nil || id.IsError {
+		t.Fatalf("%v %+v", err, id)
+	}
+	got := fmt.Sprint(id.StructuredContent)
+	if !strings.Contains(got, "cfg@example.test") || !strings.Contains(got, "git config") {
+		t.Fatalf("identity %s", got)
+	}
+}
+
+func TestBlobNamesTheIndexEntry(t *testing.T) {
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	want, _ := exec.Command("git", "-C", root, "rev-parse", ":seed.txt").Output()
+	cs := connectedClient(t)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_blob",
+		Arguments: map[string]any{"root": root, "path": "seed.txt"}})
+	if err != nil || res.IsError {
+		t.Fatalf("%v %+v", err, res)
+	}
+	if !strings.Contains(fmt.Sprint(res.StructuredContent), strings.TrimSpace(string(want))) {
+		t.Fatalf("blob %+v want %s", res.StructuredContent, want)
+	}
+}
+
+func TestStageThenUndoThroughTheTools(t *testing.T) {
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	os.WriteFile(filepath.Join(root, "seed.txt"), []byte("changed\n"), 0o644)
+	cs := connectedClient(t)
+	call := func(name string, args map[string]any) {
+		t.Helper()
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil || res.IsError {
+			t.Fatalf("%s: %v %+v", name, err, res)
+		}
+	}
+	call("git_stage", map[string]any{"root": root, "paths": []string{"seed.txt"}})
+	out, _ := exec.Command("git", "-C", root, "diff", "--cached", "--name-only").Output()
+	if strings.TrimSpace(string(out)) != "seed.txt" {
+		t.Fatalf("staged %q", out)
+	}
+	call("git_unstage", map[string]any{"root": root, "paths": []string{"seed.txt"}})
+	out, _ = exec.Command("git", "-C", root, "diff", "--cached", "--name-only").Output()
+	if strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("still staged %q", out)
+	}
+}
+
+func TestAWriteOutsideTheProjectIsRefused(t *testing.T) {
+	setupProject(t, `"local":{}`, "local")
+	cs := connectedClient(t)
+	res, _ := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_stage",
+		Arguments: map[string]any{"root": t.TempDir(), "paths": []string{"a"}}})
+	if !res.IsError {
+		t.Fatal("staged in a root outside the project")
 	}
 }
 
