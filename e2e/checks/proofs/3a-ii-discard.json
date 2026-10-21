@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-ii-discard.jsonl",
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T15:55:11.978177Z",
+  "checkBlob": "b10861a3ee279623ec04a1033306dd76a8fb6b14"
+}
