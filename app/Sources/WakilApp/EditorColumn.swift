@@ -381,6 +381,10 @@ struct EditorColumn: View {
         static let row: CGFloat = 22
     }
 
+    /// Dimmed read text — a branch, a folder, a count, the placeholder: §3's 0.55, which clears the
+    /// 4.5:1 floor on the slab and on the lifted box (0.46 does on neither). Chevrons keep 0.46.
+    private static let dimmed = RailTreatment.kindOpacity
+
     /// Whether the operator closed this group (3a-ii): the pane's column, through an action.
     private func groupOpen(_ root: String, _ group: GitGroup) -> Bool {
         !column.changesClosedGroups.contains(EditorChangesGroup(root: root, group: group.rawValue))
@@ -394,7 +398,7 @@ struct EditorColumn: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if gitRoots.isEmpty || shown.isEmpty {
                         Text(gitRoots.isEmpty ? "No project roots to read" : "No git repositories in this project")
-                            .font(.system(size: 12)).foregroundStyle(EditorPaneStyle.text.opacity(0.46))
+                            .font(.system(size: 12)).foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
                             .padding(.horizontal, ChangesSpace.m)
                     }
                     ForEach(Array(shown.enumerated()), id: \.element.root) { i, root in
@@ -461,7 +465,7 @@ struct EditorColumn: View {
             HStack(spacing: ChangesSpace.s) {
                 if root.loading { EditorBusyTick(label: "loading", identifier: "editor.changes.loading") }
                 (Text(root.name).foregroundStyle(EditorPaneStyle.text.opacity(0.86))
-                    + Text(detail.isEmpty ? "" : "  " + detail).foregroundStyle(EditorPaneStyle.text.opacity(0.46)))
+                    + Text(detail.isEmpty ? "" : "  " + detail).foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed)))
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: ChangesSpace.m)
@@ -564,7 +568,7 @@ struct EditorColumn: View {
             (Text(gitRowName(row)).foregroundStyle(EditorPaneStyle.text.opacity(0.9))
                 + Text(folder.isEmpty ? "" : "  " + folder)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(EditorPaneStyle.text.opacity(0.46)))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed)))
                 .font(.system(size: 12, design: .monospaced))
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: ChangesSpace.s)
@@ -605,7 +609,7 @@ struct EditorColumn: View {
                 Text(gitGroupLabel(group))
                     .foregroundStyle(EditorPaneStyle.text.opacity(0.62))
                 Text("\(count)")
-                    .foregroundStyle(EditorPaneStyle.text.opacity(0.46))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
                 Spacer(minLength: ChangesSpace.m)
             }
             .contentShape(Rectangle())
@@ -715,7 +719,7 @@ struct EditorColumn: View {
                     // Read by the tree as the box's hint: who a commit here is authored as.
                     Text(changes.placeholders[key] ?? "Message (⌘⏎ to commit)")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(EditorPaneStyle.text.opacity(0.46))
+                        .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
                         .fixedSize(horizontal: false, vertical: true)
                         // Onto the editor's first line, where its caret stands.
                         .padding(.leading, 5)

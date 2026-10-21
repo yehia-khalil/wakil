@@ -1109,13 +1109,13 @@ struct EditorBusyTick: View {
 
 enum EditorPaneStyle {
     static let text = Color(RailTreatment.textColour)
-    static let slab = Color(red: 0x0b / 255, green: 0x0d / 255, blue: 0x14 / 255)
+    static let slab = Color(EditorSurface.slab)
     /// The artboard's active-tab tick, `#9e82ff`.
     static let tick = Color(red: 0x9e / 255, green: 0x82 / 255, blue: 0xff / 255)
     static let amber = Color(TerminalPalette.amber)
     /// §5's violet `#7c5cff`: the column's selected row and a search switch that is on.
     static let violet = Color(VoidPalette.violet)
-    static let lifted = Color(red: 0x1c / 255, green: 0x20 / 255, blue: 0x30 / 255)
+    static let lifted = Color(EditorSurface.lifted)
 
     /// §5: amber for a change, green for an addition, a deletion muted — never red (3a-i's tones).
     static func tone(_ t: GitStatusTone) -> Color {
