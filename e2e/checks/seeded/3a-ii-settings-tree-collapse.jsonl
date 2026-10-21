@@ -1,0 +1,32 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"expect":{"tree":"contains","text":"projects open"}}
+{"expect":{"tree":"contains","text":"project.e2e-project open"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.staging open"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.qa closed"}}
+{"expect":{"tree":"contains","text":"project.e2e-git closed"}}
+{"expect":{"frame":"settings.tree.databases.e2e-project.staging","minWidth":1}}
+{"do":{"click":"settings.tree.environment.e2e-project.qa.disclosure"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.qa open"}}
+{"do":{"click":"settings.tree.databases.e2e-project.qa"}}
+{"expect":{"tree":"contains","text":"qa  ›  Databases"}}
+{"do":{"click":"settings.tree.environment.e2e-project.staging.disclosure"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.staging closed"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.qa open"}}
+{"expect":{"tree":"contains","text":"qa  ›  Databases"}}
+{"do":{"click":"settings.tree.project.e2e-git.disclosure"}}
+{"expect":{"tree":"contains","text":"project.e2e-git open"}}
+{"expect":{"frame":"settings.tree.projectEditor.e2e-git","minWidth":1}}
+{"do":{"click":"settings.tree.environment.e2e-project.qa"}}
+{"expect":{"tree":"contains","text":"An environment holds the databases"}}
+{"do":{"press":"Left"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.qa closed"}}
+{"do":{"press":"Right"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.qa open"}}
+{"do":{"click":"settings.tree.projectsHeading"}}
+{"expect":{"tree":"contains","text":"projects closed"}}
+{"expect":{"tree":"absent","text":"+ Add a project"}}
+{"do":{"click":"settings.tree.projectsHeading"}}
+{"expect":{"tree":"contains","text":"projects open"}}
+{"expect":{"tree":"contains","text":"project.e2e-git open"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.staging closed"}}

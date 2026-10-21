@@ -1,6 +1,6 @@
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.projectEditor.e2e-project"}}
-{"expect":{"tree":"contains","text":"TAB SIZE"}}
+{"expect":{"tree":"contains","text":"Tab size"}}
 {"do":{"focus":"settings.projectEditor.tabSize"}}
 {"do":{"hotkey":"cmd+a"}}
 {"do":{"keys":"2"}}

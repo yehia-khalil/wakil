@@ -1,9 +1,10 @@
 {"do":{"hotkey":"cmd+,"}}
 {"expect":{"tree":"contains","text":"SETTINGS"}}
 {"do":{"click":"settings.tree.editor"}}
-{"expect":{"tree":"contains","text":"FONT SIZE"}}
-{"expect":{"tree":"contains","text":"WORD WRAP"}}
-{"expect":{"tree":"contains","text":"AUTOSAVE"}}
+{"expect":{"tree":"contains","text":"EDITING"}}
+{"expect":{"tree":"contains","text":"Font size"}}
+{"expect":{"tree":"contains","text":"Word wrap"}}
+{"expect":{"tree":"contains","text":"Autosave"}}
 {"expect":{"tree":"contains","text":"stored in ~/.wakil/settings.json"}}
 {"dispatch":{"action":"ctx_editor_settings","params":{}}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.fontSize","equals":"12"}}

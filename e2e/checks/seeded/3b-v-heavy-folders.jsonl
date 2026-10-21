@@ -36,7 +36,7 @@
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[1]","equals":"vendor"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].editor.heavyFolders[0]","equals":"node_modules"}}
 {"do":{"click":"settings.tree.editor"}}
-{"expect":{"tree":"contains","text":"SHOW IGNORED FILES"}}
+{"expect":{"tree":"contains","text":"Show ignored files"}}
 {"expect":{"tree":"contains","text":"text vendor"}}
 {"expect":{"tree":"absent","text":"autoload.php"}}
 {"do":{"click":"editor.tree.row:e2e-api/vendor"}}

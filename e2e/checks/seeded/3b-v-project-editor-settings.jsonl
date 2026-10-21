@@ -1,8 +1,9 @@
 {"do":{"hotkey":"cmd+,"}}
 {"expect":{"tree":"contains","text":"SETTINGS"}}
 {"do":{"click":"settings.tree.projectEditor.e2e-project"}}
-{"expect":{"tree":"contains","text":"TAB SIZE"}}
-{"expect":{"tree":"contains","text":"INDENT WITH"}}
+{"expect":{"tree":"contains","text":"INDENTATION"}}
+{"expect":{"tree":"contains","text":"Tab size"}}
+{"expect":{"tree":"contains","text":"Indent with"}}
 {"expect":{"tree":"contains","text":"so they travel with the code"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].name","equals":"e2e-project"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].editor.tabSize","equals":"4"}}

@@ -7,7 +7,7 @@
 {"expect":{"tree":"contains","text":"CREDENTIAL"}}
 {"expect":{"tree":"contains","text":"SIGN-IN"}}
 {"do":{"click":"settings.tree.organisation"}}
-{"expect":{"tree":"contains","text":"DISPLAY NAME"}}
+{"expect":{"tree":"contains","text":"Display name"}}
 {"do":{"click":"settings.reload"}}
 {"expect":{"tree":"contains","text":"nothing here is cached"}}
 {"dispatch":{"action":"ctx_config_tree","params":{}}}

@@ -7,7 +7,7 @@
 {"do":{"keys":"ab"}}
 {"expect":{"pane":"editor-2","field":"visible_text","equals":"ab"}}
 {"do":{"drag":{"from":"settings.tree.editor","to":"settings.tree.editor"}}}
-{"expect":{"tree":"contains","text":"AUTOSAVE"}}
+{"expect":{"tree":"contains","text":"Autosave"}}
 {"expect":{"journal":{"contains":"\"params\":{\"id\":\"settings-1\"}"}}}
 {"do":{"keys":"z"}}
 {"expect":{"pane":"editor-2","field":"visible_text","equals":"ab"}}
