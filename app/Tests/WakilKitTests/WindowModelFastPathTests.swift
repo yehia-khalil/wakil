@@ -97,7 +97,9 @@ private func makeFastPathWindow(
     window.seedForTesting(providerId: "", rootPath: "/p", thoughts: 0, project: "shop", environment: "qa")
     window.setSettingsForTesting(SettingsTree(
         org: SettingsOrg(id: "test-org"),
-        projects: [SettingsProject(name: "shop", environments: [SettingsEnvironment(name: "staging"), SettingsEnvironment(name: "qa")])]))
+        projects: [SettingsProject(name: "shop", environments: [
+            SettingsEnvironment(name: "staging", databases: [SettingsDatabase(name: "reports")]),
+            SettingsEnvironment(name: "qa", databases: [SettingsDatabase(name: "core"), SettingsDatabase(name: "audit")])])]))
     await window.rebuildQuickTasks()
     return (window, FastPathCalls(registry: registry), model)
 }
@@ -172,6 +174,9 @@ private func makeFastPathWindow(
                 == "Ran: open confirm.go")
         #expect(WindowModel.fastPathReceiptText(action: "pane_restore", params: .object([:])) == "Ran: restore the layout")
         #expect(WindowModel.fastPathReceiptText(action: "editor_goto", params: .object(["line": .integer(40)])) == "Ran: go to line 40")
+        #expect(WindowModel.fastPathReceiptText(action: "db_list_tables", params: .object(["database": .string("core")]))
+                == "Ran: list the tables in core")
+        #expect(WindowModel.fastPathReceiptText(action: "db_list_tables", params: .object([:])) == "Ran: list the tables")
     }
 
     @Test func theScopeHoldsTheTopTwentyFilesAndEveryPane() async throws {
@@ -220,6 +225,11 @@ private func makeFastPathWindow(
     @Test func theProjectsComeFromSettingsWithoutARoundTrip() async {
         let (window, _, _) = await makeFastPathWindow(reply: #"{"action":"agent","params":{}}"#)
         #expect(await window.fastPathScope(for: "go to shop").projects == ["shop"])
+    }
+
+    @Test func theDatabasesAreTheActiveEnvironmentsFromSettings() async {
+        let (window, _, _) = await makeFastPathWindow(reply: #"{"action":"agent","params":{}}"#)
+        #expect(await window.fastPathScope(for: "tables in core").databases == ["core", "audit"])
     }
 
     @Test func aScopeNotReadyByTheDeadlineSendsTheLineToTheAgent() async {

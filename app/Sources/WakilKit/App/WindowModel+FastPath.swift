@@ -2,18 +2,20 @@ import Foundation
 
 extension WindowModel {
     /// What the fast path's model may name for `line` (spec §The prompt and the scope): the top 20
-    /// file matches by ⌘P's matcher, and every project, environment, table, open pane and api entry.
+    /// file matches by ⌘P's matcher, and every project, environment, database, table, open pane and api entry.
     /// Read from what the window holds — no dispatch, so a line journals nothing and leaves the
     /// status line alone (Rule 8).
     public func fastPathScope(for line: String) async -> FastPathScope {
         let files = Self.fastPathFiles(for: line, in: await fastPathFileEntries())
-        let environments = settings?.projects.first { $0.name == project }?.environments.map(\.name) ?? []
+        let projectEnvironments = settings?.projects.first { $0.name == project }?.environments ?? []
+        let environments = projectEnvironments.map(\.name)
+        let databases = projectEnvironments.first { $0.name == environment }?.databases.map(\.name) ?? []
         var seen = Set<String>()
         let tables = (await vocabulary?.current().names ?? [])
             .filter { $0.kind == .table }.map(\.text).filter { seen.insert($0).inserted }
         return FastPathScope(
             files: files, roots: rootPaths, projects: settings?.projects.map(\.name) ?? [],
-            environments: environments, activeEnvironment: environment, tables: tables,
+            environments: environments, activeEnvironment: environment, databases: databases, tables: tables,
             panes: layoutSnapshot.panes.map { FastPathPane(id: $0.id, kind: $0.kind, title: $0.title) },
             apiEntries: (await apiListing(http: paletteClients.http))?.map(\.name) ?? [])
     }
@@ -121,6 +123,7 @@ extension WindowModel {
             }
         }
         let file = (p("path") as NSString).lastPathComponent
+        let database = p("database").isEmpty ? "" : " in \(p("database"))"
         let said: String
         switch action {
         case "editor_open": said = "open \(file)"
@@ -135,9 +138,9 @@ extension WindowModel {
         case "editor_set_language": said = "set the language to \(p("language"))"
         case "ctx_set_environment": said = "switch environment to \(p("name"))"
         case "ctx_set_project": said = "switch project to \(p("name"))"
-        case "db_read_table": said = "show \(p("table"))"
-        case "db_describe_table": said = "describe \(p("table"))"
-        case "db_list_tables": said = "list the tables"
+        case "db_read_table": said = "show \(p("table"))\(database)"
+        case "db_describe_table": said = "describe \(p("table"))\(database)"
+        case "db_list_tables": said = "list the tables\(database)"
         case "db_page":       // `to` is "next", "previous", "first" or a page number
             let to = p("to")
             said = to.isEmpty ? "next page" : Int(to) == nil ? "\(to) page" : "page \(to)"

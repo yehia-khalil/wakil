@@ -25,6 +25,8 @@ var FastPathReplies = map[string]string{
 	"open nowhere.go": `{"action":"editor_open","params":{"path":"nowhere.go"}}`,
 	// A name relative to the project root, as Wakil now shows a model its files.
 	"open fastpath-target.txt": `{"action":"editor_open","params":{"path":"fastpath-target.txt"}}`,
+	// One database of several, which the environment's databases in scope let the model name.
+	"tables in cells": `{"action":"db_list_tables","params":{"database":"cells"}}`,
 }
 
 // SlowPrefix makes the stub answer late: "slow go to qa" answers as "go to

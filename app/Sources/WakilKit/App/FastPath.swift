@@ -15,14 +15,15 @@ public struct FastPathScope: Sendable, Equatable {
     public var projects: [String]
     public var environments: [String]
     public var activeEnvironment: String
+    public var databases: [String]
     public var tables: [String]
     public var panes: [FastPathPane]
     public var apiEntries: [String]
     public init(files: [String] = [], roots: [String] = [], projects: [String] = [], environments: [String] = [],
-                activeEnvironment: String = "", tables: [String] = [], panes: [FastPathPane] = [],
+                activeEnvironment: String = "", databases: [String] = [], tables: [String] = [], panes: [FastPathPane] = [],
                 apiEntries: [String] = []) {
         self.files = files; self.roots = roots; self.projects = projects; self.environments = environments
-        self.activeEnvironment = activeEnvironment; self.tables = tables; self.panes = panes
+        self.activeEnvironment = activeEnvironment; self.databases = databases; self.tables = tables; self.panes = panes
         self.apiEntries = apiEntries
     }
 
@@ -52,7 +53,7 @@ public enum FastPathRoute: Sendable, Equatable {
 
 /// What a param must name: something in scope, or anything (`free`: a search query, a line).
 /// `closablePane` is an open pane that is not a terminal: closing one ends its shell.
-public enum FastPathParam: Sendable { case file, project, environment, table, pane, closablePane, apiEntry, free }
+public enum FastPathParam: Sendable { case file, project, environment, database, table, pane, closablePane, apiEntry, free }
 
 public struct FastPathAction: Sendable {
     public var params: [String: FastPathParam]
@@ -75,9 +76,10 @@ public enum FastPath {
         "editor_set_language": .init(["language": .free]),
         "ctx_set_environment": .init(["name": .environment]),
         "ctx_set_project": .init(["name": .project]),
-        "db_read_table": .init(["table": .table]),
-        "db_describe_table": .init(["table": .table]),
-        "db_list_tables": .init([:]),
+        // `database` picks one where the environment has several; with none, wakil-db refuses (3b-ix walk).
+        "db_read_table": .init(["table": .table, "database": .database]),
+        "db_describe_table": .init(["table": .table, "database": .database]),
+        "db_list_tables": .init(["database": .database]),
         "db_page": .init(["pane": .pane, "to": .free]),
         "db_refetch": .init(["pane": .pane]),
         "pane_open": .init(["kind": .free]),
@@ -117,6 +119,7 @@ public enum FastPath {
         EXAMPLES (line -> answer):
         - "go to qa" -> {"action": "ctx_set_environment", "params": {"name": "qa"}}
         - "show payments" -> {"action": "db_read_table", "params": {"table": "payments"}}
+        - "tables in core" -> {"action": "db_list_tables", "params": {"database": "core"}}
         - "what columns does invoices have" -> {"action": "db_describe_table", "params": {"table": "invoices"}}
         - "close the bookings table" -> {"action": "pane_close", "params": {"id": "db-1"}}
         - "line 40" -> {"action": "editor_goto", "params": {"line": 40}}
@@ -130,11 +133,11 @@ public enum FastPath {
     public static func input(_ line: String, scope: FastPathScope) -> String {
         struct Wire: Encodable {
             let files: [String]; let projects: [String]; let environments: [String]
-            let active_environment: String; let tables: [String]; let open_panes: [FastPathPane]
+            let active_environment: String; let databases: [String]; let tables: [String]; let open_panes: [FastPathPane]
             let api_entries: [String]
         }
         let wire = Wire(files: scope.fileNames.map(\.name), projects: scope.projects, environments: scope.environments,
-                        active_environment: scope.activeEnvironment, tables: scope.tables,
+                        active_environment: scope.activeEnvironment, databases: scope.databases, tables: scope.tables,
                         open_panes: scope.panes, api_entries: scope.apiEntries)
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys]
@@ -250,6 +253,7 @@ public enum FastPath {
         case .file: return filePath(v, scope) != nil
         case .project: return scope.projects.contains(s)
         case .environment: return scope.environments.contains(s)
+        case .database: return scope.databases.contains(s)
         case .table: return scope.tables.contains(s)
         case .pane: return scope.panes.contains { $0.id == s }
         case .closablePane: return scope.panes.contains { $0.id == s && $0.kind != "terminal" }

@@ -5,7 +5,7 @@ import Foundation
 private let scope = FastPathScope(
     files: ["/p/api/confirm.go", "/p/web/Login.tsx"], roots: ["/p"], projects: ["rafiq", "wakil"],
     environments: ["staging", "qa", "production"], activeEnvironment: "qa",
-    tables: ["bookings", "users"],
+    databases: ["core", "audit"], tables: ["bookings", "users"],
     panes: [FastPathPane(id: "editor-1", kind: "editor", title: "confirm.go"),
             FastPathPane(id: "db-1", kind: "db", title: "bookings"),
             FastPathPane(id: "terminal-1", kind: "terminal", title: "zsh")],
@@ -36,6 +36,11 @@ private let schemas: [String: JSONValue] = [
                                "direction": .object(["type": .string("string"),
                                                      "enum": .array([.string("asc"), .string("desc"), .string("drop")])])]),
         "required": .array([.string("pane")])]),
+    "db_list_tables": .object(["type": .string("object"),
+        "properties": .object(["database": .object(["type": .string("string")]), "pane": .object(["type": .string("string")])])]),
+    "db_read_table": .object(["type": .string("object"),
+        "properties": .object(["table": .object(["type": .string("string")]), "database": .object(["type": .string("string")])]),
+        "required": .array([.string("table")])]),
     "db_page": .object(["type": .string("object"),
         "properties": .object(["pane": .object(["type": .string("string")]), "to": .object(["type": .string("string")])]),
         "required": .array([.string("pane"), .string("to")])]),
@@ -212,4 +217,17 @@ private final class Gate: @unchecked Sendable {
     let wide = FastPathScope(files: ["/elsewhere/a.go"], roots: ["/p"])
     #expect(FastPath.check(reply: #"{"action":"editor_changes_select","params":{"path":"/elsewhere/a.go"}}"#,
                            scope: wide, schemas: schemas) == .agent)
+}
+
+// 3b-ix walk: "show tables in core" ran with no database and wakil-db refused, because an
+// environment with several databases needs one named and the fast path could not name it.
+@Test func aDatabaseInScopeIsPassedOnAndOneOutsideItGoesToTheAgent() {
+    #expect(FastPath.check(reply: #"{"action":"db_list_tables","params":{"database":"core"}}"#, scope: scope, schemas: schemas)
+            == .action(name: "db_list_tables", params: .object(["database": .string("core")])))
+    #expect(FastPath.check(reply: #"{"action":"db_read_table","params":{"table":"users","database":"audit"}}"#,
+                           scope: scope, schemas: schemas)
+            == .action(name: "db_read_table", params: .object(["table": .string("users"), "database": .string("audit")])))
+    #expect(FastPath.check(reply: #"{"action":"db_list_tables","params":{"database":"billing"}}"#, scope: scope, schemas: schemas)
+            == .agent)
+    #expect(FastPath.input("tables in core", scope: scope).contains(#""databases":["core","audit"]"#))
 }

@@ -1,0 +1,17 @@
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bookings","driver":"sqlite","dsn":"{fixtureRoot}/bookings.db"}}}
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"cells","driver":"sqlite","dsn":"{fixtureRoot}/cells.db"}}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"{chatStub}"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"do":{"click":"settings.org.quickProvider.qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.fastPath","equals":"true"}}
+{"do":{"type":{"into":"window.composer","text":"tables in cells"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Ran: list the tables in cells"}}
+{"expect":{"tree":"absent","text":"name one of them"}}
+{"expect":{"pane":"db-2","field":"rows[0][0]","equals":"cells"}}
+{"expect":{"journal":{"contains":"\"via\":\"fastPath\""}}}
+{"expect":{"focus":"window.composer"}}
