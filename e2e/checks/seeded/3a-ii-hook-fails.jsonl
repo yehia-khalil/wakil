@@ -25,6 +25,7 @@
 {"do":{"click":"editor.changes.e2e-portal.cancel"}}
 {"expect":{"process":{"none-matching":"sleep 90.32"}}}
 {"expect":{"tree":"absent","text":"e2e hook says no"}}
+{"expect":{"tree":"absent","text":"CancellationError"}}
 {"expect":{"tree":"contains","text":"e2e blocked"}}
 {"expect":{"tree":"absent","text":"e2e-portal · main · clean"}}
 {"expect":{"tree":"contains","text":"?, slow"}}
