@@ -250,6 +250,16 @@ private func makeFastPathWindow(
         #expect(await window.fastPathScope(for: "tables in cells").databases == ["cells"])
     }
 
+    // Spec Rule 6, the 3b-ix e2e: "open <file>" moved the keyboard into the opened tab.
+    @Test func aLineThatRunsHoldsTheKeyboardInTheComposerAndOneForTheAgentDoesNot() async {
+        let (ran, _, _) = await makeFastPathWindow(reply: #"{"action":"ctx_set_environment","params":{"name":"staging"}}"#)
+        _ = await ran.runFastPath("switch to staging")
+        #expect(ran.composerHoldsKeyboard)
+        let (sent, _, _) = await makeFastPathWindow(reply: #"{"action":"agent","params":{}}"#)
+        _ = await sent.runFastPath("why is checkout slow?")
+        #expect(!sent.composerHoldsKeyboard)
+    }
+
     @Test func aScopeNotReadyByTheDeadlineSendsTheLineToTheAgent() async {
         let (window, calls, model) = await makeFastPathWindow(
             reply: #"{"action":"settings_open","params":{}}"#,

@@ -81,6 +81,7 @@ public enum FastPathOutcome: Sendable, Equatable { case ran(FastPathReceipt), re
 extension WindowModel {
     nonisolated static let fastPathLocalDeadline: Duration = .milliseconds(400)
     nonisolated static let fastPathSessionDeadline: Duration = .milliseconds(2500)
+    static let fastPathKeyboardHold: Duration = .milliseconds(1500)
 
     /// Asks the org's quick model whether `line` is one allowed action and, if every check holds,
     /// dispatches it as the operator's own click (Invariant 2). Anything else is `.toAgent`.
@@ -102,6 +103,7 @@ extension WindowModel {
         } ?? .agent
         guard generation == quickTasksGeneration, org == organization, place == typedIn,
               case .action(let name, let params) = route else { return .toAgent }
+        composerHoldsKeyboardUntil = .now + Self.fastPathKeyboardHold
         do {
             _ = try await registry.dispatch(
                 name: name, params: params, origin: .ui,

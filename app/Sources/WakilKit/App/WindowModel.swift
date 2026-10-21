@@ -5378,6 +5378,15 @@ public final class WindowModel {
     /// under the org plane and the confirmation plane.
     public private(set) var paletteShowing = false
 
+    /// Until when a fast-path action leaves the keyboard in the composer (spec: Rule 6), so the
+    /// next line can be typed. Set before the dispatch; a pane that would take the keyboard as the
+    /// action lands (an editor's arriving tab, Rule 3) stands down until then. Timed, because the
+    /// editor's own take is retried for up to a second while its web view joins the window.
+    public internal(set) var composerHoldsKeyboardUntil: ContinuousClock.Instant?
+    public var composerHoldsKeyboard: Bool {
+        composerHoldsKeyboardUntil.map { ContinuousClock.now < $0 } ?? false
+    }
+
     public func paletteKey(_ mode: PaletteMode) {
         paletteKeySerial += 1
         paletteKeyPress = PaletteKeyPress(mode: mode, serial: paletteKeySerial)

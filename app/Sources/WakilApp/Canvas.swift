@@ -478,6 +478,7 @@ extension WakilWindow {
                     isKeyboardOwner: !(
                         model.showOrgPlane || model.organization.isEmpty || model.pending != nil
                         || model.paletteShowing || model.unsavedPrompt != nil),
+                    keyboardHeld: { model.composerHoldsKeyboard },
                     unsavedPrompt: model.unsavedPrompt.flatMap { prompt in
                         if case .closeTab(pane.id, _) = prompt.intent { prompt } else { nil }
                     },
