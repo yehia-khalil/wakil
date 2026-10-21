@@ -57,24 +57,3 @@ public func fastPathHint(_ tree: SettingsTree) -> String {
     let model = quickTaskChoices(tree).first { $0.id == chosen }?.display ?? chosen
     return base + " · off: on \(model) each line would wait for Claude first"
 }
-
-/// The ⓘ beside QUICK TASKS: what the two features do and, as plainly, what the fast path won't,
-/// so an operator does not expect an edit or a query from it (3b-ix walk). Markdown, inline only;
-/// the deadlines are the ones the fast path runs under, so the text cannot drift from them.
-public var quickTasksAbout: String {
-    func seconds(_ d: Duration) -> String {
-        let ms = Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
-        return String(format: "%g s", ms / 1000)
-    }
-    let local = seconds(WindowModel.fastPathLocalDeadline)
-    let other = seconds(WindowModel.fastPathSessionDeadline)
-    return """
-    **Ghost-text** suggests the rest of the line as you type in the editor. Tab accepts it.
-
-    **Fast path** runs a short command the moment you press Return, without the agent: "open checkout.go", "line 40", "switch to staging", "show tables in core". If it guessed wrong, click **Ask the agent instead**.
-
-    It only opens, shows, switches and closes things Wakil knows (files, tables, panes, environments). It never edits, queries or runs commands, and does one thing per line. Anything else, or a model slower than \(local) (\(other) if not local), goes to the agent.
-
-    Best with a local model. On *Same as agent* it is off by default, since every line would wait for Claude first.
-    """
-}

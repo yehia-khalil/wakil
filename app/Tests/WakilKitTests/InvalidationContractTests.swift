@@ -266,6 +266,9 @@ private let orgIndependent: Set<String> = [
     // Background agents, 2 of 4: the tail of the pool's retain queue, `surfaceChain`'s shape —
     // the order retains land in, not either org's state.
     "placeRetain",
+    // 3b-ix: how long the composer keeps the keyboard after a fast-path action — the operator's
+    // hand on the composer, `paletteShowing`'s shape, and over in 1.5 s whatever the org.
+    "composerHoldsKeyboardUntil",
 ]
 
 /// **A stable reference whose CONTENTS are org-scoped and must be torn

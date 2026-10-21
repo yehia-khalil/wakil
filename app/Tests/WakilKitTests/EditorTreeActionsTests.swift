@@ -223,9 +223,8 @@ private func treeFixture() async throws -> (EditorFixture, EditorFileLists) {
 @Test func aRootListedBeforeWatchingStoppedIsReadAgainWhenWatched() async throws {
     let f = try await editorFixture()
     let lists = EditorFileLists(files: f.files)
-    await lists.watch(roots: ["/p/api"])
     await f.files.setListing("/p/api", ["a.go"])
-    _ = await lists.listing(root: "/p/api")
+    await lists.watch(roots: ["/p/api"]).value           // watching lists it (31f486e), awaited
     await lists.watch(roots: [])                         // stops watching: the lists are dropped
     #expect(await lists.state().listings["/p/api"] == nil)
     await lists.watch(roots: ["/p/api"]).value
