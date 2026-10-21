@@ -193,11 +193,9 @@ func registerEditorChangesWrites(
             guard let root else { throw EditorFilesError(description: "\(action): \(path) is in no git root of the project") }
             let rel = relative(path, to: root)
             return try await write(root, action: action) { git in
-                let blob = fields(try await call(git, "git_blob", ["root": .string(root), "path": .string(rel)], action: action,
-                                                 timeout: MCPClient.readReplyTimeout))
-                guard case .object(let b) = blob, case .string(let expect)? = b["blob"] else {
-                    throw EditorFilesError(description: "\(action): git_blob answered no blob for \(rel)")
-                }
+                // R1: the guard is the id of the text the peek was computed from (the tab's baseline), so an
+                // index that moved since refuses in Go. Asking git for the blob now would compare it to itself.
+                let expect = gitBlobId(base)
                 return try await call(git, "git_stage_hunk",
                                       ["root": .string(root), "path": .string(rel), "content": .string(content), "expect": .string(expect)],
                                       action: action)

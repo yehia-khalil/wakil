@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // The gutter's change marks, the peek and Revert (3b-iii), pure. A file tab's text is compared with
@@ -229,4 +230,14 @@ public func editorStagedText(base: String, text: String, hunk: Int) -> String? {
         out = editorReplacing(out, e.range, with: e.text)
     }
     return out
+}
+
+/// Git's blob id of `text`: SHA-1 over "blob <bytes>\0" and the bytes, lowercase hex. What Stage Change
+/// sends as `expect` for the baseline the peek was computed from (3a-ii, ruling R1).
+public func gitBlobId(_ text: String) -> String {
+    let data = Data(text.utf8)
+    var h = Insecure.SHA1()
+    h.update(data: Data("blob \(data.count)\0".utf8))
+    h.update(data: data)
+    return h.finalize().map { String(format: "%02x", $0) }.joined()
 }

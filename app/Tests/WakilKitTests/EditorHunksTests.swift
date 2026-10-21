@@ -103,3 +103,10 @@ private let cases: [HunkCase] = [
         #expect(editorStagedText(base: "a\nb\nc\n", text: "a\nc\n", hunk: 0) == "a\nc\n")
     }
 }
+
+@Suite struct GitBlobIdTests {
+    @Test func gitBlobIdMatchesGitHashObject() {
+        #expect(gitBlobId("hello\n") == "ce013625030ba8dba906f756967f9e9ca394464a")
+        #expect(gitBlobId("") == "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+    }
+}

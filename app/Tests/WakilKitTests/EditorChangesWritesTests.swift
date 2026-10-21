@@ -182,10 +182,39 @@ private func args(_ call: WriteGit.Call?, _ key: String) -> JSONValue? {
         #expect(args(call, "root") == .string("/p"))
         #expect(args(call, "path") == .string("a.go"))
         #expect(args(call, "content") == .string(try #require(editorStagedText(base: base, text: text, hunk: 0))))
-        #expect(args(call, "expect") == .string("abc123"))
+        #expect(args(call, "expect") == .string(gitBlobId(base)), "the id of the baseline, not of the index now")
+        #expect(await f.git.count("git_blob") == 0)
         // hunk omitted: the tab's peek.
         _ = try await f.dispatch("editor_changes_stage_hunk", ["path": .string("/p/a.go")])
         #expect(await f.git.count("git_stage_hunk") == 2)
+    }
+
+    private func openTab(_ f: Fixture, baseline: String?) async {
+        await f.panes.updateEditor(paneId: f.pane, create: true) { s in
+            s.tabs = [EditorTab(subject: .file(path: "/p/a.go", root: "/p"), text: "a\nB\n", savedText: "a\nb\n", language: "go",
+                                diskState: .inSync, mtime: 1, cursor: EditorPosition(line: 1, column: 1), selection: nil,
+                                visibleRange: nil, scrollTop: 0, notice: nil, readOnly: false, saving: false, edits: 0,
+                                lastAgentEdit: nil, baseline: baseline, peek: 0)]
+            s.active = 0
+        }
+    }
+
+    @Test func stageHunkRefusesATabWithNoBaseline() async throws {
+        let f = try await fixture()
+        await openTab(f, baseline: nil)
+        await #expect(throws: (any Error).self) {
+            _ = try await f.dispatch("editor_changes_stage_hunk", ["path": .string("/p/a.go"), "hunk": .integer(0)])
+        }
+        #expect(await f.git.count("git_stage_hunk") == 0)
+    }
+
+    @Test func stageHunkRefusesAHunkOutOfRange() async throws {
+        let f = try await fixture()
+        await openTab(f, baseline: "a\nb\n")
+        await #expect(throws: (any Error).self) {
+            _ = try await f.dispatch("editor_changes_stage_hunk", ["path": .string("/p/a.go"), "hunk": .integer(5)])
+        }
+        #expect(await f.git.count("git_stage_hunk") == 0)
     }
 
     @Test func stageHunkRefusesAFileThatIsNotOpenOrHasNoBaseline() async throws {
