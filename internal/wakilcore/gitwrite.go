@@ -6,10 +6,12 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // gitWriteSafetyArgs come before every write's subcommand. Unlike gitSafetyArgs they leave hooks,
@@ -226,4 +228,95 @@ func (w *GitWriter) head(ctx context.Context) (GitCommitResult, error) {
 	}
 	h, s, _ := strings.Cut(strings.TrimRight(string(out), "\n"), "\x00")
 	return GitCommitResult{Commit: h, Summary: s}, nil
+}
+
+// Discard sends each path's current copy to the Trash, then restores tracked ones from the index.
+// A tracked file is renamed `<name> (discarded HH:MM)` first (` 2`, ` 3` … when taken), so the
+// Trash says what it was; an untracked one goes as itself (Decision 41's Move to Trash). A tracked
+// path already gone from disk has nothing to trash: it is only restored.
+func (w *GitWriter) Discard(ctx context.Context, paths []string, now time.Time) ([]string, error) {
+	ps, err := w.paths(paths)
+	if err != nil {
+		return nil, err
+	}
+	names := []string{}
+	var tracked []string
+	for _, p := range ps {
+		rel, err := w.runner().ResolvePath(p)
+		if err != nil {
+			return names, err
+		}
+		abs := filepath.Join(w.Root, rel)
+		_, lsErr := w.runner().Run(ctx, "rev-parse", "--verify", ":"+p)
+		isTracked := lsErr == nil
+		_, statErr := os.Lstat(abs)
+		onDisk := statErr == nil
+		if isTracked && !onDisk {
+			tracked = append(tracked, p)
+			continue
+		}
+		target := abs
+		if isTracked {
+			base := filepath.Base(abs) + " (discarded " + now.Format("15:04") + ")"
+			target = filepath.Join(filepath.Dir(abs), base)
+			for n := 2; ; n++ {
+				if _, err := os.Lstat(target); os.IsNotExist(err) {
+					break
+				}
+				target = filepath.Join(filepath.Dir(abs), base+" "+strconv.Itoa(n))
+			}
+			if err := os.Rename(abs, target); err != nil {
+				return names, UserError("discard " + p + ": " + err.Error())
+			}
+			tracked = append(tracked, p)
+		}
+		if _, err := TrashEntry(ctx, target, []string{w.Root}); err != nil {
+			return names, err
+		}
+		names = append(names, filepath.Base(target))
+	}
+	if len(tracked) > 0 {
+		if _, err := w.git(ctx, nil, "restore", append([]string{"--"}, tracked...)...); err != nil {
+			return names, err
+		}
+	}
+	return names, nil
+}
+
+func (w *GitWriter) IndexBlob(ctx context.Context, path string) (string, error) {
+	if _, err := w.runner().ResolvePath(path); err != nil {
+		return "", err
+	}
+	out, err := w.runner().Run(ctx, "rev-parse", "--verify", ":"+path)
+	if err != nil {
+		return "", UserError(path + " is not in the index")
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// StageContent makes content the index's version of path (Stage Change, ruling R1), when the
+// index still holds expect — else the peek was computed against an index that has since moved.
+func (w *GitWriter) StageContent(ctx context.Context, path, content, expect string) error {
+	now, err := w.IndexBlob(ctx, path)
+	if err != nil {
+		return err
+	}
+	if now != expect {
+		return UserError("the change moved — open the peek again")
+	}
+	mode, err := w.git(ctx, nil, "ls-files", "-s", "--", path)
+	if err != nil {
+		return err
+	}
+	fields := strings.Fields(string(mode))
+	if len(fields) == 0 {
+		return UserError(path + " is not in the index")
+	}
+	blob, err := w.git(ctx, []byte(content), "hash-object", "-w", "--stdin", "--path="+path)
+	if err != nil {
+		return err
+	}
+	_, err = w.git(ctx, nil, "update-index", "--cacheinfo",
+		fields[0]+","+strings.TrimSpace(string(blob))+","+path)
+	return err
 }

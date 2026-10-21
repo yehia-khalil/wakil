@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // gitOut is gitIn (gitread_test.go:18) returning trimmed stdout.
@@ -204,5 +205,87 @@ func TestPathsAreLiteralNotPathspecs(t *testing.T) {
 	}
 	if got := gitOut(t, dir, "diff", "--cached", "--name-only"); got != "*.txt" {
 		t.Fatalf("staged %q", got)
+	}
+}
+
+func fakeTrashKeeping(t *testing.T) {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "trash")
+	os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	old := trashBin
+	trashBin = bin
+	t.Cleanup(func() { trashBin = old })
+}
+
+func TestDiscardTrashesTheCurrentCopyThenRestores(t *testing.T) {
+	args := fakeTrash(t)
+	dir := gitTestRepo(t)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("n\n"), 0o644)
+	at := time.Date(2026, 10, 21, 14, 2, 0, 0, time.Local)
+	names, err := writerFor(t, dir, GitIdentity{}).Discard(context.Background(), []string{"new.txt", "a.txt"}, at) // a.txt last: fakeTrash keeps only the last call's args
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "a.txt")); string(b) != "one\n" {
+		t.Fatalf("a.txt is %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "new.txt")); !os.IsNotExist(err) {
+		t.Fatal("untracked file still there")
+	}
+	if want := []string{"new.txt", "a.txt (discarded 14:02)"}; strings.Join(names, "|") != strings.Join(want, "|") {
+		t.Fatalf("names %v", names)
+	}
+	if b, _ := os.ReadFile(args); !strings.Contains(string(b), "a.txt (discarded 14:02)") {
+		t.Fatalf("trash got %q", b)
+	}
+}
+
+func TestDiscardOfADeletedTrackedFileOnlyRestoresIt(t *testing.T) {
+	args := fakeTrash(t)
+	dir := gitTestRepo(t)
+	os.Remove(filepath.Join(dir, "a.txt"))
+	names, err := writerFor(t, dir, GitIdentity{}).Discard(context.Background(), []string{"a.txt"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "a.txt")); string(b) != "one\n" {
+		t.Fatalf("a.txt is %q", b)
+	}
+	if len(names) != 0 {
+		t.Fatalf("names %v", names)
+	}
+	if _, err := os.Stat(args); !os.IsNotExist(err) {
+		t.Fatal("the trash was called for a file that was not on disk")
+	}
+}
+
+func TestTwoDiscardsInOneMinuteNeverOverwrite(t *testing.T) {
+	fakeTrashKeeping(t) // like fakeTrash but leaves the file in place, so the name stays taken
+	dir := gitTestRepo(t)
+	w := writerFor(t, dir, GitIdentity{})
+	at := time.Date(2026, 10, 21, 14, 2, 0, 0, time.Local)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x\n"), 0o644)
+	first, _ := w.Discard(context.Background(), []string{"a.txt"}, at)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("y\n"), 0o644)
+	second, _ := w.Discard(context.Background(), []string{"a.txt"}, at)
+	if first[0] != "a.txt (discarded 14:02)" || second[0] != "a.txt (discarded 14:02) 2" {
+		t.Fatalf("%v %v", first, second)
+	}
+}
+
+func TestStageContentWritesTheIndexAndRefusesAMovedChange(t *testing.T) {
+	dir := gitTestRepo(t)
+	w := writerFor(t, dir, GitIdentity{})
+	ctx := context.Background()
+	blob, _ := w.IndexBlob(ctx, "a.txt")
+	if err := w.StageContent(ctx, "a.txt", "one\nstaged\n", blob); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOut(t, dir, "show", ":a.txt"); got != "one\nstaged" {
+		t.Fatalf("index %q", got)
+	}
+	if err := w.StageContent(ctx, "a.txt", "other\n", blob); err == nil || err.Error() != "the change moved — open the peek again" {
+		t.Fatalf("err %v", err)
 	}
 }
