@@ -657,15 +657,17 @@ struct SettingsPane: View {
             }
         case .project(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {
-                fields([("Name", project.name, true), ("File", project.path, true)])
+                // Two groups, two headed sections (2026-10-21): what the project is, and its roots.
+                SettingsSection("Project") {
+                    fields([("Name", project.name, true), ("File", project.path, true)])
+                }
                 if !project.roots.isEmpty {
-                    label("Roots")
-                    ForEach(project.roots, id: \.path) { root in
-                        HStack(spacing: 8) {
-                            Text(root.path).font(.system(size: Scale.meta, design: .monospaced))
-                                .foregroundStyle(coolWhite.opacity(0.70))
-                            if !root.role.isEmpty {
-                                Text(root.role).font(.system(size: Scale.meta)).foregroundStyle(coolWhite.opacity(0.40))
+                    SettingsSection("Roots") {
+                        // A root's role is its label, its path the value; a root with no role
+                        // is labelled as what it is.
+                        ForEach(project.roots, id: \.path) { root in
+                            SettingsRow(root.role.isEmpty ? "Root" : root.role) {
+                                SettingsValue(text: root.path)
                             }
                         }
                     }
@@ -754,11 +756,13 @@ struct SettingsPane: View {
                     // request records, so the same request can run against
                     // staging and then production (2c-iv).
                     ForEach(environment.api, id: \.name) { api in
-                        fields([
-                            ("Name", api.name.isEmpty ? "unnamed" : api.name, true),
-                            ("Base URL", api.baseUrl, true),
-                            ("Auth ref", api.authRef.isEmpty ? "none" : api.authRef, true),
-                        ])
+                        // A section per entry, headed by its name (2026-10-21).
+                        SettingsSection(api.name.isEmpty ? "unnamed" : api.name) {
+                            fields([
+                                ("Base URL", api.baseUrl, true),
+                                ("Auth ref", api.authRef.isEmpty ? "none" : api.authRef, true),
+                            ])
+                        }
                     }
                 }
                 // Permanently read-only, and this merge is the argument
@@ -2189,29 +2193,11 @@ struct SettingsPane: View {
     /// Read values as page rows: the label left, the value right, `—` for an empty one. The
     /// third element says whether the value is an identifier, drawn monospace (§6).
     private func fields(_ rows: [(String, String, Bool)]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(rows, id: \.0) { row in
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.0.uppercased())
-                        .font(.system(size: Scale.micro, weight: .medium))
-                        .tracking(Scale.microTracking)
-                        .foregroundStyle(coolWhite.opacity(0.32))
-                    Text(row.1.isEmpty ? "—" : row.1)
-                        .font(.system(size: row.2 ? Scale.identifier : Scale.body,
-                                      design: row.2 ? .monospaced : .default))
-                        .foregroundStyle(coolWhite.opacity(row.1.isEmpty ? 0.30 : 0.85))
-                        .textSelection(.enabled)
-                }
+                SettingsRow(row.0) { SettingsValue(text: row.1, monospaced: row.2) }
             }
         }
-    }
-
-    private func label(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: Scale.micro, weight: .medium))
-            .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.32))
-            .padding(.top, 4)
     }
 
     private func readOnlyNote(_ text: String) -> some View {
