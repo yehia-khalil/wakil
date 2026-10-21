@@ -204,6 +204,14 @@ struct SettingsPane: View {
     /// changed. **Owned by the window** (`WakilWindow.settingsSelection`)
     /// so it also survives the pane being rebuilt, as a provider switch does.
     @Binding var selection: SettingsNode
+    /// Which projects and environments are open in the tree. **Owned by the window**, for
+    /// `selection`'s reason: window-life, never persisted, and it survives the pane being rebuilt.
+    @Binding var expansion: SettingsTreeExpansion
+    /// The place on screen, whose project and environment start open.
+    var activeProject: String = ""
+    var activeEnvironment: String = ""
+    /// Whether the tree column holds the keyboard, for → and ←.
+    @FocusState private var treeFocused: Bool
     /// Whether the Adopt door is open (#236). Window state, like
     /// `selection` — an operator who opened it to compare directories
     /// should not have it shut by a re-read.
@@ -248,6 +256,13 @@ struct SettingsPane: View {
 
     // MARK: - The tree
 
+    /// The tree, with every project and environment a branch that opens and closes (2026-10-21).
+    ///
+    /// **Collapsing is the operator's alone** (Rule 6): `expansion` lays its defaults once — the
+    /// heading, the active project and its active environment open — and afterwards changes when
+    /// a chevron is pressed, → or ← is pressed on the selected branch, or the heading is pressed.
+    /// The one change made for them is an opening: a node selected inside a closed parent opens
+    /// its ancestors (`revealSelection`), so a node the operator was taken to is never hidden.
     @ViewBuilder
     private var treeColumn: some View {
         ScrollView {
@@ -256,87 +271,226 @@ struct SettingsPane: View {
                 row(.organisation, label: tree?.org.label ?? "Organisation", depth: 0)
                 row(.providers, label: "Providers", depth: 0, badge: tree.map { "\($0.providers.count)" })
 
-                sectionLabel("Projects")
-                if let tree, tree.projects.isEmpty {
-                    emptyLine("no projects")
-                }
-                ForEach(tree?.projects ?? [], id: \.name) { project in
-                    row(.project(project.name), label: project.name, depth: 1)
-                    row(.projectEditor(project.name), label: "Editor", depth: 2)
-                    ForEach(project.environments, id: \.name) { environment in
-                        row(
-                            .environment(project: project.name, environment: environment.name),
-                            label: environment.name, depth: 2)
-                        row(
-                            .databases(project: project.name, environment: environment.name),
-                            label: "Databases", depth: 3,
-                            badge: "\(environment.databases.count)")
-                        // The API node is drawn whether or not the
-                        // environment declares an entry, and read-only
-                        // either way. The ninth artboard correction: *What
-                        // is editable* rules the API row read-only on
-                        // Decision 8's amendment, which presumes a row
-                        // exists, and none of the five drawn variants had
-                        // one until it was noticed.
-                        row(
-                            .api(project: project.name, environment: environment.name),
-                            label: "API", depth: 3)
+                projectsHeading
+                if expansion.projectsOpen {
+                    if let tree, tree.projects.isEmpty {
+                        emptyLine("no projects")
                     }
-                    // Marked rather than drawn silently, so the operator
-                    // learns the boundary by looking rather than by
-                    // pressing. Environment create, rename and remove are
-                    // #45 and are out of this phase.
-                    notThisPhase("+ Add an environment", depth: 2)
+                    ForEach(tree?.projects ?? [], id: \.name) { project in
+                        let projectOpen = expansion.isOpen(project: project.name)
+                        row(.project(project.name), label: project.name, depth: 1, disclosure: .branch(open: projectOpen)) {
+                            expansion.setOpen(!projectOpen, project: project.name)
+                        }
+                        if projectOpen {
+                            row(.projectEditor(project.name), label: "Editor", depth: 2, disclosure: .leaf)
+                            ForEach(project.environments, id: \.name) { environment in
+                                let environmentOpen = expansion.isOpen(
+                                    project: project.name, environment: environment.name)
+                                row(
+                                    .environment(project: project.name, environment: environment.name),
+                                    label: environment.name, depth: 2, disclosure: .branch(open: environmentOpen)
+                                ) {
+                                    expansion.setOpen(
+                                        !environmentOpen, project: project.name, environment: environment.name)
+                                }
+                                if environmentOpen {
+                                    row(
+                                        .databases(project: project.name, environment: environment.name),
+                                        label: "Databases", depth: 3, badge: "\(environment.databases.count)",
+                                        disclosure: .leaf)
+                                    // The API node is drawn whether or not the
+                                    // environment declares an entry, and read-only
+                                    // either way. The ninth artboard correction: *What
+                                    // is editable* rules the API row read-only on
+                                    // Decision 8's amendment, which presumes a row
+                                    // exists, and none of the five drawn variants had
+                                    // one until it was noticed.
+                                    row(
+                                        .api(project: project.name, environment: environment.name),
+                                        label: "API", depth: 3, disclosure: .leaf)
+                                }
+                            }
+                            // Marked rather than drawn silently, so the operator
+                            // learns the boundary by looking rather than by
+                            // pressing. Environment create, rename and remove are
+                            // #45 and are out of this phase.
+                            notThisPhase("+ Add an environment", depth: 2)
+                        }
+                    }
+                    notThisPhase("+ Add a project", depth: 1)
                 }
-                notThisPhase("+ Add a project", depth: 1)
             }
             .padding(.vertical, 2)
         }
+        .contentShape(Rectangle())
+        // The keyboard's way to open and close: → opens the selected branch, ← closes it. Taken
+        // by the column when a row is clicked, as the editor's file tree takes it.
+        .focusable()
+        .focused($treeFocused)
+        .focusEffectDisabled()
+        .onKeyPress(phases: .down, action: treeKey)
+        .onAppear {
+            expansion.seed(activeProject: activeProject, activeEnvironment: activeEnvironment)
+            revealSelection()
+        }
+        .onChange(of: activeProject) { _, _ in seedOrRevealActive() }
+        .onChange(of: activeEnvironment) { _, _ in seedOrRevealActive() }
+        // Another organisation's tree: the window forgot the old one's branches, so lay these.
+        .onChange(of: tree?.org.id) { _, _ in seedOrRevealActive() }
+        .onChange(of: selection) { _, _ in revealSelection() }
     }
 
-    private func row(
-        _ node: SettingsNode, label: String, depth: Int, badge: String? = nil
-    ) -> some View {
-        Button {
-            selection = node
+    /// The PROJECTS heading: pressing it opens or closes every project at once.
+    private var projectsHeading: some View {
+        let open = expansion.projectsOpen
+        return Button {
+            expansion.projectsOpen.toggle()
         } label: {
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: Scale.door))
-                    .foregroundStyle(coolWhite.opacity(selection == node ? 0.95 : 0.62))
-                    .lineLimit(1)
-                if let badge {
-                    Text(badge)
-                        .font(.system(size: Scale.meta, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.35))
-                }
+            HStack(spacing: 4) {
+                chevron(open: open)
+                Text("PROJECTS")
+                    .font(.system(size: Scale.micro, weight: .medium))
+                    .tracking(Scale.microTracking)
+                    .foregroundStyle(coolWhite.opacity(0.32))
                 Spacer(minLength: 0)
             }
-            .padding(.leading, CGFloat(depth) * 12 + 8)
-            .padding(.vertical, 3)
-            .padding(.trailing, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(coolWhite.opacity(selection == node ? 0.08 : 0)))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        // **On the Button, not on its label.** A modifier inside the
-        // `label:` closure names the content view; the accessibility
-        // element the driver resolves is the Button, and it carried no
-        // identifier at all. Caught by the check going red on a control
-        // that was supposedly named.
-        .accessibilityIdentifier("settings.tree.\(node.identifierFragment)")
-    }
-
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: Scale.micro, weight: .medium))
-            .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.32))
             .padding(.leading, 8)
             .padding(.top, 10)
             .padding(.bottom, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(open ? "Projects, open" : "Projects, closed")
+        .accessibilityIdentifier("settings.tree.projectsHeading")
+    }
+
+    /// A branch's ▾ / ▸, or the empty column a leaf keeps so its label lines up under its parent's.
+    private func chevron(open: Bool?) -> some View {
+        Group {
+            if let open {
+                Image(systemName: open ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(coolWhite.opacity(0.45))
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: 10, height: 10)
+    }
+
+    /// The active place changed: lay the defaults if they were never laid, else open the new
+    /// active project and environment. Opening only — nothing the operator closed is shut again
+    /// that was not, and nothing they opened is closed.
+    private func seedOrRevealActive() {
+        if expansion.seeded {
+            expansion.reveal(project: activeProject, environment: activeEnvironment)
+        } else {
+            expansion.seed(activeProject: activeProject, activeEnvironment: activeEnvironment)
+        }
+    }
+
+    /// Opens the selected node's ancestors, never the node: a project's heading, an environment's
+    /// project, a database's environment.
+    private func revealSelection() {
+        switch selection {
+        case .organisation, .providers, .editor: return
+        case .project: expansion.projectsOpen = true
+        case .projectEditor(let project), .environment(let project, _):
+            expansion.reveal(project: project)
+        case .databases(let project, let environment), .api(let project, let environment):
+            expansion.reveal(project: project, environment: environment)
+        }
+    }
+
+    /// → opens the selected project or environment, ← closes it. Any other key is not the tree's.
+    private func treeKey(_ press: KeyPress) -> KeyPress.Result {
+        guard press.modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return .ignored }
+        let open: Bool
+        switch press.key {
+        case .rightArrow: open = true
+        case .leftArrow: open = false
+        default: return .ignored
+        }
+        switch selection {
+        case .project(let project):
+            expansion.setOpen(open, project: project)
+        case .environment(let project, let environment):
+            expansion.setOpen(open, project: project, environment: environment)
+        default:
+            return .ignored
+        }
+        return .handled
+    }
+
+    /// What a row draws before its label: nothing (the top-level rows), an empty chevron column
+    /// (a leaf under a project, so its label lines up with its siblings'), or a branch's chevron.
+    private enum Disclosure: Equatable {
+        case none
+        case leaf
+        case branch(open: Bool)
+    }
+
+    /// One node. A branch's chevron is its own button, calling `toggle`, beside the row's button,
+    /// so opening a branch never selects it and selecting one never opens or closes it.
+    private func row(
+        _ node: SettingsNode, label: String, depth: Int, badge: String? = nil,
+        disclosure: Disclosure = .none, toggle: (() -> Void)? = nil
+    ) -> some View {
+        let selected = selection == node
+        let fragment = node.identifierFragment
+        return HStack(spacing: 4) {
+            switch disclosure {
+            case .none:
+                EmptyView()
+            case .leaf:
+                chevron(open: nil)
+            case .branch(let state):
+                if let toggle {
+                    Button(action: toggle) {
+                        chevron(open: state)
+                            .frame(width: 14, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, -2)
+                    .accessibilityLabel(state ? "Close \(label)" : "Open \(label)")
+                    .accessibilityIdentifier("settings.tree.\(fragment).disclosure")
+                } else {
+                    chevron(open: state)
+                }
+            }
+            Button {
+                selection = node
+                treeFocused = true
+            } label: {
+                HStack(spacing: 6) {
+                    Text(label)
+                        .font(.system(size: Scale.door))
+                        .foregroundStyle(coolWhite.opacity(selected ? 0.95 : 0.62))
+                        .lineLimit(1)
+                    if let badge {
+                        Text(badge)
+                            .font(.system(size: Scale.meta, design: .monospaced))
+                            .foregroundStyle(coolWhite.opacity(0.35))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 3)
+                .padding(.trailing, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // **On the Button, not on its label.** A modifier inside the
+            // `label:` closure names the content view; the accessibility
+            // element the driver resolves is the Button, and it carried no
+            // identifier at all. Caught by the check going red on a control
+            // that was supposedly named.
+            .accessibilityIdentifier("settings.tree.\(fragment)")
+        }
+        .padding(.leading, CGFloat(depth) * 12 + 8)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(coolWhite.opacity(selected ? 0.08 : 0)))
     }
 
     private func emptyLine(_ text: String) -> some View {
@@ -369,7 +523,8 @@ struct SettingsPane: View {
                         .stroke(coolWhite.opacity(0.14), lineWidth: 0.5))
             Spacer(minLength: 0)
         }
-        .padding(.leading, CGFloat(depth) * 12 + 8)
+        // After the chevron column its siblings keep, so it reads as one of them.
+        .padding(.leading, CGFloat(depth) * 12 + 8 + 14)
         .padding(.vertical, 3)
     }
 

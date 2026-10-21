@@ -573,7 +573,10 @@ extension WakilWindow {
                         await model.removeDatabase(
                             projectPath: path, environment: environment, name: name)
                     },
-                    selection: $settingsSelection)
+                    selection: $settingsSelection,
+                    expansion: $settingsExpansion,
+                    activeProject: model.project,
+                    activeEnvironment: model.environment)
             default:
                 // Unreachable today: `Pane.kinds` is
                 // `["db", "terminal", "api", "settings", "editor"]`, all five arms
