@@ -260,7 +260,10 @@ live app; *accepted* means it was marked met without one.
 | **Phase 3** | Breadth — editor, API client UI, chat and inbox adapters | — | — |
 | **3a-i** | Git pane, read-only: changes by root, the spine, the Monaco diff host | **2026-10-09**, walked | — |
 | **3a-ii** | Stage, unstage, commit — the fourth write | — | 3a-i |
-| **3a-iii** | A git account per organisation; push and pull | — | 3a-ii |
+| **3a-ii-b** | Stage Selected Ranges in the diff tab | — | 3a-ii |
+| **3a-iii** | A git account per organisation — sign in, the credential in the Keychain; push, pull, fetch | — | 3a-ii |
+| **3a-iv** | Branches and stash — the branch picker in the context line, stash, pop, apply | — | 3a-iii |
+| **3a-v** | Conflicts, history and blame — accept current or incoming, the Timeline, inline blame | — | 3a-ii |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
 ## 9. Glossary
