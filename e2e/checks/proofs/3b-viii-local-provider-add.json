@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-viii-local-provider-add.jsonl",
   "baseCommit": "2a491bfe7b06ddfdff753560ebb58cd6bd321c97",
-  "provedAt": "2026-10-20T18:18:59.506488Z",
+  "provedAt": "2026-10-21T11:59:22.616716Z",
   "checkBlob": "3a88119c0ccfb5df91de395a3f3f306ee64410ae"
 }
