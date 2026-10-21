@@ -53,7 +53,7 @@ public enum FastPathRoute: Sendable, Equatable {
 
 /// What a param must name: something in scope, or anything (`free`: a search query, a line).
 /// `closablePane` is an open pane that is not a terminal: closing one ends its shell.
-public enum FastPathParam: Sendable { case file, project, environment, database, table, pane, closablePane, apiEntry, free }
+public enum FastPathParam: Sendable { case file, project, environment, database, table, pane, closablePane, apiEntry, root, free }
 
 public struct FastPathAction: Sendable {
     public var params: [String: FastPathParam]
@@ -88,7 +88,8 @@ public enum FastPath {
         "pane_maximize": .init(["id": .pane]),
         "pane_restore": .init([:]),
         "pane_sort": .init(["pane": .pane, "column": .free, "direction": .free]),
-        "term_open": .init(["path": .free]),
+        // A root in scope, or dropped: the model sees no directories, and the 1.5B made one up ("zsh").
+        "term_open": .init(["path": .root]),
         "api_open": .init(["entry": .apiEntry]),
         "settings_open": .init([:]),
     ]
@@ -156,10 +157,16 @@ public enum FastPath {
         if case .object(let p)? = top["params"] { given = p } else { given = [:] }
 
         var params: [String: JSONValue] = [:]
+        let needed = Set(required(schema))
         for (key, kind) in action.params {
             guard let raw = given[key] else { continue }
             let property = property(schema, key)
-            guard let typed = conform(raw, to: property.type) else { return .agent }
+            // An optional param that is not its type is dropped and the rest runs (Rule 7): the 1.5B
+            // copies the path into `line` on "open confirm.go" (3b-ix walk). A required one cannot be.
+            guard let typed = conform(raw, to: property.type) else {
+                if needed.contains(key) { return .agent } else { continue }
+            }
+            if kind == .root, !inScope(typed, kind, scope) { continue }
             if let allowed = property.values, !allowed.contains(typed) { return .agent }
             guard inScope(typed, kind, scope) else { return .agent }
             params[key] = kind == .file ? filePath(typed, scope).map(JSONValue.string) ?? typed : typed
@@ -178,6 +185,7 @@ public enum FastPath {
     public static func route(_ line: String, scope: FastPathScope, schemas: [String: JSONValue],
                              deadline: Duration,
                              respond: @escaping @Sendable (RespondRequest) async throws -> String) async -> FastPathRoute {
+        guard !asksToDelete(line) else { return .agent }
         let request = RespondRequest(instructions: instructions(actions: schemas), input: input(line, scope: scope),
                                      jsonSchema: replySchema, maxTokens: 80)
         guard let reply = await within(deadline, { try? await respond(request) }) else { return .agent }
@@ -199,6 +207,17 @@ public enum FastPath {
     }
 
     // MARK: - Checks
+
+    /// Words that open a request to delete. The prompt says a delete is always the agent's, and the
+    /// 1.5B still answered "delete the draft bookings" with closing the bookings pane (3b-ix walk),
+    /// so such a line is not asked at all. The first word only: "open delete_user.go" is a file.
+    static let deleteWords: Set<String> = ["delete", "drop", "remove", "truncate", "erase", "purge", "wipe"]
+
+    static func asksToDelete(_ line: String) -> Bool {
+        let words = line.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init)
+        let first = words.first == "please" ? words.dropFirst().first : words.first
+        return first.map(deleteWords.contains) ?? false
+    }
 
     /// The registry schema's `type` for `key`, and its `enum` when it has one.
     private static func property(_ schema: JSONValue, _ key: String) -> (type: String?, values: [JSONValue]?) {
@@ -258,6 +277,7 @@ public enum FastPath {
         case .pane: return scope.panes.contains { $0.id == s }
         case .closablePane: return scope.panes.contains { $0.id == s && $0.kind != "terminal" }
         case .apiEntry: return scope.apiEntries.contains(s)
+        case .root: return scope.roots.contains(s)
         case .free: return true
         }
     }

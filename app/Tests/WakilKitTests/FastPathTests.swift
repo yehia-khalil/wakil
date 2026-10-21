@@ -36,6 +36,7 @@ private let schemas: [String: JSONValue] = [
                                "direction": .object(["type": .string("string"),
                                                      "enum": .array([.string("asc"), .string("desc"), .string("drop")])])]),
         "required": .array([.string("pane")])]),
+    "term_open": .object(["type": .string("object"), "properties": .object(["path": .object(["type": .string("string")])])]),
     "db_list_tables": .object(["type": .string("object"),
         "properties": .object(["database": .object(["type": .string("string")]), "pane": .object(["type": .string("string")])])]),
     "db_read_table": .object(["type": .string("object"),
@@ -231,3 +232,34 @@ private final class Gate: @unchecked Sendable {
             == .agent)
     #expect(FastPath.input("tables in core", scope: scope).contains(#""databases":["core","audit"]"#))
 }
+
+// 3b-ix walk, the real 1.5B: "open confirm.go" came back with the path in `line` as well.
+@Test func anOptionalParamOfTheWrongTypeIsDroppedAndTheRestRuns() {
+    let r = FastPath.check(reply: #"{"action":"editor_open","params":{"line":"api/confirm.go","path":"api/confirm.go"}}"#,
+                           scope: scope, schemas: schemas)
+    #expect(r == .action(name: "editor_open", params: .object(["path": .string("/p/api/confirm.go")])))
+}
+
+// 3b-ix walk, the real 1.5B: "delete the draft bookings" came back as closing the bookings pane.
+@Test func aLineThatAsksToDeleteGoesToTheAgentWithoutAskingTheModel() async {
+    let asked = Counter()
+    for line in ["delete the draft bookings", "Drop the old refunds", "please remove bookings 12"] {
+        let r = await FastPath.route(line, scope: scope, schemas: schemas, deadline: .seconds(1)) { _ in
+            await asked.bump(); return #"{"action":"pane_close","params":{"id":"db-1"}}"#
+        }
+        #expect(r == .agent, "\(line)")
+    }
+    #expect(await asked.count == 0)
+    #expect(!FastPath.asksToDelete("open delete_user.go"))
+    #expect(!FastPath.asksToDelete("close the db pane"))
+}
+
+// 3b-ix walk, the real 1.5B: "open a terminal" came back with `path: "zsh"`.
+@Test func aTerminalPathThatIsNotARootIsDropped() {
+    #expect(FastPath.check(reply: #"{"action":"term_open","params":{"path":"zsh"}}"#, scope: scope, schemas: schemas)
+            == .action(name: "term_open", params: .object([:])))
+    #expect(FastPath.check(reply: #"{"action":"term_open","params":{"path":"/p"}}"#, scope: scope, schemas: schemas)
+            == .action(name: "term_open", params: .object(["path": .string("/p")])))
+}
+
+private actor Counter { var count = 0; func bump() { count += 1 } }

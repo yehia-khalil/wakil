@@ -156,13 +156,18 @@ public struct FastPath: Sendable {
   projects, the trees' file listings), so a line journals nothing but its own dispatch. Only the
   routed `respond` provider is asked: a local server that is down sends the line to the agent,
   not to the session's provider (ghost-text keeps its fall-back).
+- A line whose first word (after "please") is delete, drop, remove, truncate, erase, purge or
+  wipe goes to the agent without asking the model: on the walk the 1.5B answered "delete the
+  draft bookings" with closing the bookings pane.
 - Checks, in order; the first that fails answers `.agent`:
   1. the reply parses and matches the schema;
   2. the action is on the list (`agent` answers `.agent`);
   3. the params fit that action's registry schema, its `type` and any `enum`, after dropping params
-     not on the list (a number for a string param becomes its string: "page 3");
-  4. every name param is in scope exactly: `path` among the files sent (except `term_open`, whose `path` is a directory and is not checked
-     against the file scope), `name` among the projects
+     not on the list (a number for a string param becomes its string: "page 3"). An optional
+     param of the wrong type is dropped and the rest runs (Rule 7; the 1.5B sent the file name as
+     `line` too); a required one fails;
+  4. every name param is in scope exactly: `path` among the files sent (`term_open`'s `path` is
+     kept only when it is a root, and dropped otherwise), `name` among the projects
      or environments, `database` among the databases, `table` among the tables, `id` among the open panes (for `pane_close`, never a
      terminal: closing one ends its shell), `entry` among the API entries.
 - Never throws to the composer: a model error, a timeout or a refusal is `.agent`, and the

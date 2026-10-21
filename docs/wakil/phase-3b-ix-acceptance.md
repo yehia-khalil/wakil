@@ -66,8 +66,10 @@ Settings is ⌘, ; **QUICK TASKS** and **LOCAL MODELS** are on the organisation'
 
 ## 2. Known and not fixed
 
-- **`term_open`'s `path` is a directory** and is not checked against the file scope; only the
-  other name params are checked against what was sent.
+- **`term_open`'s `path` is kept only when it is a project root**; otherwise the terminal opens
+  where it would with no path. The model is shown no directories.
+- **A delete is caught by its first word** (delete, drop, remove, truncate, erase, purge, wipe).
+  "Please get rid of the drafts" still reaches the model, whose prompt says a delete is the agent's.
 - **File scope is the top 20 of the project's files**, gathered by ranking each word of the line
   with ⌘P's matcher and interleaving the lists. A file outside the top 20 for every word is out of
   scope, so the line goes to the agent.
