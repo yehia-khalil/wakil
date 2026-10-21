@@ -233,25 +233,42 @@ func (w *GitWriter) head(ctx context.Context) (GitCommitResult, error) {
 // Discard sends each path's current copy to the Trash, then restores tracked ones from the index.
 // A tracked file is renamed `<name> (discarded HH:MM)` first (` 2`, ` 3` … when taken), so the
 // Trash says what it was; an untracked one goes as itself (Decision 41's Move to Trash). A tracked
-// path already gone from disk has nothing to trash: it is only restored.
+// path already gone from disk has nothing to trash: it is only restored. A path with a merge
+// conflict is refused before anything moves. On a failure part-way, the file being moved is put
+// back and every tracked path already trashed is restored, so nothing is left half-discarded.
 func (w *GitWriter) Discard(ctx context.Context, paths []string, now time.Time) ([]string, error) {
 	ps, err := w.paths(paths)
 	if err != nil {
 		return nil, err
 	}
+	for _, p := range ps {
+		out, err := w.git(ctx, nil, "ls-files", "-u", "--", p)
+		if err != nil {
+			return nil, err
+		}
+		if len(bytes.TrimSpace(out)) > 0 {
+			return nil, UserError(p + " has a merge conflict; resolve it before discarding")
+		}
+	}
 	names := []string{}
 	var tracked []string
+	fail := func(err error) ([]string, error) {
+		if len(tracked) > 0 {
+			if _, rerr := w.git(ctx, nil, "restore", append([]string{"--"}, tracked...)...); rerr != nil {
+				err = UserError(err.Error() + "; restoring what was already discarded also failed: " + rerr.Error())
+			}
+		}
+		return names, err
+	}
 	for _, p := range ps {
 		rel, err := w.runner().ResolvePath(p)
 		if err != nil {
-			return names, err
+			return fail(err)
 		}
 		abs := filepath.Join(w.Root, rel)
 		_, lsErr := w.runner().Run(ctx, "rev-parse", "--verify", ":"+p)
 		isTracked := lsErr == nil
-		_, statErr := os.Lstat(abs)
-		onDisk := statErr == nil
-		if isTracked && !onDisk {
+		if _, statErr := os.Lstat(abs); isTracked && statErr != nil {
 			tracked = append(tracked, p)
 			continue
 		}
@@ -266,12 +283,17 @@ func (w *GitWriter) Discard(ctx context.Context, paths []string, now time.Time) 
 				target = filepath.Join(filepath.Dir(abs), base+" "+strconv.Itoa(n))
 			}
 			if err := os.Rename(abs, target); err != nil {
-				return names, UserError("discard " + p + ": " + err.Error())
+				return fail(UserError("discard " + p + ": " + err.Error()))
 			}
-			tracked = append(tracked, p)
 		}
 		if _, err := TrashEntry(ctx, target, []string{w.Root}); err != nil {
-			return names, err
+			if isTracked {
+				os.Rename(target, abs) // put the original name back
+			}
+			return fail(err)
+		}
+		if isTracked {
+			tracked = append(tracked, p)
 		}
 		names = append(names, filepath.Base(target))
 	}

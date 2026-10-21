@@ -289,3 +289,54 @@ func TestStageContentWritesTheIndexAndRefusesAMovedChange(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func TestADiscardThatFailsHalfwayLeavesNothingHalfDone(t *testing.T) {
+	dir := gitTestRepo(t)
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("bee\n"), 0o644)
+	gitOut(t, dir, "add", "b.txt")
+	gitOut(t, dir, "commit", "-q", "-m", "b")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed\n"), 0o644)
+	bin := filepath.Join(t.TempDir(), "trash")
+	script := "#!/bin/sh\nif [ -e \"" + bin + ".n\" ]; then exit 1; fi\ntouch \"" + bin + ".n\"\nrm -rf \"$2\"\n"
+	os.WriteFile(bin, []byte(script), 0o755)
+	old := trashBin
+	trashBin = bin
+	t.Cleanup(func() { trashBin = old })
+	_, err := writerFor(t, dir, GitIdentity{}).Discard(context.Background(), []string{"a.txt", "b.txt"}, time.Now())
+	if err == nil {
+		t.Fatal("want the failure")
+	}
+	for f, want := range map[string]string{"a.txt": "one\n", "b.txt": "bee\n"} {
+		if b, _ := os.ReadFile(filepath.Join(dir, f)); string(b) != want {
+			t.Fatalf("%s is %q", f, b)
+		}
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "(discarded") {
+			t.Fatalf("left behind: %s", e.Name())
+		}
+	}
+}
+
+func TestDiscardRefusesAConflictedPath(t *testing.T) {
+	fakeTrash(t)
+	dir := gitTestRepo(t)
+	gitOut(t, dir, "checkout", "-q", "-b", "other")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("theirs\n"), 0o644)
+	gitOut(t, dir, "commit", "-q", "-am", "theirs")
+	gitOut(t, dir, "checkout", "-q", "main")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("ours\n"), 0o644)
+	gitOut(t, dir, "commit", "-q", "-am", "ours")
+	exec.Command("git", "-C", dir, "merge", "other").Run() // conflicts; exit 1 expected
+	if gitOut(t, dir, "ls-files", "-u") == "" {
+		t.Fatal("no conflict was made")
+	}
+	_, err := writerFor(t, dir, GitIdentity{}).Discard(context.Background(), []string{"a.txt"}, time.Now())
+	if err == nil || err.Error() != "a.txt has a merge conflict; resolve it before discarding" {
+		t.Fatalf("err %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a.txt")); err != nil {
+		t.Fatal("a.txt vanished")
+	}
+}
