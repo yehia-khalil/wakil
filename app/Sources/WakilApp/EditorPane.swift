@@ -75,6 +75,10 @@ struct EditorPane: View {
     let ghostSchema: () async -> GhostScope
     let ghostSuggest: (InfillRequest, Int) async -> String?
     let ghostCancel: () -> Void
+    /// 3a-ii. The Changes view's commit box and write buttons, for every root (`EditorChangesControls`).
+    let changes: EditorChangesControls
+    /// The peek's Stage Change: `WindowModel.changesStageHunk`, the focused tab's peeked hunk.
+    let stageHunk: () async -> Void
 
     @State private var host = EditorHost()
     /// Compare, open: the path and the disk text it shows against the buffer.
@@ -136,7 +140,8 @@ struct EditorPane: View {
                                  reveal: { Task { await revealInTree() } },
                                  selected: $treeSelected, selectedResult: $resultSelected,
                                  focusWanted: $columnFocusWanted, hasKeyboard: $columnHasKeyboard,
-                                 pendingReveal: $pendingReveal, browsed: $treeBrowsed)
+                                 pendingReveal: $pendingReveal, browsed: $treeBrowsed,
+                                 changes: changes)
                 }
                 editorStack
             }
@@ -498,7 +503,7 @@ struct EditorPane: View {
 
     // MARK: - Peek
 
-    /// A peek control or key (R13): step, close, or Revert — `editor_replace_range` with the hunk's
+    /// A peek control or key (R13): step, close, Stage Change (3a-ii), or Revert — `editor_replace_range` with the hunk's
     /// old lines, which asks nothing (Rule 1) and is undone with ⌘Z.
     ///
     /// Revert passes `expect`, the hunk's new text as this snapshot has it, so the store refuses it
@@ -510,6 +515,9 @@ struct EditorPane: View {
             case "up": await dispatch("editor_peek_step", ["delta": .integer(-1)])
             case "down": await dispatch("editor_peek_step", ["delta": .integer(1)])
             case "close": await dispatch("editor_peek_close", [:])
+            // 3a-ii: that one hunk into the index. The peek exists only on a tracked file (its
+            // baseline is the index text), so the button is never drawn where it has nothing to stage.
+            case "stage": await stageHunk()
             case "revert":
                 guard !host.reverting, let latest = host.latest, let r = editorPeekRevert(latest) else { return }
                 host.reverting = true

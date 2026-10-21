@@ -489,7 +489,33 @@ extension WakilWindow {
                     ghostSuggest: { request, generation in
                         await model.ghostSuggestion(pane: pane.id, request: request, generation: generation)
                     },
-                    ghostCancel: { model.ghostCancel(pane: pane.id) })
+                    ghostCancel: { model.ghostCancel(pane: pane.id) },
+                    // 3a-ii: the Changes view's writes, per root, from the window's one state.
+                    changes: EditorChangesControls(
+                        messages: model.changesMessages, errors: model.changesErrors,
+                        inFlight: model.changesInFlight,
+                        hints: Dictionary(model.gitRoots.compactMap { r in
+                            model.changesHint(root: r.root).map { (r.root, $0) }
+                        }, uniquingKeysWith: { first, _ in first }),
+                        edit: { root, text in model.changesMessageEdited(root: root, text: text) },
+                        historyStep: { root, delta in
+                            let before = model.changesMessages[root]
+                            model.changesHistoryStep(root: root, by: delta)
+                            return model.changesMessages[root] != before
+                        },
+                        commit: { root in await model.changesCommit(root: root) },
+                        amend: { root in await model.changesAmend(root: root) },
+                        undo: { root in await model.changesUndoCommit(root: root) },
+                        stage: { root, paths, group in await model.changesStage(root: root, paths: paths, group: group) },
+                        unstage: { root, paths, group in
+                            await model.changesUnstage(root: root, paths: paths, group: group)
+                        },
+                        discard: { root, paths, group in
+                            await model.changesDiscard(root: root, paths: paths, group: group)
+                        },
+                        cancel: { root in model.changesCancel(root: root) },
+                        refreshIdentity: { root in await model.refreshChangesIdentity(root: root) }),
+                    stageHunk: { await model.changesStageHunk() })
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw
                 // its kind — the rule `Pane.kinds` has always stated.

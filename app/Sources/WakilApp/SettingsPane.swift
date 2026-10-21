@@ -441,6 +441,16 @@ struct SettingsPane: View {
                 organisationEditor(field, in: tree)
             }
             speechRow(tree: tree)
+            // 3a-ii: who commits from the Changes view. Drawn as QUICK TASKS' header is.
+            VStack(alignment: .leading, spacing: 8) {
+                Text("GIT")
+                    .font(.system(size: Scale.micro, weight: .medium))
+                    .tracking(Scale.microTracking)
+                    .foregroundStyle(coolWhite.opacity(0.32))
+                organisationEditor(.gitName, in: tree)
+                organisationEditor(.gitEmail, in: tree)
+            }
+            .padding(.top, 14)
             readOnlyNote(
                 "Saved one field at a time, read-modify-write from disk — so an edit you make "
                     + "to org.json by hand while this pane is open survives a save here.")
@@ -884,8 +894,9 @@ struct SettingsPane: View {
         case .defaultProvider: return tree.org.defaultProvider
         case .speechProvider: return tree.org.speechProvider
         case .quickProvider: return tree.org.quickProvider
-        // Drawn under GIT by Task 7, which reads them from the tree; not in the generic list.
-        case .gitName, .gitEmail: return ""
+        // Drawn under GIT, not in the generic list (3a-ii).
+        case .gitName: return tree.org.gitName
+        case .gitEmail: return tree.org.gitEmail
         }
     }
 

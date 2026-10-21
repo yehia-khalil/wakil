@@ -289,7 +289,7 @@
         const node = document.createElement('div'); node.className = 'wakil-peek';
         const head = document.createElement('div'); head.className = 'wakil-peek-head';
         const title = document.createElement('span'); title.textContent = p.title; head.appendChild(title);
-        [['\u2191', 'up'], ['\u2193', 'down'], ['Revert', 'revert'], ['\u00d7', 'close']].forEach(function (b) {
+        [['\u2191', 'up'], ['\u2193', 'down'], ['Stage Change', 'stage'], ['Revert', 'revert'], ['\u00d7', 'close']].forEach(function (b) {
           const el = document.createElement('button'); el.textContent = b[0];
           el.addEventListener('mousedown', function (e) {
             e.preventDefault(); e.stopPropagation();

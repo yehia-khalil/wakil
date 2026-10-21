@@ -178,11 +178,15 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var ghostText: Bool
     /// The organisation's fast-path switch (3b-ix): one-line composer commands without an agent turn.
     public var fastPath: Bool
+    /// The organisation's git author (3a-ii): the name and email commits from the Changes view carry.
+    /// Empty means the repository's own git config decides.
+    public var gitName: String
+    public var gitEmail: String
 
     public init(
         id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
         speechProvider: String = "", quickProvider: String = "", ghostText: Bool = true,
-        fastPath: Bool = false
+        fastPath: Bool = false, gitName: String = "", gitEmail: String = ""
     ) {
         self.id = id
         self.displayName = displayName
@@ -192,6 +196,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         self.quickProvider = quickProvider
         self.ghostText = ghostText
         self.fastPath = fastPath
+        self.gitName = gitName
+        self.gitEmail = gitEmail
     }
 
     public init(from decoder: Decoder) throws {
@@ -204,10 +210,13 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         quickProvider = try container.decodeIfPresent(String.self, forKey: .quickProvider) ?? ""
         ghostText = try container.decodeIfPresent(Bool.self, forKey: .ghostText) ?? true
         fastPath = try container.decodeIfPresent(Bool.self, forKey: .fastPath) ?? false
+        gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
+        gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath
+        case gitName, gitEmail
     }
 
     /// What the tree's Organisation node is labelled with: the display
