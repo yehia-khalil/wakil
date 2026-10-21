@@ -289,8 +289,13 @@ struct SettingsSection<Accessory: View, Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // The hairline is the section's identifier: it spans the column, so a page drawn wider
+            // than its pane shows on it, and an e2e check holds it inside `settings.pane`
+            // (2e-settings-pane, 2e-settings-narrow-rows). A container's frame would not: macOS
+            // reports one as the union of its children.
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.10)).frame(height: 0.5)
-                .accessibilityHidden(true)
+                .accessibilityElement()
+                .accessibilityIdentifier("settings.section.\(fragment)")
             HStack(alignment: .center, spacing: 6) {
                 Text(title.uppercased())
                     .font(.system(size: SettingsScale.micro, weight: .medium))
@@ -304,6 +309,13 @@ struct SettingsSection<Accessory: View, Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, SettingsScale.sectionGap - 10)
+    }
+
+    /// The title as an identifier fragment: `Local models` → `localModels`.
+    private var fragment: String {
+        let words = title.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map { $0.lowercased() }
+        guard let first = words.first else { return "untitled" }
+        return first + words.dropFirst().map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()
     }
 }
 

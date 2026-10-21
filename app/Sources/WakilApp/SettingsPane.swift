@@ -250,7 +250,15 @@ struct SettingsPane: View {
                 // gives every row, applied once to the column they share.
                 .padding(.leading, Scale.gutter)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // **The pane's width, never its content's.** `minWidth: 0` makes this frame the width it is
+        // given; without it a page wider than the pane (the account table, 2026-10-21) grew the
+        // whole slab, which the canvas then centred on the pane's frame — the tree cut off on the
+        // left. A page that is still too wide now runs past the right edge, where
+        // 2e-settings-pane and 2e-settings-narrow-rows hold its sections inside `settings.pane`.
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // The pane's extent, for those checks: a leaf behind the content, because macOS reports a
+        // container's frame as the union of its children — the overflow it is meant to catch.
+        .background(Color.clear.accessibilityElement().accessibilityIdentifier("settings.pane"))
         .task(id: tree) { quickStatus = await quickTaskStatus() }
     }
 
@@ -595,6 +603,7 @@ struct SettingsPane: View {
             .tracking(Scale.microTracking)
             .foregroundStyle(coolWhite.opacity(0.40))
             .lineLimit(1)
+            .accessibilityIdentifier("settings.breadcrumb")
     }
 
     @ViewBuilder
