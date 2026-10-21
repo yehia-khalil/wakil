@@ -10,6 +10,16 @@ public actor GitWriteFlights {
     public func begin(_ root: String) -> Bool { roots.insert(root).inserted }
     public func end(_ root: String) { roots.remove(root) }
     public func running(_ root: String) -> Bool { roots.contains(root) }
+    /// Returns once no write runs, or after `limit` seconds; true when none was left running.
+    /// `WakilWiring.switchOrg` waits here before it stops wakil-git, so a running commit finishes.
+    public func drained(within limit: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(limit)
+        while !roots.isEmpty {
+            if Date() >= deadline { return false }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return true
+    }
 }
 
 /// Registers the seven `editor_changes_*` git writes (3a-ii). Each is a mutation priced allow in every
@@ -42,16 +52,36 @@ func registerEditorChangesWrites(
         if let n = await rootState(root)?.name, !n.isEmpty { return n }
         return (root as NSString).lastPathComponent
     }
-    /// `paths`, else every path of `group` in the root's last status; refuses when neither names a file.
-    @Sendable func targets(_ params: JSONValue, root: String, action: String) async throws -> [String] {
-        if let paths = strings(params, "paths"), !paths.isEmpty { return paths.map { relative($0, to: root) } }
+    /// `paths`, else every path of `group` in the root's last status; refuses when neither names a file,
+    /// or the group is not one this write takes (`groups`). With `renames`, a staged rename brings its
+    /// old path along: unstaging only the new one would leave the deletion staged.
+    @Sendable func targets(
+        _ params: JSONValue, root: String, action: String, groups: [GitGroup], renames: Bool
+    ) async throws -> [String] {
+        func withRenames(_ paths: [String]) async -> [String] {
+            guard renames else { return paths }
+            let staged = await rootState(root)?.files.filter { $0.group == .staged } ?? []
+            var out: [String] = []
+            for p in paths {
+                out.append(p)
+                if let orig = staged.first(where: { $0.path == p })?.origPath, !out.contains(orig), !paths.contains(orig) {
+                    out.append(orig)
+                }
+            }
+            return out
+        }
+        if let paths = strings(params, "paths"), !paths.isEmpty { return await withRenames(paths.map { relative($0, to: root) }) }
         if let g = optionalString(params, "group") {
             guard let group = GitGroup(rawValue: g) else {
                 throw EditorFilesError(description: "\(action): group is staged, changed or untracked")
             }
+            guard groups.contains(group) else {
+                throw EditorFilesError(description:
+                    "\(action) takes group \(groups.map(\.rawValue).joined(separator: " or ")), not \(g)")
+            }
             let rows = await rootState(root)?.files.filter { $0.group == group }.map(\.path) ?? []
             guard !rows.isEmpty else { throw EditorFilesError(description: "\(action): nothing is \(g) in \(await rootName(root))") }
-            return rows
+            return await withRenames(rows)
         }
         throw StandardActionError.missingParam(action: action, param: "paths")
     }
@@ -95,24 +125,26 @@ func registerEditorChangesWrites(
     let price: (production: GateDecision, otherwise: GateDecision) = (production: .allow, otherwise: .allow)
 
     /// stage / unstage / discard share one shape: root plus paths or a group.
-    @Sendable func pathWrite(_ name: String, tool: String, description: String) async {
+    @Sendable func pathWrite(
+        _ name: String, tool: String, groups: [GitGroup], renames: Bool = false, description: String
+    ) async {
         await registry.register(Action(
             name: name, description: description, kind: .mutate, audience: .agentReachable,
             schema: rootSchema(["paths": pathsSchema, "group": groupSchema]),
             handler: { params in
                 let root = try requireString(params, "root", action: name)
-                let paths = try await targets(params, root: root, action: name)
+                let paths = try await targets(params, root: root, action: name, groups: groups, renames: renames)
                 return try await write(root, action: name) { git in
                     try await call(git, tool, ["root": .string(root), "paths": .array(paths.map { .string($0) })], action: name)
                 }
             },
             price: price))
     }
-    await pathWrite("editor_changes_stage", tool: "git_stage",
+    await pathWrite("editor_changes_stage", tool: "git_stage", groups: [.changed, .untracked],
         description: "Stage files in one root: paths (relative to root, or absolute), or group (changed or untracked) for every file in it. Allowed everywhere; editor_changes_unstage reverses it.")
-    await pathWrite("editor_changes_unstage", tool: "git_unstage",
-        description: "Unstage files in one root: paths, or group (staged) for every staged file. The working tree is untouched. Allowed everywhere.")
-    await pathWrite("editor_changes_discard", tool: "git_discard",
+    await pathWrite("editor_changes_unstage", tool: "git_unstage", groups: [.staged], renames: true,
+        description: "Unstage files in one root: paths, or group (staged) for every staged file; a staged rename's old path is unstaged with it. A path with nothing staged is left as it is. The working tree is untouched. Allowed everywhere.")
+    await pathWrite("editor_changes_discard", tool: "git_discard", groups: [.changed, .untracked],
         description: "Discard the working-tree changes of files in one root: paths, or group (changed or untracked). Discarded files go to the Trash, where Finder's Put Back restores them; answers trashed, the names. Allowed everywhere.")
 
     await registry.register(Action(
@@ -164,16 +196,20 @@ func registerEditorChangesWrites(
 
     await registry.register(Action(
         name: "editor_changes_stage_hunk",
-        description: "Stage one change of an open file: path (absolute) and hunk (its index in the file's changes, default the one the peek shows). The index gains only that change; the buffer is untouched. Allowed everywhere.",
+        description: "Stage one change of an open file: path (absolute), hunk (its index in the file's changes, default the one the peek shows) and pane (the editor pane whose tab to use; default the first with the file open). The index gains only that change; the buffer is untouched. Allowed everywhere.",
         kind: .mutate, audience: .agentReachable,
-        schema: rootSchema(["path": .object(["type": .string("string")]), "hunk": .object(["type": .string("integer")])],
+        schema: rootSchema(["path": .object(["type": .string("string")]), "hunk": .object(["type": .string("integer")]),
+                            "pane": .object(["type": .string("string")])],
                            required: ["path"]).withoutRequired("root"),
         handler: { params in
             let action = "editor_changes_stage_hunk"
             let path = try requireString(params, "path", action: action)
             var found: EditorTab?
             if let layout {
-                for pane in await layout.snapshot().panes where pane.kind == "editor" {
+                // The given pane first: the same file open in two panes can show two different changes.
+                let wanted = optionalString(params, "pane")
+                let editors = await layout.snapshot().panes.filter { $0.kind == "editor" }
+                for pane in editors.filter({ $0.id == wanted }) + editors.filter({ $0.id != wanted }) {
                     if let t = await panes.editorSnapshot(paneId: pane.id).tabs.first(where: { $0.path == path }) { found = t; break }
                 }
             }

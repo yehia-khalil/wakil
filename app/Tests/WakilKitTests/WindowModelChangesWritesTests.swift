@@ -11,6 +11,7 @@ private actor ChangesGit: ToolCaller {
     var undoMessage = "m"
     var identity: (name: String, email: String, from: String) = ("O", "o@x", "organisation")
     var gated = false
+    var cancelThrows = false
     var identityFails = false
     var commitsFinished = 0
     private var parked: CheckedContinuation<Void, Never>?
@@ -23,6 +24,8 @@ private actor ChangesGit: ToolCaller {
     func set(identity: (name: String, email: String, from: String)) { self.identity = identity }
     func failIdentity() { identityFails = true }
     func gateCommits() { gated = true; released = false }
+    /// As MCPClient does: a cancelled call ends in CancellationError.
+    func throwOnCancel() { cancelThrows = true }
     func release() { released = true; parked?.resume(); parked = nil }
     private func park(_ c: CheckedContinuation<Void, Never>) { if released { c.resume() } else { parked = c } }
     func parkedNow() -> Bool { parked != nil }
@@ -38,6 +41,7 @@ private actor ChangesGit: ToolCaller {
                        "behind": .integer(0), "files": .array([])])
         case "git_commit":
             if gated { await withCheckedContinuation { c in Task { await self.park(c) } } }
+            if cancelThrows { try Task.checkCancellation() }
             defer { commitsFinished += 1 }
             if let failCommit {
                 return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(failCommit)])])])
@@ -224,5 +228,40 @@ private func changesWindow(failCommit: String? = nil, undoMessage: String? = nil
         #expect(window.changesHistory["/p"] == nil && window.changesErrors["/p"] == nil
                 && window.changesMessages["/p"] == nil && !window.changesInFlight.contains("/p")
                 && window.changesTasks["/p"] == nil)
+    }
+
+    @Test func cancellingACommitShowsNoError() async throws {
+        let (window, git) = await changesWindow()
+        await git.gateCommits()
+        await git.throwOnCancel()
+        window.changesMessageEdited(root: "/p", text: "fix")
+        let commit = Task { await window.changesCommit(root: "/p") }
+        while await !git.parkedNow() { try await Task.sleep(for: .milliseconds(1)) }
+        window.changesCancel(root: "/p")
+        await git.release()
+        await commit.value
+        #expect(window.changesErrors["/p"] == nil, "\(window.changesErrors["/p"] ?? "")")
+        #expect(window.changesMessages["/p"] == "fix", "the draft stays for another try")
+        #expect(!window.changesInFlight.contains("/p"))
+    }
+
+    @Test func textTypedWhileACommitRunsIsKept() async throws {
+        let (window, git) = await changesWindow()
+        await git.gateCommits()
+        window.changesMessageEdited(root: "/p", text: "fix")
+        let commit = Task { await window.changesCommit(root: "/p") }
+        while await !git.parkedNow() { try await Task.sleep(for: .milliseconds(1)) }
+        window.changesMessageEdited(root: "/p", text: "next one")
+        await git.release()
+        await commit.value
+        #expect(window.changesMessages["/p"] == "next one")
+        #expect(window.changesHistory["/p"] == ["fix"])
+    }
+
+    @Test func undoDoesNotOverwriteADraft() async {
+        let (window, _) = await changesWindow(undoMessage: "undo me")
+        window.changesMessageEdited(root: "/p", text: "my draft")
+        await window.changesUndoCommit(root: "/p")
+        #expect(window.changesMessages["/p"] == "my draft")
     }
 }

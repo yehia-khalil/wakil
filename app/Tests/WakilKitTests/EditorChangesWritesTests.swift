@@ -11,8 +11,10 @@ private actor WriteGit: ToolCaller {
     private var parked: CheckedContinuation<Void, Never>?
     private var released = false
     var statusRows: [String: [(String, String, String)]] = [:]
+    var origPaths: [String: String] = [:]
 
     func set(rows: [(String, String, String)], root: String) { statusRows[root] = rows }
+    func set(origPath: String, for path: String) { origPaths[path] = origPath }
     func hold(root: String) { holdCommit = root; released = false }
     func release() { released = true; parked?.resume(); parked = nil }
     private func park(_ c: CheckedContinuation<Void, Never>) { if released { c.resume() } else { parked = c } }
@@ -27,7 +29,11 @@ private actor WriteGit: ToolCaller {
             let rows = statusRows[root] ?? []
             return ok(["root": .string(root), "branch": .string("main"), "detached": .string(""),
                        "upstream": .string(""), "ahead": .integer(0), "behind": .integer(0),
-                       "files": .array(rows.map { .object(["path": .string($0.0), "group": .string($0.1), "status": .string($0.2)]) })])
+                       "files": .array(rows.map { row in
+                           var o: [String: JSONValue] = ["path": .string(row.0), "group": .string(row.1), "status": .string(row.2)]
+                           if let orig = origPaths[row.0] { o["origPath"] = .string(orig) }
+                           return .object(o)
+                       })])
         case "git_commit":
             if holdCommit == root { await withCheckedContinuation { c in Task { await self.park(c) } } }
             return ok(["commit": .string("abc"), "summary": .string("1 file changed")])
@@ -223,5 +229,53 @@ private func args(_ call: WriteGit.Call?, _ key: String) -> JSONValue? {
             _ = try await f.dispatch("editor_changes_stage_hunk", ["path": .string("/p/none.go"), "hunk": .integer(0)])
         }
         #expect(await f.git.count("git_stage_hunk") == 0)
+    }
+
+    @Test func eachPathWriteTakesOnlyItsOwnGroups() async throws {
+        let f = try await fixture(rows: ["/p": [("a.go", "changed", "M"), ("s.go", "staged", "M"), ("n.go", "untracked", "?")], "/q": []])
+        for (action, group) in [("editor_changes_stage", "staged"), ("editor_changes_unstage", "changed"),
+                                ("editor_changes_unstage", "untracked"), ("editor_changes_discard", "staged")] {
+            await #expect(throws: (any Error).self, "\(action) with group \(group)") {
+                _ = try await f.dispatch(action, ["root": .string("/p"), "group": .string(group)])
+            }
+        }
+        #expect(await f.git.count("git_stage") + f.git.count("git_unstage") + f.git.count("git_discard") == 0)
+        do {
+            _ = try await f.dispatch("editor_changes_unstage", ["root": .string("/p"), "group": .string("changed")])
+        } catch {
+            #expect("\(error)".contains("editor_changes_unstage takes group staged, not changed"), "\(error)")
+        }
+        _ = try await f.dispatch("editor_changes_unstage", ["root": .string("/p"), "group": .string("staged")])
+        _ = try await f.dispatch("editor_changes_discard", ["root": .string("/p"), "group": .string("untracked")])
+        _ = try await f.dispatch("editor_changes_stage", ["root": .string("/p"), "group": .string("untracked")])
+    }
+
+    @Test func unstagingARenameUnstagesItsOldPathToo() async throws {
+        let f = try await fixture(rows: ["/p": [("b.go", "staged", "R"), ("c.go", "staged", "M")], "/q": []])
+        await f.git.set(origPath: "a.go", for: "b.go")
+        await f.status.refresh()
+        _ = try await f.dispatch("editor_changes_unstage", ["root": .string("/p"), "paths": .array([.string("/p/b.go")])])
+        #expect(args(await f.git.calls.last { $0.name == "git_unstage" }, "paths") == .array([.string("b.go"), .string("a.go")]))
+        _ = try await f.dispatch("editor_changes_unstage", ["root": .string("/p"), "group": .string("staged")])
+        #expect(args(await f.git.calls.last { $0.name == "git_unstage" }, "paths")
+                == .array([.string("b.go"), .string("a.go"), .string("c.go")]))
+    }
+
+    @Test func stageHunkTakesTheTabOfTheGivenPane() async throws {
+        let f = try await fixture()
+        let second = await f.layout.open(kind: "editor", title: "Editor 2").id
+        let base = "a\nb\n"
+        for (pane, text) in [(f.pane, "a\nFIRST\n"), (second, "a\nSECOND\n")] {
+            await f.panes.updateEditor(paneId: pane, create: true) { s in
+                s.tabs = [EditorTab(subject: .file(path: "/p/a.go", root: "/p"), text: text, savedText: base, language: "go",
+                                    diskState: .inSync, mtime: 1, cursor: EditorPosition(line: 1, column: 1), selection: nil,
+                                    visibleRange: nil, scrollTop: 0, notice: nil, readOnly: false, saving: false, edits: 0,
+                                    lastAgentEdit: nil, baseline: base, peek: 0)]
+                s.active = 0
+            }
+        }
+        _ = try await f.dispatch("editor_changes_stage_hunk", ["path": .string("/p/a.go"), "hunk": .integer(0), "pane": .string(second)])
+        let call = await f.git.calls.last { $0.name == "git_stage_hunk" }
+        #expect(args(call, "content") == .string(try #require(editorStagedText(base: base, text: "a\nSECOND\n", hunk: 0))))
     }
 }

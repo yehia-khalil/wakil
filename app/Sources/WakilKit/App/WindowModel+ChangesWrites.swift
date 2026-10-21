@@ -40,23 +40,27 @@ extension WindowModel {
     // MARK: Writes
 
     public func changesCommit(root: String) async {
-        let message = (changesMessages[root] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let draft = changesMessages[root]
+        let message = (draft ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return }
         guard await changesWrite(root, "editor_changes_commit",
                                  ["root": .string(root), "message": .string(message)]) != nil else { return }
-        changesRemember(root, message)
+        changesRemember(root, message, committedDraft: draft)
     }
 
     public func changesAmend(root: String) async {
-        let message = (changesMessages[root] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let draft = changesMessages[root]
+        let message = (draft ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         var params: [String: JSONValue] = ["root": .string(root)]
         if !message.isEmpty { params["message"] = .string(message) }
         guard await changesWrite(root, "editor_changes_amend", params) != nil else { return }
-        if !message.isEmpty { changesRemember(root, message) }
+        if !message.isEmpty { changesRemember(root, message, committedDraft: draft) }
     }
 
+    /// The undone commit's message fills the box only when it is empty: a draft is the operator's.
     public func changesUndoCommit(root: String) async {
         guard let result = await changesWrite(root, "editor_changes_undo_commit", ["root": .string(root)]) else { return }
+        guard (changesMessages[root] ?? "").isEmpty else { return }
         let message = Self.changesField(result, "message") ?? ""
         changesHistoryCursor[root] = nil
         changesMessages[root] = message.isEmpty ? nil : message
@@ -74,12 +78,15 @@ extension WindowModel {
         _ = await changesWrite(root, "editor_changes_discard", Self.changesTargets(root, paths, group))
     }
 
-    /// Stages the change the focused editor tab's peek shows; the action refuses a tab with none.
+    /// Stages the change the focused editor tab's peek shows; the action refuses a tab with none. The
+    /// pane and the peek's hunk are named, so the same file open in another pane is not the one staged.
     public func changesStageHunk() async {
         guard let pane = focusedEditorPane(), let s = editor(pane), let i = s.active, i < s.tabs.count,
               let path = s.tabs[i].path else { return }
         let root = gitRoots.map(\.root).filter { path.hasPrefix($0 + "/") }.max { $0.count < $1.count } ?? ""
-        _ = await changesWrite(root, "editor_changes_stage_hunk", ["path": .string(path)])
+        var params: [String: JSONValue] = ["path": .string(path), "pane": .string(pane)]
+        if let peek = s.tabs[i].peek { params["hunk"] = .integer(Int64(peek)) }
+        _ = await changesWrite(root, "editor_changes_stage_hunk", params)
     }
 
     /// Ends that root's running dispatch. The write itself may already be past the point of stopping;
@@ -88,7 +95,8 @@ extension WindowModel {
 
     // MARK: Identity and hint
 
-    /// Reads who a commit in `root` would be authored as. Kept as it was when the read fails.
+    /// Reads who a commit in `root` would be authored as. Cleared when the read fails: the old hint
+    /// may now be wrong.
     public func refreshChangesIdentity(root: String) async {
         guard let git = gitStatus?.git else { return }
         let generation = changesGeneration
@@ -111,10 +119,13 @@ extension WindowModel {
 
     // MARK: Plumbing
 
-    private func changesRemember(_ root: String, _ message: String) {
+    /// Records `message` in the root's history and empties the box — unless the operator typed
+    /// something else while the write ran (`committedDraft` is what the box held when it started).
+    private func changesRemember(_ root: String, _ message: String, committedDraft: String?) {
         var h = changesHistory[root] ?? []
         h.insert(message, at: 0)
         changesHistory[root] = Array(h.prefix(Self.changesHistoryLimit))
+        guard changesMessages[root] == committedDraft else { return }
         changesHistoryCursor[root] = nil
         changesMessages[root] = nil
     }
@@ -156,7 +167,12 @@ extension WindowModel {
             changesErrors[root] = nil
             return result
         case .failure(let error):
-            changesErrors[root] = statusDescribingFailure(name, error)
+            // Cancel is the operator's own act, not a failure to report.
+            if error is CancellationError || task.isCancelled {
+                changesErrors[root] = nil
+            } else {
+                changesErrors[root] = statusDescribingFailure(name, error)
+            }
             return nil
         }
     }
