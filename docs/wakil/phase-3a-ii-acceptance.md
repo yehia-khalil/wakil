@@ -69,15 +69,15 @@ Walk in order, on `walk-3a-ii`, in `personal`.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 1 | Press ⌘⇧G | Each root header has a message box reading `Message (⌘⏎ to commit)`, a **Commit** button (disabled while the box is empty) and a **▾**. Under `api`'s box: `committing as walk-config@example.com (from git config)`; under `hooked`'s, nothing (no identity anywhere) | |
-| 2 | ⌘, → Organisation → **GIT**: type Name `Walk Org`, press Tab, type Email `walk-org@example.com`, click the Display name field. Close Settings, press ⌘B then ⌘⇧G | Both fields keep what was typed and are saved without Return or Save (reopen Settings: they are there). Both roots' hints read `committing as walk-org@example.com` | |
+| 1 | Press ⌘⇧G | Each root with changes has a message box, a **Commit** bar the box's width (disabled while the box is empty) with a **▾** at its right edge; a clean root is one line. `api`'s box reads `Message · as walk-config@example.com (from git config) (⌘⏎)`; `hooked`'s reads `Message (⌘⏎ to commit)` (no identity anywhere) | |
+| 2 | ⌘, → Organisation → **GIT**: type Name `Walk Org`, press Tab, type Email `walk-org@example.com`, click the Display name field. Close Settings, press ⌘B then ⌘⇧G | Both fields keep what was typed and are saved without Return or Save (reopen Settings: they are there). Both roots' boxes read `Message · as walk-org@example.com (⌘⏎)` | |
 | 3 | Hover a row under **Changes**, then one under **Untracked**, then a group header | **+** and **↺** on Changes and Untracked rows; the header carries them for the whole group. Click a row: its buttons stay while it is highlighted | |
 | 4 | Press **+** on `notes` | `notes` moves to **Staged** as `A` and stays highlighted (Rule 6); the Files tree's letter for it changes at the same time. The button now reads **Commit** | |
 | 5 | Press **−** on `notes` under Staged, then **+** again | It goes back to Untracked, then to Staged; no dialog either way | |
 | 6 | In `api`'s box type `walk: first`, press ⌘⏎ | `notes` leaves the list; the box empties. The other rows stay | |
 | 7 | Click the empty box, press ↑, then ↓ | ↑ shows `walk: first`; ↓ empties the box. Typing after ↑ edits a new message | |
 | 8 | Press ↺ on `scratch.txt` (untracked) | It leaves the list with no dialog; Finder's Trash holds `scratch.txt`, and Put Back restores it | |
-| 9 | Open `confirm.go` from the tree. Click the gutter mark on line 1; in the peek press **Stage Change** | `confirm.go` shows under both **Staged** and **Changes**; line 1's mark is gone and line 7's stays | |
+| 9 | Open `confirm.go` from the tree. Click the gutter mark on line 1; in the peek press **Stage** | `confirm.go` shows under both **Staged** and **Changes**; line 1's mark is gone and line 7's stays | |
 | 10 | With nothing typed, ▾ → **Amend Last Commit** | No dialog. In Terminal, `git -C "$TMPDIR/walk-3a-ii/api" log -1 --format=%s` still prints `walk: first`, and `git -C "$TMPDIR/walk-3a-ii/api" show --stat HEAD` lists `confirm.go` | |
 | 11 | ▾ → **Undo Last Commit** | The box holds `walk: first`; `notes` and `confirm.go` are back under Staged | |
 | 12 | ▾ → **Undo Last Commit** again | Under the box, whole: `nothing to undo: this is the first commit`. The box keeps its text | |
@@ -113,7 +113,7 @@ Walk in order, on `walk-3a-ii`, in `personal`.
   does for VS Code; the walk's repositories do not sign, so that prompt is not seen.
 - **The Trash's names** (rows 8 and 14) are pinned by `internal/wakilcore` tests; no e2e check
   reads Finder's Trash.
-- **Stage Change's button** is HTML inside Monaco's web view, which the harness cannot press; the
+- **Stage's button** (the peek's) is HTML inside Monaco's web view, which the harness cannot press; the
   checks dispatch `editor_changes_stage_hunk` and row 9 presses it.
 - **The button's label** (Commit vs Commit All) is not in the accessibility tree the checks read;
   rows 4 and 15 see it.

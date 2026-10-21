@@ -17,7 +17,7 @@
 {"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-2","field":"column.view","equals":"changes"}}
-{"expect":{"tree":"contains","text":"committing as cfg@e2e.invalid (from git config)"}}
+{"expect":{"tree":"contains","text":"Message · as cfg@e2e.invalid (from git config) (⌘⏎)"}}
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.organisation"}}
 {"expect":{"tree":"contains","text":"GIT"}}
@@ -31,7 +31,7 @@
 {"expect":{"pane":"editor-2","field":"column.view","equals":"files"}}
 {"dispatch":{"action":"editor_tree","params":{"pane":"editor-2","view":"changes"}}}
 {"expect":{"pane":"editor-2","field":"column.view","equals":"changes"}}
-{"expect":{"tree":"contains","text":"committing as org@e2e.invalid"}}
+{"expect":{"tree":"contains","text":"Message · as org@e2e.invalid (⌘⏎)"}}
 {"expect":{"tree":"absent","text":"(from git config)"}}
 {"do":{"type":{"into":"editor.changes.e2e-portal.message","text":"e2e as org"}}}
 {"expect":{"tree":"contains","text":"e2e as org"}}

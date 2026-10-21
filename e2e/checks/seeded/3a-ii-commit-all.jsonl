@@ -8,7 +8,7 @@
 {"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
-{"expect":{"tree":"contains","text":"committing as org@e2e.invalid"}}
+{"expect":{"tree":"contains","text":"Message · as org@e2e.invalid (⌘⏎)"}}
 {"expect":{"tree":"contains","text":"M, index.txt"}}
 {"do":{"type":{"into":"editor.changes.e2e-portal.message","text":"e2e all"}}}
 {"expect":{"tree":"contains","text":"e2e all"}}
@@ -26,23 +26,23 @@
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"changed"}}
 {"do":{"click":"editor.changes.e2e-api.changed.stageAll"}}
 {"expect":{"journal":{"contains":"\"group\":\"changed\""}}}
-{"expect":{"tree":"absent","text":"CHANGES"}}
+{"expect":{"tree":"absent","text":"Changes, "}}
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"staged"}}
 {"do":{"click":"editor.changes.e2e-api.staged.unstageAll"}}
 {"expect":{"journal":{"contains":"\"group\":\"staged\""}}}
 {"expect":{"tree":"contains","text":"?, notes"}}
 {"expect":{"tree":"contains","text":"?, BookingController.php"}}
 {"expect":{"tree":"contains","text":"M, app.txt"}}
-{"expect":{"tree":"absent","text":"STAGED"}}
+{"expect":{"tree":"absent","text":"Staged, "}}
 {"do":{"click":"editor.changes.row:e2e-api/app.txt:changed"}}
 {"dispatch":{"action":"editor_close","params":{"pane":"editor-1"}}}
 {"expect":{"pane":"editor-1","field":"tabs[0]","present":false}}
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"app.txt"}}
 {"do":{"click":"editor.changes.row:e2e-api/app.txt:changed.stage"}}
-{"expect":{"tree":"contains","text":"STAGED"}}
+{"expect":{"tree":"contains","text":"Staged, "}}
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"staged"}}
 {"parity":{"action":"editor_changes_unstage","params":{"root":"{fixtureRoot}/e2e-api","paths":["app.txt"]},"click":"editor.changes.row:e2e-api/app.txt:staged.unstage","assert":"tree"}}
-{"expect":{"tree":"absent","text":"STAGED"}}
+{"expect":{"tree":"absent","text":"Staged, "}}
 {"expect":{"tree":"contains","text":"M, app.txt"}}
 {"dispatch":{"action":"editor_changes_commit","params":{"root":"{fixtureRoot}/e2e-api","message":"e2e agent all"}}}
 {"expect":{"tree":"contains","text":"e2e-api · main · clean"}}

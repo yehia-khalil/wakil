@@ -8,7 +8,7 @@
 {"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
-{"expect":{"tree":"contains","text":"committing as org@e2e.invalid"}}
+{"expect":{"tree":"contains","text":"Message · as org@e2e.invalid (⌘⏎)"}}
 {"dispatch":{"action":"editor_changes_commit","params":{"root":"{fixtureRoot}/e2e-portal","message":"e2e to undo"}}}
 {"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
 {"expect":{"tree":"absent","text":"e2e to undo"}}

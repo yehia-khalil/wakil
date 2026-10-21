@@ -13,7 +13,7 @@
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
 {"expect":{"pane":"editor-1","field":"column.shown","equals":"true"}}
-{"expect":{"tree":"contains","text":"STAGED"}}
+{"expect":{"tree":"contains","text":"Staged, "}}
 {"expect":{"focus":"editor.column"}}
 {"do":{"press":"Down"}}
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"app.txt"}}
@@ -43,7 +43,7 @@
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-1","field":"column.shown","equals":"false"}}
-{"expect":{"tree":"absent","text":"STAGED"}}
+{"expect":{"tree":"absent","text":"Staged, "}}
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-1","field":"column.shown","equals":"true"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}

@@ -497,9 +497,11 @@ no full debugger.
     in this file* ask nothing (Decision 39): a file open in a tab is edited in its buffer, the rest are
     written, and one line — *Replaced 37 in 12 files · Undo replace* — offers the undo, which leaves
     any file changed since.
-  - **Changes** (3b-iii, Decision 40) — one header per root (`api · main · ↑2 ↓1`, or `docs · not a
-    git repository`; a header collapses its root), then Staged / Changes / Untracked. Rows show the
-    status letter in §5's tones (never red) and the name; a rename reads `old → new`. A click or Return
+  - **Changes** (3b-iii, Decision 40) — one block per root, a hairline between them: a header
+    (`api  main ↑2 ↓1`, the branch dimmed; a header collapses its root), and only while the root has
+    changes its message box and Commit, then Staged / Changes / Untracked, each collapsible. A clean
+    root is one line (`web  main · clean`); a root that is not a git repository is not drawn. Rows read
+    the file name, its folder dimmed, and the status letter in §5's tones (never red) at the far right. A click or Return
     opens a read-only inline diff tab under the preview-tab rule; ⌘⏎ in a diff opens the file at that
     line. It follows git live, with no refresh control.
   - **Find in file** — Monaco's own find and replace bar (⌘F, ⌥⌘F) in Wakil's colours,

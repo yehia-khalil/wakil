@@ -16,7 +16,7 @@
 {"expect":{"pane":"git-1","field":"tabs","equals":"[]"}}
 {"expect":{"tree":"contains","text":"e2e-api · main"}}
 {"expect":{"tree":"contains","text":"?, notes"}}
-{"expect":{"tree":"contains","text":"e2e-git · not a git repository"}}
+{"expect":{"tree":"absent","text":"not a git repository"}}
 {"parity":{"action":"editor_changes_select","params":{"pane":"git-1","root":"{fixtureRoot}/e2e-api","path":"notes","group":"untracked"},"click":"editor.changes.row:e2e-api/notes:untracked","assert":"read_pane"}}
 {"expect":{"pane":"git-1","field":"tabs[0].diff.path","equals":"notes"}}
 {"dispatch":{"action":"pane_open","params":{"kind":"git"},"refuses":"pane_open: param \"kind\" cannot be \"git\""}}

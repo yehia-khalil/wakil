@@ -30,6 +30,18 @@ private func row(_ path: String, _ group: GitGroup = .changed, _ status: String 
     #expect(gitRootLine(r(behind: 3)) == "api · main ↓3 · clean")
 }
 
+/// The view draws the name and the rest apart, the rest dimmed; a non-repository is not drawn.
+@Test func aRootsDetailIsItsLineAfterTheName() {
+    #expect(gitRootDetail(r()) == "main · clean")
+    #expect(gitRootDetail(r([row("a")], ahead: 1)) == "main ↑1")
+    #expect(gitRootDetail(r(error: "fatal: bad object HEAD\nhint: x")) == "fatal: bad object HEAD")
+    #expect(gitRootDetail(r(branch: "")) == "")
+    #expect(gitRootIsRepository(r()))
+    #expect(gitRootIsRepository(r(error: "fatal: bad object HEAD")))
+    #expect(!gitRootIsRepository(r(error: "not a git repository")))
+    #expect(!gitRootIsRepository(r(error: "not a git repository (the repository is above this root)")))
+}
+
 /// A root no read has reached yet has no branch and no SHA. It is not "clean" — nobody knows.
 @Test func aRootNotYetReadIsOnlyItsName() {
     var pending = r(branch: "")
@@ -50,9 +62,9 @@ private func row(_ path: String, _ group: GitGroup = .changed, _ status: String 
 // MARK: - The list
 
 @Test func groupsAreLabelledAndAnEmptyGroupIsNotDrawn() {
-    #expect(gitGroupLabel(.staged) == "STAGED")
-    #expect(gitGroupLabel(.changed) == "CHANGES")
-    #expect(gitGroupLabel(.untracked) == "UNTRACKED")
+    #expect(gitGroupLabel(.staged) == "Staged")
+    #expect(gitGroupLabel(.changed) == "Changes")
+    #expect(gitGroupLabel(.untracked) == "Untracked")
     let state = r([row("b.txt", .untracked, "?"), row("a.txt", .staged, "A"), row("c.txt", .untracked, "?")])
     let sections = gitListSections(state)
     #expect(sections.map(\.group) == [.staged, .untracked])
@@ -65,6 +77,15 @@ private func row(_ path: String, _ group: GitGroup = .changed, _ status: String 
     let listed = gitListSections(state).flatMap(\.rows)
         .map { EditorChangesRow(root: state.root, path: $0.path, group: $0.group.rawValue) }
     #expect(listed == editorChangesRows([state], closed: []))
+}
+
+/// A row reads its name first and its folder dimmed after it; a rename says where it came from.
+@Test func aRowIsItsNameThenItsFolder() {
+    #expect(gitRowName(row("src/app.txt")) == "app.txt")
+    #expect(gitRowFolder(row("src/app.txt")) == "src")
+    #expect(gitRowFolder(row("notes")) == "")
+    #expect(gitRowFolder(row("new.swift", .staged, "R", orig: "old.swift")) == "← old.swift")
+    #expect(gitRowFolder(row("src/new.swift", .staged, "R", orig: "lib/old.swift")) == "src · ← lib/old.swift")
 }
 
 @Test func aRenameReadsOldToNew() {

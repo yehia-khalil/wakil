@@ -20,7 +20,7 @@
 {"do":{"click":"editor.changes.e2e-api.untracked.discardAll"}}
 {"expect":{"journal":{"contains":"\"group\":\"untracked\""}}}
 {"expect":{"tree":"absent","text":"?, BookingController.php"}}
-{"expect":{"tree":"absent","text":"UNTRACKED"}}
+{"expect":{"tree":"absent","text":"Untracked, "}}
 {"expect":{"tree":"contains","text":"M, app.txt"}}
 {"do":{"click":"editor.changes.row:e2e-portal/index.txt:changed"}}
 {"dispatch":{"action":"editor_close","params":{"pane":"editor-1"}}}

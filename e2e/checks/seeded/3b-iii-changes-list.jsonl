@@ -9,18 +9,23 @@
 {"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
 {"do":{"hotkey":"cmd+b"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
-{"expect":{"tree":"absent","text":"UNTRACKED"}}
+{"expect":{"tree":"absent","text":"Untracked, "}}
 {"parity":{"action":"editor_tree","params":{"pane":"editor-1","shown":true,"view":"changes"},"click":"editor.column.changes","assert":"read_pane"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
 {"expect":{"pane":"editor-1","field":"column.shown","equals":"true"}}
 {"expect":{"pane":"editor-1","field":"column.changes_highlight","equals":"null"}}
-{"expect":{"tree":"contains","text":"e2e-git · not a git repository"}}
+{"expect":{"tree":"absent","text":"not a git repository"}}
 {"expect":{"tree":"contains","text":"e2e-api · main"}}
 {"expect":{"tree":"contains","text":"e2e-portal · main"}}
 {"expect":{"tree":"absent","text":"e2e-portal · main · clean"}}
-{"expect":{"tree":"contains","text":"STAGED"}}
-{"expect":{"tree":"contains","text":"CHANGES"}}
-{"expect":{"tree":"contains","text":"UNTRACKED"}}
+{"expect":{"tree":"contains","text":"Staged, "}}
+{"expect":{"tree":"contains","text":"Changes, "}}
+{"expect":{"tree":"contains","text":"Untracked, "}}
+{"do":{"click":"editor.changes.group:e2e-api/untracked"}}
+{"expect":{"tree":"absent","text":"?, BookingController.php"}}
+{"expect":{"tree":"contains","text":"Untracked, 2"}}
+{"do":{"click":"editor.changes.group:e2e-api/untracked"}}
+{"expect":{"tree":"contains","text":"?, BookingController.php"}}
 {"expect":{"tree":"contains","text":"M, app.txt"}}
 {"expect":{"tree":"contains","text":"?, BookingController.php"}}
 {"expect":{"tree":"contains","text":"?, notes"}}
@@ -32,11 +37,13 @@
 {"dispatch":{"action":"editor_refresh","params":{"pane":"editor-1","what":"files"}}}
 {"expect":{"tree":"contains","text":"M, index.txt"}}
 {"dispatch":{"action":"editor_refresh","params":{"pane":"editor-1"}}}
-{"expect":{"tree":"contains","text":"e2e-git · not a git repository"}}
+{"expect":{"tree":"absent","text":"not a git repository"}}
 {"expect":{"tree":"contains","text":"?, BookingController.php"}}
 {"dispatch":{"action":"editor_refresh","params":{"pane":"editor-1","what":"status"},"refuses":"editor_refresh: what must be all, files or git, not \"status\""}}
 {"do":{"resize":{"width":1000,"height":888}}}
 {"expect":{"frame":"editor.changes.row:e2e-api/notes:untracked","inside":"editor.column","maxHeight":30}}
+{"dispatch":{"action":"editor_changes_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api"}}}
+{"expect":{"pane":"editor-1","field":"column.changes_closed","contains":"/e2e-api"}}
 {"expect":{"frame":"editor.changes.row:e2e-portal/index.txt:changed","inside":"editor.column","maxHeight":30}}
-{"expect":{"frame":"editor.changes.root:e2e-portal","inside":"editor.column","clear":"editor.changes.row:e2e-api/notes:untracked"}}
-{"expect":{"frame":"editor.changes.root:e2e-git","inside":"editor.column","maxHeight":40}}
+{"expect":{"frame":"editor.changes.root:e2e-portal","inside":"editor.column","clear":"editor.changes.root:e2e-api"}}
+{"expect":{"frame":"editor.changes.root:e2e-api","inside":"editor.column","maxHeight":40}}

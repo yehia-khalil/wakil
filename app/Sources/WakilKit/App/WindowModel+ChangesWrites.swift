@@ -112,9 +112,11 @@ extension WindowModel {
         changesIdentity[root] = (email: email, fromConfig: Self.changesField(result, "from") != "organisation")
     }
 
-    public func changesHint(root: String) -> String? {
-        guard let who = changesIdentity[root], !who.email.isEmpty else { return nil }
-        return who.fromConfig ? "committing as \(who.email) (from git config)" : "committing as \(who.email)"
+    /// The message box's placeholder: who a commit is authored as and the key that commits, or only
+    /// the key while nobody is known.
+    public func changesPlaceholder(root: String) -> String {
+        guard let who = changesIdentity[root], !who.email.isEmpty else { return "Message (⌘⏎ to commit)" }
+        return who.fromConfig ? "Message · as \(who.email) (from git config) (⌘⏎)" : "Message · as \(who.email) (⌘⏎)"
     }
 
     // MARK: Plumbing

@@ -82,6 +82,8 @@ struct EditorColumn: View {
     @FocusState private var messageFocused: String?
     /// ⌘⏎ and ↑/↓ for the message box holding the keyboard, ahead of the menu (⌘⏎ is Maximize Pane).
     @State private var messageKeys = ChangesMessageKeys()
+    /// The Changes groups the operator closed, by root and group: the window's life, never saved.
+    @State private var closedGroups: Set<String> = []
 
     /// The name a row's root goes by in identifiers: `editor.tree.row:<root name>/<relative>`.
     private func rootName(_ row: EditorTreeRow) -> String { (row.root as NSString).lastPathComponent }
@@ -372,25 +374,37 @@ struct EditorColumn: View {
     private var changesRows: [EditorChangesRow] { editorChangesRows(gitRoots, closed: column.changesClosed) }
     private var changesHighlight: EditorChangesRow? { editorChangesResolve(column.changesHighlight, roots: gitRoots) }
 
+    /// The view's one spacing scale: 4, 8, 12.
+    private enum ChangesSpace {
+        static let s: CGFloat = 4, m: CGFloat = 8, l: CGFloat = 12
+        /// Every row and header line, so the list keeps one rhythm.
+        static let row: CGFloat = 22
+    }
+
+    /// A group's key in `closedGroups`.
+    private func groupKey(_ root: String, _ group: String) -> String { root + "\n" + group }
+
     private var changesView: some View {
-        ScrollViewReader { proxy in
+        // A root that is not a git repository has nothing to change or commit: it is not drawn.
+        let shown = gitRoots.filter(gitRootIsRepository)
+        return ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    if gitRoots.isEmpty {
-                        Text("No project roots to read")
+                VStack(alignment: .leading, spacing: 0) {
+                    if gitRoots.isEmpty || shown.isEmpty {
+                        Text(gitRoots.isEmpty ? "No project roots to read" : "No git repositories in this project")
                             .font(.system(size: 12)).foregroundStyle(EditorPaneStyle.text.opacity(0.46))
+                            .padding(.horizontal, ChangesSpace.m)
                     }
-                    ForEach(gitRoots, id: \.root) { root in
-                        changesHeader(root)
-                        if !column.changesClosed.contains(root.root) {
-                            ForEach(gitListSections(root), id: \.group) { section in
-                                changesGroupLabel(section.group, root: root)
-                                ForEach(section.rows, id: \.self) { changesRow($0, root: root) }
-                            }
+                    ForEach(Array(shown.enumerated()), id: \.element.root) { i, root in
+                        if i > 0 {
+                            // One hairline between roots, in the column edge's tone.
+                            Rectangle().fill(EditorPaneStyle.text.opacity(0.08)).frame(height: 0.5)
+                                .padding(.vertical, ChangesSpace.l)
                         }
+                        changesRoot(root)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, ChangesSpace.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .focusable()
@@ -398,46 +412,114 @@ struct EditorColumn: View {
             .focusEffectDisabled()
             .onKeyPress(phases: .down) { press in changesKey(press) }
             .onChange(of: changesHighlight) { _, now in
-                if let now { withAnimation(.easeOut(duration: 0.16)) { proxy.scrollTo(now) } }
+                guard let now else { return }
+                // A row the highlight reaches is never left inside a closed group.
+                closedGroups.remove(groupKey(now.root, now.group))
+                withAnimation(.easeOut(duration: 0.16)) { proxy.scrollTo(now) }
             }
         }
     }
 
+    /// One root's block: its header, then — only while it has changes — the message box and Commit,
+    /// then its groups. A clean root is its header line alone.
     @ViewBuilder
-    private func changesHeader(_ root: GitRootState) -> some View {
+    private func changesRoot(_ root: GitRootState) -> some View {
         let closed = column.changesClosed.contains(root.root)
-        HStack(spacing: 6) {
-            Image(systemName: closed ? "chevron.right" : "chevron.down").font(.system(size: 9))
-            if root.loading { EditorBusyTick(label: "loading", identifier: "editor.changes.loading") }
-            Text(gitRootLine(root))
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.62))
-                .lineLimit(1).truncationMode(.middle)
+        let boxed = !closed && root.error == nil && !root.files.isEmpty
+        VStack(alignment: .leading, spacing: 0) {
+            changesHeader(root, closed: closed)
+            if let detail = gitRootErrorDetail(root) {
+                Text(detail)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    .accessibilityIdentifier("editor.changes.rootError:\(root.name)")
+            }
+            if boxed {
+                commitBox(root)
+            } else {
+                changesError(root)
+            }
+            if !closed {
+                ForEach(gitListSections(root), id: \.group) { section in
+                    changesGroupLabel(section.group, root: root, count: section.rows.count)
+                    if !closedGroups.contains(groupKey(root.root, section.group.rawValue)) {
+                        ForEach(section.rows, id: \.self) { changesRow($0, root: root) }
+                    }
+                }
+            }
         }
-        .padding(.top, 10).padding(.leading, 8)
-        .contentShape(Rectangle())
-        .onTapGesture { toggleRoot(root.root, closed: closed) }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("editor.changes.root:\(root.name)")
-        .accessibilityAction { toggleRoot(root.root, closed: closed) }
-        // 3a-ii: who a commit here is authored as, for the box's hint; read again with each root shown.
-        .task(id: root.root) { await changes.refreshIdentity(root.root) }
-        // Text, as a row is: as a button its line never reached the tree (AXDescription only).
-        .accessibilityRemoveTraits(.isButton)
-        .accessibilityAddTraits(.isStaticText)
-        if let detail = gitRootErrorDetail(root) {
-            Text(detail)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
-                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                .padding(.leading, 8)
-                .accessibilityIdentifier("editor.changes.rootError:\(root.name)")
+        .padding(.horizontal, ChangesSpace.m)
+    }
+
+    @ViewBuilder
+    private func changesHeader(_ root: GitRootState, closed: Bool) -> some View {
+        let detail = gitRootDetail(root)
+        let clean = root.error == nil && !root.loading && root.files.isEmpty && !detail.isEmpty
+        HStack(spacing: ChangesSpace.m) {
+            HStack(spacing: ChangesSpace.s) {
+                if root.loading { EditorBusyTick(label: "loading", identifier: "editor.changes.loading") }
+                (Text(root.name).foregroundStyle(EditorPaneStyle.text.opacity(0.86))
+                    + Text(detail.isEmpty ? "" : "  " + detail).foregroundStyle(EditorPaneStyle.text.opacity(0.46)))
+                    .font(.system(size: 11, design: .monospaced))
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: ChangesSpace.m)
+                if !root.files.isEmpty {
+                    Image(systemName: closed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(EditorPaneStyle.text.opacity(0.46))
+                }
+            }
+            .frame(height: ChangesSpace.row)
+            .contentShape(Rectangle())
+            .onTapGesture { toggleRoot(root.root, closed: closed) }
+            // One line for the tree, `api · main · clean`: the name and its dimmed rest read as one.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(gitRootLine(root))
+            .accessibilityIdentifier("editor.changes.root:\(root.name)")
+            .accessibilityAction { toggleRoot(root.root, closed: closed) }
+            // 3a-ii: who a commit here is authored as, for the box's placeholder; read again with each
+            // root shown.
+            .task(id: root.root) { await changes.refreshIdentity(root.root) }
+            // Text, as a row is: as a button its line never reached the tree (AXDescription only).
+            .accessibilityRemoveTraits(.isButton)
+            .accessibilityAddTraits(.isStaticText)
+            // A clean root has no box, but its last commit can still be undone from here.
+            if clean { cleanRootActions(root) }
         }
-        if !closed, root.error == nil { commitBox(root) }
+    }
+
+    /// A clean root's line end: the spinner and Cancel while a write runs, and ⋯ with Undo Last Commit.
+    @ViewBuilder
+    private func cleanRootActions(_ root: GitRootState) -> some View {
+        let key = root.root
+        let busy = changes.inFlight.contains(key)
+        if busy {
+            ProgressView().controlSize(.mini)
+            Button("Cancel") { changes.cancel(key) }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.75))
+                .accessibilityIdentifier("editor.changes.\(root.name).cancel")
+        }
+        Menu {
+            Button("Undo Last Commit") { Task { await changes.undo(key) } }
+                .accessibilityIdentifier("editor.changes.\(root.name).undo")
+        } label: { Image(systemName: "ellipsis").font(.system(size: 10, weight: .semibold)) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .foregroundStyle(EditorPaneStyle.text.opacity(0.62))
+            .disabled(busy)
+            .help("More Commit Actions")
+            .accessibilityIdentifier("editor.changes.\(root.name).menu")
     }
 
     private func toggleRoot(_ root: String, closed: Bool) {
         Task { await dispatch(closed ? "editor_changes_expand" : "editor_changes_collapse", ["root": .string(root)]) }
+    }
+
+    private func toggleGroup(_ root: String, _ group: GitGroup) {
+        let key = groupKey(root, group.rawValue)
+        if closedGroups.contains(key) { closedGroups.remove(key) } else { closedGroups.insert(key) }
     }
 
     private func changesRow(_ row: GitFileRow, root: GitRootState) -> some View {
@@ -449,42 +531,55 @@ struct EditorColumn: View {
             stage: "editor.changes.row:\(root.name)/\(row.path):\(row.group.rawValue).stage",
             unstage: "editor.changes.row:\(root.name)/\(row.path):\(row.group.rawValue).unstage",
             discard: "editor.changes.row:\(root.name)/\(row.path):\(row.group.rawValue).discard")
-        // The buttons sit beside the row's tap gesture, not inside it: a press never selects the row.
-        return HStack(spacing: 4) {
-            changesRowLine(row, ref: ref, on: on, id: id)
-            if hoveredChange == id || on {
-                changesWriteButtons(row.group, root: root, paths: [row.path], ids: ids)
+        let fill = on ? EditorPaneStyle.lifted : EditorPaneStyle.slab
+        // The buttons lie over the row's end, left of its letter, not inside its tap gesture: a press
+        // never selects the row.
+        return changesRowLine(row, ref: ref, on: on, id: id)
+            .padding(.leading, ChangesSpace.l).padding(.trailing, ChangesSpace.s)
+            .frame(height: ChangesSpace.row)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(fill, in: RoundedRectangle(cornerRadius: 4))
+            .overlay(alignment: .leading) { if on { Rectangle().fill(EditorPaneStyle.violet).frame(width: 2) } }
+            .overlay(alignment: .trailing) {
+                if hoveredChange == id || on {
+                    changesWriteButtons(row.group, root: root, paths: [row.path], ids: ids)
+                        .padding(.horizontal, ChangesSpace.s)
+                        .frame(height: ChangesSpace.row)
+                        .background(fill)
+                        .padding(.trailing, ChangesSpace.s + ChangesSpace.l + ChangesSpace.s)
+                }
             }
-        }
-        .font(.system(size: 12, design: .monospaced))
-        .padding(.vertical, 2).padding(.horizontal, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(on ? EditorPaneStyle.lifted : .clear, in: RoundedRectangle(cornerRadius: 4))
-        .overlay(alignment: .leading) { if on { Rectangle().fill(EditorPaneStyle.violet).frame(width: 2) } }
-        .onHover { inside in
-            if inside { hoveredChange = id } else if hoveredChange == id { hoveredChange = nil }
-        }
-        .id(ref)
+            .onHover { inside in
+                if inside { hoveredChange = id } else if hoveredChange == id { hoveredChange = nil }
+            }
+            .id(ref)
     }
 
     private func changesRowLine(_ row: GitFileRow, ref: EditorChangesRow, on: Bool, id: String) -> some View {
-        HStack(spacing: 0) {
-            Text(row.status)
-                .foregroundStyle(EditorPaneStyle.tone(gitStatusTone(row.status)))
-                .frame(width: 18, alignment: .leading)
+        let folder = gitRowFolder(row)
+        return HStack(spacing: ChangesSpace.s) {
             EditorFileIcon(editorFileGlyph(forPath: row.path))
                 .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
-                .padding(.trailing, 5)
-            Text(gitRowLabel(row))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
-                .lineLimit(1).truncationMode(.middle)
+            (Text(gitRowName(row)).foregroundStyle(EditorPaneStyle.text.opacity(0.9))
+                + Text(folder.isEmpty ? "" : "  " + folder)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.46)))
+                .font(.system(size: 12, design: .monospaced))
+                .lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: ChangesSpace.s)
+            Text(row.status)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(EditorPaneStyle.tone(gitStatusTone(row.status)))
+                .frame(width: ChangesSpace.l, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         // One tap gesture reading the click count, as the tree's and the tabs': a `count: 2` gesture
         // beside it held every single click for the double-click interval (3b-iii walk).
         .onTapGesture { selectChange(ref, pin: NSApp.currentEvent?.clickCount ?? 1 >= 2) }
-        .accessibilityElement(children: .combine)
+        // The tree reads `M, app.txt` (letter, then the path or `old → new`) whatever the drawn order.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(row.status), \(gitRowLabel(row))")
         .accessibilityIdentifier(id)
         .accessibilityAction { selectChange(ref, pin: false) }
         .accessibilityRemoveTraits(.isButton)
@@ -493,15 +588,32 @@ struct EditorColumn: View {
 
     // MARK: - Changes writes (3a-ii)
 
-    /// A group's micro-label and, on hover (or while its highlighted row is in it), the group's buttons.
-    private func changesGroupLabel(_ group: GitGroup, root: GitRootState) -> some View {
+    /// A group's header — its chevron, name and dimmed count, which collapse it — and, on hover (or
+    /// while its highlighted row is in it), the group's buttons at its right.
+    private func changesGroupLabel(_ group: GitGroup, root: GitRootState, count: Int) -> some View {
         let key = "group:\(root.root):\(group.rawValue)"
         let current = changesHighlight.map { $0.root == root.root && $0.group == group.rawValue } ?? false
-        return HStack(spacing: 4) {
-            Text(gitGroupLabel(group))
-                .font(.system(size: 9, weight: .medium)).tracking(1.7)
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.45))
-            Spacer(minLength: 6)
+        let open = !closedGroups.contains(groupKey(root.root, group.rawValue))
+        return HStack(spacing: ChangesSpace.s) {
+            HStack(spacing: ChangesSpace.s) {
+                Image(systemName: open ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.46))
+                    .frame(width: ChangesSpace.m)
+                Text(gitGroupLabel(group))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.62))
+                Text("\(count)")
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.46))
+                Spacer(minLength: ChangesSpace.m)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { toggleGroup(root.root, group) }
+            // Text, as a row is, reading `Staged, 2`; the press is its accessibility action.
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("editor.changes.group:\(root.name)/\(group.rawValue)")
+            .accessibilityAction { toggleGroup(root.root, group) }
+            .accessibilityRemoveTraits(.isButton)
+            .accessibilityAddTraits(.isStaticText)
             if hoveredChange == key || current {
                 // Spelled out whole, as the row's, for the identifier harvest.
                 changesWriteButtons(group, root: root, paths: nil, ids: ChangesWriteIds(
@@ -510,9 +622,10 @@ struct EditorColumn: View {
                     discard: "editor.changes.\(root.name).\(group.rawValue).discardAll"))
             }
         }
-        .frame(height: 16)
-        .padding(.top, 6).padding(.leading, 6).padding(.trailing, 6)
-        .contentShape(Rectangle())
+        .font(.system(size: 11, design: .monospaced))
+        .padding(.trailing, ChangesSpace.s + ChangesSpace.l + ChangesSpace.s)
+        .frame(height: ChangesSpace.row)
+        .padding(.top, ChangesSpace.m)
         .onHover { inside in
             if inside { hoveredChange = key } else if hoveredChange == key { hoveredChange = nil }
         }
@@ -526,7 +639,7 @@ struct EditorColumn: View {
         let all = paths == nil ? "All" : ""
         let target: GitGroup? = paths == nil ? group : nil
         let busy = changes.inFlight.contains(root.root)
-        HStack(spacing: 6) {
+        HStack(spacing: ChangesSpace.m) {
             if group == .staged {
                 changesWriteButton("minus", help: "Unstage\(all.isEmpty ? "" : " All")", id: ids.unstage) {
                     await changes.unstage(root.root, paths, target)
@@ -549,7 +662,7 @@ struct EditorColumn: View {
                                     _ act: @escaping () async -> Void) -> some View {
         Button { Task { await act() } } label: {
             Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
-                .frame(width: 14, height: 14).contentShape(Rectangle())
+                .frame(width: 16, height: 16).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(EditorPaneStyle.text.opacity(0.75))
@@ -558,8 +671,23 @@ struct EditorColumn: View {
         .accessibilityIdentifier(id)
     }
 
-    /// The root's message box, Commit / Commit All, the ▾ menu, the spinner and Cancel while a write
-    /// runs, who commits, and the last write's error, whole (Rule 8).
+    /// The root's last write error, whole (Rule 8), in the caution colour.
+    @ViewBuilder
+    private func changesError(_ root: GitRootState) -> some View {
+        if let error = changes.errors[root.root] {
+            Text(error)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(EditorPaneStyle.amber)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .padding(.top, ChangesSpace.s)
+                .accessibilityIdentifier("editor.changes.\(root.name).error")
+        }
+    }
+
+    /// The root's message box — its placeholder naming who commits and ⌘⏎ — then one Commit bar the
+    /// box's width with the ▾ menu at its right edge, the spinner and Cancel while a write runs, and
+    /// the last write's error, whole (Rule 8).
     @ViewBuilder
     private func commitBox(_ root: GitRootState) -> some View {
         let key = root.root
@@ -568,80 +696,87 @@ struct EditorColumn: View {
         let busy = changes.inFlight.contains(key)
         // Rule 9: with nothing staged the default is everything, and the button says so.
         let staged = root.files.contains { $0.group == .staged }
+        let title = staged ? "Commit" : "Commit All"
         let lines = min(max(draft.components(separatedBy: "\n").count, 1), 6)
-        VStack(alignment: .leading, spacing: 4) {
-            TextEditor(text: Binding(get: { changes.messages[key] ?? "" }, set: { changes.edit(key, $0) }))
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(EditorPaneStyle.text)
-                .scrollContentBackground(.hidden)
-                .scrollIndicators(lines >= 6 ? .automatic : .never)
-                .focused($messageFocused, equals: key)
-                .frame(height: CGFloat(lines) * 14 + 6)
-                .padding(.horizontal, 2).padding(.vertical, 2)
-                .background(alignment: .topLeading) {
-                    if draft.isEmpty {
-                        Text("Message (⌘⏎ to commit)")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(EditorPaneStyle.text.opacity(0.35))
-                            .padding(.leading, 7).padding(.top, 2)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
+        VStack(alignment: .leading, spacing: ChangesSpace.m) {
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: Binding(get: { changes.messages[key] ?? "" }, set: { changes.edit(key, $0) }))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(EditorPaneStyle.text)
+                    .scrollContentBackground(.hidden)
+                    .scrollIndicators(lines >= 6 ? .automatic : .never)
+                    .focused($messageFocused, equals: key)
+                    .frame(height: CGFloat(lines) * 14 + 4)
+                    .accessibilityLabel("Commit message")
+                    .accessibilityIdentifier("editor.changes.\(root.name).message")
+                if draft.isEmpty {
+                    // Read by the tree as the box's hint: who a commit here is authored as.
+                    Text(changes.placeholders[key] ?? "Message (⌘⏎ to commit)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(EditorPaneStyle.text.opacity(0.46))
+                        .fixedSize(horizontal: false, vertical: true)
+                        // Onto the editor's first line, where its caret stands.
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("editor.changes.\(root.name).hint")
                 }
-                .background(EditorPaneStyle.lifted, in: RoundedRectangle(cornerRadius: 3))
-                .overlay(RoundedRectangle(cornerRadius: 3)
-                    .stroke(messageFocused == key ? EditorPaneStyle.violet : EditorPaneStyle.text.opacity(0.12),
-                            lineWidth: 1))
-                .accessibilityLabel("Commit message")
-                .accessibilityIdentifier("editor.changes.\(root.name).message")
-            HStack(spacing: 6) {
+            }
+            .padding(ChangesSpace.s)
+            .background(EditorPaneStyle.lifted, in: RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4)
+                .stroke(messageFocused == key ? EditorPaneStyle.violet : EditorPaneStyle.text.opacity(0.12),
+                        lineWidth: 1))
+            HStack(spacing: 0) {
                 if busy {
-                    ProgressView().controlSize(.small)
-                    Button("Cancel") { changes.cancel(key) }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11))
-                        .foregroundStyle(EditorPaneStyle.text.opacity(0.75))
-                        .accessibilityIdentifier("editor.changes.\(root.name).cancel")
+                    HStack(spacing: ChangesSpace.m) {
+                        ProgressView().controlSize(.small)
+                        Button("Cancel") { changes.cancel(key) }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 11))
+                            .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
+                            .accessibilityIdentifier("editor.changes.\(root.name).cancel")
+                    }
+                    .frame(maxWidth: .infinity)
                 } else {
-                    Button(staged ? "Commit" : "Commit All") { Task { await changes.commit(key) } }
+                    Button { Task { await changes.commit(key) } } label: {
+                        HStack(spacing: ChangesSpace.s) {
+                            Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold))
+                            Text(title)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: ChangesSpace.row)
+                        .contentShape(Rectangle())
+                    }
                         .buttonStyle(.plain)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
-                        .padding(.horizontal, 10).padding(.vertical, 3)
-                        .background(EditorPaneStyle.violet.opacity(0.55), in: RoundedRectangle(cornerRadius: 3))
                         .disabled(empty)
                         .opacity(empty ? 0.45 : 1)
+                        .accessibilityLabel(title)
                         .accessibilityIdentifier("editor.changes.\(root.name).commit")
                 }
+                Rectangle().fill(EditorPaneStyle.text.opacity(0.18)).frame(width: 0.5, height: ChangesSpace.l)
                 Menu {
+                    Button(title) { Task { await changes.commit(key) } }
+                        .disabled(empty)
+                        .accessibilityIdentifier("editor.changes.\(root.name).menuCommit")
+                    Divider()
                     Button("Amend Last Commit") { Task { await changes.amend(key) } }
                         .accessibilityIdentifier("editor.changes.\(root.name).amend")
                     Button("Undo Last Commit") { Task { await changes.undo(key) } }
                         .accessibilityIdentifier("editor.changes.\(root.name).undo")
                 } label: { Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
+                    .frame(width: ChangesSpace.row + ChangesSpace.s, height: ChangesSpace.row)
                     .disabled(busy)
                     .help("More Commit Actions")
                     .accessibilityIdentifier("editor.changes.\(root.name).menu")
-                Spacer(minLength: 0)
             }
-            if let hint = changes.hints[key] {
-                Text(hint)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(EditorPaneStyle.text.opacity(0.46))
-                    .lineLimit(1).truncationMode(.middle)
-                    .accessibilityIdentifier("editor.changes.\(root.name).hint")
-            }
-            if let error = changes.errors[key] {
-                Text(error)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(EditorPaneStyle.amber)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                    .accessibilityIdentifier("editor.changes.\(root.name).error")
-            }
+            .frame(height: ChangesSpace.row)
+            .background(EditorPaneStyle.violet.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
+            changesError(root)
         }
-        .padding(.leading, 8).padding(.trailing, 8).padding(.top, 4)
+        .padding(.top, ChangesSpace.s)
     }
 
     /// The box that took the keyboard gets ⌘⏎ and ↑/↓ (`ChangesMessageKeys`); none, nothing is watched.
@@ -1411,8 +1546,8 @@ struct EditorChangesControls {
     var messages: [String: String]
     var errors: [String: String]
     var inFlight: Set<String>
-    /// `WindowModel.changesHint`, per root that has one.
-    var hints: [String: String]
+    /// `WindowModel.changesPlaceholder`, per root: the box's placeholder, naming who commits.
+    var placeholders: [String: String]
     let edit: (String, String) -> Void
     /// ↑ (`-1`) or ↓ (`1`) through the root's history; true when the box changed.
     let historyStep: (String, Int) -> Bool

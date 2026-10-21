@@ -8,7 +8,7 @@
 {"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
-{"expect":{"tree":"contains","text":"committing as org@e2e.invalid"}}
+{"expect":{"tree":"contains","text":"Message · as org@e2e.invalid (⌘⏎)"}}
 {"expect":{"tree":"contains","text":"?, notes"}}
 {"do":{"click":"editor.changes.row:e2e-api/notes:untracked"}}
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}

@@ -136,12 +136,12 @@ private func changesWindow(failCommit: String? = nil, undoMessage: String? = nil
 
     @Test func theHintNamesWhoWillCommit() async {
         let (window, git) = await changesWindow()
-        #expect(window.changesHint(root: "/p") == nil)
+        #expect(window.changesPlaceholder(root: "/p") == "Message (⌘⏎ to commit)")
         await window.refreshChangesIdentity(root: "/p")
-        #expect(window.changesHint(root: "/p") == "committing as o@x")
+        #expect(window.changesPlaceholder(root: "/p") == "Message · as o@x (⌘⏎)")
         await git.set(identity: ("", "me@y", "git config"))
         await window.refreshChangesIdentity(root: "/p")
-        #expect(window.changesHint(root: "/p") == "committing as me@y (from git config)")
+        #expect(window.changesPlaceholder(root: "/p") == "Message · as me@y (from git config) (⌘⏎)")
     }
 
     @Test func savingTheGitIdentityReadsTheHintAgain() async {
@@ -152,7 +152,7 @@ private func changesWindow(failCommit: String? = nil, undoMessage: String? = nil
             schema: .object(["type": .string("object")]), handler: { _ in .object([:]) }))
         await git.set(identity: ("N", "n@z", "organisation"))
         _ = await window.saveOrganisationField(.gitEmail, to: "n@z", organisation: "test-org")
-        #expect(window.changesHint(root: "/p") == "committing as n@z")
+        #expect(window.changesPlaceholder(root: "/p") == "Message · as n@z (⌘⏎)")
     }
 
     @Test func aCommitThatLandsAfterAnOrgSwitchIsNotShown() async throws {
@@ -207,10 +207,10 @@ private func changesWindow(failCommit: String? = nil, undoMessage: String? = nil
     @Test func aFailedIdentityReadShowsNoHint() async {
         let (window, git) = await changesWindow()
         await window.refreshChangesIdentity(root: "/p")
-        #expect(window.changesHint(root: "/p") == "committing as o@x")
+        #expect(window.changesPlaceholder(root: "/p") == "Message · as o@x (⌘⏎)")
         await git.failIdentity()
         await window.refreshChangesIdentity(root: "/p")
-        #expect(window.changesHint(root: "/p") == nil)
+        #expect(window.changesPlaceholder(root: "/p") == "Message (⌘⏎ to commit)")
     }
 
     @Test func anOrgSwitchLetsARunningCommitFinishAndShowsNothingOfIt() async throws {

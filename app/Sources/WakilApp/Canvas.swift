@@ -494,8 +494,8 @@ extension WakilWindow {
                     changes: EditorChangesControls(
                         messages: model.changesMessages, errors: model.changesErrors,
                         inFlight: model.changesInFlight,
-                        hints: Dictionary(model.gitRoots.compactMap { r in
-                            model.changesHint(root: r.root).map { (r.root, $0) }
+                        placeholders: Dictionary(model.gitRoots.map { r in
+                            (r.root, model.changesPlaceholder(root: r.root))
                         }, uniquingKeysWith: { first, _ in first }),
                         edit: { root, text in model.changesMessageEdited(root: root, text: text) },
                         historyStep: { root, delta in
