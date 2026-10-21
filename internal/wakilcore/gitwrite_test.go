@@ -180,6 +180,14 @@ func TestReadsStillRunNoHook(t *testing.T) {
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("a read ran a hook")
 	}
+	// The positive control: the same hook does run for a write, so its absence above is the read's doing.
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("two\n"), 0o644)
+	if err := writerFor(t, dir, GitIdentity{}).Stage(context.Background(), []string{"a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("the hook did not run for a write either, so the read check proves nothing")
+	}
 }
 
 func TestAMissingPathCanBeStaged(t *testing.T) {
@@ -266,9 +274,15 @@ func TestTwoDiscardsInOneMinuteNeverOverwrite(t *testing.T) {
 	w := writerFor(t, dir, GitIdentity{})
 	at := time.Date(2026, 10, 21, 14, 2, 0, 0, time.Local)
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x\n"), 0o644)
-	first, _ := w.Discard(context.Background(), []string{"a.txt"}, at)
+	first, err := w.Discard(context.Background(), []string{"a.txt"}, at)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first discard: %v %v", first, err)
+	}
 	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("y\n"), 0o644)
-	second, _ := w.Discard(context.Background(), []string{"a.txt"}, at)
+	second, err := w.Discard(context.Background(), []string{"a.txt"}, at)
+	if err != nil || len(second) != 1 {
+		t.Fatalf("second discard: %v %v", second, err)
+	}
 	if first[0] != "a.txt (discarded 14:02)" || second[0] != "a.txt (discarded 14:02) 2" {
 		t.Fatalf("%v %v", first, second)
 	}
@@ -338,5 +352,133 @@ func TestDiscardRefusesAConflictedPath(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "a.txt")); err != nil {
 		t.Fatal("a.txt vanished")
+	}
+}
+
+func TestDiscardRefusesADirectory(t *testing.T) {
+	args := fakeTrash(t)
+	dir := gitTestRepo(t)
+	os.MkdirAll(filepath.Join(dir, "d"), 0o755)
+	os.WriteFile(filepath.Join(dir, "d", "x.txt"), []byte("x\n"), 0o644)
+	gitIn(t, dir, "add", "d/x.txt")
+	gitIn(t, dir, "commit", "-q", "-m", "d")
+	os.WriteFile(filepath.Join(dir, "d", "x.txt"), []byte("changed\n"), 0o644)
+	_, err := writerFor(t, dir, GitIdentity{}).Discard(context.Background(), []string{"d"}, time.Now())
+	if err == nil || err.Error() != "d is a directory, not a changed file" {
+		t.Fatalf("err %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "d", "x.txt")); string(b) != "changed\n" {
+		t.Fatalf("d/x.txt is %q", b)
+	}
+	if _, err := os.Stat(args); !os.IsNotExist(err) {
+		t.Fatal("the trash was called")
+	}
+}
+
+func TestDiscardRefusesAnIgnoredFile(t *testing.T) {
+	args := fakeTrash(t)
+	dir := gitTestRepo(t)
+	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.log\n"), 0o644)
+	gitIn(t, dir, "add", ".gitignore")
+	gitIn(t, dir, "commit", "-q", "-m", "ignore")
+	os.WriteFile(filepath.Join(dir, "x.log"), []byte("keep\n"), 0o644)
+	_, err := writerFor(t, dir, GitIdentity{}).Discard(context.Background(), []string{"x.log"}, time.Now())
+	if err == nil || err.Error() != "x.log is not a changed file" {
+		t.Fatalf("err %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "x.log")); err != nil {
+		t.Fatal("the ignored file was discarded")
+	}
+	if _, err := os.Stat(args); !os.IsNotExist(err) {
+		t.Fatal("the trash was called")
+	}
+}
+
+func TestDiscardNormalisesThePath(t *testing.T) {
+	fakeTrash(t)
+	dir := gitTestRepo(t)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("changed\n"), 0o644)
+	at := time.Date(2026, 10, 21, 14, 2, 0, 0, time.Local)
+	names, err := writerFor(t, dir, GitIdentity{}).Discard(context.Background(), []string{"x/../a.txt"}, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "a.txt")); string(b) != "one\n" {
+		t.Fatalf("a.txt is %q", b)
+	}
+	if strings.Join(names, "|") != "a.txt (discarded 14:02)" {
+		t.Fatalf("names %v (tracked a.txt went to the Trash as untracked)", names)
+	}
+}
+
+func TestUnstageOfAPathNotStagedIsANoOp(t *testing.T) {
+	dir := gitTestRepo(t)
+	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("n\n"), 0o644)
+	w := writerFor(t, dir, GitIdentity{})
+	if err := w.Unstage(context.Background(), []string{"new.txt"}); err != nil {
+		t.Fatalf("unstage of an untracked path: %v", err)
+	}
+	if err := w.Unstage(context.Background(), []string{"a.txt"}); err != nil {
+		t.Fatalf("unstage of an unstaged tracked path: %v", err)
+	}
+}
+
+func TestUnstagingARenameUnstagesBothSides(t *testing.T) {
+	dir := gitTestRepo(t)
+	gitIn(t, dir, "mv", "a.txt", "b.txt")
+	if err := writerFor(t, dir, GitIdentity{}).Unstage(context.Background(), []string{"b.txt", "a.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOut(t, dir, "diff", "--cached", "--name-status"); got != "" {
+		t.Fatalf("still staged %q", got)
+	}
+}
+
+func TestAHashLineInTheMessageIsKept(t *testing.T) {
+	dir := gitTestRepo(t)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("two\n"), 0o644)
+	w := writerFor(t, dir, GitIdentity{})
+	r, err := w.Commit(context.Background(), "#123 fix\n\n# not a comment", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Summary != "#123 fix" || gitOut(t, dir, "log", "-1", "--format=%B") != "#123 fix\n\n# not a comment" {
+		t.Fatalf("result %+v, message %q", r, gitOut(t, dir, "log", "-1", "--format=%B"))
+	}
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("three\n"), 0o644)
+	w.Stage(context.Background(), []string{"a.txt"})
+	if _, err := w.Amend(context.Background(), "#124 amended"); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOut(t, dir, "log", "-1", "--format=%s"); got != "#124 amended" {
+		t.Fatalf("amended subject %q", got)
+	}
+}
+
+func TestTheOrganisationsIdentityBeatsARepositorysAuthorConfig(t *testing.T) {
+	dir := gitTestRepo(t)
+	gitIn(t, dir, "config", "author.email", "repo-author@example.test")
+	gitIn(t, dir, "config", "author.name", "Repo Author")
+	gitIn(t, dir, "config", "committer.email", "repo-committer@example.test")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("two\n"), 0o644)
+	w := writerFor(t, dir, GitIdentity{Name: "Org Person", Email: "org@example.test"})
+	if _, err := w.Commit(context.Background(), "m", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOut(t, dir, "log", "-1", "--format=%an <%ae>|%cn <%ce>"); got != "Org Person <org@example.test>|Org Person <org@example.test>" {
+		t.Fatalf("log %q", got)
+	}
+}
+
+func TestAHookThatLeavesAChildHoldingItsOutputDoesNotHangTheWrite(t *testing.T) {
+	dir := gitTestRepo(t)
+	os.WriteFile(filepath.Join(dir, ".git", "hooks", "post-commit"), []byte("#!/bin/sh\nsleep 8 &\n"), 0o755)
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("two\n"), 0o644)
+	start := time.Now()
+	if _, err := writerFor(t, dir, GitIdentity{}).Commit(context.Background(), "m", true); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 6*time.Second {
+		t.Fatalf("the commit waited %v for the hook's child", d)
 	}
 }

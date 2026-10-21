@@ -25,6 +25,9 @@ var gitWriteSafetyArgs = []string{
 	"--literal-pathspecs",
 }
 
+// gitWriteWaitDelay is how long a write waits for its output pipes after git itself has exited.
+const gitWriteWaitDelay = 2 * time.Second
+
 // hookOutputCap bounds what a failed write reports; the end is kept, where a hook says why.
 const hookOutputCap = 64 << 10
 
@@ -53,17 +56,19 @@ func NewGitWriter(root string, allowedRoots []string, id GitIdentity) (*GitWrite
 
 func (w *GitWriter) runner() *GitRunner { return &GitRunner{Root: w.Root} }
 
-// paths resolves each to a root-relative path; every one must stay inside the root.
+// paths resolves each to its cleaned root-relative path (`a/../b.txt` is `b.txt`); every one must
+// stay inside the root. What git is handed, and what a refusal names, is the cleaned path.
 func (w *GitWriter) paths(in []string) ([]string, error) {
 	if len(in) == 0 {
 		return nil, UserError("no paths given")
 	}
 	out := make([]string, 0, len(in))
 	for _, p := range in {
-		if _, err := w.runner().ResolvePath(p); err != nil {
+		rel, err := w.runner().ResolvePath(p)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		out = append(out, filepath.ToSlash(rel))
 	}
 	return out, nil
 }
@@ -74,16 +79,24 @@ func (w *GitWriter) git(ctx context.Context, stdin []byte, sub string, args ...s
 	mu.Lock()
 	defer mu.Unlock()
 	full := append([]string{"-C", w.Root}, gitWriteSafetyArgs...)
+	// author.* and committer.* too: a repository's own author.email would otherwise beat user.email.
 	if w.Identity.Name != "" {
-		full = append(full, "-c", "user.name="+w.Identity.Name)
+		for _, k := range []string{"user", "author", "committer"} {
+			full = append(full, "-c", k+".name="+w.Identity.Name)
+		}
 	}
 	if w.Identity.Email != "" {
-		full = append(full, "-c", "user.email="+w.Identity.Email)
+		for _, k := range []string{"user", "author", "committer"} {
+			full = append(full, "-c", k+".email="+w.Identity.Email)
+		}
 	}
 	full = append(append(full, sub), args...)
 	cmd := exec.Command("git", full...)
 	cmd.Env = gitScrubbedEnv(w.Root)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // a cancel kills hooks too
+	// A hook's background child can hold git's output open after git exits; Wait would block on it,
+	// holding the root's lock. After this long the pipes are closed and git's own exit status stands.
+	cmd.WaitDelay = gitWriteWaitDelay
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -100,6 +113,9 @@ func (w *GitWriter) git(ctx context.Context, stdin []byte, sub string, args ...s
 		<-done
 		return nil, ctx.Err()
 	case err := <-done:
+		if errors.Is(err, exec.ErrWaitDelay) {
+			err = nil // git exited 0; only a leftover child's pipe was cut
+		}
 		if err != nil {
 			return nil, gitWriteError(sub, out.Bytes(), errb.Bytes(), err)
 		}
@@ -134,12 +150,38 @@ func (w *GitWriter) Unstage(ctx context.Context, paths []string) error {
 	if err != nil {
 		return err
 	}
-	if w.hasNoHead(ctx) {
-		_, err = w.git(ctx, nil, "rm", append([]string{"--cached", "-q", "--"}, ps...)...)
+	// Only what is staged is unstaged (Rule 7): a path with nothing staged is no error, just nothing.
+	noHead := w.hasNoHead(ctx)
+	var list []byte
+	if noHead {
+		list, err = w.git(ctx, nil, "ls-files", append([]string{"-z", "--"}, ps...)...)
+	} else {
+		list, err = w.git(ctx, nil, "diff", append([]string{"--cached", "--name-only", "--no-renames", "-z", "--"}, ps...)...)
+	}
+	if err != nil {
 		return err
 	}
-	_, err = w.git(ctx, nil, "restore", append([]string{"--staged", "--"}, ps...)...)
+	staged := nulFields(list)
+	if len(staged) == 0 {
+		return nil
+	}
+	if noHead {
+		_, err = w.git(ctx, nil, "rm", append([]string{"--cached", "-q", "--"}, staged...)...)
+		return err
+	}
+	_, err = w.git(ctx, nil, "restore", append([]string{"--staged", "--"}, staged...)...)
 	return err
+}
+
+// nulFields splits git's -z output into its paths.
+func nulFields(b []byte) []string {
+	var out []string
+	for _, f := range strings.Split(string(b), "\x00") {
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func (w *GitWriter) hasNoHead(ctx context.Context) bool {
@@ -153,8 +195,12 @@ func messageFile(message string) (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
-	f.WriteString(message)
-	f.Close()
+	_, werr := f.WriteString(message)
+	cerr := f.Close()
+	if err := errors.Join(werr, cerr); err != nil {
+		os.Remove(f.Name())
+		return "", nil, UserError("could not write the commit message: " + err.Error())
+	}
 	return f.Name(), func() { os.Remove(f.Name()) }, nil
 }
 
@@ -178,7 +224,7 @@ func (w *GitWriter) Commit(ctx context.Context, message string, all bool) (GitCo
 		return GitCommitResult{}, err
 	}
 	defer done()
-	if _, err := w.git(ctx, nil, "commit", "-q", "--cleanup=strip", "-F", file); err != nil {
+	if _, err := w.git(ctx, nil, "commit", "-q", "--cleanup=whitespace", "-F", file); err != nil {
 		return GitCommitResult{}, err
 	}
 	return w.head(ctx)
@@ -194,7 +240,7 @@ func (w *GitWriter) Amend(ctx context.Context, message string) (GitCommitResult,
 			return GitCommitResult{}, err
 		}
 		defer done()
-		args = append(args, "--cleanup=strip", "-F", file)
+		args = append(args, "--cleanup=whitespace", "-F", file)
 	}
 	if _, err := w.git(ctx, nil, "commit", args...); err != nil {
 		return GitCommitResult{}, err
@@ -206,7 +252,7 @@ func (w *GitWriter) UndoCommit(ctx context.Context) (string, error) {
 	if _, err := w.runner().Run(ctx, "rev-parse", "--verify", "HEAD~1"); err != nil {
 		return "", UserError("nothing to undo: this is the first commit")
 	}
-	msg, err := w.git(ctx, nil, "log", "-1", "--format=%B")
+	msg, err := w.git(ctx, nil, "log", "-1", "--no-show-signature", "--format=%B")
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +268,7 @@ func (w *GitWriter) merging(ctx context.Context) bool {
 }
 
 func (w *GitWriter) head(ctx context.Context) (GitCommitResult, error) {
-	out, err := w.git(ctx, nil, "log", "-1", "--format=%h%x00%s")
+	out, err := w.git(ctx, nil, "log", "-1", "--no-show-signature", "--format=%h%x00%s")
 	if err != nil {
 		return GitCommitResult{}, err
 	}
@@ -241,6 +287,11 @@ func (w *GitWriter) Discard(ctx context.Context, paths []string, now time.Time) 
 	if err != nil {
 		return nil, err
 	}
+	// Each path is classified before anything moves: a file the index holds (tracked), or one git
+	// lists as untracked and not ignored. A directory, an ignored file, or anything else is refused,
+	// so a discard never trashes more than the one changed file it names.
+	isTracked := map[string]bool{}
+	var todo []string
 	for _, p := range ps {
 		out, err := w.git(ctx, nil, "ls-files", "-u", "--", p)
 		if err != nil {
@@ -249,6 +300,28 @@ func (w *GitWriter) Discard(ctx context.Context, paths []string, now time.Time) 
 		if len(bytes.TrimSpace(out)) > 0 {
 			return nil, UserError(p + " has a merge conflict; resolve it before discarding")
 		}
+		fi, statErr := os.Lstat(filepath.Join(w.Root, p))
+		if statErr == nil && fi.IsDir() {
+			return nil, UserError(p + " is a directory, not a changed file")
+		}
+		if out, err = w.git(ctx, nil, "ls-files", "-z", "--", p); err != nil {
+			return nil, err
+		}
+		if string(out) == p+"\x00" {
+			isTracked[p] = true
+			todo = append(todo, p)
+			continue
+		}
+		if statErr != nil {
+			continue // P2: an untracked path already gone has nothing left to discard
+		}
+		if out, err = w.git(ctx, nil, "ls-files", "--others", "--exclude-standard", "-z", "--", p); err != nil {
+			return nil, err
+		}
+		if string(out) != p+"\x00" {
+			return nil, UserError(p + " is not a changed file")
+		}
+		todo = append(todo, p)
 	}
 	names := []string{}
 	var tracked []string
@@ -260,20 +333,14 @@ func (w *GitWriter) Discard(ctx context.Context, paths []string, now time.Time) 
 		}
 		return names, err
 	}
-	for _, p := range ps {
-		rel, err := w.runner().ResolvePath(p)
-		if err != nil {
-			return fail(err)
-		}
-		abs := filepath.Join(w.Root, rel)
-		_, lsErr := w.runner().Run(ctx, "rev-parse", "--verify", ":"+p)
-		isTracked := lsErr == nil
-		if _, statErr := os.Lstat(abs); isTracked && statErr != nil {
+	for _, p := range todo {
+		abs := filepath.Join(w.Root, p)
+		if _, statErr := os.Lstat(abs); isTracked[p] && statErr != nil {
 			tracked = append(tracked, p)
 			continue
 		}
 		target := abs
-		if isTracked {
+		if isTracked[p] {
 			base := filepath.Base(abs) + " (discarded " + now.Format("15:04") + ")"
 			target = filepath.Join(filepath.Dir(abs), base)
 			for n := 2; ; n++ {
@@ -287,12 +354,15 @@ func (w *GitWriter) Discard(ctx context.Context, paths []string, now time.Time) 
 			}
 		}
 		if _, err := TrashEntry(ctx, target, []string{w.Root}); err != nil {
-			if isTracked {
-				os.Rename(target, abs) // put the original name back
+			if isTracked[p] {
+				if rerr := os.Rename(target, abs); rerr != nil { // put the original name back
+					err = UserError(err.Error() + "; putting the name back also failed, the current copy is " +
+						filepath.Base(target) + ": " + rerr.Error())
+				}
 			}
 			return fail(err)
 		}
-		if isTracked {
+		if isTracked[p] {
 			tracked = append(tracked, p)
 		}
 		names = append(names, filepath.Base(target))
