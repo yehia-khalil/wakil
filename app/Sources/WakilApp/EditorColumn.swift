@@ -432,7 +432,7 @@ struct EditorColumn: View {
         let closed = column.changesClosed.contains(root.root)
         let boxed = !closed && root.error == nil && !root.files.isEmpty
         VStack(alignment: .leading, spacing: 0) {
-            changesHeader(root, closed: closed)
+            changesHeader(root, closed: closed, boxed: boxed)
             if let detail = gitRootErrorDetail(root) {
                 Text(detail)
                     .font(.system(size: 11, design: .monospaced))
@@ -458,7 +458,7 @@ struct EditorColumn: View {
     }
 
     @ViewBuilder
-    private func changesHeader(_ root: GitRootState, closed: Bool) -> some View {
+    private func changesHeader(_ root: GitRootState, closed: Bool, boxed: Bool) -> some View {
         let detail = gitRootDetail(root)
         let clean = root.error == nil && !root.loading && root.files.isEmpty && !detail.isEmpty
         HStack(spacing: ChangesSpace.m) {
@@ -477,12 +477,12 @@ struct EditorColumn: View {
             }
             .frame(height: ChangesSpace.row)
             .contentShape(Rectangle())
-            .onTapGesture { toggleRoot(root.root, closed: closed) }
+            .onTapGesture { if !root.files.isEmpty { toggleRoot(root.root, closed: closed) } }
             // One line for the tree, `api · main · clean`: the name and its dimmed rest read as one.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(gitRootLine(root))
             .accessibilityIdentifier("editor.changes.root:\(root.name)")
-            .accessibilityAction { toggleRoot(root.root, closed: closed) }
+            .accessibilityAction { if !root.files.isEmpty { toggleRoot(root.root, closed: closed) } }
             // 3a-ii: who a commit here is authored as, for the box's placeholder; read again with each
             // root shown.
             .task(id: root.root) { await changes.refreshIdentity(root.root) }
@@ -490,7 +490,26 @@ struct EditorColumn: View {
             .accessibilityRemoveTraits(.isButton)
             .accessibilityAddTraits(.isStaticText)
             // A clean root has no box, but its last commit can still be undone from here.
-            if clean { cleanRootActions(root) }
+            if clean {
+                cleanRootActions(root)
+            } else if !boxed {
+                // A collapsed root has no commit bar: its write in flight shows here (Rules 4, 5).
+                rootBusyActions(root)
+            }
+        }
+    }
+
+    /// A root line's spinner and Cancel while its write runs: a clean root's, or a collapsed one's.
+    @ViewBuilder
+    private func rootBusyActions(_ root: GitRootState) -> some View {
+        let key = root.root
+        if changes.inFlight.contains(key) {
+            ProgressView().controlSize(.mini)
+            Button("Cancel") { changes.cancel(key) }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.75))
+                .accessibilityIdentifier("editor.changes.\(root.name).cancel")
         }
     }
 
@@ -499,14 +518,7 @@ struct EditorColumn: View {
     private func cleanRootActions(_ root: GitRootState) -> some View {
         let key = root.root
         let busy = changes.inFlight.contains(key)
-        if busy {
-            ProgressView().controlSize(.mini)
-            Button("Cancel") { changes.cancel(key) }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.75))
-                .accessibilityIdentifier("editor.changes.\(root.name).cancel")
-        }
+        rootBusyActions(root)
         Menu {
             Button("Undo Last Commit") { Task { await changes.undo(key) } }
                 .accessibilityIdentifier("editor.changes.\(root.name).undo")

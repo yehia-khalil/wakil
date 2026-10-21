@@ -24,8 +24,12 @@
 {"do":{"click":"editor.changes.e2e-portal.menuCommit"}}
 {"expect":{"process":{"any-matching":"sleep 90.32"}}}
 {"dispatch":{"action":"editor_changes_stage","params":{"root":"{fixtureRoot}/e2e-portal","paths":["slow"]},"refuses":"a git write is already running in e2e-portal"}}
+{"dispatch":{"action":"editor_changes_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-portal"}}}
+{"expect":{"tree":"absent","text":"?, slow"}}
+{"expect":{"frame":"editor.changes.e2e-portal.cancel","inside":"editor.column"}}
 {"do":{"click":"editor.changes.e2e-portal.cancel"}}
 {"expect":{"process":{"none-matching":"sleep 90.32"}}}
+{"dispatch":{"action":"editor_changes_expand","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-portal"}}}
 {"expect":{"tree":"absent","text":"e2e hook says no"}}
 {"expect":{"tree":"absent","text":"CancellationError"}}
 {"expect":{"tree":"contains","text":"e2e blocked"}}
