@@ -721,10 +721,13 @@ struct SettingsPane: View {
         let localIds = Set(tree.providers.filter { $0.kind == "local" }.map(\.id))
         func isLocal(_ id: String) -> Bool { localIds.contains(id) }
         return VStack(alignment: .leading, spacing: 4) {
-            Text("QUICK TASKS")
-                .font(.system(size: Scale.micro, weight: .medium))
-                .tracking(Scale.microTracking)
-                .foregroundStyle(coolWhite.opacity(0.32))
+            HStack(alignment: .center, spacing: 6) {
+                Text("QUICK TASKS")
+                    .font(.system(size: Scale.micro, weight: .medium))
+                    .tracking(Scale.microTracking)
+                    .foregroundStyle(coolWhite.opacity(0.32))
+                QuickTasksAboutButton()
+            }
             // One table row, as the local models under it are drawn: the choice as plain text with
             // a chevron (the system's menu chrome would be the only bezel on the page), and where
             // code completion goes beside it.
@@ -2139,6 +2142,36 @@ enum SettingsNode: Hashable {
             return [organisation, "Projects", project, environment, "Databases"]
         case .api(let project, let environment):
             return [organisation, "Projects", project, environment, "API"]
+        }
+    }
+}
+
+/// The ⓘ beside QUICK TASKS. A click, not a hover tooltip: the text is a dozen lines, and a
+/// tooltip can be neither reached by keyboard nor read at leisure. Click away or Esc closes it.
+private struct QuickTasksAboutButton: View {
+    @State private var open = false
+
+    var body: some View {
+        Button { open.toggle() } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 10))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(open ? 0.86 : 0.48))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("About quick tasks")
+        .accessibilityIdentifier("settings.quickTasks.about")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            Text((try? AttributedString(
+                markdown: quickTasksAbout,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(quickTasksAbout))
+                .font(.system(size: SettingsScale.body))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 420, alignment: .leading)
+                .padding(14)
+                .background(Color(red: 0.055, green: 0.063, blue: 0.098))   // #0e1019, as the agent chips' list
+                .accessibilityIdentifier("settings.quickTasks.about.text")
         }
     }
 }

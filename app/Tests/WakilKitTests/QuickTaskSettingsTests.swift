@@ -85,3 +85,13 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
     #expect(hint(quick: "qwen", on: true) == "one-line commands without the agent · on: the model is local")
     #expect(hint(quick: "main", on: true) == "one-line commands without the agent", "a value the operator changed needs no why")
 }
+
+/// The ⓘ's text names the deadlines the fast path runs under, so raising one cannot leave the
+/// text promising the old one; and it says what the fast path won't do.
+@Test func theAboutTextNamesTheDeadlinesAndWhatTheFastPathWontDo() {
+    #expect(quickTasksAbout.contains("longer than 0.4 s (2.5 s for a model that isn't local)"))
+    #expect(quickTasksAbout.contains("It never edits a file, changes data or a setting, or runs a command or a query."))
+    #expect(quickTasksAbout.contains("Press Tab to accept it."))
+    #expect((try? AttributedString(markdown: quickTasksAbout,
+                                   options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) != nil)
+}

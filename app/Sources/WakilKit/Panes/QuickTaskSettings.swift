@@ -57,3 +57,37 @@ public func fastPathHint(_ tree: SettingsTree) -> String {
     let model = quickTaskChoices(tree).first { $0.id == chosen }?.display ?? chosen
     return base + " · off: on \(model) each line would wait for Claude first"
 }
+
+/// The ⓘ beside QUICK TASKS: what the two features do and, as plainly, what the fast path won't,
+/// so an operator does not expect an edit or a query from it (3b-ix walk). Markdown, inline only;
+/// the deadlines are the ones the fast path runs under, so the text cannot drift from them.
+public var quickTasksAbout: String {
+    func seconds(_ d: Duration) -> String {
+        let ms = Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
+        return String(format: "%g s", ms / 1000)
+    }
+    let local = seconds(WindowModel.fastPathLocalDeadline)
+    let other = seconds(WindowModel.fastPathSessionDeadline)
+    return """
+    **Quick tasks** use one small, fast model for two jobs.
+
+    **Ghost-text:** while you type in the editor, it suggests the rest of the line in grey. Press Tab to accept it.
+
+    **Fast path:** when you press Return in the composer, a short command runs straight away, without waiting for the agent. For example:
+    • open checkout.go
+    • line 40
+    • switch to staging
+    • show tables in core
+    • close the bookings table
+    What ran is shown under the composer, with **Ask the agent instead** if it guessed wrong.
+
+    **What the fast path won't do:**
+    • It only moves you around: it opens, shows, switches, focuses and closes. It never edits a file, changes data or a setting, or runs a command or a query.
+    • It does one thing per line. "open a.go and go to line 40" goes to the agent.
+    • It only uses names Wakil already knows: your project's files, tables, databases, open panes and environments. Anything else goes to the agent.
+    • Questions and requests to change something always go to the agent.
+    • If the model takes longer than \(local) (\(other) for a model that isn't local), the line goes to the agent.
+
+    **Tip:** a local model is fastest. On *Same as agent*, every line waits for Claude first, so the fast path starts off.
+    """
+}

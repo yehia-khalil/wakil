@@ -1,0 +1,10 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"expect":{"tree":"absent","text":"What the fast path won't do"}}
+{"do":{"click":"settings.quickTasks.about"}}
+{"expect":{"tree":"contains","text":"What the fast path won't do"}}
+{"expect":{"tree":"contains","text":"It never edits a file, changes data or a setting, or runs a command or a query."}}
+{"expect":{"tree":"contains","text":"longer than 0.4 s"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"What the fast path won't do"}}
