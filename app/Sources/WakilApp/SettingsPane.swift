@@ -262,7 +262,8 @@ struct SettingsPane: View {
     /// heading, the active project and its active environment open — and afterwards changes when
     /// a chevron is pressed, → or ← is pressed on the selected branch, or the heading is pressed.
     /// The one change made for them is an opening: a node selected inside a closed parent opens
-    /// its ancestors (`revealSelection`), so a node the operator was taken to is never hidden.
+    /// its ancestors (`revealSelection`), so a node the operator was taken to is never hidden. A
+    /// place change, a rebuild or a reopened pane opens nothing once the defaults are laid.
     @ViewBuilder
     private var treeColumn: some View {
         ScrollView {
@@ -337,14 +338,14 @@ struct SettingsPane: View {
         .focused($treeFocused)
         .focusEffectDisabled()
         .onKeyPress(phases: .down, action: treeKey)
-        .onAppear {
-            expansion.seed(activeProject: activeProject, activeEnvironment: activeEnvironment)
-            revealSelection()
-        }
-        .onChange(of: activeProject) { _, _ in seedOrRevealActive() }
-        .onChange(of: activeEnvironment) { _, _ in seedOrRevealActive() }
+        // Seeding only, on appear and on a place change: once the defaults are laid, neither
+        // reopening the pane nor moving the place opens a branch the operator closed (Rule 6).
+        .onAppear { seed() }
+        .onChange(of: activeProject) { _, _ in seed() }
+        .onChange(of: activeEnvironment) { _, _ in seed() }
         // Another organisation's tree: the window forgot the old one's branches, so lay these.
-        .onChange(of: tree?.org.id) { _, _ in seedOrRevealActive() }
+        .onChange(of: tree?.org.id) { _, _ in seed() }
+        // A navigation to a node inside a closed parent is the one opening made for the operator.
         .onChange(of: selection) { _, _ in revealSelection() }
     }
 
@@ -387,19 +388,15 @@ struct SettingsPane: View {
         .frame(width: 10, height: 10)
     }
 
-    /// The active place changed: lay the defaults if they were never laid, else open the new
-    /// active project and environment. Opening only — nothing the operator closed is shut again
-    /// that was not, and nothing they opened is closed.
-    private func seedOrRevealActive() {
-        if expansion.seeded {
-            expansion.reveal(project: activeProject, environment: activeEnvironment)
-        } else {
-            expansion.seed(activeProject: activeProject, activeEnvironment: activeEnvironment)
-        }
+    /// Lays the defaults if they were never laid; afterwards does nothing, so a place change, a
+    /// rebuild or a reopened pane never opens what the operator closed (3a-ii review I3).
+    private func seed() {
+        expansion.seed(activeProject: activeProject, activeEnvironment: activeEnvironment)
     }
 
     /// Opens the selected node's ancestors, never the node: a project's heading, an environment's
-    /// project, a database's environment.
+    /// project, a database's environment. Run only when the selection CHANGES — a navigation —
+    /// never on appear, so a selection left inside a branch the operator closed stays hidden.
     private func revealSelection() {
         switch selection {
         case .organisation, .providers, .editor: return

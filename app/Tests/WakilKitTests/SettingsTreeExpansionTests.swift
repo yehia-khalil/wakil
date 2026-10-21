@@ -61,3 +61,18 @@ import Testing
     #expect(!expansion.isOpen(project: "p"))
     #expect(expansion.projectsOpen)
 }
+
+// 3a-ii review I3: the pane seeds on appear and on every place change, and once seeded that
+// opens nothing — a closed branch stays closed when the place moves into it or the pane reopens.
+@Test func aLaterPlaceOpensNothingOnceSeeded() {
+    var expansion = SettingsTreeExpansion()
+    expansion.seed(activeProject: "e2e-project", activeEnvironment: "staging")
+    expansion.setOpen(false, project: "e2e-project")
+    expansion.setOpen(false, project: "e2e-project", environment: "staging")
+    expansion.seed(activeProject: "e2e-project", activeEnvironment: "qa")
+    expansion.seed(activeProject: "e2e-git", activeEnvironment: "staging")
+    #expect(!expansion.isOpen(project: "e2e-project"))
+    #expect(!expansion.isOpen(project: "e2e-project", environment: "qa"))
+    #expect(!expansion.isOpen(project: "e2e-project", environment: "staging"))
+    #expect(!expansion.isOpen(project: "e2e-git"))
+}

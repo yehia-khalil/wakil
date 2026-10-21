@@ -30,3 +30,28 @@
 {"expect":{"tree":"contains","text":"projects open"}}
 {"expect":{"tree":"contains","text":"project.e2e-git open"}}
 {"expect":{"tree":"contains","text":"environment.e2e-project.staging closed"}}
+{"do":{"click":"settings.tree.databases.e2e-project.qa"}}
+{"expect":{"tree":"contains","text":"qa  ›  Databases"}}
+{"do":{"click":"settings.tree.environment.e2e-project.qa.disclosure"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.qa closed"}}
+{"dispatch":{"action":"pane_close","params":{"id":"settings-1"}}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.qa"}}
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"projects open"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.qa closed"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.staging closed"}}
+{"do":{"click":"settings.tree.project.e2e-project.disclosure"}}
+{"expect":{"tree":"contains","text":"project.e2e-project closed"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"qa"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.qa"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"projects open"}}
+{"expect":{"tree":"contains","text":"project.e2e-project closed"}}

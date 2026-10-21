@@ -7,8 +7,9 @@ import Foundation
 /// laid once, when the pane first knows the place on screen: PROJECTS open, the active project
 /// open, its active environment open, everything else closed. After that a branch closes only
 /// when the operator closes it — selecting another node never collapses the one left — and the
-/// only automatic change is an OPENING: reaching a node whose parent is closed opens its
-/// ancestors, so nothing the operator was taken to is hidden from them.
+/// only automatic change is an OPENING: navigating to a node whose parent is closed opens its
+/// ancestors, so nothing the operator was taken to is hidden from them. A place change, a rebuild
+/// or a reopened pane opens nothing: `seed` is the only thing they call, and it lays once.
 public struct SettingsTreeExpansion: Equatable, Sendable {
     /// One environment, by project and environment name.
     public struct EnvironmentKey: Hashable, Sendable {
