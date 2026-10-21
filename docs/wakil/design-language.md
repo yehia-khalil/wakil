@@ -684,6 +684,24 @@ setting it explains and never pooled in a footnote; a footnote keeps only where 
 stored. A field that sits in a list (a project's heavy folders) takes the same boxed `.field`
 through `fieldBox`, and the list's add gesture is a `FormButton`.
 
+**A page with more than one group is drawn in sections (added 2026-10-21).** The operator found
+the pages bland, with nothing separating one group from the next. Each group is a
+**`SettingsSection`**: a hairline above it, a micro header in QUICK TASKS' style, and 12pt of
+rhythm; inside it, each setting is a **`SettingsRow`** — the label left at a fixed width
+(`SettingsScale.labelWidth`), the value right, on one line, as QUICK TASKS' rows were first drawn.
+An empty value reads `—` until it is typed in; a field is edited where it stands, its box drawn
+only on hover or focus (`inPlaceField`). The Organisation page is Identity · Accounts · Jira ·
+Git; Providers is Accounts · Local models · Quick tasks; the Editor pages are Editing · Files and
+Indentation · Heavy folders; a project is Project · Roots; each API entry is its own section.
+A page of one group (an environment) draws its rows without a header.
+
+**The tree's projects and environments open and close (2026-10-21).** Each is a branch with its
+own chevron, pressed apart from the row so opening never selects and selecting never opens; → and
+← on the selected branch do the same, and the PROJECTS heading closes them all. The heading, the
+active project and its active environment start open and everything else closed; the state is
+the window's, never persisted, and changes only by the operator (Rule 6) — the one change made
+for them is that reaching a node inside a closed parent opens its ancestors.
+
 ## 15. Open items
 
 **Settled by 2b-ii (2026-09-09):** ~~Final palette values~~ — red was the one hue in §5's

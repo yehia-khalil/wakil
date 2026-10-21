@@ -278,7 +278,12 @@ struct SettingsPane: View {
                     }
                     ForEach(tree?.projects ?? [], id: \.name) { project in
                         let projectOpen = expansion.isOpen(project: project.name)
-                        row(.project(project.name), label: project.name, depth: 1, disclosure: .branch(open: projectOpen)) {
+                        row(
+                            .project(project.name), label: project.name, depth: 1,
+                            disclosure: .branch(
+                                open: projectOpen,
+                                identifier: "settings.tree.project.\(project.name).disclosure")
+                        ) {
                             expansion.setOpen(!projectOpen, project: project.name)
                         }
                         if projectOpen {
@@ -288,7 +293,10 @@ struct SettingsPane: View {
                                     project: project.name, environment: environment.name)
                                 row(
                                     .environment(project: project.name, environment: environment.name),
-                                    label: environment.name, depth: 2, disclosure: .branch(open: environmentOpen)
+                                    label: environment.name, depth: 2,
+                                    disclosure: .branch(
+                                        open: environmentOpen,
+                                        identifier: "settings.tree.environment.\(project.name).\(environment.name).disclosure")
                                 ) {
                                     expansion.setOpen(
                                         !environmentOpen, project: project.name, environment: environment.name)
@@ -361,6 +369,7 @@ struct SettingsPane: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(open ? "Projects, open" : "Projects, closed")
+        .accessibilityValue(open ? "projects open" : "projects closed")
         .accessibilityIdentifier("settings.tree.projectsHeading")
     }
 
@@ -427,7 +436,9 @@ struct SettingsPane: View {
     private enum Disclosure: Equatable {
         case none
         case leaf
-        case branch(open: Bool)
+        /// `identifier` is written out at the call site, whole, so the control harvest sees each
+        /// family (`settings.tree.project.<…>.disclosure`) rather than one interpolated fragment.
+        case branch(open: Bool, identifier: String)
     }
 
     /// One node. A branch's chevron is its own button, calling `toggle`, beside the row's button,
@@ -444,7 +455,7 @@ struct SettingsPane: View {
                 EmptyView()
             case .leaf:
                 chevron(open: nil)
-            case .branch(let state):
+            case .branch(let state, let identifier):
                 if let toggle {
                     Button(action: toggle) {
                         chevron(open: state)
@@ -454,7 +465,10 @@ struct SettingsPane: View {
                     .buttonStyle(.plain)
                     .padding(.horizontal, -2)
                     .accessibilityLabel(state ? "Close \(label)" : "Open \(label)")
-                    .accessibilityIdentifier("settings.tree.\(fragment).disclosure")
+                    // The state as words, named by the node, so the tree a check reads can say
+                    // which branch is open: `environment.e2e-project.qa closed`.
+                    .accessibilityValue(state ? "\(fragment) open" : "\(fragment) closed")
+                    .accessibilityIdentifier(identifier)
                 } else {
                     chevron(open: state)
                 }
@@ -861,7 +875,7 @@ struct SettingsPane: View {
         let known = engines.first(where: { $0.id == current })
         func idFor(_ name: String) -> String { engines.first(where: { $0.name == name })?.id ?? name }
         return VStack(alignment: .leading, spacing: 2) {
-            SettingsRow("Speech") {
+            SettingsRow("Speech", wraps: true) {
                 SegmentedChoice(
                     options: engines.map(\.name),
                     selection: Binding(

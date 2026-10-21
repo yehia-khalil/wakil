@@ -99,7 +99,7 @@ struct ChoiceSettingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            SettingsRow(label) {
+            SettingsRow(label, wraps: true) {
                     SegmentedChoice(
                         options: options,
                         selection: Binding(get: { selected }, set: { option in

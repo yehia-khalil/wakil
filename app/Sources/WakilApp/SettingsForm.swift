@@ -315,28 +315,56 @@ extension SettingsSection where Accessory == EmptyView {
 
 /// One setting on one line: its label left at `labelWidth`, its value right, a faint hairline
 /// under it — the QUICK TASKS rows' shape, which every sectioned page uses.
+///
+/// `wraps` is for a value that cannot shrink — a `SegmentedChoice` of several long options: when
+/// label and value do not fit the column on one line, the value goes under the label instead of
+/// running past the pane's edge. The settings pane opens 640pt wide, and Autosave's three
+/// options beside a 120pt label are wider than its subject column.
 struct SettingsRow<Value: View>: View {
     let label: String
+    var wraps: Bool = false
     let value: Value
 
-    init(_ label: String, @ViewBuilder value: () -> Value) {
+    init(_ label: String, wraps: Bool = false, @ViewBuilder value: () -> Value) {
         self.label = label
+        self.wraps = wraps
         self.value = value()
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: SettingsScale.columnGap) {
-            Text(label)
-                .font(.system(size: SettingsScale.body, weight: .medium))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
-                .lineLimit(1)
-                .frame(width: SettingsScale.labelWidth, alignment: .leading)
-            value
-            Spacer(minLength: 0)
+        Group {
+            if wraps {
+                ViewThatFits(in: .horizontal) {
+                    oneLine
+                    VStack(alignment: .leading, spacing: 6) {
+                        labelText
+                        value
+                    }
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                oneLine
+            }
         }
         .frame(minHeight: SettingsScale.rowHeight, alignment: .leading)
         .overlay(alignment: .bottom) {
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.06)).frame(height: 0.5)
+        }
+    }
+
+    private var labelText: some View {
+        Text(label)
+            .font(.system(size: SettingsScale.body, weight: .medium))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
+            .lineLimit(1)
+    }
+
+    private var oneLine: some View {
+        HStack(alignment: .center, spacing: SettingsScale.columnGap) {
+            labelText.frame(width: SettingsScale.labelWidth, alignment: .leading)
+            value
+            Spacer(minLength: 0)
         }
     }
 }
