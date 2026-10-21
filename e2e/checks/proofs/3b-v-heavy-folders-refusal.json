@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-v-heavy-folders-refusal.jsonl",
   "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
-  "provedAt": "2026-10-21T20:10:57.810195Z",
+  "provedAt": "2026-10-21T21:06:32.502374Z",
   "checkBlob": "fdc67e8b1f7f9f2017751dc0b4fd2268d0beec61"
 }
