@@ -69,25 +69,12 @@ public var quickTasksAbout: String {
     let local = seconds(WindowModel.fastPathLocalDeadline)
     let other = seconds(WindowModel.fastPathSessionDeadline)
     return """
-    **Quick tasks** use one small, fast model for two jobs.
+    **Ghost-text** suggests the rest of the line as you type in the editor. Tab accepts it.
 
-    **Ghost-text:** while you type in the editor, it suggests the rest of the line in grey. Press Tab to accept it.
+    **Fast path** runs a short command the moment you press Return, without the agent: "open checkout.go", "line 40", "switch to staging", "show tables in core". If it guessed wrong, click **Ask the agent instead**.
 
-    **Fast path:** when you press Return in the composer, a short command runs straight away, without waiting for the agent. For example:
-    • open checkout.go
-    • line 40
-    • switch to staging
-    • show tables in core
-    • close the bookings table
-    What ran is shown under the composer, with **Ask the agent instead** if it guessed wrong.
+    It only opens, shows, switches and closes things Wakil knows (files, tables, panes, environments). It never edits, queries or runs commands, and does one thing per line. Anything else, or a model slower than \(local) (\(other) if not local), goes to the agent.
 
-    **What the fast path won't do:**
-    • It only moves you around: it opens, shows, switches, focuses and closes. It never edits a file, changes data or a setting, or runs a command or a query.
-    • It does one thing per line. "open a.go and go to line 40" goes to the agent.
-    • It only uses names Wakil already knows: your project's files, tables, databases, open panes and environments. Anything else goes to the agent.
-    • Questions and requests to change something always go to the agent.
-    • If the model takes longer than \(local) (\(other) for a model that isn't local), the line goes to the agent.
-
-    **Tip:** a local model is fastest. On *Same as agent*, every line waits for Claude first, so the fast path starts off.
+    Best with a local model. On *Same as agent* it is off by default, since every line would wait for Claude first.
     """
 }

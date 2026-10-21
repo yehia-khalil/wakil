@@ -89,9 +89,9 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
 /// The ⓘ's text names the deadlines the fast path runs under, so raising one cannot leave the
 /// text promising the old one; and it says what the fast path won't do.
 @Test func theAboutTextNamesTheDeadlinesAndWhatTheFastPathWontDo() {
-    #expect(quickTasksAbout.contains("longer than 0.4 s (2.5 s for a model that isn't local)"))
-    #expect(quickTasksAbout.contains("It never edits a file, changes data or a setting, or runs a command or a query."))
-    #expect(quickTasksAbout.contains("Press Tab to accept it."))
+    #expect(quickTasksAbout.contains("slower than 0.4 s (2.5 s if not local)"))
+    #expect(quickTasksAbout.contains("It never edits, queries or runs commands"))
+    #expect(quickTasksAbout.contains("Tab accepts it."))
     #expect((try? AttributedString(markdown: quickTasksAbout,
                                    options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) != nil)
 }
