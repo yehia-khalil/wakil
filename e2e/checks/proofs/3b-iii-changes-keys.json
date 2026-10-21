@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-iii-changes-keys.jsonl",
-  "baseCommit": "2dfec0ee0c10361256dd62e7365793e14cb46481",
-  "provedAt": "2026-10-16T20:59:37.504574Z",
-  "checkBlob": "300b9e5d9a6ead4f43c12b44172cec974a4fc9ae"
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T17:12:24.311128Z",
+  "checkBlob": "0b198d68d5aad164850e7bb41315cd6e1e394ea9"
 }

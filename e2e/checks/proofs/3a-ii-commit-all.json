@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3a-ii-commit-all.jsonl",
   "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
-  "provedAt": "2026-10-21T15:55:11.978177Z",
-  "checkBlob": "febba649365fb89f5d27788f8278f0c4786051b3"
+  "provedAt": "2026-10-21T17:09:51.546011Z",
+  "checkBlob": "95f31333ddfc7b198fbba7e7cb5901fe7f178767"
 }

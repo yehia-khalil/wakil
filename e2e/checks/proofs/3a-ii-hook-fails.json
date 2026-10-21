@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3a-ii-hook-fails.jsonl",
   "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
-  "provedAt": "2026-10-21T15:55:11.978177Z",
-  "checkBlob": "0fd65777a2fe2723e0e8eed1d6a5e4cd85542efa"
+  "provedAt": "2026-10-21T17:09:51.546011Z",
+  "checkBlob": "5830030cd8283af2c383fd198edc7c843aa163bf"
 }

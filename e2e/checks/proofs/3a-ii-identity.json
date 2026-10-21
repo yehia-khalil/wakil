@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3a-ii-identity.jsonl",
   "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
-  "provedAt": "2026-10-21T15:55:11.978177Z",
-  "checkBlob": "9062ea2b3b827953577b6e681818e5a0116ae894"
+  "provedAt": "2026-10-21T17:09:51.546011Z",
+  "checkBlob": "4170b7f080d4982c0e55323a954cac672ae12c5a"
 }
