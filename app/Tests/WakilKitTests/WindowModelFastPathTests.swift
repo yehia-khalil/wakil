@@ -240,7 +240,7 @@ private func makeFastPathWindow(
         let warmed = await model.respondCalls      // the rebuild's warm-up, not a line
         let started = ContinuousClock.now
         #expect(await window.runFastPath("open settings") == .toAgent)
-        #expect(ContinuousClock.now - started < .seconds(10), "the 300 ms deadline, loosely: not the 30 s read")
+        #expect(ContinuousClock.now - started < .seconds(10), "the 400 ms deadline, loosely: not the 30 s read")
         #expect(await calls.all().isEmpty)
         #expect(await model.respondCalls == warmed, "the model is not asked without a scope")
     }

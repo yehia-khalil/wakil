@@ -168,7 +168,7 @@ Each entry: the call, why, and what would change our mind.
     the org's quick-tasks model. The model may answer with exactly one action from a fixed list
     of 26 navigation actions, and no writes. Wakil runs it as the operator's own dispatch only if
     the action is on the list, its params fit the schema and every name it uses exists. Anything
-    else, a late answer (past 300 ms on a local model, 2.5 s otherwise) or any doubt sends the
+    else, a late answer (past 400 ms on a local model, 2.5 s otherwise) or any doubt sends the
     line to the agent unchanged. There is still no grammar and no voice-only path. *Reverse if:*
     operators often have to undo what the fast path ran.
 

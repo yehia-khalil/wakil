@@ -44,7 +44,7 @@ func TestChatStubAnswersTheTableAndAgentOtherwise(t *testing.T) {
 }
 
 // TestChatStubAnswersASlowLineLate — the deadline check needs an answer that
-// arrives, and arrives after 300 ms.
+// arrives, and arrives after 400 ms.
 func TestChatStubAnswersASlowLineLate(t *testing.T) {
 	origin, stop, err := StartChatStub()
 	if err != nil {

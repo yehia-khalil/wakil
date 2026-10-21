@@ -30,7 +30,7 @@ var FastPathReplies = map[string]string{
 }
 
 // SlowPrefix makes the stub answer late: "slow go to qa" answers as "go to
-// qa" does, after SlowReply — past the fast path's 300 ms local deadline.
+// qa" does, after SlowReply — past the fast path's 400 ms local deadline.
 const SlowPrefix = "slow "
 
 // SlowReply is how long a slow line waits before its answer.

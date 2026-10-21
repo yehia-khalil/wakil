@@ -79,7 +79,7 @@ public struct FastPathReceipt: Sendable, Equatable {
 public enum FastPathOutcome: Sendable, Equatable { case ran(FastPathReceipt), refused(FastPathReceipt), toAgent }
 
 extension WindowModel {
-    static let fastPathLocalDeadline: Duration = .milliseconds(300)
+    static let fastPathLocalDeadline: Duration = .milliseconds(400)
     static let fastPathSessionDeadline: Duration = .milliseconds(2500)
 
     /// Asks the org's quick model whether `line` is one allowed action and, if every check holds,
