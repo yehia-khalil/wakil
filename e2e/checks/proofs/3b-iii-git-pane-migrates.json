@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-iii-git-pane-migrates.jsonl",
   "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
-  "provedAt": "2026-10-21T17:12:24.311128Z",
+  "provedAt": "2026-10-21T20:10:57.810195Z",
   "checkBlob": "60a14d33f5e5551b9e93b9fed1d71d5cbf1e59a0"
 }

@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-v-project-editor-settings.jsonl",
-  "baseCommit": "e6c782b4f52f9e4c17f82bfadd17b13c8252445a",
-  "provedAt": "2026-10-13T12:35:19.419434Z",
-  "checkBlob": "27809a0bf4a2d29bd0fbcd7d65700510aaf600a1"
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T20:10:57.810195Z",
+  "checkBlob": "d2a46bf3986cb10a7a83a2dcfdcf241034cab0a6"
 }

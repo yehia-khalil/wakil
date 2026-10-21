@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-v-editor-autosave-pause.jsonl",
-  "baseCommit": "e6c782b4f52f9e4c17f82bfadd17b13c8252445a",
-  "provedAt": "2026-10-13T12:35:19.419434Z",
-  "checkBlob": "359e0aed6bdd9bb3d2e9973aa749862e96cf4d42"
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T20:10:57.810195Z",
+  "checkBlob": "23524b711029e56e6b1d04cf5185e2389105a36a"
 }

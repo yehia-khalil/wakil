@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-iv-trash-tabs.jsonl",
-  "baseCommit": "a2a8b3fc90506ed554bcbb2e7888f9daa31d0f99",
-  "provedAt": "2026-10-18T07:34:37.514653Z",
-  "checkBlob": "40f90d3b7485b1b4975c5c5d4db82651de73dd48"
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T20:10:57.810195Z",
+  "checkBlob": "b1d36891ed90f2213d087647337374aabae4af5f"
 }

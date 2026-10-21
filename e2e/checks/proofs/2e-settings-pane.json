@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/2e-settings-pane.jsonl",
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T20:10:57.810195Z",
+  "checkBlob": "e0d168881c700ccb6930bcbc86f86db18e1c0e60"
+}

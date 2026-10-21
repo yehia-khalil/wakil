@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-v-editor-autosave-focus.jsonl",
-  "baseCommit": "e6c782b4f52f9e4c17f82bfadd17b13c8252445a",
-  "provedAt": "2026-10-13T12:35:19.419434Z",
-  "checkBlob": "5f5ee3fd6bbf1b0299e0780aa20cef364b2ff853"
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T20:10:57.810195Z",
+  "checkBlob": "a478403805bad67dc395e1b2d9ab9849d18e7e9e"
 }
