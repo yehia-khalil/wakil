@@ -554,7 +554,6 @@ struct EditorColumn: View {
     @ViewBuilder
     private func commitBox(_ root: GitRootState) -> some View {
         let key = root.root
-        let base = "editor.changes.\(root.name)"
         let draft = changes.messages[key] ?? ""
         let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let busy = changes.inFlight.contains(key)
@@ -585,7 +584,7 @@ struct EditorColumn: View {
                     .stroke(messageFocused == key ? EditorPaneStyle.violet : EditorPaneStyle.text.opacity(0.12),
                             lineWidth: 1))
                 .accessibilityLabel("Commit message")
-                .accessibilityIdentifier("\(base).message")
+                .accessibilityIdentifier("editor.changes.\(root.name).message")
             HStack(spacing: 6) {
                 if busy {
                     ProgressView().controlSize(.small)
@@ -593,7 +592,7 @@ struct EditorColumn: View {
                         .buttonStyle(.plain)
                         .font(.system(size: 11))
                         .foregroundStyle(EditorPaneStyle.text.opacity(0.75))
-                        .accessibilityIdentifier("\(base).cancel")
+                        .accessibilityIdentifier("editor.changes.\(root.name).cancel")
                 } else {
                     Button(staged ? "Commit" : "Commit All") { Task { await changes.commit(key) } }
                         .buttonStyle(.plain)
@@ -603,18 +602,18 @@ struct EditorColumn: View {
                         .background(EditorPaneStyle.violet.opacity(0.55), in: RoundedRectangle(cornerRadius: 3))
                         .disabled(empty)
                         .opacity(empty ? 0.45 : 1)
-                        .accessibilityIdentifier("\(base).commit")
+                        .accessibilityIdentifier("editor.changes.\(root.name).commit")
                 }
                 Menu {
                     Button("Amend Last Commit") { Task { await changes.amend(key) } }
-                        .accessibilityIdentifier("\(base).amend")
+                        .accessibilityIdentifier("editor.changes.\(root.name).amend")
                     Button("Undo Last Commit") { Task { await changes.undo(key) } }
-                        .accessibilityIdentifier("\(base).undo")
+                        .accessibilityIdentifier("editor.changes.\(root.name).undo")
                 } label: { Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .disabled(busy)
                     .help("More Commit Actions")
-                    .accessibilityIdentifier("\(base).menu")
+                    .accessibilityIdentifier("editor.changes.\(root.name).menu")
                 Spacer(minLength: 0)
             }
             if let hint = changes.hints[key] {
@@ -622,7 +621,7 @@ struct EditorColumn: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(EditorPaneStyle.text.opacity(0.46))
                     .lineLimit(1).truncationMode(.middle)
-                    .accessibilityIdentifier("\(base).hint")
+                    .accessibilityIdentifier("editor.changes.\(root.name).hint")
             }
             if let error = changes.errors[key] {
                 Text(error)
@@ -630,7 +629,7 @@ struct EditorColumn: View {
                     .foregroundStyle(EditorPaneStyle.amber)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                    .accessibilityIdentifier("\(base).error")
+                    .accessibilityIdentifier("editor.changes.\(root.name).error")
             }
         }
         .padding(.leading, 8).padding(.trailing, 8).padding(.top, 4)
