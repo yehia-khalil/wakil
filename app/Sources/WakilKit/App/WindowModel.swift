@@ -1086,6 +1086,12 @@ public final class WindowModel {
                 if name == "term_open" {
                     await self.backfillTerminals()
                 }
+                // A database added or removed changes the environment's list, which was read only
+                // on a context change: the query line's chooser and the fast path's scope missed
+                // a database added since (3b-ix e2e).
+                if name == "db_set_dsn" || name == "db_remove_database" {
+                    await self.refreshDatabases()
+                }
                 // **An agent's settings write, and the pane it lands under.**
                 // Every operator edit goes through a wrapper here that calls
                 // `refreshSettings()` after it (`setDatabaseDSN`,

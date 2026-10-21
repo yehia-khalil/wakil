@@ -232,6 +232,24 @@ private func makeFastPathWindow(
         #expect(await window.fastPathScope(for: "tables in core").databases == ["core", "audit"])
     }
 
+    @Test func aDatabaseAddedAfterLaunchIsInTheNextScope() async throws {
+        let (window, calls, _) = await makeFastPathWindow(reply: #"{"action":"agent","params":{}}"#)
+        let listed = Listed()
+        await calls.registry.register(Action(name: "db_list_databases", description: "", kind: .read, audience: .operatorOnly,
+                                             schema: obj([:], required: [])) { _ in
+            .object(["structuredContent": .object(["databases": .array(await listed.names.map { .object(["name": .string($0)]) })])])
+        })
+        await calls.registry.register(Action(name: "db_set_dsn", description: "", kind: .control, audience: .operatorOnly,
+                                             schema: obj(["name": "string"], required: [])) { p in
+            if case .object(let o) = p, case .string(let n)? = o["name"] { await listed.add(n) }
+            return .object([:])
+        })
+        _ = try await calls.registry.dispatch(name: "db_set_dsn", params: .object(["name": .string("cells")]), origin: .ui,
+                                              caller: DispatchCaller(place: window.place, session: nil), confirmation: nil)
+        for _ in 0..<50 where window.databases.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await window.fastPathScope(for: "tables in cells").databases == ["cells"])
+    }
+
     @Test func aScopeNotReadyByTheDeadlineSendsTheLineToTheAgent() async {
         let (window, calls, model) = await makeFastPathWindow(
             reply: #"{"action":"settings_open","params":{}}"#,
@@ -281,3 +299,5 @@ private func makeFastPathWindow(
                 == "Ran: page 3")
     }
 }
+
+private actor Listed { var names: [String] = []; func add(_ n: String) { names.append(n) } }
