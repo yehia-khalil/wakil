@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +11,10 @@ import (
 	"github.com/yehia-khalil/wakil/internal/mcpx"
 	"github.com/yehia-khalil/wakil/internal/wakilcore"
 )
+
+// gitWritesEnv, set to "1", registers the seven write tools. Only the window's own copies of
+// wakil-git (AppWiring) set it; the agent's copy (agentMCPConfigJSON) never does.
+const gitWritesEnv = "WAKIL_GIT_WRITES"
 
 type statusArg struct {
 	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
@@ -84,7 +89,12 @@ func writer(root string) (*wakilcore.GitWriter, *mcp.CallToolResult) {
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
-	org, _ := wakilcore.LoadOrg()
+	// An unreadable org.json is refused, not read as "no identity": that would commit as git
+	// config's identity, which may be another organisation's (Invariant 4).
+	org, err := wakilcore.LoadOrg()
+	if err != nil {
+		return nil, mcpx.ToolErr("wakil-git", err)
+	}
 	w, err := wakilcore.NewGitWriter(root, wakilcore.ProjectRootPaths(*r), wakilcore.OrgGitIdentity(org))
 	if err != nil {
 		return nil, mcpx.ToolErr("wakil-git", err)
@@ -134,6 +144,50 @@ func newServer() *mcp.Server {
 			return nil, r, nil
 		})
 
+	if os.Getenv(gitWritesEnv) == "1" {
+		addWriteTools(s)
+	}
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_blob", Description: "Read-only. The id of one file's blob in the index (git rev-parse --verify :path): the expect value git_stage_hunk needs."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a blobArg) (*mcp.CallToolResult, blobResult, error) {
+			g, fail := runner(a.Root)
+			if fail != nil {
+				return fail, blobResult{}, nil
+			}
+			out, err := g.Run(ctx, "rev-parse", "--verify", ":"+a.Path)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), blobResult{}, nil
+			}
+			return nil, blobResult{Blob: strings.TrimSpace(string(out))}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_identity", Description: "Read-only. The name and email a commit here would carry. When the organisation sets both, those (from: organisation). Otherwise the repository's git config user.name and user.email. If the organisation sets only one of the two, that one is used and the other comes from git config. from names where the email came from: organisation or git config."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, identityResult, error) {
+			g, fail := runner(a.Root)
+			if fail != nil {
+				return fail, identityResult{}, nil
+			}
+			org, err := wakilcore.LoadOrg()
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), identityResult{}, nil
+			}
+			id := wakilcore.OrgGitIdentity(org)
+			// from names the email's source: the hint the window shows is the email.
+			res := identityResult{Name: id.Name, Email: id.Email, From: "organisation"}
+			if res.Name == "" {
+				res.Name = g.ConfigValue(ctx, "user.name")
+			}
+			if res.Email == "" {
+				res.Email = g.ConfigValue(ctx, "user.email")
+				res.From = "git config"
+			}
+			return nil, res, nil
+		})
+	return s
+}
+
+// addWriteTools registers the 3a-ii writes. Each runs the repository's hooks and signing.
+func addWriteTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "git_stage", Description: "Writes. Runs `git add` on the given paths in one root."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a pathsArg) (*mcp.CallToolResult, emptyResult, error) {
 			w, fail := writer(a.Root)
@@ -224,41 +278,6 @@ func newServer() *mcp.Server {
 			}
 			return nil, messageResult{Message: m}, nil
 		})
-
-	mcp.AddTool(s, &mcp.Tool{Name: "git_blob", Description: "Read-only. The id of one file's blob in the index (git rev-parse --verify :path): the expect value git_stage_hunk needs."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a blobArg) (*mcp.CallToolResult, blobResult, error) {
-			g, fail := runner(a.Root)
-			if fail != nil {
-				return fail, blobResult{}, nil
-			}
-			out, err := g.Run(ctx, "rev-parse", "--verify", ":"+a.Path)
-			if err != nil {
-				return mcpx.ToolErr("wakil-git", err), blobResult{}, nil
-			}
-			return nil, blobResult{Blob: strings.TrimSpace(string(out))}, nil
-		})
-
-	mcp.AddTool(s, &mcp.Tool{Name: "git_identity", Description: "Read-only. The name and email a commit here would carry. When the organisation sets both, those (from: organisation). Otherwise the repository's git config user.name and user.email (from: git config); if the organisation sets only one of the two, that one is used, the other comes from git config, and from is organisation."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, identityResult, error) {
-			g, fail := runner(a.Root)
-			if fail != nil {
-				return fail, identityResult{}, nil
-			}
-			org, _ := wakilcore.LoadOrg()
-			id := wakilcore.OrgGitIdentity(org)
-			res := identityResult{Name: id.Name, Email: id.Email, From: "organisation"}
-			if id.Name == "" && id.Email == "" {
-				res.From = "git config"
-			}
-			if res.Name == "" {
-				res.Name = g.ConfigValue(ctx, "user.name")
-			}
-			if res.Email == "" {
-				res.Email = g.ConfigValue(ctx, "user.email")
-			}
-			return nil, res, nil
-		})
-	return s
 }
 
 func main() {

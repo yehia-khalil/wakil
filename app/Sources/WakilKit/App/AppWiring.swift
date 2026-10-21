@@ -311,7 +311,8 @@ public struct WakilWiring: Sendable {
                     notFoundDiagnostic(for: name, executableDirectory: executableDirectory, environment: environment))
                 return nil
             }
-            let client = MCPClient(executable: url, arguments: [], environment: childEnvironment)
+            let client = MCPClient(
+                executable: url, arguments: [], environment: windowClientEnvironment(for: name, childEnvironment))
             do {
                 try await client.start()
                 return client
@@ -350,8 +351,8 @@ public struct WakilWiring: Sendable {
                 }
                 let client = MCPClient(
                     executable: url, arguments: [],
-                    environment: pinnedEnvironment(
-                        for: place, from: environment, provider: pinnedProvider(for: place, launch: environment)))
+                    environment: windowClientEnvironment(for: role.rawValue, pinnedEnvironment(
+                        for: place, from: environment, provider: pinnedProvider(for: place, launch: environment))))
                 do {
                     try await client.start()
                 } catch {
@@ -784,6 +785,26 @@ public struct WakilWiring: Sendable {
     /// fate-unknown**. Recording it is #187/#194's, not this function's;
     /// what is this function's is not claiming the stronger guarantee for
     /// a client it does not hold for.
+    /// What makes `wakil-git` register its seven write tools (3a-ii). Set only on the copies this
+    /// assembly starts — the window's `gitClient` and a place's pinned git client — whose one caller
+    /// is the registry's `editor_changes_*` actions. The agent's own copy (`agentMCPConfigJSON`)
+    /// never has it, so the agent reaches a write only through the registry (Invariant 2).
+    static let gitWritesFlag = "WAKIL_GIT_WRITES"
+
+    /// `base`, plus `gitWritesFlag` for `wakil-git`: the environment one of this assembly's own
+    /// clients starts, or restarts, under.
+    static func windowClientEnvironment(for name: String, _ base: [String: String]) -> [String: String] {
+        guard name == "wakil-git" else { return base }
+        var env = base
+        env[gitWritesFlag] = "1"
+        return env
+    }
+
+    /// How long `switchOrg` waits for a running git write before it stops `wakil-git` anyway. The
+    /// ruling is that an org switch lets a commit finish (its result is dropped, by generation, in
+    /// `WindowModel`); a hook that runs past this is cut off, as any client's call is on a switch.
+    static let orgSwitchGitWriteDrainLimit: TimeInterval = 60
+
     public func switchOrg(to org: String) async -> [String] {
         let childEnvironment = Self.childProcessEnvironment(
             from: launchEnvironment, org: org,
@@ -794,11 +815,18 @@ public struct WakilWiring: Sendable {
             provider: nil)
 
         var diagnostics: [String] = []
+        // Stopping wakil-git would orphan a running commit (its git, in its own process group, lives
+        // on with closed pipes). The switch waits for it, up to the limit.
+        // Past the limit the switch goes ahead (not a failed restart, so no diagnostic): stderr says so.
+        if !(await gitWrites.drained(within: Self.orgSwitchGitWriteDrainLimit)) {
+            FileHandle.standardError.write(Data(
+                "wakil: a git write was still running after \(Int(Self.orgSwitchGitWriteDrainLimit)) s; the org switch stopped wakil-git under it\n".utf8))
+        }
         for (name, client) in wakilOwnedClients {
             guard let client else { continue }
             await client.stop()
             do {
-                try await client.start(environment: childEnvironment)
+                try await client.start(environment: Self.windowClientEnvironment(for: name, childEnvironment))
             } catch {
                 await client.stop()
                 diagnostics.append("\(name) did not come back under \(org): \(error)")

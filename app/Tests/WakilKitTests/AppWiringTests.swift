@@ -1008,3 +1008,48 @@ private struct FailingLookupForWiringTests: ProviderCredentialsLookup {
 
     await wiring.shutdown()
 }
+
+/// Invariant 2 (3a-ii): only the window's own wakil-git copies register the writes. The agent's
+/// copy, started from agentMCPConfigJSON, never carries the flag, so it has the reads alone.
+@Test func onlyTheWindowsWakilGitIsStartedWithTheWritesFlag() throws {
+    let base = ["HOME": "/h", "PATH": "/p"]
+    #expect(WakilWiring.windowClientEnvironment(for: "wakil-git", base)[WakilWiring.gitWritesFlag] == "1")
+    for other in ["wakil-ctx", "wakil-db", "wakil-http", "wakil-files"] {
+        #expect(WakilWiring.windowClientEnvironment(for: other, base)[WakilWiring.gitWritesFlag] == nil, "\(other)")
+    }
+    let json = agentMCPConfigJSON(
+        shimExecutable: URL(fileURLWithPath: "/bin/wakil"), socketPath: "/tmp/s",
+        binaries: ["wakil-git": URL(fileURLWithPath: "/bin/wakil-git")],
+        place: Place(organization: "initech", project: "p", environment: "e"), provider: "main")
+    #expect(json.contains("wakil-git"))
+    #expect(!json.contains(WakilWiring.gitWritesFlag), "\(json)")
+}
+
+/// The ruling: an org switch lets a running commit finish. `switchOrg` stops wakil-git, so it
+/// waits for the window's git writes to end first.
+@Test(.timeLimit(.minutes(1))) func anOrgSwitchWaitsForARunningGitWriteBeforeStoppingTheClients() async throws {
+    let journal = try scratch()
+    let emptyBin = try scratch()
+    let wiring = await WakilWiring.build(
+        journalDirectory: journal, sessionId: "s1", executableDirectory: emptyBin,
+        environment: ["HOME": journal.path, "WAKIL_BIN_DIR": emptyBin.path])
+    #expect(await wiring.gitWrites.begin("/p"))
+    let done = ManagedAtomicFlag()
+    let switching = Task {
+        _ = await wiring.switchOrg(to: "umbrella")
+        done.set()
+    }
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(!done.isSet, "the switch went ahead while the commit ran")
+    await wiring.gitWrites.end("/p")
+    await switching.value
+    #expect(done.isSet)
+    await wiring.shutdown()
+}
+
+private final class ManagedAtomicFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    func set() { lock.lock(); value = true; lock.unlock() }
+    var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+}

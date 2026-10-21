@@ -152,7 +152,31 @@ func TestDiffWithAnEscapingPathIsAToolError(t *testing.T) {
 	}
 }
 
+func toolNames(t *testing.T, cs *mcp.ClientSession) string {
+	t.Helper()
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tool := range res.Tools {
+		names = append(names, tool.Name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
+}
+
+// Invariant 2: the agent's own copy of wakil-git (agentMCPConfigJSON) never sets the flag, so it
+// has the reads alone; a write reaches git only through the registry's editor_changes_* actions.
+func TestWithoutTheWritesFlagTheToolListIsTheReadsAlone(t *testing.T) {
+	t.Setenv(gitWritesEnv, "")
+	if got := toolNames(t, connectedClient(t)); got != "git_blob,git_diff,git_identity,git_show,git_status" {
+		t.Fatalf("tools %s", got)
+	}
+}
+
 func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
 	cs := connectedClient(t)
 	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
@@ -171,6 +195,7 @@ func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
 }
 
 func TestCommitThroughTheToolUsesTheOrganisationsIdentity(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
 	root := setupProject(t, `"local":{}`, "local")
 	gitInit(t, root)
 	name, email := "Org Person", "org@example.test"
@@ -228,6 +253,7 @@ func TestBlobNamesTheIndexEntry(t *testing.T) {
 }
 
 func TestStageThenUndoThroughTheTools(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
 	root := setupProject(t, `"local":{}`, "local")
 	gitInit(t, root)
 	os.WriteFile(filepath.Join(root, "seed.txt"), []byte("changed\n"), 0o644)
@@ -252,10 +278,14 @@ func TestStageThenUndoThroughTheTools(t *testing.T) {
 }
 
 func TestAWriteOutsideTheProjectIsRefused(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
 	setupProject(t, `"local":{}`, "local")
 	cs := connectedClient(t)
-	res, _ := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_stage",
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_stage",
 		Arguments: map[string]any{"root": t.TempDir(), "paths": []string{"a"}}})
+	if err != nil || res == nil {
+		t.Fatalf("call: %+v %v", res, err)
+	}
 	if !res.IsError {
 		t.Fatal("staged in a root outside the project")
 	}
@@ -277,5 +307,75 @@ func TestStatusOnANonRepositoryRootIsAToolError(t *testing.T) {
 	}
 	if !strings.Contains(text, "not a git repository") {
 		t.Fatalf("text: %q", text)
+	}
+}
+
+func toolText(res *mcp.CallToolResult) string {
+	var text string
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			text += tc.Text
+		}
+	}
+	return text
+}
+
+// Invariant 4: an unreadable org.json is not "no identity" — committing as git config's would be
+// committing as someone else.
+func TestAnUnreadableOrganisationRecordRefusesTheCommitAndTheIdentity(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	home := os.Getenv("HOME")
+	if err := os.WriteFile(filepath.Join(home, ".wakil", "orgs", "initech", "org.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	os.WriteFile(filepath.Join(root, "seed.txt"), []byte("changed\n"), 0o644)
+	cs := connectedClient(t)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_commit",
+		Arguments: map[string]any{"root": root, "message": "m", "all": true}})
+	if err != nil || res == nil || !res.IsError || !strings.Contains(toolText(res), "org.json") {
+		t.Fatalf("want a tool error naming org.json, got %+v %v", res, err)
+	}
+	if after, _ := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output(); string(after) != string(before) {
+		t.Fatal("a commit landed")
+	}
+	id, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_identity",
+		Arguments: map[string]any{"root": root}})
+	if err != nil || id == nil || !id.IsError || !strings.Contains(toolText(id), "org.json") {
+		t.Fatalf("want a tool error naming org.json, got %+v %v", id, err)
+	}
+}
+
+// from names where the email came from, since the hint shows the email.
+func TestIdentityWithOnlyTheOrganisationsNameSaysTheEmailIsGitConfigs(t *testing.T) {
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	exec.Command("git", "-C", root, "config", "user.email", "cfg@example.test").Run()
+	name := "Org Person"
+	if err := wakilcore.UpdateOrg("initech", wakilcore.OrgPatch{GitName: &name}); err != nil {
+		t.Fatal(err)
+	}
+	cs := connectedClient(t)
+	id, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_identity",
+		Arguments: map[string]any{"root": root}})
+	if err != nil || id.IsError {
+		t.Fatalf("%v %+v", err, id)
+	}
+	b, _ := json.Marshal(id.StructuredContent)
+	if got := string(b); !strings.Contains(got, `"email":"cfg@example.test"`) || !strings.Contains(got, `"from":"git config"`) ||
+		!strings.Contains(got, `"name":"Org Person"`) {
+		t.Fatalf("identity %s", got)
+	}
+	email := "org@example.test"
+	empty := ""
+	if err := wakilcore.UpdateOrg("initech", wakilcore.OrgPatch{GitName: &empty, GitEmail: &email}); err != nil {
+		t.Fatal(err)
+	}
+	id, _ = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_identity",
+		Arguments: map[string]any{"root": root}})
+	if b, _ := json.Marshal(id.StructuredContent); !strings.Contains(string(b), `"from":"organisation"`) {
+		t.Fatalf("identity %s", b)
 	}
 }
