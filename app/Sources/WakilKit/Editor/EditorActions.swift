@@ -266,8 +266,10 @@ public func registerEditorActions(
     files: (any ToolCaller)?,
     fileLists: EditorFileLists?,
     gitStatus: GitStatus?,
-    roots: @escaping @Sendable () async -> [String]
+    roots: @escaping @Sendable () async -> [String],
+    gitWrites: GitWriteFlights = GitWriteFlights()
 ) async {
+    await registerEditorChangesWrites(into: registry, gitStatus: gitStatus, panes: panes, layout: layout, writes: gitWrites)
     @Sendable func requireFiles(_ action: String) throws -> any ToolCaller {
         guard let files else { throw StandardActionError.missingClient(action: action, role: "files") }
         return files

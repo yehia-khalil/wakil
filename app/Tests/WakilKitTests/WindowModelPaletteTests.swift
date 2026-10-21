@@ -932,6 +932,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "editor_tree", "editor_tree_expand", "editor_tree_collapse", "editor_tree_reveal", "editor_move_tab",
     // 3b-iii: the Changes view's four, all agent-reachable.
     "editor_changes_select", "editor_changes_step", "editor_changes_collapse", "editor_changes_expand",
+    // 3a-ii: the seven git writes, agent-reachable mutations.
+    "editor_changes_stage", "editor_changes_unstage", "editor_changes_discard", "editor_changes_commit", "editor_changes_amend", "editor_changes_undo_commit", "editor_changes_stage_hunk",
     "editor_peek", "editor_peek_step", "editor_peek_close",
     "editor_find", "editor_search", "files_search",
     // 3b-iv: file operations in the tree, all agent-reachable mutations.

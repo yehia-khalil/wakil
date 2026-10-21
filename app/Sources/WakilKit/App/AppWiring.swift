@@ -78,6 +78,9 @@ public struct WakilWiring: Sendable {
     /// The window's git status (3b-iii). One per assembly; the window, the actions and `GitSource`
     /// share it.
     public let gitStatus: GitStatus
+    /// The git writes in flight, one per root (3a-ii, ruling P1). One per assembly: the actions
+    /// register against it and the window reads `running(_:)` from it for its spinners.
+    public let gitWrites: GitWriteFlights
     /// The editor panes' own watch (3b-i), separate from the git one so each starts and stops
     /// with its own panes. Handed to the window by `WindowSession.start`; `shutdown` stops it.
     public let editorRootWatcher: any RootWatcher
@@ -407,10 +410,11 @@ public struct WakilWiring: Sendable {
         // there is one, `wakil-ctx`'s until then.
         let gitRoots = GitRootsSource(context: contextClient)
         let gitStatus = GitStatus(git: routed(.git, gitClient), roots: { await gitRoots.current() })
+        let gitWrites = GitWriteFlights()
         await registerEditorActions(
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
-            gitStatus: gitStatus, roots: { await gitRoots.current() })
+            gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites)
 
         // Provider capacity: the record path and the one read every surface uses.
         await registerCapacityActions(into: registry, context: routed(.context, contextClient))
@@ -472,6 +476,7 @@ public struct WakilWiring: Sendable {
             fileLists: fileLists,
             rootWatcher: FSEventsRootWatcher(),
             gitStatus: gitStatus,
+            gitWrites: gitWrites,
             editorRootWatcher: FSEventsRootWatcher(),
             gitRoots: gitRoots,
             placeClients: placeClients,

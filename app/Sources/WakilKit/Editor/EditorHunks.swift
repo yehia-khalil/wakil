@@ -216,3 +216,17 @@ public func editorRangeParam(_ r: EditorRange) -> JSONValue {
     }
     return .object(["start": p(r.start), "end": p(r.end)])
 }
+
+/// The index text Stage Change writes (3a-ii, ruling R1): `text` with every hunk but `hunk` reverted
+/// to `base`, so the index gains exactly the one change the peek shows. Reverted from the last hunk
+/// up, so each earlier hunk's line numbers still hold. nil when `hunk` is out of range.
+public func editorStagedText(base: String, text: String, hunk: Int) -> String? {
+    let hunks = editorHunks(base: base, text: text)
+    guard hunks.indices.contains(hunk) else { return nil }
+    var out = text
+    for i in hunks.indices.reversed() where i != hunk {
+        let e = editorRevertEdit(hunks[i], text: out)
+        out = editorReplacing(out, e.range, with: e.text)
+    }
+    return out
+}
