@@ -444,11 +444,16 @@ struct EditorColumn: View {
         let ref = EditorChangesRow(root: root.root, path: row.path, group: row.group.rawValue)
         let on = ref == changesHighlight
         let id = "editor.changes.row:\(root.name)/\(row.path):\(row.group.rawValue)"
+        // Spelled out whole, not built from `id`, so the identifier harvest counts each button.
+        let ids = ChangesWriteIds(
+            stage: "editor.changes.row:\(root.name)/\(row.path):\(row.group.rawValue).stage",
+            unstage: "editor.changes.row:\(root.name)/\(row.path):\(row.group.rawValue).unstage",
+            discard: "editor.changes.row:\(root.name)/\(row.path):\(row.group.rawValue).discard")
         // The buttons sit beside the row's tap gesture, not inside it: a press never selects the row.
         return HStack(spacing: 4) {
             changesRowLine(row, ref: ref, on: on, id: id)
             if hoveredChange == id || on {
-                changesWriteButtons(row.group, root: root, paths: [row.path], id: id)
+                changesWriteButtons(row.group, root: root, paths: [row.path], ids: ids)
             }
         }
         .font(.system(size: 12, design: .monospaced))
@@ -498,7 +503,11 @@ struct EditorColumn: View {
                 .foregroundStyle(EditorPaneStyle.text.opacity(0.45))
             Spacer(minLength: 6)
             if hoveredChange == key || current {
-                changesWriteButtons(group, root: root, paths: nil, id: "editor.changes.\(root.name).\(group.rawValue)")
+                // Spelled out whole, as the row's, for the identifier harvest.
+                changesWriteButtons(group, root: root, paths: nil, ids: ChangesWriteIds(
+                    stage: "editor.changes.\(root.name).\(group.rawValue).stageAll",
+                    unstage: "editor.changes.\(root.name).\(group.rawValue).unstageAll",
+                    discard: "editor.changes.\(root.name).\(group.rawValue).discardAll"))
             }
         }
         .frame(height: 16)
@@ -513,21 +522,21 @@ struct EditorColumn: View {
     /// (`paths`) or the whole group's (`paths` nil, the `…All` identifiers). Nothing asks (Rule 1:
     /// a discard goes to the Trash); disabled while the root's write runs (Rule 5).
     @ViewBuilder
-    private func changesWriteButtons(_ group: GitGroup, root: GitRootState, paths: [String]?, id: String) -> some View {
+    private func changesWriteButtons(_ group: GitGroup, root: GitRootState, paths: [String]?, ids: ChangesWriteIds) -> some View {
         let all = paths == nil ? "All" : ""
         let target: GitGroup? = paths == nil ? group : nil
         let busy = changes.inFlight.contains(root.root)
         HStack(spacing: 6) {
             if group == .staged {
-                changesWriteButton("minus", help: "Unstage\(all.isEmpty ? "" : " All")", id: "\(id).unstage\(all)") {
+                changesWriteButton("minus", help: "Unstage\(all.isEmpty ? "" : " All")", id: ids.unstage) {
                     await changes.unstage(root.root, paths, target)
                 }
             } else {
                 changesWriteButton("arrow.uturn.backward", help: "Discard\(all.isEmpty ? "" : " All")",
-                                   id: "\(id).discard\(all)") {
+                                   id: ids.discard) {
                     await changes.discard(root.root, paths, target)
                 }
-                changesWriteButton("plus", help: "Stage\(all.isEmpty ? "" : " All")", id: "\(id).stage\(all)") {
+                changesWriteButton("plus", help: "Stage\(all.isEmpty ? "" : " All")", id: ids.stage) {
                     await changes.stage(root.root, paths, target)
                 }
             }
@@ -1488,4 +1497,11 @@ final class ChangesMessageKeys {
     deinit {
         if let monitor { NSEvent.removeMonitor(monitor) }
     }
+}
+
+/// One row's or group's three write-button identifiers, each spelled whole at its call site.
+private struct ChangesWriteIds {
+    let stage: String
+    let unstage: String
+    let discard: String
 }
