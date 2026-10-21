@@ -1215,7 +1215,6 @@ struct SettingsPane: View {
                 .accessibilityIdentifier("settings.capacity.strip")
             }
 
-            accountTableHeader()
             // **This organisation's bindings, and no others (#236).** The
             // table used to draw every binding on the machine, which on
             // this one is ten rows for three accounts — five of them
@@ -1223,11 +1222,23 @@ struct SettingsPane: View {
             // accounts are behind the Adopt door below, where the
             // operator is choosing rather than reading.
             let mine = accounts.accounts.filter(\.mine)
-            if mine.isEmpty {
-                emptyLine("no accounts registered in this organisation")
-            }
-            ForEach(mine) { account in
-                accountRow(account)
+            // **A table where it fits, a list where it does not (2026-10-21).** The four columns
+            // are fixed so their labels stay over them, and together they are wider than the
+            // subject column of a pane at its 640pt default — so there each account is drawn as
+            // its identity and then KIND, CREDENTIAL and SIGN-IN as labelled lines, the column
+            // labels moving beside the values they name. The wide branch states its width, so the
+            // choice turns on the columns and never on how long a note under a row happens to be.
+            ViewThatFits(in: .horizontal) {
+                VStack(alignment: .leading, spacing: 10) {
+                    accountTableHeader()
+                    accountRows(mine, stacked: false)
+                }
+                .frame(minWidth: Self.accountTableWidth, idealWidth: Self.accountTableWidth,
+                       maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 10) {
+                    accountRows(mine, stacked: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             if login.offersAddDoors { addAccountRow() }
 
@@ -1559,10 +1570,17 @@ struct SettingsPane: View {
             if rows.isEmpty {
                 emptyLine("every account on this machine is already bound here")
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(rows) { account in
-                        accountRow(account)
+                // The table's rows where its columns fit, stacked where they do not — as above.
+                ViewThatFits(in: .horizontal) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(rows) { account in accountRow(account) }
                     }
+                    .frame(minWidth: Self.accountTableWidth, idealWidth: Self.accountTableWidth,
+                           maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(rows) { account in accountRow(account, stacked: true) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.leading, 20)
             }
@@ -1696,6 +1714,20 @@ struct SettingsPane: View {
         .padding(.bottom, 8)
     }
 
+    /// The account table's four columns, the gaps between them and the verbs, which stack to
+    /// about the width of the longest (`RE-AUTHENTICATE (2 TRIPS)`). Narrower, rows are stacked.
+    private static let accountTableWidth: CGFloat = 300 + 104 + 200 + 175 + 5 * SettingsScale.columnGap + 170
+
+    @ViewBuilder
+    private func accountRows(_ mine: [Account], stacked: Bool) -> some View {
+        if mine.isEmpty {
+            emptyLine("no accounts registered in this organisation")
+        }
+        ForEach(mine) { account in
+            accountRow(account, stacked: stacked)
+        }
+    }
+
     private func accountTableHeader() -> some View {
         HStack(spacing: Scale.columnGap) {
             // **No ORGANISATION column (#236).** The table draws this
@@ -1725,51 +1757,87 @@ struct SettingsPane: View {
             .frame(width: width, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func accountRow(_ account: Account) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: Scale.columnGap) {
-                // **The id, and under it the ACCOUNT (#236).** Five
-                // bindings on this machine are called `main` and they
-                // span three different accounts, while `personal/work`
-                // and `initech/main` are one account under two names — so
-                // the id alone identifies nothing. Decision 32: the
-                // account is the config dir.
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(account.accountId)
-                        .font(.system(size: Scale.identifier, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.92))
-                    accountDirectory(account)
-                    if !account.label.isEmpty {
-                        Text(account.label)
-                            .font(.system(size: Scale.meta))
-                            .foregroundStyle(coolWhite.opacity(0.38))
-                    }
-                }
-                .frame(width: 300, alignment: .leading)
+    /// **The id, and under it the ACCOUNT (#236).** Five bindings on this machine are called
+    /// `main` and they span three different accounts, while `personal/work` and `initech/main`
+    /// are one account under two names — so the id alone identifies nothing. Decision 32: the
+    /// account is the config dir.
+    private func accountIdentity(_ account: Account) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(account.accountId)
+                .font(.system(size: Scale.identifier, design: .monospaced))
+                .foregroundStyle(coolWhite.opacity(0.92))
+            accountDirectory(account)
+            if !account.label.isEmpty {
+                Text(account.label)
+                    .font(.system(size: Scale.meta))
+                    .foregroundStyle(coolWhite.opacity(0.38))
+            }
+        }
+    }
 
+    /// One account in a column too narrow for the table: its identity, then each column as a
+    /// labelled line, then its verbs — in a row with room, as a stack of words without.
+    private func stackedAccountLine(_ account: Account) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            accountIdentity(account)
+            stackedCell("KIND") {
                 Text(account.kind)
                     .font(.system(size: Scale.body))
                     .foregroundStyle(coolWhite.opacity(0.55))
-                    .frame(width: 104, alignment: .leading)
-
-                credentialCell(account).frame(width: 200, alignment: .leading)
-                livenessCell(account.liveness).frame(width: 175, alignment: .leading)
-                Spacer(minLength: 0)
-                // **Whole words, never letters** (#326). The data columns
-                // are fixed so their labels stay over them; the verbs are
-                // what gives way. With room they sit in a row, and in a
-                // narrower window they stack as words, one above another,
-                // rather than being squeezed a letter per line.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: Scale.columnGap) { rowVerbs(account) }
-                    VStack(alignment: .trailing, spacing: 6) { rowVerbs(account) }
-                }
             }
-            // `.row { height: 44px }`. A MINIMUM rather than a fixed
-            // height, because a shared binding's directory line can wrap
-            // and a clipped row is worse than a tall one.
-            .frame(minHeight: Scale.rowHeight, alignment: .leading)
+            stackedCell("CREDENTIAL") { credentialCell(account) }
+            stackedCell("SIGN-IN") { livenessCell(account.liveness) }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Scale.columnGap) { rowVerbs(account) }
+                VStack(alignment: .leading, spacing: 6) { rowVerbs(account) }
+            }
+            .padding(.top, 2)
+        }
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func stackedCell<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            columnLabel(label, width: 84)
+            value()
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func accountRow(_ account: Account, stacked: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            if stacked {
+                stackedAccountLine(account)
+            } else {
+                HStack(spacing: Scale.columnGap) {
+                    accountIdentity(account)
+                        .frame(width: 300, alignment: .leading)
+
+                    Text(account.kind)
+                        .font(.system(size: Scale.body))
+                        .foregroundStyle(coolWhite.opacity(0.55))
+                        .frame(width: 104, alignment: .leading)
+
+                    credentialCell(account).frame(width: 200, alignment: .leading)
+                    livenessCell(account.liveness).frame(width: 175, alignment: .leading)
+                    Spacer(minLength: 0)
+                    // **Whole words, never letters** (#326). The data columns
+                    // are fixed so their labels stay over them; the verbs are
+                    // what gives way. With room they sit in a row, and in a
+                    // narrower window they stack as words, one above another,
+                    // rather than being squeezed a letter per line.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: Scale.columnGap) { rowVerbs(account) }
+                        VStack(alignment: .trailing, spacing: 6) { rowVerbs(account) }
+                    }
+                }
+                // `.row { height: 44px }`. A MINIMUM rather than a fixed
+                // height, because a shared binding's directory line can wrap
+                // and a clipped row is worse than a tall one.
+                .frame(minHeight: Scale.rowHeight, alignment: .leading)
+            }
             if confirmingUnlink?.id == account.id {
                 // **The confirmation says what will NOT be destroyed**,
                 // because that is the part an operator otherwise assumes.

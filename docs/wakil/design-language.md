@@ -693,7 +693,11 @@ An empty value reads `—` until it is typed in; a field is edited where it stan
 only on hover or focus (`inPlaceField`). The Organisation page is Identity · Accounts · Jira ·
 Git; Providers is Accounts · Local models · Quick tasks; the Editor pages are Editing · Files and
 Indentation · Heavy folders; a project is Project · Roots; each API entry is its own section.
-A page of one group (an environment) draws its rows without a header.
+A page of one group (an environment) draws its rows without a header. **A page never draws wider than its pane:**
+the pane holds the width it is given, and what does not fit moves under its label rather than past
+the edge — the accounts table, whose four columns are wider than the subject column at the pane's
+640pt default, draws each account as its identity and then KIND, CREDENTIAL and SIGN-IN as labelled
+lines there, and a local model puts its URL under its name.
 
 **The tree's projects and environments open and close (2026-10-21).** Each is a branch with its
 own chevron, pressed apart from the row so opening never selects and selecting never opens; → and
