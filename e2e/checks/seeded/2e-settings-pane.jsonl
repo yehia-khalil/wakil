@@ -6,6 +6,9 @@
 {"expect":{"tree":"contains","text":"ACCOUNT"}}
 {"expect":{"tree":"contains","text":"CREDENTIAL"}}
 {"expect":{"tree":"contains","text":"SIGN-IN"}}
+{"expect":{"frame":"settings.tree.providers","inside":"settings.pane"}}
+{"expect":{"frame":"settings.breadcrumb","inside":"settings.pane"}}
+{"expect":{"frame":"settings.section.accounts","inside":"settings.pane"}}
 {"do":{"click":"settings.tree.organisation"}}
 {"expect":{"tree":"contains","text":"Display name"}}
 {"do":{"click":"settings.reload"}}

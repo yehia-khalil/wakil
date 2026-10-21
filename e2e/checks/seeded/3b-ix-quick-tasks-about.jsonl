@@ -1,5 +1,6 @@
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.providers"}}
+{"dispatch":{"action":"pane_resize","params":{"id":"settings-1","width":1400,"height":420}}}
 {"expect":{"tree":"contains","text":"QUICK TASKS"}}
 {"expect":{"tree":"absent","text":"Ask the agent instead"}}
 {"do":{"click":"settings.quickTasks.about"}}
