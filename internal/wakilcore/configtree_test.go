@@ -367,3 +367,18 @@ func TestConfigTreeNamesAMalformedSettingsFile(t *testing.T) {
 		t.Errorf("tree = %+v; want defaults plus editorError", tree)
 	}
 }
+
+func TestConfigTreeCarriesTheOrgGitIdentity(t *testing.T) {
+	localOrg(t)
+	name, email := "Org Person", "org@example.test"
+	if err := UpdateOrg("initech", OrgPatch{GitName: &name, GitEmail: &email}); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := LoadConfigTreeFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Org.GitName != name || tree.Org.GitEmail != email {
+		t.Fatalf("%+v", tree.Org)
+	}
+}

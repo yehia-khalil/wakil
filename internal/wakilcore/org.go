@@ -41,6 +41,11 @@ type Org struct {
 	// empty means the active provider.
 	QuickProvider string `json:"quickProvider,omitempty"`
 
+	// GitName and GitEmail are the author identity every commit from Wakil
+	// uses (3a-ii, Decision 43). Empty falls back to git config.
+	GitName  string `json:"gitName,omitempty"`
+	GitEmail string `json:"gitEmail,omitempty"`
+
 	// GhostText and FastPath switch the org's quick tasks (3b-ix, Decision 42 amended). Nil is
 	// the default, resolved on config_tree: ghost-text falls back to the app-wide setting, then
 	// on; the fast path is on when QuickProvider names a local provider.
@@ -204,7 +209,19 @@ func normaliseOrg(org string, o Org) (Org, error) {
 		}
 	}
 	o.SpeechProvider = strings.TrimSpace(o.SpeechProvider)
+	if strings.ContainsAny(o.GitName+o.GitEmail, "\r\n") {
+		return Org{}, UserError("gitName and gitEmail cannot hold a newline")
+	}
 	return o, nil
+}
+
+// OrgGitIdentity is the author identity the organisation names; zero when
+// it names none, so the caller falls back to git config.
+func OrgGitIdentity(o *Org) GitIdentity {
+	if o == nil {
+		return GitIdentity{}
+	}
+	return GitIdentity{Name: o.GitName, Email: o.GitEmail}
 }
 
 func writeOrgFile(dir string, o Org) error {

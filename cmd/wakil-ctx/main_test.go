@@ -1120,3 +1120,30 @@ func TestSetProviderWhilePinnedDoesNotPersistThePins(t *testing.T) {
 		t.Fatalf("the file must keep the operator's own values, got %+v", got)
 	}
 }
+
+func TestUpdateOrgToolWritesTheGitIdentity(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx := context.Background()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	ss, err := newServer().Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ss.Close() })
+	client := mcp.NewClient(&mcp.Implementation{Name: "update-org-git-test", Version: "0.0.0"}, nil)
+	cs, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cs.Close() })
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "update_org", Arguments: map[string]any{"id": "initech", "gitName": "N", "gitEmail": "e@x"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("update_org: %v %v", err, res)
+	}
+	o, err := wakilcore.LoadOrgFor("initech")
+	if err != nil || o.GitName != "N" || o.GitEmail != "e@x" {
+		t.Fatalf("%+v %v", o, err)
+	}
+}

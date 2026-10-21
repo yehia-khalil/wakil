@@ -394,3 +394,35 @@ func TestConfigTreeGhostTextFallsBackToTheAppSetting(t *testing.T) {
 		t.Fatal("an operator who turned ghost-text off app-wide keeps it off")
 	}
 }
+
+func TestUpdateOrgSetsAndClearsTheGitIdentity(t *testing.T) {
+	localOrg(t)
+	name, email := "Org Person", "org@example.test"
+	if err := UpdateOrg("initech", OrgPatch{GitName: &name, GitEmail: &email}); err != nil {
+		t.Fatal(err)
+	}
+	o, _ := LoadOrgFor("initech")
+	if OrgGitIdentity(o) != (GitIdentity{Name: name, Email: email}) {
+		t.Fatalf("%+v", o)
+	}
+	empty := ""
+	if err := UpdateOrg("initech", OrgPatch{GitEmail: &empty}); err != nil {
+		t.Fatal(err)
+	}
+	o, _ = LoadOrgFor("initech")
+	if o.GitEmail != "" || o.GitName != name {
+		t.Fatalf("%+v", o)
+	}
+	if OrgGitIdentity(nil) != (GitIdentity{}) {
+		t.Fatal("nil org must give the zero identity")
+	}
+}
+
+func TestAGitIdentityWithANewlineIsRefused(t *testing.T) {
+	localOrg(t)
+	bad := "a@b\nx"
+	err := UpdateOrg("initech", OrgPatch{GitEmail: &bad})
+	if err == nil || err.Error() != "gitName and gitEmail cannot hold a newline" {
+		t.Fatalf("err %v", err)
+	}
+}

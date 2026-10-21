@@ -278,3 +278,21 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         "id": .string("qwen"), "label": .string("Qwen"), "baseURL": .string("http://127.0.0.1:8012"),
     ]))
 }
+
+/// The organisation's git author identity travels through `ctx_update_org` like any other string
+/// field: forwarded when sent, `""` included (it clears).
+@Test func theGitIdentityIsForwardedToUpdateOrg() async throws {
+    let (registry, caller) = try await registryWithRecordingContext()
+
+    _ = try await registry.dispatch(
+        name: "ctx_update_org",
+        params: .object(["id": .string("acme"), "gitName": .string("N"), "gitEmail": .string("")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+
+    let calls = await caller.recorded()
+    guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
+        Issue.record("expected one update_org call, got \(calls)"); return
+    }
+    #expect(arguments["gitName"] == .string("N"))
+    #expect(arguments["gitEmail"] == .string(""))
+}

@@ -155,6 +155,8 @@ type updateOrgArgs struct {
 	DefaultProvider *string `json:"defaultProvider,omitempty" jsonschema:"optional account id, which must already be registered in this organisation; omit to leave unchanged, send \"\" to clear"`
 	SpeechProvider  *string `json:"speechProvider,omitempty" jsonschema:"optional speech engine id (apple); omit to leave unchanged, send \"\" to clear"`
 	QuickProvider   *string `json:"quickProvider,omitempty" jsonschema:"optional provider id quick tasks run on; omit to leave unchanged, send \"\" for the active provider"`
+	GitName         *string `json:"gitName,omitempty" jsonschema:"author name for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
+	GitEmail        *string `json:"gitEmail,omitempty" jsonschema:"author email for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
 	GhostText       *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
 	FastPath        *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
 }
@@ -497,6 +499,8 @@ func newServer() *mcp.Server {
 				DefaultProvider: a.DefaultProvider,
 				SpeechProvider:  a.SpeechProvider,
 				QuickProvider:   a.QuickProvider,
+				GitName:         a.GitName,
+				GitEmail:        a.GitEmail,
 				GhostText:       a.GhostText,
 				FastPath:        a.FastPath,
 			}); err != nil {
