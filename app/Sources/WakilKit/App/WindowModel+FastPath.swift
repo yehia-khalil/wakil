@@ -7,15 +7,16 @@ extension WindowModel {
     /// status line alone (Rule 8).
     public func fastPathScope(for line: String) async -> FastPathScope {
         let files = Self.fastPathFiles(for: line, in: await fastPathFileEntries())
-        let projectEnvironments = settings?.projects.first { $0.name == project }?.environments ?? []
-        let environments = projectEnvironments.map(\.name)
-        let databases = projectEnvironments.first { $0.name == environment }?.databases.map(\.name) ?? []
+        let environments = settings?.projects.first { $0.name == project }?.environments.map(\.name) ?? []
         var seen = Set<String>()
         let tables = (await vocabulary?.current().names ?? [])
             .filter { $0.kind == .table }.map(\.text).filter { seen.insert($0).inserted }
         return FastPathScope(
             files: files, roots: rootPaths, projects: settings?.projects.map(\.name) ?? [],
-            environments: environments, activeEnvironment: environment, databases: databases, tables: tables,
+            environments: environments, activeEnvironment: environment,
+            // The query line's list, refreshed with the context: the settings tree is read only
+            // once Settings opens, and the walk's first line found it empty (3b-ix walk).
+            databases: databases, tables: tables,
             panes: layoutSnapshot.panes.map { FastPathPane(id: $0.id, kind: $0.kind, title: $0.title) },
             apiEntries: (await apiListing(http: paletteClients.http))?.map(\.name) ?? [])
     }

@@ -97,9 +97,7 @@ private func makeFastPathWindow(
     window.seedForTesting(providerId: "", rootPath: "/p", thoughts: 0, project: "shop", environment: "qa")
     window.setSettingsForTesting(SettingsTree(
         org: SettingsOrg(id: "test-org"),
-        projects: [SettingsProject(name: "shop", environments: [
-            SettingsEnvironment(name: "staging", databases: [SettingsDatabase(name: "reports")]),
-            SettingsEnvironment(name: "qa", databases: [SettingsDatabase(name: "core"), SettingsDatabase(name: "audit")])])]))
+        projects: [SettingsProject(name: "shop", environments: [SettingsEnvironment(name: "staging"), SettingsEnvironment(name: "qa")])]))
     await window.rebuildQuickTasks()
     return (window, FastPathCalls(registry: registry), model)
 }
@@ -227,8 +225,10 @@ private func makeFastPathWindow(
         #expect(await window.fastPathScope(for: "go to shop").projects == ["shop"])
     }
 
-    @Test func theDatabasesAreTheActiveEnvironmentsFromSettings() async {
+    @Test func theDatabasesAreTheQueryLinesWithoutSettingsRead() async {
         let (window, _, _) = await makeFastPathWindow(reply: #"{"action":"agent","params":{}}"#)
+        window.seedForTesting(providerId: "", rootPath: "/p", thoughts: 0, databases: ["core", "audit"], project: "shop", environment: "qa")
+        window.setSettingsForTesting(nil)
         #expect(await window.fastPathScope(for: "tables in core").databases == ["core", "audit"])
     }
 

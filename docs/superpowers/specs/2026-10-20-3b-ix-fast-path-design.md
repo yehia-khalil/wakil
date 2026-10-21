@@ -128,7 +128,7 @@ One system prompt, built per line:
     interleaved. ⌘P's matcher needs every word to match, so ranking the whole line would match
     nothing;
   - in full: projects of the org, environments of the active project and the active one, the
-    active environment's databases (from the settings tree), tables of those databases (the vocabulary ghost-text already reads), open panes
+    active environment's databases (the query line's list, refreshed with the context), tables of those databases (the vocabulary ghost-text already reads), open panes
     (id, kind, title), API entries of the active environment.
 
 The rules, the action list and the examples come first and never change within a window, so the
