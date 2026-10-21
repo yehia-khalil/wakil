@@ -1,0 +1,63 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"committing as org@e2e.invalid"}}
+{"expect":{"tree":"contains","text":"?, notes"}}
+{"do":{"click":"editor.changes.row:e2e-api/notes:untracked"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0]","present":false}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}
+{"parity":{"action":"editor_changes_stage","params":{"root":"{fixtureRoot}/e2e-api","paths":["notes"]},"click":"editor.changes.row:e2e-api/notes:untracked.stage","assert":"tree"}}
+{"expect":{"tree":"contains","text":"A, notes"}}
+{"expect":{"tree":"absent","text":"?, notes"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"staged"}}
+{"do":{"click":"editor.changes.row:e2e-api/notes:staged.unstage"}}
+{"expect":{"tree":"contains","text":"?, notes"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_changes_unstage\""}}}
+{"do":{"click":"editor.changes.row:e2e-api/notes:untracked"}}
+{"do":{"click":"editor.changes.row:e2e-api/notes:untracked.stage"}}
+{"expect":{"tree":"contains","text":"A, notes"}}
+{"do":{"type":{"into":"editor.changes.e2e-api.message","text":"e2e commit"}}}
+{"expect":{"tree":"contains","text":"e2e commit"}}
+{"do":{"hotkey":"cmd+Return"}}
+{"expect":{"journal":{"contains":"\"message\":\"e2e commit\""}}}
+{"expect":{"tree":"absent","text":"A, notes"}}
+{"expect":{"tree":"absent","text":"?, notes"}}
+{"expect":{"tree":"contains","text":"M, app.txt"}}
+{"expect":{"tree":"absent","text":"e2e commit"}}
+{"do":{"press":"Up"}}
+{"expect":{"tree":"contains","text":"e2e commit"}}
+{"do":{"press":"Down"}}
+{"expect":{"tree":"absent","text":"e2e commit"}}
+{"do":{"press":"Up"}}
+{"expect":{"tree":"contains","text":"e2e commit"}}
+{"do":{"press":"Down"}}
+{"expect":{"tree":"absent","text":"e2e commit"}}
+{"do":{"type":{"into":"editor.changes.e2e-api.message","text":"e2e amended"}}}
+{"expect":{"tree":"contains","text":"e2e amended"}}
+{"do":{"click":"editor.changes.e2e-api.menu"}}
+{"expect":{"tree":"contains","text":"Amend Last Commit"}}
+{"parity":{"action":"editor_changes_amend","params":{"root":"{fixtureRoot}/e2e-api","message":"e2e amended"},"click":"editor.changes.e2e-api.amend","assert":"tree"}}
+{"expect":{"journal":{"contains":"\"message\":\"e2e amended\""}}}
+{"expect":{"tree":"absent","text":"e2e amended"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git -C ../e2e-api --no-pager log -1 --format=%an/%ae/%s"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"E2E Org/org@e2e.invalid/e2e amended"}}
+{"do":{"keys":"git -C ../e2e-api rev-list --count HEAD"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"2"}}

@@ -1,0 +1,27 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"committing as org@e2e.invalid"}}
+{"dispatch":{"action":"editor_changes_commit","params":{"root":"{fixtureRoot}/e2e-portal","message":"e2e to undo"}}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"expect":{"tree":"absent","text":"e2e to undo"}}
+{"do":{"click":"editor.changes.e2e-portal.menu"}}
+{"expect":{"tree":"contains","text":"Undo Last Commit"}}
+{"do":{"click":"editor.changes.e2e-portal.undo"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_changes_undo_commit\""}}}
+{"expect":{"tree":"contains","text":"e2e to undo"}}
+{"expect":{"tree":"contains","text":"M, index.txt"}}
+{"expect":{"tree":"absent","text":"e2e-portal · main · clean"}}
+{"dispatch":{"action":"editor_changes_undo_commit","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"nothing to undo: this is the first commit"}}
+{"expect":{"tree":"contains","text":"e2e to undo"}}
+{"do":{"focus":"editor.changes.e2e-portal.message"}}
+{"do":{"hotkey":"cmd+Return"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"expect":{"tree":"absent","text":"e2e to undo"}}

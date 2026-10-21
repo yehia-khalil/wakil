@@ -1,0 +1,30 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"committing as org@e2e.invalid"}}
+{"expect":{"tree":"contains","text":"M, index.txt"}}
+{"do":{"type":{"into":"editor.changes.e2e-portal.message","text":"e2e blocked"}}}
+{"expect":{"tree":"contains","text":"e2e blocked"}}
+{"do":{"click":"editor.changes.e2e-portal.commit"}}
+{"expect":{"tree":"contains","text":"e2e hook says no"}}
+{"expect":{"tree":"contains","text":"e2e blocked"}}
+{"expect":{"tree":"contains","text":"M, index.txt"}}
+{"expect":{"tree":"absent","text":"e2e-portal · main · clean"}}
+{"dispatch":{"action":"editor_create","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/slow","kind":"file"}}}
+{"expect":{"tree":"contains","text":"?, slow"}}
+{"do":{"click":"editor.changes.e2e-portal.commit"}}
+{"expect":{"process":{"any-matching":"sleep 90.32"}}}
+{"dispatch":{"action":"editor_changes_stage","params":{"root":"{fixtureRoot}/e2e-portal","paths":["slow"]},"refuses":"a git write is already running in e2e-portal"}}
+{"do":{"click":"editor.changes.e2e-portal.cancel"}}
+{"expect":{"process":{"none-matching":"sleep 90.32"}}}
+{"expect":{"tree":"absent","text":"e2e hook says no"}}
+{"expect":{"tree":"contains","text":"e2e blocked"}}
+{"expect":{"tree":"absent","text":"e2e-portal · main · clean"}}
+{"expect":{"tree":"contains","text":"?, slow"}}

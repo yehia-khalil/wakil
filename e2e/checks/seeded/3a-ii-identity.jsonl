@@ -1,0 +1,44 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-1"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git -C ../e2e-portal config user.email cfg@e2e.invalid"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"committing as cfg@e2e.invalid (from git config)"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"GIT"}}
+{"do":{"type":{"into":"settings.org.gitName","text":"E2E Org"}}}
+{"do":{"type":{"into":"settings.org.gitEmail","text":"org@e2e.invalid"}}}
+{"expect":{"pane":"settings-3","field":"configuration.structuredContent.org.gitName","equals":"E2E Org"}}
+{"do":{"focus":"settings.org.gitName"}}
+{"expect":{"pane":"settings-3","field":"configuration.structuredContent.org.gitEmail","equals":"org@e2e.invalid"}}
+{"expect":{"tree":"contains","text":"org@e2e.invalid"}}
+{"dispatch":{"action":"editor_tree","params":{"pane":"editor-2","view":"files"}}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"files"}}
+{"dispatch":{"action":"editor_tree","params":{"pane":"editor-2","view":"changes"}}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"committing as org@e2e.invalid"}}
+{"expect":{"tree":"absent","text":"(from git config)"}}
+{"do":{"type":{"into":"editor.changes.e2e-portal.message","text":"e2e as org"}}}
+{"expect":{"tree":"contains","text":"e2e as org"}}
+{"do":{"click":"editor.changes.e2e-portal.commit"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"do":{"click":"rail.terminal-1"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git -C ../e2e-portal --no-pager log -1 --format=%an/%ae/%s"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"E2E Org/org@e2e.invalid/e2e as org"}}

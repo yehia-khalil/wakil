@@ -1,0 +1,31 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-api/app.txt"}}
+{"expect":{"pane":"editor-1","field":"hunks[0].kind","equals":"added"}}
+{"expect":{"pane":"editor-1","field":"hunks[1]","present":false}}
+{"dispatch":{"action":"editor_tree","params":{"pane":"editor-1","shown":true,"view":"changes"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":5}},"text":"LINE","expect":"line"}}}
+{"expect":{"pane":"editor-1","field":"hunks[0].kind","equals":"changed"}}
+{"expect":{"pane":"editor-1","field":"hunks[0].line","equals":"1"}}
+{"expect":{"pane":"editor-1","field":"hunks[1].kind","equals":"added"}}
+{"expect":{"pane":"editor-1","field":"hunks[1].line","equals":"3"}}
+{"dispatch":{"action":"editor_peek","params":{"pane":"editor-1","line":1}}}
+{"expect":{"pane":"editor-1","field":"peek.index","equals":"0"}}
+{"dispatch":{"action":"editor_changes_stage_hunk","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_changes_stage_hunk\""}}}
+{"expect":{"pane":"editor-1","field":"hunks[0].kind","equals":"added"}}
+{"expect":{"pane":"editor-1","field":"hunks[0].line","equals":"3"}}
+{"expect":{"pane":"editor-1","field":"hunks[1]","present":false}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"expect":{"frame":"editor.changes.row:e2e-api/app.txt:staged","inside":"editor.column"}}
+{"expect":{"frame":"editor.changes.row:e2e-api/app.txt:changed","inside":"editor.column"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/notes"}}}
+{"expect":{"pane":"editor-1","field":"hunks","equals":"null"}}
+{"dispatch":{"action":"editor_changes_stage_hunk","params":{"path":"{fixtureRoot}/e2e-api/notes","hunk":0},"refuses":"has no index text to compare"}}

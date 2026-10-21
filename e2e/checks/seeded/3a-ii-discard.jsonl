@@ -1,0 +1,31 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"?, notes"}}
+{"do":{"click":"editor.changes.row:e2e-api/notes:untracked"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}
+{"do":{"click":"editor.changes.row:e2e-api/notes:untracked.discard"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_changes_discard\""}}}
+{"expect":{"tree":"absent","text":"?, notes"}}
+{"expect":{"tree":"contains","text":"?, BookingController.php"}}
+{"expect":{"tree":"contains","text":"M, app.txt"}}
+{"do":{"click":"editor.changes.row:e2e-api/BookingController.php:untracked"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"BookingController.php"}}
+{"do":{"click":"editor.changes.e2e-api.untracked.discardAll"}}
+{"expect":{"journal":{"contains":"\"group\":\"untracked\""}}}
+{"expect":{"tree":"absent","text":"?, BookingController.php"}}
+{"expect":{"tree":"absent","text":"UNTRACKED"}}
+{"expect":{"tree":"contains","text":"M, app.txt"}}
+{"do":{"click":"editor.changes.row:e2e-portal/index.txt:changed"}}
+{"dispatch":{"action":"editor_close","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0]","present":false}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"index.txt"}}
+{"parity":{"action":"editor_changes_discard","params":{"root":"{fixtureRoot}/e2e-portal","paths":["index.txt"]},"click":"editor.changes.e2e-portal.changed.discardAll","assert":"tree"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"expect":{"tree":"absent","text":"M, index.txt"}}

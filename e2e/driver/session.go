@@ -191,6 +191,8 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		spec.SpareProvider = SpareProviderFor(stub)
 		// The search-Cancel check's 200 MiB haystack, for its launch only (SeedSpec.SearchHaystack).
 		spec.SearchHaystack = WantsSearchHaystack(checks)
+		// 3a-ii's failing (and, on request, slow) pre-commit hook, for its launch only (SeedSpec.GitHook).
+		spec.GitHook = WantsGitHook(checks)
 		seeded, err = Seed(fixture, spec)
 		if err != nil {
 			return Result{}, err
