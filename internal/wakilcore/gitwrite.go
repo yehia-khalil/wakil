@@ -20,6 +20,7 @@ var gitWriteSafetyArgs = []string{
 	"-c", "core.pager=cat",
 	"-c", "diff.external=",
 	"--no-pager",
+	"--literal-pathspecs",
 }
 
 // hookOutputCap bounds what a failed write reports; the end is kept, where a hook says why.

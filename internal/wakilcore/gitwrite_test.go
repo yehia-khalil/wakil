@@ -191,3 +191,18 @@ func TestAMissingPathCanBeStaged(t *testing.T) {
 		t.Fatalf("staged %q", got)
 	}
 }
+
+func TestPathsAreLiteralNotPathspecs(t *testing.T) {
+	dir := gitTestRepo(t)
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644)
+	gitIn(t, dir, "add", "b.txt")
+	gitIn(t, dir, "commit", "-q", "-m", "b")
+	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b2\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "*.txt"), []byte("star\n"), 0o644)
+	if err := writerFor(t, dir, GitIdentity{}).Stage(context.Background(), []string{"*.txt"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitOut(t, dir, "diff", "--cached", "--name-only"); got != "*.txt" {
+		t.Fatalf("staged %q", got)
+	}
+}
