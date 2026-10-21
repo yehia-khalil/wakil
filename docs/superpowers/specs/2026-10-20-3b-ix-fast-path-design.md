@@ -109,6 +109,10 @@ write's fate is unknown), `db_cancel` (one click already), `api_reopen` (needs R
 
 A test pins the list against the registry: every name exists, and none is `.mutate`.
 
+`db_read_table`, `db_describe_table` and `db_list_tables` take `database` as well as their
+own params. An environment with more than one database needs one named, and without it the
+action refuses ("multiple databases in this environment — name one of them"; found on the walk).
+
 ### The prompt and the scope
 
 One system prompt, built per line:
@@ -123,8 +127,8 @@ One system prompt, built per line:
     same file entries and matcher ⌘P uses (`PaletteSearch.rank`), and the per-word lists are
     interleaved. ⌘P's matcher needs every word to match, so ranking the whole line would match
     nothing;
-  - in full: projects of the org, environments of the active project and the active one, tables
-    of the active environment's databases (the vocabulary ghost-text already reads), open panes
+  - in full: projects of the org, environments of the active project and the active one, the
+    active environment's databases (from the settings tree), tables of those databases (the vocabulary ghost-text already reads), open panes
     (id, kind, title), API entries of the active environment.
 
 The rules, the action list and the examples come first and never change within a window, so the
@@ -158,7 +162,7 @@ public struct FastPath: Sendable {
      not on the list (a number for a string param becomes its string: "page 3");
   4. every name param is in scope exactly: `path` among the files sent (except `term_open`, whose `path` is a directory and is not checked
      against the file scope), `name` among the projects
-     or environments, `table` among the tables, `id` among the open panes (for `pane_close`, never a
+     or environments, `database` among the databases, `table` among the tables, `id` among the open panes (for `pane_close`, never a
      terminal: closing one ends its shell), `entry` among the API entries.
 - Never throws to the composer: a model error, a timeout or a refusal is `.agent`, and the
   model's error is kept for Settings as ghost-text's is (Rule 8).
