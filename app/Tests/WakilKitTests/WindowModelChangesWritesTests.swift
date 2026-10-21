@@ -11,6 +11,8 @@ private actor ChangesGit: ToolCaller {
     var undoMessage = "m"
     var identity: (name: String, email: String, from: String) = ("O", "o@x", "organisation")
     var gated = false
+    var identityFails = false
+    var commitsFinished = 0
     private var parked: CheckedContinuation<Void, Never>?
     private var released = false
 
@@ -19,6 +21,7 @@ private actor ChangesGit: ToolCaller {
         if let undoMessage { self.undoMessage = undoMessage }
     }
     func set(identity: (name: String, email: String, from: String)) { self.identity = identity }
+    func failIdentity() { identityFails = true }
     func gateCommits() { gated = true; released = false }
     func release() { released = true; parked?.resume(); parked = nil }
     private func park(_ c: CheckedContinuation<Void, Never>) { if released { c.resume() } else { parked = c } }
@@ -35,6 +38,7 @@ private actor ChangesGit: ToolCaller {
                        "behind": .integer(0), "files": .array([])])
         case "git_commit":
             if gated { await withCheckedContinuation { c in Task { await self.park(c) } } }
+            defer { commitsFinished += 1 }
             if let failCommit {
                 return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(failCommit)])])])
             }
@@ -42,6 +46,9 @@ private actor ChangesGit: ToolCaller {
         case "git_amend": return ok(["commit": .string("def"), "summary": .string("amended")])
         case "git_undo_commit": return ok(["message": .string(undoMessage)])
         case "git_identity":
+            if identityFails {
+                return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string("no repo")])])])
+            }
             return ok(["name": .string(identity.name), "email": .string(identity.email), "from": .string(identity.from)])
         default: return ok([:])
         }
@@ -170,5 +177,52 @@ private func changesWindow(failCommit: String? = nil, undoMessage: String? = nil
         await git.release()
         await commit.value
         #expect(window.changesHistory["/p"] == nil)
+    }
+
+    @Test func aSecondWriteOnABusyRootDoesNothingAndTheFirstCanStillBeCancelled() async throws {
+        let (window, git) = await changesWindow()
+        await git.gateCommits()
+        window.changesMessageEdited(root: "/p", text: "fix")
+        let commit = Task { await window.changesCommit(root: "/p") }
+        while await !git.parkedNow() { try await Task.sleep(for: .milliseconds(1)) }
+        await window.changesStage(root: "/p", paths: ["a.go"], group: nil)
+        window.changesMessageEdited(root: "/p", text: "fix")
+        await window.changesCommit(root: "/p")
+        #expect(window.changesInFlight.contains("/p"))
+        #expect(window.changesErrors["/p"] == nil)
+        #expect(await git.count("git_stage") == 0)
+        #expect(await git.count("git_commit") == 1)
+        let first = try #require(window.changesTasks["/p"])
+        window.changesCancel(root: "/p")
+        #expect(first.isCancelled)
+        await git.release()
+        await commit.value
+        #expect(!window.changesInFlight.contains("/p"))
+    }
+
+    @Test func aFailedIdentityReadShowsNoHint() async {
+        let (window, git) = await changesWindow()
+        await window.refreshChangesIdentity(root: "/p")
+        #expect(window.changesHint(root: "/p") == "committing as o@x")
+        await git.failIdentity()
+        await window.refreshChangesIdentity(root: "/p")
+        #expect(window.changesHint(root: "/p") == nil)
+    }
+
+    @Test func anOrgSwitchLetsARunningCommitFinishAndShowsNothingOfIt() async throws {
+        let (window, git) = await changesWindow()
+        await git.gateCommits()
+        window.changesMessageEdited(root: "/p", text: "fix")
+        let commit = Task { await window.changesCommit(root: "/p") }
+        while await !git.parkedNow() { try await Task.sleep(for: .milliseconds(1)) }
+        let running = try #require(window.changesTasks["/p"])
+        await window.invalidateForOrgChange()
+        #expect(!running.isCancelled, "the commit finishes in the repository it started in")
+        await git.release()
+        await commit.value
+        #expect(await git.commitsFinished == 1)
+        #expect(window.changesHistory["/p"] == nil && window.changesErrors["/p"] == nil
+                && window.changesMessages["/p"] == nil && !window.changesInFlight.contains("/p")
+                && window.changesTasks["/p"] == nil)
     }
 }

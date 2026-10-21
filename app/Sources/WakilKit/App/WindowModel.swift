@@ -2110,9 +2110,9 @@ public final class WindowModel {
         await gitStatus?.reset()
         gitRoots = []
         // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
-        // A write still running is left to finish on disk, but its result is dropped (`changesGeneration`).
+        // A write still running is NOT cancelled: a commit finishes, hooks and all, in the repository it
+        // started in, and only its result is dropped (`changesGeneration`), so nothing of it shows here.
         changesGeneration += 1
-        for task in changesTasks.values { task.cancel() }
         changesTasks = [:]
         changesMessages = [:]
         changesHistory = [:]

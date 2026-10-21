@@ -92,11 +92,15 @@ extension WindowModel {
     public func refreshChangesIdentity(root: String) async {
         guard let git = gitStatus?.git else { return }
         let generation = changesGeneration
-        guard let result = try? await callCheckedTool(
-                  git, tool: "git_identity", arguments: .object(["root": .string(root)]),
-                  action: "git_identity", timeout: MCPClient.readReplyTimeout),
-              generation == changesGeneration,
-              let email = Self.changesField(result, "email") else { return }
+        let result = try? await callCheckedTool(
+            git, tool: "git_identity", arguments: .object(["root": .string(root)]),
+            action: "git_identity", timeout: MCPClient.readReplyTimeout)
+        guard generation == changesGeneration else { return }
+        // A failed read shows no hint: the old one may now be wrong (a save just changed who commits).
+        guard let result, let email = Self.changesField(result, "email") else {
+            changesIdentity[root] = nil
+            return
+        }
         changesIdentity[root] = (email: email, fromConfig: Self.changesField(result, "from") != "organisation")
     }
 
@@ -130,6 +134,9 @@ extension WindowModel {
     /// One write: the root is in flight for its length, an error is kept whole (the action's own prefix
     /// included), and a result that lands after an org switch is dropped. Nil on failure or a dropped result.
     private func changesWrite(_ root: String, _ name: String, _ params: [String: JSONValue]) async -> JSONValue? {
+        // One write per root: the controls are disabled while it runs, and a second one must not
+        // touch the first's spinner, task or error.
+        guard !changesInFlight.contains(root) else { return nil }
         let generation = changesGeneration
         changesInFlight.insert(root)
         let caller = DispatchCaller(place: place, session: nil)
@@ -140,8 +147,10 @@ extension WindowModel {
         changesTasks[root] = task
         let outcome = await task.result
         guard generation == changesGeneration else { return nil }
-        changesTasks[root] = nil
-        changesInFlight.remove(root)
+        if changesTasks[root] == task {
+            changesTasks[root] = nil
+            changesInFlight.remove(root)
+        }
         switch outcome {
         case .success(let result):
             changesErrors[root] = nil
