@@ -26,6 +26,7 @@
 {"dispatch":{"action":"editor_changes_stage","params":{"root":"{fixtureRoot}/e2e-portal","paths":["slow"]},"refuses":"a git write is already running in e2e-portal"}}
 {"dispatch":{"action":"editor_changes_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-portal"}}}
 {"expect":{"tree":"absent","text":"?, slow"}}
+{"dispatch":{"action":"editor_changes_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api"}}}
 {"expect":{"frame":"editor.changes.e2e-portal.cancel","inside":"editor.column"}}
 {"do":{"click":"editor.changes.e2e-portal.cancel"}}
 {"expect":{"process":{"none-matching":"sleep 90.32"}}}
