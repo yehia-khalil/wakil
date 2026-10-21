@@ -44,6 +44,7 @@
 {"dispatch":{"action":"editor_refresh","params":{"pane":"editor-1","what":"status"},"refuses":"editor_refresh: what must be all, files or git, not \"status\""}}
 {"do":{"resize":{"width":1000,"height":888}}}
 {"expect":{"frame":"editor.changes.row:e2e-api/notes:untracked","inside":"editor.column","maxHeight":30}}
+{"expect":{"frame":"editor.changes.root:e2e-portal","inside":"editor.column","clear":"editor.changes.row:e2e-api/notes:untracked"}}
 {"dispatch":{"action":"editor_changes_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api"}}}
 {"expect":{"pane":"editor-1","field":"column.changes_closed","contains":"/e2e-api"}}
 {"expect":{"frame":"editor.changes.row:e2e-portal/index.txt:changed","inside":"editor.column","maxHeight":30}}
