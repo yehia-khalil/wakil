@@ -195,6 +195,8 @@ struct SettingsPane: View {
     /// The field whose save is in flight, so its control can say so rather
     /// than look inert.
     @State private var saving: WindowModel.OrganisationField?
+    /// The organisation field holding the keyboard: Git name and email save when it leaves (3a-ii, Rule 2).
+    @FocusState private var focusedOrgField: WindowModel.OrganisationField?
 
     /// Where the operator is standing in the tree. Window state, not
     /// configuration: it survives a re-read, and a re-read that dropped it
@@ -640,6 +642,15 @@ struct SettingsPane: View {
                     .font(.system(size: Scale.body))
                     .foregroundStyle(coolWhite.opacity(0.88))
                     .onSubmit { save(field, tree: tree) }
+                    .focused($focusedOrgField, equals: field)
+                    // 3a-ii, Rule 2: Git name and email save when the field is left, through Save's
+                    // path. A Return that saved already cleared the draft (or is still saving), so
+                    // leaving after it writes nothing twice. The other fields keep Return / Save.
+                    .onChange(of: focusedOrgField) { old, _ in
+                        guard old == field, field == .gitName || field == .gitEmail,
+                              let d = drafts[field], d != storedValue(field, in: tree), saving != field else { return }
+                        save(field, tree: tree)
+                    }
                     .accessibilityIdentifier("settings.org.\(field.identifierFragment)")
                 if draft != nil, draft != stored {
                     Button(saving == field ? "Saving…" : "Save") { save(field, tree: tree) }

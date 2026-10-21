@@ -1425,15 +1425,25 @@ struct EditorChangesControls {
 /// caret as usual.
 @MainActor
 final class ChangesMessageKeys {
-    private var monitor: Any?
+    /// `nonisolated(unsafe)`: read once more by `deinit`, which removes the monitor; every other
+    /// access is on the main actor.
+    nonisolated(unsafe) private var monitor: Any?
+    /// The box's own text view, taken once the box holds the keyboard. Only its keys are handled: a
+    /// focus state gone stale must never let ⌘⏎ in another text view (the composer, a query line)
+    /// commit a repository.
+    private weak var owner: NSTextView?
+    /// Bumped by every start and stop, so a capture still waiting for its turn knows it is stale.
+    private var generation = 0
 
     func start(window: NSWindow?, commit: @escaping () -> Void, step: @escaping (Int) -> Bool) {
         stop()
-        weak var window = window
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        guard let window else { return }
+        let mine = generation
+        capture(window, generation: mine, tries: 5)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak window] event in
             let swallowed: Bool = MainActor.assumeIsolated {
-                guard let window, event.window === window, window.isKeyWindow,
-                      let text = window.firstResponder as? NSTextView, !text.hasMarkedText() else { return false }
+                guard let self, let window, let owner = self.owner, event.window === window, window.isKeyWindow,
+                      window.firstResponder === owner, !owner.hasMarkedText() else { return false }
                 let mods = event.modifierFlags.intersection([.command, .control, .option, .shift])
                 switch event.keyCode {
                 case 36, 76:   // Return, Enter
@@ -1441,9 +1451,9 @@ final class ChangesMessageKeys {
                     commit()
                     return true
                 case 126, 125: // ↑, ↓
-                    guard mods.isEmpty, text.selectedRange().length == 0 else { return false }
-                    let all = text.string as NSString
-                    let caret = min(text.selectedRange().location, all.length)
+                    guard mods.isEmpty, owner.selectedRange().length == 0 else { return false }
+                    let all = owner.string as NSString
+                    let caret = min(owner.selectedRange().location, all.length)
                     let up = event.keyCode == 126
                     let rest = up ? all.substring(to: caret) : all.substring(from: caret)
                     guard !rest.contains("\n") else { return false }
@@ -1455,8 +1465,28 @@ final class ChangesMessageKeys {
         }
     }
 
+    /// A turn after the box took focus its text view is the window's first responder; a few more
+    /// turns are allowed for a focus move AppKit finishes late. Nothing is captured otherwise, and the
+    /// monitor then handles nothing.
+    private func capture(_ window: NSWindow, generation mine: Int, tries: Int) {
+        Task { @MainActor [weak self, weak window] in
+            guard let self, let window, self.generation == mine else { return }
+            if let text = window.firstResponder as? NSTextView {
+                self.owner = text
+            } else if tries > 1 {
+                self.capture(window, generation: mine, tries: tries - 1)
+            }
+        }
+    }
+
     func stop() {
+        generation += 1
+        owner = nil
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+    }
+
+    deinit {
+        if let monitor { NSEvent.removeMonitor(monitor) }
     }
 }
