@@ -650,7 +650,24 @@ public final class WindowModel {
     /// shows git. No default, for `rootWatcher`'s reason (`wakil-never-wired-parameters`): production
     /// passes `wiring.gitStatus`, the one the actions were registered with; a test that shows no git
     /// says `nil` out loud.
-    private let gitStatus: GitStatus?
+    let gitStatus: GitStatus?
+    /// 3a-ii. The Changes view's state, per root, for the window's life only (R3: nothing persists).
+    /// The message being typed; absent is empty.
+    public internal(set) var changesMessages: [String: String] = [:]
+    /// Messages committed, newest first, at most `changesHistoryLimit`.
+    public internal(set) var changesHistory: [String: [String]] = [:]
+    /// Where ↑/↓ stands in `changesHistory`; nil once the box was typed in.
+    var changesHistoryCursor: [String: Int] = [:]
+    /// The last write's error in that root, whole (Rule 8); cleared by the next write that succeeds.
+    public internal(set) var changesErrors: [String: String] = [:]
+    /// Roots with a write running from this window.
+    public internal(set) var changesInFlight: Set<String> = []
+    /// Who a commit there would be authored as (`git_identity`).
+    public internal(set) var changesIdentity: [String: (email: String, fromConfig: Bool)] = [:]
+    /// The dispatch running per root, so a cancel can end it.
+    var changesTasks: [String: Task<JSONValue, Error>] = [:]
+    /// Bumped by an org switch: a write that lands under another generation is not shown.
+    var changesGeneration = 0
     /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
@@ -1470,7 +1487,8 @@ public final class WindowModel {
         persistence: LayoutPersistence? = nil,
         agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() },
         quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil,
-        paletteClients: PaletteClients = PaletteClients()
+        paletteClients: PaletteClients = PaletteClients(),
+        gitStatus: GitStatus? = nil
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1546,7 +1564,7 @@ public final class WindowModel {
             rootWatcher: nil,
             editorRootWatcher: nil,
             fileLists: nil,
-            gitStatus: nil,
+            gitStatus: gitStatus,
             paletteClients: paletteClients,
             placeClients: placeClients,
             agentSocketFactory: agentSocketFactory,
@@ -2091,6 +2109,17 @@ public final class WindowModel {
         editorFiles = .empty
         await gitStatus?.reset()
         gitRoots = []
+        // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
+        // A write still running is left to finish on disk, but its result is dropped (`changesGeneration`).
+        changesGeneration += 1
+        for task in changesTasks.values { task.cancel() }
+        changesTasks = [:]
+        changesMessages = [:]
+        changesHistory = [:]
+        changesHistoryCursor = [:]
+        changesErrors = [:]
+        changesInFlight = []
+        changesIdentity = [:]
         await syncGitWatcher()
         await syncEditorWatcher()
     }
@@ -2691,6 +2720,9 @@ public final class WindowModel {
                 origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
             await refreshSettings()
             await rebuildQuickTasks()
+            if field == .gitName || field == .gitEmail {
+                for root in changesIdentity.keys { await refreshChangesIdentity(root: root) }
+            }
             return nil
         } catch {
             // The pane still re-reads. A refused write changed nothing,
@@ -2760,6 +2792,8 @@ public final class WindowModel {
         case defaultProvider
         case speechProvider
         case quickProvider
+        case gitName
+        case gitEmail
 
         /// A stable fragment for this field's accessibility identifier —
         /// the case name, not the label, which is prose and may be
@@ -2774,6 +2808,8 @@ public final class WindowModel {
             case .defaultProvider: return "Default provider"
             case .speechProvider: return "Speech"
             case .quickProvider: return "Quick tasks"
+            case .gitName: return "Git name"
+            case .gitEmail: return "Git email"
             }
         }
     }
@@ -5591,7 +5627,7 @@ public final class WindowModel {
     }
 
     /// The focused pane if it is an editor, else the first editor pane.
-    private func focusedEditorPane() -> String? {
+    func focusedEditorPane() -> String? {
         let panes = layoutSnapshot.panes
         if let focused = panes.first(where: { $0.id == layoutSnapshot.focusedId }), focused.kind == "editor" { return focused.id }
         return panes.first { $0.kind == "editor" }?.id

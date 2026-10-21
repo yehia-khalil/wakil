@@ -437,7 +437,7 @@ struct SettingsPane: View {
             // be written and no way for the two to disagree. Not a
             // setting, and drawn as the fact it is.
             fields([("Id", tree.org.id, true)])
-            ForEach(WindowModel.OrganisationField.allCases.filter { $0 != .speechProvider && $0 != .quickProvider }, id: \.self) { field in
+            ForEach(WindowModel.OrganisationField.allCases.filter { $0 != .speechProvider && $0 != .quickProvider && $0 != .gitName && $0 != .gitEmail }, id: \.self) { field in
                 organisationEditor(field, in: tree)
             }
             speechRow(tree: tree)
@@ -884,6 +884,8 @@ struct SettingsPane: View {
         case .defaultProvider: return tree.org.defaultProvider
         case .speechProvider: return tree.org.speechProvider
         case .quickProvider: return tree.org.quickProvider
+        // Drawn under GIT by Task 7, which reads them from the tree; not in the generic list.
+        case .gitName, .gitEmail: return ""
         }
     }
 
