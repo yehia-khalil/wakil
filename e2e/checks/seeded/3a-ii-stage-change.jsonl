@@ -26,6 +26,24 @@
 {"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
 {"expect":{"frame":"editor.changes.row:e2e-api/app.txt:staged","inside":"editor.column"}}
 {"expect":{"frame":"editor.changes.row:e2e-api/app.txt:changed","inside":"editor.column"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git -C ../e2e-api show :app.txt | tr '\\n' '|'; echo"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"LINE one|line two, staged|"}}
+{"do":{"keys":"git -C ../e2e-api --no-pager diff --cached --numstat -- app.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"2\t2\tapp.txt"}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"do":{"keys":"git -C ../e2e-api --no-pager diff --numstat -- app.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1\t0\tapp.txt"}}
 {"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/notes"}}}
 {"expect":{"pane":"editor-1","field":"hunks","equals":"null"}}
 {"dispatch":{"action":"editor_changes_stage_hunk","params":{"path":"{fixtureRoot}/e2e-api/notes","hunk":0},"refuses":"has no index text to compare"}}

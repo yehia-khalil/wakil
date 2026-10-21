@@ -29,3 +29,22 @@
 {"parity":{"action":"editor_changes_discard","params":{"root":"{fixtureRoot}/e2e-portal","paths":["index.txt"]},"click":"editor.changes.e2e-portal.changed.discardAll","assert":"tree"}}
 {"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
 {"expect":{"tree":"absent","text":"M, index.txt"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"keys":"test ! -e ../e2e-api/notes && test ! -e ../e2e-api/BookingController.php && echo untracked-gone"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"untracked-gone"}}
+{"do":{"keys":"cat ../e2e-portal/index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"portal"}}
+{"do":{"keys":"git -C ../e2e-portal status --porcelain | wc -l | tr -d ' '"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"0"}}
+{"do":{"keys":"git -C ../e2e-api --no-pager diff --numstat -- app.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1\t0\tapp.txt"}}
