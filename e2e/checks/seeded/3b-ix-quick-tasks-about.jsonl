@@ -8,3 +8,5 @@
 {"expect":{"tree":"contains","text":"slower than 0.4 s"}}
 {"do":{"press":"Escape"}}
 {"expect":{"tree":"absent","text":"Ask the agent instead"}}
+{"do":{"click":"settings.quickTasks.about"}}
+{"expect":{"tree":"contains","text":"Ask the agent instead"}}
