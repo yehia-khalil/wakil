@@ -82,8 +82,6 @@ struct EditorColumn: View {
     @FocusState private var messageFocused: String?
     /// ⌘⏎ and ↑/↓ for the message box holding the keyboard, ahead of the menu (⌘⏎ is Maximize Pane).
     @State private var messageKeys = ChangesMessageKeys()
-    /// The Changes groups the operator closed, by root and group: the window's life, never saved.
-    @State private var closedGroups: Set<String> = []
 
     /// The name a row's root goes by in identifiers: `editor.tree.row:<root name>/<relative>`.
     private func rootName(_ row: EditorTreeRow) -> String { (row.root as NSString).lastPathComponent }
@@ -371,7 +369,9 @@ struct EditorColumn: View {
 
     // MARK: - Changes (3b-iii)
 
-    private var changesRows: [EditorChangesRow] { editorChangesRows(gitRoots, closed: column.changesClosed) }
+    private var changesRows: [EditorChangesRow] {
+        editorChangesRows(gitRoots, closed: column.changesClosed, closedGroups: column.changesClosedGroups)
+    }
     private var changesHighlight: EditorChangesRow? { editorChangesResolve(column.changesHighlight, roots: gitRoots) }
 
     /// The view's one spacing scale: 4, 8, 12.
@@ -381,8 +381,10 @@ struct EditorColumn: View {
         static let row: CGFloat = 22
     }
 
-    /// A group's key in `closedGroups`.
-    private func groupKey(_ root: String, _ group: String) -> String { root + "\n" + group }
+    /// Whether the operator closed this group (3a-ii): the pane's column, through an action.
+    private func groupOpen(_ root: String, _ group: GitGroup) -> Bool {
+        !column.changesClosedGroups.contains(EditorChangesGroup(root: root, group: group.rawValue))
+    }
 
     private var changesView: some View {
         // A root that is not a git repository has nothing to change or commit: it is not drawn.
@@ -413,8 +415,7 @@ struct EditorColumn: View {
             .onKeyPress(phases: .down) { press in changesKey(press) }
             .onChange(of: changesHighlight) { _, now in
                 guard let now else { return }
-                // A row the highlight reaches is never left inside a closed group.
-                closedGroups.remove(groupKey(now.root, now.group))
+                // A closed group stays closed (Rule 6): a step skips it, and nothing here opens it.
                 withAnimation(.easeOut(duration: 0.16)) { proxy.scrollTo(now) }
             }
         }
@@ -443,7 +444,7 @@ struct EditorColumn: View {
             if !closed {
                 ForEach(gitListSections(root), id: \.group) { section in
                     changesGroupLabel(section.group, root: root, count: section.rows.count)
-                    if !closedGroups.contains(groupKey(root.root, section.group.rawValue)) {
+                    if groupOpen(root.root, section.group) {
                         ForEach(section.rows, id: \.self) { changesRow($0, root: root) }
                     }
                 }
@@ -518,8 +519,8 @@ struct EditorColumn: View {
     }
 
     private func toggleGroup(_ root: String, _ group: GitGroup) {
-        let key = groupKey(root, group.rawValue)
-        if closedGroups.contains(key) { closedGroups.remove(key) } else { closedGroups.insert(key) }
+        let action = groupOpen(root, group) ? "editor_changes_group_collapse" : "editor_changes_group_expand"
+        Task { await dispatch(action, ["root": .string(root), "group": .string(group.rawValue)]) }
     }
 
     private func changesRow(_ row: GitFileRow, root: GitRootState) -> some View {
@@ -592,8 +593,9 @@ struct EditorColumn: View {
     /// while its highlighted row is in it), the group's buttons at its right.
     private func changesGroupLabel(_ group: GitGroup, root: GitRootState, count: Int) -> some View {
         let key = "group:\(root.root):\(group.rawValue)"
-        let current = changesHighlight.map { $0.root == root.root && $0.group == group.rawValue } ?? false
-        let open = !closedGroups.contains(groupKey(root.root, group.rawValue))
+        let open = groupOpen(root.root, group)
+        // A closed group's buttons show on hover only: its highlighted row is not drawn.
+        let current = open && (changesHighlight.map { $0.root == root.root && $0.group == group.rawValue } ?? false)
         return HStack(spacing: ChangesSpace.s) {
             HStack(spacing: ChangesSpace.s) {
                 Image(systemName: open ? "chevron.down" : "chevron.right")

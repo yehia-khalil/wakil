@@ -203,12 +203,15 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
   3b-ii-b adds `editor_replace` (batched `files_replace`, open tabs edited in their buffers, `cancel`),
   `editor_replace_undo`, `editor_move_tab` and `editor_tree_reveal`, and `editor_search`'s `replace`.
   3b-iii adds `editor_changes_select`, `editor_changes_step`, `editor_changes_collapse`,
-  `editor_changes_expand`, `editor_open_file`, and `editor_refresh`'s `what`.
+  `editor_changes_expand`, `editor_open_file`, and `editor_refresh`'s `what`. 3a-ii adds
+  `editor_changes_group_collapse` / `_expand` (a group of one root, kept on the column for the
+  window's life and never saved; readable as `column.changes_closed_groups`).
 - `GhostBridge.swift` (3b-viii) — the editor's side of ghost-text: `ghostCaret`, `ghostTabContext`
   (which tab and caret a request is for) and `GhostRequestOrder` (a reply is dropped once a newer
   request was made).
 - `EditorChanges.swift` (3b-iii) — the Changes view's rows over the window's `GitStatus`:
-  `editorChangesRows` (step order, a collapsed root left out), `editorChangesStep`,
+  `editorChangesRows` (step order, a collapsed root and a closed group left out), `editorChangesStep`,
+  `editorChangesShown` (where the highlight goes when its group closes),
   `editorChangesResolve` (where the highlight goes after a refresh, Rule 6), `editorChangesFile` and
   `editorTreeStatus` (the Files tree's status letter).
 - `EditorDiff.swift` (3b-iii) — diff tabs: `GitDiffState` (a diff's two sides and the facts about

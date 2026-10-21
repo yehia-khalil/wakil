@@ -248,7 +248,8 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "db_remove_database",
              "db_render_update", "db_run_mutation", "db_run_query", "db_set_dsn",
              "editor_changes_amend", "editor_changes_collapse", "editor_changes_commit", "editor_changes_discard",
-             "editor_changes_expand", "editor_changes_select", "editor_changes_stage", "editor_changes_stage_hunk",
+             "editor_changes_expand", "editor_changes_group_collapse", "editor_changes_group_expand",
+             "editor_changes_select", "editor_changes_stage", "editor_changes_stage_hunk",
              "editor_changes_step", "editor_changes_undo_commit", "editor_changes_unstage",
              "editor_close", "editor_create", "editor_find", "editor_focus_tab", "editor_goto", "editor_move_tab", "editor_new_scratch", "editor_open", "editor_open_file",
              "editor_peek", "editor_peek_close", "editor_peek_step", "editor_refresh", "editor_reload", "editor_rename", "editor_replace", "editor_replace_range", "editor_replace_undo", "editor_restore", "editor_save",
@@ -726,7 +727,8 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
     #expect(wiring.diagnostics.contains { $0.hasPrefix("wakil-git:") }, "\(wiring.diagnostics)")
     let names = Set(await wiring.registry.all().map(\.name))
     for name in ["editor_changes_select", "editor_changes_step", "editor_changes_collapse",
-                 "editor_changes_expand", "editor_open_file"] {
+                 "editor_changes_expand", "editor_changes_group_collapse", "editor_changes_group_expand",
+                 "editor_open_file"] {
         #expect(names.contains(name), "\(name) is not registered")
     }
 }

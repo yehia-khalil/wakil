@@ -1,7 +1,8 @@
 import Foundation
 
 // The Changes view's rows and the choices behind them (3b-iii), pure, because WakilApp has no test
-// target. The status is the window's (`GitStatus`); the highlight and collapsed roots are the pane's.
+// target. The status is the window's (`GitStatus`); the highlight, collapsed roots and closed groups
+// are the pane's.
 
 private func editorChangesRank(_ group: String) -> Int {
     switch GitGroup(rawValue: group) {
@@ -23,17 +24,21 @@ private func editorChangesRows(of r: GitRootState) -> [EditorChangesRow] {
         .sorted(by: editorChangesPrecedes)
 }
 
-/// Every row the view draws, in step order: roots in project order, a collapsed root's rows left
-/// out, then staged, changes, untracked, then path.
-public func editorChangesRows(_ roots: [GitRootState], closed: Set<String>) -> [EditorChangesRow] {
+/// Every row the view draws, in step order: roots in project order, a collapsed root's rows and a
+/// closed group's rows left out, then staged, changes, untracked, then path.
+public func editorChangesRows(_ roots: [GitRootState], closed: Set<String>,
+                              closedGroups: Set<EditorChangesGroup> = []) -> [EditorChangesRow] {
     roots.filter { !closed.contains($0.root) }.flatMap(editorChangesRows(of:))
+        .filter { !closedGroups.contains(EditorChangesGroup(root: $0.root, group: $0.group)) }
 }
 
 /// The row `delta` away from `from` among the drawn rows, clamped at both ends; the first row when
-/// `from` is nil or not drawn; nil when nothing is drawn.
-public func editorChangesStep(_ roots: [GitRootState], closed: Set<String>, from: EditorChangesRow?,
+/// `from` is nil or not drawn; nil when nothing is drawn. A closed group is skipped as a collapsed
+/// root is, and stays closed (Rule 6).
+public func editorChangesStep(_ roots: [GitRootState], closed: Set<String>,
+                              closedGroups: Set<EditorChangesGroup> = [], from: EditorChangesRow?,
                               by delta: Int) -> EditorChangesRow? {
-    let rows = editorChangesRows(roots, closed: closed)
+    let rows = editorChangesRows(roots, closed: closed, closedGroups: closedGroups)
     guard !rows.isEmpty else { return nil }
     guard let from, let i = rows.firstIndex(of: from) else { return rows.first }
     return rows[min(max(i + delta, 0), rows.count - 1)]
@@ -54,6 +59,27 @@ public func editorChangesResolve(_ highlight: EditorChangesRow?, roots: [GitRoot
     if let moved = rows.first(where: { $0.path == h.path }) { return moved }
     guard !rows.isEmpty else { return nil }
     return rows.first(where: { editorChangesPrecedes(h, $0) }) ?? rows.last
+}
+
+/// Where the highlight goes when a group closes over it (3a-ii): kept when it is still drawn (or
+/// nil); else its root's next drawn row in step order, else the drawn row before it, else nil — so
+/// a highlight is never left on a row the view does not draw, and never jumps to another root.
+public func editorChangesShown(_ highlight: EditorChangesRow?, roots: [GitRootState], closed: Set<String>,
+                               closedGroups: Set<EditorChangesGroup>) -> EditorChangesRow? {
+    guard let h = highlight else { return nil }
+    let drawn = Set(editorChangesRows(roots, closed: closed, closedGroups: closedGroups))
+    guard !drawn.contains(h), let r = roots.first(where: { $0.root == h.root }) else { return h }
+    let rows = editorChangesRows(of: r)
+    return rows.first { drawn.contains($0) && editorChangesPrecedes(h, $0) }
+        ?? rows.last { drawn.contains($0) && editorChangesPrecedes($0, h) }
+}
+
+/// Closed groups in the order the view draws them: by root, then staged, changes, untracked.
+public func editorChangesSortedGroups(_ groups: Set<EditorChangesGroup>) -> [EditorChangesGroup] {
+    groups.sorted { a, b in
+        if a.root != b.root { return a.root.utf8.lexicographicallyPrecedes(b.root.utf8) }
+        return editorChangesRank(a.group) < editorChangesRank(b.group)
+    }
 }
 
 /// The status row a Changes row names, or nil when it is not in that group now.

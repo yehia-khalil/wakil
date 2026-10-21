@@ -21,10 +21,12 @@
 {"expect":{"tree":"contains","text":"Staged, "}}
 {"expect":{"tree":"contains","text":"Changes, "}}
 {"expect":{"tree":"contains","text":"Untracked, "}}
-{"do":{"click":"editor.changes.group:e2e-api/untracked"}}
+{"parity":{"action":"editor_changes_group_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","group":"untracked"},"click":"editor.changes.group:e2e-api/untracked","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"column.changes_closed_groups","contains":"\"untracked\""}}
 {"expect":{"tree":"absent","text":"?, BookingController.php"}}
 {"expect":{"tree":"contains","text":"Untracked, 2"}}
-{"do":{"click":"editor.changes.group:e2e-api/untracked"}}
+{"parity":{"action":"editor_changes_group_expand","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","group":"untracked"},"click":"editor.changes.group:e2e-api/untracked","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"column.changes_closed_groups","equals":"[]"}}
 {"expect":{"tree":"contains","text":"?, BookingController.php"}}
 {"expect":{"tree":"contains","text":"M, app.txt"}}
 {"expect":{"tree":"contains","text":"?, BookingController.php"}}

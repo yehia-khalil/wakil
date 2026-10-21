@@ -380,6 +380,16 @@ public struct EditorChangesRow: Sendable, Equatable, Hashable, Codable {
     }
 }
 
+/// One group (staged, changed, untracked) of one root in the editor's Changes view (3a-ii).
+public struct EditorChangesGroup: Sendable, Hashable {
+    public var root: String
+    public var group: String
+    public init(root: String, group: String) {
+        self.root = root
+        self.group = group
+    }
+}
+
 /// An editor pane's left column as a layout keeps it (3b-ii). `open` holds absolute paths.
 public struct EditorColumnState: Sendable, Equatable, Codable {
     public var shown: Bool
@@ -390,6 +400,9 @@ public struct EditorColumnState: Sendable, Equatable, Codable {
     public var changesClosed: Set<String>
     /// The Changes view's highlighted row; nil before one is chosen.
     public var changesHighlight: EditorChangesRow?
+    /// Groups collapsed in the Changes view (3a-ii): the window's life, changed only by
+    /// `editor_changes_group_collapse` / `_expand`, and never saved — not in `CodingKeys`.
+    public var changesClosedGroups: Set<EditorChangesGroup> = []
     public static let initial = EditorColumnState(shown: false, view: .files, width: 240, open: [])
     public init(shown: Bool, view: EditorColumnView, width: Double, open: [String],
                 changesClosed: Set<String> = [], changesHighlight: EditorChangesRow? = nil) {
