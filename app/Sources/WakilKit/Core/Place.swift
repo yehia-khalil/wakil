@@ -18,13 +18,17 @@ public struct Place: Sendable, Hashable, Codable {
 /// Who a dispatch is made for: the place it acts in, and the agent session that asked.
 /// The write gate prices by `place.environment`; the journal records the whole value.
 /// `session` is nil for the operator's own dispatches, which no agent session made.
+/// `via` names the route a dispatch took when it was not the default one (3b-ix: `"fastPath"`,
+/// the composer's one-line command); the journal records it, and nil is not written.
 public struct DispatchCaller: Sendable {
     public let place: Place
     public let session: String?
+    public let via: String?
 
-    public init(place: Place, session: String?) {
+    public init(place: Place, session: String?, via: String? = nil) {
         self.place = place
         self.session = session
+        self.via = via
     }
 }
 

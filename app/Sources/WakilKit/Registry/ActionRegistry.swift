@@ -194,6 +194,11 @@ public actor ActionRegistry {
         }
     }
 
+    /// One action's descriptor by name, or nil (3b-ix: the fast path checks params against it).
+    public func descriptor(named name: String) -> ActionDescriptor? {
+        all().first { $0.name == name }
+    }
+
     /// Runs `name`'s handler and returns its result, or throws without
     /// running it. Every outcome this method can produce — an unrecognized
     /// name, a gated refusal, an outright block, a handler that throws, or
@@ -622,7 +627,8 @@ public actor ActionRegistry {
             environment: caller.place.environment,
             session: caller.session?.nilIfEmpty,
             outcome: outcome,
-            reason: reason
+            reason: reason,
+            via: caller.via
         )
         var line = try encoder.encode(entry)
         line.append(UInt8(ascii: "\n"))

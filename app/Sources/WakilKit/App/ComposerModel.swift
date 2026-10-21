@@ -18,7 +18,11 @@ public final class ComposerModel {
     /// Bumped on every landing; the bar focuses its field when it changes.
     public private(set) var focusToken = 0
 
+    /// What a fast-path line did (3b-ix): kept until the next line, "Ask the agent instead" or Esc.
+    public private(set) var receipt: FastPathReceipt?
+
     private let window: WindowModel
+    private let fastPathRunner: (String, WindowModel.TurnScope) async -> FastPathOutcome
     private let speech: SpeechRegistry
     private let now: @MainActor () -> Double
     private var provider: (any SpeechProvider)?
@@ -29,9 +33,11 @@ public final class ComposerModel {
 
     public init(
         window: WindowModel, speech: SpeechRegistry,
-        now: @escaping @MainActor () -> Double = { ProcessInfo.processInfo.systemUptime }
+        now: @escaping @MainActor () -> Double = { ProcessInfo.processInfo.systemUptime },
+        fastPathRunner: ((String, WindowModel.TurnScope) async -> FastPathOutcome)? = nil
     ) {
         self.window = window
+        self.fastPathRunner = fastPathRunner ?? { [window] line, scope in await window.runFastPath(line, scope: scope) }
         self.speech = speech
         self.now = now
     }
@@ -70,10 +76,24 @@ public final class ComposerModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let source: WindowModel.TurnSource = landedUnsent ? .voice : .typed
+        // Read before the first await: the line belongs to the place it was typed in.
+        let scope = window.turnScope
         draft = ""
         caret = 0
         landedUnsent = false
-        let started = await window.send(text, via: source)
+        receipt = nil
+        switch await fastPathRunner(text, scope) {
+        case .ran(var r), .refused(var r):
+            // Rule 2: a refused line is kept here, with Ask the agent instead, which re-sends it
+            // where it was typed and as it came (a spoken line stays a voice turn).
+            r.scope = scope
+            r.source = source
+            receipt = r
+            return
+        case .toAgent:
+            break
+        }
+        let started = await window.send(text, via: source, scope: scope)
         // No turn started (no harness, a failed send): the
         // operator's words come back. Not if they have typed since.
         if !started, draft.isEmpty {
@@ -82,6 +102,23 @@ public final class ComposerModel {
             landedUnsent = source == .voice
         }
     }
+
+    /// Sends the line a receipt answered to the agent after all: to the place it was typed in, with
+    /// its source. No turn started (no harness, a failed send): the line comes back, as `submit`'s
+    /// does (Rule 2), unless the operator has typed since.
+    public func askAgentInstead() async {
+        guard let r = receipt else { return }
+        receipt = nil
+        let started = await window.send(r.line, via: r.source, scope: r.scope)
+        if !started, draft.isEmpty {
+            draft = r.line
+            caret = (r.line as NSString).length
+            landedUnsent = r.source == .voice
+        }
+    }
+
+    /// Clears the receipt (the bar calls it on Esc in an empty composer).
+    public func dismissReceipt() { receipt = nil }
 
     private func run(_ effects: [ListeningMachine.Effect]) {
         window.setListening(machine.isListening)

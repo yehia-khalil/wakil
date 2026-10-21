@@ -522,14 +522,24 @@ public struct FilesSource: PaletteSource {
                     error: "\(rootName): only the first \((list.count + ignored.count).formatted()) files are listed and searched; open a deeper root for the rest",
                     kindLabel: "file"))
             }
-            for (paths, dimmed) in [(list, false), (withIgnored ? ignored : [], true)] {
-                for case .string(let rel) in paths {
-                    let folder = (rel as NSString).deletingLastPathComponent
-                    rows.append(PaletteEntry(
-                        id: "editorfile:\(root)/\(rel)", group: group, title: (rel as NSString).lastPathComponent,
-                        subtitle: folder.isEmpty ? rootName : "\(folder) · \(rootName)", kindLabel: "file",
-                        verb: "open", action: .openInEditor(path: "\(root)/\(rel)"), isDimmed: dimmed))
-                }
+            func strings(_ a: [JSONValue]) -> [String] { a.compactMap { if case .string(let s) = $0 { s } else { nil } } }
+            rows += Self.rows(root: root, files: strings(list), ignored: withIgnored ? strings(ignored) : [])
+        }
+        return rows
+    }
+
+    /// One root's rows: its tracked files, then the `ignored` ones dimmed. The fast path builds the
+    /// same rows from the listing the window already holds.
+    static func rows(root: String, files: [String], ignored: [String]) -> [PaletteEntry] {
+        let rootName = (root as NSString).lastPathComponent
+        var rows: [PaletteEntry] = []
+        for (paths, dimmed) in [(files, false), (ignored, true)] {
+            for rel in paths {
+                let folder = (rel as NSString).deletingLastPathComponent
+                rows.append(PaletteEntry(
+                    id: "editorfile:\(root)/\(rel)", group: .resources, title: (rel as NSString).lastPathComponent,
+                    subtitle: folder.isEmpty ? rootName : "\(folder) · \(rootName)", kindLabel: "file",
+                    verb: "open", action: .openInEditor(path: "\(root)/\(rel)"), isDimmed: dimmed))
             }
         }
         return rows

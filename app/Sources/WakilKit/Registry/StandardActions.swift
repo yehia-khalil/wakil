@@ -985,6 +985,8 @@ public func registerStandardActions(
                 "defaultProvider": .object(["type": .string("string")]),
                 "speechProvider": .object(["type": .string("string")]),
                 "quickProvider": .object(["type": .string("string")]),
+                "ghostText": .object(["type": .string("boolean")]),
+                "fastPath": .object(["type": .string("boolean")]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1005,22 +1007,26 @@ public func registerStandardActions(
             for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
+            for key in ["ghostText", "fastPath"] {
+                if let value = fields[key], case .bool = value { arguments[key] = value }
+            }
             return try await callChecked(
                 context, tool: "update_org", arguments: .object(arguments),
                 action: "ctx_update_org", timeout: MCPClient.readReplyTimeout)
         }
     ))
 
-    // 3b-viii (Decision 42). A local model endpoint the operator runs: its URL and the quick
-    // operations it serves. Operator-only on `ctx_update_org`'s reason: which model reads the
-    // operator's code is theirs to choose. Go resolves the active organisation itself, so no org
-    // travels; forwarded key by key, so only the four fields reach Go.
+    // 3b-viii (Decision 42). A local model endpoint the operator runs: its URL. Operator-only on
+    // `ctx_update_org`'s reason: which model reads the operator's code is theirs to choose. Go
+    // resolves the active organisation itself, so no org travels; forwarded key by key, so only
+    // id, label and baseURL reach Go (`serves` is ignored since 3b-ix: a local provider serves
+    // every quick task).
     await registry.register(Action(
         name: "ctx_set_local_provider",
         description: "Create or change a local model endpoint for the active organisation: id, optional "
-            + "label, baseURL (http or https) and serves, the quick operations it is fit for (infill, "
-            + "respond; infill when omitted). Wakil installs and starts nothing. Refuses a bad URL, an "
-            + "unknown operation, and an id already used by another kind of account. Operator-only.",
+            + "label and baseURL (http or https); it serves every quick task. serves is ignored since "
+            + "3b-ix. Wakil installs and starts nothing. Refuses a bad URL and an id already used by "
+            + "another kind of account. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1029,7 +1035,10 @@ public func registerStandardActions(
                 "id": .object(["type": .string("string")]),
                 "label": .object(["type": .string("string")]),
                 "baseURL": .object(["type": .string("string")]),
-                "serves": .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+                "serves": .object([
+                    "type": .string("array"), "items": .object(["type": .string("string")]),
+                    "description": .string("ignored since 3b-ix"),
+                ]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1043,7 +1052,6 @@ public func registerStandardActions(
             var arguments: [String: JSONValue] = ["id": .string(id)]
             if case .string? = fields["label"] { arguments["label"] = fields["label"] }
             if case .string? = fields["baseURL"] { arguments["baseURL"] = fields["baseURL"] }
-            if case .array? = fields["serves"] { arguments["serves"] = fields["serves"] }
             return try await callChecked(
                 context, tool: "set_local_provider", arguments: .object(arguments),
                 action: "ctx_set_local_provider", timeout: MCPClient.readReplyTimeout)

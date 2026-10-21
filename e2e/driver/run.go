@@ -87,6 +87,9 @@ type Runner struct {
 	// expands to in a dispatch's params. Empty in the unit tests, where no
 	// fixture exists and no expansion should happen.
 	FixtureRoot string
+	// ChatStub is this launch's chat stub origin (StartChatStub), which
+	// `ChatStubToken` expands to. Empty without a seed.
+	ChatStub string
 
 	Processes ProcessTable
 	// Journal answers what the app recorded about its own actions. Nil means
@@ -259,6 +262,11 @@ func (r Result) For(name string) Result {
 }
 
 // Run executes every check and reports what was proved.
+// tokens are the values a check's dispatch and parity params may name.
+func (r *Runner) tokens() map[string]string {
+	return map[string]string{FixtureRootToken: r.FixtureRoot, ChatStubToken: r.ChatStub}
+}
+
 func (r *Runner) Run(checks []Check) Result {
 	result := Result{}
 	for _, name := range r.Quarantined {
@@ -703,7 +711,7 @@ func (r *Runner) dispatch(step *Dispatch) error {
 	if r.Channel == nil {
 		return fmt.Errorf("no agent channel is open, so %q cannot be dispatched", step.Action)
 	}
-	_, err := r.Channel.Call(step.Action, ExpandParams(step.Params, r.FixtureRoot))
+	_, err := r.Channel.Call(step.Action, ExpandParams(step.Params, r.tokens()))
 	switch {
 	case step.Refuses != "" && err == nil:
 		return fmt.Errorf("%q was expected to be refused with %q, and it ran", step.Action, step.Refuses)
@@ -996,7 +1004,7 @@ func (r *Runner) parity(parity *Parity) error {
 			parity.UIHalf(), unverified)
 	}
 
-	if _, err := r.Channel.Call(parity.Action, ExpandParams(parity.Params, r.FixtureRoot)); err != nil {
+	if _, err := r.Channel.Call(parity.Action, ExpandParams(parity.Params, r.tokens())); err != nil {
 		return fmt.Errorf("the dispatch half was refused: %w", err)
 	}
 	afterDispatch, err := r.settledParityState(parity)

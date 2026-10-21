@@ -338,3 +338,59 @@ func TestUpdateOrgRefusesAnUnboundQuickProvider(t *testing.T) {
 		t.Error("accepted a quickProvider that names no provider")
 	}
 }
+
+func TestUpdateOrgSetsTheQuickTaskSwitches(t *testing.T) {
+	localOrg(t)
+	on, off := true, false
+	if err := UpdateOrg("initech", OrgPatch{GhostText: &off, FastPath: &on}); err != nil {
+		t.Fatal(err)
+	}
+	o, err := LoadOrgFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.GhostText == nil || *o.GhostText || o.FastPath == nil || !*o.FastPath {
+		t.Fatalf("ghostText=%v fastPath=%v", o.GhostText, o.FastPath)
+	}
+}
+
+func TestConfigTreeResolvesTheQuickTaskSwitches(t *testing.T) {
+	localOrg(t)
+	tree, err := LoadConfigTreeFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Nothing set: ghost-text on, fast path off (no local quick provider).
+	if !tree.Org.GhostText || tree.Org.FastPath {
+		t.Fatalf("defaults: ghostText=%v fastPath=%v", tree.Org.GhostText, tree.Org.FastPath)
+	}
+	if err := SetLocalProvider("initech", Provider{ID: "qwen", BaseURL: "http://127.0.0.1:8012"}); err != nil {
+		t.Fatal(err)
+	}
+	q := "qwen"
+	if err := UpdateOrg("initech", OrgPatch{QuickProvider: &q}); err != nil {
+		t.Fatal(err)
+	}
+	tree, _ = LoadConfigTreeFor("initech")
+	if !tree.Org.FastPath {
+		t.Fatal("a local quick provider should turn the fast path on by default")
+	}
+	off := false
+	_ = UpdateOrg("initech", OrgPatch{FastPath: &off})
+	tree, _ = LoadConfigTreeFor("initech")
+	if tree.Org.FastPath {
+		t.Fatal("the org's own value must win over the default")
+	}
+}
+
+func TestConfigTreeGhostTextFallsBackToTheAppSetting(t *testing.T) {
+	localOrg(t)
+	off := false
+	if err := UpdateEditorAppSettings(EditorAppPatch{GhostText: &off}); err != nil {
+		t.Fatal(err)
+	}
+	tree, _ := LoadConfigTreeFor("initech")
+	if tree.Org.GhostText {
+		t.Fatal("an operator who turned ghost-text off app-wide keeps it off")
+	}
+}

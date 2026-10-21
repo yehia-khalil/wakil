@@ -45,3 +45,15 @@ public func quickTaskChoices(_ tree: SettingsTree) -> [(id: String, display: Str
         return (id: option.id, display: clash ? "\(option.label) (\(option.id))" : option.label)
     }
 }
+
+/// Fast path's hint under QUICK TASKS: what it is, and, when the value is the default for the
+/// chosen model, why — naming that model. A hint only: either value can be chosen (Rule 9).
+public func fastPathHint(_ tree: SettingsTree) -> String {
+    let base = "one-line commands without the agent"
+    let chosen = tree.org.quickProvider
+    let local = tree.providers.contains { $0.id == chosen && $0.kind == "local" }
+    guard tree.org.fastPath == local else { return base }
+    if local { return base + " · on: the model is local" }
+    let model = quickTaskChoices(tree).first { $0.id == chosen }?.display ?? chosen
+    return base + " · off: on \(model) each line would wait for Claude first"
+}

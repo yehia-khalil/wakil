@@ -1,0 +1,16 @@
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"{chatStub}"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"do":{"click":"settings.org.quickProvider.qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.fastPath","equals":"true"}}
+{"do":{"type":{"into":"window.composer","text":"line 40"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"editor_goto"}}
+{"expect":{"tree":"absent","text":"Ran:"}}
+{"expect":{"tree":"absent","text":"no agent session"}}
+{"expect":{"focus":"window.composer"}}
+{"do":{"click":"window.composer.askAgent"}}
+{"expect":{"tree":"contains","text":"no agent session"}}

@@ -174,15 +174,6 @@ struct EditorAppSettingsForm: View {
                 hint: "Files your .gitignore excludes, like .env or build output. On, they show dimmed "
                     + "in the Files tree and ⌘P; project search never looks inside them.",
                 save: { option in await save(["showIgnored": .bool(option == "On")]) })
-            ChoiceSettingRow(
-                label: "Ghost-text", options: ["Off", "On"], selected: editor.ghostText ? "On" : "Off",
-                identifier: { option in
-                    let key = option.lowercased()
-                    return "settings.editor.ghostText.\(key)"
-                },
-                refusalIdentifier: "settings.editor.ghostText.refusal",
-                hint: "A grey suggestion after your cursor as you type.",
-                save: { option in await save(["ghostText": .bool(option == "On")]) })
             Text("Yours across every organisation and project — stored in ~/.wakil/settings.json.")
                 .font(.system(size: SettingsScale.meta))
                 .foregroundStyle(SettingsPalette.coolWhite.opacity(0.40))

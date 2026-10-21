@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-ix-fast-path-switch.jsonl",
+  "baseCommit": "2a491bfe7b06ddfdff753560ebb58cd6bd321c97",
+  "provedAt": "2026-10-21T11:59:22.616716Z",
+  "checkBlob": "e38fa3dd3636b7de86576a8c820be0d5315d81e2"
+}

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3b-ix-fast-path-to-agent.jsonl",
+  "baseCommit": "2a491bfe7b06ddfdff753560ebb58cd6bd321c97",
+  "provedAt": "2026-10-21T11:59:22.616716Z",
+  "checkBlob": "d40bea260c7befe8bd43ade9f3a0fcc6cd326696"
+}

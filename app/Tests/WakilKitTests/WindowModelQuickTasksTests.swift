@@ -47,6 +47,8 @@ private actor QuickBackend: ToolCaller {
     var configFailure: String?
     /// The provider ids `unlink_provider` was asked to remove.
     var removed: [String] = []
+    /// The arguments `update_org` was last called with.
+    private(set) var lastUpdateOrg: [String: JSONValue]?
 
     func fail(_ message: String?) { configFailure = message }
 
@@ -83,10 +85,21 @@ private actor QuickBackend: ToolCaller {
                 tree = .object(root)
             }
             return .object(["structuredContent": .object([:])])
+        case "update_org":
+            if case .object(let fields) = arguments, case .object(var root) = tree,
+               case .object(var org)? = root["org"] {
+                lastUpdateOrg = fields
+                for (key, value) in fields where key != "id" { org[key] = value }
+                root["org"] = .object(org)
+                tree = .object(root)
+            }
+            return .object(["structuredContent": .object([:])])
         case "set_local_provider":
             if case .object(let fields) = arguments, case .object(var root) = tree {
                 var provider = fields
                 provider["kind"] = .string("local")
+                // Go resolves what a local model serves (3b-ix); the app no longer sends it.
+                provider["serves"] = .array([.string("infill"), .string("respond")])
                 root["providers"] = .array([.object(provider)])
                 tree = .object(root)
             }
@@ -115,7 +128,7 @@ private func treeJSON(org: String = "initech", quick: String, ghost: Bool, baseU
     -> JSONValue
 {
     .object([
-        "org": .object(["id": .string(org), "quickProvider": .string(quick)]),
+        "org": .object(["id": .string(org), "quickProvider": .string(quick), "ghostText": .bool(ghost)]),
         "providers": .array([
             .object([
                 "id": .string("qwen"), "kind": .string("local"),
@@ -248,10 +261,41 @@ private func makeSettingsWindow(
         let model = try await makeSettingsWindow(backend: backend) { _, _ in fake }
         #expect(model.ghostTextEnabled)
 
-        #expect(await model.saveEditorSettings(["ghostText": .bool(false)]) == nil)
+        #expect(await model.saveOrganisationSwitch(.ghostText, on: false) == nil)
 
         #expect(!model.ghostTextEnabled)
         #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == nil)
+    }
+
+    @Test func theOrgSwitchesDriveGhostTextAndTheFastPath() async {
+        let tree: JSONValue = .object([
+            "org": .object([
+                "id": .string("initech"), "quickProvider": .string("qwen"),
+                "ghostText": .bool(false), "fastPath": .bool(true),
+            ]),
+            "providers": .array([.object([
+                "id": .string("qwen"), "kind": .string("local"), "baseURL": .string("http://127.0.0.1:8012"),
+                "serves": .array([.string("infill"), .string("respond")]),
+            ])]),
+            "projects": .array([]),
+            "editor": .object(["ghostText": .bool(true)]),
+        ])
+        let model = await makeWindow(tree: tree, providerId: "qwen") { _, _ in
+            ScriptedQuickModel(serves: [.infill, .respond], reply: "x")
+        }
+        #expect(model.ghostTextEnabled == false)
+        #expect(model.fastPathEnabled == true)
+    }
+
+    @Test func savingASwitchDispatchesUpdateOrgWithABoolean() async throws {
+        let backend = QuickBackend(tree: treeJSON(quick: "qwen", ghost: true))
+        let model = try await makeSettingsWindow(backend: backend) { _, _ in
+            ScriptedQuickModel(serves: [.infill], reply: "x")
+        }
+        let refusal = await model.saveOrganisationSwitch(.fastPath, on: true)
+        #expect(refusal == nil)
+        #expect(await backend.lastUpdateOrg?["fastPath"] == .bool(true))
+        #expect(model.fastPathEnabled == true)
     }
 
     /// A local model's new URL is what the next request reaches, and the old model is shut down.
@@ -267,7 +311,7 @@ private func makeSettingsWindow(
         #expect(await model.ghostSuggestion(pane: "p1", request: anyRequest, generation: model.quickTasksGeneration) == "first")
 
         let refusal = await model.setLocalProvider(
-            id: "qwen", label: "Qwen", baseURL: "http://127.0.0.1:9000", serves: [.infill])
+            id: "qwen", label: "Qwen", baseURL: "http://127.0.0.1:9000")
 
         #expect(refusal == nil)
         #expect(await first.shutdowns == 1)

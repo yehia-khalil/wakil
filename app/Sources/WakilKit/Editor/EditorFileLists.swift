@@ -116,7 +116,15 @@ public actor EditorFileLists: ToolCaller {
             inFlight[root] = nil
         }
         var reloads: [Task<Void, Never>] = []
-        for root in joined.sorted() { reloads.append(await invalidate(root: root)) }
+        for root in joined.sorted() {
+            reloads.append(await invalidate(root: root))
+            // A watched root is one an editor's tree draws, as "listing" until it is listed: read
+            // the ones nothing has listed yet (the first editor pane after launch, 3b-ix walk).
+            // Started, not awaited, so the pane draws at once with each root's tick (C1).
+            if current.listings[root] == nil, inFlight[root] == nil {
+                reloads.append(Task { _ = await self.listing(root: root) })
+            }
+        }
         return Task { for r in reloads { await r.value } }
     }
 

@@ -16,7 +16,7 @@ func TestExpandParamsReachesTheTokenWhereverItIs(t *testing.T) {
 		"list":        []interface{}{FixtureRootToken + "/one", "untouched"},
 		"number":      float64(3),
 		"flag":        true,
-	}, "/tmp/fixture-root")
+	}, rootToken("/tmp/fixture-root"))
 
 	want := map[string]interface{}{
 		"projectPath": "/tmp/fixture-root/e2e-project/.wakil/project.json",
@@ -37,7 +37,7 @@ func TestExpandParamsReachesTheTokenWhereverItIs(t *testing.T) {
 func TestExpandParamsLeavesEverythingAloneWithoutAFixture(t *testing.T) {
 	params := map[string]interface{}{"projectPath": FixtureRootToken + "/p.json"}
 
-	got := ExpandParams(params, "")
+	got := ExpandParams(params, rootToken(""))
 
 	if got["projectPath"] != FixtureRootToken+"/p.json" {
 		t.Errorf("projectPath = %v; want the token left intact", got["projectPath"])
@@ -54,7 +54,7 @@ func TestExpandParamsDoesNotMutateTheCheck(t *testing.T) {
 		"nested":      map[string]interface{}{"path": FixtureRootToken},
 	}
 
-	ExpandParams(params, "/tmp/first")
+	ExpandParams(params, rootToken("/tmp/first"))
 
 	if params["projectPath"] != FixtureRootToken+"/p.json" {
 		t.Errorf("the original was rewritten: %v", params["projectPath"])
@@ -68,10 +68,25 @@ func TestExpandParamsDoesNotMutateTheCheck(t *testing.T) {
 // TestExpandParamsSurvivesNoParams — `dispatch` steps routinely carry `{}` or
 // nothing at all.
 func TestExpandParamsSurvivesNoParams(t *testing.T) {
-	if got := ExpandParams(nil, "/tmp/root"); got != nil {
+	if got := ExpandParams(nil, rootToken("/tmp/root")); got != nil {
 		t.Errorf("nil params expanded to %#v", got)
 	}
-	if got := ExpandParams(map[string]interface{}{}, "/tmp/root"); len(got) != 0 {
+	if got := ExpandParams(map[string]interface{}{}, rootToken("/tmp/root")); len(got) != 0 {
 		t.Errorf("empty params expanded to %#v", got)
+	}
+}
+
+func rootToken(path string) map[string]string { return map[string]string{FixtureRootToken: path} }
+
+// TestExpandParamsReplacesEachToken — the chat stub's origin travels beside the
+// fixture root, and one string may carry both.
+func TestExpandParamsReplacesEachToken(t *testing.T) {
+	got := ExpandParams(map[string]interface{}{
+		"baseURL": ChatStubToken,
+		"both":    ChatStubToken + " " + FixtureRootToken,
+	}, map[string]string{FixtureRootToken: "/tmp/r", ChatStubToken: "http://127.0.0.1:5"})
+	want := map[string]interface{}{"baseURL": "http://127.0.0.1:5", "both": "http://127.0.0.1:5 /tmp/r"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("expanded to %#v\nwant %#v", got, want)
 	}
 }

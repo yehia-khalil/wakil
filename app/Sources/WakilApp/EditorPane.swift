@@ -61,6 +61,8 @@ struct EditorPane: View {
     let isFocusedPane: Bool
     /// No plane, palette or window prompt is in front of the canvas (the terminal pane's test).
     let isKeyboardOwner: Bool
+    /// The composer keeps the keyboard just after a fast-path action (`composerHoldsKeyboard`).
+    let keyboardHeld: () -> Bool
     /// The window's unsaved prompt, when it asks about one of THIS pane's tabs (`.closeTab`).
     let unsavedPrompt: UnsavedPrompt?
     /// Save / Don't Save / Cancel for that prompt.
@@ -174,6 +176,7 @@ struct EditorPane: View {
             }
             host.ghostSuggest = ghostSuggest
             host.ghostCancel = ghostCancel
+            host.keyboardHeld = keyboardHeld
             // Handed in first, so `start` applies the newest snapshot, never this one if a newer
             // one landed while the renderer was being made.
             host.apply(snapshot)
@@ -743,6 +746,8 @@ final class EditorHost {
     @ObservationIgnored var viewReported: ((EditorTabSubject, EditorPosition, EditorRange?, ClosedRange<Int>?, Double) async -> Void)?
     /// Monaco's find bar state, a view report like the cursor's (`PaneStore.editorFindDidReport`).
     @ObservationIgnored var findReported: ((EditorFindReport) async -> Void)?
+    /// Whether something else holds the keyboard for now; `focus` leaves it there.
+    @ObservationIgnored var keyboardHeld: () -> Bool = { false }
     /// 3b-viii ghost-text: the request for the text at a caret in the tab at a path in a language
     /// (built across the schema's await) with the quick-tasks generation it was built in, its
     /// suggestion (nil: draw nothing; also for a request built in an earlier generation), and the
@@ -986,6 +991,7 @@ final class EditorHost {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.focus(tries: tries - 1) }
             return
         }
+        guard !keyboardHeld() else { return }
         window.makeFirstResponder(renderer.webView)
         renderer.focus()
     }

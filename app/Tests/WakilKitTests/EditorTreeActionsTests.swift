@@ -41,6 +41,14 @@ private func treeFixture() async throws -> (EditorFixture, EditorFileLists) {
     #expect(await f.snapshot().column?.open == ["/p/api", "/p/api/app/Models"])
 }
 
+// 3b-ix walk: a root nested in another (#37) is its own root, so expanding it opens it alone —
+// not the outer root, which the first matching root used to name.
+@Test func expandingANestedRootOpensItAloneNotTheRootAroundIt() async throws {
+    let f = try await editorFixture(roots: ["/p/api", "/p/api/src"])
+    try await f.dispatch("editor_tree_expand", ["path": .string("/p/api/src")])
+    #expect(await f.snapshot().column?.open == ["/p/api/src"])
+}
+
 // Final review I2: tree actions in flight together each read the column, await, then write it —
 // so without one writer at a time a later write drops an earlier one's open folder, and the pane
 // store and the layout can end on different copies.
@@ -198,6 +206,29 @@ private func treeFixture() async throws -> (EditorFixture, EditorFileLists) {
     await lists.watch(roots: ["/p/api"]).value
     #expect(await lists.state().listings["/p/api"]?.files == ["a.go", "b.go"], "re-read on return")
     #expect(await lists.listing(root: "/p/api").files == ["a.go", "b.go"])
+}
+
+// 3b-ix walk: the first editor pane after launch draws its Files column with nothing listed yet;
+// watching its roots lists them, or the tree shows "listing" until the operator switches views.
+@Test func watchingARootNothingListedListsIt() async throws {
+    let f = try await editorFixture()
+    let lists = EditorFileLists(files: f.files)
+    await f.files.setListing("/p/api", ["a.go"])
+    await lists.watch(roots: ["/p/api"]).value
+    #expect(await lists.state().listings["/p/api"]?.files == ["a.go"])
+}
+
+// 3b-ix walk: a pane opening briefly stops watching (no editor in the layout yet), which drops the
+// lists; watching the same roots again must re-read them, or the tree waits on "listing" forever.
+@Test func aRootListedBeforeWatchingStoppedIsReadAgainWhenWatched() async throws {
+    let f = try await editorFixture()
+    let lists = EditorFileLists(files: f.files)
+    await f.files.setListing("/p/api", ["a.go"])
+    await lists.watch(roots: ["/p/api"]).value           // watching lists it (31f486e), awaited
+    await lists.watch(roots: [])                         // stops watching: the lists are dropped
+    #expect(await lists.state().listings["/p/api"] == nil)
+    await lists.watch(roots: ["/p/api"]).value
+    #expect(await lists.state().listings["/p/api"]?.files == ["a.go"], "re-read when watched again")
 }
 
 // A watcher wake while a files_list is in flight: the stale read lands after the invalidate and

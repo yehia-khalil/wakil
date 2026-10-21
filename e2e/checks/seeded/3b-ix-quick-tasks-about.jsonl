@@ -1,0 +1,12 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"expect":{"tree":"absent","text":"Ask the agent instead"}}
+{"do":{"click":"settings.quickTasks.about"}}
+{"expect":{"tree":"contains","text":"Ask the agent instead"}}
+{"expect":{"tree":"contains","text":"It never edits, queries or runs commands"}}
+{"expect":{"tree":"contains","text":"slower than 0.4 s"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"Ask the agent instead"}}
+{"do":{"click":"settings.quickTasks.about"}}
+{"expect":{"tree":"contains","text":"Ask the agent instead"}}

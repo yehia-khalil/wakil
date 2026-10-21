@@ -4,7 +4,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -14,9 +13,9 @@ const (
 	QuickOpRespond = "respond"
 )
 
-const errLocalOnly = "baseURL and serves apply only to --kind local — only a local endpoint speaks /infill (Decision 42)"
+const errLocalOnly = "baseURL applies only to --kind local — only a local endpoint speaks /infill (Decision 42)"
 
-// normaliseLocal trims and checks a local provider's URL and operations, filling the default.
+// normaliseLocal trims and checks a local provider's URL and drops the retired serves field.
 func normaliseLocal(p *Provider) error {
 	raw := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
 	u, err := url.Parse(raw)
@@ -24,36 +23,17 @@ func normaliseLocal(p *Provider) error {
 		return UserError("baseURL must be an http or https URL, e.g. http://127.0.0.1:8012; got " + strconv.Quote(p.BaseURL))
 	}
 	p.BaseURL = raw
-	seen := map[string]bool{}
-	out := []string{}
-	for _, op := range p.Serves {
-		op = strings.TrimSpace(op)
-		if op != QuickOpInfill && op != QuickOpRespond {
-			return UserError("serves: unknown operation " + strconv.Quote(op) + " — one of infill, respond")
-		}
-		if !seen[op] {
-			seen[op] = true
-			out = append(out, op)
-		}
-	}
-	if len(out) == 0 {
-		out = []string{QuickOpInfill}
-	}
-	sort.Strings(out) // infill < respond
-	p.Serves = out
+	// 3b-ix: one model per org does every quick task, so a local provider serves both
+	// operations. A record that still carries serves loads; the field is dropped on write.
+	p.Serves = nil
 	return nil
 }
 
 // resolvedServes is what config_tree publishes: what the provider's kind can serve.
 func resolvedServes(p Provider) []string {
 	switch p.Kind {
-	case ProviderKindClaudeCode:
+	case ProviderKindClaudeCode, ProviderKindLocal:
 		return []string{QuickOpInfill, QuickOpRespond}
-	case ProviderKindLocal:
-		if len(p.Serves) == 0 {
-			return []string{QuickOpInfill}
-		}
-		return p.Serves
 	default:
 		return []string{}
 	}

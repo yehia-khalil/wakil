@@ -158,6 +158,7 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 	// other source, so an instance launched without it resolves no org
 	// however much state is on disk.
 	var seeded Seeded
+	var chatStub string
 	if s.Seed {
 		spec := DefaultSeed()
 		// The cancel check's slow server (W14). Alive for the whole launch, closed with it.
@@ -167,6 +168,14 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		}
 		defer stall.Close()
 		spec.StallOrigin = stall.Origin()
+		// The fast path's local model (3b-ix). Alive for the whole launch; a
+		// check points a local provider at it with ChatStubToken.
+		origin, stopChat, err := StartChatStub()
+		if err != nil {
+			return Result{}, err
+		}
+		defer stopChat()
+		chatStub = origin
 		// **The scripted agent goes on the provider record, when there is
 		// one.** A run without it seeds a record with no `claudePath`, which
 		// `decodeProviderCredentials` refuses — so the window opens with no
@@ -319,6 +328,7 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		Channel:     client,
 		PID:         instance.PID,
 		FixtureRoot: fixture.Root,
+		ChatStub:    chatStub,
 		Processes:   PS{},
 		Journal:     FileJournal{Home: fixture.Home},
 		Evidence:    evidence,

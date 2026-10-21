@@ -478,6 +478,7 @@ extension WakilWindow {
                     isKeyboardOwner: !(
                         model.showOrgPlane || model.organization.isEmpty || model.pending != nil
                         || model.paletteShowing || model.unsavedPrompt != nil),
+                    keyboardHeld: { model.composerHoldsKeyboard },
                     unsavedPrompt: model.unsavedPrompt.flatMap { prompt in
                         if case .closeTab(pane.id, _) = prompt.intent { prompt } else { nil }
                     },
@@ -510,9 +511,10 @@ extension WakilWindow {
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },
-                    saveLocalProvider: { id, label, url, serves in
-                        await model.setLocalProvider(id: id, label: label, baseURL: url, serves: serves)
+                    saveLocalProvider: { id, label, url in
+                        await model.setLocalProvider(id: id, label: label, baseURL: url)
                     },
+                    saveOrganisationSwitch: { key, on in await model.saveOrganisationSwitch(key, on: on) },
                     removeLocalProvider: { id in await model.removeLocalProvider(id: id) },
                     quickTaskStatus: { await model.quickTaskStatus() },
                     accounts: model.accounts,

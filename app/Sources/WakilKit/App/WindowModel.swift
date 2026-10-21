@@ -174,6 +174,16 @@ public final class WindowModel {
 
     /// Where a turn's text came from, for the journal.
     public enum TurnSource: String, Sendable { case typed, voice }
+
+    /// What `send` pins to the place the operator typed in (3b-ix): the composer reads it at
+    /// Return and hands it back, so a turn that waits on the fast path still goes to that place.
+    public struct TurnScope: Sendable, Equatable {
+        public let place: Place
+        public let rootPath: String
+        public let providerId: String
+    }
+
+    public var turnScope: TurnScope { TurnScope(place: place, rootPath: rootPath, providerId: providerId) }
     /// True from the moment `setOrganization`'s OTHER guards pass until
     /// its whole sequence (success or failure) finishes. Org-independent:
     /// it describes the transition itself, not either the outgoing or the
@@ -422,6 +432,8 @@ public final class WindowModel {
     @ObservationIgnored var quickTasksConfigError: String?
     /// The operator's ghost-text switch, as the last rebuild read it. Off until a tree has been read.
     public internal(set) var ghostTextEnabled = false
+    /// The organisation's fast-path switch (3b-ix), as the last rebuild read it. Off until a tree has been read.
+    public internal(set) var fastPathEnabled = false
     private let panes: PaneStore
     private let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per
@@ -1074,6 +1086,12 @@ public final class WindowModel {
                 if name == "term_open" {
                     await self.backfillTerminals()
                 }
+                // A database added or removed changes the environment's list, which was read only
+                // on a context change: the query line's chooser and the fast path's scope missed
+                // a database added since (3b-ix e2e).
+                if name == "db_set_dsn" || name == "db_remove_database" {
+                    await self.refreshDatabases()
+                }
                 // **An agent's settings write, and the pane it lands under.**
                 // Every operator edit goes through a wrapper here that calls
                 // `refreshSettings()` after it (`setDatabaseDSN`,
@@ -1451,7 +1469,8 @@ public final class WindowModel {
         placeClients: PlaceClients? = nil,
         persistence: LayoutPersistence? = nil,
         agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() },
-        quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil
+        quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil,
+        paletteClients: PaletteClients = PaletteClients()
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1528,7 +1547,7 @@ public final class WindowModel {
             editorRootWatcher: nil,
             fileLists: nil,
             gitStatus: nil,
-            paletteClients: PaletteClients(),
+            paletteClients: paletteClients,
             placeClients: placeClients,
             agentSocketFactory: agentSocketFactory,
             quickModelFactory: quickModelFactory)
@@ -1648,6 +1667,9 @@ public final class WindowModel {
     func seedEnvironmentProductionForTesting(_ production: EnvironmentProduction) {
         environmentProduction = production
     }
+
+    /// Puts `text` on the status line, for a test asserting something leaves it alone.
+    func setStatusForTesting(_ text: String) { status = text }
 
     func seedForTesting(
         providerId: String, rootPath: String, thoughts: Int,
@@ -5146,7 +5168,7 @@ public final class WindowModel {
 
     /// The clients ⌘P reads directly: tables, API entries and changed files are listed without
     /// drawing a pane, so none of them is a dispatch.
-    private let paletteClients: PaletteClients
+    let paletteClients: PaletteClients
 
     /// Bumped by every root build and by `paletteClosed()`. A late answer — a slow source, a
     /// background table refresh — carries the number it was asked under and is dropped unless
@@ -5355,6 +5377,15 @@ public final class WindowModel {
     /// Whether the palette's plane is up. Panes stop owning the keyboard under it, as they do
     /// under the org plane and the confirmation plane.
     public private(set) var paletteShowing = false
+
+    /// Until when a fast-path action leaves the keyboard in the composer (spec: Rule 6), so the
+    /// next line can be typed. Set before the dispatch; a pane that would take the keyboard as the
+    /// action lands (an editor's arriving tab, Rule 3) stands down until then. Timed, because the
+    /// editor's own take is retried for up to a second while its web view joins the window.
+    public internal(set) var composerHoldsKeyboardUntil: ContinuousClock.Instant?
+    public var composerHoldsKeyboard: Bool {
+        composerHoldsKeyboardUntil.map { ContinuousClock.now < $0 } ?? false
+    }
 
     public func paletteKey(_ mode: PaletteMode) {
         paletteKeySerial += 1
@@ -5653,6 +5684,14 @@ public final class WindowModel {
         return (Self.environmentListings(from: structured), nil)
     }
 
+    /// The project's files as ⌘P lists them; the fast path ranks the same entries.
+    func paletteFilesSource() -> FilesSource? {
+        paletteClients.files.map { files in
+            FilesSource(files: files, roots: { [weak self] in await self?.gitRootPaths ?? [] },
+                        showIgnored: { [weak self] in await self?.editorSettings.app.showIgnored ?? true })
+        }
+    }
+
     /// ⌘P's sources, in group order.
     private func paletteOpenSources(tables: TablesSource?) -> [any PaletteSource] {
         var sources: [any PaletteSource] = [
@@ -5665,10 +5704,7 @@ public final class WindowModel {
             sources.append(ApiEntriesSource(http: http, environment: { environment }))
         }
         let changed = ChangedFilesSource(status: { [weak self] in await self?.paletteGitStatus() ?? [] })
-        let fileSource: FilesSource? = paletteClients.files.map { files in
-            FilesSource(files: files, roots: { [weak self] in await self?.gitRootPaths ?? [] },
-                        showIgnored: { [weak self] in await self?.editorSettings.app.showIgnored ?? true })
-        }
+        let fileSource = paletteFilesSource()
         // An editor in focus puts the project's files first: sources keep their own order within a group.
         let editorFocused = layoutSnapshot.panes.first { $0.id == layoutSnapshot.focusedId }?.kind == "editor"
         if let fileSource, editorFocused { sources.append(fileSource) }
@@ -6477,13 +6513,14 @@ public final class WindowModel {
     /// missing harness or a failed send returns false, and the composer
     /// gives the operator's draft back.
     @discardableResult
-    public func send(_ text: String, via source: TurnSource = .typed) async -> Bool {
+    public func send(_ text: String, via source: TurnSource = .typed, scope: TurnScope? = nil) async -> Bool {
         // The place the operator typed in: its agent takes the turn, wherever the screen is by
         // the time a suspension below returns. Its root and provider are captured with it: a
         // first turn's harness starts after `enterConversation` suspends, and starting it with
         // whatever the screen shows by then would run A's agent in B's root.
-        let agent = agent(for: place)
-        let (startRoot, startProvider) = (rootPath, providerId)
+        let typedIn = scope ?? turnScope
+        let agent = agent(for: typedIn.place)
+        let (startRoot, startProvider) = (typedIn.rootPath, typedIn.providerId)
         // The canvas comes with the conversation, for the same reason `openPane` does: a
         // first turn mints the conversation, and the arrangement belongs to the conversation
         // rather than to the window that happened to be open when it started. Nothing visible

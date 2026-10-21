@@ -163,6 +163,15 @@ Each entry: the call, why, and what would change our mind.
     Speech-to-text produces the same string the text box would send; one code path.
     Building a voice grammar or intent parser is the failure mode to avoid.
 
+    *Amended 2026-10-20 (3b-ix): one bounded exception, the fast path.* A line sent from the
+    composer, typed or spoken (the same string through the same path), may first be offered to
+    the org's quick-tasks model. The model may answer with exactly one action from a fixed list
+    of 26 navigation actions, and no writes. Wakil runs it as the operator's own dispatch only if
+    the action is on the list, its params fit the schema and every name it uses exists. Anything
+    else, a late answer (past 400 ms on a local model, 2.5 s otherwise) or any doubt sends the
+    line to the agent unchanged. There is still no grammar and no voice-only path. *Reverse if:*
+    operators often have to undo what the fast path ran.
+
 11. **Push-to-talk capture, not a wake word.**
     More reliable, no always-on microphone, and one fewer subsystem. Mistranscribed
     identifiers (`RAF-142` → "raff one forty two") are resolved by the agent against
@@ -1424,8 +1433,7 @@ Each entry: the call, why, and what would change our mind.
     a warm session 1.0–1.8 s, Apple's on-device model fast but poor, `llama-server` with
     Qwen2.5-Coder 1.5B 30–210 ms. The Anthropic API with the subscription token stays
     excluded (§5).
-    **Next quick tasks:** the ⌘K fast path (must amend Decision 10 first), then agent status
-    lines. **Candidates, unscheduled:** shrinking what the agent reads (lossy; opt-in at
+    **Next quick task:** agent status lines. **Candidates, unscheduled:** shrinking what the agent reads (lossy; opt-in at
     most), session titles and commit drafts, voice cleanup, and a natural-language query in the
     DB query line (plain English drafted into SQL the operator reviews before it runs), and
     ghost-text in the API pane's JSON body (from the method, the URL and the text around the
@@ -1433,6 +1441,10 @@ Each entry: the call, why, and what would change our mind.
     gate, statement classification, anything touching credentials.
     *Reverse if:* quick tasks on the default provider cost enough quota to crowd out agent
     turns — then ghost-text defaults off without a local provider.
+    *Amended 2026-10-20 (3b-ix): one model per org does every quick task; a `local` provider is a
+    URL and serves both operations (the serves checkboxes are removed); each quick task has an
+    on/off switch beside the model, per org (`ghostText`, `fastPath`). The fast path is built;
+    next is agent status lines.*
 
 ## Invariant 6 — the writes that have earned in
 

@@ -26,7 +26,7 @@ private let orgDerived: Set<String> = [
     "editorSettings",
     // 3b-viii: the quick tasks route to the org's providers on its credentials, and each pane's
     // ghost session asks them; `invalidateForOrgChange` shuts both down, and the switch rebuilds.
-    "quickTasks", "ghostSessions", "ghostTextEnabled", "quickTasksConfigError",
+    "quickTasks", "ghostSessions", "ghostTextEnabled", "fastPathEnabled", "quickTasksConfigError",
     "providerId",
     "lookup", "rootPaths", "hasProjectRoot",
     "organization", "resumedParentForTesting",
@@ -266,6 +266,9 @@ private let orgIndependent: Set<String> = [
     // Background agents, 2 of 4: the tail of the pool's retain queue, `surfaceChain`'s shape —
     // the order retains land in, not either org's state.
     "placeRetain",
+    // 3b-ix: how long the composer keeps the keyboard after a fast-path action — the operator's
+    // hand on the composer, `paletteShowing`'s shape, and over in 1.5 s whatever the org.
+    "composerHoldsKeyboardUntil",
 ]
 
 /// **A stable reference whose CONTENTS are org-scoped and must be torn

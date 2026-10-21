@@ -64,3 +64,34 @@ private func tree(quick: String = "", _ providers: [SettingsProvider]) -> Settin
     #expect(quickTaskRouteLine(t, routed: "work") == "Code completion goes to work")
     #expect(quickTaskRouteLine(t, routed: nil) == nil)
 }
+
+@Test func anOrgWithoutTheSwitchesDecodesTheirDefaults() throws {
+    let json = #"{"id":"acme"}"#.data(using: .utf8)!
+    let org = try JSONDecoder().decode(SettingsOrg.self, from: json)
+    #expect(org.ghostText == true)
+    #expect(org.fastPath == false)
+}
+
+@Test func fastPathHintNamesTheModelActuallyChosen() {
+    let providers = [
+        SettingsProvider(id: "main", kind: "claude-code", label: "Work", serves: ["infill", "respond"]),
+        SettingsProvider(id: "qwen", kind: "local", baseURL: "http://127.0.0.1:8012", serves: ["infill", "respond"]),
+    ]
+    func hint(quick: String, on: Bool) -> String {
+        fastPathHint(SettingsTree(org: SettingsOrg(id: "acme", quickProvider: quick, fastPath: on), providers: providers))
+    }
+    #expect(hint(quick: "", on: false) == "one-line commands without the agent · off: on Same as agent each line would wait for Claude first")
+    #expect(hint(quick: "main", on: false) == "one-line commands without the agent · off: on Work each line would wait for Claude first")
+    #expect(hint(quick: "qwen", on: true) == "one-line commands without the agent · on: the model is local")
+    #expect(hint(quick: "main", on: true) == "one-line commands without the agent", "a value the operator changed needs no why")
+}
+
+/// The ⓘ's text names the deadlines the fast path runs under, so raising one cannot leave the
+/// text promising the old one; and it says what the fast path won't do.
+@Test func theAboutTextNamesTheDeadlinesAndWhatTheFastPathWontDo() {
+    #expect(quickTasksAbout.contains("slower than 0.4 s (2.5 s if not local)"))
+    #expect(quickTasksAbout.contains("It never edits, queries or runs commands"))
+    #expect(quickTasksAbout.contains("Tab accepts it."))
+    #expect((try? AttributedString(markdown: quickTasksAbout,
+                                   options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) != nil)
+}

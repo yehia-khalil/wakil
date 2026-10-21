@@ -256,8 +256,9 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
 }
 
 /// A local model is the operator's to add: `ctx_set_local_provider` is a `.control` the agent cannot
-/// reach, and it forwards the four fields, `serves` as a list of strings, to `set_local_provider`.
-@Test func setLocalProviderForwardsTheFourFieldsAndIsOperatorOnly() async throws {
+/// reach, and it forwards id, label and baseURL to `set_local_provider` — `serves`, ignored since
+/// 3b-ix, is not forwarded.
+@Test func setLocalProviderForwardsItsFieldsButNotServesAndIsOperatorOnly() async throws {
     let (registry, caller) = try await registryWithRecordingContext()
     let descriptor = try #require(await registry.all().first { $0.name == "ctx_set_local_provider" })
     #expect(descriptor.kind == .control)
@@ -275,6 +276,5 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     #expect(calls.first?.tool == "set_local_provider")
     #expect(calls.first?.arguments == .object([
         "id": .string("qwen"), "label": .string("Qwen"), "baseURL": .string("http://127.0.0.1:8012"),
-        "serves": .array([.string("infill"), .string("respond")]),
     ]))
 }

@@ -251,3 +251,152 @@ private func settle(until done: () -> Bool) async {
     #expect(composer.otherInput() == true)
     #expect(composer.machine.isCapturing)
 }
+
+// MARK: - The fast path (3b-ix)
+
+/// A composer whose fast path answers `outcome` for every line, over the file's window and harness.
+@MainActor
+private func makeComposerWithFastPath(outcome: FastPathOutcome) -> (composer: ComposerModel, harness: AcceptingHarness) {
+    let harness = AcceptingHarness()
+    let window = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { _, _ in harness })
+    window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
+    let speech = SpeechRegistry(engines: [])
+    return (ComposerModel(window: window, speech: speech, fastPathRunner: { _, _ in outcome }), harness)
+}
+
+@MainActor
+@Test func aFastPathLineStartsNoTurnAndLeavesAReceipt() async {
+    let made = makeComposerWithFastPath(outcome: .ran(FastPathReceipt(
+        line: "switch to staging", text: "Ran: switch environment to staging", refused: false)))
+    made.composer.edited(draft: "switch to staging", caret: 17)
+    await made.composer.submit()
+    #expect(made.harness.sent.isEmpty)
+    #expect(made.composer.receipt?.text == "Ran: switch environment to staging")
+    #expect(made.composer.draft == "")
+}
+
+@MainActor
+@Test func aRefusedFastPathLineKeepsItsReceiptAndConsumesAVoiceLine() async {
+    let made = makeComposerWithFastPath(outcome: .refused(FastPathReceipt(
+        line: "close confirm.go", text: "editor_close: unsaved changes", refused: true)))
+    made.composer.edited(draft: "close confirm.go", caret: 16)
+    await made.composer.submit()
+    #expect(made.harness.sent.isEmpty)
+    #expect(made.composer.receipt?.refused == true)
+    #expect(made.composer.draft == "")
+    #expect(!made.composer.landedUnsent)
+}
+
+@MainActor
+@Test func askTheAgentInsteadSendsTheOriginalLine() async {
+    let made = makeComposerWithFastPath(outcome: .ran(FastPathReceipt(
+        line: "switch to staging", text: "Ran: switch environment to staging", refused: false)))
+    made.composer.edited(draft: "switch to staging", caret: 17)
+    await made.composer.submit()
+    await made.composer.askAgentInstead()
+    #expect(made.harness.sent == ["switch to staging"])
+    #expect(made.composer.receipt == nil)
+}
+
+@MainActor
+@Test func askingTheAgentWithNoAgentBringsTheLineBack() async {
+    let window = WindowModel.forTesting(scratchRoot: testScratchRoot)
+    window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
+    let composer = ComposerModel(window: window, speech: SpeechRegistry(engines: []), fastPathRunner: { _, _ in
+        .ran(FastPathReceipt(line: "go to qa", text: "Ran: switch environment to qa", refused: false))
+    })
+    composer.edited(draft: "go to qa", caret: 8)
+    await composer.submit()
+    #expect(composer.draft == "")
+    await composer.askAgentInstead()
+    #expect(composer.receipt == nil)
+    #expect(composer.draft == "go to qa", "Rule 2: a line no turn took comes back to the composer")
+}
+
+@MainActor
+@Test func dismissingTheReceiptClearsItAndSendsNothing() async {
+    let made = makeComposerWithFastPath(outcome: .ran(FastPathReceipt(line: "x", text: "Ran: x", refused: false)))
+    made.composer.edited(draft: "x", caret: 1)
+    await made.composer.submit()
+    made.composer.dismissReceipt()
+    #expect(made.composer.receipt == nil)
+    #expect(made.harness.sent.isEmpty)
+}
+
+@MainActor
+@Test func aLineTheFastPathDoesNotTakeIsSentAsToday() async {
+    let made = makeComposerWithFastPath(outcome: .toAgent)
+    made.composer.edited(draft: "why is it slow?", caret: 15)
+    await made.composer.submit()
+    #expect(made.harness.sent == ["why is it slow?"])
+    #expect(made.composer.receipt == nil)
+}
+
+/// One harness per place the window asked one for, so a test can see whose agent took a turn.
+private final class HarnessesByPlace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var map: [Place: AcceptingHarness] = [:]
+    func harness(for place: Place) -> AcceptingHarness {
+        lock.withLock {
+            if let h = map[place] { return h }
+            let h = AcceptingHarness()
+            map[place] = h
+            return h
+        }
+    }
+    func sent(in place: Place) -> [String] { lock.withLock { map[place]?.sent ?? [] } }
+}
+
+@MainActor
+@Test func aToAgentLineGoesToThePlaceItWasTypedInEvenIfTheScreenMovedDuringTheWait() async {
+    let harnesses = HarnessesByPlace()
+    let window = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { place, _ in harnesses.harness(for: place) })
+    window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
+    window.seedForTesting(providerId: "main", rootPath: "/a", thoughts: 0, project: "a", environment: "qa")
+    let placeA = window.place
+    let composer = ComposerModel(window: window, speech: SpeechRegistry(engines: []), fastPathRunner: { _, _ in
+        try? await Task.sleep(for: .milliseconds(60))
+        return .toAgent
+    })
+    composer.edited(draft: "why is it slow?", caret: 15)
+    let submitting = Task { await composer.submit() }
+    try? await Task.sleep(for: .milliseconds(20))
+    window.seedForTesting(providerId: "main", rootPath: "/b", thoughts: 0, project: "b", environment: "qa")
+    #expect(window.place != placeA)
+    await submitting.value
+    #expect(harnesses.sent(in: placeA) == ["why is it slow?"])
+    #expect(harnesses.sent(in: window.place).isEmpty)
+}
+
+@MainActor
+@Test func askTheAgentInsteadSendsAVoiceLineToThePlaceItWasSpokenIn() async throws {
+    let harnesses = HarnessesByPlace()
+    let window = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { place, _ in harnesses.harness(for: place) })
+    window.setSettingsForTesting(SettingsTree(org: SettingsOrg(id: "test-org")))
+    window.seedForTesting(providerId: "main", rootPath: "/a", thoughts: 0, project: "a", environment: "qa")
+    let placeA = window.place
+    let clock = Clock()
+    let speech = SpeechRegistry(engines: [SpeechEngine(id: "apple", name: "Apple", make: {
+        RecordingProvider(steps: [.init(after: 0, event: .partial(settled: "close confirm.go", volatile: ""))])
+    })])
+    var runnerScope: WindowModel.TurnScope?
+    let composer = ComposerModel(window: window, speech: speech, now: { clock.t }, fastPathRunner: { line, scope in
+        runnerScope = scope
+        return .refused(FastPathReceipt(line: line, text: "editor_close: unsaved changes", refused: true))
+    })
+    composer.optionDown(); clock.t = 0.2; composer.tick()
+    await settle(until: { !composer.machine.settled.isEmpty })
+    clock.t = 1; composer.optionUp()
+    await settle(until: { composer.machine.phase == .idle })
+    #expect(composer.landedUnsent)
+    await composer.submit()
+    #expect(runnerScope?.place == placeA, "the runner is handed the place the line was typed in")
+    #expect(composer.receipt?.refused == true)
+    window.seedForTesting(providerId: "main", rootPath: "/b", thoughts: 0, project: "b", environment: "qa")
+    #expect(window.place != placeA)
+    await composer.askAgentInstead()
+    #expect(harnesses.sent(in: placeA) == ["close confirm.go"])
+    #expect(harnesses.sent(in: window.place).isEmpty)
+    let entries = try await window.registryForTesting.journalEntries()
+    #expect(entries.contains { $0.action == "voice_turn" }, "the re-send keeps the line's voice provenance")
+}

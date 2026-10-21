@@ -342,3 +342,30 @@ actor Ran {
         origin: .ui, caller: .test("production"), confirmation: "confirm")
     #expect(await ran.count == 1)
 }
+
+// MARK: - A dispatch can say how it came (3b-ix)
+
+@Test func aDispatchTaggedFastPathIsJournalledWithVia() async throws {
+    let r = ActionRegistry(journalDirectory: testScratchRoot
+        .appendingPathComponent(UUID().uuidString), sessionId: "s1")
+    await r.register(testAction("noop_read", .read))
+    let place = Place(organization: "org", project: "proj", environment: "staging")
+    _ = try await r.dispatch(name: "noop_read", params: .object([:]), origin: .ui,
+                             caller: DispatchCaller(place: place, session: nil, via: "fastPath"),
+                             confirmation: nil)
+    let entries = try await r.journalEntries()
+    #expect(entries.last?.via == "fastPath")
+    #expect(await r.descriptor(named: "noop_read")?.kind == .read)
+    #expect(await r.descriptor(named: "nope") == nil)
+}
+
+@Test func aDispatchWithoutViaWritesNoViaKey() async throws {
+    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let r = ActionRegistry(journalDirectory: dir, sessionId: "s1")
+    await r.register(testAction("noop_read", .read))
+    _ = try await r.dispatch(name: "noop_read", params: .object([:]), origin: .ui,
+                             caller: .test("staging"), confirmation: nil)
+    let line = try String(contentsOf: dir.appendingPathComponent("s1.jsonl"), encoding: .utf8)
+    #expect(!line.contains("\"via\""))
+    #expect(try await r.journalEntries().last?.via == nil)
+}

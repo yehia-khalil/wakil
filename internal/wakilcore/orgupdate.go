@@ -18,12 +18,14 @@ type OrgPatch struct {
 	DefaultProvider *string
 	SpeechProvider  *string
 	QuickProvider   *string
+	GhostText       *bool
+	FastPath        *bool
 }
 
 // isEmpty reports whether this patch would change nothing.
 func (p OrgPatch) isEmpty() bool {
 	return p.DisplayName == nil && p.JiraBase == nil && p.DefaultProvider == nil &&
-		p.SpeechProvider == nil && p.QuickProvider == nil
+		p.SpeechProvider == nil && p.QuickProvider == nil && p.GhostText == nil && p.FastPath == nil
 }
 
 // apply returns o with this patch's named fields replaced.
@@ -42,6 +44,14 @@ func (p OrgPatch) apply(o Org) Org {
 	}
 	if p.QuickProvider != nil {
 		o.QuickProvider = *p.QuickProvider
+	}
+	if p.GhostText != nil {
+		v := *p.GhostText
+		o.GhostText = &v
+	}
+	if p.FastPath != nil {
+		v := *p.FastPath
+		o.FastPath = &v
 	}
 	return o
 }

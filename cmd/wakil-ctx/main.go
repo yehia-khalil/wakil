@@ -155,6 +155,8 @@ type updateOrgArgs struct {
 	DefaultProvider *string `json:"defaultProvider,omitempty" jsonschema:"optional account id, which must already be registered in this organisation; omit to leave unchanged, send \"\" to clear"`
 	SpeechProvider  *string `json:"speechProvider,omitempty" jsonschema:"optional speech engine id (apple); omit to leave unchanged, send \"\" to clear"`
 	QuickProvider   *string `json:"quickProvider,omitempty" jsonschema:"optional provider id quick tasks run on; omit to leave unchanged, send \"\" for the active provider"`
+	GhostText       *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
+	FastPath        *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
 }
 
 // setEditorSettingsArgs is the app-wide editor tier's edit (3b-v). Pointers for updateOrgArgs'
@@ -197,7 +199,7 @@ type setLocalProviderArgs struct {
 	ID      string   `json:"id" jsonschema:"the local provider id to create or override"`
 	Label   string   `json:"label,omitempty" jsonschema:"optional human-readable name"`
 	BaseURL string   `json:"baseURL" jsonschema:"the endpoint's http or https URL, e.g. http://127.0.0.1:8012"`
-	Serves  []string `json:"serves,omitempty" jsonschema:"quick operations the model is fit for: infill, respond; defaults to [infill]"`
+	Serves  []string `json:"serves,omitempty" jsonschema:"ignored since 3b-ix: a local provider serves every quick task"`
 }
 
 // unlinkProviderArgs removes one organisation's binding.
@@ -495,6 +497,8 @@ func newServer() *mcp.Server {
 				DefaultProvider: a.DefaultProvider,
 				SpeechProvider:  a.SpeechProvider,
 				QuickProvider:   a.QuickProvider,
+				GhostText:       a.GhostText,
+				FastPath:        a.FastPath,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
@@ -621,14 +625,14 @@ func newServer() *mcp.Server {
 
 	// Added by 3b-viii (Decision 42): an upsert, because an operator points the one local
 	// endpoint somewhere else far more often than they add a second.
-	mcp.AddTool(s, &mcp.Tool{Name: "set_local_provider", Description: "Create or override a local model endpoint for the ACTIVE organisation: its id, optional label, baseURL (http or https) and the quick operations it serves (infill, respond; default infill). Refuses a bad URL, an unknown operation, and an id that is already another kind of account. Returns the provider's config_tree row."},
+	mcp.AddTool(s, &mcp.Tool{Name: "set_local_provider", Description: "Create or override a local model endpoint for the ACTIVE organisation: its id, optional label and baseURL (http or https); a local provider serves every quick task. Refuses a bad URL and an id that is already another kind of account. Returns the provider's config_tree row."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setLocalProviderArgs) (*mcp.CallToolResult, wakilcore.ConfigTreeProvider, error) {
 			org, err := wakilcore.CurrentOrg()
 			if err != nil {
 				return toolErr(err), wakilcore.ConfigTreeProvider{}, nil
 			}
 			if err := wakilcore.SetLocalProvider(org, wakilcore.Provider{
-				ID: a.ID, Label: a.Label, BaseURL: a.BaseURL, Serves: a.Serves,
+				ID: a.ID, Label: a.Label, BaseURL: a.BaseURL,
 			}); err != nil {
 				return toolErr(err), wakilcore.ConfigTreeProvider{}, nil
 			}

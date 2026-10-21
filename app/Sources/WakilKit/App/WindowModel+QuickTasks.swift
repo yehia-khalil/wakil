@@ -11,6 +11,7 @@ extension WindowModel {
         quickTasksGeneration += 1
         let mine = quickTasksGeneration
         await shutDownQuickTasks()
+        fastPathEnabled = false
         let org = organization
         let active = providerId
         guard let factory = quickModelFactory, let context, !org.isEmpty else { return }
@@ -43,7 +44,17 @@ extension WindowModel {
         let quick = tree.org.quickProvider.isEmpty ? nil : records.first { $0.id == tree.org.quickProvider }
         let config = QuickTasksConfig(quickProvider: quick, active: records.first { $0.id == active })
         quickTasks = QuickTasks(config: config) { record in try await factory(record, org) }
-        ghostTextEnabled = tree.editor.ghostText
+        ghostTextEnabled = tree.org.ghostText
+        fastPathEnabled = tree.org.fastPath
+        // Only a local server has a prompt cache to fill; a session-backed model would spend a turn.
+        if fastPathEnabled, let tasks = quickTasks, await tasks.routedKind(.respond) == "local" {
+            let schemas = await fastPathSchemas()
+            guard mine == quickTasksGeneration else { return }
+            let warm = RespondRequest(instructions: FastPath.instructions(actions: schemas),
+                                      input: FastPath.input("open settings", scope: FastPathScope()),
+                                      jsonSchema: FastPath.replySchema, maxTokens: 8)
+            Task { _ = try? await tasks.respond(warm, fallback: false) }   // the reply is not used
+        }
     }
 
     /// Releases every pane's pending request, then shuts the models down. Also the window's own
@@ -119,12 +130,29 @@ extension WindowModel {
         return GhostScope(generation: generation, tables: GhostSchema.tables(from: await vocabulary.current().names))
     }
 
+    /// An org's quick-task switch (3b-ix): written with `ctx_update_org`, then re-read and rebuilt.
+    public enum OrganisationSwitch: String, Sendable, CaseIterable { case ghostText, fastPath }
+
+    public func saveOrganisationSwitch(_ s: OrganisationSwitch, on: Bool) async -> String? {
+        do {
+            _ = try await registry.dispatch(
+                name: "ctx_update_org",
+                params: .object(["id": .string(organization), s.rawValue: .bool(on)]),
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure("ctx_update_org", error)
+        }
+        await refreshSettings()
+        await rebuildQuickTasks()
+        return nil
+    }
+
     /// Saves a local model endpoint, then re-reads Settings and rebuilds (Ruling R4). Answers the
     /// refusal's own sentence, or nil — `saveOrganisationField`'s shape.
-    public func setLocalProvider(id: String, label: String, baseURL: String, serves: Set<QuickOperation>) async -> String? {
+    public func setLocalProvider(id: String, label: String, baseURL: String) async -> String? {
         let params: JSONValue = .object([
             "id": .string(id), "label": .string(label), "baseURL": .string(baseURL),
-            "serves": .array(QuickOperation.allCases.filter(serves.contains).map { .string($0.rawValue) }),
         ])
         do {
             _ = try await registry.dispatch(

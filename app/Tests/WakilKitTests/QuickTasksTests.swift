@@ -57,6 +57,23 @@ private let respondReq = RespondRequest(instructions: "title", input: "x", jsonS
         #expect(await claudeModel.calls == 1)
     }
 
+    @Test func aRespondWithoutFallbackAsksOnlyTheRoutedProvider() async {
+        // The fast path's call: a local server that is down sends the line to the agent, not to Claude.
+        let both = QuickProviderRecord(id: "qwen", kind: "local", baseURL: "http://127.0.0.1:8012", serves: [.infill, .respond])
+        let localModel = FakeModel(serves: [.infill, .respond], replies: [.failure(.unreachable("connection refused"))])
+        let claudeModel = FakeModel(serves: [.infill, .respond], replies: [.success("{}")])
+        let made = Counter()
+        let tasks = QuickTasks(config: QuickTasksConfig(quickProvider: both, active: claude)) { r in
+            if r.id == "main" { await made.bump() }
+            return r.id == "qwen" ? localModel : claudeModel
+        }
+        await #expect(throws: QuickModelError.unreachable("connection refused")) {
+            try await tasks.respond(respondReq, fallback: false)
+        }
+        #expect(await claudeModel.calls == 0)
+        #expect(await made.value == 0, "the session provider's model is not even made")
+    }
+
     @Test func aNonConnectionErrorDoesNotFallBack() async {
         let localModel = FakeModel(serves: [.infill], replies: [.failure(.failed("HTTP 500: boom"))])
         let claudeModel = FakeModel(serves: [.infill, .respond], replies: [.success("x")])

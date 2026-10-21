@@ -52,7 +52,9 @@ Measured on the operator's Mac (M5 Pro, 2026-10-20), llama-server, Q4_K_M, promp
   the model, in one place.
 - **Fast path defaults on only when the model is a local one.** On *Same as agent* it would add
   1 to 1.8 s and quota to every agent turn, so it defaults off there; the operator may turn it on.
-- **A 300 ms deadline** on the model's answer; past it the line goes to the agent.
+- **A deadline** of 400 ms on a local model and 2.5 s otherwise (Ruling R1, plan 2026-10-20) on the
+  model's answer; past it the line goes to the agent. Raised from 300 ms on the walk: a line
+  that ran took 288 ms, 118 of them gathering the scope.
 - **Voice is covered by the composer path** (dictation lands there, Return sends). Voice
   cleanup stays an unscheduled candidate.
 
@@ -122,10 +124,12 @@ One system prompt, built per line:
 - The 26 actions with their params.
 - Fixed worked examples (about nine, as measured), including four that answer `agent`.
 - The scope:
-  - files: the top 20 of the active project's files by fuzzy match against the line's words,
-    using the same file entries and matcher ⌘P uses (`PaletteSearch.rank`);
+  - files: the top 20 of the active project's files. Each word of the line is ranked with the
+    same file entries and matcher ⌘P uses (`PaletteSearch.rank`), and the per-word lists are
+    interleaved. ⌘P's matcher needs every word to match, so ranking the whole line would match
+    nothing;
   - in full: projects of the org, environments of the active project and the active one, the
-    active environment's databases (from the settings tree), tables of those databases (the vocabulary ghost-text already reads), open panes
+    active environment's databases (the query line's list, refreshed with the context), tables of those databases (the vocabulary ghost-text already reads), open panes
     (id, kind, title), API entries of the active environment.
 
 The rules, the action list and the examples come first and never change within a window, so the
@@ -145,15 +149,27 @@ public struct FastPath: Sendable {
 }
 ```
 
-- Calls `QuickTasks.respond` with the prompt and the schema, under a 300 ms deadline. The deadline
-  cancels the request.
+- Calls `QuickTasks.respond` with the prompt and the schema, under a deadline of 400 ms on a local
+  model and 2.5 s otherwise (Ruling R1). The deadline bounds gathering the scope and the model's
+  answer together, and returns without waiting for either: the losing request is cancelled and
+  left to finish on its own. The scope is read from what the window holds (the settings tree's
+  projects, the trees' file listings), so a line journals nothing but its own dispatch. Only the
+  routed `respond` provider is asked: a local server that is down sends the line to the agent,
+  not to the session's provider (ghost-text keeps its fall-back).
+- A line whose first word (after "please") is delete, drop, remove, truncate, erase, purge or
+  wipe goes to the agent without asking the model: on the walk the 1.5B answered "delete the
+  draft bookings" with closing the bookings pane.
 - Checks, in order; the first that fails answers `.agent`:
   1. the reply parses and matches the schema;
   2. the action is on the list (`agent` answers `.agent`);
-  3. the params fit that action's registry schema, after dropping params not on the list;
-  4. every name param is in scope exactly: `path` among the files sent, `name` among the projects
-     or environments, `database` among the databases, `table` among the tables, `id` among the open panes, `entry` among the API
-     entries.
+  3. the params fit that action's registry schema, its `type` and any `enum`, after dropping params
+     not on the list (a number for a string param becomes its string: "page 3"). An optional
+     param of the wrong type is dropped and the rest runs (Rule 7; the 1.5B sent the file name as
+     `line` too); a required one fails;
+  4. every name param is in scope exactly: `path` among the files sent (`term_open`'s `path` is
+     kept only when it is a root, and dropped otherwise), `name` among the projects
+     or environments, `database` among the databases, `table` among the tables, `id` among the open panes (for `pane_close`, never a
+     terminal: closing one ends its shell), `entry` among the API entries.
 - Never throws to the composer: a model error, a timeout or a refusal is `.agent`, and the
   model's error is kept for Settings as ghost-text's is (Rule 8).
 
@@ -187,13 +203,14 @@ public struct FastPath: Sendable {
    switched) is what was asked.
 4. A dispatch refused or thrown: the receipt shows the error whole and *Ask the agent instead*.
 5. `.agent`: `window.send(line, via:)`, unchanged.
-6. *Ask the agent instead* sends the original line through `window.send` and clears the receipt.
+6. *Ask the agent instead* sends the original line through `window.send`, to the place it was
+   typed in and with its source (a spoken line stays a voice turn), and clears the receipt.
    The receipt also clears on the next send or on Esc in an empty composer.
 
 ### WakilApp
 
-- `ComposerBar`: the receipt line, `composer.fastPath.receipt` and
-  `composer.fastPath.askAgent`.
+- `ComposerBar`: the receipt line, `window.composer.receipt` and
+  `window.composer.askAgent`.
 - `SettingsPane`, Providers: QUICK TASKS becomes three rows — **Model** (the 3b-viii dropdown,
   unchanged), **Ghost-text** and **Fast path** switches (`settings.org.ghostText`,
   `settings.org.fastPath`), each with a one-line hint. A default shown comes with why: *On: the
@@ -206,7 +223,7 @@ public struct FastPath: Sendable {
 - **Rule 1:** nothing on the list destroys, so nothing is confirmed. `discard` is never sent.
 - **Rule 2:** the composer's line is never lost: an `.agent` route sends it; a refused action
   keeps it in the receipt with *Ask the agent instead*.
-- **Rule 4 and 5:** the wait is at most 300 ms and shows nothing; the composer cannot send twice
+- **Rule 4 and 5:** the wait is at most 400 ms on a local model, 2.5 s otherwise, and shows nothing; the composer cannot send twice
   meanwhile (the draft is already cleared, as today).
 - **Rule 6:** the composer keeps focus after a fast-path action.
 - **Rule 8:** a refusal is shown whole in the receipt; a model error is shown whole in Settings.
@@ -217,7 +234,7 @@ public struct FastPath: Sendable {
 | Case | Result |
 |---|---|
 | Local server down | `respond` fails fast, the line goes to the agent; Settings shows the error whole |
-| Model slower than 300 ms | the request is cancelled, the line goes to the agent |
+| Model slower than its deadline (400 ms local, 2.5 s otherwise) | the request is cancelled, the line goes to the agent |
 | Malformed or off-schema reply | agent |
 | Name not in scope (invented file) | agent |
 | A file outside the top 20 | the model cannot name it: agent |
@@ -249,7 +266,7 @@ public struct FastPath: Sendable {
   first be offered to the org's quick-tasks model. The model may answer with exactly one action
   from a fixed list of 26 navigation actions, and no writes. Wakil runs it as the operator's own
   dispatch only if the action is on the list, its params fit the schema and every name it uses
-  exists. Anything else, a late answer (past 300 ms) or any doubt sends the line to the agent
+  exists. Anything else, a late answer (past 400 ms on a local model, 2.5 s otherwise) or any doubt sends the line to the agent
   unchanged. There is still no grammar and no voice-only path. *Reverse if:* operators often have
   to undo what the fast path ran.
 - **Decision 42, amended:** one model per org does every quick task; a `local` provider is a URL
