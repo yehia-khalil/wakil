@@ -8,7 +8,7 @@ discards and commits each root, amends and undoes the last commit, and stages on
 gutter peek, all without a dialog. Every commit from Wakil carries the organisation's git name and
 email from Settings → Organisation → Git, and `git log` in a terminal shows it.
 
-Nothing here is walked yet: the Walked column is empty until the operator ticks it.
+Walked by the operator on 2026-10-22, on this Mac: every row passes, after three fixes the walk found (the message box took clicks only on its first line, a second ⌥ hold hid the text already typed, and + − ↺ gave no sign of the pointer). Recorded after #41 merged.
 
 ## 0. Setup
 
@@ -69,26 +69,26 @@ Walk in order, on `walk-3a-ii`, in `personal`.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 1 | Press ⌘⇧G | Each root with changes has a message box, a **Commit** bar the box's width (disabled while the box is empty) with a **▾** at its right edge; a clean root is one line. `api`'s box reads `Message · as walk-config@example.com (from git config) (⌘⏎)`; `hooked`'s reads `Message (⌘⏎ to commit)` (no identity anywhere) | |
-| 2 | ⌘, → Organisation → **GIT**: type Name `Walk Org`, press Tab, type Email `walk-org@example.com`, click the Display name field. Close Settings, press ⌘B then ⌘⇧G | Both fields keep what was typed and are saved without Return or Save (reopen Settings: they are there). Both roots' boxes read `Message · as walk-org@example.com (⌘⏎)` | |
-| 3 | Hover a row under **Changes**, then one under **Untracked**, then a group header | **+** and **↺** on Changes and Untracked rows; the header carries them for the whole group. Click a row: its buttons stay while it is highlighted | |
-| 4 | Press **+** on `notes` | `notes` moves to **Staged** as `A` and stays highlighted (Rule 6); the Files tree's letter for it changes at the same time. The button now reads **Commit** | |
-| 5 | Press **−** on `notes` under Staged, then **+** again | It goes back to Untracked, then to Staged; no dialog either way | |
-| 6 | In `api`'s box type `walk: first`, press ⌘⏎ | `notes` leaves the list; the box empties. The other rows stay | |
-| 7 | Click the empty box, press ↑, then ↓ | ↑ shows `walk: first`; ↓ empties the box. Typing after ↑ edits a new message | |
-| 8 | Press ↺ on `scratch.txt` (untracked) | It leaves the list with no dialog; Finder's Trash holds `scratch.txt`, and Put Back restores it | |
-| 9 | Open `confirm.go` from the tree. Click the gutter mark on line 1; in the peek press **Stage** | `confirm.go` shows under both **Staged** and **Changes**; line 1's mark is gone and line 7's stays | |
-| 10 | With nothing typed, ▾ → **Amend Last Commit** | No dialog. In Terminal, `git -C "$TMPDIR/walk-3a-ii/api" log -1 --format=%s` still prints `walk: first`, and `git -C "$TMPDIR/walk-3a-ii/api" show --stat HEAD` lists `confirm.go` | |
-| 11 | ▾ → **Undo Last Commit** | The box holds `walk: first`; `notes` and `confirm.go` are back under Staged | |
-| 12 | ▾ → **Undo Last Commit** again | Under the box, whole: `nothing to undo: this is the first commit`. The box keeps its text | |
-| 13 | With the box still holding `walk: first`, press **Commit** | The staged files leave the list; `confirm.go` stays under Changes (line 7) | |
-| 14 | Press ↺ on `confirm.go` under Changes | It leaves the list, no dialog; Finder's Trash holds `confirm.go (discarded HH:MM)` with today's time; the open tab shows line 7 as `seven` again, and its gutter mark is gone | |
-| 15 | In Terminal, `touch "$TMPDIR/walk-3a-ii/hooked/.git/BLOCK"`. In `hooked`'s box type `walk: blocked`, press **Commit All** | Under the box, whole, in amber: the hook's `walk hook: BLOCK is present, refusing`. `walk: blocked` is still in the box | |
-| 16 | `rm "$TMPDIR/walk-3a-ii/hooked/.git/BLOCK"; touch "$TMPDIR/walk-3a-ii/hooked/.git/SLOW"`, then press **Commit** | A spinner and **Cancel** replace the button; **▾** and the row buttons are disabled. Press **Cancel**: the button comes back, the message is kept, nothing is committed | |
-| 17 | Type a message in `hooked`'s box, press ⌘B, then ⌘⇧G | The message is still there (Rule 2) | |
-| 18 | `rm "$TMPDIR/walk-3a-ii/hooked/.git/SLOW"`. Hold ⌥ and say "commit everything in hooked as walk voice", release, Return | An agent turn calls `editor_changes_commit`; `hooked` reads `· clean` with no confirmation asked | |
-| 19 | In the composer: `stage scratch.txt in api`, Return | The agent calls `editor_changes_stage`; `scratch.txt` (back from row 8's Put Back) moves to Staged as row 4's `notes` did | |
-| 20 | In Terminal: `git -C "$TMPDIR/walk-3a-ii/api" log -3 --format='%an <%ae> %s'` and `git -C "$TMPDIR/walk-3a-ii/hooked" log -2 --format='%an <%ae> %s'` | Every commit made from Wakil reads `Walk Org <walk-org@example.com> …`; only `seed` reads `seed <seed@example.com>` | |
+| 1 | Press ⌘⇧G | Each root with changes has a message box, a **Commit** bar the box's width (disabled while the box is empty) with a **▾** at its right edge; a clean root is one line. `api`'s box reads `Message · as walk-config@example.com (from git config) (⌘⏎)`; `hooked`'s reads `Message (⌘⏎ to commit)` (no identity anywhere) | ✓ 2026-10-22 |
+| 2 | ⌘, → Organisation → **GIT**: type Name `Walk Org`, press Tab, type Email `walk-org@example.com`, click the Display name field. Close Settings, press ⌘B then ⌘⇧G | Both fields keep what was typed and are saved without Return or Save (reopen Settings: they are there). Both roots' boxes read `Message · as walk-org@example.com (⌘⏎)` | ✓ 2026-10-22 |
+| 3 | Hover a row under **Changes**, then one under **Untracked**, then a group header | **+** and **↺** on Changes and Untracked rows; the header carries them for the whole group. Click a row: its buttons stay while it is highlighted | ✓ 2026-10-22 |
+| 4 | Press **+** on `notes` | `notes` moves to **Staged** as `A` and stays highlighted (Rule 6); the Files tree's letter for it changes at the same time. The button now reads **Commit** | ✓ 2026-10-22 |
+| 5 | Press **−** on `notes` under Staged, then **+** again | It goes back to Untracked, then to Staged; no dialog either way | ✓ 2026-10-22 |
+| 6 | In `api`'s box type `walk: first`, press ⌘⏎ | `notes` leaves the list; the box empties. The other rows stay | ✓ 2026-10-22 |
+| 7 | Click the empty box, press ↑, then ↓ | ↑ shows `walk: first`; ↓ empties the box. Typing after ↑ edits a new message | ✓ 2026-10-22 |
+| 8 | Press ↺ on `scratch.txt` (untracked) | It leaves the list with no dialog; Finder's Trash holds `scratch.txt`, and Put Back restores it | ✓ 2026-10-22 |
+| 9 | Open `confirm.go` from the tree. Click the gutter mark on line 1; in the peek press **Stage** | `confirm.go` shows under both **Staged** and **Changes**; line 1's mark is gone and line 7's stays | ✓ 2026-10-22 |
+| 10 | With nothing typed, ▾ → **Amend Last Commit** | No dialog. In Terminal, `git -C "$TMPDIR/walk-3a-ii/api" log -1 --format=%s` still prints `walk: first`, and `git -C "$TMPDIR/walk-3a-ii/api" show --stat HEAD` lists `confirm.go` | ✓ 2026-10-22 |
+| 11 | ▾ → **Undo Last Commit** | The box holds `walk: first`; `notes` and `confirm.go` are back under Staged | ✓ 2026-10-22 |
+| 12 | ▾ → **Undo Last Commit** again | Under the box, whole: `nothing to undo: this is the first commit`. The box keeps its text | ✓ 2026-10-22 |
+| 13 | With the box still holding `walk: first`, press **Commit** | The staged files leave the list; `confirm.go` stays under Changes (line 7) | ✓ 2026-10-22 |
+| 14 | Press ↺ on `confirm.go` under Changes | It leaves the list, no dialog; Finder's Trash holds `confirm.go (discarded HH:MM)` with today's time; the open tab shows line 7 as `seven` again, and its gutter mark is gone | ✓ 2026-10-22 |
+| 15 | In Terminal, `touch "$TMPDIR/walk-3a-ii/hooked/.git/BLOCK"`. In `hooked`'s box type `walk: blocked`, press **Commit All** | Under the box, whole, in amber: the hook's `walk hook: BLOCK is present, refusing`. `walk: blocked` is still in the box | ✓ 2026-10-22 |
+| 16 | `rm "$TMPDIR/walk-3a-ii/hooked/.git/BLOCK"; touch "$TMPDIR/walk-3a-ii/hooked/.git/SLOW"`, then press **Commit** | A spinner and **Cancel** replace the button; **▾** and the row buttons are disabled. Press **Cancel**: the button comes back, the message is kept, nothing is committed | ✓ 2026-10-22 |
+| 17 | Type a message in `hooked`'s box, press ⌘B, then ⌘⇧G | The message is still there (Rule 2) | ✓ 2026-10-22 |
+| 18 | `rm "$TMPDIR/walk-3a-ii/hooked/.git/SLOW"`. Hold ⌥ and say "commit everything in hooked as walk voice", release, Return | An agent turn calls `editor_changes_commit`; `hooked` reads `· clean` with no confirmation asked | ✓ 2026-10-22 |
+| 19 | In the composer: `stage scratch.txt in api`, Return | The agent calls `editor_changes_stage`; `scratch.txt` (back from row 8's Put Back) moves to Staged as row 4's `notes` did | ✓ 2026-10-22 |
+| 20 | In Terminal: `git -C "$TMPDIR/walk-3a-ii/api" log -3 --format='%an <%ae> %s'` and `git -C "$TMPDIR/walk-3a-ii/hooked" log -2 --format='%an <%ae> %s'` | Every commit made from Wakil reads `Walk Org <walk-org@example.com> …`; only `seed` reads `seed <seed@example.com>` | ✓ 2026-10-22 |
 
 ## 2. Known and not fixed
 
