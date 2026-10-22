@@ -73,6 +73,8 @@ struct EditorColumn: View {
     @FocusState private var nameFocused: Bool
     /// The row under the pointer: a root shows its **+** while hovered or selected.
     @State private var hovered: String?
+    /// 3a-ii-b: ✨ under the pointer, which shows ✕ while its draft runs.
+    @State private var draftHovered: String?
     /// Bumped by every row the operator picks (`activate`): a commit in flight moves the selection
     /// to its new path only if no pick came after it started (Rule 6).
     @State private var picks = 0
@@ -714,17 +716,23 @@ struct EditorColumn: View {
         // Rule 9: with nothing staged the default is everything, and the button says so.
         let staged = root.files.contains { $0.group == .staged }
         let title = staged ? "Commit" : "Commit All"
-        let lines = min(max(draft.components(separatedBy: "\n").count, 1), 6)
         let hint = changes.placeholders[key] ?? "Message (⌘⏎ to commit)"
         VStack(alignment: .leading, spacing: ChangesSpace.m) {
-            // The box's height: the draft's lines, or the placeholder's wrapped lines when it is drawn,
-            // whichever is taller. Drawn by nothing; the editor and the placeholder lie over it, so the
-            // editor covers every line the box draws and a click anywhere in it reaches the text view
-            // (3a-ii walk: a wrapped placeholder had made the box three lines tall over a one-line editor).
+            // The box's height: the draft as it wraps at the box's width, at most six lines, or the
+            // placeholder's wrapped lines when it is drawn. Measured by a hidden copy in the editor's font
+            // and inset; the editor and the placeholder lie over it, so the editor covers every line the
+            // box draws and a click anywhere in it reaches the text view (3a-ii walk: a wrapped placeholder
+            // had made the box three lines tall over a one-line editor; 3a-ii-b walk: a wrapped draft was
+            // counted by its newlines and scrolled in a one-line box). Past six lines the editor scrolls.
             ZStack(alignment: .topLeading) {
-                Color.clear.frame(height: CGFloat(lines) * 14 + 4)
+                commitHint(draft.isEmpty ? " " : draft + (draft.hasSuffix("\n") ? " " : ""))
+                    .lineLimit(6)
+                    .padding(.trailing, 5)          // the text view's line-fragment padding, right side
+                    .padding(.vertical, 2)
+                    .hidden()
                 if draft.isEmpty { commitHint(hint).hidden() }
             }
+            .padding(.trailing, Self.draftButtonRoom)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .overlay(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
@@ -732,7 +740,7 @@ struct EditorColumn: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(EditorPaneStyle.text)
                         .scrollContentBackground(.hidden)
-                        .scrollIndicators(lines >= 6 ? .automatic : .never)
+                        .scrollIndicators(.automatic)
                         .focused($messageFocused, equals: key)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .accessibilityLabel("Commit message")
@@ -744,6 +752,8 @@ struct EditorColumn: View {
                             .accessibilityIdentifier("editor.changes.\(root.name).hint")
                     }
                 }
+                // The text and its placeholder stop short of ✨ in the box's corner, as the measuring copy does.
+                .padding(.trailing, Self.draftButtonRoom)
             }
             .padding(ChangesSpace.s)
             // The padding ring is the box too: a click there focuses the editor, caret at the end. A
@@ -756,6 +766,7 @@ struct EditorColumn: View {
                 .stroke(messageFocused == key ? EditorPaneStyle.violet : EditorPaneStyle.text.opacity(0.12),
                         lineWidth: 1)
                 .allowsHitTesting(false))
+            .overlay(alignment: .topTrailing) { draftButton(root) }
             HStack(spacing: 0) {
                 if busy {
                     HStack(spacing: ChangesSpace.m) {
@@ -810,6 +821,9 @@ struct EditorColumn: View {
     }
 
     /// The message box's placeholder, onto the editor's first line, where its caret stands.
+    /// The width ✨ takes in the message box's top-right corner: the text wraps before it.
+    static let draftButtonRoom: CGFloat = 20
+
     private func commitHint(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 11, design: .monospaced))
@@ -819,6 +833,47 @@ struct EditorColumn: View {
     }
 
     /// Focuses the root's message box from a click on its padding, the caret at the end of the draft.
+    /// 3a-ii-b: ✨ in the box's corner — the quick model drafts what Commit would commit into the box.
+    /// While it runs: a spinner, ✕ under the pointer to cancel (Rules 4, 5). A draft that replaced
+    /// text is one ⌘Z away (R3); the keyboard stays in the box (Rule 6). Hidden when the organisation
+    /// switched commit drafts off.
+    @ViewBuilder
+    private func draftButton(_ root: GitRootState) -> some View {
+        let key = root.root
+        if changes.draftsOn {
+            let drafting = changes.drafting.contains(key)
+            Button {
+                if drafting { changes.cancelDraft(key); return }
+                // The keyboard comes back to the box only if it was there at the press: a draft that
+                // lands while the operator types elsewhere must not take their keys (final review I3).
+                let hadKeyboard = messageFocused == key
+                Task {
+                    // The window registers the draft's ⌘Z (`changesLastDraft`), whoever asked for it.
+                    guard await changes.draft(key) != nil, hadKeyboard, messageFocused == key else { return }
+                    focusMessage(key)
+                }
+            } label: {
+                Group {
+                    if drafting && draftHovered != key {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        // A symbol in the pane's own ink, not the emoji's yellow (3a-ii-b walk).
+                        Image(systemName: drafting ? "xmark" : "sparkles").font(.system(size: 10, weight: .medium))
+                    }
+                }
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
+            .onHover { inside in draftHovered = inside ? key : (draftHovered == key ? nil : draftHovered) }
+            .help(drafting ? "Cancel Draft" : "Draft Message")
+            .accessibilityLabel(drafting ? "Cancel Draft" : "Draft Message")
+            .accessibilityIdentifier("editor.changes.\(root.name).draft")
+            .padding(2)
+        }
+    }
+
     private func focusMessage(_ key: String) {
         messageFocused = key
         Task { @MainActor in
@@ -1616,6 +1671,13 @@ struct ChangesIconButtonStyle: ButtonStyle {
 
 /// 3a-ii. What the Changes view's writes draw from and press, every root's, handed in by `Canvas`
 /// from the window's state (`WindowModel+ChangesWrites`). Keyed by the root's absolute path.
+/// The undo target a draft's step is registered against: `registerUndo` needs an object, and the
+/// step itself only calls `edit`.
+@MainActor
+final class ChangesDraftUndo {
+    static let shared = ChangesDraftUndo()
+}
+
 struct EditorChangesControls {
     var messages: [String: String]
     var errors: [String: String]
@@ -1633,6 +1695,12 @@ struct EditorChangesControls {
     let discard: (String, [String]?, GitGroup?) async -> Void
     let cancel: (String) -> Void
     let refreshIdentity: (String) async -> Void
+    /// 3a-ii-b: roots with a ✨ draft running; whether the organisation has commit drafts on; the
+    /// draft (the text it replaced, nil when nothing landed); and its cancel.
+    var drafting: Set<String>
+    var draftsOn: Bool
+    let draft: (String) async -> String?
+    let cancelDraft: (String) -> Void
 }
 
 /// The message box's keys (3a-ii), taken ahead of SwiftUI and the menu while a box holds the keyboard:

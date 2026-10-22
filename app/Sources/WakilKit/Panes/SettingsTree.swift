@@ -178,6 +178,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var ghostText: Bool
     /// The organisation's fast-path switch (3b-ix): one-line composer commands without an agent turn.
     public var fastPath: Bool
+    /// The organisation's commit-drafts switch (3a-ii-b): the commit box's ✨. On unless switched off.
+    public var commitDrafts: Bool
     /// The organisation's git author (3a-ii): the name and email commits from the Changes view carry.
     /// Empty means the repository's own git config decides.
     public var gitName: String
@@ -186,7 +188,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public init(
         id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
         speechProvider: String = "", quickProvider: String = "", ghostText: Bool = true,
-        fastPath: Bool = false, gitName: String = "", gitEmail: String = ""
+        fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true
     ) {
         self.id = id
         self.displayName = displayName
@@ -196,6 +198,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         self.quickProvider = quickProvider
         self.ghostText = ghostText
         self.fastPath = fastPath
+        self.commitDrafts = commitDrafts
         self.gitName = gitName
         self.gitEmail = gitEmail
     }
@@ -210,12 +213,13 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         quickProvider = try container.decodeIfPresent(String.self, forKey: .quickProvider) ?? ""
         ghostText = try container.decodeIfPresent(Bool.self, forKey: .ghostText) ?? true
         fastPath = try container.decodeIfPresent(Bool.self, forKey: .fastPath) ?? false
+        commitDrafts = try container.decodeIfPresent(Bool.self, forKey: .commitDrafts) ?? true
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath
+        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts
         case gitName, gitEmail
     }
 

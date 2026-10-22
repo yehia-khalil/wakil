@@ -318,3 +318,29 @@ func TestShowWorktreeReadsAtMostTheCap(t *testing.T) {
 		t.Errorf("allocated %d MB reading a file capped at 2 MB", got>>20)
 	}
 }
+
+// 3a-ii-b: an empty path is the whole root, the commit draft's input. A binary file stays a
+// "Binary files … differ" line among the text, and a rename keeps both names.
+func TestGitDiffWithNoPathCoversTheWholeRoot(t *testing.T) {
+	repo := gitTestRepo(t)
+	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("bee\n"), 0o644)
+	gitIn(t, repo, "add", "b.txt")
+	gitIn(t, repo, "commit", "-qm", "b")
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("one\ntwo\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "pic.bin"), []byte{0, 1, 2, 0, 255}, 0o644)
+	gitIn(t, repo, "mv", "b.txt", "c.txt")
+	gitIn(t, repo, "add", "a.txt", "pic.bin")
+	g, _ := NewGitRunner(repo, []string{repo})
+	r, err := GitDiff(context.Background(), g, "", "staged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Binary {
+		t.Error("a root's diff is never binary as a whole")
+	}
+	for _, want := range []string{"a.txt", "+two", "pic.bin", "Binary files", "c.txt"} {
+		if !strings.Contains(r.Text, want) {
+			t.Errorf("missing %q in %q", want, r.Text)
+		}
+	}
+}

@@ -9,6 +9,8 @@ extension WindowModel {
     // MARK: The message box
 
     public func changesMessageEdited(root: String, text: String) {
+        // 3a-ii-b (R4): typing wins over a draft in flight; its reply is dropped when it lands.
+        changesDraftTasks[root]?.cancel()
         // The box showing the history entry the cursor stands on is the step's own echo, not typing.
         if let c = changesHistoryCursor[root], let h = changesHistory[root], c < h.count, h[c] == text {
             changesMessages[root] = text
@@ -87,6 +89,23 @@ extension WindowModel {
         var params: [String: JSONValue] = ["path": .string(path), "pane": .string(pane)]
         if let peek = s.tabs[i].peek { params["hunk"] = .integer(Int64(peek)) }
         _ = await changesWrite(root, "editor_changes_stage_hunk", params)
+    }
+
+    /// Stage (or unstage) Selected Ranges (3a-ii-b): `pane`'s active Changes (or Staged) diff tab — the
+    /// pane the press was made in, focused or not (final review M1) — with `ranges`, every selection
+    /// the page holds, read at the press (ruling R1).
+    public func changesStageRanges(pane: String, _ ranges: [EditorLineSpan]) async {
+        await changesRanges("editor_changes_stage_ranges", pane, ranges)
+    }
+    public func changesUnstageRanges(pane: String, _ ranges: [EditorLineSpan]) async {
+        await changesRanges("editor_changes_unstage_ranges", pane, ranges)
+    }
+
+    private func changesRanges(_ name: String, _ pane: String, _ ranges: [EditorLineSpan]) async {
+        guard let s = editor(pane), let i = s.active, i < s.tabs.count,
+              case .diff(let root, let path, _) = s.tabs[i].subject else { return }
+        let spans: JSONValue = .array(ranges.map { .object(["start": .integer(Int64($0.start)), "end": .integer(Int64($0.end))]) })
+        _ = await changesWrite(root, name, ["path": .string(root + "/" + path), "pane": .string(pane), "ranges": spans])
     }
 
     /// Ends that root's running dispatch. The write itself may already be past the point of stopping;

@@ -434,6 +434,8 @@ public final class WindowModel {
     public internal(set) var ghostTextEnabled = false
     /// The organisation's fast-path switch (3b-ix), as the last rebuild read it. Off until a tree has been read.
     public internal(set) var fastPathEnabled = false
+    /// The organisation's commit-drafts switch (3a-ii-b), read with the quick tasks.
+    public internal(set) var commitDraftsEnabled = false
     private let panes: PaneStore
     private let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per
@@ -668,6 +670,12 @@ public final class WindowModel {
     var changesTasks: [String: Task<JSONValue, Error>] = [:]
     /// Bumped by an org switch: a write that lands under another generation is not shown.
     var changesGeneration = 0
+    /// 3a-ii-b. Roots with a ✨ draft in flight, and the task each runs, so typing or ✕ can end it.
+    public internal(set) var changesDrafting: Set<String> = []
+    var changesDraftTasks: [String: Task<String, Error>] = [:]
+    /// The last draft that landed, by any path (✨, the agent, voice): what it replaced, for the view's
+    /// one ⌘Z (final review I4). `serial` tells two drafts with the same text apart.
+    public internal(set) var changesLastDraft: ChangesDraftReplacement?
     /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
@@ -2114,6 +2122,10 @@ public final class WindowModel {
         // started in, and only its result is dropped (`changesGeneration`), so nothing of it shows here.
         changesGeneration += 1
         changesTasks = [:]
+        for task in changesDraftTasks.values { task.cancel() }
+        changesDraftTasks = [:]
+        changesDrafting = []
+        changesLastDraft = nil
         changesMessages = [:]
         changesHistory = [:]
         changesHistoryCursor = [:]
@@ -5313,6 +5325,11 @@ public final class WindowModel {
             guard let f = focused, f.kind == "editor", let s = editor(f.id), let i = s.active, i < s.tabs.count else { return false }
             return s.tabs[i].path != nil
         }()
+        let editorActiveDiff: EditorActiveDiff? = {
+            guard let f = focused, f.kind == "editor", let s = editor(f.id), let i = s.active, i < s.tabs.count,
+                  case .diff(let root, let path, let group) = s.tabs[i].subject else { return nil }
+            return EditorActiveDiff(path: root + "/" + path, group: group)
+        }()
         return PaletteContext(
             focusedPane: focused.map { FocusedPane(id: $0.id, kind: $0.kind) },
             apiSendInFlight: sending != nil,
@@ -5320,7 +5337,8 @@ public final class WindowModel {
             dbPageHasNext: table.map { $0.pageable && $0.truncated } ?? false,
             dbPageHasPrevious: table.map { $0.pageable && $0.offset > 0 } ?? false,
             hasEnvironments: hasEnvironments, projectCount: projectCount, providerCount: providerCount,
-            editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project)
+            editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project,
+            editorActiveDiff: editorActiveDiff)
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.

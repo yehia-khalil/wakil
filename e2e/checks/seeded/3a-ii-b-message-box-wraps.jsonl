@@ -1,0 +1,15 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"expect":{"frame":"editor.changes.e2e-api.message","maxHeight":24}}
+{"do":{"type":{"into":"editor.changes.e2e-api.message","text":"Uppercase sample lines and append nine and gamma to the notes"}}}
+{"expect":{"tree":"contains","text":"Uppercase sample lines and append nine and gamma to the notes"}}
+{"expect":{"frame":"editor.changes.e2e-api.message","minHeight":30}}
+{"do":{"type":{"into":"editor.changes.e2e-api.message","text":" — and then a very long body that keeps going well past the six lines the box is allowed to grow to, so that it has to scroll inside instead of pushing the Commit button and the change list down the column without end"}}}
+{"expect":{"frame":"editor.changes.e2e-api.message","maxHeight":100}}
+{"expect":{"frame":"editor.changes.e2e-api.commit","inside":"editor.column"}}

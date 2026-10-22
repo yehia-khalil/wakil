@@ -59,3 +59,31 @@ func TestChatStubAnswersASlowLineLate(t *testing.T) {
 		t.Errorf("answered in %v, before %v", took, SlowReply)
 	}
 }
+
+// TestChatStubDraftsACommitMessage — 3a-ii-b: a commit-draft request (its
+// instructions ask for a git commit message) gets CommitDraftReply, whatever
+// the diff in its input says.
+func TestChatStubDraftsACommitMessage(t *testing.T) {
+	origin, stop, err := StartChatStub()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	body := `{"messages":[{"role":"system","content":"Write a git commit message for the change below."},{"role":"user","content":"Files:\nREADME.md +1 −1"}]}`
+	resp, err := http.Post(origin+"/v1/chat/completions", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Choices []struct {
+			Message struct{ Content string } `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || len(out.Choices) != 1 {
+		t.Fatalf("decoding: %v %#v", err, out)
+	}
+	if got := out.Choices[0].Message.Content; got != CommitDraftReply {
+		t.Errorf("a commit draft answered %s", got)
+	}
+}

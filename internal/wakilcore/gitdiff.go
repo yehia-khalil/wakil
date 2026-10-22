@@ -32,9 +32,16 @@ type GitShowResult struct {
 
 // GitDiff returns the diff for a file at a given side (staged or changed).
 func GitDiff(ctx context.Context, g *GitRunner, path, side string) (GitDiffResult, error) {
-	rel, err := g.ResolvePath(path)
-	if err != nil {
-		return GitDiffResult{}, err
+	// An empty path is the whole root (3a-ii-b): no pathspec, and git's per-file
+	// "Binary files … differ" lines stay in the text.
+	whole := path == ""
+	rel := ""
+	if !whole {
+		r, err := g.ResolvePath(path)
+		if err != nil {
+			return GitDiffResult{}, err
+		}
+		rel = r
 	}
 	args := []string{"--no-color", "--"}
 	switch side {
@@ -44,11 +51,14 @@ func GitDiff(ctx context.Context, g *GitRunner, path, side string) (GitDiffResul
 	default:
 		return GitDiffResult{}, UserError("side must be staged or changed, got " + side)
 	}
-	out, err := g.Run(ctx, "diff", append(args, rel)...)
+	if !whole {
+		args = append(args, rel)
+	}
+	out, err := g.Run(ctx, "diff", args...)
 	if err != nil {
 		return GitDiffResult{}, err
 	}
-	if bytes.Contains(out, []byte("\nBinary files ")) || bytes.HasPrefix(out, []byte("Binary files ")) {
+	if !whole && (bytes.Contains(out, []byte("\nBinary files ")) || bytes.HasPrefix(out, []byte("Binary files "))) {
 		return GitDiffResult{Binary: true}, nil
 	}
 	lines := strings.SplitAfter(string(out), "\n")

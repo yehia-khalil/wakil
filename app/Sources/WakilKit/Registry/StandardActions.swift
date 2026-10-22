@@ -989,6 +989,7 @@ public func registerStandardActions(
                 "gitEmail": .object(["type": .string("string")]),
                 "ghostText": .object(["type": .string("boolean")]),
                 "fastPath": .object(["type": .string("boolean")]),
+                "commitDrafts": .object(["type": .string("boolean")]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1009,7 +1010,7 @@ public func registerStandardActions(
             for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
-            for key in ["ghostText", "fastPath"] {
+            for key in ["ghostText", "fastPath", "commitDrafts"] {
                 if let value = fields[key], case .bool = value { arguments[key] = value }
             }
             return try await callChecked(

@@ -13,6 +13,16 @@ public struct FocusedPane: Sendable, Equatable {
     }
 }
 
+/// The focused editor pane's diff tab in front (3a-ii-b): its file, absolute, and its group.
+public struct EditorActiveDiff: Sendable, Equatable {
+    public var path: String
+    public var group: GitGroup
+    public init(path: String, group: GitGroup) {
+        self.path = path
+        self.group = group
+    }
+}
+
 /// A snapshot of the window state the catalog's predicates and params read. Built by the
 /// window when ⌘K opens and again whenever that state moves, so a command appears or goes
 /// while the palette is open (a send starts → Cancel appears).
@@ -21,6 +31,8 @@ public struct PaletteContext: Sendable, Equatable {
     public var apiSendInFlight: Bool
     /// The focused editor pane has a file tab in front (not a scratch): *Reveal Active File in Tree* is offered.
     public var editorActiveIsFile: Bool
+    /// The focused editor pane has a diff tab in front: Stage / Unstage Selected Ranges are offered.
+    public var editorActiveDiff: EditorActiveDiff?
     public var dbPageHasNext: Bool
     public var dbPageHasPrevious: Bool
     public var hasEnvironments: Bool
@@ -36,11 +48,13 @@ public struct PaletteContext: Sendable, Equatable {
         focusedPane: FocusedPane? = nil, apiSendInFlight: Bool = false,
         dbPageHasNext: Bool = false, dbPageHasPrevious: Bool = false,
         hasEnvironments: Bool = false, projectCount: Int = 0, providerCount: Int = 0,
-        editorActiveIsFile: Bool = false, organisation: String = "", project: String = ""
+        editorActiveIsFile: Bool = false, organisation: String = "", project: String = "",
+        editorActiveDiff: EditorActiveDiff? = nil
     ) {
         self.focusedPane = focusedPane
         self.apiSendInFlight = apiSendInFlight
         self.editorActiveIsFile = editorActiveIsFile
+        self.editorActiveDiff = editorActiveDiff
         self.dbPageHasNext = dbPageHasNext
         self.dbPageHasPrevious = dbPageHasPrevious
         self.hasEnvironments = hasEnvironments
@@ -145,6 +159,10 @@ public enum CommandCatalog {
         pane("editor.reveal", "Reveal Active File in Tree", "editor", "window.editorReveal",
              available: { $0.editorActiveIsFile }),
 
+        // 3a-ii-b. The diff tab in front, with its selection (or its caret's line) as the ranges.
+        diffRanges("editor.stageRanges", "Stage Selected Ranges", "editor_changes_stage_ranges", .changed),
+        diffRanges("editor.unstageRanges", "Unstage Selected Ranges", "editor_changes_unstage_ranges", .staged),
+
         choice("global.env", "Switch environment…", "ctx_set_environment",
                .environments, "Environment", available: { $0.hasEnvironments }),
         // The window switches project and provider through `WindowModel.setProject` /
@@ -196,6 +214,16 @@ public enum CommandCatalog {
                 .object(extra.merging(["pane": .string(c.focusedPane?.id ?? "")]) { a, _ in a })
             },
             available: available)
+    }
+
+    /// Stage / Unstage Selected Ranges, offered on a diff of `group` in front.
+    private static func diffRanges(_ id: String, _ label: String, _ action: String, _ group: GitGroup) -> CatalogCommand {
+        CatalogCommand(
+            id: id, label: label, scope: .pane("editor"), action: action, input: nil,
+            params: { c, _ in
+                .object(["pane": .string(c.focusedPane?.id ?? ""), "path": .string(c.editorActiveDiff?.path ?? "")])
+            },
+            available: { $0.editorActiveDiff?.group == group })
     }
 
     /// Close pane, one per kind the spec offers it on. `pane_close` names its pane `id`.

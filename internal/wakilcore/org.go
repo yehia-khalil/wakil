@@ -51,6 +51,8 @@ type Org struct {
 	// on; the fast path is on when QuickProvider names a local provider.
 	GhostText *bool `json:"ghostText,omitempty"`
 	FastPath  *bool `json:"fastPath,omitempty"`
+	// CommitDrafts switches the commit box's ✨ (3a-ii-b). Nil is the default, on.
+	CommitDrafts *bool `json:"commitDrafts,omitempty"`
 }
 
 const orgFileName = "org.json"

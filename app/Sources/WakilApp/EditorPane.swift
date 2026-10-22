@@ -79,6 +79,10 @@ struct EditorPane: View {
     let changes: EditorChangesControls
     /// The peek's Stage Change: `WindowModel.changesStageHunk`, the focused tab's peeked hunk.
     let stageHunk: () async -> Void
+    /// 3a-ii-b: Stage / Unstage Selected Ranges in the active diff tab (`WindowModel.changesStageRanges`
+    /// and `changesUnstageRanges`), with the lines of every selection the page held.
+    let stageRanges: ([EditorLineSpan]) async -> Void
+    let unstageRanges: ([EditorLineSpan]) async -> Void
 
     @State private var host = EditorHost()
     /// Compare, open: the path and the disk text it shows against the buffer.
@@ -167,6 +171,10 @@ struct EditorPane: View {
                 Task { await dispatch("editor_peek", ["line": .integer(Int64(line))]) }
             }
             host.peekPressed = { op in peekOp(op) }
+            host.rangesPressed = { op, selections in
+                let spans = editorLineSpans(selections)
+                Task { if op == "unstage" { await unstageRanges(spans) } else { await stageRanges(spans) } }
+            }
             host.onKey = { key in
                 if comparing != nil { if key == "escape" { closeCompare() }; return }
                 peekOp(key == "escape" ? "close" : key)
@@ -499,6 +507,39 @@ struct EditorPane: View {
             lineText(banner).accessibilityIdentifier("editor.diff.banner")
         }
         if d.noLongerChanged { lineText("No longer changed").accessibilityIdentifier("editor.diff.gone") }
+        if case .diff(let root, _, let group) = tab.subject, group != .untracked, !d.loading, d.error == nil,
+           gitDiffBanner(d) == nil {
+            rangesLine(tab, d, root: root, group: group)
+        }
+    }
+
+    /// 3a-ii-b: Stage Selected Ranges on a Changes diff, Unstage on a Staged one. Enabled while the
+    /// selection (or the caret's line) touches a change; a press reads every selection from the page
+    /// (ruling R1). A write running in the root shows the spinner and takes no second press (Rule 5).
+    private func rangesLine(_ tab: EditorTab, _ d: GitDiffState, root: String, group: GitGroup) -> some View {
+        let unstage = group == .staged
+        let shown = tab.selection ?? EditorRange(start: tab.cursor, end: tab.cursor)
+        let touches = editorRangesTouchChange(base: d.original, text: d.modified, ranges: editorLineSpans([shown]))
+        let busy = changes.inFlight.contains(root)
+        return HStack(spacing: 8) {
+            Button(unstage ? "Unstage Selected Ranges" : "Stage Selected Ranges") {
+                Task {
+                    var selections = await host.renderer?.diffSelections() ?? []
+                    if selections.isEmpty { selections = [shown] }
+                    let spans = editorLineSpans(selections)
+                    if unstage { await unstageRanges(spans) } else { await stageRanges(spans) }
+                }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(EditorPaneStyle.text.opacity(touches && !busy ? 1 : 0.4))
+            .disabled(!touches || busy)
+            .accessibilityIdentifier(unstage ? "editor.diff.unstageRanges" : "editor.diff.stageRanges")
+            if busy { EditorBusyTick() }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Peek
@@ -790,6 +831,8 @@ final class EditorHost {
     @ObservationIgnored private var marksTask: Task<Void, Never>?
     /// A mark clicked: (tab subject, line).
     @ObservationIgnored var peekPressed: ((String) -> Void)?
+    /// 3a-ii-b: the diff's right-click Stage / Unstage Selected Ranges: ("stage" | "unstage", selections).
+    @ObservationIgnored var rangesPressed: ((String, [EditorRange]) -> Void)?
     @ObservationIgnored var markClicked: ((EditorTabSubject, Int) -> Void)?
     /// A Revert is on its way to the store: another press is dropped until it lands.
     @ObservationIgnored var reverting = false
@@ -856,6 +899,7 @@ final class EditorHost {
         }
         made.onKey = { [weak self] key in self?.onKey?(key) }
         made.onPeek = { [weak self] _, op in self?.peekPressed?(op) }
+        made.onRanges = { [weak self] _, op, selections in self?.rangesPressed?(op, selections) }
         made.onMark = { [weak self] key, line in
             guard let self, let s = self.subjects[key] else { return }
             self.markClicked?(s, line)

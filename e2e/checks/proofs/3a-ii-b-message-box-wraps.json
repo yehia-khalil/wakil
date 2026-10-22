@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-ii-b-message-box-wraps.jsonl",
+  "baseCommit": "91f64b7b89da734fc9609cb355bf4890ae127ead",
+  "provedAt": "2026-10-22T14:08:41.135159Z",
+  "checkBlob": "6fe0cb89fac58d0e216896c3a61df2d311fc5098"
+}

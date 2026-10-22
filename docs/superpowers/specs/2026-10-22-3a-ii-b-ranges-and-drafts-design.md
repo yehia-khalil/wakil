@@ -80,19 +80,16 @@ hunk: in Swift, from those two texts, with no patch and no `git apply`.
   reports from the diff's modified editor. A caret is a one-line span.
 - **Per hunk, the intersection is staged:**
   - `added`: the added lines inside the ranges are staged, and the rest are left out.
-  - `changed`: the new lines inside the ranges are staged. The hunk's old lines are removed from
-    the index whenever any new line of the hunk is selected, because a changed hunk is a
-    replacement and half a replacement reads as a duplicate. When none of its new lines are
-    selected the hunk is untouched.
+  - `changed`: old and new lines are paired one to one (amendment below). A selected new line
+    replaces its paired old line, or is added when it is past the old ones; an unselected one
+    leaves its pair in place. Old lines past the new ones are removed only when the whole hunk is
+    selected.
   - `deleted`: staged when a range covers the line its mark sits on (`editorGutterMarks`: the line
     above, or line 1 for a deletion at the top).
   - Hunks the ranges do not touch keep their index text.
 - It returns nil when no hunk is touched. The action reads nil as `the selection holds no change`.
 
-> **Builder's call, flagged:** whether the old lines of a partly selected `changed` hunk should go
-> pairwise (old line *k* with new line *k*) instead of whole. Whole is VS Code's behaviour in the
-> inline diff, where the removed lines show as a block that cannot be selected. Pairwise would
-> need the side-by-side view.
+> **Settled (amendment below):** paired line by line, not "all old lines out".
 
 ### Selection — `monaco-host.html`
 
@@ -258,9 +255,9 @@ Asked at review and agreed: a **Staged** diff tab (`confirm.go (Staged)`, HEAD a
 gets **Unstage Selected Ranges**, the mirror of Stage.
 
 - **Pure:** `editorUnstagedText(base:text:ranges:) -> String?`, `base` the HEAD text (empty for a
-  file new in the index), `text` the index text. The touched part of each hunk is reverted to
-  HEAD's lines with the same per-kind rules as staging (a partly selected `changed` hunk gets all
-  its old lines back); untouched hunks stay staged. Nil when no hunk is touched.
+  file new in the index), `text` the index text. The touched part of each hunk goes back to HEAD,
+  paired line by line (amendment below): a selected new line gets its old pair back, or is dropped
+  when it was an addition; untouched hunks stay staged. Nil when no hunk is touched.
 - **Action:** `editor_changes_unstage_ranges`, the same params, kind, audience and price as
   `editor_changes_stage_ranges`. Texts come from the pane's Staged diff tab, else `git_show`
   (`HEAD`, `index`). Write: `git_stage_hunk` with `content` = the result and `expect` =
@@ -273,3 +270,16 @@ gets **Unstage Selected Ranges**, the mirror of Stage.
 - **Tests:** the pure function per kind and the round trip (unstage the ranges, then diff HEAD
   against the index, and only the unselected changes remain); the action's refusals; an e2e that
   stages a file whole and then unstages two selected lines.
+
+## Amendment 2026-10-22 — a partly selected block is paired line by line (Cover)
+
+The e2e run and the runbook's draft found the "all old lines out" rule wrong in both directions.
+Unstaging only the added `line three` of the fixture's `app.txt` (HEAD `line two`; index
+`line two, staged` plus `line three`, one hunk) put `line two` back *beside* `line two, staged`.
+Staging only an added `gamma` after `beta`→`BETA` would have staged the removal of `beta`, which
+was never selected. Ruled: within a touched hunk, old and new lines pair one to one. A selected
+new line replaces its pair (or is added past the old ones) when staging, and gets its pair back
+(or is dropped) when unstaging; an unselected line stays as it is on the side being written. Old
+lines past the new ones change side only when the whole hunk is selected, so a deletion or a
+fully selected hunk behaves as before. Tests: `aChangedHunkPairsItsLines`,
+`unstageRevertsOnlyTheSelectedPart`, `unstagingTheAddedLineOfAChangedHunkKeepsTheChangeStaged`.

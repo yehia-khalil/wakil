@@ -81,6 +81,9 @@ public struct WakilWiring: Sendable {
     /// The git writes in flight, one per root (3a-ii, ruling P1). One per assembly: the actions
     /// register against it and the window reads `running(_:)` from it for its spinners.
     public let gitWrites: GitWriteFlights
+    /// The commit box's ✨ (3a-ii-b, ruling R2): `editor_changes_draft_message` is registered against
+    /// it here, before any window exists; `WindowSession.start` binds the window's draft to it.
+    public let commitDrafts: CommitDraftSink
     /// The editor panes' own watch (3b-i), separate from the git one so each starts and stops
     /// with its own panes. Handed to the window by `WindowSession.start`; `shutdown` stops it.
     public let editorRootWatcher: any RootWatcher
@@ -416,6 +419,8 @@ public struct WakilWiring: Sendable {
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
             gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites)
+        let commitDrafts = CommitDraftSink()
+        await registerCommitDraftAction(into: registry, drafts: commitDrafts)
 
         // Provider capacity: the record path and the one read every surface uses.
         await registerCapacityActions(into: registry, context: routed(.context, contextClient))
@@ -478,6 +483,7 @@ public struct WakilWiring: Sendable {
             rootWatcher: FSEventsRootWatcher(),
             gitStatus: gitStatus,
             gitWrites: gitWrites,
+            commitDrafts: commitDrafts,
             editorRootWatcher: FSEventsRootWatcher(),
             gitRoots: gitRoots,
             placeClients: placeClients,

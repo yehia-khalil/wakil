@@ -342,7 +342,7 @@ func TestUpdateOrgRefusesAnUnboundQuickProvider(t *testing.T) {
 func TestUpdateOrgSetsTheQuickTaskSwitches(t *testing.T) {
 	localOrg(t)
 	on, off := true, false
-	if err := UpdateOrg("initech", OrgPatch{GhostText: &off, FastPath: &on}); err != nil {
+	if err := UpdateOrg("initech", OrgPatch{GhostText: &off, FastPath: &on, CommitDrafts: &off}); err != nil {
 		t.Fatal(err)
 	}
 	o, err := LoadOrgFor("initech")
@@ -351,6 +351,9 @@ func TestUpdateOrgSetsTheQuickTaskSwitches(t *testing.T) {
 	}
 	if o.GhostText == nil || *o.GhostText || o.FastPath == nil || !*o.FastPath {
 		t.Fatalf("ghostText=%v fastPath=%v", o.GhostText, o.FastPath)
+	}
+	if o.CommitDrafts == nil || *o.CommitDrafts {
+		t.Fatalf("commitDrafts=%v", o.CommitDrafts)
 	}
 }
 
@@ -363,6 +366,10 @@ func TestConfigTreeResolvesTheQuickTaskSwitches(t *testing.T) {
 	// Nothing set: ghost-text on, fast path off (no local quick provider).
 	if !tree.Org.GhostText || tree.Org.FastPath {
 		t.Fatalf("defaults: ghostText=%v fastPath=%v", tree.Org.GhostText, tree.Org.FastPath)
+	}
+	// 3a-ii-b: commit drafts are on until switched off.
+	if !tree.Org.CommitDrafts {
+		t.Fatal("defaults: commitDrafts off")
 	}
 	if err := SetLocalProvider("initech", Provider{ID: "qwen", BaseURL: "http://127.0.0.1:8012"}); err != nil {
 		t.Fatal(err)
