@@ -54,8 +54,11 @@ extension WindowModel {
         }
         changesDraftTasks[root] = task
         defer {
-            changesDraftTasks[root] = nil
-            changesDrafting.remove(root)
+            // An org switch may have emptied these and a new draft taken the root since.
+            if changesDraftTasks[root] == task {
+                changesDraftTasks[root] = nil
+                changesDrafting.remove(root)
+            }
         }
         let message: String
         do {

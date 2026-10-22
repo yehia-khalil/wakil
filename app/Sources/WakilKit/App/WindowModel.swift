@@ -2120,6 +2120,8 @@ public final class WindowModel {
         changesGeneration += 1
         changesTasks = [:]
         for task in changesDraftTasks.values { task.cancel() }
+        changesDraftTasks = [:]
+        changesDrafting = []
         changesMessages = [:]
         changesHistory = [:]
         changesHistoryCursor = [:]

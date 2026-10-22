@@ -26,12 +26,16 @@ private let orgDerived: Set<String> = [
     // that makes a late result drop (WindowModelChangesWritesTests).
     "changesMessages", "changesHistory", "changesHistoryCursor", "changesErrors", "changesInFlight",
     "changesIdentity", "changesTasks", "changesGeneration",
+    // 3a-ii-b: a ✨ draft reads the outgoing org's diff with its quick model; `invalidateForOrgChange`
+    // cancels it and empties both, and the generation drops a late reply (WindowModelCommitDraftTests).
+    "changesDrafting", "changesDraftTasks",
     "project", "projectKey", "environment", "environmentProduction",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
     // 3b-viii: the quick tasks route to the org's providers on its credentials, and each pane's
     // ghost session asks them; `invalidateForOrgChange` shuts both down, and the switch rebuilds.
-    "quickTasks", "ghostSessions", "ghostTextEnabled", "fastPathEnabled", "quickTasksConfigError",
+    "quickTasks", "ghostSessions", "ghostTextEnabled", "fastPathEnabled", "commitDraftsEnabled",
+    "quickTasksConfigError",
     "providerId",
     "lookup", "rootPaths", "hasProjectRoot",
     "organization", "resumedParentForTesting",
