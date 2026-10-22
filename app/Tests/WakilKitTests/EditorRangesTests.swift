@@ -76,4 +76,10 @@ private func r(_ l1: Int, _ c1: Int, _ l2: Int, _ c2: Int) -> EditorRange {
         #expect(left == "A\nb\nc\nd\nE\n")
         #expect(editorHunks(base: head, text: left ?? "").count == 2)
     }
+
+    // Final review I1: the last line emitted is not its side's last line, so it ends with "\n".
+    @Test func aPartialSelectionBeforeAnUnterminatedLastLineKeepsItsNewline() {
+        #expect(editorStagedText(base: "x\n", text: "x\na\nb", ranges: [s(2, 2)]) == "x\na\n")
+        #expect(editorUnstagedText(base: "x\n", text: "x\na\nb", ranges: [s(3, 3)]) == "x\na\n")
+    }
 }

@@ -295,49 +295,51 @@ private func editorHunkTouched(_ h: EditorHunk, _ ranges: [EditorLineSpan]) -> B
 }
 
 /// Walks the two texts' lines once, hunk by hunk. Unchanged and untouched lines come from the side
-/// the write starts from (the index's base when staging, the index's text when unstaging); the text
-/// ends with a newline when the side its last line came from does, so a missing final newline (R9)
-/// is never staged or unstaged by a selection that did not reach it.
+/// the write starts from (the index's base when staging, the index's text when unstaging). The result
+/// ends without a newline only when its last line is the last line of a side that has none, so a
+/// missing final newline (R9) is never moved onto a line it did not belong to.
 private func editorMergedText(base: String, text: String, ranges: [EditorLineSpan], stage: Bool) -> String? {
     let hunks = editorHunks(base: base, text: text)
     guard hunks.contains(where: { editorHunkTouched($0, ranges) }) else { return nil }
     let old = editorHunkLines(base), new = editorHunkLines(text)
     var out: [String] = []
-    var lastFromBase = stage
-    func keep(_ line: String, fromBase: Bool) { out.append(line); lastFromBase = fromBase }
+    var lastIsUnterminated = false
+    let baseUnterminated = !base.isEmpty && base.unicodeScalars.last != "\n"
+    let textUnterminated = !text.isEmpty && text.unicodeScalars.last != "\n"
+    /// `at` is the line's index in its side: the side's last line carries that side's ending.
+    func keep(_ line: String, fromBase: Bool, at: Int) {
+        out.append(line)
+        lastIsUnterminated = fromBase ? (at == old.count - 1 && baseUnterminated) : (at == new.count - 1 && textUnterminated)
+    }
     var i = 0, j = 0      // positions in old and new
     for h in hunks {
         while j < h.newStart - 1 {      // the unchanged lines before the hunk
-            keep(stage ? old[i] : new[j], fromBase: stage)
+            if stage { keep(old[i], fromBase: true, at: i) } else { keep(new[j], fromBase: false, at: j) }
             i += 1; j += 1
         }
-        let added = Array(new[j..<(j + h.newCount)])
         let lines = Array(h.newStart..<(h.newStart + h.newCount))
         let touched = editorHunkTouched(h, ranges)
+        func takeOld() { for (k, line) in h.oldLines.enumerated() { keep(line, fromBase: true, at: i + k) } }
+        func takeNew(selected: Bool) {
+            for (k, line) in lines.enumerated() where editorLineSelected(line, ranges) == selected {
+                keep(new[j + k], fromBase: false, at: j + k)
+            }
+        }
         if stage {
-            if touched {
-                for (k, line) in lines.enumerated() where editorLineSelected(line, ranges) { keep(added[k], fromBase: false) }
-            } else {
-                for line in h.oldLines { keep(line, fromBase: true) }
-            }
+            if touched { takeNew(selected: true) } else { takeOld() }
+        } else if touched {
+            takeOld()
+            if h.kind != .deleted { takeNew(selected: false) }
         } else {
-            if touched {
-                for line in h.oldLines { keep(line, fromBase: true) }
-                if h.kind != .deleted {
-                    for (k, line) in lines.enumerated() where !editorLineSelected(line, ranges) { keep(added[k], fromBase: false) }
-                }
-            } else {
-                for line in added { keep(line, fromBase: false) }
-            }
+            for k in 0..<h.newCount { keep(new[j + k], fromBase: false, at: j + k) }
         }
         i += h.oldLines.count
         j += h.newCount
     }
     while j < new.count {               // the unchanged lines after the last hunk
-        keep(stage ? old[i] : new[j], fromBase: stage)
+        if stage { keep(old[i], fromBase: true, at: i) } else { keep(new[j], fromBase: false, at: j) }
         i += 1; j += 1
     }
     if out.isEmpty { return "" }
-    let side = lastFromBase ? base : text
-    return out.joined(separator: "\n") + (side.unicodeScalars.last == "\n" ? "\n" : "")
+    return out.joined(separator: "\n") + (lastIsUnterminated ? "" : "\n")
 }
