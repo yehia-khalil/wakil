@@ -8,7 +8,7 @@ selected; in a Staged diff tab they unstage only those. ✨ in the commit box dr
 from what Commit would commit, with the org's quick model, and the operator edits it and commits.
 Nothing asks (Rule 1), a replaced draft is one ⌘Z away, and typing always wins over a draft.
 
-Nothing here is walked yet: the Walked column is empty until the operator ticks it.
+Walked by the operator on 2026-10-22, on this Mac: every row passes. The walk found two defects in the commit box, both fixed before this record: a long message was counted by its newlines and scrolled in a one-line box (it now grows with its wrapped text to six lines), and ✨ drew in the emoji's own yellow (it is now a symbol in the pane's ink).
 
 ## 0. Setup
 
@@ -52,16 +52,16 @@ Walk in order, on `walk-3a-ii-b`, in `personal`.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 1 | ⌘⇧G, click `confirm.go` under **Changes**. In the diff, drag over lines 6–7 (the `SIX`/`SEVEN` block) and press **Stage Selected Ranges** in the strip above the diff | No dialog. `confirm.go` shows under both **Staged** and **Changes**; the diff still shows lines 1 and 9 as changes, and the cursor and scroll stay where they were. Terminal: `git -C "$TMPDIR/walk-3a-ii-b/api" diff --cached` shows only `six`→`SIX` and `seven`→`SEVEN` | |
-| 2 | Drag from the start of line 1 down to the start of line 2 (a whole-line drag), then press **Stage Selected Ranges** | Only line 1 is staged: line 2 is untouched, and line 9 is still unstaged | |
-| 3 | Click line 9 (no selection, just the cursor there). Right-click → **Stage Selected Ranges** | The right-click menu shows the entry (and no **Unstage** entry). Line 9 is staged; the Changes diff has nothing left | |
-| 4 | Open `confirm.go` under **Staged**. ⌥-click to put cursors on lines 1 and 9, then press **Unstage Selected Ranges** | Both lines go back under Changes; `SIX`/`SEVEN` stay staged. `git diff --cached` shows only that block | |
-| 5 | Open `notes.md` under **Changes**, select only the `gamma` line, press ⌘K and run **Stage Selected Ranges** | ⌘K offers the command (and offers no **Unstage**). Only `gamma` is staged; `BETA` stays unstaged; `git diff --cached -- notes.md` adds `gamma` and does not touch `beta` | |
-| 6 | In the commit box, press ✨ | A spinner replaces ✨ for the model's time; then a short imperative message about the staged lines fills the box. Nothing is committed | |
-| 7 | Type `wip` over the box's text, press ✨, and press ⌘Z once the draft lands | The draft replaces `wip`; ⌘Z puts `wip` back | |
-| 8 | Press ✨ and, before it lands, click into the diff and type a few characters, or hover ✨ and press ✕ | With ✕: the spinner goes and the box keeps its text, with no error. While typing elsewhere: the draft lands in the box, but the keystrokes stay where you typed them, and the keyboard is not pulled back to the box (Rules 3, 6) | |
-| 9 | ⌘, → Providers → QUICK TASKS: **Commit drafts** Off, then back to the Changes view | ✨ is gone from the box. In the composer, "draft a commit message for api" is refused with `commit drafts are off for personal — Settings → Providers → Quick tasks`. Switch it back On | |
-| 10 | Hold ⌥ and say "draft a commit message", release, Return. Then edit it and press **Commit** | An agent turn calls `editor_changes_draft_message` and the box fills; ⌘Z right after puts back what was there. **Commit** commits it: `git -C "$TMPDIR/walk-3a-ii-b/api" log -1 --format=%B` prints the message as you left it | |
+| 1 | ⌘⇧G, click `confirm.go` under **Changes**. In the diff, drag over lines 6–7 (the `SIX`/`SEVEN` block) and press **Stage Selected Ranges** in the strip above the diff | No dialog. `confirm.go` shows under both **Staged** and **Changes**; the diff still shows lines 1 and 9 as changes, and the cursor and scroll stay where they were. Terminal: `git -C "$TMPDIR/walk-3a-ii-b/api" diff --cached` shows only `six`→`SIX` and `seven`→`SEVEN` | ✓ 2026-10-22 |
+| 2 | Drag from the start of line 1 down to the start of line 2 (a whole-line drag), then press **Stage Selected Ranges** | Only line 1 is staged: line 2 is untouched, and line 9 is still unstaged | ✓ 2026-10-22 |
+| 3 | Click line 9 (no selection, just the cursor there). Right-click → **Stage Selected Ranges** | The right-click menu shows the entry (and no **Unstage** entry). Line 9 is staged; the Changes diff has nothing left | ✓ 2026-10-22 |
+| 4 | Open `confirm.go` under **Staged**. ⌥-click to put cursors on lines 1 and 9, then press **Unstage Selected Ranges** | Both lines go back under Changes; `SIX`/`SEVEN` stay staged. `git diff --cached` shows only that block | ✓ 2026-10-22 |
+| 5 | Open `notes.md` under **Changes**, select only the `gamma` line, press ⌘K and run **Stage Selected Ranges** | ⌘K offers the command (and offers no **Unstage**). Only `gamma` is staged; `BETA` stays unstaged; `git diff --cached -- notes.md` adds `gamma` and does not touch `beta` | ✓ 2026-10-22 |
+| 6 | In the commit box, press ✨ | A spinner replaces ✨ for the model's time; then a short imperative message about the staged lines fills the box. Nothing is committed | ✓ 2026-10-22 |
+| 7 | Type `wip` over the box's text, press ✨, and press ⌘Z once the draft lands | The draft replaces `wip`; ⌘Z puts `wip` back | ✓ 2026-10-22 |
+| 8 | Press ✨ and, before it lands, click into the diff and type a few characters, or hover ✨ and press ✕ | With ✕: the spinner goes and the box keeps its text, with no error. While typing elsewhere: the draft lands in the box, but the keystrokes stay where you typed them, and the keyboard is not pulled back to the box (Rules 3, 6) | ✓ 2026-10-22 |
+| 9 | ⌘, → Providers → QUICK TASKS: **Commit drafts** Off, then back to the Changes view | ✨ is gone from the box. In the composer, "draft a commit message for api" is refused with `commit drafts are off for personal — Settings → Providers → Quick tasks`. Switch it back On | ✓ 2026-10-22 |
+| 10 | Hold ⌥ and say "draft a commit message", release, Return. Then edit it and press **Commit** | An agent turn calls `editor_changes_draft_message` and the box fills; ⌘Z right after puts back what was there. **Commit** commits it: `git -C "$TMPDIR/walk-3a-ii-b/api" log -1 --format=%B` prints the message as you left it | ✓ 2026-10-22 |
 
 ## 2. Known and not fixed
 
