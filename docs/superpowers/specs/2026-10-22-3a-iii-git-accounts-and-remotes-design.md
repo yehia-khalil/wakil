@@ -166,7 +166,7 @@ SSH keys page** (title suggested: `Wakil · <org> · <Mac name>`), and **Test co
     and its history carry on. The thread shows one quiet line: `Instructions updated — the agent
     has the new ones from this turn.` *Probe first (the plan's first task):* that a resumed Claude
     Code session takes a changed `--append-system-prompt`. If it does not, the spec is amended
-    before build.
+    before build. *(Amended 2026-10-22 below: it does not.)*
 
 ### The agent and voice
 
@@ -349,3 +349,14 @@ the status re-read after every remote operation also reads `ahead`/`behind` (alr
   thread — revisits Decision 41; its agenda is the parked #78–#86), also added by the operator.
 - **operator-todo:** register the GitHub OAuth App and the GitLab.com application, and record their
   client IDs.
+
+## Amendment 2026-10-22 — instruction edits ride in the next turn (probe)
+
+`docs/wakil/3a-iii-instructions-probe.md`: Claude Code 2.1.308 ignores a changed
+`--append-system-prompt` on any resume, forked or not. Item 15 is ruled instead (implementer's
+ruling, for the operator's review): a live agent whose instructions changed receives them **in its
+next turn**, before the operator's own words, as a marked block —
+`[Wakil: the operator updated your instructions. They replace any earlier ones under the same
+headings.]` followed by the composed text — and the thread shows the same quiet line. The process is
+not restarted and the session is not forked. A session that starts afterwards gets them in its
+system prompt as before. The block is not shown in the thread as the operator's words.
