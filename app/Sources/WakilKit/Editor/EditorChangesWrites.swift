@@ -24,6 +24,9 @@ public actor GitWriteFlights {
 
 /// Registers the seven `editor_changes_*` git writes (3a-ii). Each is a mutation priced allow in every
 /// environment: a stage, an unstage and a commit stay on this Mac and undo; a discard goes to the Trash.
+/// How long a remote git operation may take before the call gives up: a large push or a slow host.
+let gitRemoteReplyTimeout: TimeInterval = 600
+
 func registerEditorChangesWrites(
     into registry: ActionRegistry, gitStatus: GitStatus?, panes: PaneStore, layout: LayoutStore?,
     writes: GitWriteFlights
@@ -338,6 +341,29 @@ func registerEditorChangesWrites(
             },
             price: price))
     }
+    // 3a-iii-a: the remote operations, with the organisation's account for the remote's host, priced
+    // allow for every channel (Decision 44). They take the root's one write lock (R1), so a commit and
+    // a push never overlap, and the status is read again after, ahead and behind with it.
+    for (name, tool, what) in [
+        ("editor_changes_fetch", "git_fetch", "Fetch one root's remote (git fetch --prune) with the organisation's account."),
+        ("editor_changes_pull", "git_pull", "Pull one root's upstream by the organisation's pull strategy; a conflict aborts and names the paths."),
+        ("editor_changes_push", "git_push", "Push one root's branch to its upstream with the organisation's account. Never forces."),
+        ("editor_changes_sync", "git_sync", "Pull one root's upstream, then push, stopping at the first failure."),
+        ("editor_changes_publish", "git_publish", "Push one root's branch to origin and set it as the upstream."),
+    ] {
+        await registry.register(Action(
+            name: name, description: what + " root (absolute). Allowed everywhere.",
+            kind: .mutate, audience: .agentReachable,
+            schema: rootSchema(),
+            handler: { params in
+                let root = try requireString(params, "root", action: name)
+                return try await write(root, action: name) { git in
+                    try await call(git, tool, ["root": .string(root)], action: name, timeout: gitRemoteReplyTimeout)
+                }
+            },
+            price: price))
+    }
+
     await rangeWrite(
         "editor_changes_stage_ranges", group: .changed,
         description: "Stage the selected lines of one changed file: path (absolute), ranges ([{start, end}], 1-based "

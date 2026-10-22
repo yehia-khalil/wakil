@@ -940,6 +940,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "editor_changes_stage_ranges", "editor_changes_unstage_ranges",
     // 3a-ii-b: the ✨ draft, a control action (it fills Wakil's own box).
     "editor_changes_draft_message",
+    // 3a-iii-a: the remote operations, agent-reachable mutations priced allow.
+    "editor_changes_fetch", "editor_changes_pull", "editor_changes_push", "editor_changes_sync", "editor_changes_publish",
     "editor_peek", "editor_peek_step", "editor_peek_close",
     "editor_find", "editor_search", "files_search",
     // 3b-iv: file operations in the tree, all agent-reachable mutations.
