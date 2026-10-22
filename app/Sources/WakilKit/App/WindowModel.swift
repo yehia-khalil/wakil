@@ -689,6 +689,8 @@ public final class WindowModel {
     /// never as an error); the fetch loop, its interval, its sleep (tests replace it), and whether the
     /// app is frontmost.
     public internal(set) var changesRemoteNotes: [String: String] = [:]
+    /// 3a-iii-b: where the composed agent instructions go; the process's own unless a test swaps it.
+    var agentInstructionsBox: AgentInstructionsBox = .shared
     public let backgroundFetchInterval: Duration = .seconds(300)
     var backgroundFetchSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     var backgroundFetchTask: Task<Void, Never>?
@@ -2701,6 +2703,7 @@ public final class WindowModel {
             }
             settings = tree
             settingsFailure = nil
+            publishAgentInstructions(tree)
 
             // The account table, in the same refresh. **One read, two
             // halves**: the tree's Providers node and this table describe

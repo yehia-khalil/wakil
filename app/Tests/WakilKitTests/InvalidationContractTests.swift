@@ -155,6 +155,8 @@ private let orgIndependent: Set<String> = [
     // 3a-iii-a: the fetch loop runs for whatever roots the window has; its interval, sleep and the
     // app's activity are no organisation's.
     "backgroundFetchInterval", "backgroundFetchSleep", "backgroundFetchTask", "appActive",
+    // 3a-iii-b: the box is keyed by organisation itself; no switch empties it.
+    "agentInstructionsBox",
     // 2d-ii: the operator's hand on ⌥, not either organisation's state.
     "isListening",
     // 2e (#202). Both are injected at construction and describe HOW to

@@ -14,12 +14,15 @@ public enum CommitDraft {
     /// counts where the diff reached it, so none is lost to a cut or an empty diff.
     /// `examples` are the root's messages committed from Wakil, newest first; at most five are used.
     public static func request(diff: String, truncated: Bool, files: [String], untracked: [String],
-                               examples: [String]) -> RespondRequest {
+                               examples: [String], commitInstructions: String = "") -> RespondRequest {
         var instructions = """
             Write a git commit message for the change below. A subject line in the imperative mood, under \
             72 characters; then, only if the change needs explaining, a blank line and a short body. \
             Describe what changed and why, not which files. Answer as JSON: {"message": "..."}.
             """
+        // 3a-iii-b: the organisation's and the project's commit rules, as the operator wrote them.
+        let rules = commitInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !rules.isEmpty { instructions += "\n\nFollow these commit rules:\n" + rules }
         let style = examples.prefix(5)
         if !style.isEmpty {
             instructions += "\n\nMatch the style of this repository's recent messages:\n"
