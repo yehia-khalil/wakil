@@ -1504,6 +1504,22 @@ Each entry: the call, why, and what would change our mind.
     or an agent push the operator did not ask for is found on a remote, and then push becomes *gate*
     for the agent.
 
+45. **Agent instructions are the operator's, appended after Wakil's own rules, and reach a live agent
+    in its next turn.**
+    *(2026-10-22, operator, during the 3a-iii design; delivery amended by the probe in
+    `docs/wakil/3a-iii-instructions-probe.md`.)*
+    Settings holds three boxes per organisation — **General** under Agent, **Commits** and **Pull
+    requests** under Git — and the same three on each project's page. The agent's launch appends them
+    to `--append-system-prompt` **after** Wakil's own prompt, under one heading per box (organisation
+    first, then the project), so they add to Wakil's rules and never replace them; an empty box and its
+    heading are left out. ✨ drafts a commit message with the Commits texts. The CLI ignores a changed
+    appended prompt on `--resume`, so **a saved edit rides in the agent's next turn**, as a block
+    before the operator's words that says it replaces the earlier text, with a thread line saying so;
+    a turn in flight is never interrupted. Each box saves when it is left (Rule 2); past 2,000 words
+    it says long instructions ride on every turn, and nothing is refused.
+    *Reverse if:* the agent is found following an earlier text after an update, or a resumed session
+    starts honouring a new appended prompt — then a save restarts the session instead.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,
