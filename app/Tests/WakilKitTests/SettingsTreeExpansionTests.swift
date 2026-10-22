@@ -76,3 +76,51 @@ import Testing
     #expect(!expansion.isOpen(project: "e2e-project", environment: "staging"))
     #expect(!expansion.isOpen(project: "e2e-git"))
 }
+
+// MARK: - Where a create, rename or removal lands (2e-ii)
+
+@Test func landingAfterACreateIsTheNewNode() {
+    #expect(SettingsLanding.afterCreatingProject("shop") == .project("shop"))
+    #expect(
+        SettingsLanding.afterCreatingEnvironment(project: "shop", name: "new-environment")
+            == .environment(project: "shop", environment: "new-environment"))
+}
+
+@Test func landingAfterARemovalIsTheParentHeading() {
+    #expect(SettingsLanding.afterRemovingProject() == .projects)
+    #expect(SettingsLanding.afterRemovingEnvironment(project: "shop") == .project("shop"))
+}
+
+@Test func landingFollowsARenameToTheNewName() {
+    #expect(SettingsLanding.afterRenamingProject(to: "store") == .project("store"))
+    #expect(
+        SettingsLanding.afterRenamingEnvironment(project: "shop", to: "qa")
+            == .environment(project: "shop", environment: "qa"))
+}
+
+@Test func renamingAProjectCarriesItsOpenBranchesToTheNewName() {
+    var expansion = SettingsTreeExpansion()
+    expansion.setOpen(true, project: "shop")
+    expansion.setOpen(true, project: "shop", environment: "staging")
+    expansion.setOpen(true, project: "other", environment: "staging")
+    expansion.renamed(project: "shop", to: "store")
+    #expect(expansion.isOpen(project: "store"))
+    #expect(expansion.isOpen(project: "store", environment: "staging"))
+    #expect(!expansion.isOpen(project: "shop"))
+    #expect(!expansion.isOpen(project: "shop", environment: "staging"))
+    #expect(expansion.isOpen(project: "other", environment: "staging"))
+}
+
+@Test func renamingAClosedProjectLeavesItClosed() {
+    var expansion = SettingsTreeExpansion()
+    expansion.renamed(project: "shop", to: "store")
+    #expect(!expansion.isOpen(project: "store"))
+}
+
+@Test func renamingAnEnvironmentCarriesItsOpenState() {
+    var expansion = SettingsTreeExpansion()
+    expansion.setOpen(true, project: "shop", environment: "staging")
+    expansion.renamed(project: "shop", environment: "staging", to: "qa")
+    #expect(expansion.isOpen(project: "shop", environment: "qa"))
+    #expect(!expansion.isOpen(project: "shop", environment: "staging"))
+}

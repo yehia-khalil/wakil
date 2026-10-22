@@ -573,6 +573,18 @@ extension WakilWindow {
                         await model.removeDatabase(
                             projectPath: path, environment: environment, name: name)
                     },
+                    createProject: { folder in await model.createProject(folder: folder) },
+                    renameProject: { old, new in await model.renameProject(old, to: new) },
+                    removeProject: { name in await model.removeProject(name) },
+                    createEnvironment: { project, path in
+                        await model.createEnvironment(project: project, projectPath: path)
+                    },
+                    renameEnvironment: { project, path, old, new in
+                        await model.renameEnvironment(project: project, projectPath: path, old, to: new)
+                    },
+                    removeEnvironment: { project, path, name in
+                        await model.removeEnvironment(project: project, projectPath: path, name)
+                    },
                     selection: $settingsSelection,
                     expansion: $settingsExpansion,
                     activeProject: model.project,
