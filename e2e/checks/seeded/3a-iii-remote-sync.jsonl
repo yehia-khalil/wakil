@@ -1,0 +1,41 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git init -q --bare -b main ../e2e-remote.git && git -C ../e2e-portal remote add origin \"$(cd .. && pwd)/e2e-remote.git\" && git -C ../e2e-portal push -q -u origin main"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git clone -q ../e2e-remote.git ../e2e-mate && echo theirs > ../e2e-mate/b.txt && git -C ../e2e-mate add b.txt && git -C ../e2e-mate -c user.name=Mate -c user.email=mate@e2e.invalid commit -qm theirs && git -C ../e2e-mate push -q"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"dispatch":{"action":"editor_changes_commit","params":{"root":"{fixtureRoot}/e2e-portal","message":"e2e mine"}}}
+{"dispatch":{"action":"editor_changes_fetch","params":{"root":"{fixtureRoot}/e2e-portal"}}}
+{"expect":{"tree":"contains","text":"e2e-portal · main ↑1 ↓1 · clean"}}
+{"dispatch":{"action":"editor_changes_push","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"Rejected: the remote has newer commits. Pull or Sync first"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","pullStrategy":"ff-only"}}}
+{"dispatch":{"action":"editor_changes_sync","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"Both sides have new commits, so Fast-forward only cannot pull. Choose Rebase or Merge in Settings → Organisation → Git"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main ↑1 ↓1 · clean"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","pullStrategy":"rebase"}}}
+{"dispatch":{"action":"editor_changes_sync","params":{"root":"{fixtureRoot}/e2e-portal"}}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-remote.git --no-pager log -2 --format=%s main"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"e2e mine"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[1]","equals":"theirs"}}

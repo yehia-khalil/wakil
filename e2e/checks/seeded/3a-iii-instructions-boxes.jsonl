@@ -1,0 +1,35 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"GIT"}}
+{"expect":{"tree":"contains","text":"AGENT INSTRUCTIONS"}}
+{"expect":{"tree":"contains","text":"The agent follows these after Wakil's own rules, from its next turn. ✨ uses Commits."}}
+{"do":{"type":{"into":"settings.org.agent.general","text":"Ask before running migrations."}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.agentGeneral","equals":"Ask before running migrations."}}
+{"expect":{"focus":"settings.org.agent.general"}}
+{"do":{"type":{"into":"settings.org.git.commits","text":"Imperative subject lines."}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitCommitInstructions","equals":"Imperative subject lines."}}
+{"do":{"type":{"into":"settings.org.git.pullRequests","text":"Say how to test it."}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitPRInstructions","equals":"Say how to test it."}}
+{"do":{"press":"Return"}}
+{"do":{"type":{"into":"settings.org.git.pullRequests","text":"Then the risk."}}}
+{"do":{"click":"settings.tree.project.e2e-project"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitPRInstructions","equals":"Say how to test it.\nThen the risk."}}
+{"expect":{"tree":"contains","text":"This project's own, after the organisation's. The agent has them from its next turn."}}
+{"do":{"type":{"into":"settings.project.agent.general","text":"Project general rule."}}}
+{"do":{"type":{"into":"settings.project.agent.commits","text":"Project commit rule."}}}
+{"do":{"type":{"into":"settings.project.agent.pullRequests","text":"Project PR rule."}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].name","equals":"e2e-project"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.general","equals":"Project general rule."}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.commits","equals":"Project commit rule."}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.pullRequests","equals":"Project PR rule."}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"Project general rule."}}
+{"expect":{"tree":"contains","text":"Project commit rule."}}
+{"expect":{"tree":"contains","text":"Project PR rule."}}
+{"dispatch":{"action":"ctx_set_project_agent_instructions","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","general":"Dispatched general rule."}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.general","equals":"Dispatched general rule."}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.commits","equals":"Project commit rule."}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"Dispatched general rule."}}
+{"expect":{"tree":"contains","text":"Project commit rule."}}
+{"expect":{"tree":"absent","text":"Project general rule."}}

@@ -1,0 +1,87 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N e2epass -C e2e-key -f ~/.ssh/e2ekey && echo made"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"made"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"GIT"}}
+{"do":{"click":"settings.org.git.account.add"}}
+{"expect":{"tree":"contains","text":"Pushes, pulls and clones in e2e-fixture use this account. One account per host."}}
+{"do":{"click":"settings.org.git.account.add.close"}}
+{"expect":{"tree":"absent","text":"Pushes, pulls and clones in e2e-fixture use this account. One account per host."}}
+{"do":{"click":"settings.org.git.account.add"}}
+{"expect":{"tree":"contains","text":"Pushes, pulls and clones in e2e-fixture use this account. One account per host."}}
+{"do":{"click":"settings.org.git.account.add.provider.bitbucket"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"How should Wakil sign in to bitbucket.org?"}}
+{"do":{"click":"settings.org.git.account.add.method.token"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"The token is kept in the Keychain, never in a file."}}
+{"do":{"type":{"into":"settings.org.git.account.add.username","text":"e2e-user"}}}
+{"expect":{"tree":"contains","text":"e2e-user"}}
+{"do":{"click":"settings.org.git.account.add.back"}}
+{"expect":{"tree":"contains","text":"How should Wakil sign in to bitbucket.org?"}}
+{"do":{"click":"settings.org.git.account.add.back"}}
+{"do":{"click":"settings.org.git.account.add.provider.other"}}
+{"expect":{"focus":"settings.org.git.account.add.host"}}
+{"do":{"type":{"into":"settings.org.git.account.add.host","text":"e2ehost"}}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"How should Wakil sign in to e2ehost?"}}
+{"do":{"click":"settings.org.git.account.add.method.token"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"do":{"type":{"into":"settings.org.git.account.add.token","text":"e2e-token-value"}}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"Wakil cannot test a token on e2ehost; the next fetch will."}}
+{"expect":{"tree":"contains","text":"Pushes, pulls and clones in e2e-fixture now use this account on e2ehost."}}
+{"expect":{"tree":"absent","text":"e2e-token-value"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[0].host","equals":"e2ehost"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[0].method","equals":"token"}}
+{"do":{"click":"settings.org.git.account.e2ehost.test"}}
+{"expect":{"tree":"contains","text":"Wakil cannot test a token on e2ehost; it is used on the next fetch"}}
+{"do":{"click":"settings.org.git.account.add"}}
+{"expect":{"tree":"contains","text":"Pushes, pulls and clones in e2e-fixture use this account. One account per host."}}
+{"do":{"click":"settings.org.git.account.add.provider.other"}}
+{"do":{"type":{"into":"settings.org.git.account.add.host","text":"e2ehost"}}}
+{"expect":{"tree":"contains","text":"e2ehost is connected already. Remove it on the Git page to connect it again."}}
+{"do":{"click":"settings.org.git.account.add.close"}}
+{"do":{"click":"settings.org.git.account.add"}}
+{"expect":{"tree":"contains","text":"Pushes, pulls and clones in e2e-fixture use this account. One account per host."}}
+{"do":{"click":"settings.org.git.account.add.provider.other"}}
+{"expect":{"focus":"settings.org.git.account.add.host"}}
+{"do":{"type":{"into":"settings.org.git.account.add.host","text":"e2essh"}}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"How should Wakil sign in to e2essh?"}}
+{"do":{"click":"settings.org.git.account.add.method.ssh"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"Wakil keeps the key in e2e-fixture's folder and its passphrase in the Keychain; ~/.ssh is left alone."}}
+{"do":{"click":"settings.org.git.account.add.keySource.existing"}}
+{"do":{"click":"settings.org.git.account.add.keySource.generate"}}
+{"expect":{"tree":"contains","text":"Recommended: a key just for e2e-fixture, so this organisation never pushes as another."}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"ssh-ed25519"}}
+{"expect":{"tree":"contains","text":"e2e-fixture (Wakil · e2e-fixture)"}}
+{"expect":{"tree":"contains","text":"In e2essh's settings, under SSH keys."}}
+{"expect":{"tree":"contains","text":"Add this key on e2essh, then test the connection."}}
+{"do":{"click":"settings.org.git.account.add.close"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[1].host","equals":"e2essh"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[1].method","equals":"ssh"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"ls ~/.ssh | paste -sd, -"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"e2ekey,e2ekey.pub"}}
+{"do":{"click":"settings.org.git.account.e2ehost.more"}}
+{"expect":{"tree":"contains","text":"Remove…"}}
+{"do":{"click":"settings.org.git.account.e2ehost.remove"}}
+{"expect":{"tree":"contains","text":"Remove e2ehost? Pushes and pulls from e2ehost stop until you connect it again."}}
+{"do":{"click":"settings.org.git.account.e2ehost.remove.keep"}}
+{"expect":{"tree":"absent","text":"Remove e2ehost? Pushes and pulls from e2ehost stop until you connect it again."}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[0].host","equals":"e2ehost"}}
+{"do":{"click":"settings.org.git.account.e2ehost.more"}}
+{"expect":{"tree":"contains","text":"Remove…"}}
+{"do":{"click":"settings.org.git.account.e2ehost.remove"}}
+{"expect":{"tree":"contains","text":"Remove e2ehost? Pushes and pulls from e2ehost stop until you connect it again."}}
+{"do":{"click":"settings.org.git.account.e2ehost.remove.confirm"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[0].host","equals":"e2essh"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[1]","present":false}}

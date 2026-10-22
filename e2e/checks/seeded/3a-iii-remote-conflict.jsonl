@@ -1,0 +1,63 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git init -q --bare -b main ../e2e-remote.git && git -C ../e2e-portal remote add origin \"$(cd .. && pwd)/e2e-remote.git\" && git -C ../e2e-portal push -q -u origin main"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git clone -q ../e2e-remote.git ../e2e-mate && echo theirs > ../e2e-mate/index.txt && git -C ../e2e-mate -c user.name=Mate -c user.email=mate@e2e.invalid commit -qam theirs && git -C ../e2e-mate push -q"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"dispatch":{"action":"editor_changes_commit","params":{"root":"{fixtureRoot}/e2e-portal","message":"e2e mine"}}}
+{"dispatch":{"action":"editor_changes_fetch","params":{"root":"{fixtureRoot}/e2e-portal"}}}
+{"expect":{"tree":"contains","text":"e2e-portal · main ↑1 ↓1 · clean"}}
+{"dispatch":{"action":"editor_changes_pull","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"Pull stopped on conflicts in index.txt; nothing was changed"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main ↑1 ↓1 · clean"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"cat ../e2e-portal/index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"portal, edited"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"ls ../e2e-portal/.git | grep -c rebase"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"0"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal status --porcelain | wc -l | tr -d ' '"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"0"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal -c user.name=Me -c user.email=me@e2e.invalid merge --no-edit '@{u}'"}}
+{"do":{"press":"Return"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"test -f ../e2e-portal/.git/MERGE_HEAD && echo merging"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"merging"}}
+{"dispatch":{"action":"editor_changes_sync","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"A merge is in progress in"}}
+{"dispatch":{"action":"editor_changes_pull","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"finish or abort it first"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"test -f ../e2e-portal/.git/MERGE_HEAD && echo merging"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"merging"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal merge --abort"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}

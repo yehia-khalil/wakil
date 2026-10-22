@@ -193,6 +193,8 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		spec.SearchHaystack = WantsSearchHaystack(checks)
 		// 3a-ii's failing (and, on request, slow) pre-commit hook, for its launch only (SeedSpec.GitHook).
 		spec.GitHook = WantsGitHook(checks)
+		// 3a-iii's last clone folder, for the clone check's launch only (SeedSpec.CloneFolder).
+		spec.CloneFolder = WantsCloneFolder(checks)
 		seeded, err = Seed(fixture, spec)
 		if err != nil {
 			return Result{}, err

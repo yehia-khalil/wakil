@@ -1,0 +1,46 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"do":{"type":{"into":"settings.org.agent.general","text":"E2E-ORG-RULE-ONE"}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.agentGeneral","equals":"E2E-ORG-RULE-ONE"}}
+{"do":{"click":"settings.tree.project.e2e-project"}}
+{"do":{"type":{"into":"settings.project.agent.commits","text":"E2E-PROJECT-COMMITS"}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.commits","equals":"E2E-PROJECT-COMMITS"}}
+{"dispatch":{"action":"pane_restore","params":{}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"say the instructions marker"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"the instructions marker turn answered"}}
+{"expect":{"tree":"absent","text":"Instructions updated"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"grep -c -- '--append-system-prompt' ../claude-e2e-provider/e2e-agent-log.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"grep -c E2E-ORG-RULE-ONE ../claude-e2e-provider/e2e-agent-log.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"grep -c E2E-PROJECT-COMMITS ../claude-e2e-provider/e2e-agent-log.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
+{"do":{"type":{"into":"settings.project.agent.commits","text":" AND-TWO"}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[1].agent.commits","equals":"E2E-PROJECT-COMMITS AND-TWO"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"say the instructions marker again"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Instructions updated — the agent has the new ones from this turn."}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"grep '^prompt:' ../claude-e2e-provider/e2e-agent-log.txt | grep -c AND-TWO"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"grep '^started:' ../claude-e2e-provider/e2e-agent-log.txt | grep -c -- '--session-id'"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}

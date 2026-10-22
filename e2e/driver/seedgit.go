@@ -181,6 +181,23 @@ func WantsGitHook(checks []Check) bool {
 	return false
 }
 
+// CloneFolderName is the folder under the fixture root SeedSpec.CloneFolder records as the
+// organisation's last clone folder.
+const CloneFolderName = "e2e-clones"
+
+// cloneFolderChecks are the checks whose launch records a last clone folder (SeedSpec.CloneFolder).
+var cloneFolderChecks = map[string]bool{"3a-iii-add-project-clone.jsonl": true}
+
+// WantsCloneFolder reports whether a launch running these checks records a last clone folder.
+func WantsCloneFolder(checks []Check) bool {
+	for _, check := range checks {
+		if cloneFolderChecks[check.Name] {
+			return true
+		}
+	}
+	return false
+}
+
 // gitSeedStep is one thing done to a seeded repository: files written, or one
 // git command run. Exactly one of the two.
 type gitSeedStep struct {
