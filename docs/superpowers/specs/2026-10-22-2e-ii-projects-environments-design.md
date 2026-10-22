@@ -26,8 +26,9 @@ sub-phase reverses that part of the amendment.
    already has `.wakil/project.json`, Wakil registers that file as it is (the same thing
    `wakil project add` does). Otherwise it writes a new one.
 2. **Remove a project = take it off the org's list.** The row leaves `projects.json`, and
-   `project.json` stays on disk, as `wakil project rm` does today. Nothing is destroyed, so
-   there is no dialog (Rule 1). Adding the same folder again brings the project back whole.
+   `project.json` stays on disk, as `wakil project rm` does today. It asks first, in the pane
+   (**Remove** / **Keep it**): the operator counts it as destroying (Rule 1, ruled on the walk
+   2026-10-22). Adding the same folder again brings the project back whole.
 3. **Remove an environment = Trash first, then remove.** An environment exists only inside
    `project.json`. Before the key goes, a copy of the file goes to the Trash as
    `project.json (before removing staging 14:02)`. That copy is the undo (Decision 41's pattern,

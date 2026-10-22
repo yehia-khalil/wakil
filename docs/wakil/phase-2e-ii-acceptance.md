@@ -48,7 +48,7 @@ Walk in order, in `personal`.
 | 2 | Cancel the picker the next time you open it | Nothing happens: no new row, no message | |
 | 3 | Type `spare-renamed`, click `walk-2e-ii` in the tree (no Return) | The tree shows `spare-renamed`; the project switcher (⌘P) lists it too. Saved on leaving the field (Rule 2) | |
 | 4 | In Terminal: `cat "$TMPDIR/walk-2e-ii/spare/.wakil/project.json"` | The file's `name` is `spare-renamed` and its `roots` hold the `spare` folder | |
-| 5 | On `spare-renamed`'s page press **Remove from this organisation** | The tree selects the PROJECTS heading; the line `Removed spare-renamed from this organisation — its folder is untouched.` shows; no dialog. `ls "$TMPDIR/walk-2e-ii/spare/.wakil"` still lists `project.json` | |
+| 5 | On `spare-renamed`'s page press **Remove from this organisation**, then **Keep it**; press it again, then **Remove** | **Keep it** leaves the project; on **Remove** the tree selects the PROJECTS heading; the line `Removed spare-renamed from this organisation — its folder is untouched.` shows. `ls "$TMPDIR/walk-2e-ii/spare/.wakil"` still lists `project.json` | |
 | 6 | **+ Add a project** again, choose `spare` | It comes back whole: the same name as in the file, `spare-renamed`; no second row | |
 | 7 | Under `walk-2e-ii` click **+ Add an environment** | `new-environment` appears, its page opens with Name focused and selected, `Databases 0` and `API 0` | |
 | 8 | Click **+ Add an environment** again, then rename it `qa` and press Return | A refusal whole under the field, naming the clash; the field keeps `qa` (the typed text is still in it); nothing is written | |

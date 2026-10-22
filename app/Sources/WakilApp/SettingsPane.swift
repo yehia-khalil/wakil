@@ -157,6 +157,10 @@ struct SettingsPane: View {
     @State private var lifecycleBusy: Set<String> = []
     /// A failed add or remove, whole, beside the control that caused it (Rule 8).
     @State private var lifecycleRefusals: [String: String] = [:]
+    /// The removal awaiting its pane-local confirmation, by its key. Only a
+    /// removal that passes a `confirmation` asks (Rule 1: the operator
+    /// counts taking a project off the list as destroying).
+    @State private var confirmingRemoval: String?
     /// What a removal did, shown on the page it landed on until the operator moves.
     @State private var receipt: (node: SettingsNode, text: String)?
     /// The node whose Name field takes the keyboard when its page appears (Rule 3).
@@ -685,19 +689,28 @@ struct SettingsPane: View {
     /// spinner while it runs (Rule 5), and a failure whole beneath it (Rule 8).
     private func removeSection(
         key: String, label: String, identifier: String, hint: String,
+        confirmation: String? = nil,
         _ act: @escaping () async -> Void
     ) -> some View {
         let busy = lifecycleBusy.contains(key)
+        let run: () -> Void = {
+            guard !lifecycleBusy.contains(key) else { return }
+            lifecycleBusy.insert(key)
+            lifecycleRefusals[key] = nil
+            Task {
+                await act()
+                lifecycleBusy.remove(key)
+            }
+        }
         return SettingsSection("Remove") {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     Button {
-                        guard !lifecycleBusy.contains(key) else { return }
-                        lifecycleBusy.insert(key)
-                        lifecycleRefusals[key] = nil
-                        Task {
-                            await act()
-                            lifecycleBusy.remove(key)
+                        if confirmation != nil {
+                            lifecycleRefusals[key] = nil
+                            confirmingRemoval = key
+                        } else {
+                            run()
                         }
                     } label: {
                         Text(label)
@@ -711,6 +724,29 @@ struct SettingsPane: View {
                     if busy { ProgressView().controlSize(.small) }
                 }
                 FormHint(hint)
+                if let confirmation, confirmingRemoval == key {
+                    // Says what will NOT be destroyed, as the unlink
+                    // confirmation does.
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(confirmation)
+                            .font(.system(size: Scale.body))
+                            .foregroundStyle(caution)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 10) {
+                            confirmButton("Remove", tone: caution, filled: true,
+                                          identifier: "\(identifier).confirm") {
+                                confirmingRemoval = nil
+                                run()
+                            }
+                            confirmButton("Keep it", tone: coolWhite.opacity(0.62),
+                                          identifier: "\(identifier).keep") {
+                                confirmingRemoval = nil
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+                    .padding(.top, 4)
+                }
                 if let refusal = lifecycleRefusals[key] {
                     Text(refusal)
                         .font(.system(size: Scale.body))
@@ -907,7 +943,9 @@ struct SettingsPane: View {
                 removeSection(
                     key: "remove.project.\(project.name)", label: "Remove from this organisation",
                     identifier: "settings.project.remove",
-                    hint: "The project leaves this organisation's list. Its folder and project.json are left alone."
+                    hint: "The project leaves this organisation's list. Its folder and project.json are left alone.",
+                    confirmation: "Remove \(project.name) from this organisation? Its folder and project.json "
+                        + "stay on disk; adding the folder again brings it back."
                 ) { await remove(project: project) }
             } else {
                 gone(name)
