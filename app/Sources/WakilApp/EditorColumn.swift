@@ -73,6 +73,10 @@ struct EditorColumn: View {
     @FocusState private var nameFocused: Bool
     /// The row under the pointer: a root shows its **+** while hovered or selected.
     @State private var hovered: String?
+    /// 3a-ii-b: ✨ under the pointer, which shows ✕ while its draft runs.
+    @State private var draftHovered: String?
+    /// The window's undo: a draft that replaced text registers one step that puts it back (R3).
+    @Environment(\.undoManager) private var undoManager
     /// Bumped by every row the operator picks (`activate`): a commit in flight moves the selection
     /// to its new path only if no pick came after it started (Rule 6).
     @State private var picks = 0
@@ -756,6 +760,7 @@ struct EditorColumn: View {
                 .stroke(messageFocused == key ? EditorPaneStyle.violet : EditorPaneStyle.text.opacity(0.12),
                         lineWidth: 1)
                 .allowsHitTesting(false))
+            .overlay(alignment: .topTrailing) { draftButton(root) }
             HStack(spacing: 0) {
                 if busy {
                     HStack(spacing: ChangesSpace.m) {
@@ -819,6 +824,45 @@ struct EditorColumn: View {
     }
 
     /// Focuses the root's message box from a click on its padding, the caret at the end of the draft.
+    /// 3a-ii-b: ✨ in the box's corner — the quick model drafts what Commit would commit into the box.
+    /// While it runs: a spinner, ✕ under the pointer to cancel (Rules 4, 5). A draft that replaced
+    /// text is one ⌘Z away (R3); the keyboard stays in the box (Rule 6). Hidden when the organisation
+    /// switched commit drafts off.
+    @ViewBuilder
+    private func draftButton(_ root: GitRootState) -> some View {
+        let key = root.root
+        if changes.draftsOn {
+            let drafting = changes.drafting.contains(key)
+            Button {
+                if drafting { changes.cancelDraft(key); return }
+                Task {
+                    guard let replaced = await changes.draft(key) else { return }
+                    let edit = changes.edit
+                    undoManager?.registerUndo(withTarget: ChangesDraftUndo.shared) { _ in edit(key, replaced) }
+                    undoManager?.setActionName("Draft Message")
+                    focusMessage(key)
+                }
+            } label: {
+                Group {
+                    if drafting && draftHovered != key {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Text(drafting ? "✕" : "✨").font(.system(size: 11))
+                    }
+                }
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
+            .onHover { inside in draftHovered = inside ? key : (draftHovered == key ? nil : draftHovered) }
+            .help(drafting ? "Cancel Draft" : "Draft Message")
+            .accessibilityLabel(drafting ? "Cancel Draft" : "Draft Message")
+            .accessibilityIdentifier("editor.changes.\(root.name).draft")
+            .padding(2)
+        }
+    }
+
     private func focusMessage(_ key: String) {
         messageFocused = key
         Task { @MainActor in
@@ -1616,6 +1660,13 @@ struct ChangesIconButtonStyle: ButtonStyle {
 
 /// 3a-ii. What the Changes view's writes draw from and press, every root's, handed in by `Canvas`
 /// from the window's state (`WindowModel+ChangesWrites`). Keyed by the root's absolute path.
+/// The undo target a draft's step is registered against: `registerUndo` needs an object, and the
+/// step itself only calls `edit`.
+@MainActor
+final class ChangesDraftUndo {
+    static let shared = ChangesDraftUndo()
+}
+
 struct EditorChangesControls {
     var messages: [String: String]
     var errors: [String: String]
@@ -1633,6 +1684,12 @@ struct EditorChangesControls {
     let discard: (String, [String]?, GitGroup?) async -> Void
     let cancel: (String) -> Void
     let refreshIdentity: (String) async -> Void
+    /// 3a-ii-b: roots with a ✨ draft running; whether the organisation has commit drafts on; the
+    /// draft (the text it replaced, nil when nothing landed); and its cancel.
+    var drafting: Set<String>
+    var draftsOn: Bool
+    let draft: (String) async -> String?
+    let cancelDraft: (String) -> Void
 }
 
 /// The message box's keys (3a-ii), taken ahead of SwiftUI and the menu while a box holds the keyboard:

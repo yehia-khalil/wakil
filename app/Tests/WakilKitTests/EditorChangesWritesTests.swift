@@ -351,6 +351,14 @@ private func args(_ call: WriteGit.Call?, _ key: String) -> JSONValue? {
         #expect(args(await f.git.calls.last { $0.name == "git_stage_hunk" }, "content") == .string("a\nc\n"))
     }
 
+    @Test func stageRangesWithOnlyACaretTakesTheCaretsLine() async throws {
+        let f = try await fixture(rows: ["/p": [("a.go", "changed", "M")], "/q": []])
+        await openDiff(f, group: .changed, original: "a\n", modified: "a\nb\nc\n")
+        await f.panes.updateEditor(paneId: f.pane, create: false) { s in s.tabs[0].cursor = EditorPosition(line: 2, column: 1) }
+        _ = try await f.dispatch("editor_changes_stage_ranges", ["path": .string("/p/a.go")])
+        #expect(args(await f.git.calls.last { $0.name == "git_stage_hunk" }, "content") == .string("a\nb\n"))
+    }
+
     private func refusal(_ f: Fixture, _ action: String, _ params: [String: JSONValue]) async -> String {
         do {
             _ = try await f.dispatch(action, params)

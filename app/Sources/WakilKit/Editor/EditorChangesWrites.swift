@@ -307,8 +307,9 @@ func registerEditorChangesWrites(
                         guard case .object(let r) = v, let s = r["start"]?.intValue, let e = r["end"]?.intValue else { return nil }
                         return EditorLineSpan(start: Int(min(s, e)), end: Int(max(s, e)))
                     }
-                } else if let sel = tab?.selection {
-                    spans = editorLineSpans([sel])
+                } else if let tab {
+                    // The page reports a caret as no selection: the caret's line is a one-line one.
+                    spans = editorLineSpans([tab.selection ?? EditorRange(start: tab.cursor, end: tab.cursor)])
                 } else {
                     throw StandardActionError.missingParam(action: name, param: "ranges")
                 }
