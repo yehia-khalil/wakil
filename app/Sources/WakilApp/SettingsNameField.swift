@@ -40,7 +40,7 @@ struct LifecycleNameField: View {
                         .frame(maxWidth: 320)
                         .inPlaceField(focused: focused)
                         .focused($focused)
-                        .onSubmit { commit(field.leave(stored: stored)) }
+                        .onSubmit { commit(field.submit(stored: stored)) }
                         .onChange(of: focused) { old, new in
                             if old, !new { commit(field.leave(stored: stored)) }
                         }

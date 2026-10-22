@@ -225,6 +225,9 @@ struct SettingsPane: View {
     /// click — so its refusal goes to the window's status (Rule 8). A reference, as
     /// `LeaveSavedField`'s, so the save's task reads the live answer.
     @State private var gitFieldsShown = ShownFields()
+    /// The text a Git field's last save sent, when it was refused: leaving does not send it again
+    /// (the refusal is already under the field); Return and Save do.
+    @State private var refusedDrafts: [WindowModel.OrganisationField: String] = [:]
 
     private final class ShownFields {
         var fields: Set<WindowModel.OrganisationField> = []
@@ -1336,7 +1339,7 @@ struct SettingsPane: View {
     private func leave(_ field: WindowModel.OrganisationField, tree: SettingsTree) {
         guard field.savesOnLeave,
               LeaveSave.value(draft: drafts[field], stored: storedValue(field, in: tree),
-                              saving: saving == field) != nil else { return }
+                              saving: saving == field, refused: refusedDrafts[field]) != nil else { return }
         save(field, tree: tree)
     }
 
@@ -1347,14 +1350,18 @@ struct SettingsPane: View {
         let shown = gitFieldsShown
         Task {
             let refusal = await saveOrganisationField(field, value)
+            // The draft is cleared only on success, so a refused value
+            // stays in front of the operator to be corrected rather than
+            // vanishing along with the explanation of why it was refused.
+            // Cleared WITH `saving`, before the await below: a leave in
+            // between would otherwise see a draft and no write in flight,
+            // and send the same value again.
+            if refusal == nil { drafts[field] = nil }
+            refusedDrafts[field] = refusal == nil ? nil : value
             saving = nil
             refusals[field] = refusal
             if let refusal, field.savesOnLeave, !shown.fields.contains(field) { showUnseenRefusal(refusal) }
             quickStatus = await quickTaskStatus()
-            // The draft is cleared only on success, so a refused value
-            // stays in front of the operator to be corrected rather than
-            // vanishing along with the explanation of why it was refused.
-            if refusal == nil { drafts[field] = nil }
         }
     }
 
