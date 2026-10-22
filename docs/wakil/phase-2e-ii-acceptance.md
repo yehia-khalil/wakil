@@ -51,7 +51,7 @@ Walk in order, in `personal`.
 | 5 | On `spare-renamed`'s page press **Remove from this organisation** | The tree selects the PROJECTS heading; the line `Removed spare-renamed from this organisation — its folder is untouched.` shows; no dialog. `ls "$TMPDIR/walk-2e-ii/spare/.wakil"` still lists `project.json` | |
 | 6 | **+ Add a project** again, choose `spare` | It comes back whole: the same name as in the file, `spare-renamed`; no second row | |
 | 7 | Under `walk-2e-ii` click **+ Add an environment** | `new-environment` appears, its page opens with Name focused and selected, `Databases 0` and `API 0` | |
-| 8 | Click **+ Add an environment** again, then rename it `qa`, leave the field | A refusal whole under the field, naming the clash; the field keeps `qa`; nothing is written | |
+| 8 | Click **+ Add an environment** again, then rename it `qa` and press Return | A refusal whole under the field, naming the clash; the field keeps `qa` (the typed text is still in it); nothing is written | |
 | 9 | Rename the first one `review` (type, then click `staging`). Then make `staging` the active environment, rename it `uat` and leave the field | The tree, the place line, the environment chip (**UAT**) and the switcher all show `uat`. The panes you had open in `staging` are back (the layout moved with the name) | |
 | 10 | Make `qa` active, open a terminal pane in it, then on `uat` press **Remove environment** | The tree selects the project; the receipt reads `Removed uat — a copy of project.json is in the Trash`; no dialog. The window stays on `qa` with its panes | |
 | 11 | In Finder open the Trash, select `project.json (before removing uat HH:MM)`, choose **Put Back** | The file returns to `$TMPDIR/walk-2e-ii/project/` as `project.json` and holds `uat`. Put Back is the undo | |
@@ -80,6 +80,7 @@ Walk in order, in `personal`.
   quota. The refusal itself is pinned in the Swift and Go tests.
 - **Voice** (row 14) runs a real provider; the checks dispatch the same actions on the
   agent's socket and the walk hears the agent say it can't.
+- **The field keeping what was typed** is asserted in the tree as the field's `Value:` line (the accessibility value of the text field), which only the field carries; row 15 is the walk's look at it.
 - **A refused name on leaving the field** (row 8) is visible only until the page changes; the
   checks pin the refusal on Return and the unchanged tree after leaving.
 
