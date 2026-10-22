@@ -2401,11 +2401,12 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
     // action and is absent here for the reason `pane_open` is: this test
     // covers `registerStandardActions` alone.
     #expect(await r.all().map(\.name).sorted() ==
-            ["ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org",
-             "ctx_editor_settings", "ctx_list_accounts",
+            ["ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_environment",
+             "ctx_create_org", "ctx_create_project", "ctx_editor_settings", "ctx_list_accounts",
              "ctx_list_environments", "ctx_list_machine_providers",
              "ctx_list_orgs", "ctx_list_projects", "ctx_list_providers",
-             "ctx_provider_login", "ctx_set_editor_settings", "ctx_set_environment",
+             "ctx_provider_login", "ctx_remove_environment", "ctx_remove_project",
+             "ctx_rename_environment", "ctx_rename_project", "ctx_set_editor_settings", "ctx_set_environment",
              "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_editor_settings", "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
              "db_cancel", "db_classify_statement", "db_describe_table",
              "db_list_databases", "db_list_tables", "db_page", "db_read_table", "db_refetch",
@@ -2668,6 +2669,16 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         // the missing-client guard is ever reached — which would make
         // this test pass for the wrong reason.
         "ctx_update_org": .object(["id": .string("acme"), "displayName": .string("Acme")]),
+        // 2e-ii. Each needs its params, or the pin check or `.missingParam` could answer first.
+        "ctx_create_project": .object(["folder": .string("/w"), "name": .string("acme")]),
+        "ctx_rename_project": .object(["name": .string("acme"), "newName": .string("beta")]),
+        "ctx_remove_project": .object(["name": .string("acme")]),
+        "ctx_create_environment": .object(["projectPath": .string("/p.json")]),
+        "ctx_rename_environment": .object([
+            "project": .string("acme"), "projectPath": .string("/p.json"),
+            "name": .string("dev"), "newName": .string("qa")]),
+        "ctx_remove_environment": .object([
+            "project": .string("acme"), "projectPath": .string("/p.json"), "name": .string("dev")]),
         "ctx_set_project": .object(["name": .string("widgets")]),
         "ctx_set_environment": .object(["name": .string("dev")]),
         "ctx_set_editor_settings": .object(["fontSize": .integer(14)]),
@@ -3144,3 +3155,130 @@ private func writeProviderFixture(home: URL, org: String, id: String) throws {
     await client.stop()
 }
 
+
+// MARK: - 2e-ii: projects and environments from Settings
+
+private let projectEnvironmentActions = [
+    "ctx_create_project", "ctx_rename_project", "ctx_remove_project",
+    "ctx_create_environment", "ctx_rename_environment", "ctx_remove_environment",
+]
+
+/// A registry over a recording context client, with `agentIn` answering as the test says.
+private func projectEnvironmentRegistry(
+    agentIn: (@Sendable (String, String?) async -> String?)? = nil
+) async throws -> (ActionRegistry, RecordingToolCaller) {
+    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let client = RecordingToolCaller(always: .object(["ok": .bool(true)]))
+    let registry = ActionRegistry(
+        journalDirectory: dir.appendingPathComponent("journal"), sessionId: "s1")
+    await registerStandardActions(
+        into: registry, context: client, panes: PaneStore(), db: nil, resumes: ResumeBroker(),
+        agentIn: agentIn)
+    return (registry, client)
+}
+
+@Test func theSixProjectAndEnvironmentActionsAreOperatorOnlyControls() async throws {
+    let (registry, _) = try await projectEnvironmentRegistry()
+    let byName = Dictionary(uniqueKeysWithValues: await registry.all().map { ($0.name, $0) })
+    for name in projectEnvironmentActions {
+        #expect(byName[name]?.kind == .control, "\(name)")
+        #expect(byName[name]?.audience == .operatorOnly, "\(name)")
+        #expect(operatorOnlyActions.contains(name), "\(name)")
+    }
+}
+
+@Test func theSixActionsForwardToTheirToolsWithTheToolsArguments() async throws {
+    let (registry, client) = try await projectEnvironmentRegistry()
+    let cases: [(String, [String: JSONValue], String, [String: JSONValue])] = [
+        ("ctx_create_project", ["folder": .string("/w"), "name": .string("acme")],
+         "create_project", ["folder": .string("/w"), "name": .string("acme")]),
+        ("ctx_rename_project", ["name": .string("acme"), "newName": .string("beta")],
+         "rename_project", ["name": .string("acme"), "newName": .string("beta")]),
+        ("ctx_remove_project", ["name": .string("acme")],
+         "remove_project", ["name": .string("acme")]),
+        ("ctx_create_environment", ["projectPath": .string("/p.json")],
+         "create_environment", ["projectPath": .string("/p.json")]),
+        // `project` is the pin check's, not the tool's: it must not be forwarded.
+        ("ctx_rename_environment",
+         ["project": .string("acme"), "projectPath": .string("/p.json"),
+          "name": .string("dev"), "newName": .string("qa")],
+         "rename_environment",
+         ["projectPath": .string("/p.json"), "name": .string("dev"), "newName": .string("qa")]),
+        ("ctx_remove_environment",
+         ["project": .string("acme"), "projectPath": .string("/p.json"), "name": .string("dev")],
+         "remove_environment", ["projectPath": .string("/p.json"), "name": .string("dev")]),
+    ]
+    for (action, params, tool, expected) in cases {
+        await client.reset()
+        _ = try await registry.dispatch(
+            name: action, params: .object(params), origin: .ui, caller: .test("dev"),
+            confirmation: nil)
+        let calls = await client.calls
+        #expect(calls.count == 1, "\(action)")
+        #expect(calls.first?.name == tool, "\(action)")
+        #expect(calls.first?.arguments == .object(expected), "\(action)")
+    }
+}
+
+@Test func renameProjectAndRemoveEnvironmentAreRefusedWhereAnAgentRuns() async throws {
+    let (registry, client) = try await projectEnvironmentRegistry(agentIn: { project, environment in
+        project == "acme" && (environment == nil || environment == "dev") ? "agent-1" : nil
+    })
+    do {
+        _ = try await registry.dispatch(
+            name: "ctx_rename_project",
+            params: .object(["name": .string("acme"), "newName": .string("beta")]),
+            origin: .ui, caller: .test("dev"), confirmation: nil)
+        Issue.record("expected the rename to be refused")
+    } catch {
+        let text = "\(error)"
+        #expect(text.contains("agent-1 is running in acme"))
+        #expect(text.contains("Invariant 5"))
+    }
+    do {
+        _ = try await registry.dispatch(
+            name: "ctx_remove_environment",
+            params: .object([
+                "project": .string("acme"), "projectPath": .string("/p.json"),
+                "name": .string("dev"),
+            ]),
+            origin: .ui, caller: .test("dev"), confirmation: nil)
+        Issue.record("expected the removal to be refused")
+    } catch {
+        let text = "\(error)"
+        #expect(text.contains("agent-1 is running in acme / dev"))
+        #expect(text.contains("Invariant 5"))
+    }
+    // An environment the agent is not in, and a project it is not in, go through.
+    _ = try await registry.dispatch(
+        name: "ctx_remove_environment",
+        params: .object([
+            "project": .string("acme"), "projectPath": .string("/p.json"), "name": .string("qa"),
+        ]),
+        origin: .ui, caller: .test("dev"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_remove_project", params: .object(["name": .string("other")]),
+        origin: .ui, caller: .test("dev"), confirmation: nil)
+    #expect(await client.calls.map(\.name) == ["remove_environment", "remove_project"])
+}
+
+@Test func createActionsAreNeverPinned() async throws {
+    let (registry, client) = try await projectEnvironmentRegistry(agentIn: { _, _ in "agent-1" })
+    _ = try await registry.dispatch(
+        name: "ctx_create_project",
+        params: .object(["folder": .string("/w"), "name": .string("acme")]),
+        origin: .ui, caller: .test("dev"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_create_environment", params: .object(["projectPath": .string("/p.json")]),
+        origin: .ui, caller: .test("dev"), confirmation: nil)
+    #expect(await client.calls.map(\.name) == ["create_project", "create_environment"])
+}
+
+@Test func theAgentLookupAnswersNilUntilWiredThenAsksTheWindow() async {
+    let lookup = ActiveAgentLookup()
+    #expect(await lookup.agent(in: "acme", environment: nil) == nil)
+    lookup.use { project, environment in "agent-\(project)-\(environment ?? "any")" }
+    #expect(await lookup.agent(in: "acme", environment: "dev") == "agent-acme-dev")
+    #expect(await lookup.agent(in: "acme", environment: nil) == "agent-acme-any")
+}

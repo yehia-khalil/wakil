@@ -266,7 +266,13 @@ public func registerStandardActions(
     // handler treats a `nil` layout exactly as `queryTargetPane` documents
     // — the old `"db"` default, unchanged. The one production call site
     // (`WakilWiring.build`) always passes its own `layout` explicitly.
-    layout: LayoutStore? = nil
+    layout: LayoutStore? = nil,
+    // 2e-ii. Defaulted for the same reason as the two above: no test but the pin's own runs an
+    // agent. Names the agent running in a project (and, when `environment` is given, in that
+    // environment of it), or nil. `ctx_rename_project`, `ctx_remove_project`,
+    // `ctx_rename_environment` and `ctx_remove_environment` ask it before touching a place an
+    // agent is pinned to (Invariant 5). The one production call site passes the window's.
+    agentIn: (@Sendable (_ project: String, _ environment: String?) async -> String?)? = nil
 ) async {
     // Every dispatch is homed in the canvas on screen when it began, unless its caller has one of
     // its own (`ActionRegistry.setScreenScope`): a db read, a git status or a page whose reply
@@ -930,6 +936,207 @@ public func registerStandardActions(
             return try await callChecked(
                 context, tool: "remove_database", arguments: .object(arguments),
                 action: "db_remove_database", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    // 2e-ii. Add, rename and remove a project and an environment from Settings: six
+    // `.control`, `.operatorOnly` actions over `wakil-ctx`'s six writers, each a plain
+    // forward like `db_remove_database` above. Operator-only because the agent's place is
+    // fixed when its session starts (Invariant 5) and these move it. A refusal comes back as a
+    // tool error carrying the Go `UserError` text whole, which `callChecked` surfaces unchanged.
+    //
+    // **The pin.** Renaming or removing a place an agent is running in would pull it out from
+    // under the session, so those four ask `agentIn` first and refuse by name. The two
+    // environment actions take an extra `project` (the registry name) for that check only —
+    // the tool's own schema has no such param, so it is not forwarded. Creates are never
+    // pinned: nothing an agent holds yet exists.
+
+    await registry.register(Action(
+        name: "ctx_create_project",
+        description: "Add a project: create its file under a folder and register it. Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "folder": .object(["type": .string("string")]),
+                "name": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("folder"), .string("name")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(
+                    action: "ctx_create_project", role: "context")
+            }
+            var arguments: [String: JSONValue] = [:]
+            for key in ["folder", "name"] {
+                arguments[key] = .string(
+                    try requireStringParam(params, key, action: "ctx_create_project"))
+            }
+            return try await callChecked(
+                context, tool: "create_project", arguments: .object(arguments),
+                action: "ctx_create_project", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    await registry.register(Action(
+        name: "ctx_rename_project",
+        description: "Rename a registered project. Refused while an agent is running in it (Invariant 5). Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object(["type": .string("string")]),
+                "newName": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("name"), .string("newName")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(
+                    action: "ctx_rename_project", role: "context")
+            }
+            try await refuseIfAgentRuns(
+                agentIn, project: try requireStringParam(params, "name", action: "ctx_rename_project"),
+                environment: nil, action: "ctx_rename_project")
+            var arguments: [String: JSONValue] = [:]
+            for key in ["name", "newName"] {
+                arguments[key] = .string(
+                    try requireStringParam(params, key, action: "ctx_rename_project"))
+            }
+            return try await callChecked(
+                context, tool: "rename_project", arguments: .object(arguments),
+                action: "ctx_rename_project", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    await registry.register(Action(
+        name: "ctx_remove_project",
+        description: "Remove a project from the registry. Its folder is left alone. Refused while an agent is running in it (Invariant 5). Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "name": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("name")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(
+                    action: "ctx_remove_project", role: "context")
+            }
+            try await refuseIfAgentRuns(
+                agentIn, project: try requireStringParam(params, "name", action: "ctx_remove_project"),
+                environment: nil, action: "ctx_remove_project")
+            var arguments: [String: JSONValue] = [:]
+            for key in ["name"] {
+                arguments[key] = .string(
+                    try requireStringParam(params, key, action: "ctx_remove_project"))
+            }
+            return try await callChecked(
+                context, tool: "remove_project", arguments: .object(arguments),
+                action: "ctx_remove_project", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    await registry.register(Action(
+        name: "ctx_create_environment",
+        description: "Add an environment to a project; the tool picks the name. Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "projectPath": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("projectPath")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(
+                    action: "ctx_create_environment", role: "context")
+            }
+            var arguments: [String: JSONValue] = [:]
+            for key in ["projectPath"] {
+                arguments[key] = .string(
+                    try requireStringParam(params, key, action: "ctx_create_environment"))
+            }
+            return try await callChecked(
+                context, tool: "create_environment", arguments: .object(arguments),
+                action: "ctx_create_environment", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    await registry.register(Action(
+        name: "ctx_rename_environment",
+        description: "Rename an environment of a project. `project` is the registry name, used only to check that no agent is running there (Invariant 5). Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "project": .object(["type": .string("string")]),
+                "projectPath": .object(["type": .string("string")]),
+                "name": .object(["type": .string("string")]),
+                "newName": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("project"), .string("projectPath"), .string("name"), .string("newName")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(
+                    action: "ctx_rename_environment", role: "context")
+            }
+            try await refuseIfAgentRuns(
+                agentIn, project: try requireStringParam(params, "project", action: "ctx_rename_environment"),
+                environment: try requireStringParam(params, "name", action: "ctx_rename_environment"),
+                action: "ctx_rename_environment")
+            var arguments: [String: JSONValue] = [:]
+            for key in ["projectPath", "name", "newName"] {
+                arguments[key] = .string(
+                    try requireStringParam(params, key, action: "ctx_rename_environment"))
+            }
+            return try await callChecked(
+                context, tool: "rename_environment", arguments: .object(arguments),
+                action: "ctx_rename_environment", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    await registry.register(Action(
+        name: "ctx_remove_environment",
+        description: "Remove an environment of a project; its files are moved to the Trash. `project` is the registry name, used only to check that no agent is running there (Invariant 5). Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "project": .object(["type": .string("string")]),
+                "projectPath": .object(["type": .string("string")]),
+                "name": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("project"), .string("projectPath"), .string("name")]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(
+                    action: "ctx_remove_environment", role: "context")
+            }
+            try await refuseIfAgentRuns(
+                agentIn, project: try requireStringParam(params, "project", action: "ctx_remove_environment"),
+                environment: try requireStringParam(params, "name", action: "ctx_remove_environment"),
+                action: "ctx_remove_environment")
+            var arguments: [String: JSONValue] = [:]
+            for key in ["projectPath", "name"] {
+                arguments[key] = .string(
+                    try requireStringParam(params, key, action: "ctx_remove_environment"))
+            }
+            return try await callChecked(
+                context, tool: "remove_environment", arguments: .object(arguments),
+                action: "ctx_remove_environment", timeout: MCPClient.readReplyTimeout)
         }
     ))
 
@@ -2855,6 +3062,19 @@ func callCheckedTool(
     _ client: any ToolCaller, tool: String, arguments: JSONValue, action: String, timeout: TimeInterval
 ) async throws -> JSONValue {
     try await callChecked(client, tool: tool, arguments: arguments, action: action, timeout: timeout)
+}
+
+/// 2e-ii. Throws, naming the agent, when `agentIn` finds one running in the place a rename or
+/// removal would move. The text is the whole refusal — the operator reads it as written.
+private func refuseIfAgentRuns(
+    _ agentIn: (@Sendable (String, String?) async -> String?)?,
+    project: String, environment: String?, action: String
+) async throws {
+    guard let agentIn, let agent = await agentIn(project, environment) else { return }
+    let place = environment.map { "\(project) / \($0)" } ?? project
+    throw StandardActionError.serverError(
+        action: action,
+        message: "\(agent) is running in \(place) — an agent keeps its own place (Invariant 5); stop it first")
 }
 
 private func callChecked(

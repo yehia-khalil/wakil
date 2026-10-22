@@ -46,6 +46,17 @@ public final class WindowModel {
     public private(set) var agents: [Place: PlaceAgent] = [:]
     /// The agent of the place on screen, if work has begun there.
     public var currentAgent: PlaceAgent? { agents[place] }
+    /// The name of an agent whose session is live in `project` (and, when given, in that
+    /// `environment` of it), or nil: what renaming or removing the place checks first
+    /// (Invariant 5). Live is a harness, as in `agentPlaces`.
+    public func runningAgent(in project: String, environment: String?) -> String? {
+        for (place, agent) in agents where agent.harness != nil && place.project == project
+            && (environment == nil || place.environment == environment) {
+            return "agent (\(agent.providerId))"
+        }
+        return nil
+    }
+
     /// The places whose agent has a live harness: what the pool keeps clients for.
     public var agentPlaces: Set<Place> { Set(agents.compactMap { $0.value.harness == nil ? nil : $0.key }) }
     /// The clients pinned to agent sessions' places (`WakilWiring.placeClients`). Told the places

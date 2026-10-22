@@ -104,6 +104,11 @@ public let operatorOnlyActions: Set<String> = [
     // row makes that objection no weaker. The agent still reads the
     // ACTIVE organisation's accounts through `ctx_config_tree`.
     "ctx_list_accounts",
+    // 2e-ii. Adding, renaming and removing a project or an environment is the operator's: an
+    // agent's place is fixed when its session starts (Invariant 5), and these rewrite the
+    // registry and the project files it stands in.
+    "ctx_create_project", "ctx_rename_project", "ctx_remove_project",
+    "ctx_create_environment", "ctx_rename_environment", "ctx_remove_environment",
     // 3b-v (Decision 38). Decision 30 kept for the editor's settings: they carry no credential,
     // but autosave decides when the operator's files are written, and showing ignored files
     // and the heavy folders decide what search covers; the operator, not the agent, chooses.

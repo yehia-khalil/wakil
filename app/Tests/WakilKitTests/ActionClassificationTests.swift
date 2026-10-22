@@ -121,7 +121,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
         operatorOnly == [
             // Provider capacity: the agent may not forge a reading.
             "capacity_record",
-            "ctx_add_provider", "ctx_adopt_provider", "ctx_create_org", "ctx_list_accounts",
+            "ctx_add_provider", "ctx_adopt_provider", "ctx_create_environment", "ctx_create_org",
+            "ctx_create_project", "ctx_list_accounts",
             "ctx_list_machine_providers", "ctx_list_orgs",
             // 2e (#199). `defaultProvider` names which account this
             // organisation's projects fall back to, so setting it chooses
@@ -131,6 +132,9 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // browser on the operator's machine and authenticates as
             // them.
             "ctx_provider_login",
+            // 2e-ii. Adding, renaming and removing a project or environment: the operator's.
+            "ctx_remove_environment", "ctx_remove_project", "ctx_rename_environment",
+            "ctx_rename_project",
             // 3b-v (Decision 38): Decision 30 kept — the agent reads editor settings, never writes them.
             "ctx_set_editor_settings", "ctx_set_environment",
             // 3b-viii (Decision 42): which model reads the operator's code is theirs to choose.

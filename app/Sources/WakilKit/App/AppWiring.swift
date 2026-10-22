@@ -42,6 +42,9 @@ public struct WakilWiring: Sendable {
     /// context changes while the app runs, so this must be asked, never
     /// captured. See `ActiveShellContext`.
     public let shellContext: ActiveShellContext
+    /// 2e-ii. Which agent runs in a project or environment, for the rename and remove actions'
+    /// pin check; pointed at the window by `useActiveContext(of:)` once there is one.
+    public let agentLookup: ActiveAgentLookup
     public let contextClient: MCPClient?
     public let databaseClient: MCPClient?
     /// `wakil-http`, in the window (#185).
@@ -237,6 +240,10 @@ public struct WakilWiring: Sendable {
         gitRoots.use { [weak model] in
             await model?.gitRootPaths(forCaller: ActionRegistry.dispatchCaller) ?? []
         }
+        // 2e-ii: the pin check on rename and remove asks the window's agents, live.
+        agentLookup.use { [weak model] project, environment in
+            await model?.runningAgent(in: project, environment: environment)
+        }
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -378,11 +385,13 @@ public struct WakilWiring: Sendable {
         let registry = ActionRegistry(journalDirectory: journalDirectory, sessionId: sessionId)
         let resumes = ResumeBroker()
         let providerSwitches = ProviderSwitchBroker()
+        let agentLookup = ActiveAgentLookup()
         let terminals = TerminalStore(panes: panes)
         await registerStandardActions(
             into: registry, context: routed(.context, contextClient), panes: panes,
             db: routed(.database, databaseClient), resumes: resumes,
-            providerSwitches: providerSwitches, layout: layout)
+            providerSwitches: providerSwitches, layout: layout,
+            agentIn: { project, environment in await agentLookup.agent(in: project, environment: environment) })
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
             unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
@@ -469,6 +478,7 @@ public struct WakilWiring: Sendable {
             layout: layout,
             terminals: terminals,
             shellContext: shellContext,
+            agentLookup: agentLookup,
             contextClient: contextClient,
             databaseClient: databaseClient,
             httpClient: httpClient,

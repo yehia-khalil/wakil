@@ -39,11 +39,12 @@ private func repoRoot() -> URL {
     // `make app-test` does not depend on `make build` — so a tool added
     // in Go without landing here is a suite that keeps passing against
     // yesterday's server and says nothing.
-    #expect(tools == ["add_provider", "adopt_provider", "capacity", "config_tree", "create_org",
-                      "derive_config_dir", "editor_settings", "get_context", "get_session",
+    #expect(tools == ["add_provider", "adopt_provider", "capacity", "config_tree", "create_environment",
+                      "create_org", "create_project", "derive_config_dir", "editor_settings", "get_context", "get_session",
                       "list_accounts", "list_environments", "list_machine_providers",
                       "list_orgs", "list_projects", "list_providers", "list_sessions",
                       "read_session", "record_capacity", "record_session_parent", "remove_database",
+                      "remove_environment", "remove_project", "rename_environment", "rename_project",
                       "set_database_dsn", "set_editor_settings", "set_environment", "set_local_provider",
                       "set_project",
                       "set_project_editor_settings", "set_provider", "unlink_provider", "update_org"])
