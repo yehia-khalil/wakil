@@ -48,16 +48,16 @@ Walk in order, in `personal`.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 1 | Under `walk-2e-iii` › `staging` open **API**. In the card type NAME `orders-api`, BASE URL `https://api.example.com`, TOKEN `Bearer walk-token-123`, press **Save** | The TOKEN field shows dots, not the text. The question reads `Store a token for orders-api in staging? It goes to your Keychain, not to the project file.` and names no part of the token | |
+| 1 | Under `walk-2e-iii` › `staging` open **API**. In the card type NAME `orders-api`, BASE URL `https://httpbin.org`, TOKEN `Bearer walk-token-123`, press **Save** | The TOKEN field shows dots, not the text. The question reads `Store a token for orders-api in staging? It goes to your Keychain, not to the project file.` and names no part of the token | |
 | 2 | Press **Store it** | The entry `orders-api` appears with Token `in Keychain (api:walk-2e-iii:staging:orders-api)` — the name of the Keychain item, never the token. The card is empty again | |
 | 3 | In Terminal: `security find-generic-password -s wakil:personal:api:walk-2e-iii:staging:orders-api -w` | Prints `Bearer walk-token-123`. macOS may ask to allow it; allow once | |
 | 4 | In Terminal: `cat "$TMPDIR/walk-2e-iii/project/project.json"` | The entry holds `"authRef":"api:walk-2e-iii:staging:orders-api"` and no token text anywhere | |
-| 5 | Open the API pane for `orders-api` (⌘P or the palette), and send a request from it | The request goes out with `Authorization: Bearer walk-token-123`; the reply or transport error is the host's, and the pane never shows the token | |
+| 5 | Open the API pane for `orders-api` (⌘P or the palette), and send `GET /headers` from it | httpbin answers with the headers it received: the reply body holds `"Authorization": "Bearer walk-token-123"`. That echo is the only place the token appears; the request the pane draws shows no token | |
 | 6 | Back in Settings press **Replace token**, type `Bearer walk-token-456`, press **Store it** | One question at a time, on the entry; **Store it** replaces the item. Run row 3's command: it prints `Bearer walk-token-456` | |
 | 7 | Press **Replace token**, type something, then press **Cancel** | The field and the question go away; row 3's command still prints `Bearer walk-token-456` | |
 | 8 | Press **Clear token** | No question (it destroys nothing). Token reads `none`. Row 3's command still prints `Bearer walk-token-456`: the Keychain item is kept | |
 | 9 | In the journal (the activity view) look for the store in row 6 | The `api_set_entry` line shows the token as `[redacted]`, never its text | |
-| 10 | In the composer: `add an API entry named walk-agent at https://api.example.com to staging`, Return. Then hold ⌥, say the same sentence, release | The agent says it can't (the actions are operator-only); no `walk-agent` entry appears. Voice reaches the agent, so it is told the same | |
+| 10 | In the composer: `add an API entry named walk-agent at https://api.example.com to staging`, Return. Then hold ⌥, say the same sentence, release | The agent says it can't; asked what the tool answered, it quotes `only the operator configures an API entry` and points at the settings pane (⌘,), not the organisation sentence (`creating an organisation…`). No `walk-agent` entry appears. Voice reaches the agent, so it is told the same | |
 | 11 | Open **Databases** for `staging`. Rename `ledger` to `ledger-main` and click away in the tree (no Return) | The row shows `ledger-main`, its Keychain refs still end `:ledger`; saved on leaving the field (Rule 2). **Remove write access** is absent: this database is not writable | |
 
 ## 2. Known and not fixed
@@ -74,7 +74,8 @@ Walk in order, in `personal`.
   is absent from the tree and `[redacted]` in the journal, and presses **Clear token**. They
   write the harness's throwaway fixture keychain, which a check cannot read back, so rows 1 to
   8 keep the real login Keychain: `security find-generic-password` and the real-host send.
-- **Sending with the token** (row 5) needs the real Keychain item and a real host.
+- **Sending with the token** (row 5) needs the real Keychain item and a real host that echoes
+  the header it received.
 - **The agent's refusal** (row 10) needs a running agent, a real provider and quota; the
   actions' operator-only audience is pinned in the Swift tests and the checks dispatch them on
   the agent's own socket.
