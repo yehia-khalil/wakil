@@ -41,6 +41,10 @@ func ParseRemoteURL(raw string) (RemoteURL, error) {
 		}
 		return r, nil
 	}
+	// An absolute path is git's local (file) transport: `git clone /path/repo.git` records it so.
+	if filepath.IsAbs(raw) {
+		return RemoteURL{Scheme: "file", Path: raw}, nil
+	}
 	// scp-like: [user@]host:path, where host has no slash before the colon.
 	colon := strings.Index(raw, ":")
 	if colon <= 0 || strings.Contains(raw[:colon], "/") {

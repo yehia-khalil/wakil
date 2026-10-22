@@ -79,3 +79,15 @@ func TestGitHostSuggestionsCountRepositoriesPerHost(t *testing.T) {
 		t.Fatalf("suggestions = %+v", got)
 	}
 }
+
+// Walk 3a-iii row 1: `git clone /path/remote.git` records the bare path as the URL — git's file
+// transport, so it is a file remote, allowed only where file remotes are.
+func TestALocalPathIsAFileRemote(t *testing.T) {
+	r, err := ParseRemoteURL("/var/tmp/walk/remote.git")
+	if err != nil || r.Scheme != "file" || r.Path != "/var/tmp/walk/remote.git" {
+		t.Fatalf("r = %+v err = %v", r, err)
+	}
+	if _, _, _, err := credentials("initech", "/var/tmp/walk/remote.git", GitRemoteOptions{}); err == nil || !strings.Contains(err.Error(), "protocol not allowed: file") {
+		t.Fatalf("a local path without the file switch: %v", err)
+	}
+}
