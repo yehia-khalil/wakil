@@ -161,6 +161,17 @@ type updateOrgArgs struct {
 	GhostText       *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
 	FastPath        *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
 	CommitDrafts    *bool   `json:"commitDrafts,omitempty" jsonschema:"the commit box's drafted message (✨) on or off for this organisation"`
+	PullStrategy    *string `json:"pullStrategy,omitempty" jsonschema:"how Pull and Sync integrate: rebase, merge or ff-only"`
+}
+
+type gitAccountArgs struct {
+	ID       string `json:"id" jsonschema:"the organisation's id"`
+	Host     string `json:"host" jsonschema:"the git host, e.g. github.com"`
+	Provider string `json:"provider,omitempty" jsonschema:"github, gitlab, bitbucket or other"`
+	Method   string `json:"method,omitempty" jsonschema:"ssh, token or signin"`
+	User     string `json:"user,omitempty" jsonschema:"the account name the host knows"`
+	KeyPath  string `json:"keyPath,omitempty" jsonschema:"an ssh account's private key"`
+	Username string `json:"username,omitempty" jsonschema:"Bitbucket's username, used with its token"`
 }
 
 // setEditorSettingsArgs is the app-wide editor tier's edit (3b-v). Pointers for updateOrgArgs'
@@ -548,6 +559,7 @@ func newServer() *mcp.Server {
 				GhostText:       a.GhostText,
 				FastPath:        a.FastPath,
 				CommitDrafts:    a.CommitDrafts,
+				PullStrategy:    a.PullStrategy,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
@@ -749,6 +761,24 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "remove_database", Description: "Drop a database from an environment. Its Keychain entry is KEPT: the same credential may be named by another project, a script, or a colleague's checkout, none of which this file can see, so \"unreferenced\" is not something the registry can claim. Refuses a project filed under another organisation."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a removeDatabaseArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.RemoveDatabase(a.ProjectPath, a.Environment, a.Name); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_account_add", Description: "Record an organisation's git account for one host, replacing the one it has there. method is ssh (keyPath), token or signin; the secret goes through its own tool."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.AddGitAccount(a.ID, wakilcore.GitAccount{
+				Host: a.Host, Provider: a.Provider, Method: a.Method, User: a.User, KeyPath: a.KeyPath, Username: a.Username,
+			}); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_account_remove", Description: "Forget an organisation's git account for one host: its Keychain secrets go, and a key Wakil generated goes to the Trash."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.RemoveGitAccount(a.ID, a.Host); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

@@ -241,3 +241,31 @@ private actor GhostRecordingCaller: ToolCaller {
         origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await caller.arguments == [.object(["id": .string("o"), "commitDrafts": .bool(false)]), .object(["id": .string("o")])])
 }
+
+/// 3a-iii-a: the pull strategy reaches `update_org` as a string, and the account tools forward their
+/// fields (the 3a-ii-b lesson: a key not forwarded is dropped silently).
+@Test func thePullStrategyAndTheAccountToolsAreForwarded() async throws {
+    let caller = GhostRecordingCaller()
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "git-accounts")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    _ = try await registry.dispatch(
+        name: "ctx_update_org", params: .object(["id": .string("o"), "pullStrategy": .string("merge")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_git_account_add",
+        params: .object(["id": .string("o"), "host": .string("github.com"), "provider": .string("github"),
+                         "method": .string("ssh"), "keyPath": .string("/k")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_git_account_remove", params: .object(["id": .string("o"), "host": .string("github.com")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    #expect(await caller.arguments == [
+        .object(["id": .string("o"), "pullStrategy": .string("merge")]),
+        .object(["id": .string("o"), "host": .string("github.com"), "provider": .string("github"),
+                 "method": .string("ssh"), "keyPath": .string("/k")]),
+        .object(["id": .string("o"), "host": .string("github.com")]),
+    ])
+    let d = try #require(await registry.descriptor(named: "ctx_git_account_add"))
+    #expect(d.audience == .operatorOnly)
+}

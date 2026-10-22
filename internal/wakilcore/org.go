@@ -53,6 +53,12 @@ type Org struct {
 	FastPath  *bool `json:"fastPath,omitempty"`
 	// CommitDrafts switches the commit box's ✨ (3a-ii-b). Nil is the default, on.
 	CommitDrafts *bool `json:"commitDrafts,omitempty"`
+
+	// GitAccounts are the organisation's git accounts, one per host (3a-iii, Decision 44); their
+	// secrets are in the Keychain, never here. PullStrategy is how Pull and Sync integrate:
+	// rebase (the default when empty), merge or ff-only.
+	GitAccounts  []GitAccount `json:"gitAccounts,omitempty"`
+	PullStrategy string       `json:"pullStrategy,omitempty"`
 }
 
 const orgFileName = "org.json"
@@ -213,6 +219,11 @@ func normaliseOrg(org string, o Org) (Org, error) {
 	o.SpeechProvider = strings.TrimSpace(o.SpeechProvider)
 	if strings.ContainsAny(o.GitName+o.GitEmail, "\r\n") {
 		return Org{}, UserError("gitName and gitEmail cannot hold a newline")
+	}
+	switch o.PullStrategy {
+	case "", "rebase", "merge", "ff-only":
+	default:
+		return Org{}, UserError("pullStrategy is rebase, merge or ff-only")
 	}
 	return o, nil
 }

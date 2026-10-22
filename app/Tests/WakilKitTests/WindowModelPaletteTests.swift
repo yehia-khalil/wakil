@@ -959,6 +959,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs", "ctx_list_projects",
     "ctx_list_providers", "ctx_provider_login", "ctx_set_environment", "ctx_set_project",
     "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
+    // 3a-iii-a: the git account tools, operator-only.
+    "ctx_git_account_add", "ctx_git_account_remove",
     "db_cancel", "db_classify_statement", "db_describe_table", "db_list_databases", "db_list_tables", "db_page",
     "db_read_table", "db_refetch", "db_remove_database", "db_render_update", "db_run_mutation",
     "db_run_query", "db_set_dsn",

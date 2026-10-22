@@ -951,6 +951,38 @@ public func registerStandardActions(
     // the tool's own schema has no such param, so it is not forwarded. Creates are never
     // pinned: nothing an agent holds yet exists.
 
+    // 3a-iii-a: an organisation's git accounts. Operator-only, like every Settings write
+    // (Decision 30); the secrets travel through their own tools, never these.
+    for (name, tool, keys, required) in [
+        ("ctx_git_account_add", "git_account_add",
+         ["id", "host", "provider", "method", "user", "keyPath", "username"], ["id", "host", "provider", "method"]),
+        ("ctx_git_account_remove", "git_account_remove", ["id", "host"], ["id", "host"]),
+    ] {
+        await registry.register(Action(
+            name: name,
+            description: name == "ctx_git_account_add"
+                ? "Record an organisation's git account for one host (ssh, token or signin). Operator-only."
+                : "Forget an organisation's git account for one host, with its secrets. Operator-only.",
+            kind: .control,
+            audience: .operatorOnly,
+            schema: .object([
+                "type": .string("object"),
+                "properties": .object(Dictionary(uniqueKeysWithValues: keys.map { ($0, JSONValue.object(["type": .string("string")])) })),
+                "required": .array(required.map { .string($0) }),
+            ]),
+            handler: { params in
+                guard let context else { throw StandardActionError.missingClient(action: name, role: "context") }
+                var arguments: [String: JSONValue] = [:]
+                for key in required { arguments[key] = .string(try requireStringParam(params, key, action: name)) }
+                for key in keys where arguments[key] == nil {
+                    if case .object(let o) = params, case .string(let v)? = o[key] { arguments[key] = .string(v) }
+                }
+                return try await callChecked(
+                    context, tool: tool, arguments: .object(arguments), action: name,
+                    timeout: MCPClient.readReplyTimeout)
+            }))
+    }
+
     await registry.register(Action(
         name: "ctx_create_project",
         description: "Add a project: create its file under a folder and register it. Operator-only.",
@@ -1197,6 +1229,7 @@ public func registerStandardActions(
                 "ghostText": .object(["type": .string("boolean")]),
                 "fastPath": .object(["type": .string("boolean")]),
                 "commitDrafts": .object(["type": .string("boolean")]),
+                "pullStrategy": .object(["type": .string("string")]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1214,7 +1247,7 @@ public func registerStandardActions(
                 throw StandardActionError.missingParam(action: "ctx_update_org", param: "id")
             }
             var arguments: [String: JSONValue] = ["id": .string(id)]
-            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail"] {
+            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail", "pullStrategy"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
             for key in ["ghostText", "fastPath", "commitDrafts"] {

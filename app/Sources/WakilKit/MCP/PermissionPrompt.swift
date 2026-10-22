@@ -115,6 +115,9 @@ public let operatorOnlyActions: Set<String> = [
     "ctx_set_editor_settings", "ctx_set_project_editor_settings",
     // 3b-viii (Decision 42). Which model reads the operator's code is the operator's choice.
     "ctx_set_local_provider",
+    // 3a-iii (Decision 44). Which account pushes for an organisation, and its secrets, are the
+    // operator's: these move a credential boundary (Invariant 4).
+    "ctx_git_account_add", "ctx_git_account_remove",
     // 2c-iii. The seventh member, and the one whose reason is NOT that the
     // agent could move a boundary by calling it — it is that the shell in
     // a terminal pane carries the active organisation, project and
@@ -233,6 +236,10 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "and these rewrite the registry and the project files it stands in. You may READ "
             + "them: ctx_config_tree answers every project and environment. Ask the operator to "
             + "do it in the settings pane (\u{2318},)."
+    case "ctx_git_account_add", "ctx_git_account_remove":
+        return "\(toolName): only the operator adds and removes an organisation's git accounts: "
+            + "they decide which account pushes and hold its secrets (Invariant 4). Ask the operator "
+            + "to do it in Settings → Organisation → Git (\u{2318},)."
     case "ctx_list_orgs", "ctx_list_machine_providers", "ctx_list_accounts":
         return "\(toolName): this session is scoped to one organisation. Enumerating every "
             + "organisation and config dir on this machine is not something a session scoped "

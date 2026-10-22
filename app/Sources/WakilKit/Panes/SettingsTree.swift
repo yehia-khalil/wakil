@@ -164,6 +164,37 @@ public struct SettingsProjectEditor: Sendable, Equatable, Decodable {
     private enum CodingKeys: String, CodingKey { case tabSize, insertSpaces, heavyFolders }
 }
 
+/// One of the organisation's git accounts, as `config_tree` sends it (3a-iii): never a secret.
+public struct SettingsGitAccount: Sendable, Equatable, Decodable {
+    public var host: String
+    public var provider: String
+    public var method: String
+    public var user: String
+    public var keyPath: String
+    public var username: String
+
+    public init(host: String, provider: String, method: String, user: String = "", keyPath: String = "", username: String = "") {
+        self.host = host
+        self.provider = provider
+        self.method = method
+        self.user = user
+        self.keyPath = keyPath
+        self.username = username
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        host = try c.decode(String.self, forKey: .host)
+        provider = try c.decodeIfPresent(String.self, forKey: .provider) ?? "other"
+        method = try c.decodeIfPresent(String.self, forKey: .method) ?? "ssh"
+        user = try c.decodeIfPresent(String.self, forKey: .user) ?? ""
+        keyPath = try c.decodeIfPresent(String.self, forKey: .keyPath) ?? ""
+        username = try c.decodeIfPresent(String.self, forKey: .username) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case host, provider, method, user, keyPath, username }
+}
+
 /// The organisation's four editable strings, and the id, which is the
 /// directory name and therefore not editable at all.
 public struct SettingsOrg: Sendable, Equatable, Decodable {
@@ -180,6 +211,9 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var fastPath: Bool
     /// The organisation's commit-drafts switch (3a-ii-b): the commit box's ✨. On unless switched off.
     public var commitDrafts: Bool
+    /// 3a-iii: the organisation's git accounts (no secrets) and its pull strategy (rebase when unset).
+    public var gitAccounts: [SettingsGitAccount]
+    public var pullStrategy: String
     /// The organisation's git author (3a-ii): the name and email commits from the Changes view carry.
     /// Empty means the repository's own git config decides.
     public var gitName: String
@@ -188,7 +222,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public init(
         id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
         speechProvider: String = "", quickProvider: String = "", ghostText: Bool = true,
-        fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true
+        fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true,
+        gitAccounts: [SettingsGitAccount] = [], pullStrategy: String = "rebase"
     ) {
         self.id = id
         self.displayName = displayName
@@ -199,6 +234,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         self.ghostText = ghostText
         self.fastPath = fastPath
         self.commitDrafts = commitDrafts
+        self.gitAccounts = gitAccounts
+        self.pullStrategy = pullStrategy
         self.gitName = gitName
         self.gitEmail = gitEmail
     }
@@ -214,12 +251,14 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         ghostText = try container.decodeIfPresent(Bool.self, forKey: .ghostText) ?? true
         fastPath = try container.decodeIfPresent(Bool.self, forKey: .fastPath) ?? false
         commitDrafts = try container.decodeIfPresent(Bool.self, forKey: .commitDrafts) ?? true
+        gitAccounts = try container.decodeIfPresent([SettingsGitAccount].self, forKey: .gitAccounts) ?? []
+        pullStrategy = try container.decodeIfPresent(String.self, forKey: .pullStrategy) ?? "rebase"
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts
+        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, gitAccounts, pullStrategy
         case gitName, gitEmail
     }
 
