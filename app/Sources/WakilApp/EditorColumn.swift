@@ -682,8 +682,7 @@ struct EditorColumn: View {
             Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
                 .frame(width: 16, height: 16).contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(EditorPaneStyle.text.opacity(0.75))
+        .buttonStyle(ChangesIconButtonStyle())
         .help(help)
         .accessibilityLabel(help)
         .accessibilityIdentifier(id)
@@ -1585,6 +1584,32 @@ struct EditorColumn: View {
         let c = caseSensitive ?? search.caseSensitive, w = wholeWord ?? search.wholeWord, r = regex ?? search.regex
         Task {
             await dispatch("editor_search", ["query": .string(q), "case": .bool(c), "word": .bool(w), "regex": .bool(r)])
+        }
+    }
+}
+
+/// The Changes view's **+**, **−** and **↺** (3a-ii walk): a rounded fill under the glyph on hover and a
+/// stronger one while pressed, the glyph brightened (`IconButtonTreatment`). The hit area is the
+/// label's own 16pt square, as before.
+struct ChangesIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { Lit(configuration: configuration) }
+
+    private struct Lit: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var hovered = false
+        @Environment(\.isEnabled) private var enabled
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            let pressed = configuration.isPressed
+            configuration.label
+                .foregroundStyle(EditorPaneStyle.text.opacity(
+                    IconButtonTreatment.glyph(hovered: hovered, pressed: pressed, enabled: enabled)))
+                .background(RoundedRectangle(cornerRadius: 3).fill(EditorPaneStyle.text.opacity(
+                    IconButtonTreatment.fill(hovered: hovered, pressed: pressed, enabled: enabled))))
+                .animation(.easeOut(duration: IconButtonTreatment.hoverDuration(reduceMotion: reduceMotion)),
+                           value: hovered)
+                .onHover { hovered = $0 }
         }
     }
 }
