@@ -54,9 +54,12 @@ public enum DatabaseWording {
 /// and a key without the project would let a removal confirmed on one page open, spin or refuse
 /// on the other's.
 public enum SettingsRowKey {
-    /// One API entry, by position: a hand-edited file can hold two of one name.
-    public static func apiSection(project: String, environment: String, index: Int) -> String {
-        "api.\(project)\u{1F}\(environment)\u{1F}\(index)"
+    /// One API entry, by position: a hand-edited file can hold two of one name. **And by how many
+    /// entries there are**: a rename keeps the key (a focused field is not torn down when it
+    /// lands), while an add or a removal changes every key, so nothing held by position — a
+    /// refused draft, an open token field, a removal's question — passes to another entry.
+    public static func apiSection(project: String, environment: String, index: Int, count: Int) -> String {
+        "api.\(project)\u{1F}\(environment)\u{1F}\(index)\u{1F}\(count)"
     }
 
     /// A database's removal.

@@ -365,6 +365,10 @@ struct SettingsSection<Accessory: View, Content: View>: View {
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.10)).frame(height: 0.5)
                 .accessibilityElement()
                 .accessibilityIdentifier("settings.section.\(fragment)")
+                // Untitled, the rule is all that parts one section from the next, so it takes the
+                // air a title would have had above it — and the row before it draws no hairline of
+                // its own (`SettingsRow(rule: false)`), or the two read as one doubled line.
+                .padding(.top, drawsTitle ? 0 : SettingsScale.sectionGap)
             if drawsTitle {
                 HStack(alignment: .center, spacing: 6) {
                     Text(title.uppercased())
@@ -406,11 +410,14 @@ extension SettingsSection where Accessory == EmptyView {
 struct SettingsRow<Value: View>: View {
     let label: String
     var wraps: Bool = false
+    /// False for the last row of an untitled section: the next section's rule is its separator.
+    var rule: Bool = true
     let value: Value
 
-    init(_ label: String, wraps: Bool = false, @ViewBuilder value: () -> Value) {
+    init(_ label: String, wraps: Bool = false, rule: Bool = true, @ViewBuilder value: () -> Value) {
         self.label = label
         self.wraps = wraps
+        self.rule = rule
         self.value = value()
     }
 
@@ -432,7 +439,9 @@ struct SettingsRow<Value: View>: View {
         }
         .frame(minHeight: SettingsScale.rowHeight, alignment: .leading)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(SettingsPalette.coolWhite.opacity(0.06)).frame(height: 0.5)
+            if rule {
+                Rectangle().fill(SettingsPalette.coolWhite.opacity(0.06)).frame(height: 0.5)
+            }
         }
     }
 

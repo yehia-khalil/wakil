@@ -38,8 +38,8 @@ import Testing
 /// The final review's finding: a key without the project let `staging` in one project open,
 /// spin or refuse on `staging` in another. Must fail if any builder drops the project path.
 @Test func theSameEnvironmentInAnotherProjectRepointsNothing() {
-    #expect(SettingsRowKey.apiSection(project: "/a/project.json", environment: "staging", index: 0)
-        != SettingsRowKey.apiSection(project: "/b/project.json", environment: "staging", index: 0))
+    #expect(SettingsRowKey.apiSection(project: "/a/project.json", environment: "staging", index: 0, count: 1)
+        != SettingsRowKey.apiSection(project: "/b/project.json", environment: "staging", index: 0, count: 1))
     #expect(SettingsRowKey.databaseRemoval(project: "/a/project.json", environment: "staging", name: "core")
         != SettingsRowKey.databaseRemoval(project: "/b/project.json", environment: "staging", name: "core"))
     #expect(SettingsRowKey.databaseRevoke(project: "/a/project.json", environment: "staging", name: "core")
@@ -57,4 +57,20 @@ import Testing
         .firstEmptyCredentialField == .password)
     #expect(DatabaseConnectionFields(driver: "sqlite").firstEmptyCredentialField == .path)
     #expect(DatabaseConnectionFields(driver: "sqlite", path: "/x.db").firstEmptyCredentialField == nil)
+}
+
+/// The residual finding on 2e-iii: sections keyed by position alone let a refused Base URL draft,
+/// an open Replace token or a removal's question pass to the entry that slid into a removed one's
+/// place. Must fail if the key drops the count — and if a rename (same count) changes it, which
+/// would tear down the field being typed in when the rename lands.
+@Test func aRemovalRekeysEveryApiSectionButARenameKeepsThem() {
+    let before = SettingsRowKey.apiSection(project: "/a/project.json", environment: "staging", index: 1, count: 3)
+    let afterRemoval = SettingsRowKey.apiSection(project: "/a/project.json", environment: "staging", index: 1, count: 2)
+    let afterAdd = SettingsRowKey.apiSection(project: "/a/project.json", environment: "staging", index: 1, count: 4)
+    #expect(before != afterRemoval)
+    #expect(before != afterAdd)
+    #expect(before == SettingsRowKey.apiSection(project: "/a/project.json", environment: "staging", index: 1, count: 3))
+    // Index and count are kept apart: 1·12 is not 11·2.
+    #expect(SettingsRowKey.apiSection(project: "/a", environment: "s", index: 1, count: 12)
+        != SettingsRowKey.apiSection(project: "/a", environment: "s", index: 11, count: 2))
 }

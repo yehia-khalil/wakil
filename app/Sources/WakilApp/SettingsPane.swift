@@ -455,8 +455,22 @@ struct SettingsPane: View {
             confirmingRemoval = nil
             replacingToken = nil
             replacementToken = ""
-            apiToken = ""
             confirmingApiToken = false
+            // **And so does a half-filled card.** Its name, base URL and header belong to the
+            // environment they were typed for, as its token does; kept, Save would write them to
+            // the next page's. The database card's fields, its passwords among them, likewise.
+            apiName = ""
+            apiBaseUrl = ""
+            apiAuthHeader = ""
+            apiToken = ""
+            apiRefusal = nil
+            databaseName = ""
+            databaseConnection = DatabaseConnectionFields(driver: "mysql")
+            databaseGrantWrite = false
+            databaseWriteUser = ""
+            databaseWritePassword = ""
+            confirmingDSN = false
+            databaseRefusal = nil
         }
     }
 
@@ -1091,11 +1105,17 @@ struct SettingsPane: View {
                 let names = environment.api.map(\.name)
                 ForEach(Array(environment.api.enumerated()), id: \.offset) { index, api in
                     apiEntrySection(
-                        api, index: index, clash: ApiEntryWording.clash(names: names, at: index),
+                        api, index: index, count: names.count,
+                        clash: ApiEntryWording.clash(names: names, at: index),
                         project: project, environment: environmentName)
                         // **By position, not name**: a rename that lands keeps the section, so a
                         // Base URL being typed is committed by a closure that reads the new name.
-                        .id("api.\(project.path).\(environmentName).\(index)")
+                        // **And by the count**: an add or a removal rebuilds every section, so a
+                        // refused draft and its refusal (the field's own state) never pass to the
+                        // entry that moves into a removed one's place.
+                        .id(SettingsRowKey.apiSection(
+                            project: project.path, environment: environmentName,
+                            index: index, count: names.count))
                 }
                 apiForm(path: project.path, environment: environmentName)
             } else {
@@ -2908,12 +2928,16 @@ extension SettingsPane {
     /// held that a form here would be rebuilt whenever the shape moved. The shape has settled, and
     /// the form is built from the writers' own validation, so a refusal is Go's sentence whole.
     func apiEntrySection(
-        _ api: SettingsAPI, index: Int, clash: String?, project: SettingsProject, environment: String
+        _ api: SettingsAPI, index: Int, count: Int, clash: String?, project: SettingsProject,
+        environment: String
     ) -> some View {
         let path = project.path
         // **Keyed by position, written by name.** A hand-edited file can hold two entries of one
-        // name; their sections must not open each other's confirmations or token fields.
-        let entry = SettingsRowKey.apiSection(project: path, environment: environment, index: index)
+        // name; their sections must not open each other's confirmations or token fields. The
+        // count is in the key too, so an open Replace token, a removal question or a refusal held
+        // by position cannot land on the entry that slides into a removed one's place.
+        let entry = SettingsRowKey.apiSection(
+            project: path, environment: environment, index: index, count: count)
         let removeKey = "remove.\(entry)"
         return SettingsSection(api.name.isEmpty ? "unnamed" : api.name, drawsTitle: false, accessory: { EmptyView() }) {
             if let clash {
@@ -2991,7 +3015,9 @@ extension SettingsPane {
     private func tokenRow(_ api: SettingsAPI, entry: String, path: String, environment: String) -> some View {
         let tokenKey = "token.\(entry)"
         let clearKey = "clearToken.\(entry)"
-        SettingsRow("Token") {
+        // The entry's last row: the next entry's rule parts them, so this draws none (one rule
+        // between entries, not a hairline and a rule 2pt apart).
+        SettingsRow("Token", rule: false) {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: SettingsScale.columnGap) {
                     tokenValue(api)
