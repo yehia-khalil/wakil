@@ -556,6 +556,17 @@ Each entry: the call, why, and what would change our mind.
     organisation's list and leaves its folder alone. **A project or environment an agent is
     running in cannot be renamed or removed** (Invariant 5), and these actions are
     operator-only like the rest of Settings (Decision 30), so voice cannot reach them.)*
+    *(Amended 2026-10-22 by sub-phase 2e-iii, `docs/superpowers/specs/2026-10-22-2e-iii-api-entries-design.md`.*
+    **An environment's API entries are now editable in the pane**, superseding the code comment
+    that held the API page "read-only, and stay so": add, rename, change the base URL or auth
+    header, and remove, each as the operator's own act. **A token goes to the Keychain behind
+    one confirmation and never to the project file**, the journal or the tree; clearing it
+    forgets the ref and keeps the Keychain item, so it asks nothing. **A database can be
+    renamed in place and its write access removed**, and **removing a database now asks**
+    (it destroys nothing, but a thing gone from the page is a removal to confirm, as a
+    project's and an environment's are); removing an API entry asks the same, and both say the
+    Keychain item is kept. All four actions are operator-only, like the rest of Settings
+    (Decision 30), so neither an agent nor voice can reach them.)*
 
 22. **A Claude account is shared across orgs; an org's credentials are not.**
     *(2026-09-14, `docs/superpowers/specs/2026-09-14-shared-accounts-across-orgs-design.md`.)*

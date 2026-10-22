@@ -124,6 +124,8 @@ question 16, blocking nothing).
 
 **Settings** can add, rename and remove a project and an environment (Decision 21, amended 2026-10-22), each as the operator's own act with no dialog; a project's other fields and the machine block stay in the file.
 
+Settings also edits an environment's API entries (its token goes to the Keychain behind one confirmation) and renames a database or removes its write access; removing an entry or a database asks first (Decision 21, amended 2026-10-22).
+
 **Explicitly undecided, and not to be invented:**
 
 - **Signing and notarisation are externally blocked** — no paid Developer ID on this

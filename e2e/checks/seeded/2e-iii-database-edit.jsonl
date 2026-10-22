@@ -1,0 +1,87 @@
+{"do":{"hotkey":"cmd+,"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"no databases in this environment"}}
+
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"ledger","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/ledger","grantWrite":true,"writeDsn":"e2e-rw:secret@tcp(localhost:3306)/ledger"}}}
+
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"orders","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/orders"}}}
+
+{"expect":{"tree":"contains","text":"settings.db.ledger.name"}}
+
+{"expect":{"tree":"contains","text":"WRITABLE"}}
+
+{"do":{"focus":"settings.db.ledger.name"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"ledger2"}}
+
+{"do":{"click":"settings.tree.api.e2e-project.staging"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"settings.db.ledger2.name"}}
+
+{"expect":{"tree":"absent","text":"settings.db.ledger.name"}}
+
+{"expect":{"tree":"contains","text":"read db:e2e-project:staging:ledger"}}
+
+{"expect":{"journal":{"contains":"db_update_database"}}}
+
+{"do":{"focus":"settings.db.orders.name"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"ledger2"}}
+
+{"do":{"press":"Return"}}
+
+{"expect":{"tree":"contains","text":"already has a database named"}}
+
+{"do":{"click":"settings.tree.api.e2e-project.staging"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"settings.db.orders.name"}}
+
+{"do":{"click":"settings.db.ledger2.revokeWrite"}}
+
+{"expect":{"tree":"absent","text":"WRITABLE"}}
+
+{"expect":{"tree":"absent","text":"write db:e2e-project:staging:ledger:rw"}}
+
+{"expect":{"tree":"contains","text":"settings.db.ledger2.name"}}
+
+{"do":{"click":"settings.db.ledger2.remove"}}
+
+{"expect":{"tree":"contains","text":"Remove ledger2 from staging? Its Keychain entries are kept."}}
+
+{"do":{"click":"settings.db.ledger2.remove.keep"}}
+
+{"expect":{"tree":"absent","text":"Remove ledger2 from staging?"}}
+
+{"expect":{"tree":"contains","text":"settings.db.ledger2.name"}}
+
+{"do":{"click":"settings.db.ledger2.remove"}}
+
+{"do":{"click":"settings.db.ledger2.remove.confirm"}}
+
+{"expect":{"tree":"absent","text":"settings.db.ledger2.name"}}
+
+{"dispatch":{"action":"db_update_database","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"orders","newName":"orders2"}}}
+
+{"expect":{"tree":"contains","text":"settings.db.orders2.name"}}
+
+{"expect":{"tree":"absent","text":"settings.db.orders.name"}}
+
+{"dispatch":{"action":"db_update_database","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"nothing-here","newName":"x"},"refuses":"no database"}}
+
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"ledger","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/ledger","grantWrite":true,"writeDsn":"e2e-rw:secret@tcp(localhost:3306)/ledger"}}}
+
+{"expect":{"tree":"contains","text":"WRITABLE"}}
+
+{"parity":{"action":"db_update_database","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"ledger","revokeWrite":true},"click":"settings.db.ledger.revokeWrite","assert":"tree"}}
+
+{"expect":{"tree":"absent","text":"WRITABLE"}}
