@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/yehia-khalil/wakil/internal/mcpx"
@@ -236,6 +237,48 @@ type removeDatabaseArgs struct {
 	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
 	Environment string `json:"environment" jsonschema:"the environment the database belongs to"`
 	Name        string `json:"name" jsonschema:"the database's name"`
+}
+
+type createProjectArgs struct {
+	Folder string `json:"folder" jsonschema:"absolute path of the folder the project lives in"`
+	Name   string `json:"name" jsonschema:"the new project's name"`
+}
+
+type createProjectOut struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+type renameProjectArgs struct {
+	Name    string `json:"name" jsonschema:"the project's current name"`
+	NewName string `json:"newName" jsonschema:"the name to give it"`
+}
+
+type removeProjectArgs struct {
+	Name string `json:"name" jsonschema:"the project to remove from the registry"`
+}
+
+type createEnvironmentArgs struct {
+	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
+}
+
+type createEnvironmentOut struct {
+	Name string `json:"name"`
+}
+
+type renameEnvironmentArgs struct {
+	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	Name        string `json:"name" jsonschema:"the environment's current name"`
+	NewName     string `json:"newName" jsonschema:"the name to give it"`
+}
+
+type removeEnvironmentArgs struct {
+	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	Name        string `json:"name" jsonschema:"the environment to remove"`
+}
+
+type removeEnvironmentOut struct {
+	Trashed string `json:"trashed"`
 }
 
 // MachineProviderListing wraps []wakilcore.MachineProvider in a
@@ -707,6 +750,60 @@ func newServer() *mcp.Server {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "create_project", Description: "Create a project in a folder and register it in the active organisation. Writes the folder's .wakil/project.json (name, org, one root) or adopts the one already there. Refuses a folder already registered, a name already taken, and a project filed under another organisation; nothing is written on a refusal."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a createProjectArgs) (*mcp.CallToolResult, createProjectOut, error) {
+			entry, err := wakilcore.CreateProject(a.Folder, a.Name)
+			if err != nil {
+				return toolErr(err), createProjectOut{}, nil
+			}
+			return nil, createProjectOut{Name: a.Name, Path: entry.Path}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "rename_project", Description: "Rename a project: rewrites the name in its project.json and the registry key. The active project follows the new name. Refuses a name already taken."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a renameProjectArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.RenameProject(a.Name, a.NewName); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	// **Removing a project KEEPS its project.json** — only the registry row goes.
+	mcp.AddTool(s, &mcp.Tool{Name: "remove_project", Description: "Remove a project from the registry. Its project.json stays on disk, untouched, so the folder can be registered again later; nothing in the project's folder is deleted."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a removeProjectArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.RemoveProject(a.Name); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "create_environment", Description: "Add an empty environment to a project, named with the first free name of new-environment, new-environment-2, and so on. Returns the name it chose. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a createEnvironmentArgs) (*mcp.CallToolResult, createEnvironmentOut, error) {
+			name, err := wakilcore.CreateEnvironment(a.ProjectPath)
+			if err != nil {
+				return toolErr(err), createEnvironmentOut{}, nil
+			}
+			return nil, createEnvironmentOut{Name: name}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "rename_environment", Description: "Rename an environment; its databases and API entries move with it, and the active environment follows. Refuses a name already taken and a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a renameEnvironmentArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.RenameEnvironment(a.ProjectPath, a.Name, a.NewName); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	// **Removing an environment Trashes a copy of project.json FIRST**; if
+	// the Trash fails nothing is removed.
+	mcp.AddTool(s, &mcp.Tool{Name: "remove_environment", Description: "Remove an environment from a project. A copy of project.json, as it was before, is put in the Trash first (returned as trashed); if the Trash refuses, nothing is removed. The environment's databases' Keychain entries are KEPT. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a removeEnvironmentArgs) (*mcp.CallToolResult, removeEnvironmentOut, error) {
+			trashed, err := wakilcore.RemoveEnvironment(a.ProjectPath, a.Name, time.Now())
+			if err != nil {
+				return toolErr(err), removeEnvironmentOut{}, nil
+			}
+			return nil, removeEnvironmentOut{Trashed: trashed}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "adopt_provider", Description: "Bind an account that already exists on this machine into another organisation, as a shared registration. Name fromOrg and fromId and the source binding's credential is COPIED into the adopting organisation's own Keychain item, so the binding can start a session immediately and no browser opens; omit them to copy nothing. The resolved agent-binary path is recorded from the source. The config dir keeps its existing headless home — a plain claude session started there still runs as the homing organisation — unless nothing homes it, in which case this binding becomes the home. A source that holds no credential, or a Keychain that will not answer, does not undo the binding: the row is created and reports its credential missing, which is repairable from that row."},
