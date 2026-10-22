@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-iii-instructions-boxes.jsonl",
+  "baseCommit": "dd65cbf2bbacdf39358e36f7e0797eb1bd593313",
+  "provedAt": "2026-10-22T21:28:20.857454Z",
+  "checkBlob": "1c1b405f0ed4e1cb0bee910b87c523781612445f"
+}
