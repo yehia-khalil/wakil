@@ -243,6 +243,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, store secretS
 		return runProvider(args[1:], stdout, stderr, read)
 	case "project":
 		return runProject(args[1:], stdout, stderr)
+	case "git-credential":
+		return runGitCredential(args[1:], stdin, stdout, stderr, read, func(host string) (wakilcore.GitAccount, bool) {
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return wakilcore.GitAccount{}, false
+			}
+			return wakilcore.GitAccountFor(org, host)
+		})
+	case "git-askpass":
+		return runGitAskpass(args[1:], stdout, stderr, read)
 	default:
 		fmt.Fprintln(stderr, message(wakilcore.UserError("unknown command\n\n"+usage)))
 		return 2
