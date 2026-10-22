@@ -10,8 +10,11 @@ public enum CommitDraft {
     public static let replySchema = #"{"type":"object","properties":{"message":{"type":"string"}},"required":["message"]}"#
 
     /// `diff` is `git_diff`'s text for the whole root; `truncated` says git_diff cut it already.
+    /// `files` are the paths git status puts in the commit (final review I5): each is named, with its
+    /// counts where the diff reached it, so none is lost to a cut or an empty diff.
     /// `examples` are the root's messages committed from Wakil, newest first; at most five are used.
-    public static func request(diff: String, truncated: Bool, untracked: [String], examples: [String]) -> RespondRequest {
+    public static func request(diff: String, truncated: Bool, files: [String], untracked: [String],
+                               examples: [String]) -> RespondRequest {
         var instructions = """
             Write a git commit message for the change below. A subject line in the imperative mood, under \
             72 characters; then, only if the change needs explaining, a blank line and a short body. \
@@ -25,7 +28,11 @@ public enum CommitDraft {
         let lines = diff.split(separator: "\n", omittingEmptySubsequences: false)
         let body = lines.last == "" ? lines.dropLast() : lines[...]
         let cut = truncated || body.count > lineCap
-        var input = "Files:\n" + stats(diff).joined(separator: "\n")
+        var listed = stats(diff)
+        for f in files where !listed.contains(where: { $0.hasPrefix(f + " ") || $0.contains("→ \(f) ") }) {
+            listed.append(f)
+        }
+        var input = "Files:\n" + listed.joined(separator: "\n")
         if !untracked.isEmpty {
             input += "\n\nNew files (contents not shown):\n" + untracked.joined(separator: "\n")
         }

@@ -34,6 +34,7 @@ extension WindowModel {
         guard !files.isEmpty else { throw refuse("nothing to draft from: \(changesRootName(root)) has no changes") }
         let staged = files.contains { $0.group == .staged }
         let untracked = staged ? [] : files.filter { $0.group == .untracked }.map(\.path)
+        let committed = files.filter { $0.group == (staged ? .staged : .changed) }.map(\.path)
         let examples = changesHistory[root] ?? []
         let generation = quickTasksGeneration, changes = changesGeneration
         changesErrors[root] = nil
@@ -49,7 +50,8 @@ extension WindowModel {
                 truncated = o["truncated"] == .bool(true)
             }
             try Task.checkCancellation()
-            let request = CommitDraft.request(diff: diff, truncated: truncated, untracked: untracked, examples: examples)
+            let request = CommitDraft.request(diff: diff, truncated: truncated, files: committed, untracked: untracked,
+                                              examples: examples)
             return try CommitDraft.parse(try await tasks.respond(request))
         }
         changesDraftTasks[root] = task
