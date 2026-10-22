@@ -6875,9 +6875,12 @@ public final class WindowModel {
     }
 
     /// Installs `started` as `agent`'s live session: its harness and its socket.
-    private func install(_ started: StartedSession, in agent: PlaceAgent) {
+    private func install(_ started: StartedSession, in agent: PlaceAgent, resumed: Bool = false) {
         agent.harness = started.harness
-        agent.launchedInstructions = nil   // the new session's first turn records what it launched with
+        // A new session's first turn records what it launched with. A resumed one keeps the prompt
+        // its parent was first launched with (the 3a-iii-b probe), which may predate the current
+        // text — so its first turn carries the text as an update.
+        agent.launchedInstructions = resumed ? resumedInstructionsUnknown : nil
         agent.socket = started.socket
         agent.socketFailure = started.socketFailure
     }
@@ -7293,7 +7296,7 @@ public final class WindowModel {
         agent.thoughts = rebuiltThread(thread, parent: parent, for: agent)
         agent.turnInFlight = false
 
-        install(started, in: agent)
+        install(started, in: agent, resumed: true)
         agent.providerId = providerId
         retainAgentPlace()
         agent.sessionId = child

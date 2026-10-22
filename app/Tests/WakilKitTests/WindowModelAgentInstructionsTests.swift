@@ -52,6 +52,45 @@ import Testing
         #expect(await harness.sentTexts.last == agentInstructionsUpdateHeader + "\n\n(The operator removed their instructions.)\n\ntwo")
     }
 
+    /// Review I3: a resumed session keeps the system prompt it was first launched with (the probe),
+    /// which may predate the current text — so its first turn carries the text as an update.
+    @Test func aResumedSessionsFirstTurnCarriesTheInstructions() async throws {
+        let harness = RecordingHarness()
+        let (model, box) = window(harness)
+        await model.registryForTesting.register(Action(
+            name: "session_read", description: "test double", kind: .read,
+            schema: .object(["type": .string("object")]),
+            handler: { _ in
+                .object(["structuredContent": .object([
+                    "cwd": .string("/tmp"), "provider": .string("test-provider"), "parent": .string(""),
+                    "truncated": .bool(false), "entries": .array([]),
+                ])])
+            }))
+        box.set(org: model.place.organization, project: model.place.project, text: "## Organisation o — general\nB")
+        await model.resume(sessionId: "parent-1")
+        await model.send("go on")
+        #expect(await harness.sentTexts.last == agentInstructionsUpdateHeader + "\n\n## Organisation o — general\nB\n\ngo on")
+        await model.send("more")
+        #expect(await harness.sentTexts.last == "more")
+    }
+
+    @Test func aResumedSessionWithNoInstructionsAddsNothing() async throws {
+        let harness = RecordingHarness()
+        let (model, _) = window(harness)
+        await model.registryForTesting.register(Action(
+            name: "session_read", description: "test double", kind: .read,
+            schema: .object(["type": .string("object")]),
+            handler: { _ in
+                .object(["structuredContent": .object([
+                    "cwd": .string("/tmp"), "provider": .string("test-provider"), "parent": .string(""),
+                    "truncated": .bool(false), "entries": .array([]),
+                ])])
+            }))
+        await model.resume(sessionId: "parent-1")
+        await model.send("go on")
+        #expect(await harness.sentTexts.last == "go on")
+    }
+
     /// Task 5: a project box saves through its own action, the one field and the project's path.
     @Test func aProjectBoxSavesThroughTheProjectAction() async throws {
         let (model, _) = window(RecordingHarness())

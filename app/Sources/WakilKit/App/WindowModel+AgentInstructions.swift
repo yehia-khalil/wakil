@@ -5,6 +5,9 @@ import Foundation
 public let agentInstructionsUpdateHeader =
     "[Wakil: the operator updated your instructions. They replace any earlier ones under the same headings.]"
 
+/// What a resumed session was launched with is not known here; its first turn sends the current text.
+let resumedInstructionsUnknown = "\u{0}resumed"
+
 /// 3a-iii-b: the operator's agent instructions (Decision 45). Every Settings read publishes the
 /// composed text per project to `AgentInstructionsBox`, which an agent's launch reads.
 extension WindowModel {
@@ -37,6 +40,10 @@ extension WindowModel {
         guard let had = agent.launchedInstructions else {
             agent.launchedInstructions = current
             return nil
+        }
+        if had == resumedInstructionsUnknown {
+            agent.launchedInstructions = current
+            return current.isEmpty ? nil : agentInstructionsUpdateHeader + "\n\n" + current
         }
         guard current != had else { return nil }
         agent.launchedInstructions = current
