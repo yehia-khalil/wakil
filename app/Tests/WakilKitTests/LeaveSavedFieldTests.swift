@@ -81,9 +81,10 @@ import Testing
 }
 
 @Test func onlyTheGitFieldsOfTheOrganisationSaveWhenLeft() {
-    // 3a-ii scoped Rule 2's leave-save to Git name and email; the others keep Return and Save.
+    // 3a-ii scoped Rule 2's leave-save to Git name and email; 3a-iii-b adds the three agent boxes,
+    // which are multi-line and have no Return to save with. The others keep Return and Save.
     let leaving = WindowModel.OrganisationField.allCases.filter(\.savesOnLeave)
-    #expect(leaving == [.gitName, .gitEmail])
+    #expect(leaving == [.gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions])
 }
 
 @Test func leaveSaveDoesNotResendTheValueLastRefused() {

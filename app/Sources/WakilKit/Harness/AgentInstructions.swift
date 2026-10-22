@@ -94,6 +94,13 @@ public func agentInstructions(org: String, orgTexts: AgentTexts, project: String
     return out.joined(separator: "\n\n")
 }
 
+/// Under a box past 2,000 words: what its length costs, since every turn carries it. Nothing is
+/// refused — the operator decides what is worth the tokens.
+public func agentInstructionsSizeHint(_ text: String) -> String? {
+    text.split(whereSeparator: \.isWhitespace).count > 2_000
+        ? "Long instructions ride on every turn the agent takes" : nil
+}
+
 /// The composed instructions per organisation and project, filled by every window from its Settings
 /// reads and read by the agent's launch, which runs off the main actor (ruling R3). A project with no
 /// entry of its own gets its organisation's.

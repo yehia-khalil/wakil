@@ -2799,6 +2799,27 @@ public final class WindowModel {
         return refusal
     }
 
+    /// 3a-iii-b: saves one project's agent instructions into its project.json — only the boxes
+    /// passed. The re-read publishes the new text, which the agent receives in its next turn.
+    public func saveProjectAgentInstructions(
+        projectPath: String, general: String? = nil, commits: String? = nil, pullRequests: String? = nil
+    ) async -> String? {
+        var params: [String: JSONValue] = ["projectPath": .string(projectPath)]
+        if let general { params["general"] = .string(general) }
+        if let commits { params["commits"] = .string(commits) }
+        if let pullRequests { params["pullRequests"] = .string(pullRequests) }
+        do {
+            _ = try await registry.dispatch(
+                name: "ctx_set_project_agent_instructions", params: .object(params), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            await refreshSettings()
+            return nil
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure("ctx_set_project_agent_instructions", error)
+        }
+    }
+
     private func saveEditorSettings(action: String, params: JSONValue) async -> String? {
         var refusal: String?
         do {
@@ -2829,6 +2850,10 @@ public final class WindowModel {
         case gitEmail
         /// 3a-iii: how Pull and Sync integrate (rebase, merge, ff-only).
         case pullStrategy
+        /// 3a-iii-b: the organisation's agent instructions — General under AGENT, the other two under GIT.
+        case agentGeneral
+        case gitCommitInstructions
+        case gitPRInstructions
 
         /// A stable fragment for this field's accessibility identifier —
         /// the case name, not the label, which is prose and may be
@@ -2836,8 +2861,14 @@ public final class WindowModel {
         public var identifierFragment: String { rawValue }
 
         /// Whether leaving the field saves it — by focus moving on or its page going (3a-ii,
-        /// Rule 2). The others keep Return and Save.
-        public var savesOnLeave: Bool { self == .gitName || self == .gitEmail }
+        /// Rule 2). The agent boxes are multi-line, so Return is a new line and leaving is the
+        /// only save. The others keep Return and Save.
+        public var savesOnLeave: Bool {
+            switch self {
+            case .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions: return true
+            default: return false
+            }
+        }
 
         /// What the form labels it.
         public var label: String {
@@ -2850,6 +2881,9 @@ public final class WindowModel {
             case .gitName: return "Git name"
             case .gitEmail: return "Git email"
             case .pullStrategy: return "Pull strategy"
+            case .agentGeneral: return "General"
+            case .gitCommitInstructions: return "Commits"
+            case .gitPRInstructions: return "Pull requests"
             }
         }
     }

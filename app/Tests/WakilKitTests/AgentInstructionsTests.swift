@@ -66,3 +66,11 @@ import Testing
         #expect(!none.instructions.contains("Follow these commit rules"))
     }
 }
+
+/// 3a-iii-b, Task 5: past 2,000 words a box says what length costs; nothing is refused.
+@Test func aBoxPastTwoThousandWordsHintsAtTheCost() {
+    #expect(agentInstructionsSizeHint(String(repeating: "word ", count: 2_000)) == nil)
+    #expect(agentInstructionsSizeHint(String(repeating: "word ", count: 2_001))
+            == "Long instructions ride on every turn the agent takes")
+    #expect(agentInstructionsSizeHint("") == nil)
+}

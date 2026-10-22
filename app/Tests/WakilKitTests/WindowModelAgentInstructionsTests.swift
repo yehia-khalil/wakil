@@ -51,4 +51,31 @@ import Testing
         await model.send("two")
         #expect(await harness.sentTexts.last == agentInstructionsUpdateHeader + "\n\n(The operator removed their instructions.)\n\ntwo")
     }
+
+    /// Task 5: a project box saves through its own action, the one field and the project's path.
+    @Test func aProjectBoxSavesThroughTheProjectAction() async throws {
+        let (model, _) = window(RecordingHarness())
+        let sent = SentParams()
+        await model.registryForTesting.register(Action(
+            name: "ctx_set_project_agent_instructions", description: "stub", kind: .control, audience: .operatorOnly,
+            schema: .object([:]),
+            handler: { params in await sent.record(params); return .object([:]) }))
+        let refusal = await model.saveProjectAgentInstructions(projectPath: "/p/project.json", commits: "Imperative")
+        #expect(refusal == nil)
+        #expect(await sent.all == [.object(["projectPath": .string("/p/project.json"), "commits": .string("Imperative")])])
+    }
+
+    @Test func aRefusedProjectBoxSaysWhy() async throws {
+        let (model, _) = window(RecordingHarness())
+        await model.registryForTesting.register(Action(
+            name: "ctx_set_project_agent_instructions", description: "stub", kind: .control, audience: .operatorOnly,
+            schema: .object([:]),
+            handler: { _ in throw StandardActionError.missingParam(action: "ctx_set_project_agent_instructions", param: "projectPath") }))
+        #expect(await model.saveProjectAgentInstructions(projectPath: "", general: "x") != nil)
+    }
+}
+
+private actor SentParams {
+    var all: [JSONValue] = []
+    func record(_ params: JSONValue) { all.append(params) }
 }

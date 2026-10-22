@@ -69,6 +69,9 @@ struct SettingsPane: View {
     var saveEditorSettings: ([String: JSONValue]) async -> String? = { _ in nil }
     /// Saves one project's editor fields: the project file's path, then the fields.
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
+    /// 3a-iii-b: saves one of a project's agent boxes — the project file's path, then general, commits
+    /// or pull requests, exactly one given. Answers the refusal or nil.
+    var saveProjectAgentInstructions: (String, String?, String?, String?) async -> String? = { _, _, _, _ in nil }
     /// Saves a local model: id, label, URL (3b-viii). Answers the refusal or nil.
     var saveLocalProvider: (String, String, String) async -> String? = { _, _, _ in nil }
     /// Saves the org's ghost-text or fast-path switch (3b-ix). Answers the refusal or nil.
@@ -896,6 +899,17 @@ struct SettingsPane: View {
                 // 3a-iii: the accounts pushes and pulls use, and how Pull and Sync integrate.
                 SettingsRow("Accounts", wraps: true) { GitAccountsBlock(org: tree.org, git: git) }
                 SettingsRow("Pull strategy") { pullStrategyChoice(tree) }
+                // 3a-iii-b: the agent follows these when it commits and opens pull requests, and ✨
+                // drafts with Commits.
+                organisationBox(.gitCommitInstructions, placeholder: Self.commitsPlaceholder,
+                                identifier: "settings.org.git.commits", in: tree)
+                organisationBox(.gitPRInstructions, placeholder: Self.pullRequestsPlaceholder,
+                                identifier: "settings.org.git.pullRequests", in: tree)
+            }
+            // 3a-iii-b: how the agent behaves in every project of this organisation, after Wakil's rules.
+            SettingsSection("Agent") {
+                organisationBox(.agentGeneral, placeholder: Self.generalPlaceholder,
+                                identifier: "settings.org.agent.general", in: tree)
             }
             readOnlyNote(
                 "Saved one field at a time, read-modify-write from disk — so an edit you make "
@@ -951,6 +965,22 @@ struct SettingsPane: View {
                         unseen: showUnseenRefusal)
                     .id("name.\(project.path)")
                     fields([("File", project.path, true)])
+                }
+                // 3a-iii-b: this project's own instructions, after the organisation's.
+                SettingsSection("Agent") {
+                    projectBox("General", stored: project.agent.general, placeholder: Self.generalPlaceholder,
+                               identifier: "settings.project.agent.general", project: project) { path, text in
+                        await saveProjectAgentInstructions(path, text, nil, nil)
+                    }
+                    projectBox("Commits", stored: project.agent.commits, placeholder: Self.commitsPlaceholder,
+                               identifier: "settings.project.agent.commits", project: project) { path, text in
+                        await saveProjectAgentInstructions(path, nil, text, nil)
+                    }
+                    projectBox("Pull requests", stored: project.agent.pullRequests,
+                               placeholder: Self.pullRequestsPlaceholder,
+                               identifier: "settings.project.agent.pullRequests", project: project) { path, text in
+                        await saveProjectAgentInstructions(path, nil, nil, text)
+                    }
                 }
                 if !project.roots.isEmpty {
                     SettingsSection("Roots") {
@@ -1174,6 +1204,33 @@ struct SettingsPane: View {
                     .padding(.vertical, 4)
             }
         }
+    }
+
+    // 3a-iii-b: examples of what a box holds, read as its placeholder.
+    private static let generalPlaceholder = "Ask before running migrations; keep changes small"
+    private static let commitsPlaceholder = "Imperative subject under 72 characters; reference the ticket key"
+    private static let pullRequestsPlaceholder = "What changed and why, then how to test it"
+
+    /// An organisation's agent box, saved through the organisation's one-field write. Keyed to the
+    /// organisation so a draft does not carry from one organisation's page to another's.
+    private func organisationBox(
+        _ field: WindowModel.OrganisationField, placeholder: String, identifier: String, in tree: SettingsTree
+    ) -> some View {
+        AgentInstructionBox(
+            label: field.label, stored: storedValue(field, in: tree), placeholder: placeholder,
+            identifier: identifier, save: { await saveOrganisationField(field, $0) }, unseen: showUnseenRefusal)
+            .id("\(identifier).\(tree.org.id)")
+    }
+
+    /// A project's agent box, keyed to the project for the same reason.
+    private func projectBox(
+        _ label: String, stored: String, placeholder: String, identifier: String,
+        project: SettingsProject, save: @escaping (String, String) async -> String?
+    ) -> some View {
+        AgentInstructionBox(
+            label: label, stored: stored, placeholder: placeholder, identifier: identifier,
+            save: { await save(project.path, $0) }, unseen: showUnseenRefusal)
+            .id("\(identifier).\(project.path)")
     }
 
     /// 2d-ii: the organisation's speech engine (Invariant 11). One segment
@@ -1416,6 +1473,10 @@ struct SettingsPane: View {
         case .gitName: return tree.org.gitName
         case .gitEmail: return tree.org.gitEmail
         case .pullStrategy: return tree.org.pullStrategy
+        // Drawn as multi-line boxes under AGENT and GIT (3a-iii-b).
+        case .agentGeneral: return tree.org.agentGeneral
+        case .gitCommitInstructions: return tree.org.gitCommitInstructions
+        case .gitPRInstructions: return tree.org.gitPRInstructions
         }
     }
 

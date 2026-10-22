@@ -545,6 +545,10 @@ extension WakilWindow {
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },
+                    saveProjectAgentInstructions: { path, general, commits, pullRequests in
+                        await model.saveProjectAgentInstructions(
+                            projectPath: path, general: general, commits: commits, pullRequests: pullRequests)
+                    },
                     saveLocalProvider: { id, label, url in
                         await model.setLocalProvider(id: id, label: label, baseURL: url)
                     },
