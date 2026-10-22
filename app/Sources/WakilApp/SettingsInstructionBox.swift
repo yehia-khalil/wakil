@@ -15,6 +15,8 @@ struct AgentInstructionBox: View {
     var unseen: (String) -> Void = { _ in }
 
     @State private var field = LeaveSavedField()
+    /// Saves a second after typing stops, as well as when the box is left.
+    @State private var autosave = EditorDebounce(delay: .seconds(1))
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -38,7 +40,11 @@ struct AgentInstructionBox: View {
                                 .scrollIndicators(.never)
                                 .focused($focused)
                                 .onChange(of: focused) { old, new in
-                                    if old, !new { commit(field.leave(stored: stored)) }
+                                    if old, !new { autosave.cancel(); commit(field.leave(stored: stored)) }
+                                }
+                                .onChange(of: field.draft) { _, draft in
+                                    guard draft != nil else { return }
+                                    autosave.schedule { commit(field.leave(stored: stored)) }
                                 }
                                 .accessibilityLabel(label)
                                 .accessibilityIdentifier(identifier)
@@ -77,7 +83,10 @@ struct AgentInstructionBox: View {
             }
         }
         .onAppear { field.appeared() }
-        .onDisappear { commit(field.disappeared(stored: stored)) }
+        .onDisappear {
+            autosave.cancel()
+            commit(field.disappeared(stored: stored))
+        }
     }
 
     /// Writes what a leave answered. Nil is nothing to write: unchanged, or a write in flight.
@@ -86,6 +95,8 @@ struct AgentInstructionBox: View {
         let field = field
         Task {
             if let refusal = field.landed(await save(value)) { unseen(refusal) }
+            // Typed on while it saved: that is the next save.
+            if field.draft != nil, field.refusal == nil { autosave.schedule { commit(field.leave(stored: value)) } }
         }
     }
 }

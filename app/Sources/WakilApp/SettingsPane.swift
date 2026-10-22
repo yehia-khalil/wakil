@@ -249,6 +249,8 @@ struct SettingsPane: View {
     }
     /// The organisation field holding the keyboard: Git name and email save when it leaves (3a-ii, Rule 2).
     @FocusState private var focusedOrgField: WindowModel.OrganisationField?
+    /// The Author fields save a second after typing stops, as well as when left.
+    @State private var autosave = EditorDebounce(delay: .seconds(1))
 
     /// Where the operator is standing in the tree. Window state, not
     /// configuration: it survives a re-read, and a re-read that dropped it
@@ -1160,7 +1162,12 @@ struct SettingsPane: View {
             // leaving after it writes nothing twice. The other fields keep Return / Save.
             .onChange(of: focusedOrgField) { old, _ in
                 guard old == field else { return }
+                autosave.cancel()
                 leave(field, tree: tree)
+            }
+            .onChange(of: drafts[field]) { _, draft in
+                guard field.savesOnLeave, draft != nil else { return }
+                autosave.schedule { leave(field, tree: tree) }
             }
             // Leaving the page by the tree is leaving the field too, and the focus change
             // above is never reported once the page is gone (2e-ii) — so going is a leave.
@@ -1536,11 +1543,14 @@ struct SettingsPane: View {
             // Cleared WITH `saving`, before the await below: a leave in
             // between would otherwise see a draft and no write in flight,
             // and send the same value again.
-            if refusal == nil { drafts[field] = nil }
+            // Not when more was typed while it saved: that stays, to be the next save.
+            if refusal == nil, drafts[field] == value { drafts[field] = nil }
             refusedDrafts[field] = refusal == nil ? nil : value
             saving = nil
             refusals[field] = refusal
             if let refusal, field.savesOnLeave, !shown.fields.contains(field) { showUnseenRefusal(refusal) }
+            // Typed on while it saved: that is the next save.
+            if refusal == nil, field.savesOnLeave, drafts[field] != nil { autosave.schedule { leave(field, tree: tree) } }
             quickStatus = await quickTaskStatus()
         }
     }

@@ -136,3 +136,16 @@ import Testing
     field.draft = "qa"
     #expect(field.leave(stored: "uat") == "qa")
 }
+
+/// Autosave (3a-iii walk): text typed while a save is in flight survives it, and is the next save.
+@MainActor @Test func typingDuringASaveIsKeptAndSavedNext() {
+    let field = LeaveSavedField()
+    field.draft = "a"
+    #expect(field.leave(stored: "") == "a")
+    field.draft = "ab"
+    _ = field.landed(nil)
+    #expect(field.draft == "ab")
+    #expect(field.leave(stored: "a") == "ab")
+    _ = field.landed(nil)
+    #expect(field.draft == nil)
+}
