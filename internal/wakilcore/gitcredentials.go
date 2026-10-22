@@ -53,9 +53,18 @@ func RemoteInvocation(org string, a GitAccount, remote RemoteURL, route SSHRoute
 			"-c", "credential.helper=!"+shellQuote(wakilBin)+" --org "+shellQuote(org)+" git-credential --host "+shellQuote(host),
 			"-c", "credential.interactive=false")
 		if remote.Scheme == "ssh" {
+			// From the URL as written — an alias (git@github-umbrella:) included — in both its forms.
+			at := remote.Host
+			if remote.User != "" {
+				at = remote.User + "@" + at
+			}
+			hostPort := at
+			if remote.Port != "" {
+				hostPort += ":" + remote.Port
+			}
 			inv.Args = append(inv.Args,
-				"-c", "url.https://"+host+"/.insteadOf=git@"+host+":",
-				"-c", "url.https://"+host+"/.insteadOf=ssh://git@"+host+"/")
+				"-c", "url.https://"+host+"/.insteadOf="+at+":",
+				"-c", "url.https://"+host+"/.insteadOf=ssh://"+hostPort+"/")
 		}
 	}
 	return inv

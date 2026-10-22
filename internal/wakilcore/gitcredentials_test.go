@@ -100,3 +100,25 @@ func TestGitCredentialUsernamePerProvider(t *testing.T) {
 		}
 	}
 }
+
+// Review I1: a token account on an alias remote (git@github-umbrella:…) — the rewrite to https is
+// built from the URL as written, so git never falls back to an ssh command it no longer has.
+func TestTokenInvocationRewritesAnAliasRemote(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	a := GitAccount{Host: "github.com", Provider: "github", Method: "signin"}
+	inv := RemoteInvocation("initech", a, RemoteURL{Scheme: "ssh", User: "git", Host: "github-umbrella", Path: "o/r.git"}, SSHRoute{HostName: "github.com"}, "/bin/wakil", "/kh")
+	s := joined(inv)
+	for _, want := range []string{
+		"-c url.https://github.com/.insteadOf=git@github-umbrella:",
+		"-c url.https://github.com/.insteadOf=ssh://git@github-umbrella/",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in %s", want, s)
+		}
+	}
+	ported := RemoteInvocation("initech", a, RemoteURL{Scheme: "ssh", User: "git", Host: "github-umbrella", Port: "2222", Path: "o/r.git"}, SSHRoute{HostName: "github.com"}, "/bin/wakil", "/kh")
+	if !strings.Contains(joined(ported), "-c url.https://github.com/.insteadOf=ssh://git@github-umbrella:2222/") {
+		t.Errorf("no ported rewrite: %s", joined(ported))
+	}
+}
