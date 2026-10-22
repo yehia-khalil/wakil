@@ -238,6 +238,109 @@ func registerEditorChangesWrites(
             }
         },
         price: price))
+
+    // 3a-ii-b: Stage and Unstage Selected Ranges. A diff's two sides — the tab's when one is open for
+    // the path in that group (the given pane first), else read fresh — and the selected lines of
+    // the modified side; the index gains (or loses) only those, through git_stage_hunk's guard.
+    @Sendable func rangeWrite(_ name: String, group: GitGroup, description: String) async {
+        await registry.register(Action(
+            name: name, description: description,
+            kind: .mutate, audience: .agentReachable,
+            schema: rootSchema(["path": .object(["type": .string("string")]),
+                                "ranges": .object(["type": .string("array"), "items": .object([
+                                    "type": .string("object"),
+                                    "properties": .object(["start": .object(["type": .string("integer")]),
+                                                           "end": .object(["type": .string("integer")])])])]),
+                                "pane": .object(["type": .string("string")])],
+                               required: ["path"]).withoutRequired("root"),
+            handler: { params in
+                let path = try requireString(params, "path", action: name)
+                let known = await gitStatus?.roots.map(\.root) ?? []
+                guard let root = known.filter({ path.hasPrefix($0 + "/") }).max(by: { $0.count < $1.count }) else {
+                    throw EditorFilesError(description: "\(name): \(path) is in no git root of the project")
+                }
+                let rel = relative(path, to: root)
+                let rows = await rootState(root)?.files.filter { $0.path == rel } ?? []
+                if rows.contains(where: { $0.status == "U" }) {
+                    throw EditorFilesError(description: "\(name): \(rel) has a merge conflict; its index holds stages, not one text")
+                }
+                if group == .staged, rows.contains(where: { $0.group == .staged && $0.status == "D" }) {
+                    throw EditorFilesError(description: "\(name): \(rel) is staged as deleted; − on its row unstages it")
+                }
+                var tab: EditorTab?
+                if let layout {
+                    let wanted = optionalString(params, "pane")
+                    let editors = await layout.snapshot().panes.filter { $0.kind == "editor" }
+                    for pane in editors.filter({ $0.id == wanted }) + editors.filter({ $0.id != wanted }) {
+                        if let t = await panes.editorSnapshot(paneId: pane.id).tabs.first(where: {
+                            if case .diff(root, rel, group) = $0.subject { $0.diffState?.loading == false } else { false }
+                        }) { tab = t; break }
+                    }
+                }
+                let state: GitDiffState
+                if let d = tab?.diffState {
+                    state = d
+                } else {
+                    guard let git = gitStatus?.git else { throw StandardActionError.missingClient(action: name, role: "git") }
+                    let revs = group == .staged ? ("HEAD", "index") : ("index", "worktree")
+                    func show(_ rev: String) async throws -> (text: String, binary: Bool, truncated: Bool, bytes: Int) {
+                        let f = fields(try await call(git, "git_show", ["root": .string(root), "path": .string(rel), "rev": .string(rev)],
+                                                      action: name, timeout: MCPClient.readReplyTimeout))
+                        guard case .object(let o) = f else { return ("", false, false, 0) }
+                        let text: String = if case .string(let t)? = o["text"] { t } else { "" }
+                        return (text, o["binary"] == .bool(true), o["truncated"] == .bool(true), Int(o["bytes"]?.intValue ?? 0))
+                    }
+                    let a = try await show(revs.0), b = try await show(revs.1)
+                    state = GitDiffState(original: a.text, modified: b.text, language: "", binary: a.binary || b.binary,
+                                         bytes: max(a.bytes, b.bytes), lines: 0, truncated: a.truncated || b.truncated,
+                                         error: nil, loading: false)
+                }
+                if let banner = gitDiffBanner(state) {
+                    throw EditorFilesError(description: "\(name): \(rel) is \(banner); part of it cannot be staged without losing the rest")
+                }
+                if editorHunkLines(state.original).count > editorHunksLineCap || editorHunkLines(state.modified).count > editorHunksLineCap {
+                    throw EditorFilesError(description: "\(name): \(rel) is over \(editorHunksLineCap) lines; its changes are not compared")
+                }
+                let spans: [EditorLineSpan]
+                if case .object(let o) = params, case .array(let a)? = o["ranges"] {
+                    spans = a.compactMap { v in
+                        guard case .object(let r) = v, let s = r["start"]?.intValue, let e = r["end"]?.intValue else { return nil }
+                        return EditorLineSpan(start: Int(min(s, e)), end: Int(max(s, e)))
+                    }
+                } else if let sel = tab?.selection {
+                    spans = editorLineSpans([sel])
+                } else {
+                    throw StandardActionError.missingParam(action: name, param: "ranges")
+                }
+                let content = group == .staged
+                    ? editorUnstagedText(base: state.original, text: state.modified, ranges: spans)
+                    : editorStagedText(base: state.original, text: state.modified, ranges: spans)
+                guard let content else { throw EditorFilesError(description: "\(name): the selection holds no change") }
+                // The guard is the index text the ranges were computed against: the original when
+                // staging (index vs work tree), the modified side when unstaging (HEAD vs index).
+                let expect = gitBlobId(group == .staged ? state.modified : state.original)
+                return try await write(root, action: name) { git in
+                    do {
+                        return try await call(git, "git_stage_hunk",
+                                              ["root": .string(root), "path": .string(rel), "content": .string(content),
+                                               "expect": .string(expect)], action: name)
+                    } catch let e where "\(e)".contains("the change moved") {
+                        throw EditorFilesError(description: "\(name): the change moved — reopen the diff")
+                    }
+                }
+            },
+            price: price))
+    }
+    await rangeWrite(
+        "editor_changes_stage_ranges", group: .changed,
+        description: "Stage the selected lines of one changed file: path (absolute), ranges ([{start, end}], 1-based "
+            + "lines of the working-tree side; default the Changes diff tab's selection) and pane (whose diff tab to "
+            + "use; default the first). Only the selected part of each change goes into the index. Allowed everywhere.")
+    await rangeWrite(
+        "editor_changes_unstage_ranges", group: .staged,
+        description: "Unstage the selected lines of one staged file: path (absolute), ranges ([{start, end}], 1-based "
+            + "lines of the index side; default the Staged diff tab's selection) and pane. Only the selected part of "
+            + "each staged change leaves the index. Allowed everywhere.")
 }
 
 private extension JSONValue {
