@@ -48,3 +48,41 @@ public enum DatabaseWording {
         "Remove \(name) from \(environment)? Its Keychain entries are kept."
     }
 }
+
+/// The keys an API entry's and a database's in-place writes, refusals and confirmations are held
+/// under (2e-iii). **Each names the project by its path**: two projects can each have a `staging`,
+/// and a key without the project would let a removal confirmed on one page open, spin or refuse
+/// on the other's.
+public enum SettingsRowKey {
+    /// One API entry, by position: a hand-edited file can hold two of one name.
+    public static func apiSection(project: String, environment: String, index: Int) -> String {
+        "api.\(project)\u{1F}\(environment)\u{1F}\(index)"
+    }
+
+    /// A database's removal.
+    public static func databaseRemoval(project: String, environment: String, name: String) -> String {
+        "remove.db.\(project)\u{1F}\(environment)\u{1F}\(name)"
+    }
+
+    /// A database's write access revoked.
+    public static func databaseRevoke(project: String, environment: String, name: String) -> String {
+        "revokeWrite.db.\(project)\u{1F}\(environment)\u{1F}\(name)"
+    }
+}
+
+extension DatabaseConnectionFields {
+    /// The card field **Replace connection** puts the keyboard in (Rule 3): the first empty one a
+    /// connection needs, in the order the card draws them — host, database, user, password for a
+    /// server (the port has its default), the file for SQLite. Nil when all are filled.
+    public enum CredentialField: String, Sendable {
+        case host, database, user, password, path
+    }
+
+    public var firstEmptyCredentialField: CredentialField? {
+        guard databaseDriverHasServer(driver) else { return path.isEmpty ? .path : nil }
+        let order: [(CredentialField, String)] = [
+            (.host, host), (.database, database), (.user, user), (.password, password),
+        ]
+        return order.first { $0.1.isEmpty }?.0
+    }
+}

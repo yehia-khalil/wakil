@@ -135,6 +135,10 @@ struct LabelledField: View {
     /// `width` is the most it takes rather than what it always takes: it narrows with the card,
     /// so a long field (a base URL, a token, a host) never runs past the pane (§14).
     var narrows: Bool = false
+    /// A focus the caller moves into this field, as `focusKey` (Rule 3): **Replace connection**
+    /// puts the keyboard in the first empty credential field.
+    var focus: FocusState<String?>.Binding? = nil
+    var focusKey: String = ""
 
     var body: some View {
         FormLabelled(label: label) {
@@ -151,6 +155,20 @@ struct LabelledField: View {
             .font(.system(size: SettingsScale.identifier, design: .monospaced))
             .foregroundStyle(SettingsPalette.coolWhite.opacity(0.90))
             .modifier(FieldBoxWidth(width: width, narrows: narrows))
+            .modifier(MovableFocus(focus: focus, key: focusKey))
+        }
+    }
+}
+
+private struct MovableFocus: ViewModifier {
+    let focus: FocusState<String?>.Binding?
+    let key: String
+
+    func body(content: Content) -> some View {
+        if let focus {
+            content.focused(focus, equals: key)
+        } else {
+            content
         }
     }
 }
@@ -324,11 +342,16 @@ struct FormButton: View {
 /// style, which every section now shares; `accessory` sits beside it (QUICK TASKS' ⓘ).
 struct SettingsSection<Accessory: View, Content: View>: View {
     let title: String
+    /// False for a section whose first row already says its name (an API entry's editable Name,
+    /// 2e-iii): the hairline and its identifier stay, the heading is not drawn twice.
+    var drawsTitle: Bool = true
     let accessory: Accessory
     let content: Content
 
-    init(_ title: String, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
+    init(_ title: String, drawsTitle: Bool = true,
+         @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.drawsTitle = drawsTitle
         self.accessory = accessory()
         self.content = content()
     }
@@ -342,15 +365,17 @@ struct SettingsSection<Accessory: View, Content: View>: View {
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.10)).frame(height: 0.5)
                 .accessibilityElement()
                 .accessibilityIdentifier("settings.section.\(fragment)")
-            HStack(alignment: .center, spacing: 6) {
-                Text(title.uppercased())
-                    .font(.system(size: SettingsScale.micro, weight: .medium))
-                    .tracking(SettingsScale.microTracking)
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.32))
-                accessory
+            if drawsTitle {
+                HStack(alignment: .center, spacing: 6) {
+                    Text(title.uppercased())
+                        .font(.system(size: SettingsScale.micro, weight: .medium))
+                        .tracking(SettingsScale.microTracking)
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.32))
+                    accessory
+                }
+                .padding(.top, SettingsScale.sectionGap)
+                .padding(.bottom, 4)
             }
-            .padding(.top, SettingsScale.sectionGap)
-            .padding(.bottom, 4)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)

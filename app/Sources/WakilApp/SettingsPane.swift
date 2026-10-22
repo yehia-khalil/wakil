@@ -219,7 +219,11 @@ struct SettingsPane: View {
     @FocusState private var replacementTokenFocused: Bool
     /// A section to bring into view: **Replace connection** scrolls to the database card.
     @State private var scrollRequest: String?
-    /// In-place edits of an API entry still landing, by `apiEntryKey`.
+    /// The database card's field holding the keyboard, by `CredentialField` raw value: **Replace
+    /// connection** puts it in the first empty credential field (Rule 3).
+    @FocusState private var databaseCardFocus: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// In-place edits of an API entry still landing, by `SettingsRowKey.apiSection`.
     @State private var apiEditsInFlight: [String: Int] = [:]
 
     /// The row whose unlink is awaiting confirmation.
@@ -445,6 +449,14 @@ struct SettingsPane: View {
         .onChange(of: selection) { _, _ in
             revealSelection()
             if let shown = receipt, shown.node != selection { receipt = nil }
+            // **A question, an open token field and a typed token belong to the page they were
+            // on.** Kept across a page change, a removal confirmed on one project's `staging`
+            // would answer on another's, and a token would outlive the page it was typed on.
+            confirmingRemoval = nil
+            replacingToken = nil
+            replacementToken = ""
+            apiToken = ""
+            confirmingApiToken = false
         }
     }
 
@@ -870,8 +882,15 @@ struct SettingsPane: View {
                 // operator asked for the card, so the page goes to it, on the same page (Rule 6).
                 .onChange(of: scrollRequest) { _, target in
                     guard let target else { return }
-                    withAnimation(.easeOut(duration: 0.45)) { proxy.scrollTo(target, anchor: .top) }
+                    if reduceMotion {
+                        proxy.scrollTo(target, anchor: .top)
+                    } else {
+                        withAnimation(.easeOut(duration: 0.45)) { proxy.scrollTo(target, anchor: .top) }
+                    }
                     scrollRequest = nil
+                    if target == Self.databaseCardAnchor {
+                        databaseCardFocus = databaseConnection.firstEmptyCredentialField?.rawValue
+                    }
                 }
             }
 
@@ -1074,7 +1093,9 @@ struct SettingsPane: View {
                     apiEntrySection(
                         api, index: index, clash: ApiEntryWording.clash(names: names, at: index),
                         project: project, environment: environmentName)
-                        .id("api.\(project.path).\(environmentName).\(index).\(api.name)")
+                        // **By position, not name**: a rename that lands keeps the section, so a
+                        // Base URL being typed is committed by a closure that reads the new name.
+                        .id("api.\(project.path).\(environmentName).\(index)")
                 }
                 apiForm(path: project.path, environment: environmentName)
             } else {
@@ -2447,28 +2468,33 @@ struct SettingsPane: View {
                 FormRow {
                     LabelledField(label: "HOST", prompt: "db.internal",
                                   text: $databaseConnection.host, width: 200,
-                                  identifier: "settings.db.host")
+                                  identifier: "settings.db.host",
+                                  focus: $databaseCardFocus, focusKey: "host")
                     LabelledField(label: "PORT",
                                   prompt: defaultDatabasePort(for: databaseConnection.driver) ?? "",
                                   text: $databaseConnection.port, width: 70,
                                   identifier: "settings.db.port")
                     LabelledField(label: "DATABASE", prompt: "orders",
                                   text: $databaseConnection.database, width: 160,
-                                  identifier: "settings.db.database")
+                                  identifier: "settings.db.database",
+                                  focus: $databaseCardFocus, focusKey: "database")
                 }
                 FormRow {
                     LabelledField(label: "USER", prompt: "reader",
                                   text: $databaseConnection.user, width: 200,
-                                  identifier: "settings.db.user")
+                                  identifier: "settings.db.user",
+                                  focus: $databaseCardFocus, focusKey: "user")
                     // Masked, so the one secret in this product is not on
                     // screen while it is typed.
                     LabelledField(label: "PASSWORD", text: $databaseConnection.password,
-                                  width: 244, identifier: "settings.db.password", secure: true)
+                                  width: 244, identifier: "settings.db.password", secure: true,
+                                  focus: $databaseCardFocus, focusKey: "password")
                 }
             } else {
                 LabelledField(label: "FILE", prompt: "/path/to/database.db",
                               text: $databaseConnection.path, width: 456,
-                              identifier: "settings.db.path", narrows: true)
+                              identifier: "settings.db.path", narrows: true,
+                              focus: $databaseCardFocus, focusKey: "path")
             }
 
             Toggle(isOn: $databaseGrantWrite) {
@@ -2774,9 +2800,9 @@ extension SettingsPane {
     /// Where **Replace connection** scrolls to.
     static let databaseCardAnchor = "databaseCard"
 
-    /// One database: its name edited in place beside its driver and write chips, the Keychain
-    /// refs it reads under that, and its verbs on the right edge as the account table's are —
-    /// in a row with room, stacked as words without.
+    /// One database: its name edited in place, its driver and write chips with the Keychain refs
+    /// it reads under that, and its verbs on one quiet line beneath, left-aligned as the API
+    /// Token row's are.
     ///
     /// **Remove asks now (2e-iii), and that is the operator's ruling on review.** It keeps every
     /// Keychain entry, so nothing is destroyed, which is why it asked nothing before; but the
@@ -2784,47 +2810,40 @@ extension SettingsPane {
     /// an environment's are (Rule 1). Remove write access asks nothing: the write entry stays in
     /// the Keychain and storing the connection again with writes allowed brings it back.
     func databaseRow(_ database: SettingsDatabase, project: SettingsProject, environment: String) -> some View {
-        let removeKey = "remove.db.\(environment).\(database.name)"
-        let revokeKey = "revokeWrite.db.\(environment).\(database.name)"
         let path = project.path
+        let removeKey = SettingsRowKey.databaseRemoval(project: path, environment: environment, name: database.name)
+        let revokeKey = SettingsRowKey.databaseRevoke(project: path, environment: environment, name: database.name)
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: SettingsScale.columnGap) {
-                // Identity first, then what it is: the name on its own line, edited where it
-                // stands; the chips and the Keychain refs quieter beneath it.
-                VStack(alignment: .leading, spacing: 5) {
+            // Identity first, then what it is, then what can be done to it: the name on its own
+            // line, edited where it stands; the chips and the Keychain refs quieter beneath it;
+            // the verbs on a line of their own.
+            VStack(alignment: .leading, spacing: 5) {
                     LeaveSavedTextField(
                         label: nil, stored: database.name,
                         identifier: "settings.db.\(database.name).name", maxWidth: 240,
                         save: { new in await updateDatabase(path, environment, database.name, new, nil) },
                         unseen: showUnseenRefusal)
-                    HStack(alignment: .center, spacing: 8) {
-                        Chip(text: database.driver, tone: SettingsPalette.coolWhite.opacity(0.62))
-                        if database.writable { Chip(text: "writable", tone: SettingsPalette.caution) }
-                        // The reference, never the value: the Keychain entry NAME. The secret it
-                        // names is read by the driver at query time and by nothing here.
-                        Text(database.writeRef.isEmpty
-                            ? "read \(database.ref)"
-                            : "read \(database.ref)   ·   write \(database.writeRef)")
-                            .font(.system(size: SettingsScale.meta, design: .monospaced))
-                            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.34))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
+                HStack(alignment: .center, spacing: 8) {
+                    Chip(text: database.driver, tone: SettingsPalette.coolWhite.opacity(0.62))
+                    if database.writable { Chip(text: "writable", tone: SettingsPalette.caution) }
+                    // The reference, never the value: the Keychain entry NAME. The secret it
+                    // names is read by the driver at query time and by nothing here.
+                    Text(database.writeRef.isEmpty
+                        ? "read \(database.ref)"
+                        : "read \(database.ref)   ·   write \(database.writeRef)")
+                        .font(.system(size: SettingsScale.meta, design: .monospaced))
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.34))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
-                Spacer(minLength: 0)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: SettingsScale.columnGap) {
-                        databaseVerbs(database, path: path, environment: environment,
-                                      removeKey: removeKey, revokeKey: revokeKey)
-                    }
-                    // Tight enough that three stacked verbs stay inside the row's 44pt.
-                    VStack(alignment: .trailing, spacing: 4) {
-                        databaseVerbs(database, path: path, environment: environment,
-                                      removeKey: removeKey, revokeKey: revokeKey)
-                    }
+                HStack(spacing: SettingsScale.columnGap) {
+                    databaseVerbs(database, path: path, environment: environment,
+                                  removeKey: removeKey, revokeKey: revokeKey)
                 }
+                .padding(.top, 2)
             }
-            .frame(minHeight: SettingsScale.rowHeight, alignment: .leading)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: SettingsScale.rowHeight, alignment: .leading)
             if confirmingRemoval == removeKey {
                 removalConfirmation(
                     DatabaseWording.removal(name: database.name, environment: environment),
@@ -2842,7 +2861,7 @@ extension SettingsPane {
         }
     }
 
-    /// A database's verbs, laid out by the caller in a row or a stack, whichever fits.
+    /// A database's verbs, laid out by the caller on one line.
     @ViewBuilder
     private func databaseVerbs(
         _ database: SettingsDatabase, path: String, environment: String,
@@ -2881,8 +2900,9 @@ extension SettingsPane {
         }
     }
 
-    /// One API entry as a section headed by its name: its values edited where they stand, the
-    /// token by reference, and **Remove** quiet on the head's right edge.
+    /// One API entry as a section: its name, base URL and auth header edited where they stand, the
+    /// token by reference, and **Remove** quiet on the Name row's right edge. The section draws no
+    /// heading of its own — the editable Name is the entry's name, and saying it twice was clutter.
     ///
     /// **This page was read-only until 2e-iii** (Decision 21's 2026-10-22 note): the 2c-iv pane
     /// held that a form here would be rebuilt whenever the shape moved. The shape has settled, and
@@ -2893,25 +2913,32 @@ extension SettingsPane {
         let path = project.path
         // **Keyed by position, written by name.** A hand-edited file can hold two entries of one
         // name; their sections must not open each other's confirmations or token fields.
-        let entry = Self.apiEntryKey(environment: environment, index: index)
+        let entry = SettingsRowKey.apiSection(project: path, environment: environment, index: index)
         let removeKey = "remove.\(entry)"
-        return SettingsSection(api.name.isEmpty ? "unnamed" : api.name, accessory: {
-            Spacer(minLength: 0)
-            busyVerb(removeKey) {
-                rowAction("Remove", tone: SettingsPalette.coolWhite.opacity(0.52),
-                          identifier: "settings.api.\(api.name).remove",
-                          enabled: !lifecycleBusy.contains(removeKey)) {
-                    lifecycleRefusals[removeKey] = nil
-                    confirmingRemoval = removeKey
-                }
-            }
-        }) {
+        return SettingsSection(api.name.isEmpty ? "unnamed" : api.name, drawsTitle: false, accessory: { EmptyView() }) {
             if let clash {
                 Text(clash)
                     .font(.system(size: SettingsScale.body))
                     .foregroundStyle(SettingsPalette.caution)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, SettingsScale.openGap)
+                    .padding(.top, SettingsScale.openGap)
+            }
+            SettingsRow("Name") {
+                HStack(alignment: .center, spacing: SettingsScale.columnGap) {
+                    LeaveSavedTextField(
+                        label: nil, stored: api.name, identifier: "settings.api.\(api.name).name",
+                        save: tracked(entry) { new in await updateApiEntry(path, environment, api.name, new, nil, nil, nil) },
+                        unseen: showUnseenRefusal)
+                    Spacer(minLength: 0)
+                    busyVerb(removeKey) {
+                        rowAction("Remove", tone: SettingsPalette.coolWhite.opacity(0.52),
+                                  identifier: "settings.api.\(api.name).remove",
+                                  enabled: !lifecycleBusy.contains(removeKey)) {
+                            lifecycleRefusals[removeKey] = nil
+                            confirmingRemoval = removeKey
+                        }
+                    }
+                }
             }
             if confirmingRemoval == removeKey {
                 removalConfirmation(
@@ -2921,12 +2948,9 @@ extension SettingsPane {
                 ) {
                     rowWrite(removeKey) { await removeApiEntry(path, environment, api.name) }
                 }
+                .padding(.top, SettingsScale.openGap)
             }
             rowRefusal(removeKey)
-            LeaveSavedTextField(
-                label: "Name", stored: api.name, identifier: "settings.api.\(api.name).name",
-                save: tracked(entry) { new in await updateApiEntry(path, environment, api.name, new, nil, nil, nil) },
-                unseen: showUnseenRefusal)
             LeaveSavedTextField(
                 label: "Base URL", stored: api.baseUrl, identifier: "settings.api.\(api.name).baseUrl",
                 prompt: "https://api.example.com", maxWidth: 420,
@@ -2939,11 +2963,6 @@ extension SettingsPane {
                 unseen: showUnseenRefusal)
             tokenRow(api, entry: entry, path: path, environment: environment)
         }
-    }
-
-    /// The key every write of one API entry is held under: its environment and its position.
-    static func apiEntryKey(environment: String, index: Int) -> String {
-        "api.\(environment).\(index)"
     }
 
     /// An in-place field's save, counted for its entry while it runs — so **Store it**, which

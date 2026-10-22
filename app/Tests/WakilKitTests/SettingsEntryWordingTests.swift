@@ -34,3 +34,27 @@ import Testing
     #expect(DatabaseWording.removal(name: "ledger", environment: "staging")
         == "Remove ledger from staging? Its Keychain entries are kept.")
 }
+
+/// The final review's finding: a key without the project let `staging` in one project open,
+/// spin or refuse on `staging` in another. Must fail if any builder drops the project path.
+@Test func theSameEnvironmentInAnotherProjectRepointsNothing() {
+    #expect(SettingsRowKey.apiSection(project: "/a/project.json", environment: "staging", index: 0)
+        != SettingsRowKey.apiSection(project: "/b/project.json", environment: "staging", index: 0))
+    #expect(SettingsRowKey.databaseRemoval(project: "/a/project.json", environment: "staging", name: "core")
+        != SettingsRowKey.databaseRemoval(project: "/b/project.json", environment: "staging", name: "core"))
+    #expect(SettingsRowKey.databaseRevoke(project: "/a/project.json", environment: "staging", name: "core")
+        != SettingsRowKey.databaseRevoke(project: "/b/project.json", environment: "staging", name: "core"))
+    // Nor does a dot in a name let two places spell one key.
+    #expect(SettingsRowKey.databaseRemoval(project: "/a", environment: "s.x", name: "y")
+        != SettingsRowKey.databaseRemoval(project: "/a", environment: "s", name: "x.y"))
+}
+
+@Test func replaceConnectionFocusesTheFirstEmptyCredentialField() {
+    #expect(DatabaseConnectionFields(driver: "mysql").firstEmptyCredentialField == .host)
+    #expect(DatabaseConnectionFields(driver: "mysql", host: "db", database: "orders")
+        .firstEmptyCredentialField == .user)
+    #expect(DatabaseConnectionFields(driver: "mongo", host: "db", user: "u", database: "d")
+        .firstEmptyCredentialField == .password)
+    #expect(DatabaseConnectionFields(driver: "sqlite").firstEmptyCredentialField == .path)
+    #expect(DatabaseConnectionFields(driver: "sqlite", path: "/x.db").firstEmptyCredentialField == nil)
+}
