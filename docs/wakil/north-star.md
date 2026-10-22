@@ -263,7 +263,7 @@ live app; *accepted* means it was marked met without one.
 | **3a-ii** | Stage, unstage, commit — the fourth write | **2026-10-22**, walked | 3a-i |
 | **3a-ii-b** | Stage and Unstage Selected Ranges in the diff tab; ✨ drafts the commit message with the quick model, the operator commits | **2026-10-22**, walked | 3a-ii |
 | **2e-ii** | Add, rename and remove a project and an environment from Settings | — | 3a-ii |
-| **2e-iii** | Add, edit and remove an environment's API entries from Settings; the token to the Keychain | — | 2e-ii |
+| **2e-iii** | Add, edit and remove an environment's API entries from Settings, the token to the Keychain; databases edited in place, removal confirmed | — | 2e-ii |
 | **3a-iii** | A git account per organisation — sign in, the credential in the Keychain; push, pull, fetch, sync | — | 3a-ii |
 | **3a-iv** | Branches and stash — the branch picker in the context line, stash, pop, apply | — | 3a-iii |
 | **3a-v** | Conflicts, history and blame — accept current or incoming, the Timeline, inline blame | — | 3a-ii |
