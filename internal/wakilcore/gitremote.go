@@ -312,7 +312,13 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	}
 	o, _ := LoadOrgFor(g.Org)
 	mode := map[string]string{"rebase": "--rebase", "merge": "--no-rebase", "ff-only": "--ff-only"}[PullStrategyOf(o)]
-	out, stderr, err := g.git(ctx, inv, "pull", mode, "--progress")
+	// --autostash sets uncommitted changes aside and puts them back, so work in progress does not
+	// stop a pull under any strategy (3a-iii walk; JetBrains' default).
+	out, stderr, err := g.git(ctx, inv, "pull", mode, "--autostash", "--progress")
+	if strings.Contains(string(out)+stderr, "autostash resulted in conflicts") {
+		return g.result(out, stderr), UserError("Pulled; your uncommitted changes clash with it and are kept in " +
+			"git stash — run git stash pop to bring them back")
+	}
 	if err == nil {
 		return g.result(out, stderr), nil
 	}
@@ -330,6 +336,10 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 		r.Conflicts = conflicts
 		return r, UserError("Pull stopped on conflicts in " + strings.Join(conflicts, ", ") +
 			"; nothing was changed. Resolve them in a terminal, or wait for the conflict view (3a-v)")
+	}
+	if strings.Contains(stderr, "Not possible to fast-forward") {
+		return GitRemoteResult{}, UserError("Both sides have new commits, so Fast-forward only cannot pull. " +
+			"Choose Rebase or Merge in Settings → Organisation → Git")
 	}
 	return GitRemoteResult{}, remoteError("pull", stderr, a, host, err)
 }

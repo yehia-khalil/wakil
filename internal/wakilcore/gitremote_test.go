@@ -401,3 +401,70 @@ func TestACancelledPullUndoesItsRebase(t *testing.T) {
 		t.Fatalf("tree changed:\n%s\n%s", before, after)
 	}
 }
+
+// Walk 3a-iii: Pull sets uncommitted changes aside and puts them back (--autostash), under every
+// strategy, so work in progress elsewhere in the tree does not stop it.
+func TestPullOverUncommittedChanges(t *testing.T) {
+	for _, strategy := range []string{"rebase", "merge"} {
+		t.Run(strategy, func(t *testing.T) {
+			bare, work, g := remoteFixture(t)
+			s := strategy
+			UpdateOrg("initech", OrgPatch{PullStrategy: &s})
+			pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+			os.WriteFile(filepath.Join(work, "b.txt"), []byte("mine\n"), 0o644)
+			gitIn(t, work, "add", "b.txt")
+			if _, err := g.Pull(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if b, _ := os.ReadFile(filepath.Join(work, "a.txt")); string(b) != "one\nTHEIRS\nthree\n" {
+				t.Fatalf("a.txt = %q", b)
+			}
+			if st, _ := exec.Command("git", "-C", work, "status", "--porcelain").Output(); string(st) != "A  b.txt\n" {
+				t.Fatalf("status = %q", st)
+			}
+		})
+	}
+}
+
+// When the set-aside changes clash with what came in, git keeps them in its stash; Pull says so.
+func TestPullWhoseChangesClashKeepsThemInTheStash(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+	os.WriteFile(filepath.Join(work, "a.txt"), []byte("one\nMINE\nthree\n"), 0o644)
+	_, err := g.Pull(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "kept in git stash") {
+		t.Fatalf("err = %v", err)
+	}
+	if list, _ := exec.Command("git", "-C", work, "stash", "list").Output(); strings.Count(string(list), "\n") != 1 {
+		t.Fatalf("stash = %q", list)
+	}
+}
+
+// A conflicting pull aborts and hands the set-aside changes back.
+func TestAConflictingPullGivesTheUncommittedChangesBack(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+	commitHere(t, work, "one\nMINE\nthree\n")
+	os.WriteFile(filepath.Join(work, "b.txt"), []byte("wip\n"), 0o644)
+	gitIn(t, work, "add", "b.txt")
+	before := porcelain(t, work)
+	if _, err := g.Pull(context.Background()); err == nil || !strings.Contains(err.Error(), "a.txt") {
+		t.Fatalf("err = %v", err)
+	}
+	if after := porcelain(t, work); after != before {
+		t.Fatalf("tree changed:\n%s\n%s", before, after)
+	}
+}
+
+// Fast-forward only on diverged branches says what to do, not git's own text.
+func TestFastForwardOnlyRefusalIsPlain(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	s := "ff-only"
+	UpdateOrg("initech", OrgPatch{PullStrategy: &s})
+	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+	commitHere(t, work, "ZERO\none\ntwo\nthree\n")
+	_, err := g.Pull(context.Background())
+	if err == nil || err.Error() != "Both sides have new commits, so Fast-forward only cannot pull. Choose Rebase or Merge in Settings → Organisation → Git" {
+		t.Fatalf("err = %v", err)
+	}
+}

@@ -1497,8 +1497,11 @@ Each entry: the call, why, and what would change our mind.
     written. **Fetch, pull, push, sync, publish and clone are priced *allow* for every channel**,
     voice included (Invariant 7's allow exception): a push asked for in words must happen. **Force is
     never available**, so a mistaken push is undone by a following commit. Pull's strategy (rebase,
-    merge, fast-forward only) is the organisation's setting, rebase by default; a conflicting pull is
-    aborted and named, for 3a-v to resolve. The agent may clone, but only into the folder the
+    merge, fast-forward only) is the organisation's setting, rebase by default; uncommitted changes are
+    set aside and put back (`--autostash`, the operator's ruling during the walk), and kept in git's
+    stash when they clash; a conflicting pull is aborted and named, for 3a-v to resolve. **Pull sets uncommitted changes aside and puts them back**
+    (`--autostash`, the operator's ruling during the walk, as JetBrains does); changes that clash with
+    what came in stay in git's stash, and Pull says so. The agent may clone, but only into the folder the
     operator last cloned into, and only the operator adds a clone as a project (Decision 30).
     *Reverse if:* injecting the account per command cannot reach a host the Mac's own setup reaches —
     or an agent push the operator did not ask for is found on a remote, and then push becomes *gate*
