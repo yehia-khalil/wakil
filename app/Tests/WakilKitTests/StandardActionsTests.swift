@@ -3282,3 +3282,26 @@ private func projectEnvironmentRegistry(
     #expect(await lookup.agent(in: "acme", environment: "dev") == "agent-acme-dev")
     #expect(await lookup.agent(in: "acme", environment: nil) == "agent-acme-any")
 }
+
+@Test func theRunningAgentPredicateMatchesLiveAgentsOfThisOrgByProjectAndEnvironment() {
+    let dev = Place(organization: "initech", project: "acme", environment: "dev")
+    let other = Place(organization: "globex", project: "acme", environment: "dev")
+    let agents: [(place: Place, live: Bool, providerId: String)] = [
+        (dev, true, "claude"), (other, true, "codex"),
+    ]
+    // Project match, any environment.
+    #expect(runningAgentName(among: agents, organization: "initech", project: "acme", environment: nil)
+        == "agent (claude)")
+    // Environment match, and mismatch.
+    #expect(runningAgentName(among: agents, organization: "initech", project: "acme", environment: "dev")
+        == "agent (claude)")
+    #expect(runningAgentName(among: agents, organization: "initech", project: "acme", environment: "qa") == nil)
+    // A different project.
+    #expect(runningAgentName(among: agents, organization: "initech", project: "beta", environment: nil) == nil)
+    // No live harness: not running.
+    #expect(runningAgentName(among: [(dev, false, "claude")], organization: "initech",
+                             project: "acme", environment: nil) == nil)
+    // Same project name in another org does not block this org.
+    #expect(runningAgentName(among: [(other, true, "codex")], organization: "initech",
+                             project: "acme", environment: nil) == nil)
+}

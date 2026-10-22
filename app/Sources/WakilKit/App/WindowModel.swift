@@ -47,14 +47,12 @@ public final class WindowModel {
     /// The agent of the place on screen, if work has begun there.
     public var currentAgent: PlaceAgent? { agents[place] }
     /// The name of an agent whose session is live in `project` (and, when given, in that
-    /// `environment` of it), or nil: what renaming or removing the place checks first
-    /// (Invariant 5). Live is a harness, as in `agentPlaces`.
+    /// `environment` of it) of the window's current organisation, or nil: what renaming or
+    /// removing the place checks first (Invariant 5). Live is a harness, as in `agentPlaces`.
     public func runningAgent(in project: String, environment: String?) -> String? {
-        for (place, agent) in agents where agent.harness != nil && place.project == project
-            && (environment == nil || place.environment == environment) {
-            return "agent (\(agent.providerId))"
-        }
-        return nil
+        runningAgentName(
+            among: agents.map { (place: $0.key, live: $0.value.harness != nil, providerId: $0.value.providerId) },
+            organization: place.organization, project: project, environment: environment)
     }
 
     /// The places whose agent has a live harness: what the pool keeps clients for.
@@ -8612,4 +8610,19 @@ public struct EditorColumnFocusRequest: Sendable, Equatable {
         self.view = view
         self.serial = serial
     }
+}
+
+/// The pin's predicate, pure so it is testable without a harness: the first live agent whose
+/// place is in `organization` and `project`, and in `environment` when one is given. Another
+/// organisation's project of the same name never matches — the actions act on the current org.
+func runningAgentName(
+    among agents: [(place: Place, live: Bool, providerId: String)],
+    organization: String, project: String, environment: String?
+) -> String? {
+    for agent in agents where agent.live && agent.place.organization == organization
+        && agent.place.project == project
+        && (environment == nil || agent.place.environment == environment) {
+        return "agent (\(agent.providerId))"
+    }
+    return nil
 }
