@@ -187,8 +187,9 @@ func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"git_amend", "git_blob", "git_commit", "git_diff", "git_discard", "git_identity",
-		"git_show", "git_stage", "git_stage_hunk", "git_status", "git_undo_commit", "git_unstage"}
+	want := []string{"git_amend", "git_blob", "git_clone", "git_commit", "git_diff", "git_discard", "git_fetch",
+		"git_identity", "git_publish", "git_pull", "git_push", "git_show", "git_stage", "git_stage_hunk",
+		"git_status", "git_sync", "git_undo_commit", "git_unstage"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("tools %v", names)
 	}

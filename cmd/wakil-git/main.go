@@ -102,6 +102,33 @@ func writer(root string) (*wakilcore.GitWriter, *mcp.CallToolResult) {
 	return w, nil
 }
 
+// remoteOptions: file:// remotes only when the e2e fixture's launch asks (R5).
+func remoteOptions() wakilcore.GitRemoteOptions {
+	return wakilcore.GitRemoteOptions{AllowFileProtocol: os.Getenv("WAKIL_GIT_ALLOW_FILE") == "1"}
+}
+
+// remote is writer's counterpart for the remote operations: a root the active project declares.
+func remote(root string) (*wakilcore.GitRemote, *mcp.CallToolResult) {
+	r, err := wakilcore.Resolve()
+	if err != nil {
+		return nil, mcpx.ToolErr("wakil-git", err)
+	}
+	org, err := wakilcore.CurrentOrg()
+	if err != nil {
+		return nil, mcpx.ToolErr("wakil-git", err)
+	}
+	g, err := wakilcore.NewGitRemote(org, root, wakilcore.ProjectRootPaths(*r), remoteOptions())
+	if err != nil {
+		return nil, mcpx.ToolErr("wakil-git", err)
+	}
+	return g, nil
+}
+
+type cloneArg struct {
+	URL  string `json:"url" jsonschema:"the repository's link: https://…, git@host:… or ssh://…"`
+	Dest string `json:"dest" jsonschema:"absolute folder to clone into; it must not exist"`
+}
+
 func newServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "wakil-git", Version: "0.1.0"}, nil)
 
@@ -188,6 +215,49 @@ func newServer() *mcp.Server {
 
 // addWriteTools registers the 3a-ii writes. Each runs the repository's hooks and signing.
 func addWriteTools(s *mcp.Server) {
+	// 3a-iii-a: the remote operations, with the organisation's account for the remote's host.
+	for _, op := range []struct {
+		name, desc string
+		run        func(*wakilcore.GitRemote, context.Context) (wakilcore.GitRemoteResult, error)
+	}{
+		{"git_fetch", "Writes. Fetches one root's remote (git fetch --prune) with the organisation's account; answers how far the branch is ahead and behind.", (*wakilcore.GitRemote).Fetch},
+		{"git_pull", "Writes. Pulls one root's upstream by the organisation's pull strategy (rebase, merge or ff-only). A conflict aborts and lists the paths; nothing is changed.", (*wakilcore.GitRemote).Pull},
+		{"git_push", "Writes. Pushes one root's branch to its upstream with the organisation's account. Never forces; a branch with no upstream needs git_publish.", (*wakilcore.GitRemote).Push},
+		{"git_publish", "Writes. Pushes one root's branch to origin and sets it as the upstream.", (*wakilcore.GitRemote).Publish},
+		{"git_sync", "Writes. Pulls one root's upstream (the organisation's strategy) then pushes, stopping at the first failure.", (*wakilcore.GitRemote).Sync},
+	} {
+		op := op
+		mcp.AddTool(s, &mcp.Tool{Name: op.name, Description: op.desc},
+			func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, wakilcore.GitRemoteResult, error) {
+				g, fail := remote(a.Root)
+				if fail != nil {
+					return fail, wakilcore.GitRemoteResult{}, nil
+				}
+				r, err := op.run(g, ctx)
+				if err != nil {
+					// A conflicting pull reports its paths beside the refusal.
+					if len(r.Conflicts) > 0 {
+						return mcpx.ToolErr("wakil-git", err), r, nil
+					}
+					return mcpx.ToolErr("wakil-git", err), wakilcore.GitRemoteResult{}, nil
+				}
+				return nil, r, nil
+			})
+	}
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_clone", Description: "Writes. Clones url into dest (an absolute folder that must not exist) with the organisation's account for its host; a failed clone leaves nothing behind."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a cloneArg) (*mcp.CallToolResult, wakilcore.GitRemoteResult, error) {
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitRemoteResult{}, nil
+			}
+			r, err := wakilcore.GitClone(ctx, org, a.URL, a.Dest, remoteOptions())
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitRemoteResult{}, nil
+			}
+			return nil, r, nil
+		})
+
 	mcp.AddTool(s, &mcp.Tool{Name: "git_stage", Description: "Writes. Runs `git add` on the given paths in one root."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a pathsArg) (*mcp.CallToolResult, emptyResult, error) {
 			w, fail := writer(a.Root)
