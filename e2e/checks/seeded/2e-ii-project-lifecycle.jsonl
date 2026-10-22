@@ -16,3 +16,8 @@
 {"dispatch":{"action":"ctx_create_project","params":{"folder":"{fixtureRoot}/e2e-new","name":"e2e-new"}}}
 {"expect":{"tree":"contains","text":"project.e2e-renamed"}}
 {"expect":{"tree":"absent","text":"project.e2e-new"}}
+{"dispatch":{"action":"ctx_rename_project","params":{"name":"e2e-renamed","newName":"e2e-again"}}}
+{"expect":{"tree":"contains","text":"project.e2e-again"}}
+{"expect":{"tree":"absent","text":"project.e2e-renamed"}}
+{"dispatch":{"action":"ctx_remove_project","params":{"name":"e2e-again"}}}
+{"expect":{"tree":"absent","text":"project.e2e-again"}}
