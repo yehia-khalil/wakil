@@ -124,7 +124,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "ctx_add_provider", "ctx_adopt_provider", "ctx_create_environment", "ctx_create_org",
             "ctx_create_project",
             // 3a-iii-a (Decision 44): an organisation's git accounts and their secrets are the operator's.
-            "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_host_suggestions",
+            "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
+            "ctx_git_device_start", "ctx_git_gh_import", "ctx_git_gh_logins", "ctx_git_host_suggestions",
             "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set",
             "ctx_list_accounts",
             "ctx_list_machine_providers", "ctx_list_orgs",

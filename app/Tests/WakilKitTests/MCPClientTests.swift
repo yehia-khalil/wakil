@@ -41,7 +41,8 @@ private func repoRoot() -> URL {
     // yesterday's server and says nothing.
     #expect(tools == ["add_provider", "adopt_provider", "capacity", "config_tree", "create_environment",
                       "create_org", "create_project", "derive_config_dir", "editor_settings", "get_context", "get_session",
-                      "git_account_add", "git_account_remove", "git_account_test", "git_host_suggestions",
+                      "git_account_add", "git_account_remove", "git_account_test", "git_device_poll",
+                      "git_device_start", "git_gh_import", "git_gh_logins", "git_host_suggestions",
                       "git_key_generate", "git_key_passphrase_set", "git_ssh_keys", "git_token_set",
                       "list_accounts", "list_environments", "list_machine_providers",
                       "list_orgs", "list_projects", "list_providers", "list_sessions",

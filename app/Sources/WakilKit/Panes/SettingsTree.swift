@@ -216,6 +216,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var pullStrategy: String
     /// The folder the operator last cloned into (3a-iii): Clone's default destination.
     public var lastCloneFolder: String
+    /// Which providers Sign in is offered for: those Wakil has an OAuth client id for (3a-iii, R4).
+    public var gitSignIn: [String]
     /// The organisation's git author (3a-ii): the name and email commits from the Changes view carry.
     /// Empty means the repository's own git config decides.
     public var gitName: String
@@ -225,7 +227,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
         speechProvider: String = "", quickProvider: String = "", ghostText: Bool = true,
         fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true,
-        gitAccounts: [SettingsGitAccount] = [], pullStrategy: String = "rebase", lastCloneFolder: String = ""
+        gitAccounts: [SettingsGitAccount] = [], pullStrategy: String = "rebase", lastCloneFolder: String = "",
+        gitSignIn: [String] = []
     ) {
         self.id = id
         self.displayName = displayName
@@ -239,6 +242,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         self.gitAccounts = gitAccounts
         self.pullStrategy = pullStrategy
         self.lastCloneFolder = lastCloneFolder
+        self.gitSignIn = gitSignIn
         self.gitName = gitName
         self.gitEmail = gitEmail
     }
@@ -257,12 +261,13 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         gitAccounts = try container.decodeIfPresent([SettingsGitAccount].self, forKey: .gitAccounts) ?? []
         pullStrategy = try container.decodeIfPresent(String.self, forKey: .pullStrategy) ?? "rebase"
         lastCloneFolder = try container.decodeIfPresent(String.self, forKey: .lastCloneFolder) ?? ""
+        gitSignIn = try container.decodeIfPresent([String].self, forKey: .gitSignIn) ?? []
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, gitAccounts, pullStrategy, lastCloneFolder
+        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, gitAccounts, pullStrategy, lastCloneFolder, gitSignIn
         case gitName, gitEmail
     }
 

@@ -172,6 +172,22 @@ type gitSecretArgs struct {
 	Passphrase string `json:"passphrase,omitempty" jsonschema:"the picked key's passphrase"`
 }
 
+type gitDevicePollArgs struct {
+	ID         string `json:"id" jsonschema:"the organisation's id"`
+	Provider   string `json:"provider" jsonschema:"github or gitlab"`
+	Host       string `json:"host" jsonschema:"the host the account is for"`
+	DeviceCode string `json:"deviceCode" jsonschema:"git_device_start's deviceCode"`
+}
+
+type gitDevicePollOut struct {
+	Pending bool `json:"pending"`
+	Done    bool `json:"done"`
+}
+
+type gitGhLoginsOut struct {
+	Logins []wakilcore.GhLogin `json:"logins"`
+}
+
 type gitSSHKeysOut struct {
 	Keys []wakilcore.SSHKeyListing `json:"keys"`
 }
@@ -843,6 +859,43 @@ func newServer() *mcp.Server {
 				return toolErr(err), gitTestOut{}, nil
 			}
 			return nil, gitTestOut{User: user}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_device_start", Description: "Begin a provider's Sign in (device flow): answers the code the operator types and the page to type it on."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, wakilcore.DeviceCode, error) {
+			code, err := wakilcore.DeviceStart(ctx, a.Provider)
+			if err != nil {
+				return toolErr(err), wakilcore.DeviceCode{}, nil
+			}
+			return nil, code, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_device_poll", Description: "Ask once whether the operator approved a Sign in; on approval the token goes to the Keychain and the account is recorded."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitDevicePollArgs) (*mcp.CallToolResult, gitDevicePollOut, error) {
+			token, pending, err := wakilcore.DevicePoll(ctx, a.Provider, a.DeviceCode)
+			if err != nil {
+				return toolErr(err), gitDevicePollOut{}, nil
+			}
+			if pending {
+				return nil, gitDevicePollOut{Pending: true}, nil
+			}
+			if err := wakilcore.FinishSignIn(a.ID, a.Provider, a.Host, token); err != nil {
+				return toolErr(err), gitDevicePollOut{}, nil
+			}
+			return nil, gitDevicePollOut{Done: true}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_gh_logins", Description: "The logins the GitHub CLI holds (gh auth status); none without gh."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitGhLoginsOut, error) {
+			return nil, gitGhLoginsOut{Logins: wakilcore.GhLogins()}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_gh_import", Description: "Copy one gh login's token into the organisation's Keychain once and record it as the host's account."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.ImportGhLogin(a.ID, a.Host, a.User); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_account_remove", Description: "Forget an organisation's git account for one host: its Keychain secrets go, and a key Wakil generated goes to the Trash."},

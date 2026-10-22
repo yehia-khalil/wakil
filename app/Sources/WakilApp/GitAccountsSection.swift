@@ -13,7 +13,10 @@ struct GitAccountActions {
     var setToken: (String, String) async -> String? = { _, _ in nil }
     var setPassphrase: (String, String) async -> String? = { _, _ in nil }
     var test: (String) async -> (user: String?, error: String?) = { _ in (nil, nil) }
-    var signInAvailable: Bool = false
+    var deviceStart: (GitProvider) async -> (userCode: String?, page: String?, deviceCode: String?, interval: Int, error: String?) = { _ in (nil, nil, nil, 5, nil) }
+    var devicePoll: (GitProvider, String, String) async -> (pending: Bool, error: String?) = { _, _, _ in (false, nil) }
+    var ghLogins: () async -> [(host: String, user: String)] = { [] }
+    var ghImport: (String, String) async -> String? = { _, _ in nil }
 }
 
 /// The account rows, each with Test and Remove (Remove asks, in the pane: it ends access — Rule 1),
@@ -105,6 +108,10 @@ struct GitAccountSheet: View {
     @State private var username = ""
     @State private var message: String?
     @State private var working = false
+    @State private var ghLogins: [(host: String, user: String)] = []
+    @State private var deviceUserCode: String?
+    @State private var devicePage: String?
+    @State private var signingIn: Task<Void, Never>?
     @FocusState private var focus: Bool
 
     private var host: String { provider?.host ?? otherHost.trimmingCharacters(in: .whitespaces).lowercased() }
@@ -131,7 +138,11 @@ struct GitAccountSheet: View {
         }
         .padding(20)
         .frame(width: 520)
-        .task { suggestions = await git.suggestions() }
+        .task {
+            suggestions = await git.suggestions()
+            ghLogins = await git.ghLogins()
+        }
+        .onDisappear { signingIn?.cancel() }
     }
 
     private var providerStep: some View {
@@ -165,7 +176,7 @@ struct GitAccountSheet: View {
 
     private var methodStep: some View {
         HStack(spacing: 6) {
-            ForEach(gitAccountMethods(provider: provider ?? .other, signInAvailable: git.signInAvailable), id: \.self) { m in
+            ForEach(gitAccountMethods(provider: provider ?? .other, signInAvailable: signInOffered), id: \.self) { m in
                 FormButton(title: m.title, tone: method == m ? SettingsPalette.accent : SettingsPalette.coolWhite,
                            filled: method == m, identifier: "settings.org.git.account.add.method.\(m.rawValue)") {
                     method = m
@@ -181,7 +192,7 @@ struct GitAccountSheet: View {
         switch method {
         case .ssh: sshSteps
         case .token: tokenSteps
-        case .signin: EmptyView()
+        case .signin: signInSteps
         }
     }
 
@@ -232,6 +243,85 @@ struct GitAccountSheet: View {
                     Task { await generate() }
                 }
             }
+        }
+    }
+
+    /// Sign in is offered when Wakil has the provider's client id, or, for GitHub, when gh holds a login.
+    private var signInOffered: Bool {
+        guard let provider else { return false }
+        return org.gitSignIn.contains(provider.rawValue) || (provider == .github && ghLogins.contains { $0.host == host })
+    }
+
+    private var signInSteps: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if provider == .github, ghLogins.contains(where: { $0.host == host }) {
+                Text("Use a gh login").font(.system(size: SettingsScale.meta)).foregroundStyle(SettingsPalette.coolWhite.opacity(0.6))
+                HStack(spacing: 6) {
+                    ForEach(ghLogins.filter { $0.host == host }, id: \.user) { login in
+                        FormButton(title: login.user, tone: SettingsPalette.coolWhite, identifier: "settings.org.git.account.add.gh.\(login.user)") {
+                            Task {
+                                working = true
+                                message = await git.ghImport(host, login.user) ?? "✓ Signed in as \(login.user) (from gh)"
+                                working = false
+                            }
+                        }
+                    }
+                }
+            }
+            if let provider, org.gitSignIn.contains(provider.rawValue) {
+                if let code = deviceUserCode {
+                    Text(code)
+                        .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("settings.org.git.account.add.deviceCode")
+                    HStack(spacing: 6) {
+                        if let page = devicePage, let url = URL(string: page) {
+                            FormButton(title: "Open \(url.host ?? page)", tone: SettingsPalette.accent, filled: true,
+                                       identifier: "settings.org.git.account.add.openDevice") { NSWorkspace.shared.open(url) }
+                        }
+                        if signingIn != nil {
+                            ProgressView().controlSize(.small)
+                            FormButton(title: "Cancel", tone: SettingsPalette.caution, identifier: "settings.org.git.account.add.cancelSignIn") {
+                                signingIn?.cancel()
+                                signingIn = nil
+                            }
+                        }
+                    }
+                } else {
+                    FormButton(title: "Sign in with \(provider.title)", tone: SettingsPalette.accent, filled: true,
+                               identifier: "settings.org.git.account.add.signin") { startSignIn(provider) }
+                }
+            }
+        }
+    }
+
+    private func startSignIn(_ provider: GitProvider) {
+        message = nil
+        signingIn = Task {
+            let start = await git.deviceStart(provider)
+            guard let deviceCode = start.deviceCode, start.error == nil else {
+                message = start.error
+                signingIn = nil
+                return
+            }
+            deviceUserCode = start.userCode
+            devicePage = start.page
+            if let page = start.page, let url = URL(string: page) { NSWorkspace.shared.open(url) }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(start.interval))
+                if Task.isCancelled { break }
+                let r = await git.devicePoll(provider, host, deviceCode)
+                if let e = r.error {
+                    message = e
+                    deviceUserCode = nil
+                    break
+                }
+                if !r.pending {
+                    message = "✓ Signed in to \(host)"
+                    break
+                }
+            }
+            signingIn = nil
         }
     }
 

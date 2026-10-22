@@ -963,6 +963,10 @@ public func registerStandardActions(
         ("ctx_git_token_set", "git_token_set", ["id", "host", "token"], ["id", "host", "token"], ["token"]),
         ("ctx_git_key_passphrase_set", "git_key_passphrase_set", ["id", "host", "passphrase"], ["id", "host", "passphrase"], ["passphrase"]),
         ("ctx_git_account_test", "git_account_test", ["id", "host"], ["id", "host"], []),
+        ("ctx_git_device_start", "git_device_start", ["id", "provider"], ["id", "provider"], []),
+        ("ctx_git_device_poll", "git_device_poll", ["id", "provider", "host", "deviceCode"], ["id", "provider", "host", "deviceCode"], []),
+        ("ctx_git_gh_logins", "git_gh_logins", ["id"], ["id"], []),
+        ("ctx_git_gh_import", "git_gh_import", ["id", "host", "user"], ["id", "host", "user"], []),
     ] {
         await registry.register(Action(
             name: name,
@@ -975,6 +979,10 @@ public func registerStandardActions(
                 "ctx_git_token_set": "Keep an organisation's token for one host in the Keychain. Operator-only.",
                 "ctx_git_key_passphrase_set": "Keep the passphrase of an organisation's picked key in the Keychain. Operator-only.",
                 "ctx_git_account_test": "Ask a host who an organisation's account there is. Operator-only.",
+                "ctx_git_device_start": "Begin Sign in with a provider (device flow). Operator-only.",
+                "ctx_git_device_poll": "Ask once whether a Sign in was approved. Operator-only.",
+                "ctx_git_gh_logins": "The GitHub CLI's logins. Operator-only.",
+                "ctx_git_gh_import": "Use one of the GitHub CLI's logins as the organisation's account. Operator-only.",
             ][name] ?? name,
             kind: .control,
             audience: .operatorOnly,

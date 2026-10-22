@@ -89,4 +89,35 @@ extension WindowModel {
         }
         return (user, nil)
     }
+
+    /// Sign in (device flow): the code to type and the page; then one poll per call until approved.
+    public func gitDeviceStart(provider: GitProvider) async -> (userCode: String?, page: String?, deviceCode: String?, interval: Int, error: String?) {
+        let (reply, error) = await gitAccountCall("ctx_git_device_start", ["provider": .string(provider.rawValue)])
+        let interval: Int = { if case .object(let o)? = reply { return o["interval"]?.intValue ?? 5 }; return 5 }()
+        return (Self.field(reply, "userCode"), Self.field(reply, "verificationUri"), Self.field(reply, "deviceCode"), max(interval, 1), error)
+    }
+
+    public func gitDevicePoll(provider: GitProvider, host: String, deviceCode: String) async -> (pending: Bool, error: String?) {
+        let (reply, error) = await gitAccountCall("ctx_git_device_poll", ["provider": .string(provider.rawValue), "host": .string(host),
+                                                                         "deviceCode": .string(deviceCode)])
+        if let error { return (false, error) }
+        if case .object(let o)? = reply, o["done"] == .bool(true) { await refreshSettings() }
+        if case .object(let o)? = reply { return (o["pending"] == .bool(true), nil) }
+        return (false, nil)
+    }
+
+    public func gitGhLogins() async -> [(host: String, user: String)] {
+        let (reply, _) = await gitAccountCall("ctx_git_gh_logins", [:])
+        guard case .object(let o)? = reply, case .array(let rows)? = o["logins"] else { return [] }
+        return rows.compactMap { row in
+            guard let h = Self.field(row, "host"), let u = Self.field(row, "user") else { return nil }
+            return (h, u)
+        }
+    }
+
+    public func gitGhImport(host: String, user: String) async -> String? {
+        let (_, error) = await gitAccountCall("ctx_git_gh_import", ["host": .string(host), "user": .string(user)])
+        await refreshSettings()
+        return error
+    }
 }

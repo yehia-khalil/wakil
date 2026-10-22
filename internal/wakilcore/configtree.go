@@ -27,6 +27,8 @@ type ConfigTreeOrg struct {
 	GitAccounts     []GitAccount `json:"gitAccounts"`
 	PullStrategy    string       `json:"pullStrategy"`
 	LastCloneFolder string       `json:"lastCloneFolder"`
+	// GitSignIn names the providers Sign in is offered for (those Wakil has a client id for).
+	GitSignIn []string `json:"gitSignIn"`
 }
 
 // ConfigTreeProvider is a provider binding as the settings tree draws it.
@@ -215,6 +217,12 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 	tree.Org.GitAccounts = append([]GitAccount{}, record.GitAccounts...)
 	tree.Org.PullStrategy = PullStrategyOf(record)
 	tree.Org.LastCloneFolder = record.LastCloneFolder
+	tree.Org.GitSignIn = []string{}
+	for _, p := range []string{"github", "gitlab"} {
+		if SignInProviders()[p] {
+			tree.Org.GitSignIn = append(tree.Org.GitSignIn, p)
+		}
+	}
 
 	providers, skipped, err := listProvidersFor(org)
 	if err != nil {
