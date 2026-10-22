@@ -2,6 +2,7 @@
 {"do":{"type":{"into":"window.composer","text":"please"}}}
 {"expect":{"tree":"contains","text":"please"}}
 {"do":{"hold":"option"}}
+{"expect":{"tree":"contains","text":"Hearing nothing from E2E Microphone"}}
 {"expect":{"tree":"contains","text":"say hello from the microphone"}}
 {"do":{"release":"option"}}
 {"expect":{"tree":"contains","text":"please say hello from the microphone"}}
@@ -10,6 +11,7 @@
 {"expect":{"tree":"contains","text":"RELEASE TO PUT IT IN THE LINE"}}
 {"expect":{"tree":"contains","text":"Hearing nothing from E2E Microphone"}}
 {"expect":{"tree":"contains","text":"please say hello from the microphone"}}
+{"expect":{"tree":"absent","text":"Hearing nothing from"}}
 {"expect":{"tree":"contains","text":"please say hello from the microphone say hello from the microphone"}}
 {"do":{"release":"option"}}
 {"expect":{"tree":"contains","text":"HEARD · RETURN SENDS · EDIT FIRST"}}
