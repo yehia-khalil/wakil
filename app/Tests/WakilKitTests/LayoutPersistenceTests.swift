@@ -780,3 +780,66 @@ private func conversation(
     let (loaded, note) = persistence.load(for: scope("acme", "p"))
     #expect(loaded?.panes.first?.kind == "editor" && note == nil)
 }
+
+// MARK: - 2e-ii: a renamed project or environment keeps its arrangement
+
+private func oneNamedPane(_ title: String) -> LayoutSnapshot {
+    LayoutSnapshot(
+        panes: [Pane(id: "db-1", kind: "db", title: title, frame: PaneFrame(x: 1, y: 2, width: 300, height: 200))],
+        focusedId: "db-1", maximizedId: nil, graph: SnapGraph())
+}
+
+@Test func renamingAProjectMovesEveryEnvironmentsFile() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = LayoutPersistence(directory: directory)
+    try store.save(oneNamedPane("dev"), for: scope("personal", "booking", "dev"))
+    try store.save(oneNamedPane("prod"), for: scope("personal", "booking", "prod"))
+    try store.save(oneNamedPane("other"), for: scope("personal", "booking-2", "dev"))
+
+    try store.renameProject(organization: "personal", from: "booking", to: "reservations")
+
+    #expect(store.load(for: scope("personal", "reservations", "dev")).snapshot == oneNamedPane("dev"))
+    #expect(store.load(for: scope("personal", "reservations", "prod")).snapshot == oneNamedPane("prod"))
+    #expect(store.load(for: scope("personal", "booking", "dev")).snapshot == nil)
+    #expect(store.load(for: scope("personal", "booking", "prod")).snapshot == nil)
+    // A project whose name merely begins the same is not this one.
+    #expect(store.load(for: scope("personal", "booking-2", "dev")).snapshot == oneNamedPane("other"))
+}
+
+@Test func renamingAnEnvironmentMovesOnlyThatFile() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = LayoutPersistence(directory: directory)
+    try store.save(oneNamedPane("dev"), for: scope("personal", "booking", "dev"))
+    try store.save(oneNamedPane("prod"), for: scope("personal", "booking", "prod"))
+
+    try store.renameEnvironment(organization: "personal", project: "booking", from: "dev", to: "local")
+
+    #expect(store.load(for: scope("personal", "booking", "local")).snapshot == oneNamedPane("dev"))
+    #expect(store.load(for: scope("personal", "booking", "dev")).snapshot == nil)
+    #expect(store.load(for: scope("personal", "booking", "prod")).snapshot == oneNamedPane("prod"))
+}
+
+@Test func renamingWithNothingSavedIsANoOp() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = LayoutPersistence(directory: directory)
+    try store.renameProject(organization: "personal", from: "a", to: "b")
+    try store.renameEnvironment(organization: "personal", project: "a", from: "dev", to: "local")
+    #expect(store.load(for: scope("personal", "b", "dev")).snapshot == nil)
+}
+
+@Test func renamingLeavesConversationsAlone() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = LayoutPersistence(directory: directory)
+    let conversation = LayoutScope(
+        organization: "personal", project: "booking", environment: "dev", lineageRoot: "root-1")
+    try store.save(oneNamedPane("chat"), for: conversation)
+
+    try store.renameProject(organization: "personal", from: "booking", to: "reservations")
+    try store.renameEnvironment(organization: "personal", project: "booking", from: "dev", to: "local")
+
+    #expect(store.load(for: conversation).snapshot == oneNamedPane("chat"))
+}

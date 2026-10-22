@@ -1,0 +1,189 @@
+import Foundation
+import Testing
+@testable import WakilKit
+
+/// A wakil-ctx that keeps projects and environments in memory and answers as the Go tools do:
+/// a rename keeps the active place, a removal of the active one picks the first remaining.
+private actor LifecycleContext: ToolCaller {
+    var envs: [String: [String]] = ["p": ["dev", "stage"]]
+    var project = "p"
+    var environment = "dev"
+    var calls: [String] = []
+    var failWith: String?
+
+    func fail(with text: String?) { failWith = text }
+    func count(_ name: String) -> Int { calls.filter { $0 == name }.count }
+
+    private func ok(_ o: [String: JSONValue]) -> JSONValue { .object(["structuredContent": .object(o)]) }
+
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        calls.append(name)
+        func arg(_ key: String) -> String {
+            guard case .object(let o) = arguments, case .string(let s)? = o[key] else { return "" }
+            return s
+        }
+        switch name {
+        case "get_context":
+            return ok([
+                "Org": .string("test-org"), "Environment": .string(environment),
+                "ProjectKey": .string(project), "Project": .object(["name": .string(project)]),
+                "RootPaths": .array([]), "ActiveProvider": .string("p1"),
+            ])
+        case "config_tree": return ok(["projects": .array([])])
+        default: break
+        }
+        if let failWith {
+            return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(failWith)])])])
+        }
+        switch name {
+        case "create_project":
+            envs[arg("name")] = ["dev"]
+            return ok(["name": .string(arg("name")), "path": .string(arg("folder") + "/project.json")])
+        case "rename_project":
+            envs[arg("newName")] = envs.removeValue(forKey: arg("name"))
+            if project == arg("name") { project = arg("newName") }
+            return ok([:])
+        case "remove_project":
+            envs[arg("name")] = nil
+            if project == arg("name") { project = envs.keys.sorted().first ?? ""; environment = envs[project]?.first ?? "" }
+            return ok([:])
+        case "create_environment":
+            envs[project, default: []].append("env-2")
+            return ok(["name": .string("env-2")])
+        case "rename_environment":
+            envs[project] = envs[project]?.map { $0 == arg("name") ? arg("newName") : $0 }
+            if environment == arg("name") { environment = arg("newName") }
+            return ok([:])
+        case "remove_environment":
+            envs[project]?.removeAll { $0 == arg("name") }
+            if environment == arg("name") { environment = envs[project]?.sorted().first ?? "" }
+            return ok(["trashed": .string("/Trash/project.json")])
+        default: return ok([:])
+        }
+    }
+}
+
+private func snapshot(_ title: String) -> LayoutSnapshot {
+    LayoutSnapshot(
+        panes: [Pane(id: "db-1", kind: "db", title: title, frame: PaneFrame(x: 1, y: 2, width: 300, height: 200))],
+        focusedId: "db-1", maximizedId: nil, graph: SnapGraph())
+}
+
+private func scope(_ project: String, _ environment: String) -> LayoutScope {
+    LayoutScope(organization: "test-org", project: project, environment: environment)
+}
+
+@MainActor
+private func lifecycleWindow(saved: [(String, String, String)] = [])
+    async throws -> (WindowModel, LifecycleContext, LayoutPersistence)
+{
+    let ctx = LifecycleContext()
+    let directory = testScratchRoot.appendingPathComponent("lifecycle-\(UUID().uuidString)", isDirectory: true)
+    let persistence = LayoutPersistence(directory: directory)
+    for (project, environment, title) in saved {
+        try persistence.save(snapshot(title), for: scope(project, environment))
+    }
+    let window = WindowModel.forTesting(
+        scratchRoot: testScratchRoot, context: ContextStore(client: ctx), persistence: persistence)
+    await registerStandardActions(
+        into: window.registryForTesting, context: ctx, panes: PaneStore(kinds: PaneKinds.standard),
+        db: nil, resumes: ResumeBroker())
+    await window.refreshContext()
+    return (window, ctx, persistence)
+}
+
+@Suite @MainActor struct WindowModelProjectLifecycleTests {
+    @Test func renamingTheActiveEnvironmentKeepsThePlaceAndItsPanes() async throws {
+        let (window, _, persistence) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        #expect(window.layoutSnapshot.panes.map(\.title) == ["mine"])
+
+        let error = await window.renameEnvironment(project: "p", projectPath: "/p", "dev", to: "local")
+
+        #expect(error == nil)
+        #expect(window.environment == "local")
+        #expect(window.layoutSnapshot.panes.map(\.title) == ["mine"])
+        #expect(persistence.load(for: scope("p", "dev")).snapshot == nil)
+        #expect(persistence.load(for: scope("p", "local")).snapshot != nil)
+    }
+
+    @Test func renamingTheActiveProjectKeepsThePlaceAndItsPanes() async throws {
+        let (window, _, persistence) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+
+        let error = await window.renameProject("p", to: "q")
+
+        #expect(error == nil)
+        #expect(window.projectKey == "q")
+        #expect(window.environment == "dev")
+        #expect(window.layoutSnapshot.panes.map(\.title) == ["mine"])
+        #expect(persistence.load(for: scope("p", "dev")).snapshot == nil)
+    }
+
+    @Test func aRenameOfAnUnrelatedEnvironmentLeavesTheCanvasAlone() async throws {
+        let (window, _, persistence) = try await lifecycleWindow(saved: [("p", "dev", "mine"), ("p", "stage", "theirs")])
+        _ = await window.renameEnvironment(project: "p", projectPath: "/p", "stage", to: "qa")
+        #expect(window.environment == "dev")
+        #expect(window.layoutSnapshot.panes.map(\.title) == ["mine"])
+        #expect(persistence.load(for: scope("p", "qa")).snapshot?.panes.map(\.title) == ["theirs"])
+    }
+
+    @Test func removingTheActiveEnvironmentLandsOnTheFirstRemainingWithItsPanesDropped() async throws {
+        let (window, _, persistence) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        #expect(window.layoutSnapshot.panes.count == 1)
+
+        let result = await window.removeEnvironment(project: "p", projectPath: "/p", "dev")
+
+        #expect(result.error == nil)
+        #expect(result.receipt == "Removed dev — a copy of project.json is in the Trash")
+        #expect(window.environment == "stage")
+        #expect(window.layoutSnapshot.panes.isEmpty)
+        // The removed place's canvas is not written back out on the way off it.
+        #expect(persistence.load(for: scope("p", "dev")).snapshot?.panes.map(\.title) == ["mine"])
+    }
+
+    @Test func removingTheActiveProjectWithPanesOpenDoesNotCrash() async throws {
+        let (window, ctx, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        await ctx.fail(with: nil)
+        let error = await window.removeProject("p")
+        #expect(error == nil)
+        #expect(window.projectKey == "")
+        #expect(window.layoutSnapshot.panes.isEmpty)
+    }
+
+    @Test func creatingAProjectDefaultsTheNameToTheFolder() async throws {
+        let (window, ctx, _) = try await lifecycleWindow()
+        let result = await window.createProject(folder: "/work/booking")
+        #expect(result.error == nil)
+        #expect(result.name == "booking")
+        #expect(await ctx.envs["booking"] == ["dev"])
+    }
+
+    @Test func creatingAnEnvironmentReturnsItsName() async throws {
+        let (window, _, _) = try await lifecycleWindow()
+        let result = await window.createEnvironment(project: "p", projectPath: "/p")
+        #expect(result.error == nil)
+        #expect(result.name == "env-2")
+    }
+
+    @Test func aFailedActionReturnsTheToolsTextWholeAndStillRefreshesSettings() async throws {
+        let (window, ctx, persistence) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        await ctx.fail(with: "an environment named local already exists")
+        let before = await ctx.count("config_tree")
+
+        let error = await window.renameEnvironment(project: "p", projectPath: "/p", "dev", to: "local")
+
+        #expect(error?.contains("an environment named local already exists") == true)
+        #expect(await ctx.count("config_tree") > before)
+        #expect(window.environment == "dev")
+        // Nothing moved: the rename did not happen.
+        #expect(persistence.load(for: scope("p", "dev")).snapshot != nil)
+    }
+
+    @Test func aSuccessfulActionRefreshesSettingsAndContext() async throws {
+        let (window, ctx, _) = try await lifecycleWindow()
+        let settings = await ctx.count("config_tree")
+        let contexts = await ctx.count("get_context")
+        _ = await window.removeProject("zzz")
+        #expect(await ctx.count("config_tree") > settings)
+        #expect(await ctx.count("get_context") > contexts)
+    }
+}

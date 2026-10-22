@@ -3190,6 +3190,142 @@ public final class WindowModel {
         }
     }
 
+    // MARK: Projects and environments (2e-ii)
+
+    /// Runs one of the six project and environment actions as the operator and answers its
+    /// `structuredContent`, or the failure text whole. The settings are re-read either way.
+    private func projectLifecycle(
+        _ action: String, _ params: [String: JSONValue]
+    ) async -> (result: [String: JSONValue], error: String?) {
+        do {
+            let reply = try await registry.dispatch(
+                name: action, params: .object(params), origin: .ui,
+                caller: DispatchCaller(place: self.place, session: nil), confirmation: nil)
+            if case .object(let object) = reply, case .object(let structured)? = object["structuredContent"] {
+                return (structured, nil)
+            }
+            return ([:], nil)
+        } catch {
+            await refreshSettings()
+            return ([:], statusDescribingFailure(action, error))
+        }
+    }
+
+    /// Reads the place back off disk after a success: the Go side has already moved or picked the
+    /// active place, and the window follows it.
+    private func followDisk() async {
+        await refreshContext()
+        await refreshSettings()
+    }
+
+    /// Whether `scope` is one a rename or removal of this project (and environment, when given)
+    /// touches, a conversation's included.
+    private func scopeIsAffected(_ scope: LayoutScope, project: String, environment: String?) -> Bool {
+        scope.organization == organization && scope.project == project
+            && (environment == nil || scope.environment == environment)
+    }
+
+    /// Lets go of every canvas this window holds for the place, so the next `activateLayout`
+    /// reads whatever is on disk instead of swapping the old one out and writing it back under
+    /// the name that is gone. A canvas on screen is dropped without a flush: `layoutScope` goes
+    /// to nil, and `activateLayout` has no outgoing arrangement to save.
+    private func releaseLayouts(project: String, environment: String?) {
+        let affected = { (scope: LayoutScope) in
+            self.scopeIsAffected(scope, project: project, environment: environment)
+        }
+        loadedLayoutScopes = loadedLayoutScopes.filter { !affected($0) }
+        scopesAwaitingRestore = scopesAwaitingRestore.filter { !affected($0) }
+        backgroundLayouts = backgroundLayouts.filter { !affected($0.key) }
+        layoutNotesAwaitingReturn = layoutNotesAwaitingReturn.filter { !affected($0.key) }
+        if let shown = layoutScope, affected(shown) { layoutScope = nil }
+    }
+
+    /// Adds a project from a folder. The name defaults to the folder's last path component.
+    public func createProject(folder: String) async -> (name: String?, error: String?) {
+        let name = URL(fileURLWithPath: folder).lastPathComponent
+        let reply = await projectLifecycle(
+            "ctx_create_project", ["folder": .string(folder), "name": .string(name)])
+        if let error = reply.error { return (nil, error) }
+        await followDisk()
+        if case .string(let created)? = reply.result["name"] { return (created, nil) }
+        return (name, nil)
+    }
+
+    /// Renames a registered project. Its saved arrangements move with it, so the panes come back.
+    public func renameProject(_ old: String, to new: String) async -> String? {
+        // What is on screen is saved first, so the move carries it.
+        if let shown = layoutScope, scopeIsAffected(shown, project: old, environment: nil) {
+            await persistLayout()
+        }
+        let reply = await projectLifecycle("ctx_rename_project", ["name": .string(old), "newName": .string(new)])
+        if let error = reply.error { return error }
+        do {
+            try persistence?.renameProject(organization: organization, from: old, to: new)
+        } catch {
+            status = "layout move: \(error)"
+        }
+        releaseLayouts(project: old, environment: nil)
+        await followDisk()
+        return nil
+    }
+
+    /// Removes a project from the registry; its folder is left alone.
+    public func removeProject(_ name: String) async -> String? {
+        let reply = await projectLifecycle("ctx_remove_project", ["name": .string(name)])
+        if let error = reply.error { return error }
+        releaseLayouts(project: name, environment: nil)
+        await followDisk()
+        return nil
+    }
+
+    /// Adds an environment to a project; `wakil-ctx` picks the name.
+    public func createEnvironment(
+        project: String, projectPath: String
+    ) async -> (name: String?, error: String?) {
+        let reply = await projectLifecycle(
+            "ctx_create_environment", ["project": .string(project), "projectPath": .string(projectPath)])
+        if let error = reply.error { return (nil, error) }
+        await followDisk()
+        if case .string(let created)? = reply.result["name"] { return (created, nil) }
+        return (nil, nil)
+    }
+
+    /// Renames an environment. Its saved arrangement moves with it, so the panes come back.
+    public func renameEnvironment(
+        project: String, projectPath: String, _ old: String, to new: String
+    ) async -> String? {
+        if let shown = layoutScope, scopeIsAffected(shown, project: project, environment: old) {
+            await persistLayout()
+        }
+        let reply = await projectLifecycle(
+            "ctx_rename_environment",
+            ["project": .string(project), "projectPath": .string(projectPath),
+             "name": .string(old), "newName": .string(new)])
+        if let error = reply.error { return error }
+        do {
+            try persistence?.renameEnvironment(organization: organization, project: project, from: old, to: new)
+        } catch {
+            status = "layout move: \(error)"
+        }
+        releaseLayouts(project: project, environment: old)
+        await followDisk()
+        return nil
+    }
+
+    /// Removes an environment; its file goes to the Trash. Removing the one on screen lands the
+    /// window on the first that remains (`wakil-ctx` picks it), through the same swap as a switch.
+    public func removeEnvironment(
+        project: String, projectPath: String, _ name: String
+    ) async -> (receipt: String?, error: String?) {
+        let reply = await projectLifecycle(
+            "ctx_remove_environment",
+            ["project": .string(project), "projectPath": .string(projectPath), "name": .string(name)])
+        if let error = reply.error { return (nil, error) }
+        releaseLayouts(project: project, environment: name)
+        await followDisk()
+        return ("Removed \(name) — a copy of project.json is in the Trash", nil)
+    }
+
     /// Cancels the browser trip that is running.
     ///
     /// **Trip 1's cancel is free and says so** — the only provably clean

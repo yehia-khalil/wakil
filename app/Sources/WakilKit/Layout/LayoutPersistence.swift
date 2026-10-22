@@ -272,6 +272,35 @@ public struct LayoutPersistence: Sendable {
         return levelDirectory(for: scope).appendingPathComponent(name)
     }
 
+    /// 2e-ii. Moves every `<from>@<environment>.json` of an organisation to `<to>@…`, so a renamed
+    /// project comes back with its panes. Only the org level: a conversation's files sit in
+    /// `conversations/` and are left where they lie. A project with nothing saved is a no-op, and
+    /// a file already under the new name is replaced — the rename is the later word.
+    public func renameProject(organization: String, from: String, to: String) throws {
+        let org = directory.appendingPathComponent(flatten(organization), isDirectory: true)
+        let prefix = "\(flattenPart(from))@"
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: org.path)) ?? []
+        for file in files where file.hasPrefix(prefix) && file.hasSuffix(".json") {
+            try move(org.appendingPathComponent(file),
+                     to: org.appendingPathComponent("\(flattenPart(to))@" + file.dropFirst(prefix.count)))
+        }
+    }
+
+    /// 2e-ii. Moves one environment's file, `<project>@<from>.json` to `<project>@<to>.json`.
+    /// Same rules as `renameProject`.
+    public func renameEnvironment(organization: String, project: String, from: String, to: String) throws {
+        let org = directory.appendingPathComponent(flatten(organization), isDirectory: true)
+        try move(org.appendingPathComponent("\(flattenPart(project))@\(flattenPart(from)).json"),
+                 to: org.appendingPathComponent("\(flattenPart(project))@\(flattenPart(to)).json"))
+    }
+
+    private func move(_ source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: source.path), source != destination else { return }
+        if fileManager.fileExists(atPath: destination.path) { try fileManager.removeItem(at: destination) }
+        try fileManager.moveItem(at: source, to: destination)
+    }
+
     /// Where `scope`'s level kept its file before the environment joined
     /// the path: `<project>.json` in the same directory, `project` being
     /// the display name or the key. Read, never written (R3).
