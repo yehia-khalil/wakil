@@ -1215,6 +1215,26 @@ func TestProjectToolsRoundTrip(t *testing.T) {
 	}
 }
 
+// The UI passes the folder's name; a folder already holding a project.json comes back under
+// the file's own name, and the tool answers that one (spec Call 2).
+func TestCreateProjectToolAnswersAnAdoptedFilesName(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	folder := filepath.Join(os.Getenv("HOME"), "wakil")
+	callOK(t, ctx, cs, "create_project", map[string]any{"folder": folder, "name": "wakil"})
+	callOK(t, ctx, cs, "rename_project", map[string]any{"name": "wakil", "newName": "W"})
+	callOK(t, ctx, cs, "remove_project", map[string]any{"name": "W"})
+
+	out := callOK(t, ctx, cs, "create_project", map[string]any{"folder": folder, "name": "wakil"})
+	if out["name"] != "W" {
+		t.Fatalf("create_project answered %v, want the file's name W", out)
+	}
+	reg, _ := wakilcore.LoadRegistryFor("initech")
+	if _, ok := reg["W"]; !ok {
+		t.Fatalf("registry %v", reg)
+	}
+}
+
 func TestEnvironmentToolsRoundTrip(t *testing.T) {
 	setupProject(t, `"staging":{"databases":[]},"prod":{"databases":[]}`)
 	ctx, cs := lifecycleClient(t)

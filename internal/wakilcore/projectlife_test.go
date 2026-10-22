@@ -43,9 +43,12 @@ func writeProjectFile(t *testing.T, folder, raw string) string {
 func TestCreateProjectWritesFileAndRow(t *testing.T) {
 	lifeSetup(t)
 	folder := t.TempDir()
-	entry, err := CreateProject(folder, " orders ")
+	key, entry, err := CreateProject(folder, " orders ")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if key != "orders" {
+		t.Errorf("key = %q, want the trimmed name", key)
 	}
 	path := filepath.Join(folder, ".wakil", "project.json")
 	if entry.Path != path {
@@ -69,8 +72,13 @@ func TestCreateProjectAdoptsExistingFile(t *testing.T) {
 	path := writeProjectFile(t, folder, `{"name":"legacy","org":"acme","roots":[{"path":"/x"}],`+
 		`"environments":{"staging":{"databases":[]},"production":{"production":true}}}`)
 	before, _ := os.ReadFile(path)
-	if _, err := CreateProject(folder, "orders"); err != nil {
+	// The name passed is the folder's (what the UI sends); the file's own name wins.
+	key, _, err := CreateProject(folder, "orders")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if key != "legacy" {
+		t.Errorf("key = %q, want the file's own name", key)
 	}
 	after, _ := os.ReadFile(path)
 	if string(before) != string(after) {
@@ -80,8 +88,70 @@ func TestCreateProjectAdoptsExistingFile(t *testing.T) {
 	if len(p.Environments) != 2 {
 		t.Errorf("environments lost: %+v", p.Environments)
 	}
-	if _, ok := lifeRegistry(t)["orders"]; !ok {
-		t.Error("no registry row")
+	reg := lifeRegistry(t)
+	if _, ok := reg["legacy"]; !ok {
+		t.Error("no registry row under the file's name")
+	}
+	if _, ok := reg["orders"]; ok {
+		t.Error("registered under the name passed, not the file's")
+	}
+}
+
+// A project renamed, removed and added back from its folder comes back under the name it was
+// renamed to — the key its saved layouts are filed under (spec Call 2).
+func TestCreateProjectReaddsARenamedProjectUnderItsFileName(t *testing.T) {
+	lifeSetup(t)
+	folder := filepath.Join(t.TempDir(), "wakil")
+	if _, _, err := CreateProject(folder, "wakil"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RenameProject("wakil", "W"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveProject("W"); err != nil {
+		t.Fatal(err)
+	}
+	key, _, err := CreateProject(folder, "wakil")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := lifeRegistry(t)
+	if key != "W" || reg["W"].Path == "" {
+		t.Errorf("key = %q, registry = %+v", key, reg)
+	}
+	if _, ok := reg["wakil"]; ok {
+		t.Error("re-added under the folder's name")
+	}
+}
+
+// The clash check is on the name the row would take: the file's, when adopting.
+func TestCreateProjectRefusesAnAdoptedNameThatClashes(t *testing.T) {
+	lifeSetup(t)
+	if _, _, err := CreateProject(t.TempDir(), "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	folder := t.TempDir()
+	writeProjectFile(t, folder, `{"name":"legacy","org":"acme","roots":[],"environments":{}}`)
+	_, _, err := CreateProject(folder, "fresh")
+	if err == nil || !strings.Contains(err.Error(), `"legacy"`) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, ok := lifeRegistry(t)["fresh"]; ok {
+		t.Error("registered under the name passed")
+	}
+}
+
+// An adopted file whose own name cannot be a key is refused, naming the file.
+func TestCreateProjectRefusesAnAdoptedFileWithNoUsableName(t *testing.T) {
+	lifeSetup(t)
+	folder := t.TempDir()
+	path := writeProjectFile(t, folder, `{"name":" ","org":"acme","roots":[],"environments":{}}`)
+	_, _, err := CreateProject(folder, "fresh")
+	if err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(lifeRegistry(t)) != 0 {
+		t.Error("a row was added")
 	}
 }
 
@@ -89,7 +159,7 @@ func TestCreateProjectRefusesOtherOrg(t *testing.T) {
 	lifeSetup(t)
 	folder := t.TempDir()
 	writeProjectFile(t, folder, `{"name":"x","org":"other","roots":[],"environments":{}}`)
-	_, err := CreateProject(folder, "orders")
+	_, _, err := CreateProject(folder, "orders")
 	if err == nil || !strings.Contains(err.Error(), "other") || !strings.Contains(err.Error(), "Invariant 4") {
 		t.Fatalf("err = %v", err)
 	}
@@ -101,10 +171,10 @@ func TestCreateProjectRefusesOtherOrg(t *testing.T) {
 func TestCreateProjectRefusesRegisteredFolder(t *testing.T) {
 	lifeSetup(t)
 	folder := t.TempDir()
-	if _, err := CreateProject(folder, "first"); err != nil {
+	if _, _, err := CreateProject(folder, "first"); err != nil {
 		t.Fatal(err)
 	}
-	_, err := CreateProject(folder, "second")
+	_, _, err := CreateProject(folder, "second")
 	if err == nil || !strings.Contains(err.Error(), `"first"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -115,11 +185,11 @@ func TestCreateProjectRefusesRegisteredFolder(t *testing.T) {
 
 func TestCreateProjectRefusesNameClash(t *testing.T) {
 	lifeSetup(t)
-	if _, err := CreateProject(t.TempDir(), "orders"); err != nil {
+	if _, _, err := CreateProject(t.TempDir(), "orders"); err != nil {
 		t.Fatal(err)
 	}
 	other := t.TempDir()
-	_, err := CreateProject(other, "orders")
+	_, _, err := CreateProject(other, "orders")
 	if err == nil || !strings.Contains(err.Error(), `"orders"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -144,7 +214,7 @@ func TestRenameProjectRewritesFileAndKey(t *testing.T) {
 	folder := t.TempDir()
 	path := writeProjectFile(t, folder, `{"name":"orders","org":"acme","roots":[{"path":"/a"},{"path":"/b"}],`+
 		`"environments":{"staging":{}},"editor":{"tabWidth":2}}`)
-	if _, err := CreateProject(folder, "orders"); err != nil {
+	if _, _, err := CreateProject(folder, "orders"); err != nil {
 		t.Fatal(err)
 	}
 	if err := RenameProject("orders", "shop"); err != nil {
@@ -183,7 +253,7 @@ func TestRenameProjectRefusesClash(t *testing.T) {
 func TestRenameProjectRestoresRegistryOnFileFailure(t *testing.T) {
 	lifeSetup(t)
 	folder := t.TempDir()
-	if _, err := CreateProject(folder, "orders"); err != nil {
+	if _, _, err := CreateProject(folder, "orders"); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(folder, ".wakil", "project.json")
@@ -213,7 +283,7 @@ func TestRenameProjectRestoresRegistryOnFileFailure(t *testing.T) {
 
 func TestRenameActiveProjectStillResolves(t *testing.T) {
 	lifeSetup(t)
-	entry, err := CreateProject(t.TempDir(), "orders")
+	_, entry, err := CreateProject(t.TempDir(), "orders")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +304,7 @@ func TestRenameActiveProjectStillResolves(t *testing.T) {
 
 func TestRemoveProjectKeepsFile(t *testing.T) {
 	lifeSetup(t)
-	entry, err := CreateProject(t.TempDir(), "orders")
+	_, entry, err := CreateProject(t.TempDir(), "orders")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,11 +321,11 @@ func TestRemoveProjectKeepsFile(t *testing.T) {
 
 func TestRemoveActiveProjectPicksFirstRemaining(t *testing.T) {
 	lifeSetup(t)
-	a, err := CreateProject(t.TempDir(), "a")
+	_, a, err := CreateProject(t.TempDir(), "a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := CreateProject(t.TempDir(), "b")
+	_, b, err := CreateProject(t.TempDir(), "b")
 	if err != nil {
 		t.Fatal(err)
 	}

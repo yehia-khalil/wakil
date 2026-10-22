@@ -752,15 +752,14 @@ func newServer() *mcp.Server {
 			return nil, empty{}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "create_project", Description: "Create a project in a folder and register it in the active organisation. Writes the folder's .wakil/project.json (name, org, one root) or adopts the one already there. Refuses a folder already registered, a name already taken, and a project filed under another organisation; nothing is written on a refusal."},
+	mcp.AddTool(s, &mcp.Tool{Name: "create_project", Description: "Create a project in a folder and register it in the active organisation. Writes the folder's .wakil/project.json (name, org, one root) or adopts the one already there, under that file's own name; returns the name it was registered under. Refuses a folder already registered, a name already taken, and a project filed under another organisation; nothing is written on a refusal."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a createProjectArgs) (*mcp.CallToolResult, createProjectOut, error) {
-			entry, err := wakilcore.CreateProject(a.Folder, a.Name)
+			// The key it was filed under: the trimmed name, or an adopted file's own.
+			key, entry, err := wakilcore.CreateProject(a.Folder, a.Name)
 			if err != nil {
 				return toolErr(err), createProjectOut{}, nil
 			}
-			// CreateProject trims the name before storing it; report that one.
-			stored, _ := wakilcore.ValidName(a.Name)
-			return nil, createProjectOut{Name: stored, Path: entry.Path}, nil
+			return nil, createProjectOut{Name: key, Path: entry.Path}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "rename_project", Description: "Rename a project: rewrites the name in its project.json and the registry key. The active project follows the new name. Refuses a name already taken."},

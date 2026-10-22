@@ -13,5 +13,6 @@
 {"do":{"click":"settings.project.remove"}}
 {"expect":{"tree":"absent","text":"project.e2e-renamed"}}
 {"expect":{"tree":"contains","text":"Removed e2e-renamed from this organisation"}}
-{"dispatch":{"action":"ctx_create_project","params":{"folder":"{fixtureRoot}/e2e-new","name":"e2e-renamed"}}}
+{"dispatch":{"action":"ctx_create_project","params":{"folder":"{fixtureRoot}/e2e-new","name":"e2e-new"}}}
 {"expect":{"tree":"contains","text":"project.e2e-renamed"}}
+{"expect":{"tree":"absent","text":"project.e2e-new"}}

@@ -31,39 +31,36 @@ func projectFilePath(folder string) string {
 	return filepath.Join(folder, ".wakil", "project.json")
 }
 
-// CreateProject registers a folder as a project of the current org.
+// CreateProject registers a folder as a project of the current org and
+// answers the registry key it was filed under.
 //
 // **A folder that already holds `.wakil/project.json` is adopted as it
-// is.** Only the registry row is added: the file is the operator's, often
-// hand-written, and overwriting it to "create" a project would destroy
-// the very configuration that makes it one. A fresh folder gets a minimal
-// file (name, org, one root) written through SaveProject, like every other
-// project.json write.
+// is, under the file's own name.** Only the registry row is added: the file
+// is the operator's, often hand-written, and overwriting it to "create" a
+// project would destroy the very configuration that makes it one. Its name
+// is the key because a rename writes the file and the key together and the
+// saved layouts follow the key: a project renamed, removed and added back
+// from its folder must come back under the name it was renamed to, not the
+// folder's (spec Call 2). `name` is used only when a new file is written:
+// a fresh folder gets a minimal file (name, org, one root) written through
+// SaveProject, like every other project.json write.
 //
 // **The registry entry's path is the project.json path**, matching
 // `wakil project add`, so the two registration routes produce the same row.
 //
 // Every refusal happens before anything is written: a refused create
 // leaves neither a file nor a row behind.
-func CreateProject(folder, name string) (ProjectEntry, error) {
+func CreateProject(folder, name string) (string, ProjectEntry, error) {
 	if !filepath.IsAbs(folder) {
-		return ProjectEntry{}, UserError("the folder " + strconv.Quote(folder) + " must be an absolute path")
-	}
-	name, err := ValidName(name)
-	if err != nil {
-		return ProjectEntry{}, err
+		return "", ProjectEntry{}, UserError("the folder " + strconv.Quote(folder) + " must be an absolute path")
 	}
 	org, err := CurrentOrg()
 	if err != nil {
-		return ProjectEntry{}, err
+		return "", ProjectEntry{}, err
 	}
 	reg, err := LoadRegistryFor(org)
 	if err != nil {
-		return ProjectEntry{}, err
-	}
-	if _, clash := reg[name]; clash {
-		return ProjectEntry{}, UserError("a project named " + strconv.Quote(name) +
-			" already exists in org " + strconv.Quote(org))
+		return "", ProjectEntry{}, err
 	}
 
 	path := projectFilePath(folder)
@@ -75,26 +72,43 @@ func CreateProject(folder, name string) (ProjectEntry, error) {
 	sort.Strings(names)
 	for _, existing := range names {
 		if reg[existing].Path == path {
-			return ProjectEntry{}, UserError("this folder is already registered as " +
+			return "", ProjectEntry{}, UserError("this folder is already registered as " +
 				strconv.Quote(existing))
 		}
 	}
 
+	adopting := false
 	if _, statErr := os.Stat(path); statErr == nil {
 		proj, err := LoadProject(path)
 		if err != nil {
-			return ProjectEntry{}, UserError("could not load project file " + path + ": " + err.Error())
+			return "", ProjectEntry{}, UserError("could not load project file " + path + ": " + err.Error())
 		}
 		// **Invariant 4.** A project is registered only under the org its
 		// own file declares.
 		if proj.Org != org {
-			return ProjectEntry{}, UserError("project.json at " + path + " declares org " +
+			return "", ProjectEntry{}, UserError("project.json at " + path + " declares org " +
 				strconv.Quote(proj.Org) + ", but the current org is " + strconv.Quote(org) +
 				" — a project can only be registered under the org it declares (Invariant 4)")
 		}
+		if name, err = ValidName(proj.Name); err != nil {
+			return "", ProjectEntry{}, UserError("project.json at " + path + " names no usable project: " + err.Error())
+		}
+		adopting = true
 	} else if os.IsNotExist(statErr) {
+		if name, err = ValidName(name); err != nil {
+			return "", ProjectEntry{}, err
+		}
+	} else {
+		return "", ProjectEntry{}, statErr
+	}
+	if _, clash := reg[name]; clash {
+		return "", ProjectEntry{}, UserError("a project named " + strconv.Quote(name) +
+			" already exists in org " + strconv.Quote(org))
+	}
+
+	if !adopting {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return ProjectEntry{}, err
+			return "", ProjectEntry{}, err
 		}
 		fresh := Project{
 			Name:         name,
@@ -103,18 +117,16 @@ func CreateProject(folder, name string) (ProjectEntry, error) {
 			Environments: map[string]Environment{},
 		}
 		if err := SaveProject(path, fresh); err != nil {
-			return ProjectEntry{}, err
+			return "", ProjectEntry{}, err
 		}
-	} else {
-		return ProjectEntry{}, statErr
 	}
 
 	entry := ProjectEntry{Path: path}
 	reg[name] = entry
 	if err := SaveRegistry(org, reg); err != nil {
-		return ProjectEntry{}, err
+		return "", ProjectEntry{}, err
 	}
-	return entry, nil
+	return name, entry, nil
 }
 
 // RenameProject renames a project in its file and in the registry.
