@@ -5325,6 +5325,11 @@ public final class WindowModel {
             guard let f = focused, f.kind == "editor", let s = editor(f.id), let i = s.active, i < s.tabs.count else { return false }
             return s.tabs[i].path != nil
         }()
+        let editorActiveDiff: EditorActiveDiff? = {
+            guard let f = focused, f.kind == "editor", let s = editor(f.id), let i = s.active, i < s.tabs.count,
+                  case .diff(let root, let path, let group) = s.tabs[i].subject else { return nil }
+            return EditorActiveDiff(path: root + "/" + path, group: group)
+        }()
         return PaletteContext(
             focusedPane: focused.map { FocusedPane(id: $0.id, kind: $0.kind) },
             apiSendInFlight: sending != nil,
@@ -5332,7 +5337,8 @@ public final class WindowModel {
             dbPageHasNext: table.map { $0.pageable && $0.truncated } ?? false,
             dbPageHasPrevious: table.map { $0.pageable && $0.offset > 0 } ?? false,
             hasEnvironments: hasEnvironments, projectCount: projectCount, providerCount: providerCount,
-            editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project)
+            editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project,
+            editorActiveDiff: editorActiveDiff)
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.
