@@ -685,6 +685,14 @@ public final class WindowModel {
     /// The last draft that landed, by any path (✨, the agent, voice): what it replaced, for the view's
     /// one ⌘Z (final review I4). `serial` tells two drafts with the same text apart.
     public internal(set) var changesLastDraft: ChangesDraftReplacement?
+    /// 3a-iii-a: a quiet note per root from the last background fetch (shown on the root's header,
+    /// never as an error); the fetch loop, its interval, its sleep (tests replace it), and whether the
+    /// app is frontmost.
+    public internal(set) var changesRemoteNotes: [String: String] = [:]
+    public let backgroundFetchInterval: Duration = .seconds(300)
+    var backgroundFetchSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    var backgroundFetchTask: Task<Void, Never>?
+    var appActive = true
     /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
@@ -2135,6 +2143,7 @@ public final class WindowModel {
         changesDraftTasks = [:]
         changesDrafting = []
         changesLastDraft = nil
+        changesRemoteNotes = [:]
         changesMessages = [:]
         changesHistory = [:]
         changesHistoryCursor = [:]
@@ -4377,6 +4386,8 @@ public final class WindowModel {
             // returned, the file says what the canvas says.
             _ = await pendingSave?.value
         }
+        // 3a-iii-a: the background fetch follows whether an editor pane is open.
+        updateBackgroundFetch()
     }
 
     /// Re-reads the arrangement and writes nothing.
@@ -8815,6 +8826,7 @@ public final class WindowModel {
     /// outlives the window.
     public func shutdown() async {
         socketsClosed = true
+        stopBackgroundFetch()
         for agent in agents.values { agent.eventPump?.cancel() }
         confirmationPump?.cancel()
         observationPump?.cancel()
