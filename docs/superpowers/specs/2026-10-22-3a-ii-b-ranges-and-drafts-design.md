@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-22
 **Status:** written from the phase-map row at the operator's request (2026-10-22, no interview);
-awaiting the operator's review
+approved by the operator 2026-10-22, with Unstage Selected Ranges added (amendment below)
 **Sub-phase:** 3a-ii-b, the row added by the 3a-ii design (2026-10-21). Follows 3a-ii (main
 91f64b7, PR #41). Runs beside 2e-ii, which works in Settings → Organisation; nothing here touches
 those files except one switch row under QUICK TASKS.
@@ -54,12 +54,11 @@ box (and an action), the quick model reads the staged diff, the operator commits
 
 ## What it does not do
 
-- **No Unstage Selected Ranges or Revert Selected Ranges.** The row names only Stage. Both would
-  reuse `git_stage_hunk` (unstage writes the index text back toward HEAD), so they are cheap to
-  add later. They are listed here so their absence is on the record.
+- **No Revert Selected Ranges.** The row names only Stage; Unstage came in by the operator's word
+  (amendment below). Revert would be a buffer or working-tree write, a different path.
 - **No ranges in a file tab.** A file tab keeps the 3a-ii peek's Stage Change for one hunk.
-- **No staging from a Staged or Untracked diff tab.** Staged is already staged. An untracked file
-  has no index text, so there is nothing to stage part of; + on its row stages it whole.
+- **No ranges in an Untracked diff tab.** An untracked file has no index text, so there is
+  nothing to stage part of; + on its row stages it whole.
 - **No auto-commit, and no draft unless asked.** ✨ is pressed or the action is called. Nothing
   drafts on opening the view, on staging, or on idle.
 - **No `git log` reading.** Style examples come from the root's own Wakil message history (3a-ii),
@@ -252,3 +251,25 @@ Decision 42's shape: a prompt and a parser, called through `QuickTasks.respond`.
   3a-ii-b", becomes "…came in 3a-ii-b, through the same `git_stage_hunk` and guard".
 - **Invariant 6:** no change. Range staging is a stage, already on the table from 2026-10-21.
 - **Phase map:** 3a-ii-b is marked met on its walk.
+
+## Amendment 2026-10-22 — Unstage Selected Ranges (operator)
+
+Asked at review and agreed: a **Staged** diff tab (`confirm.go (Staged)`, HEAD against the index)
+gets **Unstage Selected Ranges**, the mirror of Stage.
+
+- **Pure:** `editorUnstagedText(base:text:ranges:) -> String?`, `base` the HEAD text (empty for a
+  file new in the index), `text` the index text. The touched part of each hunk is reverted to
+  HEAD's lines with the same per-kind rules as staging (a partly selected `changed` hunk gets all
+  its old lines back); untouched hunks stay staged. Nil when no hunk is touched.
+- **Action:** `editor_changes_unstage_ranges`, the same params, kind, audience and price as
+  `editor_changes_stage_ranges`. Texts come from the pane's Staged diff tab, else `git_show`
+  (`HEAD`, `index`). Write: `git_stage_hunk` with `content` = the result and `expect` =
+  `gitBlobId(index text)`.
+- **UI:** the header button reads **Unstage Selected Ranges** on a Staged tab
+  (`editor.diff.unstageRanges`), with the same right-click entry and ⌘K command.
+- **Edges:** a file staged as deleted (`D`) has no index side and is refused (use − on its row).
+  A file new in the index keeps the lines not selected; unstaging every line leaves it staged
+  as empty, as VS Code does — − on the row unstages it whole.
+- **Tests:** the pure function per kind and the round trip (unstage the ranges, then diff HEAD
+  against the index, and only the unselected changes remain); the action's refusals; an e2e that
+  stages a file whole and then unstages two selected lines.
