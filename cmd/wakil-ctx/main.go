@@ -164,6 +164,10 @@ type updateOrgArgs struct {
 	PullStrategy    *string `json:"pullStrategy,omitempty" jsonschema:"how Pull and Sync integrate: rebase, merge or ff-only"`
 }
 
+type gitHostSuggestionsOut struct {
+	Hosts []wakilcore.GitHostSuggestion `json:"hosts"`
+}
+
 type gitAccountArgs struct {
 	ID       string `json:"id" jsonschema:"the organisation's id"`
 	Host     string `json:"host" jsonschema:"the git host, e.g. github.com"`
@@ -774,6 +778,11 @@ func newServer() *mcp.Server {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_host_suggestions", Description: "The hosts an organisation's project roots push to (each origin, ssh aliases resolved), the most used first, with how many roots use each. Read when an account is being added."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitHostSuggestionsOut, error) {
+			return nil, gitHostSuggestionsOut{Hosts: wakilcore.GitHostSuggestions(a.ID)}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_account_remove", Description: "Forget an organisation's git account for one host: its Keychain secrets go, and a key Wakil generated goes to the Trash."},

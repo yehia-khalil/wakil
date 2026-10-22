@@ -957,12 +957,15 @@ public func registerStandardActions(
         ("ctx_git_account_add", "git_account_add",
          ["id", "host", "provider", "method", "user", "keyPath", "username"], ["id", "host", "provider", "method"]),
         ("ctx_git_account_remove", "git_account_remove", ["id", "host"], ["id", "host"]),
+        ("ctx_git_host_suggestions", "git_host_suggestions", ["id"], ["id"]),
     ] {
         await registry.register(Action(
             name: name,
-            description: name == "ctx_git_account_add"
-                ? "Record an organisation's git account for one host (ssh, token or signin). Operator-only."
-                : "Forget an organisation's git account for one host, with its secrets. Operator-only.",
+            description: [
+                "ctx_git_account_add": "Record an organisation's git account for one host (ssh, token or signin). Operator-only.",
+                "ctx_git_account_remove": "Forget an organisation's git account for one host, with its secrets. Operator-only.",
+                "ctx_git_host_suggestions": "The hosts an organisation's projects push to, most used first. Operator-only.",
+            ][name] ?? name,
             kind: .control,
             audience: .operatorOnly,
             schema: .object([
