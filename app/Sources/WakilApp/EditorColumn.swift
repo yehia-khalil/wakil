@@ -716,17 +716,23 @@ struct EditorColumn: View {
         // Rule 9: with nothing staged the default is everything, and the button says so.
         let staged = root.files.contains { $0.group == .staged }
         let title = staged ? "Commit" : "Commit All"
-        let lines = min(max(draft.components(separatedBy: "\n").count, 1), 6)
         let hint = changes.placeholders[key] ?? "Message (⌘⏎ to commit)"
         VStack(alignment: .leading, spacing: ChangesSpace.m) {
-            // The box's height: the draft's lines, or the placeholder's wrapped lines when it is drawn,
-            // whichever is taller. Drawn by nothing; the editor and the placeholder lie over it, so the
-            // editor covers every line the box draws and a click anywhere in it reaches the text view
-            // (3a-ii walk: a wrapped placeholder had made the box three lines tall over a one-line editor).
+            // The box's height: the draft as it wraps at the box's width, at most six lines, or the
+            // placeholder's wrapped lines when it is drawn. Measured by a hidden copy in the editor's font
+            // and inset; the editor and the placeholder lie over it, so the editor covers every line the
+            // box draws and a click anywhere in it reaches the text view (3a-ii walk: a wrapped placeholder
+            // had made the box three lines tall over a one-line editor; 3a-ii-b walk: a wrapped draft was
+            // counted by its newlines and scrolled in a one-line box). Past six lines the editor scrolls.
             ZStack(alignment: .topLeading) {
-                Color.clear.frame(height: CGFloat(lines) * 14 + 4)
+                commitHint(draft.isEmpty ? " " : draft + (draft.hasSuffix("\n") ? " " : ""))
+                    .lineLimit(6)
+                    .padding(.trailing, 5)          // the text view's line-fragment padding, right side
+                    .padding(.vertical, 2)
+                    .hidden()
                 if draft.isEmpty { commitHint(hint).hidden() }
             }
+            .padding(.trailing, Self.draftButtonRoom)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .overlay(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
@@ -734,7 +740,7 @@ struct EditorColumn: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(EditorPaneStyle.text)
                         .scrollContentBackground(.hidden)
-                        .scrollIndicators(lines >= 6 ? .automatic : .never)
+                        .scrollIndicators(.automatic)
                         .focused($messageFocused, equals: key)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .accessibilityLabel("Commit message")
@@ -746,6 +752,8 @@ struct EditorColumn: View {
                             .accessibilityIdentifier("editor.changes.\(root.name).hint")
                     }
                 }
+                // The text and its placeholder stop short of ✨ in the box's corner, as the measuring copy does.
+                .padding(.trailing, Self.draftButtonRoom)
             }
             .padding(ChangesSpace.s)
             // The padding ring is the box too: a click there focuses the editor, caret at the end. A
@@ -813,6 +821,9 @@ struct EditorColumn: View {
     }
 
     /// The message box's placeholder, onto the editor's first line, where its caret stands.
+    /// The width ✨ takes in the message box's top-right corner: the text wraps before it.
+    static let draftButtonRoom: CGFloat = 20
+
     private func commitHint(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 11, design: .monospaced))
@@ -846,14 +857,15 @@ struct EditorColumn: View {
                     if drafting && draftHovered != key {
                         ProgressView().controlSize(.mini)
                     } else {
-                        Text(drafting ? "✕" : "✨").font(.system(size: 11))
+                        // A symbol in the pane's own ink, not the emoji's yellow (3a-ii-b walk).
+                        Image(systemName: drafting ? "xmark" : "sparkles").font(.system(size: 10, weight: .medium))
                     }
                 }
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
+            .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
             .onHover { inside in draftHovered = inside ? key : (draftHovered == key ? nil : draftHovered) }
             .help(drafting ? "Cancel Draft" : "Draft Message")
             .accessibilityLabel(drafting ? "Cancel Draft" : "Draft Message")
