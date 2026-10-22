@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/yehia-khalil/wakil/internal/wakilcore"
 )
@@ -26,9 +27,18 @@ func runGitCredential(args []string, stdin io.Reader, stdout, stderr io.Writer, 
 	if op != "get" {
 		return 0
 	}
-	// git sends its request on stdin; it is read to the end and not needed.
+	// git sends its request on stdin. The helper reaches every git process the command starts — a
+	// submodule on another host, a push URL elsewhere — so it answers only https on its own host,
+	// and says nothing otherwise (git then has no credential, and fails without one).
+	req := map[string]string{}
 	s := bufio.NewScanner(stdin)
 	for s.Scan() {
+		if k, v, ok := strings.Cut(s.Text(), "="); ok {
+			req[k] = v
+		}
+	}
+	if req["protocol"] != "https" || req["host"] != host {
+		return 0
 	}
 	a, ok := account(host)
 	if !ok {

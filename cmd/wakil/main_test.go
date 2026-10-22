@@ -1562,3 +1562,22 @@ func TestAskpassAsSSHCallsIt(t *testing.T) {
 		t.Fatalf("subcommand hijacked: %d %q", code, out.String())
 	}
 }
+
+// Review C2: the helper's -c reaches every git process the command starts — a submodule on another
+// host, a push URL elsewhere — so it answers only a request for https on its own host.
+func TestGitCredentialAnswersOnlyItsOwnHost(t *testing.T) {
+	read := func(string) (string, error) { return "tok-1", nil }
+	account := func(host string) (wakilcore.GitAccount, bool) {
+		return wakilcore.GitAccount{Host: host, Provider: "github", Method: "token"}, true
+	}
+	for _, req := range []string{
+		"protocol=https\nhost=git.corp.example\n\n",
+		"protocol=http\nhost=github.com\n\n",
+		"protocol=https\n\n",
+	} {
+		var out, errb bytes.Buffer
+		if code := runGitCredential([]string{"--host", "github.com", "get"}, strings.NewReader(req), &out, &errb, read, account); code != 0 || out.Len() != 0 {
+			t.Errorf("request %q: code %d out %q", req, code, out.String())
+		}
+	}
+}

@@ -50,7 +50,7 @@ func RemoteInvocation(org string, a GitAccount, remote RemoteURL, route SSHRoute
 	default: // token, signin
 		inv.Args = append(inv.Args,
 			"-c", "credential.helper=",
-			"-c", "credential.helper=!"+wakilBin+" --org "+org+" git-credential --host "+host,
+			"-c", "credential.helper=!"+shellQuote(wakilBin)+" --org "+shellQuote(org)+" git-credential --host "+shellQuote(host),
 			"-c", "credential.interactive=false")
 		if remote.Scheme == "ssh" {
 			inv.Args = append(inv.Args,
