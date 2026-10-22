@@ -260,7 +260,7 @@ live app; *accepted* means it was marked met without one.
 | **2e** | The settings pane — an account added from Wakil with no credential in the operator's hands; unlink; the DSN write; the residue named | **2026-09-30**, walked | the rest of 2c; **built before 2d** |
 | **Phase 3** | Breadth — editor, API client UI, chat and inbox adapters | — | — |
 | **3a-i** | Git pane, read-only: changes by root, the spine, the Monaco diff host | **2026-10-09**, walked | — |
-| **3a-ii** | Stage, unstage, commit — the fourth write | — | 3a-i |
+| **3a-ii** | Stage, unstage, commit — the fourth write | **2026-10-22**, walked | 3a-i |
 | **3a-ii-b** | Stage and Unstage Selected Ranges in the diff tab; ✨ drafts the commit message with the quick model, the operator commits | **2026-10-22**, walked | 3a-ii |
 | **2e-ii** | Add, rename and remove a project and an environment from Settings | — | 3a-ii |
 | **3a-iii** | A git account per organisation — sign in, the credential in the Keychain; push, pull, fetch, sync | — | 3a-ii |
