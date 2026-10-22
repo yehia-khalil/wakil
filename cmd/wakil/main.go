@@ -225,6 +225,11 @@ func main() {
 // record), 0 on success. Every subcommand in this package follows this
 // contract.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer, store secretStore, read secretReader) int {
+	// 3a-iii: ssh calls `wakil` as its askpass with the prompt as the only argument; the host the
+	// passphrase is for comes in WAKIL_ASKPASS_HOST. A subcommand by name still runs as itself.
+	if host := os.Getenv("WAKIL_ASKPASS_HOST"); host != "" && len(args) == 1 && !isSubcommand(args[0]) {
+		return runGitAskpass([]string{"--host", host}, stdout, stderr, read)
+	}
 	args, err := applyOrgFlag(args)
 	if err != nil {
 		fmt.Fprintln(stderr, message(err))
@@ -257,6 +262,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, store secretS
 		fmt.Fprintln(stderr, message(wakilcore.UserError("unknown command\n\n"+usage)))
 		return 2
 	}
+}
+
+func isSubcommand(name string) bool {
+	switch name {
+	case "secrets", "org", "provider", "project", "git-credential", "git-askpass":
+		return true
+	}
+	return false
 }
 
 // applyOrgFlag consumes a global "--org <name>" from anywhere in argv and

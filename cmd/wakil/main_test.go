@@ -1541,3 +1541,24 @@ func TestGitAskpassPrintsThePassphrase(t *testing.T) {
 		t.Fatalf("code %d out %q", code, out.String())
 	}
 }
+
+// Review C1: ssh calls the askpass as `<wakil> <prompt>` — one program path, the prompt its only
+// argument — so the host comes from WAKIL_ASKPASS_HOST.
+func TestAskpassAsSSHCallsIt(t *testing.T) {
+	t.Setenv("WAKIL_ASKPASS_HOST", "github.com")
+	read := func(ref string) (string, error) {
+		if ref == "git-github.com-ssh-passphrase" {
+			return "pp-1", nil
+		}
+		return "", nil
+	}
+	var out, errb bytes.Buffer
+	if code := run([]string{"Enter passphrase for key '/k/id': "}, strings.NewReader(""), &out, &errb, nil, read); code != 0 || out.String() != "pp-1\n" {
+		t.Fatalf("code %d out %q err %q", code, out.String(), errb.String())
+	}
+	// A real subcommand under the same environment still runs as itself.
+	out.Reset()
+	if code := run([]string{"git-credential", "--host", "github.com", "store"}, strings.NewReader(""), &out, &errb, nil, read); code != 0 || out.Len() != 0 {
+		t.Fatalf("subcommand hijacked: %d %q", code, out.String())
+	}
+}

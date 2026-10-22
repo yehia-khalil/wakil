@@ -71,8 +71,16 @@ func TestAskpassOnlyWhenAPassphraseIsKept(t *testing.T) {
 	a := GitAccount{Host: "github.com", Provider: "github", Method: "ssh", KeyPath: "/k"}
 	inv := RemoteInvocation("initech", a, RemoteURL{Scheme: "ssh", Host: "github.com"}, SSHRoute{HostName: "github.com"}, "/bin/wakil", "/kh")
 	s := joined(inv)
-	if !strings.Contains(s, "SSH_ASKPASS=/bin/wakil --org initech git-askpass --host github.com") || !strings.Contains(s, "SSH_ASKPASS_REQUIRE=force") {
-		t.Fatalf("no askpass: %s", s)
+	// ssh runs SSH_ASKPASS as one program path with the prompt as its only argument, so the
+	// value is the binary alone and the organisation and host ride in the environment.
+	for _, want := range []string{"SSH_ASKPASS=/bin/wakil", "SSH_ASKPASS_REQUIRE=force", "WAKIL_ASKPASS_HOST=github.com", "WAKIL_ORG=initech"} {
+		found := false
+		for _, e := range inv.Env {
+			found = found || e == want
+		}
+		if !found {
+			t.Errorf("missing env %q in %s", want, s)
+		}
 	}
 }
 

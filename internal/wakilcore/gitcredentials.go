@@ -39,8 +39,10 @@ func RemoteInvocation(org string, a GitAccount, remote RemoteURL, route SSHRoute
 		// git runs GIT_SSH_COMMAND through a shell: every part is quoted, so a key path with spaces holds.
 		inv.Env = append(inv.Env, "GIT_SSH_COMMAND="+strings.Join(quoted, " "))
 		if v, _ := SecretGetFor(org, gitPassphraseRef(host)); v != "" {
-			inv.Env = append(inv.Env,
-				"SSH_ASKPASS="+wakilBin+" --org "+org+" git-askpass --host "+host, "SSH_ASKPASS_REQUIRE=force")
+			// ssh runs SSH_ASKPASS as one program path with the prompt as its only argument, so the
+			// organisation and host ride in the environment (`wakil` reads WAKIL_ASKPASS_HOST).
+			inv.Env = append(inv.Env, "SSH_ASKPASS="+wakilBin, "SSH_ASKPASS_REQUIRE=force",
+				"WAKIL_ASKPASS_HOST="+host, "WAKIL_ORG="+org)
 		}
 		if remote.Scheme == "https" {
 			inv.Args = append(inv.Args, "-c", "url.git@"+host+":.insteadOf=https://"+host+"/")
