@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3a-ii-b-ranges.jsonl",
   "baseCommit": "91f64b7b89da734fc9609cb355bf4890ae127ead",
-  "provedAt": "2026-10-22T11:58:07.93653Z",
+  "provedAt": "2026-10-22T12:39:24.449823Z",
   "checkBlob": "8495ee38dc985e9ecbdf0aab1dc1a868ac9a2109"
 }
