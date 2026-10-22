@@ -31,8 +31,10 @@ sub-phase reverses that part of the amendment.
    2026-10-22). Adding the same folder again brings the project back whole.
 3. **Remove an environment = Trash first, then remove.** An environment exists only inside
    `project.json`. Before the key goes, a copy of the file goes to the Trash as
-   `project.json (before removing staging 14:02)`. That copy is the undo (Decision 41's pattern,
-   as in 3a-ii's discard). There is no dialog, and production environments are treated the same.
+   `project.json (before removing staging 14:02)`, written beside `project.json` and trashed from
+   there, so Put Back returns it beside the file. That copy is the undo (Decision 41's pattern, as
+   in 3a-ii's discard). It asks first, in the pane (**Remove** / **Keep it**), as removing a project
+   does (Rule 1, ruled on the walk 2026-10-22); production environments are treated the same.
 4. **Rename is the Name field on the page**, saved when the field is left (Rule 2), as Git Name
    and Email are in 3a-ii.
 5. **The active place follows the operator's edits.** Renaming the active project or

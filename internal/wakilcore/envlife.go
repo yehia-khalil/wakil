@@ -90,8 +90,10 @@ func RenameEnvironment(projectPath, old, new string) error {
 }
 
 // RemoveEnvironment removes an environment after putting a copy of
-// project.json in the Trash; if the Trash fails nothing is removed. It
-// returns the copy's file name.
+// project.json in the Trash; if the Trash fails nothing is removed. The copy
+// is written beside project.json and trashed from there, so Finder's Put Back
+// returns it beside the file (3a-ii's discard pattern). It returns the copy's
+// file name.
 func RemoveEnvironment(projectPath, name string, now time.Time) (string, error) {
 	project, err := loadOwnProject(projectPath)
 	if err != nil {
@@ -107,20 +109,24 @@ func RemoveEnvironment(projectPath, name string, now time.Time) (string, error) 
 	if _, err := os.Stat(trashBin); err != nil {
 		return "", UserError("Move to Trash needs macOS 15: " + trashBin + " is missing")
 	}
-	trashed := "project.json (before removing " + name + " " + now.Local().Format("15:04") + ")"
-	dir, err := os.MkdirTemp("", "wakil-trash-")
-	if err != nil {
-		return "", err
+	base := "project.json (before removing " + name + " " + now.Local().Format("15:04") + ")"
+	dir := filepath.Dir(projectPath)
+	copyPath := filepath.Join(dir, base)
+	for n := 2; ; n++ {
+		if _, err := os.Lstat(copyPath); os.IsNotExist(err) {
+			break
+		}
+		copyPath = filepath.Join(dir, base+" "+strconv.Itoa(n))
 	}
-	defer os.RemoveAll(dir)
-	copyPath := filepath.Join(dir, trashed)
 	if err := os.WriteFile(copyPath, raw, 0o600); err != nil {
 		return "", err
 	}
 	if out, err := exec.Command(trashBin, "-s", copyPath).CombinedOutput(); err != nil {
+		os.Remove(copyPath)
 		return "", UserError("could not move a copy of project.json to the Trash, so nothing was removed: " +
 			strings.TrimSpace(string(out)) + " (" + err.Error() + ")")
 	}
+	trashed := filepath.Base(copyPath)
 
 	delete(project.Environments, name)
 	if err := SaveProject(projectPath, *project); err != nil {

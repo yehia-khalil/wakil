@@ -159,7 +159,7 @@ struct SettingsPane: View {
     @State private var lifecycleRefusals: [String: String] = [:]
     /// The removal awaiting its pane-local confirmation, by its key. Only a
     /// removal that passes a `confirmation` asks (Rule 1: the operator
-    /// counts taking a project off the list as destroying).
+    /// counts removing a project or an environment as destroying).
     @State private var confirmingRemoval: String?
     /// What a removal did, shown on the page it landed on until the operator moves.
     @State private var receipt: (node: SettingsNode, text: String)?
@@ -983,7 +983,9 @@ struct SettingsPane: View {
                     removeSection(
                         key: "remove.environment.\(projectName).\(environmentName)",
                         label: "Remove environment", identifier: "settings.environment.remove",
-                        hint: "Its file goes to the Trash, so it can be put back."
+                        hint: "Its file goes to the Trash, so it can be put back.",
+                        confirmation: "Remove \(environmentName) from \(project.name)? A copy of project.json "
+                            + "goes to the Trash first; Put Back returns it beside project.json."
                     ) { await remove(environment: environmentName, from: project) }
                 }
             } else {

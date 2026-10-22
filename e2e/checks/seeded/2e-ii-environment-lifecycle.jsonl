@@ -10,6 +10,12 @@
 {"expect":{"tree":"absent","text":"environment.e2e-project.new-environment"}}
 {"do":{"click":"settings.tree.environment.e2e-project.review"}}
 {"do":{"click":"settings.environment.remove"}}
+{"expect":{"tree":"contains","text":"Remove review from e2e-project?"}}
+{"do":{"click":"settings.environment.remove.keep"}}
+{"expect":{"tree":"absent","text":"Remove review from e2e-project?"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.review"}}
+{"do":{"click":"settings.environment.remove"}}
+{"do":{"click":"settings.environment.remove.confirm"}}
 {"expect":{"tree":"contains","text":"a copy of project.json is in the Trash"}}
 {"expect":{"tree":"absent","text":"environment.e2e-project.review"}}
 {"dispatch":{"action":"ctx_create_environment","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json"}}}

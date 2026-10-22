@@ -23,7 +23,8 @@ func stubTrashCopying(t *testing.T, exit string) string {
 	t.Helper()
 	rec := t.TempDir()
 	bin := filepath.Join(t.TempDir(), "trash")
-	script := "#!/bin/sh\nfor a; do last=\"$a\"; done\ncp \"$last\" " + strconv1(rec) + "/\"$(basename \"$last\")\"\n" + exit + "\n"
+	script := "#!/bin/sh\nfor a; do last=\"$a\"; done\ncp \"$last\" " + strconv1(rec) + "/\"$(basename \"$last\")\"\n" +
+		"dirname \"$last\" > " + strconv1(rec) + "/.from\n" + exit + "\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +114,10 @@ func TestRemoveEnvironmentTrashesCopyFirst(t *testing.T) {
 	if err != nil || string(got) != string(before) {
 		t.Fatalf("trashed copy: %v %q", err, got)
 	}
+	// Put Back returns a file to where it was trashed from: beside project.json.
+	if from, _ := os.ReadFile(filepath.Join(rec, ".from")); strings.TrimSpace(string(from)) != filepath.Dir(path) {
+		t.Errorf("trashed from %q, want %q", strings.TrimSpace(string(from)), filepath.Dir(path))
+	}
 	p, _ := LoadProject(path)
 	if _, still := p.Environments["staging"]; still {
 		t.Error("key remains")
@@ -128,6 +133,9 @@ func TestRemoveEnvironmentTrashFailureRemovesNothing(t *testing.T) {
 	p, _ := LoadProject(path)
 	if _, ok := p.Environments["staging"]; !ok {
 		t.Error("environment removed despite Trash failure")
+	}
+	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "project.json (*")); len(left) > 0 {
+		t.Errorf("copy left beside project.json: %v", left)
 	}
 }
 
