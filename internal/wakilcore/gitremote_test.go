@@ -331,3 +331,32 @@ func TestRepositoryName(t *testing.T) {
 		}
 	}
 }
+
+// Review I2: a merge the operator is resolving is theirs — Pull refuses and leaves it as it is,
+// rather than aborting it as if Pull had started it.
+func TestPullLeavesTheOperatorsMergeAlone(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+	commitHere(t, work, "one\nMINE\nthree\n")
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = work
+		cmd.CombinedOutput()
+	}
+	run("fetch", "origin")
+	run("merge", "--no-edit", "@{u}") // conflicts: the operator is mid-merge
+	if _, err := os.Stat(filepath.Join(work, ".git", "MERGE_HEAD")); err != nil {
+		t.Fatal("fixture: no merge in progress")
+	}
+	before := porcelain(t, work)
+	_, err := g.Pull(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "A merge is in progress") {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(work, ".git", "MERGE_HEAD")); err != nil {
+		t.Fatal("the operator's merge was aborted")
+	}
+	if after := porcelain(t, work); after != before {
+		t.Fatalf("tree changed:\n%s\n%s", before, after)
+	}
+}

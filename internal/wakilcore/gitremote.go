@@ -301,6 +301,15 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	if err != nil {
 		return GitRemoteResult{}, err
 	}
+	// A merge or rebase already under way is the operator's: refuse, so the abort below only ever
+	// undoes what this pull started.
+	if rebasing, merging := g.inProgress(); rebasing || merging {
+		what := "A merge"
+		if rebasing {
+			what = "A rebase"
+		}
+		return GitRemoteResult{}, UserError(what + " is in progress in " + g.Root + "; finish or abort it first")
+	}
 	o, _ := LoadOrgFor(g.Org)
 	mode := map[string]string{"rebase": "--rebase", "merge": "--no-rebase", "ff-only": "--ff-only"}[PullStrategyOf(o)]
 	out, stderr, err := g.git(ctx, inv, "pull", mode, "--progress")
@@ -310,13 +319,7 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	if ctx.Err() != nil {
 		return GitRemoteResult{}, ctx.Err()
 	}
-	gitDir, _ := g.plain("rev-parse", "--git-dir")
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(g.Root, gitDir)
-	}
-	rebasing := fileExists(filepath.Join(gitDir, "rebase-merge")) || fileExists(filepath.Join(gitDir, "rebase-apply"))
-	merging := fileExists(filepath.Join(gitDir, "MERGE_HEAD"))
-	if rebasing || merging {
+	if rebasing, merging := g.inProgress(); rebasing || merging {
 		paths, _ := g.plain("diff", "--name-only", "--diff-filter=U")
 		conflicts := strings.Fields(paths)
 		abort := []string{"merge", "--abort"}
@@ -330,6 +333,16 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 			"; nothing was changed. Resolve them in a terminal, or wait for the conflict view (3a-v)")
 	}
 	return GitRemoteResult{}, remoteError("pull", stderr, a, host, err)
+}
+
+// inProgress reports a rebase or a merge stopped part-way in the repository.
+func (g *GitRemote) inProgress() (rebasing, merging bool) {
+	gitDir, _ := g.plain("rev-parse", "--git-dir")
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(g.Root, gitDir)
+	}
+	rebasing = fileExists(filepath.Join(gitDir, "rebase-merge")) || fileExists(filepath.Join(gitDir, "rebase-apply"))
+	return rebasing, fileExists(filepath.Join(gitDir, "MERGE_HEAD"))
 }
 
 // Push sends the branch to its upstream. It needs one (Publish makes it) and never forces.
