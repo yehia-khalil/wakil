@@ -1,0 +1,11 @@
+{"expect":{"tree":"contains","text":"STAGING"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.environment.e2e-project.staging"}}
+{"do":{"focus":"settings.environment.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"uat"}}
+{"do":{"click":"settings.tree.environment.e2e-project.qa"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.uat"}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.staging"}}
+{"expect":{"tree":"contains","text":"UAT"}}
+{"expect":{"tree":"absent","text":"STAGING"}}

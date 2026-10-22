@@ -1,0 +1,14 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"project.e2e-project open"}}
+{"do":{"click":"settings.tree.project.e2e-project.addEnvironment"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.new-environment"}}
+{"do":{"focus":"settings.environment.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"review"}}
+{"do":{"click":"settings.tree.project.e2e-project"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.review"}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.new-environment"}}
+{"do":{"click":"settings.tree.environment.e2e-project.review"}}
+{"do":{"click":"settings.environment.remove"}}
+{"expect":{"tree":"contains","text":"a copy of project.json is in the Trash"}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.review"}}

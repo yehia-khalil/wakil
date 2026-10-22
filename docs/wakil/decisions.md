@@ -544,6 +544,18 @@ Each entry: the call, why, and what would change our mind.
     the product's first one. The settings pane **caches nothing**: disk on open and on every
     read, and every write is read-modify-write from disk at dispatch, never a flush of
     cached pane state.*)
+    *(Amended 2026-10-22 by sub-phase 2e-ii, `docs/superpowers/specs/2026-10-22-2e-ii-projects-environments-design.md`.*
+    **Creating, renaming and removing a project, and creating, renaming and removing an
+    environment, are now in the pane.** The 2026-09-22 ruling that ruled them out is
+    reversed for exactly these six acts, and holds for everything else it named: a project's
+    other fields (roots, scopes, the editor block) and the machine block stay file-only.
+    The shell-parity direction is unchanged — a hand edit can do all six, and still owes no
+    new `wakil` verb. Two rulings came with it. **Removing an environment sends a copy of
+    `project.json` to the Trash first**, so Put Back is the undo and no dialog stands in
+    the way (Decision 41's pattern); removing a project only drops it from the
+    organisation's list and leaves its folder alone. **A project or environment an agent is
+    running in cannot be renamed or removed** (Invariant 5), and these actions are
+    operator-only like the rest of Settings (Decision 30), so voice cannot reach them.)*
 
 22. **A Claude account is shared across orgs; an org's credentials are not.**
     *(2026-09-14, `docs/superpowers/specs/2026-09-14-shared-accounts-across-orgs-design.md`.)*
