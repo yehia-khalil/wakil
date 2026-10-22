@@ -1,0 +1,32 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"GIT"}}
+{"do":{"click":"settings.org.git.account.add"}}
+{"expect":{"tree":"contains","text":"Pushes, pulls and clones in e2e-fixture use this account. One account per host."}}
+{"do":{"click":"settings.org.git.account.add.provider.other"}}
+{"do":{"type":{"into":"settings.org.git.account.add.host","text":"e2ehost"}}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"How should Wakil sign in to e2ehost?"}}
+{"do":{"click":"settings.org.git.account.add.method.token"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"The token is kept in the Keychain, never in a file."}}
+{"do":{"type":{"into":"settings.org.git.account.add.token","text":"e2e-token-value"}}}
+{"parity":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"e2ehost","token":"e2e-token-value"},"click":"settings.org.git.account.add.primary","assert":"tree"}}
+{"expect":{"tree":"contains","text":"Wakil cannot test a token on e2ehost; the next fetch will."}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitAccounts[0].host","equals":"e2ehost"}}
+{"do":{"click":"settings.org.git.account.add"}}
+{"expect":{"tree":"contains","text":"Pushes, pulls and clones in e2e-fixture use this account. One account per host."}}
+{"do":{"click":"settings.org.git.account.add.provider.other"}}
+{"do":{"type":{"into":"settings.org.git.account.add.host","text":"e2eadd"}}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"How should Wakil sign in to e2eadd?"}}
+{"do":{"click":"settings.org.git.account.add.method.token"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"The token is kept in the Keychain, never in a file."}}
+{"do":{"type":{"into":"settings.org.git.account.add.token","text":"e2e-token-value"}}}
+{"parity":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"e2eadd","provider":"other","method":"token"},"click":"settings.org.git.account.add.primary","assert":"tree"}}
+{"expect":{"tree":"contains","text":"Wakil cannot test a token on e2eadd; the next fetch will."}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitAccounts[1].host","equals":"e2eadd"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitAccounts[1].method","equals":"token"}}
