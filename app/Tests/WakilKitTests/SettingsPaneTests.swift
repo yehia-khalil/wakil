@@ -430,3 +430,35 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
     #expect(absent.org.gitName == "")
     #expect(absent.org.gitEmail == "")
 }
+
+/// 3a-iii walk: Settings opened slowly because the tree waited on finding `claude` (a login-shell
+/// lookup, ~0.4 s) and the account list. The tree comes first, so the pane fills at once.
+@MainActor
+@Test func theTreeArrivesWhileClaudeIsStillBeingFound() async throws {
+    let gate = DispatchSemaphore(value: 0)
+    let locator = ClaudeExecutableLocator(
+        home: "/Users/x", shellLookup: { gate.wait(); return "/usr/local/bin/claude" }, isExecutable: { _ in true })
+    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, claudeLocator: locator)
+    await model.registryForTesting.register(Action(
+        name: "ctx_config_tree", description: "stub", kind: .read, schema: .object([:]),
+        handler: { _ in .object(["structuredContent": .object(["org": .object(["id": .string("test-org")]), "projects": .array([])])]) }))
+    let refresh = Task { await model.refreshSettings() }
+    var spins = 0
+    while model.settings == nil, spins < 400 { try await Task.sleep(for: .milliseconds(5)); spins += 1 }
+    #expect(model.settings != nil)
+    gate.signal()
+    await refresh.value
+}
+
+/// 3a-iii walk: Settings opens full screen (maximized) every time ⌘, opens or brings it forward.
+@MainActor
+@Test func settingsOpensFullScreen() async throws {
+    let model = WindowModel.forTesting(scratchRoot: testScratchRoot)
+    await model.openSettings()
+    let id = try #require(model.layoutSnapshot.panes.first { $0.kind == Pane.settingsKind }?.id)
+    #expect(model.layoutSnapshot.maximizedId == id)
+    await model.toggleMaximize(id: id)
+    #expect(model.layoutSnapshot.maximizedId == nil)
+    await model.openSettings()
+    #expect(model.layoutSnapshot.maximizedId == id)
+}

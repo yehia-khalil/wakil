@@ -1520,7 +1520,8 @@ public final class WindowModel {
         agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() },
         quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil,
         paletteClients: PaletteClients = PaletteClients(),
-        gitStatus: GitStatus? = nil
+        gitStatus: GitStatus? = nil,
+        claudeLocator: ClaudeExecutableLocator? = nil
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1592,6 +1593,7 @@ public final class WindowModel {
             confirmations: confirmations,
             orgSwitcher: orgSwitcher,
             terminals: terminals,
+            claudeLocator: claudeLocator,
             vocabulary: vocabulary,
             rootWatcher: nil,
             editorRootWatcher: nil,
@@ -2670,6 +2672,11 @@ public final class WindowModel {
             caller: DispatchCaller(place: place, session: nil), confirmation: nil)) != nil
         else { return }
         await refreshLayout()
+        // Settings opens full screen, each time ⌘, opens it or brings it forward (3a-iii walk).
+        if let id = layoutSnapshot.panes.first(where: { $0.kind == Pane.settingsKind })?.id,
+           layoutSnapshot.maximizedId != id {
+            await dispatchLayout("pane_maximize", .object(["id": .string(id)]))
+        }
         await refreshSettings()
     }
 
@@ -2697,7 +2704,6 @@ public final class WindowModel {
     /// freshly created organisation genuinely has no projects, and a read
     /// that never answered has learned nothing about whether it does.
     public func refreshSettings() async {
-        await locateClaudeIfNeeded()
         do {
             let result = try await registry.dispatch(
                 name: "ctx_config_tree", params: .object([:]), origin: .ui,
@@ -2709,6 +2715,9 @@ public final class WindowModel {
             settings = tree
             settingsFailure = nil
             publishAgentInstructions(tree)
+            // The tree first, so the pane fills at once; finding `claude` (a login-shell lookup)
+            // is for the account table below, and waits until the tree is drawn.
+            await locateClaudeIfNeeded()
 
             // The account table, in the same refresh. **One read, two
             // halves**: the tree's Providers node and this table describe
