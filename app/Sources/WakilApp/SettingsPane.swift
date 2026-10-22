@@ -219,6 +219,8 @@ struct SettingsPane: View {
     @FocusState private var replacementTokenFocused: Bool
     /// A section to bring into view: **Replace connection** scrolls to the database card.
     @State private var scrollRequest: String?
+    /// In-place edits of an API entry still landing, by `apiEntryKey`.
+    @State private var apiEditsInFlight: [String: Int] = [:]
 
     /// The row whose unlink is awaiting confirmation.
     ///
@@ -1070,7 +1072,7 @@ struct SettingsPane: View {
                 let names = environment.api.map(\.name)
                 ForEach(Array(environment.api.enumerated()), id: \.offset) { index, api in
                     apiEntrySection(
-                        api, clash: ApiEntryWording.clash(names: names, at: index),
+                        api, index: index, clash: ApiEntryWording.clash(names: names, at: index),
                         project: project, environment: environmentName)
                         .id("api.\(project.path).\(environmentName).\(index).\(api.name)")
                 }
@@ -2433,7 +2435,7 @@ struct SettingsPane: View {
         // is how to add to it. Drawn from `SettingsForm.swift`'s vocabulary,
         // which the API settings form will use too.
         FormCard(title: "ADD OR REPLACE A DATABASE") {
-            HStack(alignment: .bottom, spacing: 12) {
+            FormRow {
                 LabelledField(label: "NAME", prompt: "orders", text: $databaseName,
                               width: 160, identifier: "settings.db.name")
                 FormLabelled(label: "DRIVER") {
@@ -2442,7 +2444,7 @@ struct SettingsPane: View {
                 }
             }
             if databaseDriverHasServer(databaseConnection.driver) {
-                HStack(alignment: .bottom, spacing: 12) {
+                FormRow {
                     LabelledField(label: "HOST", prompt: "db.internal",
                                   text: $databaseConnection.host, width: 200,
                                   identifier: "settings.db.host")
@@ -2454,7 +2456,7 @@ struct SettingsPane: View {
                                   text: $databaseConnection.database, width: 160,
                                   identifier: "settings.db.database")
                 }
-                HStack(alignment: .bottom, spacing: 12) {
+                FormRow {
                     LabelledField(label: "USER", prompt: "reader",
                                   text: $databaseConnection.user, width: 200,
                                   identifier: "settings.db.user")
@@ -2466,7 +2468,7 @@ struct SettingsPane: View {
             } else {
                 LabelledField(label: "FILE", prompt: "/path/to/database.db",
                               text: $databaseConnection.path, width: 456,
-                              identifier: "settings.db.path")
+                              identifier: "settings.db.path", narrows: true)
             }
 
             Toggle(isOn: $databaseGrantWrite) {
@@ -2478,7 +2480,7 @@ struct SettingsPane: View {
             .accessibilityIdentifier("settings.db.grantWrite")
             // A file has no logins: its write credential is its own path.
             if databaseGrantWrite, databaseDriverHasServer(databaseConnection.driver) {
-                HStack(alignment: .bottom, spacing: 12) {
+                FormRow {
                     LabelledField(label: "WRITE USER", prompt: "writer", text: $databaseWriteUser,
                                   width: 200, identifier: "settings.db.writeUser")
                     LabelledField(label: "WRITE PASSWORD", text: $databaseWritePassword,
@@ -2815,14 +2817,14 @@ extension SettingsPane {
                         databaseVerbs(database, path: path, environment: environment,
                                       removeKey: removeKey, revokeKey: revokeKey)
                     }
-                    VStack(alignment: .trailing, spacing: 8) {
+                    // Tight enough that three stacked verbs stay inside the row's 44pt.
+                    VStack(alignment: .trailing, spacing: 4) {
                         databaseVerbs(database, path: path, environment: environment,
                                       removeKey: removeKey, revokeKey: revokeKey)
                     }
                 }
             }
             .frame(minHeight: SettingsScale.rowHeight, alignment: .leading)
-            .padding(.vertical, 6)
             if confirmingRemoval == removeKey {
                 removalConfirmation(
                     DatabaseWording.removal(name: database.name, environment: environment),
@@ -2835,7 +2837,6 @@ extension SettingsPane {
             rowRefusal(revokeKey)
             rowRefusal(removeKey)
         }
-        .padding(.bottom, 4)
         .overlay(alignment: .bottom) {
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.06)).frame(height: 0.5)
         }
@@ -2887,10 +2888,13 @@ extension SettingsPane {
     /// held that a form here would be rebuilt whenever the shape moved. The shape has settled, and
     /// the form is built from the writers' own validation, so a refusal is Go's sentence whole.
     func apiEntrySection(
-        _ api: SettingsAPI, clash: String?, project: SettingsProject, environment: String
+        _ api: SettingsAPI, index: Int, clash: String?, project: SettingsProject, environment: String
     ) -> some View {
         let path = project.path
-        let removeKey = "remove.api.\(environment).\(api.name)"
+        // **Keyed by position, written by name.** A hand-edited file can hold two entries of one
+        // name; their sections must not open each other's confirmations or token fields.
+        let entry = Self.apiEntryKey(environment: environment, index: index)
+        let removeKey = "remove.\(entry)"
         return SettingsSection(api.name.isEmpty ? "unnamed" : api.name, accessory: {
             Spacer(minLength: 0)
             busyVerb(removeKey) {
@@ -2907,7 +2911,7 @@ extension SettingsPane {
                     .font(.system(size: SettingsScale.body))
                     .foregroundStyle(SettingsPalette.caution)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 4)
+                    .padding(.bottom, SettingsScale.openGap)
             }
             if confirmingRemoval == removeKey {
                 removalConfirmation(
@@ -2917,34 +2921,57 @@ extension SettingsPane {
                 ) {
                     rowWrite(removeKey) { await removeApiEntry(path, environment, api.name) }
                 }
-                .padding(.bottom, 6)
             }
             rowRefusal(removeKey)
             LeaveSavedTextField(
                 label: "Name", stored: api.name, identifier: "settings.api.\(api.name).name",
-                save: { new in await updateApiEntry(path, environment, api.name, new, nil, nil, nil) },
+                save: tracked(entry) { new in await updateApiEntry(path, environment, api.name, new, nil, nil, nil) },
                 unseen: showUnseenRefusal)
             LeaveSavedTextField(
                 label: "Base URL", stored: api.baseUrl, identifier: "settings.api.\(api.name).baseUrl",
                 prompt: "https://api.example.com", maxWidth: 420,
-                save: { new in await updateApiEntry(path, environment, api.name, nil, new, nil, nil) },
+                save: tracked(entry) { new in await updateApiEntry(path, environment, api.name, nil, new, nil, nil) },
                 unseen: showUnseenRefusal)
             LeaveSavedTextField(
                 label: "Auth header", stored: api.authHeader,
                 identifier: "settings.api.\(api.name).authHeader", prompt: "Authorization",
-                save: { new in await updateApiEntry(path, environment, api.name, nil, nil, new, nil) },
+                save: tracked(entry) { new in await updateApiEntry(path, environment, api.name, nil, nil, new, nil) },
                 unseen: showUnseenRefusal)
-            tokenRow(api, path: path, environment: environment)
+            tokenRow(api, entry: entry, path: path, environment: environment)
         }
     }
 
+    /// The key every write of one API entry is held under: its environment and its position.
+    static func apiEntryKey(environment: String, index: Int) -> String {
+        "api.\(environment).\(index)"
+    }
+
+    /// An in-place field's save, counted for its entry while it runs — so **Store it**, which
+    /// re-sends the entry's base URL and auth header, waits for an edit of them to land.
+    private func tracked(
+        _ entry: String, _ save: @escaping (String) async -> String?
+    ) -> (String) async -> String? {
+        { value in
+            apiEditsInFlight[entry, default: 0] += 1
+            let refusal = await save(value)
+            apiEditsInFlight[entry, default: 1] -= 1
+            return refusal
+        }
+    }
+
+    /// Whether any write of this entry is running: an edit, a removal, a clear or a store.
+    private func entryBusy(_ entry: String) -> Bool {
+        apiEditsInFlight[entry, default: 0] > 0
+            || ["remove", "token", "clearToken"].contains { lifecycleBusy.contains("\($0).\(entry)") }
+    }
+
     /// The Token row: where the token lives, by ref, and its two verbs. **Replace token** opens a
-    /// masked field under the value with the confirmation it answers to; nothing else is ever
-    /// drawn for a token, and no stored token is read back.
+    /// masked field under the value; nothing else is ever drawn for a token, and no stored token
+    /// is read back.
     @ViewBuilder
-    private func tokenRow(_ api: SettingsAPI, path: String, environment: String) -> some View {
-        let tokenKey = "token.api.\(environment).\(api.name)"
-        let clearKey = "clearToken.api.\(environment).\(api.name)"
+    private func tokenRow(_ api: SettingsAPI, entry: String, path: String, environment: String) -> some View {
+        let tokenKey = "token.\(entry)"
+        let clearKey = "clearToken.\(entry)"
         SettingsRow("Token") {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: SettingsScale.columnGap) {
@@ -2952,17 +2979,16 @@ extension SettingsPane {
                     Spacer(minLength: 0)
                     tokenVerbs(api, path: path, environment: environment, tokenKey: tokenKey, clearKey: clearKey)
                 }
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: SettingsScale.openGap) {
                     tokenValue(api)
                     HStack(spacing: SettingsScale.columnGap) {
                         tokenVerbs(api, path: path, environment: environment, tokenKey: tokenKey, clearKey: clearKey)
                     }
                 }
-                .padding(.vertical, 10)
             }
         }
         if replacingToken == tokenKey {
-            tokenReplacement(api, path: path, environment: environment, key: tokenKey)
+            tokenReplacement(api, entry: entry, path: path, environment: environment, key: tokenKey)
         }
         rowRefusal(clearKey, underValue: true)
     }
@@ -3007,80 +3033,87 @@ extension SettingsPane {
         }
     }
 
-    /// **Replace token**, open: the masked field (focused, Rule 3), the question it answers to,
-    /// and **Store it** / **Cancel**.
+    /// **Replace token**, open: the masked field (focused, Rule 3) with **Cancel** beside it. The
+    /// question and **Store it** arrive only once something is typed — there is nothing to
+    /// confirm before that, and caution is not spent on an empty field.
     ///
     /// **Leaving discards, it does not save** — the one in-place field on this page Rule 2 does
     /// not reach, because a token is written only behind its confirmation. What was typed is
     /// dropped the moment the field leaves the screen, so a secret outlives no page.
     private func tokenReplacement(
-        _ api: SettingsAPI, path: String, environment: String, key: String
+        _ api: SettingsAPI, entry: String, path: String, environment: String, key: String
     ) -> some View {
         let busy = lifecycleBusy.contains(key)
-        let ready = !replacementToken.isEmpty && !busy
-        return VStack(alignment: .leading, spacing: 8) {
-            SecureField("Bearer …", text: $replacementToken)
-                .textFieldStyle(.plain)
-                .font(.system(size: SettingsScale.identifier, design: .monospaced))
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.90))
-                .focused($replacementTokenFocused)
-                .fieldBox(maxWidth: 320)
-                .accessibilityIdentifier("settings.api.\(api.name).token")
-                .accessibilityLabel("token")
-                .onAppear { replacementTokenFocused = true }
-                .onDisappear {
-                    replacementToken = ""
-                    if replacingToken == key { replacingToken = nil }
-                }
-            Text(ApiEntryWording.tokenConfirmation(name: api.name, environment: environment))
-                .font(.system(size: SettingsScale.body))
-                .foregroundStyle(SettingsPalette.caution)
-                .fixedSize(horizontal: false, vertical: true)
+        // Not while any write of this entry runs: a base URL edit still landing would be undone
+        // by a store that re-sends the old one (Rule 5).
+        let ready = !replacementToken.isEmpty && !entryBusy(entry)
+        return VStack(alignment: .leading, spacing: SettingsScale.openGap) {
             HStack(spacing: 10) {
-                confirmButton("Store it", tone: SettingsPalette.caution.opacity(ready ? 1 : 0.45), filled: true,
-                              identifier: "settings.apiToken.confirm") {
-                    guard ready else { return }
-                    let token = replacementToken
-                    rowWrite(key) {
-                        let refusal = await setApiEntry(
-                            path, environment, api.name, api.baseUrl, api.authHeader, token)
-                        if refusal == nil {
-                            replacementToken = ""
-                            replacingToken = nil
-                        }
-                        return refusal
+                SecureField("Bearer …", text: $replacementToken)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: SettingsScale.identifier, design: .monospaced))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.90))
+                    .focused($replacementTokenFocused)
+                    .fieldBox(maxWidth: 320)
+                    .accessibilityIdentifier("settings.api.\(api.name).token")
+                    .accessibilityLabel("token")
+                    .onAppear { replacementTokenFocused = true }
+                    .onDisappear {
+                        replacementToken = ""
+                        if replacingToken == key { replacingToken = nil }
                     }
-                }
-                .disabled(!ready)
                 confirmButton("Cancel", tone: SettingsPalette.coolWhite.opacity(0.62),
                               identifier: "settings.apiToken.cancel") {
                     replacementToken = ""
                     replacingToken = nil
                 }
-                if busy { ProgressView().controlSize(.small) }
+            }
+            if !replacementToken.isEmpty {
+                Text(ApiEntryWording.tokenConfirmation(name: api.name, environment: environment))
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    confirmButton("Store it", tone: SettingsPalette.caution.opacity(ready ? 1 : 0.45), filled: true,
+                                  identifier: "settings.apiToken.confirm") {
+                        guard ready else { return }
+                        let token = replacementToken
+                        rowWrite(key) {
+                            let refusal = await setApiEntry(
+                                path, environment, api.name, api.baseUrl, api.authHeader, token)
+                            if refusal == nil {
+                                replacementToken = ""
+                                replacingToken = nil
+                            }
+                            return refusal
+                        }
+                    }
+                    .disabled(!ready)
+                    if busy { ProgressView().controlSize(.small) }
+                }
             }
             rowRefusal(key)
         }
         .underRowValue()
-        .padding(.vertical, 12)
+        .padding(.bottom, SettingsScale.openGap)
     }
 
     /// The card under the entries: the database card's twin, field for field in its widths.
     func apiForm(path: String, environment: String) -> some View {
         let ready = ApiEntryWording.canSave(name: apiName, baseUrl: apiBaseUrl) && !apiSaving
         return FormCard(title: "ADD OR REPLACE AN API ENTRY") {
-            HStack(alignment: .bottom, spacing: 12) {
+            FormRow {
                 LabelledField(label: "NAME", prompt: "orders-api", text: $apiName,
                               width: 160, identifier: "settings.api.name")
                 LabelledField(label: "AUTH HEADER", prompt: "Authorization", text: $apiAuthHeader,
                               width: 200, identifier: "settings.api.authHeader")
             }
             LabelledField(label: "BASE URL", prompt: "https://api.example.com", text: $apiBaseUrl,
-                          width: 456, identifier: "settings.api.baseUrl")
+                          width: 456, identifier: "settings.api.baseUrl", narrows: true)
             // Masked, as the database password is. Optional: without one, a replaced entry keeps
             // the token it had.
             LabelledField(label: "TOKEN", prompt: "optional", text: $apiToken,
-                          width: 456, identifier: "settings.api.token", secure: true)
+                          width: 456, identifier: "settings.api.token", secure: true, narrows: true)
 
             if confirmingApiToken {
                 // **Names no part of the token.** The operator knows what they typed.
@@ -3168,8 +3201,7 @@ extension SettingsPane {
                 }
             }
         }
-        .padding(.top, 4)
-        .padding(.bottom, 8)
+        .padding(.bottom, SettingsScale.openGap)
     }
 
     /// Runs one row's write: one at a time per key (Rule 5), its refusal kept by the key for the
@@ -3201,7 +3233,7 @@ extension SettingsPane {
                 .foregroundStyle(SettingsPalette.caution)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, underValue ? SettingsScale.labelWidth + SettingsScale.columnGap : 0)
-                .padding(.vertical, 4)
+                .padding(.bottom, SettingsScale.openGap)
         }
     }
 }
