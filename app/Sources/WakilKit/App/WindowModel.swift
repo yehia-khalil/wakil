@@ -5541,8 +5541,7 @@ public final class WindowModel {
     /// Nil when the path is outside the project's roots, missing, or the read failed.
     public func editorDiskText(pane: String, path: String) async -> String? {
         guard let files = paletteClients.files else { return nil }
-        let clean = (path as NSString).standardizingPath
-        guard gitRootPaths.contains(where: { clean == $0 || clean.hasPrefix($0 + "/") }) else { return nil }
+        guard let clean = confinedPath(path, roots: gitRootPaths)?.path else { return nil }
         guard case .object(let o)? = try? await files.callTool(
                   name: "files_read", arguments: .object(["path": .string(clean)]), timeout: MCPClient.readReplyTimeout),
               o["isError"] != .bool(true),

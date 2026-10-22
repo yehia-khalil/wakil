@@ -307,11 +307,8 @@ public func registerEditorActions(
     /// nested in another holds its own paths (the innermost wins), as the tree draws it (#37): else
     /// expanding the nested root opened the outer one too (3b-ix walk).
     @Sendable func confine(_ path: String, action: String) async throws -> (path: String, root: String) {
-        let clean = (path as NSString).standardizingPath
-        if let r = await roots().filter({ clean == $0 || clean.hasPrefix($0 + "/") }).max(by: { $0.count < $1.count }) {
-            return (clean, r)
-        }
-        throw EditorFilesError(description: "\(action): \(clean) is outside the active project's roots; "
+        if let hit = confinedPath(path, roots: await roots()) { return hit }
+        throw EditorFilesError(description: "\(action): \((path as NSString).standardizingPath) is outside the active project's roots; "
             + "editor reads and writes are confined to them (Invariant 6, Decision 36)")
     }
 
@@ -2114,4 +2111,18 @@ private extension Optional {
 /// first read, says nothing: a file missing from it is unknown, not "no longer changed".
 private func editorRootIsKnown(_ r: GitRootState) -> Bool {
     r.error == nil && !(r.loading && r.files.isEmpty)
+}
+
+/// The standardized `path` and the root holding it (the innermost), or nil. Standardized first, so
+/// `/p/api/../web/x` is `/p/web/x`, in root `/p/web`. Roots are compared standardized too —
+/// `standardizingPath` drops a leading `/private` (a clone's real path is `/private/var/…`) — and the
+/// path is answered in its root's own spelling (3a-iii walk).
+func confinedPath(_ path: String, roots: [String]) -> (path: String, root: String)? {
+    let clean = (path as NSString).standardizingPath
+    let holding = roots.compactMap { root -> (root: String, standard: String)? in
+        let standard = (root as NSString).standardizingPath
+        return clean == standard || clean.hasPrefix(standard + "/") ? (root, standard) : nil
+    }
+    guard let hit = holding.max(by: { $0.standard.count < $1.standard.count }) else { return nil }
+    return (hit.root + clean.dropFirst(hit.standard.count), hit.root)
 }
