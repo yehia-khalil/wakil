@@ -966,6 +966,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
     "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set", "ctx_git_account_test",
     "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
+    "ctx_set_project_agent_instructions",
     "db_cancel", "db_classify_statement", "db_describe_table", "db_list_databases", "db_list_tables", "db_page",
     "db_read_table", "db_refetch", "db_remove_database", "db_render_update", "db_run_mutation",
     "db_run_query", "db_set_dsn",

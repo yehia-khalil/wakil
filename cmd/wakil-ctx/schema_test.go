@@ -82,6 +82,7 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		"git_account_add", "git_account_remove", "git_host_suggestions",
 		"git_ssh_keys", "git_key_generate", "git_token_set", "git_key_passphrase_set", "git_account_test",
 		"git_device_start", "git_device_poll", "git_gh_logins", "git_gh_import",
+		"set_project_agent_instructions",
 		"set_editor_settings",
 		"set_project_editor_settings",
 		// set_local_provider added by 3b-viii — a local endpoint's URL and operations.

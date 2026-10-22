@@ -150,18 +150,28 @@ type updateOrgArgs struct {
 	// the active one: this writes across the boundary Invariant 4
 	// defines, and a write that guesses which organisation it lands in is
 	// a write that can land in the wrong one.
-	ID              string  `json:"id" jsonschema:"the organisation to edit"`
-	DisplayName     *string `json:"displayName,omitempty" jsonschema:"optional human-readable name; omit to leave unchanged, send \"\" to clear"`
-	JiraBase        *string `json:"jiraBase,omitempty" jsonschema:"optional Atlassian site, absolute https; omit to leave unchanged, send \"\" to clear"`
-	DefaultProvider *string `json:"defaultProvider,omitempty" jsonschema:"optional account id, which must already be registered in this organisation; omit to leave unchanged, send \"\" to clear"`
-	SpeechProvider  *string `json:"speechProvider,omitempty" jsonschema:"optional speech engine id (apple); omit to leave unchanged, send \"\" to clear"`
-	QuickProvider   *string `json:"quickProvider,omitempty" jsonschema:"optional provider id quick tasks run on; omit to leave unchanged, send \"\" for the active provider"`
-	GitName         *string `json:"gitName,omitempty" jsonschema:"author name for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
-	GitEmail        *string `json:"gitEmail,omitempty" jsonschema:"author email for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
-	GhostText       *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
-	FastPath        *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
-	CommitDrafts    *bool   `json:"commitDrafts,omitempty" jsonschema:"the commit box's drafted message (✨) on or off for this organisation"`
-	PullStrategy    *string `json:"pullStrategy,omitempty" jsonschema:"how Pull and Sync integrate: rebase, merge or ff-only"`
+	ID                    string  `json:"id" jsonschema:"the organisation to edit"`
+	DisplayName           *string `json:"displayName,omitempty" jsonschema:"optional human-readable name; omit to leave unchanged, send \"\" to clear"`
+	JiraBase              *string `json:"jiraBase,omitempty" jsonschema:"optional Atlassian site, absolute https; omit to leave unchanged, send \"\" to clear"`
+	DefaultProvider       *string `json:"defaultProvider,omitempty" jsonschema:"optional account id, which must already be registered in this organisation; omit to leave unchanged, send \"\" to clear"`
+	SpeechProvider        *string `json:"speechProvider,omitempty" jsonschema:"optional speech engine id (apple); omit to leave unchanged, send \"\" to clear"`
+	QuickProvider         *string `json:"quickProvider,omitempty" jsonschema:"optional provider id quick tasks run on; omit to leave unchanged, send \"\" for the active provider"`
+	GitName               *string `json:"gitName,omitempty" jsonschema:"author name for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
+	GitEmail              *string `json:"gitEmail,omitempty" jsonschema:"author email for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
+	GhostText             *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
+	FastPath              *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
+	CommitDrafts          *bool   `json:"commitDrafts,omitempty" jsonschema:"the commit box's drafted message (✨) on or off for this organisation"`
+	PullStrategy          *string `json:"pullStrategy,omitempty" jsonschema:"how Pull and Sync integrate: rebase, merge or ff-only"`
+	AgentGeneral          *string `json:"agentGeneral,omitempty" jsonschema:"the organisation's general agent instructions"`
+	GitCommitInstructions *string `json:"gitCommitInstructions,omitempty" jsonschema:"how the agent writes commit messages here"`
+	GitPRInstructions     *string `json:"gitPRInstructions,omitempty" jsonschema:"how the agent writes PR titles and descriptions here"`
+}
+
+type setProjectAgentArgs struct {
+	ProjectPath  string  `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	General      *string `json:"general,omitempty" jsonschema:"the project's general agent instructions"`
+	Commits      *string `json:"commits,omitempty" jsonschema:"the project's commit message instructions"`
+	PullRequests *string `json:"pullRequests,omitempty" jsonschema:"the project's PR instructions"`
 }
 
 type gitSecretArgs struct {
@@ -590,17 +600,20 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "update_org", Description: "Change an organisation's display name, Jira site, default account or speech engine, leaving every other field on disk exactly as it is. Read-modify-write: omit a field to leave it unchanged, or send an empty string to clear it — so an edit made to the file by hand while a pane was open survives a save of a different field. Refuses a Jira site that is not an absolute https Atlassian URL, and a default account that is not already registered in this organisation. Refuses an organisation that does not exist; creating one is create_org."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a updateOrgArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.UpdateOrg(a.ID, wakilcore.OrgPatch{
-				DisplayName:     a.DisplayName,
-				JiraBase:        a.JiraBase,
-				DefaultProvider: a.DefaultProvider,
-				SpeechProvider:  a.SpeechProvider,
-				QuickProvider:   a.QuickProvider,
-				GitName:         a.GitName,
-				GitEmail:        a.GitEmail,
-				GhostText:       a.GhostText,
-				FastPath:        a.FastPath,
-				CommitDrafts:    a.CommitDrafts,
-				PullStrategy:    a.PullStrategy,
+				DisplayName:           a.DisplayName,
+				JiraBase:              a.JiraBase,
+				DefaultProvider:       a.DefaultProvider,
+				SpeechProvider:        a.SpeechProvider,
+				QuickProvider:         a.QuickProvider,
+				GitName:               a.GitName,
+				GitEmail:              a.GitEmail,
+				GhostText:             a.GhostText,
+				FastPath:              a.FastPath,
+				CommitDrafts:          a.CommitDrafts,
+				PullStrategy:          a.PullStrategy,
+				AgentGeneral:          a.AgentGeneral,
+				GitCommitInstructions: a.GitCommitInstructions,
+				GitPRInstructions:     a.GitPRInstructions,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
@@ -893,6 +906,16 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "git_gh_import", Description: "Copy one gh login's token into the organisation's Keychain once and record it as the host's account."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.ImportGhLogin(a.ID, a.Host, a.User); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_project_agent_instructions", Description: "Change one project's agent instructions (general, commits, pull requests), written to its project.json, read-modify-write; omit a field to leave it unchanged, \"\" to clear it."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setProjectAgentArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.UpdateProjectAgentInstructions(a.ProjectPath, wakilcore.ProjectAgentPatch{
+				General: a.General, Commits: a.Commits, PullRequests: a.PullRequests,
+			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

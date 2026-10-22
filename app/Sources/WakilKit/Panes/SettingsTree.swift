@@ -218,6 +218,10 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     public var lastCloneFolder: String
     /// Which providers Sign in is offered for: those Wakil has an OAuth client id for (3a-iii, R4).
     public var gitSignIn: [String]
+    /// 3a-iii-b: the organisation's agent instructions.
+    public var agentGeneral: String
+    public var gitCommitInstructions: String
+    public var gitPRInstructions: String
     /// The organisation's git author (3a-ii): the name and email commits from the Changes view carry.
     /// Empty means the repository's own git config decides.
     public var gitName: String
@@ -228,7 +232,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         speechProvider: String = "", quickProvider: String = "", ghostText: Bool = true,
         fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true,
         gitAccounts: [SettingsGitAccount] = [], pullStrategy: String = "rebase", lastCloneFolder: String = "",
-        gitSignIn: [String] = []
+        gitSignIn: [String] = [], agentGeneral: String = "", gitCommitInstructions: String = "",
+        gitPRInstructions: String = ""
     ) {
         self.id = id
         self.displayName = displayName
@@ -243,6 +248,9 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         self.pullStrategy = pullStrategy
         self.lastCloneFolder = lastCloneFolder
         self.gitSignIn = gitSignIn
+        self.agentGeneral = agentGeneral
+        self.gitCommitInstructions = gitCommitInstructions
+        self.gitPRInstructions = gitPRInstructions
         self.gitName = gitName
         self.gitEmail = gitEmail
     }
@@ -262,12 +270,16 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         pullStrategy = try container.decodeIfPresent(String.self, forKey: .pullStrategy) ?? "rebase"
         lastCloneFolder = try container.decodeIfPresent(String.self, forKey: .lastCloneFolder) ?? ""
         gitSignIn = try container.decodeIfPresent([String].self, forKey: .gitSignIn) ?? []
+        agentGeneral = try container.decodeIfPresent(String.self, forKey: .agentGeneral) ?? ""
+        gitCommitInstructions = try container.decodeIfPresent(String.self, forKey: .gitCommitInstructions) ?? ""
+        gitPRInstructions = try container.decodeIfPresent(String.self, forKey: .gitPRInstructions) ?? ""
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, gitAccounts, pullStrategy, lastCloneFolder, gitSignIn
+        case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, gitAccounts, pullStrategy, lastCloneFolder, gitSignIn,
+            agentGeneral, gitCommitInstructions, gitPRInstructions
         case gitName, gitEmail
     }
 
@@ -328,27 +340,53 @@ public struct SettingsProvider: Sendable, Equatable, Decodable {
     private enum CodingKeys: String, CodingKey { case id, kind, label, configDir, shared, baseURL, serves }
 }
 
+/// A project's agent instructions as `config_tree` sends them (3a-iii-b); empty when unset.
+public struct SettingsAgentTexts: Sendable, Equatable, Decodable {
+    public var general: String
+    public var commits: String
+    public var pullRequests: String
+
+    public init(general: String = "", commits: String = "", pullRequests: String = "") {
+        self.general = general
+        self.commits = commits
+        self.pullRequests = pullRequests
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        general = try c.decodeIfPresent(String.self, forKey: .general) ?? ""
+        commits = try c.decodeIfPresent(String.self, forKey: .commits) ?? ""
+        pullRequests = try c.decodeIfPresent(String.self, forKey: .pullRequests) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case general, commits, pullRequests }
+}
+
 public struct SettingsProject: Sendable, Equatable, Decodable {
     public var name: String
     public var path: String
     public var roots: [SettingsRoot]
     public var environments: [SettingsEnvironment]
     public var editor: SettingsProjectEditor
+    /// 3a-iii-b: the project's agent instructions.
+    public var agent: SettingsAgentTexts
 
     public init(
         name: String, path: String = "",
         roots: [SettingsRoot] = [], environments: [SettingsEnvironment] = [],
-        editor: SettingsProjectEditor = .defaults
+        editor: SettingsProjectEditor = .defaults, agent: SettingsAgentTexts = SettingsAgentTexts()
     ) {
         self.name = name
         self.path = path
         self.roots = roots
         self.environments = environments
         self.editor = editor
+        self.agent = agent
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        agent = try container.decodeIfPresent(SettingsAgentTexts.self, forKey: .agent) ?? SettingsAgentTexts()
         name = try container.decode(String.self, forKey: .name)
         path = try container.decodeIfPresent(String.self, forKey: .path) ?? ""
         roots = try container.decodeIfPresent([SettingsRoot].self, forKey: .roots) ?? []
@@ -356,7 +394,7 @@ public struct SettingsProject: Sendable, Equatable, Decodable {
         editor = try container.decodeIfPresent(SettingsProjectEditor.self, forKey: .editor) ?? .defaults
     }
 
-    private enum CodingKeys: String, CodingKey { case name, path, roots, environments, editor }
+    private enum CodingKeys: String, CodingKey { case name, path, roots, environments, editor, agent }
 }
 
 public struct SettingsRoot: Sendable, Equatable, Decodable {

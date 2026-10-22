@@ -967,6 +967,8 @@ public func registerStandardActions(
         ("ctx_git_device_poll", "git_device_poll", ["id", "provider", "host", "deviceCode"], ["id", "provider", "host", "deviceCode"], []),
         ("ctx_git_gh_logins", "git_gh_logins", ["id"], ["id"], []),
         ("ctx_git_gh_import", "git_gh_import", ["id", "host", "user"], ["id", "host", "user"], []),
+        ("ctx_set_project_agent_instructions", "set_project_agent_instructions",
+         ["projectPath", "general", "commits", "pullRequests"], ["projectPath"], []),
     ] {
         await registry.register(Action(
             name: name,
@@ -983,6 +985,7 @@ public func registerStandardActions(
                 "ctx_git_device_poll": "Ask once whether a Sign in was approved. Operator-only.",
                 "ctx_git_gh_logins": "The GitHub CLI's logins. Operator-only.",
                 "ctx_git_gh_import": "Use one of the GitHub CLI's logins as the organisation's account. Operator-only.",
+                "ctx_set_project_agent_instructions": "Change one project's agent instructions. Operator-only.",
             ][name] ?? name,
             kind: .control,
             audience: .operatorOnly,
@@ -1252,6 +1255,9 @@ public func registerStandardActions(
                 "fastPath": .object(["type": .string("boolean")]),
                 "commitDrafts": .object(["type": .string("boolean")]),
                 "pullStrategy": .object(["type": .string("string")]),
+                "agentGeneral": .object(["type": .string("string")]),
+                "gitCommitInstructions": .object(["type": .string("string")]),
+                "gitPRInstructions": .object(["type": .string("string")]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1269,7 +1275,8 @@ public func registerStandardActions(
                 throw StandardActionError.missingParam(action: "ctx_update_org", param: "id")
             }
             var arguments: [String: JSONValue] = ["id": .string(id)]
-            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail", "pullStrategy"] {
+            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail", "pullStrategy",
+                        "agentGeneral", "gitCommitInstructions", "gitPRInstructions"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
             for key in ["ghostText", "fastPath", "commitDrafts"] {

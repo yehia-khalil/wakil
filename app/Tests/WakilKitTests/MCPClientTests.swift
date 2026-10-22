@@ -49,7 +49,7 @@ private func repoRoot() -> URL {
                       "read_session", "record_capacity", "record_session_parent", "remove_database",
                       "remove_environment", "remove_project", "rename_environment", "rename_project",
                       "set_database_dsn", "set_editor_settings", "set_environment", "set_local_provider",
-                      "set_project",
+                      "set_project", "set_project_agent_instructions",
                       "set_project_editor_settings", "set_provider", "unlink_provider", "update_org"])
 }
 

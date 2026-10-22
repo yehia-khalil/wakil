@@ -143,7 +143,7 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // 3b-v (Decision 38): Decision 30 kept — the agent reads editor settings, never writes them.
             "ctx_set_editor_settings", "ctx_set_environment",
             // 3b-viii (Decision 42): which model reads the operator's code is theirs to choose.
-            "ctx_set_local_provider", "ctx_set_project",
+            "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
             "ctx_set_project_editor_settings",
             "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
             // 2e (#207). The reason NEW to this set: every other member

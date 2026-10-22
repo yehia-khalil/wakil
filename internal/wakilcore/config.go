@@ -18,6 +18,8 @@ type Project struct {
 	// Editor is the project's editor settings (3b-v, Decision 38): the values that belong to the
 	// code, committed with it. Absent means every default.
 	Editor *EditorProjectSettings `json:"editor,omitempty"`
+	// Agent is the project's agent instructions (3a-iii-b), after the organisation's.
+	Agent *ProjectAgentInstructions `json:"agent,omitempty"`
 }
 
 type Root struct {

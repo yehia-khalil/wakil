@@ -289,3 +289,27 @@ private actor GhostRecordingCaller: ToolCaller {
     #expect(!journal.contains("tok-SECRET-1"))
     #expect(!journal.contains("pass-SECRET-2"))
 }
+
+/// 3a-iii-b: the organisation's three agent texts reach `update_org`, and the tree reads both levels.
+@Test func theAgentTextsAreForwardedAndRead() async throws {
+    let caller = GhostRecordingCaller()
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "agent-texts")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    _ = try await registry.dispatch(
+        name: "ctx_update_org", params: .object(["id": .string("o"), "gitCommitInstructions": .string("Imperative subject")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_set_project_agent_instructions",
+        params: .object(["projectPath": .string("/p/project.json"), "general": .string("Ask first")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    #expect(await caller.arguments == [
+        .object(["id": .string("o"), "gitCommitInstructions": .string("Imperative subject")]),
+        .object(["projectPath": .string("/p/project.json"), "general": .string("Ask first")]),
+    ])
+    let json = #"{"id":"o","agentGeneral":"G","gitCommitInstructions":"C","gitPRInstructions":"P"}"#
+    let org = try JSONDecoder().decode(SettingsOrg.self, from: Data(json.utf8))
+    #expect(org.agentGeneral == "G" && org.gitCommitInstructions == "C" && org.gitPRInstructions == "P")
+    let project = try JSONDecoder().decode(SettingsProject.self, from: Data(#"{"name":"api","agent":{"commits":"K"}}"#.utf8))
+    #expect(project.agent == SettingsAgentTexts(general: "", commits: "K", pullRequests: ""))
+}

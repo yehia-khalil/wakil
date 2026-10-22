@@ -61,6 +61,12 @@ type Org struct {
 	PullStrategy string       `json:"pullStrategy,omitempty"`
 	// LastCloneFolder is the folder the operator last cloned into: the only one the agent may.
 	LastCloneFolder string `json:"lastCloneFolder,omitempty"`
+
+	// Agent instructions (3a-iii-b, Decision 45): appended after Wakil's own rules when an agent's
+	// session starts, General first, then Commits and Pull requests.
+	AgentGeneral          string `json:"agentGeneral,omitempty"`
+	GitCommitInstructions string `json:"gitCommitInstructions,omitempty"`
+	GitPRInstructions     string `json:"gitPRInstructions,omitempty"`
 }
 
 const orgFileName = "org.json"
