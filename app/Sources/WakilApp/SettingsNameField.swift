@@ -1,0 +1,94 @@
+import AppKit
+import SwiftUI
+import WakilKit
+
+/// The Name row on a project's or an environment's page (2e-ii): edited where it stands, saved
+/// when the field is left or Return is pressed, never by a Save button (Rule 2).
+///
+/// **A refusal is shown whole beneath the field and the typed text stays** (Rule 8) — a name in
+/// use, an empty one, one with a `/` — so it can be corrected rather than retyped. While the
+/// write is in flight the field says so and a second write is not started (Rule 5).
+///
+/// **Leaving by moving to another page is leaving too**: the tree click swaps this view out, and
+/// the focus change it would have heard is never reported, so its disappearance writes the draft
+/// (`LeaveSavedField`). A refusal that lands after it is gone goes to `unseen`, the window's
+/// status, rather than nowhere.
+struct LifecycleNameField: View {
+    let stored: String
+    let identifier: String
+    /// True when this page was just created for the operator to name: the field takes the
+    /// keyboard with its text selected (Rule 3), then the request is put down.
+    @Binding var wantsFocus: Bool
+    /// Writes the new name and answers the refusal's own sentence, or nil on success.
+    let save: (String) async -> String?
+    /// Where a refusal goes when the field is no longer on screen to show it.
+    var unseen: (String) -> Void = { _ in }
+
+    /// The draft, the write in flight, its refusal and whether the field is on screen. A
+    /// reference, so a write that lands after the field went reads the live answer.
+    @State private var field = LeaveSavedField()
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            SettingsRow("Name") {
+                HStack(spacing: 8) {
+                    TextField("", text: Binding(get: { field.draft ?? stored }, set: { field.draft = $0 }))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: SettingsScale.identifier, design: .monospaced))
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.88))
+                        .frame(maxWidth: 320)
+                        .inPlaceField(focused: focused)
+                        .focused($focused)
+                        .onSubmit { commit(field.submit(stored: stored)) }
+                        .onChange(of: focused) { old, new in
+                            if old, !new { commit(field.leave(stored: stored)) }
+                        }
+                        .accessibilityIdentifier(identifier)
+                    if field.saving {
+                        ProgressView().controlSize(.small)
+                        Text("Saving…")
+                            .font(.system(size: SettingsScale.body))
+                            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.35))
+                    }
+                }
+            }
+            if let refusal = field.refusal {
+                Text(refusal)
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .underRowValue()
+                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("\(identifier).error")
+            }
+        }
+        .onAppear {
+            field.appeared()
+            takeFocusIfAsked()
+        }
+        .onDisappear { commit(field.disappeared(stored: stored)) }
+        .onChange(of: wantsFocus) { _, _ in takeFocusIfAsked() }
+    }
+
+    private func takeFocusIfAsked() {
+        guard wantsFocus else { return }
+        wantsFocus = false
+        focused = true
+        // The field editor exists a beat after focus is granted; selecting before it does nothing.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
+        }
+    }
+
+    /// Writes what a leave answered — Return, focus moving on, or the field going from screen.
+    /// Nil is nothing to write: unchanged, or a write already in flight.
+    private func commit(_ value: String?) {
+        guard let value else { return }
+        let field = field
+        Task {
+            if let refusal = field.landed(await save(value)) { unseen(refusal) }
+        }
+    }
+}

@@ -950,6 +950,8 @@ private let registeredBeforeThePalette: Set<String> = [
     // Provider capacity, on purpose: the operator-only record path and the agent's read.
     "capacity_record", "ctx_capacity",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
+    "ctx_create_environment", "ctx_create_project", "ctx_remove_environment", "ctx_remove_project",
+    "ctx_rename_environment", "ctx_rename_project",
     // 3b-v (Decision 38): the editor settings read, and the two operator-only writes.
     "ctx_editor_settings", "ctx_set_editor_settings", "ctx_set_project_editor_settings",
     // 3b-viii (Decision 42): the operator-only write for a local model endpoint.

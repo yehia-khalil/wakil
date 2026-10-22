@@ -136,6 +136,36 @@ struct SettingsPane: View {
         _ projectPath: String, _ environment: String, _ name: String
     ) async -> String?
 
+    /// Adds a project from the folder chosen (2e-ii): its name, or the refusal whole.
+    var createProject: (String) async -> (name: String?, error: String?) = { _ in (nil, nil) }
+    /// Renames a project: old, new. Answers the refusal or nil.
+    var renameProject: (String, String) async -> String? = { _, _ in nil }
+    /// Removes a project from this organisation. Answers the refusal or nil.
+    var removeProject: (String) async -> String? = { _ in nil }
+    /// Adds an environment to a project: its name and its file's path.
+    var createEnvironment: (String, String) async -> (name: String?, error: String?) = { _, _ in (nil, nil) }
+    /// Renames an environment: project, project file, old, new. Answers the refusal or nil.
+    var renameEnvironment: (String, String, String, String) async -> String? = { _, _, _, _ in nil }
+    /// Removes an environment: project, project file, name. The receipt or the refusal.
+    var removeEnvironment: (String, String, String) async -> (receipt: String?, error: String?) =
+        { _, _, _ in (nil, nil) }
+    /// Says a refusal in the window's status, for a Name field gone before its write answered.
+    var showUnseenRefusal: (String) -> Void = { _ in }
+
+    /// Writes in flight, by key (`addProject`, `addEnvironment.<p>`, `remove.<node>`): a control
+    /// shows a spinner and cannot be fired a second time (Rule 5).
+    @State private var lifecycleBusy: Set<String> = []
+    /// A failed add or remove, whole, beside the control that caused it (Rule 8).
+    @State private var lifecycleRefusals: [String: String] = [:]
+    /// The removal awaiting its pane-local confirmation, by its key. Only a
+    /// removal that passes a `confirmation` asks (Rule 1: the operator
+    /// counts removing a project or an environment as destroying).
+    @State private var confirmingRemoval: String?
+    /// What a removal did, shown on the page it landed on until the operator moves.
+    @State private var receipt: (node: SettingsNode, text: String)?
+    /// The node whose Name field takes the keyboard when its page appears (Rule 3).
+    @State private var pendingNameFocus: SettingsNode?
+
     /// The database form's fields, while it is open.
     ///
     /// **The passwords live here and nowhere else in this view.** They are
@@ -195,6 +225,17 @@ struct SettingsPane: View {
     /// The field whose save is in flight, so its control can say so rather
     /// than look inert.
     @State private var saving: WindowModel.OrganisationField?
+    /// The Git fields on screen, read by a save that lands after its page went — left by a tree
+    /// click — so its refusal goes to the window's status (Rule 8). A reference, as
+    /// `LeaveSavedField`'s, so the save's task reads the live answer.
+    @State private var gitFieldsShown = ShownFields()
+    /// The text a Git field's last save sent, when it was refused: leaving does not send it again
+    /// (the refusal is already under the field); Return and Save do.
+    @State private var refusedDrafts: [WindowModel.OrganisationField: String] = [:]
+
+    private final class ShownFields {
+        var fields: Set<WindowModel.OrganisationField> = []
+    }
     /// The organisation field holding the keyboard: Git name and email save when it leaves (3a-ii, Rule 2).
     @FocusState private var focusedOrgField: WindowModel.OrganisationField?
 
@@ -327,14 +368,20 @@ struct SettingsPane: View {
                                         label: "API", depth: 3, disclosure: .leaf)
                                 }
                             }
-                            // Marked rather than drawn silently, so the operator
-                            // learns the boundary by looking rather than by
-                            // pressing. Environment create, rename and remove are
-                            // #45 and are out of this phase.
-                            notThisPhase("+ Add an environment", depth: 2)
+                            addRow(
+                                "+ Add an environment", depth: 2, key: "addEnvironment.\(project.name)",
+                                identifier: "settings.tree.project.\(project.name).addEnvironment"
+                            ) {
+                                await addEnvironment(to: project)
+                            }
                         }
                     }
-                    notThisPhase("+ Add a project", depth: 1)
+                    addRow(
+                        "+ Add a project", depth: 1, key: "addProject",
+                        identifier: "settings.tree.addProject"
+                    ) {
+                        await addProject()
+                    }
                 }
             }
             .padding(.vertical, 2)
@@ -354,7 +401,10 @@ struct SettingsPane: View {
         // Another organisation's tree: the window forgot the old one's branches, so lay these.
         .onChange(of: tree?.org.id) { _, _ in seed() }
         // A navigation to a node inside a closed parent is the one opening made for the operator.
-        .onChange(of: selection) { _, _ in revealSelection() }
+        .onChange(of: selection) { _, _ in
+            revealSelection()
+            if let shown = receipt, shown.node != selection { receipt = nil }
+        }
     }
 
     /// The PROJECTS heading: pressing it opens or closes every project at once.
@@ -375,6 +425,9 @@ struct SettingsPane: View {
             .padding(.top, 10)
             .padding(.bottom, 2)
             .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(coolWhite.opacity(selection == .projects ? 0.08 : 0)))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(open ? "Projects, open" : "Projects, closed")
@@ -407,7 +460,7 @@ struct SettingsPane: View {
     /// never on appear, so a selection left inside a branch the operator closed stays hidden.
     private func revealSelection() {
         switch selection {
-        case .organisation, .providers, .editor: return
+        case .organisation, .providers, .editor, .projects: return
         case .project: expansion.projectsOpen = true
         case .projectEditor(let project), .environment(let project, _):
             expansion.reveal(project: project)
@@ -520,31 +573,219 @@ struct SettingsPane: View {
             .padding(.vertical, 3)
     }
 
-    /// A control that is visible and does nothing, labelled with why.
-    ///
-    /// **Drawn rather than omitted**, deliberately: an operator looking for
-    /// "add a project" and finding nothing cannot tell a missing feature
-    /// from a control they have not found. One that says *not this phase*
-    /// answers the question it raises.
-    private func notThisPhase(_ label: String, depth: Int) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: Scale.body))
-                .foregroundStyle(coolWhite.opacity(0.24))
-            Text("not this phase")
-                .font(.system(size: Scale.micro, weight: .medium))
-                .tracking(0.6)
-                .foregroundStyle(coolWhite.opacity(0.24))
-                .padding(.horizontal, 4)
-                .padding(.vertical, 1)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .stroke(coolWhite.opacity(0.14), lineWidth: 0.5))
-            Spacer(minLength: 0)
+    /// The tree's live add control (2e-ii), in the place the not-this-phase marker held. In
+    /// flight it shows a spinner and cannot be pressed again (Rule 5); a failure is drawn whole
+    /// beneath it (Rule 8).
+    private func addRow(
+        _ label: String, depth: Int, key: String, identifier: String,
+        _ act: @escaping () async -> Void
+    ) -> some View {
+        let busy = lifecycleBusy.contains(key)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Button {
+                    guard !lifecycleBusy.contains(key) else { return }
+                    lifecycleBusy.insert(key)
+                    lifecycleRefusals[key] = nil
+                    Task {
+                        await act()
+                        lifecycleBusy.remove(key)
+                    }
+                } label: {
+                    Text(label)
+                        .font(.system(size: Scale.body))
+                        .foregroundStyle(coolWhite.opacity(busy ? 0.35 : 0.62))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                .accessibilityIdentifier(identifier)
+                if busy { ProgressView().controlSize(.mini) }
+                Spacer(minLength: 0)
+            }
+            if let refusal = lifecycleRefusals[key] {
+                Text(refusal)
+                    .font(.system(size: Scale.body))
+                    .foregroundStyle(caution)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         // After the chevron column its siblings keep, so it reads as one of them.
         .padding(.leading, CGFloat(depth) * 12 + 8 + 14)
         .padding(.vertical, 3)
+    }
+
+    /// The node a landing names.
+    private func node(for landing: SettingsLanding) -> SettingsNode {
+        switch landing {
+        case .projects: return .projects
+        case .project(let name): return .project(name)
+        case .environment(let project, let environment):
+            return .environment(project: project, environment: environment)
+        }
+    }
+
+    /// + Add a project: the folder picker, then the project's page with its Name taking the
+    /// keyboard. Cancelling the picker does nothing; the active project never changes (Rule 6).
+    private func addProject() async {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add"
+        panel.message = "Choose the project's folder"
+        guard panel.runModal() == .OK, let folder = panel.url?.path else { return }
+        let created = await createProject(folder)
+        if let error = created.error {
+            lifecycleRefusals["addProject"] = error
+        } else if let name = created.name {
+            land(on: node(for: SettingsLanding.afterCreatingProject(name)), focusName: true)
+        }
+    }
+
+    /// + Add an environment: `wakil-ctx` picks the name; the page opens with it selected.
+    private func addEnvironment(to project: SettingsProject) async {
+        let created = await createEnvironment(project.name, project.path)
+        if let error = created.error {
+            lifecycleRefusals["addEnvironment.\(project.name)"] = error
+        } else if let name = created.name {
+            land(
+                on: node(for: SettingsLanding.afterCreatingEnvironment(project: project.name, name: name)),
+                focusName: true)
+        }
+    }
+
+    /// Selects `target` and, for a create, asks its Name field for the keyboard (Rule 3).
+    private func land(on target: SettingsNode, focusName: Bool = false) {
+        receipt = nil
+        pendingNameFocus = focusName ? target : nil
+        selection = target
+    }
+
+    /// Whether the Name field on `node` has a pending request for the keyboard.
+    private func wantsNameFocus(_ node: SettingsNode) -> Binding<Bool> {
+        Binding(
+            get: { pendingNameFocus == node },
+            set: { if !$0, pendingNameFocus == node { pendingNameFocus = nil } })
+    }
+
+    /// Saves a project's new name. The selection and the open branches follow it, so a rename
+    /// closes nothing and moves the operator nowhere (Rule 6).
+    private func rename(project old: String, to new: String) async -> String? {
+        if let refusal = await renameProject(old, new) { return refusal }
+        selection = selection.renaming(project: old, to: new)
+        expansion.renamed(project: old, to: new)
+        return nil
+    }
+
+    private func rename(project: SettingsProject, environment old: String, to new: String) async -> String? {
+        if let refusal = await renameEnvironment(project.name, project.path, old, new) { return refusal }
+        selection = selection.renaming(project: project.name, environment: old, to: new)
+        expansion.renamed(project: project.name, environment: old, to: new)
+        return nil
+    }
+
+    /// The Remove control at the foot of a project's or an environment's page: the verb, a
+    /// spinner while it runs (Rule 5), and a failure whole beneath it (Rule 8).
+    private func removeSection(
+        key: String, label: String, identifier: String, hint: String,
+        confirmation: String? = nil,
+        _ act: @escaping () async -> Void
+    ) -> some View {
+        let busy = lifecycleBusy.contains(key)
+        let run: () -> Void = {
+            guard !lifecycleBusy.contains(key) else { return }
+            lifecycleBusy.insert(key)
+            lifecycleRefusals[key] = nil
+            Task {
+                await act()
+                lifecycleBusy.remove(key)
+            }
+        }
+        return SettingsSection("Remove") {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Button {
+                        if confirmation != nil {
+                            lifecycleRefusals[key] = nil
+                            confirmingRemoval = key
+                        } else {
+                            run()
+                        }
+                    } label: {
+                        Text(label)
+                            .font(.system(size: Scale.body))
+                            .foregroundStyle(caution.opacity(busy ? 0.4 : 0.9))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    .accessibilityIdentifier(identifier)
+                    if busy { ProgressView().controlSize(.small) }
+                }
+                FormHint(hint)
+                if let confirmation, confirmingRemoval == key {
+                    // Says what will NOT be destroyed, as the unlink
+                    // confirmation does.
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(confirmation)
+                            .font(.system(size: Scale.body))
+                            .foregroundStyle(caution)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 10) {
+                            confirmButton("Remove", tone: caution, filled: true,
+                                          identifier: "\(identifier).confirm") {
+                                confirmingRemoval = nil
+                                run()
+                            }
+                            confirmButton("Keep it", tone: coolWhite.opacity(0.62),
+                                          identifier: "\(identifier).keep") {
+                                confirmingRemoval = nil
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+                    .padding(.top, 4)
+                }
+                if let refusal = lifecycleRefusals[key] {
+                    Text(refusal)
+                        .font(.system(size: Scale.body))
+                        .foregroundStyle(caution)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.vertical, 10)
+        }
+    }
+
+    private func remove(project: SettingsProject) async {
+        if let error = await removeProject(project.name) {
+            lifecycleRefusals["remove.project.\(project.name)"] = error
+            return
+        }
+        let target = node(for: SettingsLanding.afterRemovingProject())
+        land(on: target)
+        receipt = (target, "Removed \(project.name) from this organisation — its folder is untouched.")
+    }
+
+    private func remove(environment: String, from project: SettingsProject) async {
+        let removed = await removeEnvironment(project.name, project.path, environment)
+        if let error = removed.error {
+            lifecycleRefusals["remove.environment.\(project.name).\(environment)"] = error
+            return
+        }
+        let target = node(for: SettingsLanding.afterRemovingEnvironment(project: project.name))
+        land(on: target)
+        if let text = removed.receipt { receipt = (target, text) }
+    }
+
+    /// What a removal said, drawn on the page it landed on.
+    @ViewBuilder
+    private func receiptLine(for node: SettingsNode) -> some View {
+        if let receipt, receipt.node == node {
+            note(receipt.text, tone: coolWhite.opacity(0.62))
+                .accessibilityIdentifier("settings.receipt")
+        }
     }
 
     // MARK: - The subject
@@ -678,8 +919,15 @@ struct SettingsPane: View {
         case .project(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {
                 // Two groups, two headed sections (2026-10-21): what the project is, and its roots.
+                receiptLine(for: .project(name))
                 SettingsSection("Project") {
-                    fields([("Name", project.name, true), ("File", project.path, true)])
+                    LifecycleNameField(
+                        stored: project.name, identifier: "settings.project.name",
+                        wantsFocus: wantsNameFocus(.project(name)),
+                        save: { new in await rename(project: name, to: new) },
+                        unseen: showUnseenRefusal)
+                    .id("name.\(project.path)")
+                    fields([("File", project.path, true)])
                 }
                 if !project.roots.isEmpty {
                     SettingsSection("Roots") {
@@ -692,14 +940,34 @@ struct SettingsPane: View {
                         }
                     }
                 }
+                removeSection(
+                    key: "remove.project.\(project.name)", label: "Remove from this organisation",
+                    identifier: "settings.project.remove",
+                    hint: "The project leaves this organisation's list. Its folder and project.json are left alone.",
+                    confirmation: "Remove \(project.name) from this organisation? Its folder and project.json "
+                        + "stay on disk; adding the folder again brings it back."
+                ) { await remove(project: project) }
             } else {
                 gone(name)
             }
 
+        case .projects:
+            receiptLine(for: .projects)
+            if receipt?.node != .projects {
+                readOnlyNote("Choose a project, or add one from the tree.")
+            }
+
         case .environment(let projectName, let environmentName):
             if let environment = environment(projectName, environmentName, in: tree) {
+                if let project = tree.projects.first(where: { $0.name == projectName }) {
+                    LifecycleNameField(
+                        stored: environment.name, identifier: "settings.environment.name",
+                        wantsFocus: wantsNameFocus(.environment(project: projectName, environment: environmentName)),
+                        save: { new in await rename(project: project, environment: environmentName, to: new) },
+                        unseen: showUnseenRefusal)
+                    .id("name.\(project.path).\(environmentName)")
+                }
                 fields([
-                    ("Name", environment.name, true),
                     ("Databases", "\(environment.databases.count)", true),
                     // A COUNT, like `Databases` above it, because the API
                     // became a list of named entries in 2c-iv. Naming one
@@ -710,7 +978,16 @@ struct SettingsPane: View {
                 ])
                 readOnlyNote(
                     "An environment holds the databases and the API — which is why this tree "
-                        + "is four levels deep and not three. Create, rename and remove are #45.")
+                        + "is four levels deep and not three.")
+                if let project = tree.projects.first(where: { $0.name == projectName }) {
+                    removeSection(
+                        key: "remove.environment.\(projectName).\(environmentName)",
+                        label: "Remove environment", identifier: "settings.environment.remove",
+                        hint: "Its file goes to the Trash, so it can be put back.",
+                        confirmation: "Remove \(environmentName) from \(project.name)? A copy of project.json "
+                            + "goes to the Trash first; Put Back returns it beside project.json."
+                    ) { await remove(environment: environmentName, from: project) }
+                }
             } else {
                 gone(environmentName)
             }
@@ -835,9 +1112,15 @@ struct SettingsPane: View {
                         // path. A Return that saved already cleared the draft (or is still saving), so
                         // leaving after it writes nothing twice. The other fields keep Return / Save.
                         .onChange(of: focusedOrgField) { old, _ in
-                            guard old == field, field == .gitName || field == .gitEmail,
-                                  let d = drafts[field], d != storedValue(field, in: tree), saving != field else { return }
-                            save(field, tree: tree)
+                            guard old == field else { return }
+                            leave(field, tree: tree)
+                        }
+                        // Leaving the page by the tree is leaving the field too, and the focus change
+                        // above is never reported once the page is gone (2e-ii) — so going is a leave.
+                        .onAppear { if field.savesOnLeave { gitFieldsShown.fields.insert(field) } }
+                        .onDisappear {
+                            gitFieldsShown.fields.remove(field)
+                            leave(field, tree: tree)
                         }
                         .accessibilityIdentifier("settings.org.\(field.identifierFragment)")
                     if draft != nil, draft != stored {
@@ -1095,19 +1378,33 @@ struct SettingsPane: View {
         }
     }
 
+    /// A Git field left — focus moved on, or its page went: saves a changed draft (Rule 2).
+    private func leave(_ field: WindowModel.OrganisationField, tree: SettingsTree) {
+        guard field.savesOnLeave,
+              LeaveSave.value(draft: drafts[field], stored: storedValue(field, in: tree),
+                              saving: saving == field, refused: refusedDrafts[field]) != nil else { return }
+        save(field, tree: tree)
+    }
+
     private func save(_ field: WindowModel.OrganisationField, tree: SettingsTree) {
         guard let value = drafts[field], saving != field else { return }
         saving = field
         refusals[field] = nil
+        let shown = gitFieldsShown
         Task {
             let refusal = await saveOrganisationField(field, value)
-            saving = nil
-            refusals[field] = refusal
-            quickStatus = await quickTaskStatus()
             // The draft is cleared only on success, so a refused value
             // stays in front of the operator to be corrected rather than
             // vanishing along with the explanation of why it was refused.
+            // Cleared WITH `saving`, before the await below: a leave in
+            // between would otherwise see a draft and no write in flight,
+            // and send the same value again.
             if refusal == nil { drafts[field] = nil }
+            refusedDrafts[field] = refusal == nil ? nil : value
+            saving = nil
+            refusals[field] = refusal
+            if let refusal, field.savesOnLeave, !shown.fields.contains(field) { showUnseenRefusal(refusal) }
+            quickStatus = await quickTaskStatus()
         }
     }
 
@@ -2350,6 +2647,9 @@ struct SettingsPane: View {
 /// at a different subject afterwards. A name that is gone is gone, and the
 /// subject column says so.
 enum SettingsNode: Hashable {
+    /// The PROJECTS heading: where a removed project leaves the operator, with nothing of its
+    /// own to show but the receipt.
+    case projects
     case organisation
     case providers
     case editor
@@ -2365,6 +2665,7 @@ enum SettingsNode: Hashable {
         switch self {
         case .organisation: return "organisation"
         case .providers: return "providers"
+        case .projects: return "projects"
         case .editor: return "editor"
         case .projectEditor(let name): return "projectEditor.\(name)"
         case .project(let name): return "project.\(name)"
@@ -2381,6 +2682,29 @@ enum SettingsNode: Hashable {
     case databases(project: String, environment: String)
     case api(project: String, environment: String)
 
+    /// This node after a project is renamed: the same place under the new name, so a rename
+    /// never throws the operator to a page that says the node is gone.
+    func renaming(project old: String, to new: String) -> SettingsNode {
+        switch self {
+        case .project(old): return .project(new)
+        case .projectEditor(old): return .projectEditor(new)
+        case .environment(old, let e): return .environment(project: new, environment: e)
+        case .databases(old, let e): return .databases(project: new, environment: e)
+        case .api(old, let e): return .api(project: new, environment: e)
+        default: return self
+        }
+    }
+
+    /// This node after an environment is renamed.
+    func renaming(project: String, environment old: String, to new: String) -> SettingsNode {
+        switch self {
+        case .environment(project, old): return .environment(project: project, environment: new)
+        case .databases(project, old): return .databases(project: project, environment: new)
+        case .api(project, old): return .api(project: project, environment: new)
+        default: return self
+        }
+    }
+
     /// The breadcrumb for this node. Four levels down needs one to say
     /// where you are.
     func breadcrumb(in tree: SettingsTree?) -> [String] {
@@ -2390,6 +2714,8 @@ enum SettingsNode: Hashable {
             return [organisation]
         case .providers:
             return [organisation, "Providers"]
+        case .projects:
+            return [organisation, "Projects"]
         case .editor:
             return ["Wakil", "Editor"]
         case .projectEditor(let name):

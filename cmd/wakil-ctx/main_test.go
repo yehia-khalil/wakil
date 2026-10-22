@@ -1147,3 +1147,153 @@ func TestUpdateOrgToolWritesTheGitIdentity(t *testing.T) {
 		t.Fatalf("%+v %v", o, err)
 	}
 }
+
+// lifecycleClient connects an in-memory client to a fresh server for the
+// 2e-ii tools' round trips.
+func lifecycleClient(t *testing.T) (context.Context, *mcp.ClientSession) {
+	t.Helper()
+	ctx := context.Background()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	ss, err := newServer().Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ss.Close() })
+	client := mcp.NewClient(&mcp.Implementation{Name: "lifecycle-test", Version: "0.0.0"}, nil)
+	cs, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cs.Close() })
+	return ctx, cs
+}
+
+func callOK(t *testing.T, ctx context.Context, cs *mcp.ClientSession, name string, args map[string]any) map[string]any {
+	t.Helper()
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil || res.IsError {
+		t.Fatalf("%s: %v %v", name, err, res)
+	}
+	out, _ := res.StructuredContent.(map[string]any)
+	return out
+}
+
+func TestProjectToolsRoundTrip(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	folder := filepath.Join(os.Getenv("HOME"), "newproj")
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out := callOK(t, ctx, cs, "create_project", map[string]any{"folder": folder, "name": "fresh"})
+	path, _ := out["path"].(string)
+	if out["name"] != "fresh" || path == "" {
+		t.Fatalf("create_project output %v", out)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("project file not written: %v", err)
+	}
+	reg, err := wakilcore.LoadRegistryFor("initech")
+	if err != nil || reg["fresh"].Path != path {
+		t.Fatalf("registry %v %v", reg, err)
+	}
+
+	callOK(t, ctx, cs, "rename_project", map[string]any{"name": "fresh", "newName": "fresher"})
+	reg, _ = wakilcore.LoadRegistryFor("initech")
+	if _, old := reg["fresh"]; old || reg["fresher"].Path != path {
+		t.Fatalf("after rename %v", reg)
+	}
+
+	callOK(t, ctx, cs, "remove_project", map[string]any{"name": "fresher"})
+	reg, _ = wakilcore.LoadRegistryFor("initech")
+	if _, still := reg["fresher"]; still {
+		t.Fatalf("row remains %v", reg)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("remove_project must keep project.json: %v", err)
+	}
+}
+
+// The UI passes the folder's name; a folder already holding a project.json comes back under
+// the file's own name, and the tool answers that one (spec Call 2).
+func TestCreateProjectToolAnswersAnAdoptedFilesName(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	folder := filepath.Join(os.Getenv("HOME"), "wakil")
+	callOK(t, ctx, cs, "create_project", map[string]any{"folder": folder, "name": "wakil"})
+	callOK(t, ctx, cs, "rename_project", map[string]any{"name": "wakil", "newName": "W"})
+	callOK(t, ctx, cs, "remove_project", map[string]any{"name": "W"})
+
+	out := callOK(t, ctx, cs, "create_project", map[string]any{"folder": folder, "name": "wakil"})
+	if out["name"] != "W" {
+		t.Fatalf("create_project answered %v, want the file's name W", out)
+	}
+	reg, _ := wakilcore.LoadRegistryFor("initech")
+	if _, ok := reg["W"]; !ok {
+		t.Fatalf("registry %v", reg)
+	}
+}
+
+func TestEnvironmentToolsRoundTrip(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]},"prod":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+
+	out := callOK(t, ctx, cs, "create_environment", map[string]any{"projectPath": pp})
+	name, _ := out["name"].(string)
+	if name == "" {
+		t.Fatalf("create_environment output %v", out)
+	}
+	p, err := wakilcore.LoadProject(pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.Environments[name]; !ok {
+		t.Fatalf("%q not written: %v", name, p.Environments)
+	}
+
+	callOK(t, ctx, cs, "rename_environment", map[string]any{"projectPath": pp, "name": name, "newName": "qa"})
+	p, _ = wakilcore.LoadProject(pp)
+	if _, ok := p.Environments["qa"]; !ok {
+		t.Fatalf("rename not applied: %v", p.Environments)
+	}
+
+	// A fake trash program: the real one resolves the user's own Trash,
+	// not $HOME, so it must never run from a test.
+	rec := t.TempDir()
+	fake := filepath.Join(t.TempDir(), "trash")
+	script := "#!/bin/sh\nfor a; do last=\"$a\"; done\ncp \"$last\" '" + rec + "'/\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(wakilcore.SetTrashBinForTest(fake))
+
+	out = callOK(t, ctx, cs, "remove_environment", map[string]any{"projectPath": pp, "name": "qa"})
+	trashed, _ := out["trashed"].(string)
+	if !strings.HasPrefix(trashed, "project.json (before removing qa ") {
+		t.Fatalf("remove_environment output %v", out)
+	}
+	if _, err := os.Stat(filepath.Join(rec, trashed)); err != nil {
+		t.Fatalf("the trash program never got the copy: %v", err)
+	}
+	p, _ = wakilcore.LoadProject(pp)
+	if _, still := p.Environments["qa"]; still {
+		t.Fatalf("qa remains: %v", p.Environments)
+	}
+}
+
+func TestRenameEnvironmentRefusalReachesTheWireVerbatim(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]},"prod":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "rename_environment", Arguments: map[string]any{"projectPath": pp, "name": "staging", "newName": "prod"},
+	})
+	if err != nil || !res.IsError {
+		t.Fatalf("want a tool error, got %v %v", err, res)
+	}
+	if got := textOf(t, res); got != wakilcore.RenameEnvironment(pp, "staging", "prod").Error() {
+		t.Fatalf("refusal text %q", got)
+	}
+}

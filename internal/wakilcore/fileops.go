@@ -17,6 +17,15 @@ import (
 // NSFileManager is out of reach (3b-iv, Decision 41). A variable so tests point it at a fake.
 var trashBin = "/usr/bin/trash"
 
+// SetTrashBinForTest points the trash program at a fake and returns the
+// function that puts the real one back. For tests in other packages only:
+// the real program resolves the user's own Trash, not $HOME.
+func SetTrashBinForTest(path string) (restore func()) {
+	old := trashBin
+	trashBin = path
+	return func() { trashBin = old }
+}
+
 // FileEntry is a file or folder a 3b-iv write made or trashed.
 type FileEntry struct {
 	Path string `json:"path"`

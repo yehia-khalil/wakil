@@ -1,0 +1,29 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"project.e2e-project open"}}
+{"dispatch":{"action":"ctx_create_project","params":{"folder":"{fixtureRoot}/e2e-new","name":"e2e-new"}}}
+{"expect":{"tree":"contains","text":"project.e2e-new"}}
+{"do":{"click":"settings.tree.project.e2e-new"}}
+{"do":{"focus":"settings.project.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"e2e-renamed"}}
+{"do":{"click":"settings.tree.project.e2e-project"}}
+{"expect":{"tree":"contains","text":"project.e2e-renamed"}}
+{"expect":{"tree":"absent","text":"project.e2e-new"}}
+{"do":{"click":"settings.tree.project.e2e-renamed"}}
+{"do":{"click":"settings.project.remove"}}
+{"expect":{"tree":"contains","text":"Remove e2e-renamed from this organisation?"}}
+{"do":{"click":"settings.project.remove.keep"}}
+{"expect":{"tree":"absent","text":"Remove e2e-renamed from this organisation?"}}
+{"expect":{"tree":"contains","text":"project.e2e-renamed"}}
+{"do":{"click":"settings.project.remove"}}
+{"do":{"click":"settings.project.remove.confirm"}}
+{"expect":{"tree":"absent","text":"project.e2e-renamed"}}
+{"expect":{"tree":"contains","text":"Removed e2e-renamed from this organisation"}}
+{"dispatch":{"action":"ctx_create_project","params":{"folder":"{fixtureRoot}/e2e-new","name":"e2e-new"}}}
+{"expect":{"tree":"contains","text":"project.e2e-renamed"}}
+{"expect":{"tree":"absent","text":"project.e2e-new"}}
+{"dispatch":{"action":"ctx_rename_project","params":{"name":"e2e-renamed","newName":"e2e-again"}}}
+{"expect":{"tree":"contains","text":"project.e2e-again"}}
+{"expect":{"tree":"absent","text":"project.e2e-renamed"}}
+{"dispatch":{"action":"ctx_remove_project","params":{"name":"e2e-again"}}}
+{"expect":{"tree":"absent","text":"project.e2e-again"}}

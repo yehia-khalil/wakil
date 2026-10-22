@@ -122,6 +122,8 @@ do not drift to synonyms. One term is knowingly ambiguous: `Connection` means an
 account in §9 and an environment-level database in seven `wakil-db` schema strings (open
 question 16, blocking nothing).
 
+**Settings** can add, rename and remove a project and an environment (Decision 21, amended 2026-10-22), each as the operator's own act with no dialog; a project's other fields and the machine block stay in the file.
+
 **Explicitly undecided, and not to be invented:**
 
 - **Signing and notarisation are externally blocked** — no paid Developer ID on this

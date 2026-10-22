@@ -13,8 +13,10 @@ import Observation
 @MainActor
 @Observable
 public final class PlaceAgent {
-    /// The place the agent works in, fixed for the entry's life.
-    public let place: Place
+    /// The place the agent works in, fixed for the entry's life — except that renaming its project
+    /// or environment moves an entry with no live session to the new name
+    /// (`WindowModel.carryAgents`), so its conversation is not lost with the old one.
+    public internal(set) var place: Place
     /// The live session's harness, or nil before the first turn.
     var harness: AgentHarness?
     /// The id the running child was started with; set and cleared with `harness`.

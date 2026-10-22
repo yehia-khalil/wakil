@@ -1,0 +1,7 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"GIT"}}
+{"do":{"type":{"into":"settings.org.gitName","text":"E2E Leaver"}}}
+{"expect":{"tree":"contains","text":"E2E Leaver"}}
+{"do":{"click":"settings.tree.project.e2e-project"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitName","equals":"E2E Leaver"}}

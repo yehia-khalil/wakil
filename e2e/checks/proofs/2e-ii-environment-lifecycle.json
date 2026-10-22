@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/2e-ii-environment-lifecycle.jsonl",
+  "baseCommit": "91f64b7b89da734fc9609cb355bf4890ae127ead",
+  "provedAt": "2026-10-22T13:25:02.4588Z",
+  "checkBlob": "22a0bb1eb21dad479fbf9f7c12ab72551aec4cdf"
+}

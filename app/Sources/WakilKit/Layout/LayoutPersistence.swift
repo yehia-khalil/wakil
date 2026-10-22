@@ -272,6 +272,46 @@ public struct LayoutPersistence: Sendable {
         return levelDirectory(for: scope).appendingPathComponent(name)
     }
 
+    /// 2e-ii. Moves every `<from>@<environment>.json` of an organisation to `<to>@…`, so a renamed
+    /// project comes back with its panes — the project's own files and each conversation's under
+    /// `conversations/<root>/`, which carry the project too (final review Important 1: a place shown
+    /// in a conversation otherwise came back on the project's seed). A project with nothing saved
+    /// is a no-op, and a file already under the new name is replaced — the rename is the later word.
+    public func renameProject(organization: String, from: String, to: String) throws {
+        let prefix = "\(flattenPart(from))@"
+        for level in levels(of: organization) {
+            let files = (try? FileManager.default.contentsOfDirectory(atPath: level.path)) ?? []
+            for file in files where file.hasPrefix(prefix) && file.hasSuffix(".json") {
+                try move(level.appendingPathComponent(file),
+                         to: level.appendingPathComponent("\(flattenPart(to))@" + file.dropFirst(prefix.count)))
+            }
+        }
+    }
+
+    /// 2e-ii. Moves one environment's files, `<project>@<from>.json` to `<project>@<to>.json`, at
+    /// the org level and in every conversation. Same rules as `renameProject`.
+    public func renameEnvironment(organization: String, project: String, from: String, to: String) throws {
+        for level in levels(of: organization) {
+            try move(level.appendingPathComponent("\(flattenPart(project))@\(flattenPart(from)).json"),
+                     to: level.appendingPathComponent("\(flattenPart(project))@\(flattenPart(to)).json"))
+        }
+    }
+
+    /// Every directory an organisation files arrangements in: its own, then each conversation's.
+    private func levels(of organization: String) -> [URL] {
+        let org = directory.appendingPathComponent(flatten(organization), isDirectory: true)
+        let conversations = org.appendingPathComponent("conversations", isDirectory: true)
+        let roots = (try? FileManager.default.contentsOfDirectory(atPath: conversations.path)) ?? []
+        return [org] + roots.sorted().map { conversations.appendingPathComponent($0, isDirectory: true) }
+    }
+
+    private func move(_ source: URL, to destination: URL) throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: source.path), source != destination else { return }
+        if fileManager.fileExists(atPath: destination.path) { try fileManager.removeItem(at: destination) }
+        try fileManager.moveItem(at: source, to: destination)
+    }
+
     /// Where `scope`'s level kept its file before the environment joined
     /// the path: `<project>.json` in the same directory, `project` being
     /// the display name or the key. Read, never written (R3).

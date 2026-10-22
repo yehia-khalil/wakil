@@ -311,6 +311,11 @@ func seedOrgState(fixture Fixture, spec SeedSpec) error {
 	if err := os.MkdirAll(filepath.Join(projectDir, ".wakil"), 0o755); err != nil {
 		return fmt.Errorf("seed: making the project directory: %w", err)
 	}
+	// An empty folder beside the project, for the 2e-ii checks that register one from Settings.
+	// It holds no `.wakil/`, so `ctx_create_project` writes the project file itself.
+	if err := os.MkdirAll(filepath.Join(fixture.Root, "e2e-new"), 0o755); err != nil {
+		return fmt.Errorf("seed: making the empty project folder: %w", err)
+	}
 	projectFile := filepath.Join(projectDir, ".wakil", "project.json")
 	// **Marshalled here rather than through a production writer, because on
 	// `main` there is no `project.json` writer at all** — the file is

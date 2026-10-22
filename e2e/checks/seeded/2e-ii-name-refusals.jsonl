@@ -1,0 +1,36 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.project.e2e-project"}}
+{"do":{"focus":"settings.project.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"press":"Backspace"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"a name cannot be empty"}}
+{"expect":{"tree":"absent","text":"Value: e2e-project"}}
+{"do":{"focus":"settings.project.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"a/b"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"a name is one segment"}}
+{"expect":{"tree":"contains","text":"Value: a/b"}}
+{"do":{"focus":"settings.project.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"e2e-git"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"already exists in org"}}
+{"expect":{"tree":"contains","text":"Value: e2e-git"}}
+{"expect":{"tree":"contains","text":"project.e2e-project"}}
+{"do":{"click":"settings.tree.environment.e2e-project.staging"}}
+{"do":{"focus":"settings.environment.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"qa"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"already exists in project"}}
+{"expect":{"tree":"contains","text":"Value: qa"}}
+{"do":{"focus":"settings.environment.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"x/y"}}
+{"do":{"click":"settings.tree.environment.e2e-project.qa"}}
+{"do":{"click":"settings.tree.environment.e2e-project.staging"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.staging"}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.x/y"}}
+{"expect":{"tree":"contains","text":"the name \"x/y\" contains \"/\""}}

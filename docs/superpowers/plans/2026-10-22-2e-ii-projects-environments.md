@@ -241,7 +241,7 @@ turns its two dimmed rows into live buttons and adds Name fields and Remove butt
   - `func renameProject(organization: String, from: String, to: String) throws`, which moves
     every `<from>@*.json` at the org level;
   - `func renameEnvironment(organization: String, project: String, from: String, to: String) throws`.
-  - Neither touches `conversations/`.
+  - Neither touches `conversations/`. (Superseded by the final review: both move the conversations' files too.)
 
 - [ ] **Step 1: Write the failing tests:**
   - LayoutPersistence: after `renameProject`, `load` for the new name returns the saved

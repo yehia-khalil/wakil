@@ -818,6 +818,10 @@ public actor LayoutStore {
 
     // MARK: - Scopes
 
+    /// Every scope holding an arrangement in memory, the one on screen among them: what a rename
+    /// of a project or an environment carries to the new name (2e-ii).
+    public var scopes: Set<LayoutScope> { Set(byScope.keys) }
+
     /// Makes `scope` the active arrangement, keeping the outgoing one.
     public func switchScope(to scope: LayoutScope) {
         screen = scope

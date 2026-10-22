@@ -68,3 +68,55 @@ public struct SettingsTreeExpansion: Equatable, Sendable {
     /// Forgets everything, for another organisation's tree: the next `seed` lays its defaults.
     public mutating func reset() { self = SettingsTreeExpansion() }
 }
+
+extension SettingsTreeExpansion {
+    /// Moves a renamed project's open state, and its environments', to the new name, so a rename
+    /// closes nothing the operator had open (Rule 6). A closed project stays closed.
+    public mutating func renamed(project old: String, to new: String) {
+        guard old != new else { return }
+        if setOpenProjects(remove: old) { setOpen(true, project: new) }
+        for key in environmentKeys(of: old) {
+            setOpen(false, project: old, environment: key.environment)
+            setOpen(true, project: new, environment: key.environment)
+        }
+    }
+
+    /// Moves a renamed environment's open state to the new name.
+    public mutating func renamed(project: String, environment old: String, to new: String) {
+        guard old != new, isOpen(project: project, environment: old) else { return }
+        setOpen(false, project: project, environment: old)
+        setOpen(true, project: project, environment: new)
+    }
+
+    private mutating func setOpenProjects(remove name: String) -> Bool {
+        let wasOpen = isOpen(project: name)
+        setOpen(false, project: name)
+        return wasOpen
+    }
+
+    private func environmentKeys(of project: String) -> [EnvironmentKey] {
+        environments.filter { $0.project == project }
+    }
+}
+
+/// Where the tree selects after a project or environment is created, renamed or removed.
+///
+/// A create or a rename lands on the node itself, under its new name. A removal has no node to
+/// stay on, so it lands on the parent: the PROJECTS heading for a project, the project for an
+/// environment.
+public enum SettingsLanding: Equatable, Sendable {
+    case projects
+    case project(String)
+    case environment(project: String, environment: String)
+
+    public static func afterCreatingProject(_ name: String) -> SettingsLanding { .project(name) }
+    public static func afterCreatingEnvironment(project: String, name: String) -> SettingsLanding {
+        .environment(project: project, environment: name)
+    }
+    public static func afterRenamingProject(to name: String) -> SettingsLanding { .project(name) }
+    public static func afterRenamingEnvironment(project: String, to name: String) -> SettingsLanding {
+        .environment(project: project, environment: name)
+    }
+    public static func afterRemovingProject() -> SettingsLanding { .projects }
+    public static func afterRemovingEnvironment(project: String) -> SettingsLanding { .project(project) }
+}

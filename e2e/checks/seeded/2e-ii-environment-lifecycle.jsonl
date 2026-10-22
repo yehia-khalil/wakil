@@ -1,0 +1,27 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"project.e2e-project open"}}
+{"do":{"click":"settings.tree.project.e2e-project.addEnvironment"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.new-environment"}}
+{"do":{"focus":"settings.environment.name"}}
+{"do":{"hotkey":"cmd+a"}}
+{"do":{"keys":"review"}}
+{"do":{"click":"settings.tree.project.e2e-project"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.review"}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.new-environment"}}
+{"do":{"click":"settings.tree.environment.e2e-project.review"}}
+{"do":{"click":"settings.environment.remove"}}
+{"expect":{"tree":"contains","text":"Remove review from e2e-project?"}}
+{"do":{"click":"settings.environment.remove.keep"}}
+{"expect":{"tree":"absent","text":"Remove review from e2e-project?"}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.review"}}
+{"do":{"click":"settings.environment.remove"}}
+{"do":{"click":"settings.environment.remove.confirm"}}
+{"expect":{"tree":"contains","text":"a copy of project.json is in the Trash"}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.review"}}
+{"dispatch":{"action":"ctx_create_environment","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json"}}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.new-environment"}}
+{"dispatch":{"action":"ctx_rename_environment","params":{"project":"e2e-project","projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","name":"new-environment","newName":"review"}}}
+{"expect":{"tree":"contains","text":"environment.e2e-project.review"}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.new-environment"}}
+{"dispatch":{"action":"ctx_remove_environment","params":{"project":"e2e-project","projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","name":"review"}}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.review"}}
