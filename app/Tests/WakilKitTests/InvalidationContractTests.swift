@@ -28,7 +28,7 @@ private let orgDerived: Set<String> = [
     "changesIdentity", "changesTasks", "changesGeneration",
     // 3a-ii-b: a ✨ draft reads the outgoing org's diff with its quick model; `invalidateForOrgChange`
     // cancels it and empties both, and the generation drops a late reply (WindowModelCommitDraftTests).
-    "changesDrafting", "changesDraftTasks",
+    "changesDrafting", "changesDraftTasks", "changesLastDraft",
     "project", "projectKey", "environment", "environmentProduction",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",

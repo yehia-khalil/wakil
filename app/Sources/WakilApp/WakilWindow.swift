@@ -36,6 +36,8 @@ import SwiftUI
 struct WakilWindow: View {
     let delegate: WakilAppDelegate
 
+    /// The window's undo, where a landed commit-message draft registers its ⌘Z (3a-ii-b).
+    @Environment(\.undoManager) private var undoManager
     @State private var session: WindowSession?
     /// 2d-ii: Task 13 binds this into the thread view; the composer bar's
     /// Esc that listening did not consume folds it.
@@ -462,6 +464,15 @@ struct WakilWindow: View {
             Color.clear.onAppear { windowSize = geometry.size }
                 .onChange(of: geometry.size) { _, new in windowSize = new }
         })
+        // 3a-ii-b (final review I4): every draft that replaced a commit box's text — ✨, the agent or
+        // voice — is one ⌘Z away, registered here once for the window.
+        .onChange(of: session?.model.changesLastDraft) { _, landed in
+            guard let landed, let model = session?.model else { return }
+            undoManager?.registerUndo(withTarget: ChangesDraftUndo.shared) { _ in
+                model.changesMessageEdited(root: landed.root, text: landed.replaced)
+            }
+            undoManager?.setActionName("Draft Message")
+        }
         .onChange(of: session?.model.organization ?? "") { _, _ in
             settingsSelection = .organisation
             settingsExpansion.reset()

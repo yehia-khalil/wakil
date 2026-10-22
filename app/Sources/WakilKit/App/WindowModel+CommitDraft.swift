@@ -1,5 +1,12 @@
 import Foundation
 
+/// A draft that landed in `root`'s box and the text it replaced ("" for an empty box).
+public struct ChangesDraftReplacement: Sendable, Equatable {
+    public var root: String
+    public var replaced: String
+    public var serial: Int
+}
+
 /// The commit box's ✨ (3a-ii-b, Decision 42): `CommitDraft` over the window's quick tasks, landing in
 /// the root's box. The box is the operator's (Rule 2): a draft replaces it only on their press, the
 /// replaced text is returned so the view can undo it (R3), and typing while one is in flight wins (R4).
@@ -74,8 +81,10 @@ extension WindowModel {
         guard !task.isCancelled, generation == quickTasksGeneration, changes == changesGeneration else {
             throw CancellationError()
         }
+        let replaced = changesMessages[root] ?? ""
         changesHistoryCursor[root] = nil
         changesMessages[root] = message
+        changesLastDraft = ChangesDraftReplacement(root: root, replaced: replaced, serial: (changesLastDraft?.serial ?? 0) + 1)
         return message
     }
 

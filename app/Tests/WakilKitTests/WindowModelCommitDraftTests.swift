@@ -183,4 +183,21 @@ private func draftWindow(rows: [(String, String, String)] = [("a.go", "staged", 
                                             origin: .agent, caller: .test("production"), confirmation: nil)
         }
     }
+
+    // Final review I4: a draft from the agent or voice replaces the box too, so the window publishes
+    // every replacement — the one place the view registers ⌘Z from — not just the button's.
+    @Test func everyDraftThatLandsIsPublishedForUndo() async throws {
+        let (window, _, _) = await draftWindow()
+        window.changesMessageEdited(root: "/p", text: "wip")
+        _ = try await window.registryForTesting.dispatch(
+            name: "editor_changes_draft_message", params: .object(["root": .string("/p")]), origin: .agent,
+            caller: .test("production"), confirmation: nil)
+        let first = try #require(window.changesLastDraft)
+        #expect(first.root == "/p")
+        #expect(first.replaced == "wip")
+        _ = await window.changesDraft(root: "/p")
+        let second = try #require(window.changesLastDraft)
+        #expect(second.replaced == "Fix login")
+        #expect(second.serial != first.serial)
+    }
 }

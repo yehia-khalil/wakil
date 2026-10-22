@@ -673,6 +673,9 @@ public final class WindowModel {
     /// 3a-ii-b. Roots with a ✨ draft in flight, and the task each runs, so typing or ✕ can end it.
     public internal(set) var changesDrafting: Set<String> = []
     var changesDraftTasks: [String: Task<String, Error>] = [:]
+    /// The last draft that landed, by any path (✨, the agent, voice): what it replaced, for the view's
+    /// one ⌘Z (final review I4). `serial` tells two drafts with the same text apart.
+    public internal(set) var changesLastDraft: ChangesDraftReplacement?
     /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
@@ -2122,6 +2125,7 @@ public final class WindowModel {
         for task in changesDraftTasks.values { task.cancel() }
         changesDraftTasks = [:]
         changesDrafting = []
+        changesLastDraft = nil
         changesMessages = [:]
         changesHistory = [:]
         changesHistoryCursor = [:]

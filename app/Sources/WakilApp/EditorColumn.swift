@@ -75,8 +75,6 @@ struct EditorColumn: View {
     @State private var hovered: String?
     /// 3a-ii-b: ✨ under the pointer, which shows ✕ while its draft runs.
     @State private var draftHovered: String?
-    /// The window's undo: a draft that replaced text registers one step that puts it back (R3).
-    @Environment(\.undoManager) private var undoManager
     /// Bumped by every row the operator picks (`activate`): a commit in flight moves the selection
     /// to its new path only if no pick came after it started (Rule 6).
     @State private var picks = 0
@@ -835,11 +833,12 @@ struct EditorColumn: View {
             let drafting = changes.drafting.contains(key)
             Button {
                 if drafting { changes.cancelDraft(key); return }
+                // The keyboard comes back to the box only if it was there at the press: a draft that
+                // lands while the operator types elsewhere must not take their keys (final review I3).
+                let hadKeyboard = messageFocused == key
                 Task {
-                    guard let replaced = await changes.draft(key) else { return }
-                    let edit = changes.edit
-                    undoManager?.registerUndo(withTarget: ChangesDraftUndo.shared) { _ in edit(key, replaced) }
-                    undoManager?.setActionName("Draft Message")
+                    // The window registers the draft's ⌘Z (`changesLastDraft`), whoever asked for it.
+                    guard await changes.draft(key) != nil, hadKeyboard, messageFocused == key else { return }
                     focusMessage(key)
                 }
             } label: {
