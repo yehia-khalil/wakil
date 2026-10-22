@@ -60,6 +60,7 @@ private func apiWindow() async -> (WindowModel, ApiEntryContext) {
         db: nil, resumes: ResumeBroker())
     await window.refreshContext()
     await window.refreshSettings()
+    _ = await window.layoutForTesting.open(kind: "api", title: apiPaneTitle(entry: "orders-api"))
     await window.panesForTesting.openApi(
         paneId: "api-1", entry: "orders-api", environment: "dev",
         origin: "https://x.example", credentialed: false, entries: ["orders-api"])
@@ -78,6 +79,9 @@ private func apiWindow() async -> (WindowModel, ApiEntryContext) {
         #expect(await window.panesForTesting.apiDraft(paneId: "api-1").entry == "orders")
         #expect(await ctx.count("list_apis") > before)
         #expect(await window.panesForTesting.apiSnapshot(paneId: "api-1").entries == ["orders"])
+        // W8: the pane's title follows its entry.
+        let titles = await window.layoutForTesting.snapshot().panes.map(\.title)
+        #expect(titles == [apiPaneTitle(entry: "orders")])
         // Only what was set is sent.
         let sent = await ctx.lastArguments("update_api_entry")
         #expect(sent["newName"] == .string("orders"))
@@ -124,6 +128,23 @@ private func apiWindow() async -> (WindowModel, ApiEntryContext) {
             projectPath: "/p/project.json", environment: "dev", name: "billing") == nil)
         #expect(await ctx.count("list_apis") > before)
         #expect(await window.panesForTesting.apiDraft(paneId: "api-1").entry == "orders-api")
+    }
+
+    @Test func aUiDatabaseUpdateRefreshesTheDatabaseList() async throws {
+        let (window, _) = await apiWindow()
+        func listings() async throws -> Int {
+            try await window.registryForTesting.journalEntries().filter { $0.action == "db_list_databases" }.count
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        let before = try await listings()
+        _ = await window.updateDatabase(
+            projectPath: "/p/project.json", environment: "dev", name: "core", newName: "main")
+        var seen = false
+        for _ in 0..<100 where !seen {
+            seen = try await listings() > before
+            if !seen { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(seen)
     }
 
     @Test func updateDatabaseSendsOnlyWhatIsSet() async throws {

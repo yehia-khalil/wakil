@@ -1672,6 +1672,7 @@ public final class WindowModel {
     /// TEST-ONLY: the registry this window journals into, so a test can
     /// read back what `send` recorded (2d-i's `identifiers_resolved`).
     var registryForTesting: ActionRegistry { registry }
+    var layoutForTesting: LayoutStore { layout }
 
     /// TEST-ONLY: puts a settings tree in place, or clears it as
     /// `invalidateForOrgChange` does.
@@ -3232,7 +3233,11 @@ public final class WindowModel {
                 name: action, params: .object(params), origin: .ui,
                 caller: DispatchCaller(place: self.place, session: nil), confirmation: nil)
             if active {
-                if let old = renamedFrom, let new = newName { await panes.renameApiEntry(from: old, to: new) }
+                if let old = renamedFrom, let new = newName {
+                    for id in await panes.renameApiEntry(from: old, to: new) {
+                        await layout.retitle(id: id, to: apiPaneTitle(entry: new))
+                    }
+                }
                 await apiResolver?.reresolve(environment: environment)
                 if apiResolver != nil { await refreshLayout() }
             }
