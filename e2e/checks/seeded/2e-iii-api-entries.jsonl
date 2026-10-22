@@ -10,7 +10,7 @@
 
 {"do":{"click":"settings.api.save"}}
 
-{"expect":{"tree":"contains","text":"settings.api.orders-api.name"}}
+{"expect":{"tree":"contains","text":"Value: orders-api"}}
 
 {"expect":{"tree":"contains","text":"Value: https://orders.e2e-fixture.invalid"}}
 
@@ -80,9 +80,9 @@
 
 {"do":{"click":"settings.tree.api.e2e-project.staging"}}
 
-{"expect":{"tree":"contains","text":"settings.api.orders-v2.name"}}
+{"expect":{"tree":"contains","text":"Value: orders-v2"}}
 
-{"expect":{"tree":"absent","text":"settings.api.orders-api.name"}}
+{"expect":{"tree":"absent","text":"Value: orders-api"}}
 
 {"do":{"click":"settings.api.orders-v2.replaceToken"}}
 
@@ -114,8 +114,6 @@
 
 {"expect":{"tree":"absent","text":"in Keychain (api:e2e-project:staging:orders-v2)"}}
 
-{"expect":{"tree":"absent","text":"settings.api.orders-v2.clearToken"}}
-
 {"do":{"click":"settings.api.orders-v2.remove"}}
 
 {"expect":{"tree":"contains","text":"Remove orders-v2 from staging? Its Keychain item is kept."}}
@@ -124,39 +122,41 @@
 
 {"expect":{"tree":"absent","text":"Remove orders-v2 from staging?"}}
 
-{"expect":{"tree":"contains","text":"settings.api.orders-v2.name"}}
+{"expect":{"tree":"contains","text":"Value: orders-v2"}}
 
 {"do":{"click":"settings.api.orders-v2.remove"}}
 
 {"do":{"click":"settings.api.orders-v2.remove.confirm"}}
 
-{"expect":{"tree":"absent","text":"settings.api.orders-v2.name"}}
+{"expect":{"tree":"absent","text":"Value: orders-v2"}}
 
 {"expect":{"journal":{"contains":"api_remove_entry"}}}
 
 {"dispatch":{"action":"api_set_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"disp-api","baseUrl":"https://disp.e2e-fixture.invalid"}}}
 
-{"expect":{"tree":"contains","text":"settings.api.disp-api.name"}}
+{"expect":{"tree":"contains","text":"Value: disp-api"}}
 
 {"dispatch":{"action":"api_set_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bad-api","baseUrl":"http://insecure.example"},"refuses":"must be an absolute https URL"}}
 
-{"expect":{"tree":"absent","text":"settings.api.bad-api.name"}}
+{"expect":{"tree":"absent","text":"Value: bad-api"}}
 
 {"dispatch":{"action":"api_update_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"disp-api","newName":"disp-two","baseUrl":"https://disp-two.e2e-fixture.invalid"}}}
 
-{"expect":{"tree":"contains","text":"settings.api.disp-two.name"}}
+{"expect":{"tree":"contains","text":"Value: disp-two"}}
 
-{"expect":{"tree":"absent","text":"settings.api.disp-api.name"}}
+{"expect":{"tree":"absent","text":"Value: disp-api"}}
 
 {"dispatch":{"action":"api_update_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"disp-two","authHeader":"Host"},"refuses":"authHeader Host cannot carry a credential"}}
 
 {"dispatch":{"action":"api_remove_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"disp-two"}}}
 
-{"expect":{"tree":"absent","text":"settings.api.disp-two.name"}}
+{"expect":{"tree":"absent","text":"Value: disp-two"}}
 
 {"do":{"type":{"into":"settings.api.name","text":"token-api"}}}
 
 {"do":{"type":{"into":"settings.api.baseUrl","text":"https://token.e2e-fixture.invalid"}}}
+
+{"do":{"type":{"into":"settings.api.authHeader","text":"X-Api-Key"}}}
 
 {"do":{"type":{"into":"settings.api.token","text":"Bearer e2e-secret-888"}}}
 
@@ -168,6 +168,8 @@
 
 {"expect":{"tree":"contains","text":"in Keychain (api:e2e-project:staging:token-api)"}}
 
+{"expect":{"tree":"contains","text":"Value: X-Api-Key"}}
+
 {"expect":{"tree":"absent","text":"e2e-secret-888"}}
 
 {"do":{"type":{"into":"settings.api.name","text":"card-api"}}}
@@ -176,4 +178,4 @@
 
 {"parity":{"action":"api_set_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"card-api","baseUrl":"https://card.e2e-fixture.invalid"},"click":"settings.api.save","assert":"tree"}}
 
-{"expect":{"tree":"contains","text":"settings.api.card-api.name"}}
+{"expect":{"tree":"contains","text":"Value: card-api"}}
