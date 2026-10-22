@@ -59,7 +59,8 @@ sub-phase reverses that part of the amendment.
    selected.
 3. **The Project page's Name** and **the Environment page's Name** are editable. Leaving the
    field saves it. A name in use, an empty name, or a name containing `/` is shown whole under
-   the field. The field keeps what was typed, and nothing is written (Rule 8).
+   the field. The field keeps what was typed, and nothing is written (Rule 8). Left by moving to
+   another page, the refusal shows in the window's status line instead.
 4. **Each project page and each environment page ends with Remove**: *Remove from this
    organisation* on a project, *Remove environment* on an environment.
    - Afterwards the tree selects the removed node's parent heading. This is the one place where
@@ -69,8 +70,12 @@ sub-phase reverses that part of the amendment.
 5. **A write in flight** shows a spinner on its control and can't be fired twice (Rule 5).
 6. **Elsewhere, renames are live:**
    - The place line, the environment chip and the project switcher all show the new name.
-   - The pane layout saved for the old name (`layouts/<org>/<project>@<env>.json`) moves to the
-     new name, so the panes come back.
+   - The pane layout saved for the old name (`layouts/<org>/<project>@<env>.json`, and each
+     conversation's under `conversations/<root>/`) moves to the new name, so the panes come back.
+   - What the window holds in memory moves too: open shells keep running, unsaved editor tabs
+     stay reachable, and a conversation on screen stays on screen.
+   - Removing a project or environment closes its shells. It is refused while the place holds an
+     unsaved editor tab; the refusal names the files and says to save or close them first.
 
 ## What it does not do
 
@@ -87,7 +92,9 @@ sub-phase reverses that part of the amendment.
 - In `internal/wakilcore`:
   - `CreateProject(org, folder, name)` writes `<folder>/.wakil/project.json` (name, org, one
     root at the folder) unless one exists. If one exists, its `org` must equal `org`: a file from
-    another org is refused under Invariant 4. Then it adds the registry row.
+    another org is refused under Invariant 4, and the row takes the file's own `name`, not the
+    `name` passed, so a renamed project added back comes back whole. Then it adds the registry
+    row, and answers the name it used.
   - `RenameProject(org, old, new)` writes project.json `name` and the registry key in one
     read-modify-write each. project.json is written first, and the registry is put back if the
     second write fails.
@@ -108,7 +115,8 @@ sub-phase reverses that part of the amendment.
 - The agent-pin refusal (call 6) is checked in the action, against the window's running agent
   sessions.
 - The layout file move is done by the window after a successful rename, through
-  `LayoutPersistence`.
+  `LayoutPersistence`; the in-memory canvases move through the seams a conversation adopts the
+  canvas by (`switchScope(to:adoptingFrom:)`, `TerminalStore.rehome`).
 
 **Settings UI.**
 - The two dimmed not-this-phase rows become live buttons:
@@ -134,7 +142,7 @@ sub-phase reverses that part of the amendment.
 ## Testing
 
 - **Go unit tests** for each of the six writers:
-  - unknown keys are kept, through `SaveProject`;
+  - known keys are kept; unknown keys drop, as `SaveProject` documents;
   - each refusal case;
   - the registry is put back when a rename fails halfway;
   - `active.json` follows a rename or a removal;
