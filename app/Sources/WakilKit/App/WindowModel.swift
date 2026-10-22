@@ -3225,10 +3225,11 @@ public final class WindowModel {
             && (environment == nil || scope.environment == environment)
     }
 
-    /// Lets go of every canvas this window holds for the place, so the next `activateLayout`
-    /// reads whatever is on disk instead of swapping the old one out and writing it back under
-    /// the name that is gone. A canvas on screen is dropped without a flush: `layoutScope` goes
-    /// to nil, and `activateLayout` has no outgoing arrangement to save.
+    /// Lets go of every canvas this window holds for a removed place, so the next `activateLayout`
+    /// reads whatever is on disk instead of swapping the removed one out and writing it back under
+    /// a name that is gone (a rename carries them instead: `carryScopes`). A canvas on screen is
+    /// dropped without a flush: `layoutScope` goes to nil, and `activateLayout` has no outgoing
+    /// arrangement to save.
     private func releaseLayouts(project: String, environment: String?) {
         let affected = { (scope: LayoutScope) in
             self.scopeIsAffected(scope, project: project, environment: environment)
@@ -3238,6 +3239,99 @@ public final class WindowModel {
         backgroundLayouts = backgroundLayouts.filter { !affected($0.key) }
         layoutNotesAwaitingReturn = layoutNotesAwaitingReturn.filter { !affected($0.key) }
         if let shown = layoutScope, affected(shown) { layoutScope = nil }
+    }
+
+    /// Every scope this window holds anything for in memory — an arrangement, pane contents, a
+    /// shell, or its own bookkeeping — that a rename or removal of the place touches.
+    private func scopesInMemory(project: String, environment: String?) async -> Set<LayoutScope> {
+        var all = await layout.scopes.union(panes.scopes).union(terminals.scopes)
+        all.formUnion(loadedLayoutScopes)
+        all.formUnion(scopesAwaitingRestore)
+        all.formUnion(backgroundLayouts.keys)
+        all.formUnion(layoutNotesAwaitingReturn.keys)
+        if let layoutScope { all.insert(layoutScope) }
+        return all.filter { scopeIsAffected($0, project: project, environment: environment) }
+    }
+
+    /// Carries everything this window holds in memory for a renamed place to the new name, through
+    /// the seams a conversation minted over the canvas adopts it by (`activateLayout`): each
+    /// arrangement, its panes' contents (an unsaved tab among them) and its running shells. Left
+    /// under the old key they were unreachable — a dev server's shell running unseen, a dirty tab a
+    /// quit would name under a place that no longer exists (final review Important 1).
+    ///
+    /// **The screen's scope goes last.** Each seam also puts its store's screen on the scope it
+    /// adopts into, so the stores end on the screen's new key; a rename that does not touch the
+    /// screen puts them back on it. Until then the stores show a canvas that is not the place's,
+    /// so the moves run under `layoutSwapInFlight`: the observation pump's refresh after the
+    /// rename's own dispatch would otherwise publish and commit a half-moved canvas — measured, an
+    /// empty one under load.
+    private func carryScopes(
+        project: String, environment: String?, renamed: (LayoutScope) -> LayoutScope
+    ) async {
+        let affected = await scopesInMemory(project: project, environment: environment)
+        guard !affected.isEmpty else { return }
+        let outerSwap = layoutSwapInFlight
+        layoutSwapInFlight = true
+        let screen = await panes.screenScope
+        let order = affected.filter { $0 != screen } + (affected.contains(screen) ? [screen] : [])
+        for from in order {
+            let to = renamed(from)
+            await layout.switchScope(to: to, adoptingFrom: from)
+            await panes.switchScope(to: to, adoptingFrom: from)
+            await terminals.rehome(from: from, to: to)
+        }
+        if !affected.contains(screen) {
+            await layout.switchScope(to: screen)
+            await panes.switchScope(to: screen)
+        }
+        func carried(_ scope: LayoutScope) -> LayoutScope { affected.contains(scope) ? renamed(scope) : scope }
+        loadedLayoutScopes = Set(loadedLayoutScopes.map(carried))
+        scopesAwaitingRestore = Set(scopesAwaitingRestore.map(carried))
+        backgroundLayouts = Dictionary(backgroundLayouts.map { (carried($0.key), $0.value) }) { new, _ in new }
+        layoutNotesAwaitingReturn = Dictionary(layoutNotesAwaitingReturn.map { (carried($0.key), $0.value) }) { new, _ in new }
+        layoutScope = layoutScope.map(carried)
+        layoutSwapInFlight = outerSwap
+        guard !outerSwap else { return }
+        // What a refresh skipped meanwhile, read now the canvas is the place's again.
+        await readLayoutSnapshot()
+        await refreshPanes()
+    }
+
+    /// Moves each agent of the renamed place that has no live session to the new name
+    /// (`PlaceAgent.place`), so its conversation — what the canvas on screen is filed under — and
+    /// its thread come along rather than vanishing with the old key. A live one cannot be here: the
+    /// rename is refused while an agent runs in the place (Invariant 5). One whose new place already
+    /// has an agent is left where it is.
+    private func carryAgents(project: String, environment: String?, renamed: (Place) -> Place) {
+        for (from, agent) in agents where agent.harness == nil && from.organization == organization
+            && from.project == project && (environment == nil || from.environment == environment)
+        {
+            let to = renamed(from)
+            guard agents[to] == nil else { continue }
+            agents[from] = nil
+            agent.place = to
+            agents[to] = agent
+        }
+    }
+
+    /// The refusal a removal gives while the place holds unsaved editor tabs, on screen or in any
+    /// canvas of it kept in memory (controller ruling, final review Important 1): removing it would
+    /// leave them where nothing reaches them. The files are named, whole (Rule 8).
+    private func unsavedTabsRefusal(removing name: String, project: String, environment: String?) async -> String? {
+        let organization = organization
+        let titles = await panes.editorDirtyTabTitles { scope in
+            scope.organization == organization && scope.project == project
+                && (environment == nil || scope.environment == environment)
+        }
+        guard !titles.isEmpty else { return nil }
+        return "\(name) has unsaved changes in \(titles.joined(separator: ", ")) — save or close them first."
+    }
+
+    /// Kills the shells of every canvas of a removed place: nothing can reach them any more.
+    private func closeShells(project: String, environment: String?) async {
+        for scope in await scopesInMemory(project: project, environment: environment) {
+            await terminals.close(scope: scope)
+        }
     }
 
     /// A refusal whose control is no longer on screen — a Settings Name field left by moving to
@@ -3257,7 +3351,8 @@ public final class WindowModel {
         return (name, nil)
     }
 
-    /// Renames a registered project. Its saved arrangements move with it, so the panes come back.
+    /// Renames a registered project. Its saved arrangements move with it, and so does what is in
+    /// memory — canvases, shells, unsaved tabs, an agent's conversation — so the panes come back.
     public func renameProject(_ old: String, to new: String) async -> String? {
         // What is on screen is saved first, so the move carries it.
         if let shown = layoutScope, scopeIsAffected(shown, project: old, environment: nil) {
@@ -3270,15 +3365,27 @@ public final class WindowModel {
         } catch {
             status = "layout move: \(error)"
         }
-        releaseLayouts(project: old, environment: nil)
+        // What is in memory follows the files, before the window reads the place back.
+        await carryScopes(project: old, environment: nil) {
+            LayoutScope(organization: $0.organization, project: new, environment: $0.environment,
+                        lineageRoot: $0.lineageRoot)
+        }
+        carryAgents(project: old, environment: nil) {
+            Place(organization: $0.organization, project: new, environment: $0.environment)
+        }
         await followDisk()
         return nil
     }
 
-    /// Removes a project from the registry; its folder is left alone.
+    /// Removes a project from the registry; its folder is left alone. Refused while any of its
+    /// canvases holds an unsaved tab; its shells are closed.
     public func removeProject(_ name: String) async -> String? {
+        if let refusal = await unsavedTabsRefusal(removing: name, project: name, environment: nil) {
+            return refusal
+        }
         let reply = await projectLifecycle("ctx_remove_project", ["name": .string(name)])
         if let error = reply.error { return error }
+        await closeShells(project: name, environment: nil)
         releaseLayouts(project: name, environment: nil)
         await followDisk()
         return nil
@@ -3296,7 +3403,8 @@ public final class WindowModel {
         return (nil, nil)
     }
 
-    /// Renames an environment. Its saved arrangement moves with it, so the panes come back.
+    /// Renames an environment. Its saved arrangements move with it, and what is in memory too, as
+    /// `renameProject`.
     public func renameEnvironment(
         project: String, projectPath: String, _ old: String, to new: String
     ) async -> String? {
@@ -3313,20 +3421,31 @@ public final class WindowModel {
         } catch {
             status = "layout move: \(error)"
         }
-        releaseLayouts(project: project, environment: old)
+        await carryScopes(project: project, environment: old) {
+            LayoutScope(organization: $0.organization, project: $0.project, environment: new,
+                        lineageRoot: $0.lineageRoot)
+        }
+        carryAgents(project: project, environment: old) {
+            Place(organization: $0.organization, project: $0.project, environment: new)
+        }
         await followDisk()
         return nil
     }
 
     /// Removes an environment; its file goes to the Trash. Removing the one on screen lands the
     /// window on the first that remains (`wakil-ctx` picks it), through the same swap as a switch.
+    /// Refused while it holds an unsaved tab; its shells are closed.
     public func removeEnvironment(
         project: String, projectPath: String, _ name: String
     ) async -> (receipt: String?, error: String?) {
+        if let refusal = await unsavedTabsRefusal(removing: name, project: project, environment: name) {
+            return (nil, refusal)
+        }
         let reply = await projectLifecycle(
             "ctx_remove_environment",
             ["project": .string(project), "projectPath": .string(projectPath), "name": .string(name)])
         if let error = reply.error { return (nil, error) }
+        await closeShells(project: project, environment: name)
         releaseLayouts(project: project, environment: name)
         await followDisk()
         return ("Removed \(name) — a copy of project.json is in the Trash", nil)
@@ -4547,6 +4666,9 @@ public final class WindowModel {
     /// replace a saved arrangement with an empty one. Read with the scope named, never through
     /// whatever `ScopeRouting.home` the caller carries.
     private func persistBackgroundLayouts() async {
+        // Mid-move, a scope's arrangement may be empty or already under its new key
+        // (`carryScopes`); the next dispatch writes whatever changed.
+        guard !layoutSwapInFlight else { return }
         for agent in agents.values where agent.place != place {
             guard let scope = agent.layoutScope, scope != layoutScope,
                   loadedLayoutScopes.contains(scope) else { continue }

@@ -488,6 +488,16 @@ public actor TerminalStore {
         await close(key: key(paneId))
     }
 
+    /// Every scope a shell is running in: what a rename of a project or an environment carries to
+    /// the new name (2e-ii).
+    public var scopes: Set<LayoutScope> { Set(sessions.keys.compactMap(\.scope)) }
+
+    /// Kills every shell opened in `scope` and waits for each: a removed project's or
+    /// environment's (2e-ii), whose canvas nothing can reach any more.
+    public func close(scope: LayoutScope) async {
+        for key in sessions.keys where key.scope == scope { await close(key: key) }
+    }
+
     /// Moves every shell opened in `outgoing` to `incoming`, for a scope whose panes moved
     /// wholesale (`PaneStore.switchScope(to:adoptingFrom:)`): a shell opened on the Landing
     /// keeps answering the operator's keys, and publishing into its pane, once the first turn

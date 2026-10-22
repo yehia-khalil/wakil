@@ -125,6 +125,15 @@ extension PaneStore {
         return out
     }
 
+    /// The title of every dirty editor tab in a scope `include` accepts, on screen or not, in
+    /// `everyScope`'s order: what removing a project or an environment would strand (2e-ii).
+    public func editorDirtyTabTitles(where include: @Sendable (LayoutScope) -> Bool) -> [String] {
+        everyScope(EditorPaneKind.self).filter { include($0.scope) }.flatMap { entry in
+            let titles = editorTabTitles(entry.contents.tabs)
+            return entry.contents.tabs.indices.filter { entry.contents.tabs[$0].dirty }.map { titles[$0] }
+        }
+    }
+
     /// **The one non-action path** (design-language §11: the editor's text surface is the one
     /// partial exception to dual-drive). The operator's keystrokes land here, debounced by the view;
     /// nothing else may call it. A tab gone or read-only is left alone.

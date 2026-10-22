@@ -203,6 +203,10 @@ public actor PaneStore {
     }
 
 
+    /// Every scope holding pane contents in memory, the one on screen among them: what a rename
+    /// of a project or an environment carries to the new name (2e-ii).
+    public var scopes: Set<LayoutScope> { Set(byScope.keys) }
+
     /// Makes `scope` the active set of panes, keeping the outgoing one.
     ///
     /// Called beside `LayoutStore.switchScope`, from

@@ -85,8 +85,10 @@ private func lifecycleWindow(saved: [(String, String, String)] = [])
     }
     let window = WindowModel.forTesting(
         scratchRoot: testScratchRoot, context: ContextStore(client: ctx), persistence: persistence)
+    // The window's own pane store: `registerStandardActions` installs the registry's screen scope
+    // from the store it is given, and a shell opens under that scope.
     await registerStandardActions(
-        into: window.registryForTesting, context: ctx, panes: PaneStore(kinds: PaneKinds.standard),
+        into: window.registryForTesting, context: ctx, panes: window.panesForTesting,
         db: nil, resumes: ResumeBroker())
     await window.refreshContext()
     return (window, ctx, persistence)
@@ -176,6 +178,109 @@ private func lifecycleWindow(saved: [(String, String, String)] = [])
         #expect(window.environment == "dev")
         // Nothing moved: the rename did not happen.
         #expect(persistence.load(for: scope("p", "dev")).snapshot != nil)
+    }
+
+    // MARK: Final review Important 1: what is in memory follows a rename, and a removal ends it
+
+    /// A dirty file tab, put straight into `scope`'s editor pane `editor-9`.
+    private func dirtyTab(_ window: WindowModel, in scope: LayoutScope, path: String) async {
+        let panes = window.panesForTesting
+        let shown = await panes.screenScope
+        if scope != shown { await panes.switchScope(to: scope) }
+        await panes.updateEditor(paneId: "editor-9", create: true) { s in
+            var t = EditorTab.file(path: path, root: "/p", text: "x", mtime: 1, language: "go")
+            t.text = "y"
+            s.tabs = [t]; s.active = 0
+        }
+        if scope != shown { await panes.switchScope(to: shown) }
+    }
+
+    @Test func renamingTheActiveEnvironmentKeepsItsShellRunning() async throws {
+        let (window, _, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        let pane = await window.openTerminalForTesting(path: NSTemporaryDirectory())
+        let pid = try #require(await window.terminals.pidForTesting(paneId: pane))
+
+        #expect(await window.renameEnvironment(project: "p", projectPath: "/p", "dev", to: "local") == nil)
+
+        // The same shell, reached under the new name: not a fresh one, and not orphaned.
+        #expect(await window.terminals.pidForTesting(paneId: pane) == pid)
+        #expect(kill(pid, 0) == 0)
+        await window.shutdown()
+    }
+
+    @Test func renamingTheActiveProjectKeepsADirtyTabReachable() async throws {
+        let (window, _, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        await dirtyTab(window, in: scope("p", "dev"), path: "/p/a.go")
+
+        #expect(await window.renameProject("p", to: "q") == nil)
+
+        let panes = window.panesForTesting
+        #expect(await panes.screenScope == scope("q", "dev"))
+        let tab = await panes.updateEditor(in: scope("q", "dev"), paneId: "editor-9") { s in s.tabs.first }
+        #expect(tab?.dirty == true)
+        #expect(await panes.editorDirtyTabsInHiddenScopes().isEmpty, "nothing left behind under the old name")
+    }
+
+    /// A project rename carries every environment's canvas, not only the one on screen.
+    @Test func renamingAProjectCarriesAHiddenEnvironmentsDirtyTab() async throws {
+        let (window, _, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        await dirtyTab(window, in: scope("p", "stage"), path: "/p/b.go")
+
+        #expect(await window.renameProject("p", to: "q") == nil)
+
+        let hidden = await window.panesForTesting.editorDirtyTabsInHiddenScopes()
+        #expect(hidden.map(\.scope) == [scope("q", "stage")])
+        #expect(await window.panesForTesting.screenScope == scope("q", "dev"))
+    }
+
+    /// Shown in a conversation (a pane opened mints one): the rename keeps the conversation, its
+    /// panes and its saved file, rather than landing on the project's seed.
+    @Test func renamingTheActiveProjectKeepsTheConversationOnScreen() async throws {
+        let (window, _, persistence) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        #expect(await window.openPane(kind: "db"))
+        let root = try #require(window.lineageRoot)
+        #expect(window.layoutSnapshot.panes.count == 2)
+
+        #expect(await window.renameProject("p", to: "q") == nil)
+
+        #expect(window.lineageRoot == root)
+        #expect(window.layoutSnapshot.panes.count == 2)
+        let moved = LayoutScope(organization: "test-org", project: "q", environment: "dev", lineageRoot: root)
+        #expect(persistence.load(for: moved).snapshot?.panes.count == 2)
+    }
+
+    @Test func removingTheActiveEnvironmentClosesItsShells() async throws {
+        let (window, _, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        let pane = await window.openTerminalForTesting(path: NSTemporaryDirectory())
+        let pid = try #require(await window.terminals.pidForTesting(paneId: pane))
+
+        #expect(await window.removeEnvironment(project: "p", projectPath: "/p", "dev").error == nil)
+
+        #expect(kill(pid, 0) == -1, "the removed place's shell was reaped")
+        await window.shutdown()
+    }
+
+    /// Controller ruling: a removal would strand unsaved work, so it is refused, naming the files.
+    @Test func removingAnEnvironmentWithAnUnsavedTabIsRefusedNamingIt() async throws {
+        let (window, ctx, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        await dirtyTab(window, in: scope("p", "dev"), path: "/p/a.go")
+
+        let result = await window.removeEnvironment(project: "p", projectPath: "/p", "dev")
+
+        #expect(result.error?.contains("a.go") == true)
+        #expect(result.error?.contains("save or close them first") == true)
+        #expect(await ctx.count("remove_environment") == 0, "nothing was removed")
+        #expect(window.environment == "dev")
+    }
+
+    @Test func removingAProjectWithAnUnsavedTabInAHiddenEnvironmentIsRefused() async throws {
+        let (window, ctx, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        await dirtyTab(window, in: scope("p", "stage"), path: "/p/b.go")
+
+        let error = await window.removeProject("p")
+
+        #expect(error?.contains("b.go") == true)
+        #expect(await ctx.count("remove_project") == 0)
     }
 
     /// Minor 3: a Name field left by moving to another page is gone when its refusal lands, so

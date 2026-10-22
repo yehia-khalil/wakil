@@ -830,16 +830,41 @@ private func oneNamedPane(_ title: String) -> LayoutSnapshot {
     #expect(store.load(for: scope("personal", "b", "dev")).snapshot == nil)
 }
 
-@Test func renamingLeavesConversationsAlone() throws {
+/// A conversation's arrangement is filed under its project and environment too, so a rename moves
+/// it: a renamed place shown in a conversation comes back with that conversation's panes (final
+/// review Important 1), and a conversation of another project is left where it lies.
+@Test func renamingAProjectMovesItsConversationsFiles() throws {
     let directory = scratch()
     defer { try? FileManager.default.removeItem(at: directory) }
     let store = LayoutPersistence(directory: directory)
-    let conversation = LayoutScope(
-        organization: "personal", project: "booking", environment: "dev", lineageRoot: "root-1")
-    try store.save(oneNamedPane("chat"), for: conversation)
+    func chat(_ project: String, _ environment: String, _ root: String) -> LayoutScope {
+        LayoutScope(organization: "personal", project: project, environment: environment, lineageRoot: root)
+    }
+    try store.save(oneNamedPane("dev chat"), for: chat("booking", "dev", "root-1"))
+    try store.save(oneNamedPane("prod chat"), for: chat("booking", "prod", "root-2"))
+    try store.save(oneNamedPane("other"), for: chat("booking-2", "dev", "root-1"))
 
     try store.renameProject(organization: "personal", from: "booking", to: "reservations")
+
+    #expect(store.load(for: chat("reservations", "dev", "root-1")).snapshot == oneNamedPane("dev chat"))
+    #expect(store.load(for: chat("reservations", "prod", "root-2")).snapshot == oneNamedPane("prod chat"))
+    #expect(store.load(for: chat("booking", "dev", "root-1")).snapshot == nil)
+    #expect(store.load(for: chat("booking-2", "dev", "root-1")).snapshot == oneNamedPane("other"))
+}
+
+@Test func renamingAnEnvironmentMovesItsConversationsFiles() throws {
+    let directory = scratch()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = LayoutPersistence(directory: directory)
+    func chat(_ environment: String, _ root: String) -> LayoutScope {
+        LayoutScope(organization: "personal", project: "booking", environment: environment, lineageRoot: root)
+    }
+    try store.save(oneNamedPane("dev chat"), for: chat("dev", "root-1"))
+    try store.save(oneNamedPane("prod chat"), for: chat("prod", "root-1"))
+
     try store.renameEnvironment(organization: "personal", project: "booking", from: "dev", to: "local")
 
-    #expect(store.load(for: conversation).snapshot == oneNamedPane("chat"))
+    #expect(store.load(for: chat("local", "root-1")).snapshot == oneNamedPane("dev chat"))
+    #expect(store.load(for: chat("dev", "root-1")).snapshot == nil)
+    #expect(store.load(for: chat("prod", "root-1")).snapshot == oneNamedPane("prod chat"))
 }
