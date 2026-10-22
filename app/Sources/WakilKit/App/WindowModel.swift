@@ -434,6 +434,8 @@ public final class WindowModel {
     public internal(set) var ghostTextEnabled = false
     /// The organisation's fast-path switch (3b-ix), as the last rebuild read it. Off until a tree has been read.
     public internal(set) var fastPathEnabled = false
+    /// The organisation's commit-drafts switch (3a-ii-b), read with the quick tasks.
+    public internal(set) var commitDraftsEnabled = false
     private let panes: PaneStore
     private let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per

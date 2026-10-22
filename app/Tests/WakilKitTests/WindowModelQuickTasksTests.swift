@@ -287,6 +287,29 @@ private func makeSettingsWindow(
         #expect(model.fastPathEnabled == true)
     }
 
+    @Test func commitDraftsFollowsTheOrgSwitch() async {
+        func tree(_ drafts: JSONValue?) -> JSONValue {
+            var org: [String: JSONValue] = ["id": .string("initech"), "quickProvider": .string("qwen")]
+            if let drafts { org["commitDrafts"] = drafts }
+            return .object([
+                "org": .object(org),
+                "providers": .array([.object([
+                    "id": .string("qwen"), "kind": .string("local"), "baseURL": .string("http://127.0.0.1:8012"),
+                ])]),
+                "projects": .array([]),
+            ])
+        }
+        let off = await makeWindow(tree: tree(.bool(false)), providerId: "qwen") { _, _ in
+            ScriptedQuickModel(serves: [.respond], reply: "x")
+        }
+        #expect(off.commitDraftsEnabled == false)
+        // A tree from before 3a-ii-b carries no switch: on.
+        let unset = await makeWindow(tree: tree(nil), providerId: "qwen") { _, _ in
+            ScriptedQuickModel(serves: [.respond], reply: "x")
+        }
+        #expect(unset.commitDraftsEnabled == true)
+    }
+
     @Test func savingASwitchDispatchesUpdateOrgWithABoolean() async throws {
         let backend = QuickBackend(tree: treeJSON(quick: "qwen", ghost: true))
         let model = try await makeSettingsWindow(backend: backend) { _, _ in

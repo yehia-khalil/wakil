@@ -22,6 +22,7 @@ type ConfigTreeOrg struct {
 	GitEmail        string `json:"gitEmail"`
 	GhostText       bool   `json:"ghostText"`
 	FastPath        bool   `json:"fastPath"`
+	CommitDrafts    bool   `json:"commitDrafts"`
 }
 
 // ConfigTreeProvider is a provider binding as the settings tree draws it.
@@ -206,6 +207,7 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 	}
 	tree.Org.GhostText = resolveOrgSwitch(record.GhostText, app.Editor.Resolved().GhostText)
 	tree.Org.FastPath = resolveOrgSwitch(record.FastPath, quickProviderIsLocal(org, record.QuickProvider))
+	tree.Org.CommitDrafts = resolveOrgSwitch(record.CommitDrafts, true)
 
 	providers, skipped, err := listProvidersFor(org)
 	if err != nil {
