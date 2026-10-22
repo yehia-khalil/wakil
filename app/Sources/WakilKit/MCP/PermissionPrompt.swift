@@ -215,6 +215,9 @@ public let operatorOnlyActions: Set<String> = [
 ///   would otherwise step inside with the operator's Enter substituted for
 ///   its own. Named `term_propose` explicitly, so the sentence also says
 ///   what to do instead rather than only what it may not do.
+/// - The six project and environment actions (2e-ii): an agent's place is fixed
+///   (Invariant 5), and these rewrite the registry and project files it stands
+///   in. Not the org family's sentence, which is about Invariant 4.
 private func operatorOnlyDenialMessage(toolName: String, action: String) -> String {
     switch action {
     case "session_set_provider", "ctx_set_provider":
@@ -223,6 +226,13 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
     case "ctx_set_project", "ctx_set_environment":
         return "\(toolName): An agent's place is fixed when its session starts (Invariant 5). "
             + "Tell the operator which place the work needs; they can start an agent there."
+    case "ctx_create_project", "ctx_rename_project", "ctx_remove_project",
+         "ctx_create_environment", "ctx_rename_environment", "ctx_remove_environment":
+        return "\(toolName): only the operator adds, renames and removes projects and "
+            + "environments. An agent's place is fixed when its session starts (Invariant 5), "
+            + "and these rewrite the registry and the project files it stands in. You may READ "
+            + "them: ctx_config_tree answers every project and environment. Ask the operator to "
+            + "do it in the settings pane (\u{2318},)."
     case "ctx_list_orgs", "ctx_list_machine_providers", "ctx_list_accounts":
         return "\(toolName): this session is scoped to one organisation. Enumerating every "
             + "organisation and config dir on this machine is not something a session scoped "

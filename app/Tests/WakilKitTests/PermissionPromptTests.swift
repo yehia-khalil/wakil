@@ -401,6 +401,26 @@ private func bridgeReply(toolName: String, input: JSONValue) async throws -> [St
     #expect(allowed.contains { $0.hasSuffix("term_open") })
 }
 
+// MARK: - Projects and environments are the operator's (2e-ii, Invariant 5)
+
+/// The six lifecycle actions get a sentence of their own: what they do, why the agent may not
+/// (Invariant 5), and where it can read instead. Must fail if any falls back to the org family's
+/// "creating an organisation" sentence, the `default:` the final review found them in.
+@Test func theAgentIsToldProjectsAndEnvironmentsAreTheOperators() {
+    for name in ["ctx_create_project", "ctx_rename_project", "ctx_remove_project",
+                 "ctx_create_environment", "ctx_rename_environment", "ctx_remove_environment"] {
+        let decision = permissionDecision(
+            toolName: "mcp__\(wakilShimServerName)__\(name)", knownActions: [name])
+        guard case .deny(let reason) = decision else {
+            Issue.record("\(name) must be operator-only, got \(decision)")
+            continue
+        }
+        #expect(reason.contains("adds, renames and removes projects and environments"), "\(name): got: \(reason)")
+        #expect(reason.contains("Invariant 5") && reason.contains("ctx_config_tree"), "\(name): got: \(reason)")
+        #expect(!reason.contains("creating an organisation"), "\(name) reused the org family: \(reason)")
+    }
+}
+
 // MARK: - The agent's place is fixed (background agents, Invariant 5)
 
 /// An agent's place (organisation, project, environment) is fixed when its
