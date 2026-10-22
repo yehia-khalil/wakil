@@ -77,8 +77,8 @@ inherits the machine's credentials; its only per-account feature binds a `gh` lo
    `Cloned to <path> — Add as project`, one click for the operator. The operator's own **Clone from a
    link…** clones and adds in one step. (Adding a project stays operator-only, Decision 30; a clone
    writes outside every root, which no agent file write may.)
-7. **Instruction edits apply to the next conversation** in that organisation and project: Claude
-   Code fixes its prompt when a session starts. The ✨ draft reads them at each press.
+7. *(Superseded by the operator, 2026-10-22 — see "Instruction edits apply from the agent's next
+   turn" below.)*
 8. **A gentle size warning** past about 2,000 words per box (all of it rides on every agent turn);
    nothing is refused.
 9. **Background fetch every 5 minutes** while an editor pane is open and the app is active, plus on
@@ -159,6 +159,14 @@ SSH keys page** (title suggested: `Wakil · <org> · <Mac name>`), and **Test co
     so where they disagree it is the one the agent read most recently.
 14. **The ✨ draft** (3a-ii-b) adds the organisation's and the project's Commits texts to its
     instructions, from the next press.
+15. **Instruction edits apply from the agent's next turn, in the same conversation** (operator,
+    2026-10-22). Saving a box marks every live agent in that organisation (or that project) as
+    holding stale instructions. Before its next turn — never during one — Wakil restarts that
+    agent's process with `--resume <its session>` and the new appended text, so the conversation
+    and its history carry on. The thread shows one quiet line: `Instructions updated — the agent
+    has the new ones from this turn.` *Probe first (the plan's first task):* that a resumed Claude
+    Code session takes a changed `--append-system-prompt`. If it does not, the spec is amended
+    before build.
 
 ### The agent and voice
 
@@ -334,6 +342,9 @@ the status re-read after every remote operation also reads `ahead`/`behind` (alr
   per project, appended after Wakil's rules at session start; the repository's `CLAUDE.md` stays
   the committed layer. *Reverse if:* the appended text is found to override Wakil's own rules in
   practice — then Wakil's rules go last.
-- **Phase map:** 3a-iii reworded to name clone and agent instructions; *Met* on its walk.
+- **Phase map:** 3a-iii reworded to name clone and agent instructions; *Met* on its walk. A new
+  row, **New conversation** (`session_new`: end this place's conversation and return to its
+  Landing — the path `WindowModel.sessionStarted`'s note records as owed), added by the operator
+  2026-10-22, not part of 3a-iii.
 - **operator-todo:** register the GitHub OAuth App and the GitLab.com application, and record their
   client IDs.
