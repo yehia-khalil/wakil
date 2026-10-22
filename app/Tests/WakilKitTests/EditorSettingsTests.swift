@@ -269,3 +269,23 @@ private actor GhostRecordingCaller: ToolCaller {
     let d = try #require(await registry.descriptor(named: "ctx_git_account_add"))
     #expect(d.audience == .operatorOnly)
 }
+
+/// 3a-iii-a: a token and a passphrase reach their tools but never the journal.
+@Test func gitSecretsNeverReachTheJournal() async throws {
+    let caller = GhostRecordingCaller()
+    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "git-secrets")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    _ = try await registry.dispatch(
+        name: "ctx_git_token_set", params: .object(["id": .string("o"), "host": .string("github.com"), "token": .string("tok-SECRET-1")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_git_key_passphrase_set",
+        params: .object(["id": .string("o"), "host": .string("github.com"), "passphrase": .string("pass-SECRET-2")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    #expect(await caller.arguments.count == 2)
+    let journal = try String(contentsOf: try #require(FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?
+        .compactMap { $0 as? URL }.first { $0.pathExtension == "jsonl" }), encoding: .utf8)
+    #expect(!journal.contains("tok-SECRET-1"))
+    #expect(!journal.contains("pass-SECRET-2"))
+}

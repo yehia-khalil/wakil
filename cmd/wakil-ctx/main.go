@@ -164,6 +164,27 @@ type updateOrgArgs struct {
 	PullStrategy    *string `json:"pullStrategy,omitempty" jsonschema:"how Pull and Sync integrate: rebase, merge or ff-only"`
 }
 
+type gitSecretArgs struct {
+	ID         string `json:"id" jsonschema:"the organisation's id"`
+	Host       string `json:"host" jsonschema:"the git host"`
+	Comment    string `json:"comment,omitempty" jsonschema:"a generated key's comment"`
+	Token      string `json:"token,omitempty" jsonschema:"the token to keep"`
+	Passphrase string `json:"passphrase,omitempty" jsonschema:"the picked key's passphrase"`
+}
+
+type gitSSHKeysOut struct {
+	Keys []wakilcore.SSHKeyListing `json:"keys"`
+}
+
+type gitKeyOut struct {
+	PublicKey string `json:"publicKey"`
+	Path      string `json:"path"`
+}
+
+type gitTestOut struct {
+	User string `json:"user"`
+}
+
 type gitHostSuggestionsOut struct {
 	Hosts []wakilcore.GitHostSuggestion `json:"hosts"`
 }
@@ -783,6 +804,45 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "git_host_suggestions", Description: "The hosts an organisation's project roots push to (each origin, ssh aliases resolved), the most used first, with how many roots use each. Read when an account is being added."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitHostSuggestionsOut, error) {
 			return nil, gitHostSuggestionsOut{Hosts: wakilcore.GitHostSuggestions(a.ID)}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_ssh_keys", Description: "The key pairs in ~/.ssh, by their public half's comment, and which need a passphrase."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitSSHKeysOut, error) {
+			return nil, gitSSHKeysOut{Keys: wakilcore.ListSSHKeys()}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_key_generate", Description: "Generate an ed25519 key for an organisation's account on one host, under the organisation's own folder; its passphrase goes to the Keychain. Answers the public key and the private key's path."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitSecretArgs) (*mcp.CallToolResult, gitKeyOut, error) {
+			pub, path, err := wakilcore.GenerateGitKey(a.ID, a.Host, a.Comment)
+			if err != nil {
+				return toolErr(err), gitKeyOut{}, nil
+			}
+			return nil, gitKeyOut{PublicKey: pub, Path: path}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_token_set", Description: "Keep an organisation's token for one host in the Keychain."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitSecretArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetGitToken(a.ID, a.Host, a.Token); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_key_passphrase_set", Description: "Keep the passphrase of a key an organisation picked from ~/.ssh in the Keychain."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitSecretArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetGitKeyPassphrase(a.ID, a.Host, a.Passphrase); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_account_test", Description: "Ask a host who an organisation's account there is: ssh -T with its key, or the provider's user API with its token. Answers the name, or the host's refusal."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitTestOut, error) {
+			user, err := wakilcore.TestGitAccount(ctx, a.ID, a.Host)
+			if err != nil {
+				return toolErr(err), gitTestOut{}, nil
+			}
+			return nil, gitTestOut{User: user}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_account_remove", Description: "Forget an organisation's git account for one host: its Keychain secrets go, and a key Wakil generated goes to the Trash."},

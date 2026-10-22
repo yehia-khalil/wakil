@@ -118,6 +118,8 @@ public let operatorOnlyActions: Set<String> = [
     // 3a-iii (Decision 44). Which account pushes for an organisation, and its secrets, are the
     // operator's: these move a credential boundary (Invariant 4).
     "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
+    "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set",
+    "ctx_git_account_test",
     // 2c-iii. The seventh member, and the one whose reason is NOT that the
     // agent could move a boundary by calling it — it is that the shell in
     // a terminal pane carries the active organisation, project and
@@ -236,7 +238,9 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "and these rewrite the registry and the project files it stands in. You may READ "
             + "them: ctx_config_tree answers every project and environment. Ask the operator to "
             + "do it in the settings pane (\u{2318},)."
-    case "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions":
+    case "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
+         "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set",
+         "ctx_git_account_test":
         return "\(toolName): only the operator adds and removes an organisation's git accounts: "
             + "they decide which account pushes and hold its secrets (Invariant 4). Ask the operator "
             + "to do it in Settings → Organisation → Git (\u{2318},)."

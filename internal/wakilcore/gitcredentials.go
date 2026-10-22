@@ -32,7 +32,12 @@ func RemoteInvocation(org string, a GitAccount, remote RemoteURL, route SSHRoute
 		if remote.User == "" && route.User != "" {
 			parts = append(parts, "-o", "User="+route.User)
 		}
-		inv.Env = append(inv.Env, "GIT_SSH_COMMAND="+strings.Join(parts, " "))
+		quoted := make([]string, len(parts))
+		for i, p := range parts {
+			quoted[i] = shellQuote(p)
+		}
+		// git runs GIT_SSH_COMMAND through a shell: every part is quoted, so a key path with spaces holds.
+		inv.Env = append(inv.Env, "GIT_SSH_COMMAND="+strings.Join(quoted, " "))
 		if v, _ := SecretGetFor(org, gitPassphraseRef(host)); v != "" {
 			inv.Env = append(inv.Env,
 				"SSH_ASKPASS="+wakilBin+" --org "+org+" git-askpass --host "+host, "SSH_ASKPASS_REQUIRE=force")
@@ -77,3 +82,13 @@ func GitCredentialUsername(a GitAccount) string {
 // GitTokenRef and GitPassphraseRef name an account's Keychain items (Invariant 4's wakil:<org>:<ref>).
 func GitTokenRef(host string) string      { return gitTokenRef(host) }
 func GitPassphraseRef(host string) string { return gitPassphraseRef(host) }
+
+// shellQuote leaves a plain word as it is and single-quotes anything else.
+func shellQuote(s string) string {
+	if s != "" && strings.IndexFunc(s, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-_./=:@,+", r))
+	}) < 0 {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}

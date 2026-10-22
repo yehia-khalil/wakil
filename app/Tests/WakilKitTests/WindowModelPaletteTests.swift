@@ -961,6 +961,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
     // 3a-iii-a: the git account tools, operator-only.
     "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
+    "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set", "ctx_git_account_test",
     "db_cancel", "db_classify_statement", "db_describe_table", "db_list_databases", "db_list_tables", "db_page",
     "db_read_table", "db_refetch", "db_remove_database", "db_render_update", "db_run_mutation",
     "db_run_query", "db_set_dsn",

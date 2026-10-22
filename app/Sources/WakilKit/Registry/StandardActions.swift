@@ -953,11 +953,16 @@ public func registerStandardActions(
 
     // 3a-iii-a: an organisation's git accounts. Operator-only, like every Settings write
     // (Decision 30); the secrets travel through their own tools, never these.
-    for (name, tool, keys, required) in [
+    for (name, tool, keys, required, secrets) in [
         ("ctx_git_account_add", "git_account_add",
-         ["id", "host", "provider", "method", "user", "keyPath", "username"], ["id", "host", "provider", "method"]),
-        ("ctx_git_account_remove", "git_account_remove", ["id", "host"], ["id", "host"]),
-        ("ctx_git_host_suggestions", "git_host_suggestions", ["id"], ["id"]),
+         ["id", "host", "provider", "method", "user", "keyPath", "username"], ["id", "host", "provider", "method"], [String]()),
+        ("ctx_git_account_remove", "git_account_remove", ["id", "host"], ["id", "host"], []),
+        ("ctx_git_host_suggestions", "git_host_suggestions", ["id"], ["id"], []),
+        ("ctx_git_ssh_keys", "git_ssh_keys", ["id"], ["id"], []),
+        ("ctx_git_key_generate", "git_key_generate", ["id", "host", "comment"], ["id", "host", "comment"], []),
+        ("ctx_git_token_set", "git_token_set", ["id", "host", "token"], ["id", "host", "token"], ["token"]),
+        ("ctx_git_key_passphrase_set", "git_key_passphrase_set", ["id", "host", "passphrase"], ["id", "host", "passphrase"], ["passphrase"]),
+        ("ctx_git_account_test", "git_account_test", ["id", "host"], ["id", "host"], []),
     ] {
         await registry.register(Action(
             name: name,
@@ -965,6 +970,11 @@ public func registerStandardActions(
                 "ctx_git_account_add": "Record an organisation's git account for one host (ssh, token or signin). Operator-only.",
                 "ctx_git_account_remove": "Forget an organisation's git account for one host, with its secrets. Operator-only.",
                 "ctx_git_host_suggestions": "The hosts an organisation's projects push to, most used first. Operator-only.",
+                "ctx_git_ssh_keys": "The key pairs in ~/.ssh, by comment, and which need a passphrase. Operator-only.",
+                "ctx_git_key_generate": "Generate an organisation's ssh key for one host; answers the public key. Operator-only.",
+                "ctx_git_token_set": "Keep an organisation's token for one host in the Keychain. Operator-only.",
+                "ctx_git_key_passphrase_set": "Keep the passphrase of an organisation's picked key in the Keychain. Operator-only.",
+                "ctx_git_account_test": "Ask a host who an organisation's account there is. Operator-only.",
             ][name] ?? name,
             kind: .control,
             audience: .operatorOnly,
@@ -983,7 +993,8 @@ public func registerStandardActions(
                 return try await callChecked(
                     context, tool: tool, arguments: .object(arguments), action: name,
                     timeout: MCPClient.readReplyTimeout)
-            }))
+            },
+            secretParams: Set(secrets)))
     }
 
     await registry.register(Action(
