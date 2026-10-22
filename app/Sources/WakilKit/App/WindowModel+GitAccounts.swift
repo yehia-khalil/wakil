@@ -19,6 +19,8 @@ extension WindowModel {
         do {
             let reply = try await registry.dispatch(name: name, params: .object(p), origin: .ui,
                                                     caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            // The tool's own fields sit under `structuredContent` in the MCP result.
+            if case .object(let o) = reply, let fields = o["structuredContent"] { return (fields, nil) }
             return (reply, nil)
         } catch {
             return (nil, statusDescribingFailure(name, error))

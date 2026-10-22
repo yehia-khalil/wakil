@@ -373,7 +373,12 @@ struct GitAccountSheet: View {
         defer { working = false }
         let r = await git.generateKey(host, "\(org.gitEmail.isEmpty ? org.id : org.gitEmail) (Wakil · \(org.id))")
         if let e = r.error { message = e; return }
-        if let e = await git.add(host, provider ?? .other, .ssh, r.path ?? "", "") { message = e; return }
+        // No account without the key it is for: an answer missing either records nothing.
+        guard let path = r.path, !path.isEmpty, r.publicKey != nil else {
+            message = "Generating the key gave no key back; nothing was saved"
+            return
+        }
+        if let e = await git.add(host, provider ?? .other, .ssh, path, "") { message = e; return }
         publicKey = r.publicKey
         message = nil
     }

@@ -72,7 +72,18 @@ func GenerateGitKey(org, host, comment string) (string, string, error) {
 	}
 	path := filepath.Join(keys, strings.ToLower(host)+"_ed25519")
 	if fileExists(path) {
-		return "", "", UserError("a key for " + host + " already exists: Remove or Replace the account first")
+		// A key an account uses stays; one no account uses (left by an earlier Generate) goes to
+		// the Trash, so Generate can make another.
+		if a, ok := GitAccountFor(org, host); ok && a.KeyPath == path {
+			return "", "", UserError("a key for " + host + " already exists: Remove or Replace the account first")
+		}
+		for _, p := range []string{path, path + ".pub"} {
+			if fileExists(p) {
+				if out, err := exec.Command(trashBin, "-s", p).CombinedOutput(); err != nil {
+					return "", "", UserError("could not move " + p + " to the Trash: " + strings.TrimSpace(string(out)))
+				}
+			}
+		}
 	}
 	secret := make([]byte, 32)
 	if _, err := rand.Read(secret); err != nil {

@@ -112,3 +112,32 @@ func TestSSHCommandQuotesAKeyPathWithSpaces(t *testing.T) {
 		t.Fatalf("not quoted: %v", inv.Env)
 	}
 }
+
+// Walk 3a-iii row 8: a key left behind with no account using it (an earlier Generate whose account
+// did not keep its path) goes to the Trash, and Generate makes a new one. A key an account uses
+// still refuses.
+func TestGenerateGitKeyReplacesAnUnusedKey(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	rec := stubTrashCopying(t, "exit 0")
+	first, path, err := GenerateGitKey("initech", "github.com", "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The stub copies rather than moves; remove the pair as the real Trash would.
+	trashBin = filepath.Join(t.TempDir(), "mv")
+	os.WriteFile(trashBin, []byte("#!/bin/sh\nfor a; do last=\"$a\"; done\nmv \"$last\" "+rec+"/\n"), 0o755)
+	second, _, err := GenerateGitKey("initech", "github.com", "c")
+	if err != nil || second == first {
+		t.Fatalf("not replaced: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(rec, "github.com_ed25519")); err != nil {
+		t.Fatal("the old key did not go to the Trash")
+	}
+	if err := AddGitAccount("initech", GitAccount{Host: "github.com", Provider: "github", Method: "ssh", KeyPath: path}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := GenerateGitKey("initech", "github.com", "c"); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("a key in use was replaced: %v", err)
+	}
+}
