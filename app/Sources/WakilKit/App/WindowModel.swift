@@ -3365,6 +3365,22 @@ public final class WindowModel {
         status = text
     }
 
+    /// 3a-iii-a: Clone from a link…, then the clone becomes a project as a chosen folder does.
+    public func cloneProject(link: String, into folder: String) async -> (name: String?, error: String?) {
+        let reply: JSONValue
+        do {
+            reply = try await registry.dispatch(
+                name: "editor_clone", params: .object(["url": .string(link), "folder": .string(folder)]),
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        } catch {
+            return (nil, statusDescribingFailure("editor_clone", error))
+        }
+        guard case .object(let o) = reply, case .string(let path)? = o["path"] else {
+            return (nil, "editor_clone: the clone answered no path")
+        }
+        return await createProject(folder: path)
+    }
+
     /// Adds a project from a folder. The name defaults to the folder's last path component.
     public func createProject(folder: String) async -> (name: String?, error: String?) {
         let name = URL(fileURLWithPath: folder).lastPathComponent

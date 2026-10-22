@@ -125,8 +125,15 @@ func remote(root string) (*wakilcore.GitRemote, *mcp.CallToolResult) {
 }
 
 type cloneArg struct {
-	URL  string `json:"url" jsonschema:"the repository's link: https://…, git@host:… or ssh://…"`
-	Dest string `json:"dest" jsonschema:"absolute folder to clone into; it must not exist"`
+	URL      string `json:"url" jsonschema:"the repository's link: https://…, git@host:… or ssh://…"`
+	Folder   string `json:"folder,omitempty" jsonschema:"absolute folder to clone under; default the last one"`
+	Operator bool   `json:"operator,omitempty" jsonschema:"true when the operator asked (any folder); false for the agent"`
+}
+
+type cloneOut struct {
+	Path     string `json:"path"`
+	Summary  string `json:"summary"`
+	Progress string `json:"progress,omitempty"`
 }
 
 func newServer() *mcp.Server {
@@ -245,17 +252,17 @@ func addWriteTools(s *mcp.Server) {
 			})
 	}
 
-	mcp.AddTool(s, &mcp.Tool{Name: "git_clone", Description: "Writes. Clones url into dest (an absolute folder that must not exist) with the organisation's account for its host; a failed clone leaves nothing behind."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a cloneArg) (*mcp.CallToolResult, wakilcore.GitRemoteResult, error) {
+	mcp.AddTool(s, &mcp.Tool{Name: "git_clone", Description: "Writes. Clones url into folder/<repository name> with the organisation's account for its host; a failed clone leaves nothing behind. The operator may name any folder (it becomes the last clone folder); otherwise only the last one is allowed, and is the default."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a cloneArg) (*mcp.CallToolResult, cloneOut, error) {
 			org, err := wakilcore.CurrentOrg()
 			if err != nil {
-				return mcpx.ToolErr("wakil-git", err), wakilcore.GitRemoteResult{}, nil
+				return mcpx.ToolErr("wakil-git", err), cloneOut{}, nil
 			}
-			r, err := wakilcore.GitClone(ctx, org, a.URL, a.Dest, remoteOptions())
+			path, r, err := wakilcore.CloneInto(ctx, org, a.URL, a.Folder, a.Operator, remoteOptions())
 			if err != nil {
-				return mcpx.ToolErr("wakil-git", err), wakilcore.GitRemoteResult{}, nil
+				return mcpx.ToolErr("wakil-git", err), cloneOut{}, nil
 			}
-			return nil, r, nil
+			return nil, cloneOut{Path: path, Summary: r.Summary, Progress: r.Progress}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_stage", Description: "Writes. Runs `git add` on the given paths in one root."},

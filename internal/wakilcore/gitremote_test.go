@@ -285,3 +285,49 @@ func TestRepositoryUploadpackIsRefused(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestCloneIntoRecordsTheOperatorsFolderAndNamesTheCloneAfterTheRepository(t *testing.T) {
+	bare, _, _ := remoteFixture(t)
+	folder := t.TempDir()
+	dest, _, err := CloneInto(context.Background(), "initech", "file://"+bare, folder, true, GitRemoteOptions{AllowFileProtocol: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dest != filepath.Join(folder, "remote") {
+		t.Fatalf("dest = %s", dest)
+	}
+	o, _ := LoadOrgFor("initech")
+	if o.LastCloneFolder != folder {
+		t.Fatalf("last = %q", o.LastCloneFolder)
+	}
+}
+
+func TestTheAgentClonesOnlyIntoTheLastFolder(t *testing.T) {
+	bare, _, _ := remoteFixture(t)
+	if _, _, err := CloneInto(context.Background(), "initech", "file://"+bare, "", false, GitRemoteOptions{AllowFileProtocol: true}); err == nil ||
+		!strings.Contains(err.Error(), "choose a folder to clone into") {
+		t.Fatalf("no last folder: %v", err)
+	}
+	last := t.TempDir()
+	CloneInto(context.Background(), "initech", "file://"+bare, last, true, GitRemoteOptions{AllowFileProtocol: true})
+	elsewhere := t.TempDir()
+	if _, _, err := CloneInto(context.Background(), "initech", "file://"+bare, elsewhere, false, GitRemoteOptions{AllowFileProtocol: true}); err == nil ||
+		!strings.Contains(err.Error(), "the agent clones only into "+last) {
+		t.Fatalf("elsewhere: %v", err)
+	}
+	os.RemoveAll(filepath.Join(last, "remote"))
+	dest, _, err := CloneInto(context.Background(), "initech", "file://"+bare, "", false, GitRemoteOptions{AllowFileProtocol: true})
+	if err != nil || dest != filepath.Join(last, "remote") {
+		t.Fatalf("dest %s err %v", dest, err)
+	}
+}
+
+func TestRepositoryName(t *testing.T) {
+	for raw, want := range map[string]string{
+		"git@github.com:o/api.git": "api", "https://github.com/o/portal": "portal", "https://h/o/web/": "web", "file:///x/remote.git": "remote",
+	} {
+		if got := repositoryName(raw); got != want {
+			t.Errorf("%s = %q", raw, got)
+		}
+	}
+}

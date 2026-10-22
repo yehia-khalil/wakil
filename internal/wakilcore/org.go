@@ -59,6 +59,8 @@ type Org struct {
 	// rebase (the default when empty), merge or ff-only.
 	GitAccounts  []GitAccount `json:"gitAccounts,omitempty"`
 	PullStrategy string       `json:"pullStrategy,omitempty"`
+	// LastCloneFolder is the folder the operator last cloned into: the only one the agent may.
+	LastCloneFolder string `json:"lastCloneFolder,omitempty"`
 }
 
 const orgFileName = "org.json"

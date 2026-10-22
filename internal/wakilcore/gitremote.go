@@ -426,3 +426,48 @@ func GitClone(ctx context.Context, org, rawURL, dest string, opts GitRemoteOptio
 	}
 	return GitRemoteResult{Summary: "cloned into " + dest, Progress: lastProgress(stderr)}, nil
 }
+
+// repositoryName is the folder a clone of rawURL gets: its last path part without .git.
+func repositoryName(rawURL string) string {
+	p := strings.TrimRight(strings.TrimSpace(rawURL), "/")
+	if i := strings.LastIndexAny(p, "/:"); i >= 0 {
+		p = p[i+1:]
+	}
+	return strings.TrimSuffix(p, ".git")
+}
+
+// CloneInto clones rawURL into folder/<repository name>. The operator may name any folder, and it
+// becomes the organisation's last clone folder; the agent (operator false) may clone only into that
+// folder (call 6), and with none named it is the default. It answers the clone's path.
+func CloneInto(ctx context.Context, org, rawURL, folder string, operator bool, opts GitRemoteOptions) (string, GitRemoteResult, error) {
+	o, err := LoadOrgFor(org)
+	if err != nil {
+		return "", GitRemoteResult{}, err
+	}
+	last := o.LastCloneFolder
+	if folder == "" {
+		folder = last
+	}
+	if folder == "" {
+		return "", GitRemoteResult{}, UserError("choose a folder to clone into: + Add a project → Clone from a link…")
+	}
+	if !operator && folder != last {
+		return "", GitRemoteResult{}, UserError("the agent clones only into " + last)
+	}
+	name := repositoryName(rawURL)
+	if name == "" {
+		return "", GitRemoteResult{}, UserError("not a repository link: " + rawURL)
+	}
+	dest := filepath.Join(folder, name)
+	r, err := GitClone(ctx, org, rawURL, dest, opts)
+	if err != nil {
+		return "", r, err
+	}
+	if operator && folder != last {
+		if o, err := LoadOrgFor(org); err == nil {
+			o.LastCloneFolder = folder
+			SaveOrg(org, *o)
+		}
+	}
+	return dest, r, nil
+}

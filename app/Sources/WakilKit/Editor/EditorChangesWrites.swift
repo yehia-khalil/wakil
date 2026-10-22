@@ -364,6 +364,32 @@ func registerEditorChangesWrites(
             price: price))
     }
 
+    // 3a-iii-a: clone from a link. The operator's clone may go anywhere and becomes a project in
+    // WindowModel.cloneProject; the agent's goes only into the folder the operator last cloned into,
+    // and registers nothing — adding a project is the operator's (Decision 30, call 6).
+    await registry.register(Action(
+        name: "editor_clone",
+        description: "Clone a repository from a link (https://…, git@host:…) into the folder the operator last cloned into, "
+            + "with the organisation's account for its host: url; folder only as the operator's. Answers path. It does not add a "
+            + "project; ask the operator to add it. Allowed everywhere.",
+        kind: .mutate, audience: .agentReachable,
+        schema: .object(["type": .string("object"),
+                         "properties": .object(["url": .object(["type": .string("string")]),
+                                                "folder": .object(["type": .string("string")])]),
+                         "required": .array([.string("url")])]),
+        handler: { params in
+            let url = try requireString(params, "url", action: "editor_clone")
+            guard let git = gitStatus?.git else { throw StandardActionError.missingClient(action: "editor_clone", role: "git") }
+            let byOperator = ActionRegistry.dispatchOrigin == .ui
+            var args: [String: JSONValue] = ["url": .string(url), "operator": .bool(byOperator)]
+            if let folder = optionalString(params, "folder") { args["folder"] = .string(folder) }
+            let reply = fields(try await call(git, "git_clone", args, action: "editor_clone", timeout: gitRemoteReplyTimeout))
+            guard !byOperator, case .object(var o) = reply, case .string(let path)? = o["path"] else { return reply }
+            o["message"] = .string("Cloned to \(path) — Add as project in Settings → + Add a project")
+            return .object(o)
+        },
+        price: price))
+
     await rangeWrite(
         "editor_changes_stage_ranges", group: .changed,
         description: "Stage the selected lines of one changed file: path (absolute), ranges ([{start, end}], 1-based "
