@@ -66,7 +66,7 @@ slip Invariant 4's boundary exists to stop.
 10. **The agent and voice** use the same actions: "commit this as fix login" is an agent turn
     that calls `editor_changes_commit`.
 11. **Settings → Organisation → Git**: **Name** and **Email**, saved when the field is left
-    (Rule 2). The message box's hint names who will commit: `committing as you@initech.com`, or
+    (Rule 2). The message box's hint names who will commit: `committing as you@example.com`, or
     `committing as you@personal.com (from git config)` when the organisation sets none.
 
 ## What it does not do
