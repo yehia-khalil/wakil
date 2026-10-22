@@ -537,9 +537,9 @@ extension WakilWindow {
                     tree: model.settings,
                     failure: model.settingsFailure,
                     reload: { Task { await model.refreshSettings() } },
-                    saveOrganisationField: { field, value in
+                    saveOrganisationField: { field, value, organisation in
                         await model.saveOrganisationField(
-                            field, to: value, organisation: model.organization)
+                            field, to: value, organisation: organisation)
                     },
                     saveEditorSettings: { fields in await model.saveEditorSettings(fields) },
                     saveProjectEditorSettings: { path, fields in

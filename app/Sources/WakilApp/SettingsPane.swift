@@ -64,7 +64,9 @@ struct SettingsPane: View {
     /// **One field per call**, which is the read-modify-write rule made
     /// operational: sending all three would flush this pane's idea of the
     /// record over a hand edit made while it was open.
-    let saveOrganisationField: (WindowModel.OrganisationField, String) async -> String?
+    /// The organisation is the one the page was drawn for, not the window's at the moment of saving:
+    /// a field left as an org switch redraws the page saves into the organisation it was typed for.
+    let saveOrganisationField: (WindowModel.OrganisationField, String, String) async -> String?
     /// Saves app-wide editor fields (3b-v) and answers the refusal's sentence, or nil.
     var saveEditorSettings: ([String: JSONValue]) async -> String? = { _ in nil }
     /// Saves one project's editor fields: the project file's path, then the fields.
@@ -1218,7 +1220,7 @@ struct SettingsPane: View {
     ) -> some View {
         AgentInstructionBox(
             label: field.label, stored: storedValue(field, in: tree), placeholder: placeholder,
-            identifier: identifier, save: { await saveOrganisationField(field, $0) }, unseen: showUnseenRefusal)
+            identifier: identifier, save: { await saveOrganisationField(field, $0, tree.org.id) }, unseen: showUnseenRefusal)
             .id("\(identifier).\(tree.org.id)")
     }
 
@@ -1452,7 +1454,7 @@ struct SettingsPane: View {
                 get: { labels[tree.org.pullStrategy] ?? "Rebase" },
                 set: { label in
                     guard let value = labels.first(where: { $0.value == label })?.key, value != tree.org.pullStrategy else { return }
-                    Task { _ = await saveOrganisationField(.pullStrategy, value) }
+                    Task { _ = await saveOrganisationField(.pullStrategy, value, tree.org.id) }
                 }),
             identifier: { label in
                 let value = labels.first(where: { $0.value == label })?.key ?? label
@@ -1494,7 +1496,7 @@ struct SettingsPane: View {
         refusals[field] = nil
         let shown = gitFieldsShown
         Task {
-            let refusal = await saveOrganisationField(field, value)
+            let refusal = await saveOrganisationField(field, value, tree.org.id)
             // The draft is cleared only on success, so a refused value
             // stays in front of the operator to be corrected rather than
             // vanishing along with the explanation of why it was refused.
