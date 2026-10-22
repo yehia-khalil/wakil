@@ -716,34 +716,47 @@ struct EditorColumn: View {
         let staged = root.files.contains { $0.group == .staged }
         let title = staged ? "Commit" : "Commit All"
         let lines = min(max(draft.components(separatedBy: "\n").count, 1), 6)
+        let hint = changes.placeholders[key] ?? "Message (⌘⏎ to commit)"
         VStack(alignment: .leading, spacing: ChangesSpace.m) {
+            // The box's height: the draft's lines, or the placeholder's wrapped lines when it is drawn,
+            // whichever is taller. Drawn by nothing; the editor and the placeholder lie over it, so the
+            // editor covers every line the box draws and a click anywhere in it reaches the text view
+            // (3a-ii walk: a wrapped placeholder had made the box three lines tall over a one-line editor).
             ZStack(alignment: .topLeading) {
-                TextEditor(text: Binding(get: { changes.messages[key] ?? "" }, set: { changes.edit(key, $0) }))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(EditorPaneStyle.text)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(lines >= 6 ? .automatic : .never)
-                    .focused($messageFocused, equals: key)
-                    .frame(height: CGFloat(lines) * 14 + 4)
-                    .accessibilityLabel("Commit message")
-                    .accessibilityIdentifier("editor.changes.\(root.name).message")
-                if draft.isEmpty {
-                    // Read by the tree as the box's hint: who a commit here is authored as.
-                    Text(changes.placeholders[key] ?? "Message (⌘⏎ to commit)")
+                Color.clear.frame(height: CGFloat(lines) * 14 + 4)
+                if draft.isEmpty { commitHint(hint).hidden() }
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .overlay(alignment: .topLeading) {
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: Binding(get: { changes.messages[key] ?? "" }, set: { changes.edit(key, $0) }))
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
-                        .fixedSize(horizontal: false, vertical: true)
-                        // Onto the editor's first line, where its caret stands.
-                        .padding(.leading, 5)
-                        .allowsHitTesting(false)
-                        .accessibilityIdentifier("editor.changes.\(root.name).hint")
+                        .foregroundStyle(EditorPaneStyle.text)
+                        .scrollContentBackground(.hidden)
+                        .scrollIndicators(lines >= 6 ? .automatic : .never)
+                        .focused($messageFocused, equals: key)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityLabel("Commit message")
+                        .accessibilityIdentifier("editor.changes.\(root.name).message")
+                    if draft.isEmpty {
+                        // Read by the tree as the box's hint: who a commit here is authored as.
+                        commitHint(hint)
+                            .allowsHitTesting(false)
+                            .accessibilityIdentifier("editor.changes.\(root.name).hint")
+                    }
                 }
             }
             .padding(ChangesSpace.s)
-            .background(EditorPaneStyle.lifted, in: RoundedRectangle(cornerRadius: 4))
+            // The padding ring is the box too: a click there focuses the editor, caret at the end. A
+            // sibling under the editor, not a gesture on its parent, so the text view keeps its clicks.
+            .background {
+                RoundedRectangle(cornerRadius: 4).fill(EditorPaneStyle.lifted)
+                    .onTapGesture { focusMessage(key) }
+            }
             .overlay(RoundedRectangle(cornerRadius: 4)
                 .stroke(messageFocused == key ? EditorPaneStyle.violet : EditorPaneStyle.text.opacity(0.12),
-                        lineWidth: 1))
+                        lineWidth: 1)
+                .allowsHitTesting(false))
             HStack(spacing: 0) {
                 if busy {
                     HStack(spacing: ChangesSpace.m) {
@@ -795,6 +808,24 @@ struct EditorColumn: View {
             changesError(root)
         }
         .padding(.top, ChangesSpace.s)
+    }
+
+    /// The message box's placeholder, onto the editor's first line, where its caret stands.
+    private func commitHint(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 5)
+    }
+
+    /// Focuses the root's message box from a click on its padding, the caret at the end of the draft.
+    private func focusMessage(_ key: String) {
+        messageFocused = key
+        Task { @MainActor in
+            guard messageFocused == key, let text = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+            text.setSelectedRange(NSRange(location: (text.string as NSString).length, length: 0))
+        }
     }
 
     /// The box that took the keyboard gets ⌘⏎ and ↑/↓ (`ChangesMessageKeys`); none, nothing is watched.
