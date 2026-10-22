@@ -1239,13 +1239,41 @@ func TestEnvironmentToolsRoundTrip(t *testing.T) {
 		t.Fatalf("rename not applied: %v", p.Environments)
 	}
 
-	// HOME is a temp dir, so the Trash copy lands in its .Trash.
+	// A fake trash program: the real one resolves the user's own Trash,
+	// not $HOME, so it must never run from a test.
+	rec := t.TempDir()
+	fake := filepath.Join(t.TempDir(), "trash")
+	script := "#!/bin/sh\nfor a; do last=\"$a\"; done\ncp \"$last\" '" + rec + "'/\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(wakilcore.SetTrashBinForTest(fake))
+
 	out = callOK(t, ctx, cs, "remove_environment", map[string]any{"projectPath": pp, "name": "qa"})
-	if trashed, _ := out["trashed"].(string); !strings.HasPrefix(trashed, "project.json (before removing qa ") {
+	trashed, _ := out["trashed"].(string)
+	if !strings.HasPrefix(trashed, "project.json (before removing qa ") {
 		t.Fatalf("remove_environment output %v", out)
+	}
+	if _, err := os.Stat(filepath.Join(rec, trashed)); err != nil {
+		t.Fatalf("the trash program never got the copy: %v", err)
 	}
 	p, _ = wakilcore.LoadProject(pp)
 	if _, still := p.Environments["qa"]; still {
 		t.Fatalf("qa remains: %v", p.Environments)
+	}
+}
+
+func TestRenameEnvironmentRefusalReachesTheWireVerbatim(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]},"prod":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "rename_environment", Arguments: map[string]any{"projectPath": pp, "name": "staging", "newName": "prod"},
+	})
+	if err != nil || !res.IsError {
+		t.Fatalf("want a tool error, got %v %v", err, res)
+	}
+	if got := textOf(t, res); got != wakilcore.RenameEnvironment(pp, "staging", "prod").Error() {
+		t.Fatalf("refusal text %q", got)
 	}
 }

@@ -758,7 +758,9 @@ func newServer() *mcp.Server {
 			if err != nil {
 				return toolErr(err), createProjectOut{}, nil
 			}
-			return nil, createProjectOut{Name: a.Name, Path: entry.Path}, nil
+			// CreateProject trims the name before storing it; report that one.
+			stored, _ := wakilcore.ValidName(a.Name)
+			return nil, createProjectOut{Name: stored, Path: entry.Path}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "rename_project", Description: "Rename a project: rewrites the name in its project.json and the registry key. The active project follows the new name. Refuses a name already taken."},
