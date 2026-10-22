@@ -184,6 +184,9 @@ public let operatorOnlyActions: Set<String> = [
     // that could drop a row could make a database unreachable without
     // touching a credential.
     "db_set_dsn", "db_remove_database",
+    // 2e-iii. An API entry's token travels in `api_set_entry`'s own parameters, as a DSN does,
+    // and the three edits beside it are the same control surface.
+    "api_set_entry", "api_update_entry", "api_remove_entry", "db_update_database",
 ]
 
 /// The message `permissionDecision` gives an agent denied one of
@@ -259,7 +262,7 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator signs in. This opens a browser on their "
             + "machine and authenticates as them, which is not something you may begin on "
             + "their behalf. Ask them to add the account from the settings pane (\u{2318},)."
-    case "db_set_dsn", "db_remove_database":
+    case "db_set_dsn", "db_remove_database", "db_update_database":
         return "\(toolName): only the operator configures a database. A connection string is a "
             + "secret the operator types, and calling this would put it in your own tool "
             + "parameters — which is the one thing Wakil's design for credentials exists to "

@@ -1123,7 +1123,7 @@ public final class WindowModel {
                 // A database added or removed changes the environment's list, which was read only
                 // on a context change: the query line's chooser and the fast path's scope missed
                 // a database added since (3b-ix e2e).
-                if name == "db_set_dsn" || name == "db_remove_database" {
+                if name == "db_set_dsn" || name == "db_remove_database" || name == "db_update_database" {
                     await self.refreshDatabases()
                 }
                 // **An agent's settings write, and the pane it lands under.**
@@ -1505,7 +1505,8 @@ public final class WindowModel {
         agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() },
         quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil,
         paletteClients: PaletteClients = PaletteClients(),
-        gitStatus: GitStatus? = nil
+        gitStatus: GitStatus? = nil,
+        apiHTTP: (any ToolCaller)? = nil
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1577,6 +1578,7 @@ public final class WindowModel {
             confirmations: confirmations,
             orgSwitcher: orgSwitcher,
             terminals: terminals,
+            apiResolver: apiHTTP.map { ApiPaneResolver(panes: panes, http: $0, layout: layout) },
             vocabulary: vocabulary,
             rootWatcher: nil,
             editorRootWatcher: nil,
@@ -2666,6 +2668,7 @@ public final class WindowModel {
     /// is why they are named: every other `db_*` write is a customer's.
     func writesSettings(_ name: String) async -> Bool {
         guard name.hasPrefix("ctx_") || name == "db_set_dsn" || name == "db_remove_database"
+                || name == "db_update_database" || name.hasPrefix("api_") && name.hasSuffix("_entry")
         else { return false }
         guard let action = await registry.all().first(where: { $0.name == name }) else { return false }
         return action.kind != .read
@@ -3203,6 +3206,104 @@ public final class WindowModel {
         } catch {
             await refreshSettings()
             return statusDescribingFailure("db_remove_database", error)
+        }
+    }
+
+    // MARK: API entries and database edits (2e-iii)
+
+    /// Whether `(projectPath, environment)` is the place on screen. The window knows its project
+    /// by name; the path comes from the settings tree.
+    private func isActivePlace(projectPath: String, environment: String) -> Bool {
+        guard environment == self.environment,
+              let project = settings?.projects.first(where: { $0.name == projectKey })
+        else { return false }
+        return project.path == projectPath
+    }
+
+    /// Runs one API-entry action as the operator. On success in the active place the open api
+    /// panes follow: a rename re-points their drafts, and every write re-resolves them.
+    private func apiEntryWrite(
+        _ action: String, _ params: [String: JSONValue],
+        projectPath: String, environment: String, renamedFrom: String? = nil, to newName: String? = nil
+    ) async -> String? {
+        let active = isActivePlace(projectPath: projectPath, environment: environment)
+        do {
+            _ = try await registry.dispatch(
+                name: action, params: .object(params), origin: .ui,
+                caller: DispatchCaller(place: self.place, session: nil), confirmation: nil)
+            if active {
+                if let old = renamedFrom, let new = newName { await panes.renameApiEntry(from: old, to: new) }
+                await apiResolver?.reresolve(environment: environment)
+                if apiResolver != nil { await refreshLayout() }
+            }
+            await refreshSettings()
+            return nil
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure(action, error)
+        }
+    }
+
+    /// Adds or replaces an API entry. `token` is the secret (the action's `secretParams`).
+    public func setApiEntry(
+        projectPath: String, environment: String, name: String, baseUrl: String,
+        authHeader: String? = nil, token: String? = nil
+    ) async -> String? {
+        var params: [String: JSONValue] = [
+            "projectPath": .string(projectPath), "environment": .string(environment),
+            "name": .string(name), "baseUrl": .string(baseUrl),
+        ]
+        if let authHeader { params["authHeader"] = .string(authHeader) }
+        if let token { params["token"] = .string(token) }
+        return await apiEntryWrite("api_set_entry", params, projectPath: projectPath, environment: environment)
+    }
+
+    /// Edits an API entry; nil means unchanged and is not sent.
+    public func updateApiEntry(
+        projectPath: String, environment: String, name: String, newName: String? = nil,
+        baseUrl: String? = nil, authHeader: String? = nil, clearToken: Bool? = nil
+    ) async -> String? {
+        var params: [String: JSONValue] = [
+            "projectPath": .string(projectPath), "environment": .string(environment),
+            "name": .string(name),
+        ]
+        if let newName { params["newName"] = .string(newName) }
+        if let baseUrl { params["baseUrl"] = .string(baseUrl) }
+        if let authHeader { params["authHeader"] = .string(authHeader) }
+        if let clearToken { params["clearToken"] = .bool(clearToken) }
+        return await apiEntryWrite(
+            "api_update_entry", params, projectPath: projectPath, environment: environment,
+            renamedFrom: newName == nil ? nil : name, to: newName)
+    }
+
+    public func removeApiEntry(projectPath: String, environment: String, name: String) async -> String? {
+        await apiEntryWrite(
+            "api_remove_entry",
+            ["projectPath": .string(projectPath), "environment": .string(environment),
+             "name": .string(name)],
+            projectPath: projectPath, environment: environment)
+    }
+
+    /// Renames a database or revokes its write access; nil means unchanged.
+    public func updateDatabase(
+        projectPath: String, environment: String, name: String, newName: String? = nil,
+        revokeWrite: Bool? = nil
+    ) async -> String? {
+        var params: [String: JSONValue] = [
+            "projectPath": .string(projectPath), "environment": .string(environment),
+            "name": .string(name),
+        ]
+        if let newName { params["newName"] = .string(newName) }
+        if let revokeWrite { params["revokeWrite"] = .bool(revokeWrite) }
+        do {
+            _ = try await registry.dispatch(
+                name: "db_update_database", params: .object(params), origin: .ui,
+                caller: DispatchCaller(place: self.place, session: nil), confirmation: nil)
+            await refreshSettings()
+            return nil
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure("db_update_database", error)
         }
     }
 

@@ -2401,7 +2401,8 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
     // action and is absent here for the reason `pane_open` is: this test
     // covers `registerStandardActions` alone.
     #expect(await r.all().map(\.name).sorted() ==
-            ["ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_environment",
+            ["api_remove_entry", "api_set_entry", "api_update_entry",
+             "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_environment",
              "ctx_create_org", "ctx_create_project", "ctx_editor_settings", "ctx_list_accounts",
              "ctx_list_environments", "ctx_list_machine_providers",
              "ctx_list_orgs", "ctx_list_projects", "ctx_list_providers",
@@ -2411,7 +2412,7 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
              "db_cancel", "db_classify_statement", "db_describe_table",
              "db_list_databases", "db_list_tables", "db_page", "db_read_table", "db_refetch",
              "db_remove_database",
-             "db_render_update", "db_run_mutation", "db_run_query", "db_set_dsn", "pane_sort", "session_get",
+             "db_render_update", "db_run_mutation", "db_run_query", "db_set_dsn", "db_update_database", "pane_sort", "session_get",
              "session_list", "session_read", "session_record_parent", "session_resume",
              "session_set_provider"])
 }
@@ -2659,6 +2660,22 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
             "dsn": .string("mysql://db"),
         ]),
         "db_remove_database": .object([
+            "projectPath": .string("/p.json"), "environment": .string("staging"),
+            "name": .string("core"),
+        ]),
+        "api_set_entry": .object([
+            "projectPath": .string("/p.json"), "environment": .string("staging"),
+            "name": .string("orders"), "baseUrl": .string("https://o.example"),
+        ]),
+        "api_update_entry": .object([
+            "projectPath": .string("/p.json"), "environment": .string("staging"),
+            "name": .string("orders"),
+        ]),
+        "api_remove_entry": .object([
+            "projectPath": .string("/p.json"), "environment": .string("staging"),
+            "name": .string("orders"),
+        ]),
+        "db_update_database": .object([
             "projectPath": .string("/p.json"), "environment": .string("staging"),
             "name": .string("core"),
         ]),

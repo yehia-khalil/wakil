@@ -946,7 +946,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "editor_create", "editor_rename", "editor_trash",
     "editor_open", "editor_open_file", "editor_new_scratch", "editor_focus_tab", "editor_close", "editor_goto", "editor_select", "editor_set_language", "editor_replace_range", "editor_save", "editor_reload", "editor_restore", "editor_replace", "editor_replace_undo",
     "api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_render_curl", "api_reopen",
-    "api_request", "api_send", "api_set_request", "api_unbind", "api_undo_fill",
+    "api_remove_entry", "api_request", "api_send", "api_set_entry", "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
     // Provider capacity, on purpose: the operator-only record path and the agent's read.
     "capacity_record", "ctx_capacity",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
@@ -960,7 +960,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_list_providers", "ctx_provider_login", "ctx_set_environment", "ctx_set_project",
     "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
     "db_cancel", "db_classify_statement", "db_describe_table", "db_list_databases", "db_list_tables", "db_page",
-    "db_read_table", "db_refetch", "db_remove_database", "db_render_update", "db_run_mutation",
+    "db_read_table", "db_refetch", "db_remove_database", "db_update_database", "db_render_update", "db_run_mutation",
     "db_run_query", "db_set_dsn",
     "pane_close", "pane_focus", "pane_maximize", "pane_move", "pane_open", "pane_resize", "pane_restore",
     "pane_scroll_clear", "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",

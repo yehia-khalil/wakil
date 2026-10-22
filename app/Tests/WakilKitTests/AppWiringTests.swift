@@ -234,8 +234,9 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
     // api_fill_from_curl and api_undo_fill added by Amendment 11: `.control` and
     // agent-reachable on api_set_request's terms — they write a draft and send nothing.
     #expect(await wiring.registry.all().map(\.name).sorted() ==
-            ["api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_render_curl", "api_reopen",
-             "api_request", "api_send", "api_set_request", "api_unbind", "api_undo_fill",
+            ["api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_remove_entry",
+             "api_render_curl", "api_reopen", "api_request", "api_send", "api_set_entry",
+             "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
              "capacity_record", "ctx_add_provider", "ctx_adopt_provider", "ctx_capacity",
              "ctx_config_tree", "ctx_create_environment", "ctx_create_org", "ctx_create_project",
              "ctx_editor_settings", "ctx_list_accounts",
@@ -248,7 +249,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "db_describe_table",
              "db_list_databases", "db_list_tables", "db_page", "db_read_table", "db_refetch",
              "db_remove_database",
-             "db_render_update", "db_run_mutation", "db_run_query", "db_set_dsn",
+             "db_render_update", "db_run_mutation", "db_run_query", "db_set_dsn", "db_update_database",
              "editor_changes_amend", "editor_changes_collapse", "editor_changes_commit", "editor_changes_discard", "editor_changes_draft_message",
              "editor_changes_expand", "editor_changes_group_collapse", "editor_changes_group_expand",
              "editor_changes_select", "editor_changes_stage", "editor_changes_stage_hunk", "editor_changes_stage_ranges",
