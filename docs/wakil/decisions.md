@@ -1483,6 +1483,27 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* a commit or discard from Wakil is found to have lost work that the Trash or Undo
     Last Commit could not bring back — then the price becomes *gate*.
 
+44. **An organisation's git account per provider; remote git priced allow; Wakil never touches the
+    Mac's own SSH or git config.**
+    *(2026-10-22, operator, during the 3a-iii design —
+    `docs/superpowers/specs/2026-10-22-3a-iii-git-accounts-and-remotes-design.md`.)*
+    Settings → Organisation → Git holds one account per host: **Sign in** (device flow; GitHub and
+    GitLab.com, offered once Wakil's OAuth client ids are set, and *Use a gh login* for GitHub), **a
+    pasted token** (Bitbucket, self-hosted, any host) or **an SSH key** (picked from `~/.ssh` or
+    generated under the organisation's folder, its passphrase in the Keychain). Wakil runs git itself
+    and hands each command the account for the remote's host: `ssh -F /dev/null` with that key alone
+    on the route `ssh -G` reads, or its own credential helper — so an alias or an https clone can no
+    longer push as another organisation's account, and nothing in `~/.ssh` or any git config is
+    written. **Fetch, pull, push, sync, publish and clone are priced *allow* for every channel**,
+    voice included (Invariant 7's allow exception): a push asked for in words must happen. **Force is
+    never available**, so a mistaken push is undone by a following commit. Pull's strategy (rebase,
+    merge, fast-forward only) is the organisation's setting, rebase by default; a conflicting pull is
+    aborted and named, for 3a-v to resolve. The agent may clone, but only into the folder the
+    operator last cloned into, and only the operator adds a clone as a project (Decision 30).
+    *Reverse if:* injecting the account per command cannot reach a host the Mac's own setup reaches —
+    or an agent push the operator did not ask for is found on a remote, and then push becomes *gate*
+    for the agent.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,
@@ -1649,3 +1670,9 @@ discard's old copy is in the Trash. A commit runs the repository's hooks and sig
 more than the agent's shell can already run in that repository — while every read still runs
 none. Still refused: push, pull, fetch and every remote (3a-iii), branches and stash (3a-iv),
 rebase, and any flag off a tool's list. The reasoning is Decision 43.
+
+**Fetch, pull, push, sync, clone (2026-10-22, 3a-iii, Decision 44).** A push publishes beyond this
+Mac. It is priced *allow* for every channel at the operator's ruling, is never forced, and is
+journalled with its caller; a mistaken push is undone by a following commit. Reads still run no
+program a repository chooses; a remote operation lets only Wakil's own ssh and credential helper run,
+and refuses a repository's `remote.<name>.uploadpack` or `receivepack`.

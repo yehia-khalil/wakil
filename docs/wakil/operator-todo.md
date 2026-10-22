@@ -4,6 +4,17 @@ Everything here needs your hands. Either it touches real credentials, your real
 Claude accounts, or an interactive session — none of which an agent should be
 driving. Kept current as work proceeds; **last updated 2026-09-21.**
 
+
+> **2026-10-22 — register Wakil's two OAuth apps, for 3a-iii's Sign in.** Until then Sign in is
+> hidden (SSH keys, tokens and *Use a gh login* work without it).
+>
+> 1. GitHub → Settings → Developer settings → OAuth Apps → New OAuth App: name `Wakil`, homepage and
+>    callback any URL you own, then **Enable Device Flow**. No secret is needed.
+> 2. GitLab.com → Preferences → Applications → Add new application: name `Wakil`, uncheck
+>    **Confidential**, scopes `read_repository`, `write_repository`, `read_user`.
+> 3. Put the two client ids in `internal/wakilcore/gitoauth.go` (`GitHubClientID`,
+>    `GitLabClientID`) and rebuild.
+
 > **2026-09-21 — four states of the rail want one look.**
 > [#138](https://github.com/yehia-khalil/rafiq/issues/138) is fixed and `WakilApp` has
 > no test target, so the promotion itself can only be seen. Open a window with two or
