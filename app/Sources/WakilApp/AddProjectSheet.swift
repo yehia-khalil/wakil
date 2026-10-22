@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 import WakilKit
 
-/// + Add a project (2e-ii, extended by 3a-iii): Choose a folder… as before, or Clone from a link… —
-/// the link field takes the keyboard (Rule 3), the destination is the last folder cloned into with
-/// Change…, and Clone shows its spinner and Cancel (Rules 4, 5). The clone becomes a project as a
-/// chosen folder does.
+/// + Add a project (2e-ii, extended by 3a-iii): open a folder already on this Mac, or clone a
+/// repository from a link. Cloning asks for the link — which takes the keyboard (Rule 3) — and
+/// where to put it, the last folder cloned into by default; Clone shows its spinner, and Cancel stops
+/// it (Rules 4, 5). The clone becomes a project as a chosen folder does.
 struct AddProjectSheet: View {
     let lastFolder: String
     let chooseFolder: () -> Void
@@ -20,31 +20,70 @@ struct AddProjectSheet: View {
     @State private var task: Task<Void, Never>?
     @FocusState private var linkFocused: Bool
 
+    private var ready: Bool { !link.trimmingCharacters(in: .whitespaces).isEmpty && !folder.isEmpty }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Add a project").font(.system(size: 14, weight: .semibold))
-            if !cloning {
-                HStack(spacing: 8) {
-                    FormButton(title: "Choose a folder…", tone: SettingsPalette.accent, filled: true,
-                               identifier: "settings.projects.add.folder") { chooseFolder() }
-                    FormButton(title: "Clone from a link…", tone: SettingsPalette.accent,
-                               identifier: "settings.projects.add.clone") {
-                        cloning = true
-                        folder = lastFolder
-                        linkFocused = true
-                    }
+        SettingsSheet(
+            title: cloning ? "Clone a repository" : "Add a project",
+            subtitle: cloning ? "It is cloned with this organisation's git account for the link's host, then added as a project."
+                : "Open a folder on this Mac, or clone a repository from a link."
+        ) {
+            if cloning { cloneForm } else { choices }
+        } footer: {
+            if cloning {
+                FormButton(title: "Back", tone: SettingsPalette.coolWhite, identifier: "settings.projects.clone.back") {
+                    cloning = false
+                    error = nil
                 }
-            } else {
-                TextField("https://github.com/org/repo or git@github.com:org/repo.git", text: $link)
+                .disabled(task != nil)
+            }
+            Spacer()
+            FormButton(title: "Cancel", tone: SettingsPalette.coolWhite, identifier: "settings.projects.add.close") {
+                if let task { task.cancel(); self.task = nil } else { close() }
+            }
+            .keyboardShortcut(.cancelAction)
+            if cloning {
+                SheetPrimaryButton(title: task == nil ? "Clone" : "Cloning…", enabled: ready, working: task != nil,
+                                   identifier: "settings.projects.clone.go") { start() }
+            }
+        }
+        .onDisappear { task?.cancel() }
+    }
+
+    private var choices: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SheetChoice(title: "Open a folder", detail: "A project already on this Mac",
+                        identifier: "settings.projects.add.folder") { chooseFolder() }
+            SheetChoice(title: "Clone a repository", detail: "From GitHub, GitLab, Bitbucket or any git link",
+                        identifier: "settings.projects.add.clone") {
+                cloning = true
+                folder = lastFolder
+            }
+        }
+    }
+
+    private var cloneForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                label("Link")
+                TextField("git@github.com:org/repo.git or https://github.com/org/repo", text: $link)
                     .textFieldStyle(.roundedBorder)
                     .focused($linkFocused)
-                    .onAppear { linkFocused = true }
+                    .onAppear { linkFocused = true }   // Rule 3
+                    .onSubmit { if ready, task == nil { start() } }
+                    .disabled(task != nil)
                     .accessibilityIdentifier("settings.projects.clone.link")
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                label("Into")
                 HStack(spacing: 8) {
-                    Text(folder.isEmpty ? "Choose where to clone" : folder)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.7))
+                    Text(folder.isEmpty ? "Choose a folder" : (folder as NSString).abbreviatingWithTildeInPath)
+                        .font(.system(size: SettingsScale.body, design: .monospaced))
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(folder.isEmpty ? 0.4 : 0.8))
                         .lineLimit(1).truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(SettingsPalette.coolWhite.opacity(0.05)))
                         .accessibilityIdentifier("settings.projects.clone.folder")
                     FormButton(title: "Change…", tone: SettingsPalette.coolWhite, identifier: "settings.projects.clone.change") {
                         let panel = NSOpenPanel()
@@ -54,41 +93,21 @@ struct AddProjectSheet: View {
                         panel.prompt = "Clone here"
                         if panel.runModal() == .OK, let url = panel.url { folder = url.path }
                     }
-                }
-                HStack(spacing: 8) {
-                    if task != nil {
-                        ProgressView().controlSize(.small)
-                        Text("Cloning…").font(.system(size: SettingsScale.meta))
-                        FormButton(title: "Cancel", tone: SettingsPalette.caution, identifier: "settings.projects.clone.cancel") {
-                            task?.cancel()
-                            task = nil
-                        }
-                    } else {
-                        FormButton(title: "Clone", tone: SettingsPalette.accent, filled: true, identifier: "settings.projects.clone.go") {
-                            start()
-                        }
-                        .disabled(link.trimmingCharacters(in: .whitespaces).isEmpty || folder.isEmpty)
-                    }
-                }
-                if let error {
-                    Text(error)
-                        .font(.system(size: SettingsScale.meta))
-                        .foregroundStyle(SettingsPalette.caution)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                        .accessibilityIdentifier("settings.projects.clone.error")
+                    .disabled(task != nil)
                 }
             }
-            HStack {
-                Spacer()
-                FormButton(title: "Close", tone: SettingsPalette.coolWhite, identifier: "settings.projects.add.close") { close() }
-            }
+            if let error { SheetMessage(text: error, identifier: "settings.projects.clone.error") }
         }
-        .padding(20)
-        .frame(width: 480)
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: SettingsScale.meta, weight: .medium))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.55))
     }
 
     private func start() {
+        guard task == nil else { return }
         error = nil
         let (l, f) = (link.trimmingCharacters(in: .whitespaces), folder)
         task = Task {

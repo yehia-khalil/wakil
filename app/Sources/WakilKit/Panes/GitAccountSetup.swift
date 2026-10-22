@@ -82,8 +82,53 @@ public func gitAccountMethods(provider: GitProvider, signInAvailable: Bool) -> [
     return (signIn ? [.signin] : []) + [.ssh, .token]
 }
 
-/// An account row in Settings: `github.com · SSH · dev-umbrella`.
-public func gitAccountRowText(_ a: SettingsGitAccount) -> String {
-    let method = ["ssh": "SSH", "token": "Token", "signin": "Signed in"][a.method] ?? a.method
-    return [a.host, method, a.user].filter { !$0.isEmpty }.joined(separator: " · ")
+/// The account already connected for a named provider's host, if any: one account per host, so the
+/// sheet shows that provider as taken. `other` is never taken — it asks for its own host.
+public func gitAccountTaken(provider: GitProvider, accounts: [SettingsGitAccount]) -> SettingsGitAccount? {
+    guard let host = provider.host else { return nil }
+    return accounts.first { $0.host == host }
+}
+
+extension GitAccountMethod {
+    /// One line under the method's name in the sheet, saying what choosing it means.
+    public func summary(provider: GitProvider) -> String {
+        switch self {
+        case .signin: return "Approve Wakil in your browser; nothing to copy"
+        case .ssh:
+            return "Wakil makes a key for this organisation only; you add it to \(provider == .other ? "the host" : provider.title) once"
+        case .token: return "Paste a personal access token that can \(provider.tokenScopes)"
+        }
+    }
+}
+
+/// What an account's card in Settings shows.
+public struct GitAccountCard: Sendable, Equatable {
+    public var title: String
+    /// The host beneath a provider's name; empty when the title is the host already.
+    public var host: String
+    public var user: String
+    public var method: String
+
+    public init(title: String, host: String, user: String, method: String) {
+        self.title = title
+        self.host = host
+        self.user = user
+        self.method = method
+    }
+}
+
+public func gitAccountCard(_ a: SettingsGitAccount) -> GitAccountCard {
+    let provider = GitProvider(host: a.host)
+    let method = ["ssh": "SSH key", "token": "Token", "signin": "Signed in"][a.method] ?? a.method
+    return GitAccountCard(
+        title: provider == .other ? a.host : provider.title, host: provider == .other ? "" : a.host,
+        user: a.user.isEmpty ? "Not tested yet" : a.user, method: method)
+}
+
+/// A failed Test, said plainly when it is the usual case — the key not added on the host yet —
+/// and whole otherwise.
+public func gitTestFailureText(_ error: String, provider: GitProvider) -> String {
+    guard error.contains("Permission denied (publickey)") else { return error }
+    let name = provider == .other ? "The host" : provider.title
+    return "\(name) didn't accept the key yet. Add it on \(provider == .other ? "the host" : provider.title), then test again"
 }

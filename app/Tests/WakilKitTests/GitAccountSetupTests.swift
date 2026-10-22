@@ -27,15 +27,6 @@ import Testing
         #expect(GitProvider.bitbucket.tokenPage?.absoluteString == "https://bitbucket.org/account/settings/api-tokens/")
     }
 
-    @Test func anAccountRowReads() {
-        #expect(gitAccountRowText(SettingsGitAccount(host: "github.com", provider: "github", method: "ssh", user: "dev-umbrella"))
-                == "github.com · SSH · dev-umbrella")
-        #expect(gitAccountRowText(SettingsGitAccount(host: "bitbucket.org", provider: "bitbucket", method: "token"))
-                == "bitbucket.org · Token")
-        #expect(gitAccountRowText(SettingsGitAccount(host: "gitlab.com", provider: "gitlab", method: "signin", user: "u"))
-                == "gitlab.com · Signed in · u")
-    }
-
     @Test func thePullStrategyIsAnOrganisationField() {
         #expect(WindowModel.OrganisationField.pullStrategy.rawValue == "pullStrategy")
     }
@@ -45,4 +36,38 @@ import Testing
         let org = try JSONDecoder().decode(SettingsOrg.self, from: Data(json.utf8))
         #expect(org.lastCloneFolder == "/c")
     }
+
+    // 3a-iii walk redesign: one account per host, so a connected provider is shown as taken.
+    @Test func aConnectedProviderIsTaken() {
+        let accounts = [SettingsGitAccount(host: "github.com", provider: "github", method: "ssh", user: "octo")]
+        #expect(gitAccountTaken(provider: .github, accounts: accounts)?.user == "octo")
+        #expect(gitAccountTaken(provider: .gitlab, accounts: accounts) == nil)
+        #expect(gitAccountTaken(provider: .other, accounts: accounts) == nil)
+    }
+
+    @Test func eachMethodSaysWhatItMeans() {
+        #expect(GitAccountMethod.ssh.summary(provider: .github)
+                == "Wakil makes a key for this organisation only; you add it to GitHub once")
+        #expect(GitAccountMethod.token.summary(provider: .github)
+                == "Paste a personal access token that can repo")
+        #expect(GitAccountMethod.signin.summary(provider: .gitlab)
+                == "Approve Wakil in your browser; nothing to copy")
+        #expect(GitAccountMethod.ssh.summary(provider: .other)
+                == "Wakil makes a key for this organisation only; you add it to the host once")
+    }
+
+    @Test func anAccountCardNamesTheProviderTheUserAndTheMethod() {
+        let card = gitAccountCard(SettingsGitAccount(host: "github.com", provider: "github", method: "ssh", user: "octo"))
+        #expect(card == GitAccountCard(title: "GitHub", host: "github.com", user: "octo", method: "SSH key"))
+        let other = gitAccountCard(SettingsGitAccount(host: "git.initech.example", provider: "other", method: "token"))
+        #expect(other == GitAccountCard(title: "git.initech.example", host: "", user: "Not tested yet", method: "Token"))
+    }
+
+    @Test func aKeyTheHostDoesNotKnowYetSaysWhatToDo() {
+        #expect(gitTestFailureText("git@github.com: Permission denied (publickey).", provider: .github)
+                == "GitHub didn't accept the key yet. Add it on GitHub, then test again")
+        #expect(gitTestFailureText("ssh: connect to host x port 22: Operation timed out", provider: .other)
+                == "ssh: connect to host x port 22: Operation timed out")
+    }
 }
+

@@ -771,7 +771,7 @@ struct EditorColumn: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(EditorPaneStyle.text)
                         .scrollContentBackground(.hidden)
-                        .scrollIndicators(.automatic)
+                        .scrollIndicators(.never)   // sized to its text up to six lines; no bar beside one line
                         .focused($messageFocused, equals: key)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .accessibilityLabel("Commit message")

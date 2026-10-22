@@ -21,28 +21,39 @@ struct AgentInstructionBox: View {
         let text = field.draft ?? stored
         VStack(alignment: .leading, spacing: 2) {
             SettingsRow(label, wraps: true) {
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: Binding(get: { field.draft ?? stored }, set: { field.draft = $0 }))
-                        .font(.system(size: SettingsScale.body))
-                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.88))
-                        .scrollContentBackground(.hidden)
-                        .focused($focused)
-                        .onChange(of: focused) { old, new in
-                            if old, !new { commit(field.leave(stored: stored)) }
+                // A hidden copy of the text sizes the box to it — one line empty, up to twelve — and
+                // the editor lies over it, so there is no scroll bar until the text outgrows that.
+                Text(text.isEmpty ? placeholder : text + "\n")
+                    .font(.system(size: SettingsScale.body))
+                    .lineLimit(12)
+                    .padding(.horizontal, 5)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .hidden()
+                    .overlay(alignment: .topLeading) {
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: Binding(get: { field.draft ?? stored }, set: { field.draft = $0 }))
+                                .font(.system(size: SettingsScale.body))
+                                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.88))
+                                .scrollContentBackground(.hidden)
+                                .scrollIndicators(.never)
+                                .focused($focused)
+                                .onChange(of: focused) { old, new in
+                                    if old, !new { commit(field.leave(stored: stored)) }
+                                }
+                                .accessibilityLabel(label)
+                                .accessibilityIdentifier(identifier)
+                            if text.isEmpty {
+                                // The text view insets its first line by its line-fragment padding.
+                                Text(placeholder)
+                                    .font(.system(size: SettingsScale.body))
+                                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.30))
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                            }
                         }
-                        .accessibilityLabel(label)
-                        .accessibilityIdentifier(identifier)
-                    if text.isEmpty {
-                        // The text view insets its first line by its line-fragment padding.
-                        Text(placeholder)
-                            .font(.system(size: SettingsScale.body))
-                            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.30))
-                            .padding(.leading, 5)
-                            .allowsHitTesting(false)
                     }
-                }
-                .frame(maxWidth: 480, minHeight: 54, maxHeight: 180)
-                .inPlaceField(focused: focused)
+                    .frame(maxWidth: 520)
+                    .inPlaceField(focused: focused)
             }
             if field.saving {
                 Text("Saving…")
