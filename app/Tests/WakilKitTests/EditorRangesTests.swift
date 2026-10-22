@@ -12,9 +12,17 @@ private func r(_ l1: Int, _ c1: Int, _ l2: Int, _ c2: Int) -> EditorRange {
         #expect(editorStagedText(base: "a\nd\n", text: "a\nb\nc\nx\nd\n", ranges: [s(2, 3)]) == "a\nb\nc\nd\n")
     }
 
-    @Test func aChangedHunkWithOneNewLineSelectedDropsAllItsOldLines() {
+    // Amended 2026-10-22 (Cover): a changed block pairs its old and new lines one to one.
+    @Test func aChangedHunkPairsItsLines() {
         #expect(editorStagedText(base: "a\nold1\nold2\nz\n", text: "a\nnew1\nnew2\nz\n", ranges: [s(2, 2)])
-            == "a\nnew1\nz\n")
+            == "a\nnew1\nold2\nz\n")
+        // A selected new line past the old ones is an addition; an unselected one is left out.
+        #expect(editorStagedText(base: "alpha\nbeta\n", text: "alpha\nBETA\ngamma\n", ranges: [s(3, 3)])
+            == "alpha\nbeta\ngamma\n")
+        #expect(editorStagedText(base: "alpha\nbeta\n", text: "alpha\nBETA\ngamma\n", ranges: [s(2, 2)])
+            == "alpha\nBETA\n")
+        // Old lines past the new ones go only when the whole block is selected.
+        #expect(editorStagedText(base: "a\nb\nc\nz\n", text: "a\nB\nz\n", ranges: [s(2, 2)]) == "a\nB\nz\n")
     }
 
     @Test func aDeletionIsStagedFromTheLineItsMarkSitsOn() {
@@ -65,9 +73,8 @@ private func r(_ l1: Int, _ c1: Int, _ l2: Int, _ c2: Int) -> EditorRange {
     @Test func unstageRevertsOnlyTheSelectedPart() {
         #expect(editorUnstagedText(base: "a\nb\n", text: "a\nX\nY\nb\n", ranges: [s(2, 2)]) == "a\nY\nb\n")
         #expect(editorUnstagedText(base: "", text: "p\nq\n", ranges: [s(1, 2)]) == "")
-        // Amended 2026-10-22 (e2e): a partly unstaged changed hunk loses only its selected new lines;
-        // its old lines come back only when every new line is unstaged, never beside a kept one.
-        #expect(editorUnstagedText(base: "a\nold\nz\n", text: "a\nn1\nn2\nz\n", ranges: [s(2, 2)]) == "a\nn2\nz\n")
+        // Amended 2026-10-22 (Cover): paired line by line — n1 goes back to old, n2 stays an addition.
+        #expect(editorUnstagedText(base: "a\nold\nz\n", text: "a\nn1\nn2\nz\n", ranges: [s(2, 2)]) == "a\nold\nn2\nz\n")
         #expect(editorUnstagedText(base: "a\nold\nz\n", text: "a\nn1\nn2\nz\n", ranges: [s(2, 3)]) == "a\nold\nz\n")
         #expect(editorUnstagedText(base: "a\nb\n", text: "a\nb\nc\n", ranges: [s(1, 1)]) == nil)
     }

@@ -272,15 +272,15 @@ public func editorRangesTouchChange(base: String, text: String, ranges: [EditorL
 }
 
 /// The index text Stage Selected Ranges writes: `base` (the index) with the selected part of each
-/// touched hunk of `text` (the working tree) applied. A touched changed hunk loses all its old lines
-/// and gains only its selected new ones. nil when no hunk is touched.
+/// touched hunk of `text` (the working tree) applied, old and new lines paired one to one: a
+/// selected new line replaces its pair, or is added past the old ones. nil when no hunk is touched.
 public func editorStagedText(base: String, text: String, ranges: [EditorLineSpan]) -> String? {
     editorMergedText(base: base, text: text, ranges: ranges, stage: true)
 }
 
 /// The index text Unstage Selected Ranges writes: `text` (the index) with the selected part of each
-/// touched hunk taken out toward `base` (HEAD; "" for a file new in the index). A hunk wholly selected
-/// gets its old lines back; one partly selected loses only its selected new lines. nil when no hunk
+/// touched hunk taken back to `base` (HEAD; "" for a file new in the index), paired the same way: a
+/// selected new line gets its old pair back, or is dropped when it was an addition. nil when no hunk
 /// is touched.
 public func editorUnstagedText(base: String, text: String, ranges: [EditorLineSpan]) -> String? {
     editorMergedText(base: base, text: text, ranges: ranges, stage: false)
@@ -320,21 +320,31 @@ private func editorMergedText(base: String, text: String, ranges: [EditorLineSpa
         }
         let lines = Array(h.newStart..<(h.newStart + h.newCount))
         let touched = editorHunkTouched(h, ranges)
-        func takeOld() { for (k, line) in h.oldLines.enumerated() { keep(line, fromBase: true, at: i + k) } }
-        func takeNew(selected: Bool) {
-            for (k, line) in lines.enumerated() where editorLineSelected(line, ranges) == selected {
-                keep(new[j + k], fromBase: false, at: j + k)
+        if !touched {
+            if stage {
+                for (k, line) in h.oldLines.enumerated() { keep(line, fromBase: true, at: i + k) }
+            } else {
+                for k in 0..<h.newCount { keep(new[j + k], fromBase: false, at: j + k) }
             }
-        }
-        if stage {
-            if touched { takeNew(selected: true) } else { takeOld() }
-        } else if touched {
-            // Unstaging: a hunk whose every new line is selected (or a deletion) goes back to HEAD's
-            // lines; a partly selected one only loses its selected new lines, so HEAD's old lines
-            // never land beside a new line that stays staged (amended 2026-10-22, from the e2e run).
-            if lines.allSatisfy({ editorLineSelected($0, ranges) }) { takeOld() } else { takeNew(selected: false) }
         } else {
-            for k in 0..<h.newCount { keep(new[j + k], fromBase: false, at: j + k) }
+            // A touched hunk pairs its old and new lines one to one (amended 2026-10-22, from Cover):
+            // new line k replaces old line k, or is an addition past the old ones. Staging writes
+            // the selected new lines over their pairs and keeps the rest of the index; unstaging puts
+            // each selected new line's pair back (or drops an addition) and keeps the rest staged.
+            // Old lines past the new ones change side only when the whole hunk is selected.
+            let all = lines.allSatisfy { editorLineSelected($0, ranges) }
+            let m = h.oldLines.count
+            for (k, line) in lines.enumerated() {
+                let selected = editorLineSelected(line, ranges)
+                if selected == stage {
+                    keep(new[j + k], fromBase: false, at: j + k)
+                } else if k < m {
+                    keep(h.oldLines[k], fromBase: true, at: i + k)
+                }
+            }
+            if m > h.newCount, all != stage {
+                for k in h.newCount..<m { keep(h.oldLines[k], fromBase: true, at: i + k) }
+            }
         }
         i += h.oldLines.count
         j += h.newCount
