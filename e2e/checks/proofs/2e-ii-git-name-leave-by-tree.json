@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/2e-ii-git-name-leave-by-tree.jsonl",
+  "baseCommit": "91f64b7b89da734fc9609cb355bf4890ae127ead",
+  "provedAt": "2026-10-22T13:25:02.4588Z",
+  "checkBlob": "cfc7201bfdf737e580a959d9dbc14cb646a77665"
+}

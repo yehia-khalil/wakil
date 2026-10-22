@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/2e-ii-name-refusals.jsonl",
+  "baseCommit": "91f64b7b89da734fc9609cb355bf4890ae127ead",
+  "provedAt": "2026-10-22T13:25:02.4588Z",
+  "checkBlob": "67326989eb1c74caa2dedc89ed0c43757c7430ad"
+}
