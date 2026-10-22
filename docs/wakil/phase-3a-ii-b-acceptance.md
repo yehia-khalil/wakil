@@ -24,11 +24,11 @@ REPO="$PWD"
 rm -rf "$W"
 mkdir -p "$W/api" "$W/project"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
-g() { git -c user.name=seed -c user.email=seed@example.com "$@"; }
+seedgit() { git -c user.name=seed -c user.email=seed@example.com "$@"; }
 cd "$W/api" && git init -q -b main
 printf 'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n' > confirm.go
 printf 'alpha\nbeta\n' > notes.md
-git add . && g commit -qm seed
+git add . && seedgit commit -qm seed
 printf 'ONE\ntwo\nthree\nfour\nfive\nSIX\nSEVEN\neight\nnine\n' > confirm.go
 printf 'alpha\nBETA\ngamma\n' > notes.md
 cat > "$W/project/project.json" <<J
