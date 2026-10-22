@@ -9,6 +9,8 @@ extension WindowModel {
     // MARK: The message box
 
     public func changesMessageEdited(root: String, text: String) {
+        // 3a-ii-b (R4): typing wins over a draft in flight; its reply is dropped when it lands.
+        changesDraftTasks[root]?.cancel()
         // The box showing the history entry the cursor stands on is the step's own echo, not typing.
         if let c = changesHistoryCursor[root], let h = changesHistory[root], c < h.count, h[c] == text {
             changesMessages[root] = text

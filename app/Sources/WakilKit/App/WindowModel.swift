@@ -670,6 +670,9 @@ public final class WindowModel {
     var changesTasks: [String: Task<JSONValue, Error>] = [:]
     /// Bumped by an org switch: a write that lands under another generation is not shown.
     var changesGeneration = 0
+    /// 3a-ii-b. Roots with a ✨ draft in flight, and the task each runs, so typing or ✕ can end it.
+    public internal(set) var changesDrafting: Set<String> = []
+    var changesDraftTasks: [String: Task<String, Error>] = [:]
     /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
@@ -2116,6 +2119,7 @@ public final class WindowModel {
         // started in, and only its result is dropped (`changesGeneration`), so nothing of it shows here.
         changesGeneration += 1
         changesTasks = [:]
+        for task in changesDraftTasks.values { task.cancel() }
         changesMessages = [:]
         changesHistory = [:]
         changesHistoryCursor = [:]
