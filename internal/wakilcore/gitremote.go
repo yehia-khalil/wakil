@@ -335,7 +335,7 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 		r := g.result(nil, stderr)
 		r.Conflicts = conflicts
 		return r, UserError("Pull stopped on conflicts in " + strings.Join(conflicts, ", ") +
-			"; nothing was changed. Resolve them in a terminal, or wait for the conflict view (3a-v)")
+			"; nothing was changed. Resolve them in a terminal, or wait for Wakil's conflict view")
 	}
 	if strings.Contains(stderr, "Not possible to fast-forward") {
 		return GitRemoteResult{}, UserError("Both sides have new commits, so Fast-forward only cannot pull. " +

@@ -88,7 +88,7 @@ func CreateProject(folder, name string) (string, ProjectEntry, error) {
 		if proj.Org != org {
 			return "", ProjectEntry{}, UserError("project.json at " + path + " declares org " +
 				strconv.Quote(proj.Org) + ", but the current org is " + strconv.Quote(org) +
-				" — a project can only be registered under the org it declares (Invariant 4)")
+				" — a project can only be registered under the org it declares")
 		}
 		if name, err = ValidName(proj.Name); err != nil {
 			return "", ProjectEntry{}, UserError("project.json at " + path + " names no usable project: " + err.Error())
@@ -169,7 +169,7 @@ func RenameProject(old, new string) error {
 	}
 	if proj.Org != org {
 		return UserError("project " + strconv.Quote(proj.Name) + " belongs to org " +
-			strconv.Quote(proj.Org) + ", not " + strconv.Quote(org) + " (Invariant 4)")
+			strconv.Quote(proj.Org) + ", not " + strconv.Quote(org) + "")
 	}
 
 	original := *proj

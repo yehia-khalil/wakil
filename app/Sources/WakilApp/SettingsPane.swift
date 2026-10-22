@@ -858,9 +858,6 @@ struct SettingsPane: View {
                     .font(.system(size: Scale.body))
                     .accessibilityIdentifier("settings.reload")
                     .foregroundStyle(coolWhite.opacity(0.45))
-                Text("read from disk on open and on every read — nothing here is cached")
-                    .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.26))
             }
         }
     }
@@ -916,9 +913,6 @@ struct SettingsPane: View {
                 organisationBox(.gitPRInstructions, placeholder: Self.pullRequestsPlaceholder,
                                 identifier: "settings.org.git.pullRequests", in: tree)
             }
-            readOnlyNote(
-                "Saved one field at a time, read-modify-write from disk — so an edit you make "
-                    + "to org.json by hand while this pane is open survives a save here.")
 
         case .providers:
             // Three headed sections (2026-10-21): the accounts, the local models, and the choice
@@ -1036,9 +1030,6 @@ struct SettingsPane: View {
                     // entries are read below.
                     ("API", "\(environment.api.count)", true),
                 ])
-                readOnlyNote(
-                    "An environment holds the databases and the API — which is why this tree "
-                        + "is four levels deep and not three.")
                 if let project = tree.projects.first(where: { $0.name == projectName }) {
                     removeSection(
                         key: "remove.environment.\(projectName).\(environmentName)",
@@ -1127,10 +1118,7 @@ struct SettingsPane: View {
                 // in a branch, exactly as the note predicted, and the cost
                 // was a list where a value had been — not a form to
                 // rewrite.
-                readOnlyNote(
-                    "The API entries are read-only, and stay so: this shape changed once "
-                        + "already while this pane was being built, and a form built on "
-                        + "today's is one rebuilt on someone else's schedule.")
+                readOnlyNote("API entries are edited in the project's project.json.")
             } else {
                 gone(environmentName)
             }

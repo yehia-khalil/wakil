@@ -309,7 +309,7 @@ public func registerEditorActions(
     @Sendable func confine(_ path: String, action: String) async throws -> (path: String, root: String) {
         if let hit = confinedPath(path, roots: await roots()) { return hit }
         throw EditorFilesError(description: "\(action): \((path as NSString).standardizingPath) is outside the active project's roots; "
-            + "editor reads and writes are confined to them (Invariant 6, Decision 36)")
+            + "editor reads and writes are confined to them")
     }
 
     /// The pane's column, else the layout's copy of it, else the one last left in any editor pane
@@ -934,8 +934,8 @@ public func registerEditorActions(
         description: "Write a tab's buffer to disk (path, or the active tab). A scratch tab needs as (an "
             + "absolute path inside a root) and becomes that file; onto a file that exists it needs replace "
             + "true, and onto a path already open in the pane it is refused. A read-only tab cannot be saved. "
-            + "Writes over a file changed on disk. Confined to the active project's roots (Invariant 6, "
-            + "Decision 36). Allowed everywhere.",
+            + "Writes over a file changed on disk. Confined to the active project's roots. "
+            + "Allowed everywhere.",
         kind: .mutate, audience: .agentReachable,
         schema: schema(["path": .object(["type": .string("string")]), "as": .object(["type": .string("string")]),
                         "replace": .object(["type": .string("boolean")])]),
@@ -1054,8 +1054,8 @@ public func registerEditorActions(
         name: "editor_create",
         description: "Make an empty file or a folder (kind file or dir) at path (absolute, inside a root), and "
             + "missing folders above it. A file opens as a pinned tab; a folder is opened in the tree. An "
-            + "existing name is refused, never overwritten. Confined to the active project's roots (Invariant 6, "
-            + "Decision 41). Allowed everywhere.",
+            + "existing name is refused, never overwritten. Confined to the active project's roots. "
+            + "Allowed everywhere.",
         kind: .mutate, audience: .agentReachable,
         schema: schema(["path": .object(["type": .string("string")]),
                         "kind": .object(["type": .string("string"), "enum": .array([.string("file"), .string("dir")])])],
@@ -1096,7 +1096,7 @@ public func registerEditorActions(
         description: "Rename or move a file or folder: path to to (both absolute, inside the roots; another root "
             + "is allowed). Open tabs on it, or under a moved folder, follow in every editor pane with their "
             + "unsaved edits; its diff tabs close. An existing to is refused; a root is never moved; a move "
-            + "across volumes is refused. Confined to the active project's roots (Invariant 6, Decision 41). "
+            + "across volumes is refused. Confined to the active project's roots. "
             + "Allowed everywhere.",
         kind: .mutate, audience: .agentReachable,
         schema: schema(["path": .object(["type": .string("string")]), "to": .object(["type": .string("string")])],
@@ -1140,9 +1140,9 @@ public func registerEditorActions(
     await registry.register(Action(
         name: "editor_trash",
         description: "Move a file or folder at path (absolute, inside a root) to the Trash, where Finder's Put "
-            + "Back restores it; no dialog (Rule 1). Its clean tabs close in every editor pane; a tab with "
+            + "Back restores it; no dialog. Its clean tabs close in every editor pane; a tab with "
             + "unsaved edits stays open, marked deleted, and saving it recreates the file. A root is never "
-            + "trashed. Needs macOS 15. Confined to the active project's roots (Invariant 6, Decision 41). "
+            + "trashed. Needs macOS 15. Confined to the active project's roots. "
             + "Allowed everywhere.",
         kind: .mutate, audience: .agentReachable,
         schema: schema(["path": .object(["type": .string("string")])], required: ["path"]),
@@ -1343,11 +1343,11 @@ public func registerEditorActions(
             return await reply(pane)
         }))
 
-    let treeRefusal = "A path outside the active project's roots is refused (Invariant 6, Decision 36)."
+    let treeRefusal = "A path outside the active project's roots is refused."
 
     await registry.register(Action(
         name: "editor_tree",
-        description: "Show or hide an editor pane's left column (shown), switch its view (files, search or changes — the project's git changes, 3b-iii), "
+        description: "Show or hide an editor pane's left column (shown), switch its view (files, search or changes — the project's git changes), "
             + "or set its width (points; clamped by the view). With no pane, the focused or first editor pane, or "
             + "a new one. A pane that never set its column starts from the one last left in any editor pane. "
             + "Shown on files, it lists every root.",
@@ -1873,7 +1873,7 @@ public func registerEditorActions(
             + "file is written. file (absolute) limits it to one file. cancel true stops a replace in flight "
             + "between batches, or an undo between files; what was written stays. Answers replaced, files and failures with the pane's "
             + "state; editor_replace_undo puts back what it wrote. Confined to the active project's roots "
-            + "(Invariant 6, Decision 36, Decision 39). Allowed everywhere.",
+            + ". Allowed everywhere.",
         kind: .mutate, audience: .agentReachable,
         schema: schema(["replacement": .object(["type": .string("string")]), "file": .object(["type": .string("string")]),
                         "cancel": .object(["type": .string("boolean")])]),

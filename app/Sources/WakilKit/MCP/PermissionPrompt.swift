@@ -231,12 +231,12 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): the operator chooses which account a session runs under; you "
             + "cannot switch it. Ask the operator to switch it in the Wakil window instead."
     case "ctx_set_project", "ctx_set_environment":
-        return "\(toolName): An agent's place is fixed when its session starts (Invariant 5). "
+        return "\(toolName): An agent's place is fixed when its session starts. "
             + "Tell the operator which place the work needs; they can start an agent there."
     case "ctx_create_project", "ctx_rename_project", "ctx_remove_project",
          "ctx_create_environment", "ctx_rename_environment", "ctx_remove_environment":
         return "\(toolName): only the operator adds, renames and removes projects and "
-            + "environments. An agent's place is fixed when its session starts (Invariant 5), "
+            + "environments. An agent's place is fixed when its session starts, "
             + "and these rewrite the registry and the project files it stands in. You may READ "
             + "them: ctx_config_tree answers every project and environment. Ask the operator to "
             + "do it in the settings pane (\u{2318},)."
@@ -244,7 +244,7 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
          "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set",
          "ctx_git_account_test", "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import":
         return "\(toolName): only the operator adds and removes an organisation's git accounts: "
-            + "they decide which account pushes and hold its secrets (Invariant 4). Ask the operator "
+            + "they decide which account pushes and hold its secrets. Ask the operator "
             + "to do it in Settings → Organisation → Git (\u{2318},)."
     case "ctx_list_orgs", "ctx_list_machine_providers", "ctx_list_accounts":
         return "\(toolName): this session is scoped to one organisation. Enumerating every "
@@ -253,7 +253,7 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "window instead."
     case "settings_open":
         return "\(toolName): only the operator opens the settings pane. Everything on it "
-            + "either crosses the credential boundary an organisation is (Invariant 4) or "
+            + "either crosses the credential boundary an organisation is or "
             + "creates and destroys credentials, so none of it is yours to drive — and a "
             + "surface you can open but not use is a handle to nothing. You may still READ "
             + "it: ctx_config_tree answers the same configuration the pane draws, read_pane "
@@ -280,7 +280,7 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "name, driver and Keychain entry name, and never a value. Ask the operator to set "
             + "it in the settings pane (\u{2318},)."
     case "ctx_set_editor_settings", "ctx_set_project_editor_settings":
-        return "\(toolName): only the operator changes editor settings (Decision 30). Autosave "
+        return "\(toolName): only the operator changes editor settings. Autosave "
             + "decides when their files are written, the font, wrap and tabs are how they read and "
             + "type, and showing ignored files and the heavy folders decide what search covers "
             + "— choices that are theirs. You may READ them: ctx_editor_settings "
@@ -289,7 +289,7 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
     case "ctx_update_org":
         return "\(toolName): only the operator edits an organisation's settings. Its default "
             + "account decides which credentials Wakil reaches for when a project names none, "
-            + "which is the credential boundary an organisation is (Invariant 4). You may READ "
+            + "which is the credential boundary an organisation is. You may READ "
             + "these values — ctx_config_tree answers all three. Ask the operator to change "
             + "them in the settings pane (\u{2318},)."
     case "capacity_record":
@@ -299,7 +299,7 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         // ctx_create_org, ctx_adopt_provider, ctx_add_provider,
         // ctx_unlink_provider
         return "\(toolName): creating an organisation or adopting an account into one moves "
-            + "the credential boundary an organisation is (Invariant 4); only the operator "
+            + "the credential boundary an organisation is; only the operator "
             + "may do that. Ask the operator to do it in the Wakil window instead."
     }
 }

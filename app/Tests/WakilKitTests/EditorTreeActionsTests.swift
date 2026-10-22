@@ -98,7 +98,7 @@ private func treeFixture() async throws -> (EditorFixture, EditorFileLists) {
         try await f.dispatch("editor_tree_expand", ["path": .string("/etc")])
         Issue.record("expected a refusal")
     } catch {
-        #expect(String(describing: error).contains("Invariant 6") && String(describing: error).contains("Decision 36"))
+        #expect(String(describing: error).contains("is outside the active project's roots"))
     }
 }
 

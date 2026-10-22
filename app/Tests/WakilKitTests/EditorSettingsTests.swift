@@ -118,7 +118,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
             guard case .deny(let reason) = decision else {
                 Issue.record("\(name) must be denied, got \(decision)"); return
             }
-            #expect(reason.contains("Decision 30"))
+            #expect(reason.contains("only the operator changes editor settings"))
             #expect(reason.contains("ctx_editor_settings"))
         }
     }

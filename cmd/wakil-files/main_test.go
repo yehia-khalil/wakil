@@ -104,7 +104,7 @@ func TestFilesRefusesAPathOutsideTheProject(t *testing.T) {
 		t.Fatal("read outside the project was allowed")
 	}
 	text := res.Content[0].(*mcp.TextContent).Text
-	if !strings.Contains(text, "Invariant 6") {
+	if !strings.Contains(text, "is outside the active project's roots") {
 		t.Fatalf("refusal does not name the invariant: %s", text)
 	}
 }
@@ -205,7 +205,7 @@ func TestFilesReplaceIsServedAndConfined(t *testing.T) {
 		t.Fatalf("disk %q", b)
 	}
 	res, _ = callFiles(t, "files_replace", map[string]any{"query": "x", "replacement": "y", "only": "/etc/hosts"})
-	if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "Invariant 6") {
+	if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "is outside the active project's roots") {
 		t.Fatalf("outside the roots: %+v", res.Content)
 	}
 }
@@ -221,7 +221,7 @@ func TestFilesCreateMoveAreServedAndConfined(t *testing.T) {
 		t.Fatalf("move %+v %v", res.Content, out)
 	}
 	res, _ := callFiles(t, "files_move", map[string]any{"from": q, "to": "/tmp/escaped.go"})
-	if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "Invariant 6") {
+	if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "is outside the active project's roots") {
 		t.Fatalf("move outside not refused by the invariant: %+v", res.Content)
 	}
 	res, _ = callFiles(t, "files_trash", map[string]any{"path": pdir})

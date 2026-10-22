@@ -1815,7 +1815,7 @@ public final class WindowModel {
     public var noActiveProviderNote: String? {
         guard providerId.isEmpty else { return nil }
         return "no active provider is set for this org yet — pick one in ⌘P, or bootstrap "
-            + "headlessly with `--dispatch ctx_set_provider` (phase-2b-vi-acceptance.md §1.4)"
+            + "headlessly with `--dispatch ctx_set_provider`"
     }
 
     /// The word this codebase uses for "no provider chosen yet", shared so

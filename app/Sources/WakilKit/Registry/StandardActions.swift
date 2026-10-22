@@ -1039,7 +1039,7 @@ public func registerStandardActions(
 
     await registry.register(Action(
         name: "ctx_rename_project",
-        description: "Rename a registered project. Refused while an agent is running in it (Invariant 5). Operator-only.",
+        description: "Rename a registered project. Refused while an agent is running in it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1071,7 +1071,7 @@ public func registerStandardActions(
 
     await registry.register(Action(
         name: "ctx_remove_project",
-        description: "Remove a project from the registry. Its folder is left alone. Refused while an agent is running in it (Invariant 5). Operator-only.",
+        description: "Remove a project from the registry. Its folder is left alone. Refused while an agent is running in it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1130,7 +1130,7 @@ public func registerStandardActions(
 
     await registry.register(Action(
         name: "ctx_rename_environment",
-        description: "Rename an environment of a project. `project` is the registry name, used only to check that no agent is running there (Invariant 5). Operator-only.",
+        description: "Rename an environment of a project. `project` is the registry name, used only to check that no agent is running there. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1165,7 +1165,7 @@ public func registerStandardActions(
 
     await registry.register(Action(
         name: "ctx_remove_environment",
-        description: "Remove an environment of a project; its files are moved to the Trash. `project` is the registry name, used only to check that no agent is running there (Invariant 5). Operator-only.",
+        description: "Remove an environment of a project; its files are moved to the Trash. `project` is the registry name, used only to check that no agent is running there. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1296,8 +1296,8 @@ public func registerStandardActions(
     await registry.register(Action(
         name: "ctx_set_local_provider",
         description: "Create or change a local model endpoint for the active organisation: id, optional "
-            + "label and baseURL (http or https); it serves every quick task. serves is ignored since "
-            + "3b-ix. Wakil installs and starts nothing. Refuses a bad URL and an id already used by "
+            + "label and baseURL (http or https); it serves every quick task. serves is ignored. "
+            + "Wakil installs and starts nothing. Refuses a bad URL and an id already used by "
             + "another kind of account. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
@@ -1309,7 +1309,7 @@ public func registerStandardActions(
                 "baseURL": .object(["type": .string("string")]),
                 "serves": .object([
                     "type": .string("array"), "items": .object(["type": .string("string")]),
-                    "description": .string("ignored since 3b-ix"),
+                    "description": .string("ignored"),
                 ]),
             ]),
             "required": .array([.string("id")]),
@@ -3137,7 +3137,7 @@ private func refuseIfAgentRuns(
     let place = environment.map { "\(project) / \($0)" } ?? project
     throw StandardActionError.serverError(
         action: action,
-        message: "\(agent) is running in \(place) — an agent keeps its own place (Invariant 5); stop it first")
+        message: "\(agent) is running in \(place) — an agent keeps its own place; stop it first")
 }
 
 private func callChecked(

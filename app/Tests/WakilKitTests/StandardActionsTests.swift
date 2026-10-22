@@ -3251,7 +3251,7 @@ private func projectEnvironmentRegistry(
     } catch {
         let text = "\(error)"
         #expect(text.contains("agent-1 is running in acme"))
-        #expect(text.contains("Invariant 5"))
+        #expect(text.contains("an agent keeps its own place"))
     }
     do {
         _ = try await registry.dispatch(
@@ -3265,7 +3265,7 @@ private func projectEnvironmentRegistry(
     } catch {
         let text = "\(error)"
         #expect(text.contains("agent-1 is running in acme / dev"))
-        #expect(text.contains("Invariant 5"))
+        #expect(text.contains("an agent keeps its own place"))
     }
     // An environment the agent is not in, and a project it is not in, go through.
     _ = try await registry.dispatch(

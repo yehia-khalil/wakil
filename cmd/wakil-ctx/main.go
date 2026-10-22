@@ -265,7 +265,7 @@ type setLocalProviderArgs struct {
 	ID      string   `json:"id" jsonschema:"the local provider id to create or override"`
 	Label   string   `json:"label,omitempty" jsonschema:"optional human-readable name"`
 	BaseURL string   `json:"baseURL" jsonschema:"the endpoint's http or https URL, e.g. http://127.0.0.1:8012"`
-	Serves  []string `json:"serves,omitempty" jsonschema:"ignored since 3b-ix: a local provider serves every quick task"`
+	Serves  []string `json:"serves,omitempty" jsonschema:"ignored: a local provider serves every quick task"`
 }
 
 // unlinkProviderArgs removes one organisation's binding.
