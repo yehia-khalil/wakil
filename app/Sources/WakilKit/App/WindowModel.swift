@@ -2809,6 +2809,10 @@ public final class WindowModel {
         /// reworded without meaning anything has moved.
         public var identifierFragment: String { rawValue }
 
+        /// Whether leaving the field saves it — by focus moving on or its page going (3a-ii,
+        /// Rule 2). The others keep Return and Save.
+        public var savesOnLeave: Bool { self == .gitName || self == .gitEmail }
+
         /// What the form labels it.
         public var label: String {
             switch self {

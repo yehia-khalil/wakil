@@ -221,6 +221,14 @@ struct SettingsPane: View {
     /// The field whose save is in flight, so its control can say so rather
     /// than look inert.
     @State private var saving: WindowModel.OrganisationField?
+    /// The Git fields on screen, read by a save that lands after its page went — left by a tree
+    /// click — so its refusal goes to the window's status (Rule 8). A reference, as
+    /// `LeaveSavedField`'s, so the save's task reads the live answer.
+    @State private var gitFieldsShown = ShownFields()
+
+    private final class ShownFields {
+        var fields: Set<WindowModel.OrganisationField> = []
+    }
     /// The organisation field holding the keyboard: Git name and email save when it leaves (3a-ii, Rule 2).
     @FocusState private var focusedOrgField: WindowModel.OrganisationField?
 
@@ -1061,9 +1069,15 @@ struct SettingsPane: View {
                         // path. A Return that saved already cleared the draft (or is still saving), so
                         // leaving after it writes nothing twice. The other fields keep Return / Save.
                         .onChange(of: focusedOrgField) { old, _ in
-                            guard old == field, field == .gitName || field == .gitEmail,
-                                  let d = drafts[field], d != storedValue(field, in: tree), saving != field else { return }
-                            save(field, tree: tree)
+                            guard old == field else { return }
+                            leave(field, tree: tree)
+                        }
+                        // Leaving the page by the tree is leaving the field too, and the focus change
+                        // above is never reported once the page is gone (2e-ii) — so going is a leave.
+                        .onAppear { if field.savesOnLeave { gitFieldsShown.fields.insert(field) } }
+                        .onDisappear {
+                            gitFieldsShown.fields.remove(field)
+                            leave(field, tree: tree)
                         }
                         .accessibilityIdentifier("settings.org.\(field.identifierFragment)")
                     if draft != nil, draft != stored {
@@ -1318,14 +1332,24 @@ struct SettingsPane: View {
         }
     }
 
+    /// A Git field left — focus moved on, or its page went: saves a changed draft (Rule 2).
+    private func leave(_ field: WindowModel.OrganisationField, tree: SettingsTree) {
+        guard field.savesOnLeave,
+              LeaveSave.value(draft: drafts[field], stored: storedValue(field, in: tree),
+                              saving: saving == field) != nil else { return }
+        save(field, tree: tree)
+    }
+
     private func save(_ field: WindowModel.OrganisationField, tree: SettingsTree) {
         guard let value = drafts[field], saving != field else { return }
         saving = field
         refusals[field] = nil
+        let shown = gitFieldsShown
         Task {
             let refusal = await saveOrganisationField(field, value)
             saving = nil
             refusals[field] = refusal
+            if let refusal, field.savesOnLeave, !shown.fields.contains(field) { showUnseenRefusal(refusal) }
             quickStatus = await quickTaskStatus()
             // The draft is cleared only on success, so a refused value
             // stays in front of the operator to be corrected rather than
