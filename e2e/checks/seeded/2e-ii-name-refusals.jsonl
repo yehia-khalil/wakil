@@ -32,4 +32,5 @@
 {"do":{"click":"settings.tree.environment.e2e-project.qa"}}
 {"do":{"click":"settings.tree.environment.e2e-project.staging"}}
 {"expect":{"tree":"contains","text":"environment.e2e-project.staging"}}
-{"expect":{"tree":"absent","text":"x/y"}}
+{"expect":{"tree":"absent","text":"environment.e2e-project.x/y"}}
+{"expect":{"tree":"contains","text":"the name \"x/y\" contains \"/\""}}
