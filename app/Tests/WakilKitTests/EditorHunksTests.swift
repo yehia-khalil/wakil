@@ -88,3 +88,25 @@ private let cases: [HunkCase] = [
     #expect(editorHunks(base: base, text: text) == editorHunksUncached(base: base, text: text))
     #expect(editorHunks(base: base, text: "a\nb\nc\nd\n").isEmpty)
 }
+
+@Suite struct EditorStagedTextTests {
+    @Test func stagedTextAppliesOnlyTheChosenHunk() {
+        let base = "a\nb\nc\nd\n"
+        let text = "a\nB\nc\nD\n"           // two changed hunks: line 2 and line 4
+        #expect(editorStagedText(base: base, text: text, hunk: 0) == "a\nB\nc\nd\n")
+        #expect(editorStagedText(base: base, text: text, hunk: 1) == "a\nb\nc\nD\n")
+        #expect(editorStagedText(base: base, text: text, hunk: 2) == nil)
+    }
+
+    @Test func stagedTextHandlesAnAddedAndADeletedHunk() {
+        #expect(editorStagedText(base: "a\nc\n", text: "a\nb\nc\n", hunk: 0) == "a\nb\nc\n")
+        #expect(editorStagedText(base: "a\nb\nc\n", text: "a\nc\n", hunk: 0) == "a\nc\n")
+    }
+}
+
+@Suite struct GitBlobIdTests {
+    @Test func gitBlobIdMatchesGitHashObject() {
+        #expect(gitBlobId("hello\n") == "ce013625030ba8dba906f756967f9e9ca394464a")
+        #expect(gitBlobId("") == "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+    }
+}

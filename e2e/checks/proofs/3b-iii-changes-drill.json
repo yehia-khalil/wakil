@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3b-iii-changes-drill.jsonl",
-  "baseCommit": "2dfec0ee0c10361256dd62e7365793e14cb46481",
-  "provedAt": "2026-10-16T20:59:37.504574Z",
-  "checkBlob": "d8553c26471935a206e3c411fc7b5fc9652d1c4f"
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T21:06:32.502374Z",
+  "checkBlob": "7c40d1507f8e5f472df9936e86fa0e19ff7773e7"
 }

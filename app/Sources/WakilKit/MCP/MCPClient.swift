@@ -256,6 +256,12 @@ public actor MCPClient {
     /// when this budget runs out.
     public static let mutationReplyTimeout: TimeInterval = 300
 
+    /// The reply budget of `git_commit` and `git_amend` (3a-ii, ruling P4). The spec allows a hook no
+    /// timeout, and `callTool` takes a finite one, so this is an hour: past any hook a person waits
+    /// for. What stops a commit sooner is cancellation, not this: cancelling the Task makes
+    /// `MCPClient` send `notifications/cancelled`.
+    public static let gitWriteReplyTimeout: TimeInterval = 3600
+
     /// Spawns the child process, then performs the MCP handshake: sends
     /// `initialize` and awaits its reply, then sends the
     /// `notifications/initialized` notification. The notification has no

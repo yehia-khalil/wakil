@@ -410,3 +410,23 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
     #expect(tree.editor.ghostText == true)
     #expect(SettingsEditor.defaults.ghostText == true)
 }
+
+// MARK: - The organisation's git author (3a-ii)
+
+/// `config_tree` publishes the organisation's git name and email; an older one publishes neither.
+@Test func theOrganisationsGitAuthorDecodes() throws {
+    func tree(_ org: [String: JSONValue]) throws -> SettingsTree {
+        try #require(decodeSettingsTree(fromResult: .object([
+            "structuredContent": .object([
+                "org": .object(org), "providers": .array([]), "projects": .array([]),
+            ]),
+        ])))
+    }
+    let set = try tree(["id": .string("initech"), "gitName": .string("Peter Gibbons"),
+                        "gitEmail": .string("peter@initech.com")])
+    #expect(set.org.gitName == "Peter Gibbons")
+    #expect(set.org.gitEmail == "peter@initech.com")
+    let absent = try tree(["id": .string("initech")])
+    #expect(absent.org.gitName == "")
+    #expect(absent.org.gitEmail == "")
+}

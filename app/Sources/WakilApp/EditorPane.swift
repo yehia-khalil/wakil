@@ -75,6 +75,10 @@ struct EditorPane: View {
     let ghostSchema: () async -> GhostScope
     let ghostSuggest: (InfillRequest, Int) async -> String?
     let ghostCancel: () -> Void
+    /// 3a-ii. The Changes view's commit box and write buttons, for every root (`EditorChangesControls`).
+    let changes: EditorChangesControls
+    /// The peek's Stage Change: `WindowModel.changesStageHunk`, the focused tab's peeked hunk.
+    let stageHunk: () async -> Void
 
     @State private var host = EditorHost()
     /// Compare, open: the path and the disk text it shows against the buffer.
@@ -136,7 +140,8 @@ struct EditorPane: View {
                                  reveal: { Task { await revealInTree() } },
                                  selected: $treeSelected, selectedResult: $resultSelected,
                                  focusWanted: $columnFocusWanted, hasKeyboard: $columnHasKeyboard,
-                                 pendingReveal: $pendingReveal, browsed: $treeBrowsed)
+                                 pendingReveal: $pendingReveal, browsed: $treeBrowsed,
+                                 changes: changes)
                 }
                 editorStack
             }
@@ -498,7 +503,7 @@ struct EditorPane: View {
 
     // MARK: - Peek
 
-    /// A peek control or key (R13): step, close, or Revert — `editor_replace_range` with the hunk's
+    /// A peek control or key (R13): step, close, Stage Change (3a-ii), or Revert — `editor_replace_range` with the hunk's
     /// old lines, which asks nothing (Rule 1) and is undone with ⌘Z.
     ///
     /// Revert passes `expect`, the hunk's new text as this snapshot has it, so the store refuses it
@@ -510,6 +515,9 @@ struct EditorPane: View {
             case "up": await dispatch("editor_peek_step", ["delta": .integer(-1)])
             case "down": await dispatch("editor_peek_step", ["delta": .integer(1)])
             case "close": await dispatch("editor_peek_close", [:])
+            // 3a-ii: that one hunk into the index. The peek exists only on a tracked file (its
+            // baseline is the index text), so the button is never drawn where it has nothing to stage.
+            case "stage": await stageHunk()
             case "revert":
                 guard !host.reverting, let latest = host.latest, let r = editorPeekRevert(latest) else { return }
                 host.reverting = true
@@ -1101,13 +1109,13 @@ struct EditorBusyTick: View {
 
 enum EditorPaneStyle {
     static let text = Color(RailTreatment.textColour)
-    static let slab = Color(red: 0x0b / 255, green: 0x0d / 255, blue: 0x14 / 255)
+    static let slab = Color(EditorSurface.slab)
     /// The artboard's active-tab tick, `#9e82ff`.
     static let tick = Color(red: 0x9e / 255, green: 0x82 / 255, blue: 0xff / 255)
     static let amber = Color(TerminalPalette.amber)
     /// §5's violet `#7c5cff`: the column's selected row and a search switch that is on.
     static let violet = Color(VoidPalette.violet)
-    static let lifted = Color(red: 0x1c / 255, green: 0x20 / 255, blue: 0x30 / 255)
+    static let lifted = Color(EditorSurface.lifted)
 
     /// §5: amber for a change, green for an addition, a deletion muted — never red (3a-i's tones).
     static func tone(_ t: GitStatusTone) -> Color {

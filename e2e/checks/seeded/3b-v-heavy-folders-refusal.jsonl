@@ -1,5 +1,6 @@
 {"do":{"hotkey":"cmd+,"}}
 {"expect":{"tree":"contains","text":"SETTINGS"}}
+{"do":{"click":"settings.tree.project.e2e-git.disclosure"}}
 {"do":{"click":"settings.tree.projectEditor.e2e-git"}}
 {"expect":{"tree":"contains","text":"HEAVY FOLDERS"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.projects[0].name","equals":"e2e-git"}}

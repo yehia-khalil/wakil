@@ -10,7 +10,7 @@
 .wakil-mark-deletedAbove::after{top:-4px}
 .wakil-peek{pointer-events:auto;background:#11141e;border-top:1px solid #2a2f40;border-bottom:1px solid #2a2f40;font:12px Menlo,monospace}
 .wakil-peek-head{display:flex;gap:10px;padding:2px 8px;color:rgba(232,236,246,.62);font-size:11px}
-.wakil-peek-head button{all:unset;cursor:pointer;color:rgba(232,236,246,.9)}
+.wakil-peek-head button{all:unset;cursor:pointer;white-space:nowrap;color:rgba(232,236,246,.9)}
 .wakil-peek-old{color:rgba(232,236,246,.45);padding-left:8px;white-space:pre}
 .wakil-peek-new{color:#8be0c8;padding-left:8px;white-space:pre}
 /* 3b-viii: the dot that pulses at the caret while a slow ghost-text request waits (the ghost's own
@@ -289,7 +289,7 @@
         const node = document.createElement('div'); node.className = 'wakil-peek';
         const head = document.createElement('div'); head.className = 'wakil-peek-head';
         const title = document.createElement('span'); title.textContent = p.title; head.appendChild(title);
-        [['\u2191', 'up'], ['\u2193', 'down'], ['Revert', 'revert'], ['\u00d7', 'close']].forEach(function (b) {
+        [['\u2191', 'up'], ['\u2193', 'down'], ['Stage', 'stage'], ['Revert', 'revert'], ['\u00d7', 'close']].forEach(function (b) {
           const el = document.createElement('button'); el.textContent = b[0];
           el.addEventListener('mousedown', function (e) {
             e.preventDefault(); e.stopPropagation();

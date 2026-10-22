@@ -61,6 +61,50 @@ private func highlight(_ f: EditorFixture) async -> EditorChangesRow? { await f.
         #expect(await f.snapshot().column?.changesClosed == [])
     }
 
+    // 3a-ii review I2: a group collapses through an action, as a root does, and a step skips it.
+    @Test func groupCollapseAndExpandKeepTheGroupAndAStepSkipsIt() async throws {
+        let f = try await changesFixture()
+        try await f.dispatch("editor_changes_group_collapse", ["root": .string("/p/api"), "group": .string("changed")])
+        #expect(await f.snapshot().column?.changesClosedGroups == [EditorChangesGroup(root: "/p/api", group: "changed")])
+        try await f.dispatch("editor_changes_step", ["delta": .integer(1)])
+        try await f.dispatch("editor_changes_step", ["delta": .integer(1)])
+        #expect(await highlight(f) == EditorChangesRow(root: "/p/api", path: "n", group: "untracked"))
+        try await f.dispatch("editor_changes_group_collapse", ["root": .string("/p/api"), "group": .string("changed")])
+        #expect(await f.snapshot().column?.changesClosedGroups.count == 1, "collapsing twice is collapsing once")
+        try await f.dispatch("editor_changes_group_expand", ["root": .string("/p/api"), "group": .string("changed")])
+        #expect(await f.snapshot().column?.changesClosedGroups == [])
+    }
+
+    @Test func aStepOrASelectionNeverOpensAClosedGroup() async throws {
+        let f = try await changesFixture()
+        try await f.dispatch("editor_changes_group_collapse", ["root": .string("/p/api"), "group": .string("untracked")])
+        try await f.dispatch("editor_changes_step", ["delta": .integer(9)])
+        try await f.dispatch("editor_changes_select", ["root": .string("/p/api"), "path": .string("n"),
+                                                       "group": .string("untracked")])
+        #expect(await f.snapshot().column?.changesClosedGroups == [EditorChangesGroup(root: "/p/api", group: "untracked")])
+    }
+
+    @Test func collapsingTheHighlightsGroupMovesTheHighlightToADrawnRow() async throws {
+        let f = try await changesFixture()
+        try await f.dispatch("editor_changes_select", ["root": .string("/p/api"), "path": .string("b.go"),
+                                                       "group": .string("changed")])
+        try await f.dispatch("editor_changes_group_collapse", ["root": .string("/p/api"), "group": .string("changed")])
+        #expect(await highlight(f) == EditorChangesRow(root: "/p/api", path: "n", group: "untracked"))
+    }
+
+    @Test func groupCollapseRefusesAnUnknownGroupAndARootOutsideTheProject() async throws {
+        let f = try await changesFixture()
+        await #expect(throws: GitActionError.unknownGroup(action: "editor_changes_group_collapse", group: "stash")) {
+            try await f.dispatch("editor_changes_group_collapse", ["root": .string("/p/api"), "group": .string("stash")])
+        }
+        await #expect(throws: GitActionError.self) {
+            try await f.dispatch("editor_changes_group_expand", ["root": .string("/x"), "group": .string("staged")])
+        }
+        await #expect(throws: StandardActionError.self) {
+            try await f.dispatch("editor_changes_group_collapse", ["root": .string("/p/api")])
+        }
+    }
+
     @Test func collapseRefusesARootOutsideTheProject() async throws {
         let f = try await changesFixture()
         await #expect(throws: GitActionError.self) {
@@ -95,6 +139,17 @@ private func highlight(_ f: EditorFixture) async -> EditorChangesRow? { await f.
         }
     }
 
+    @Test func readPaneCarriesTheClosedGroups() async throws {
+        let f = try await changesFixture()
+        try await f.dispatch("editor_changes_group_collapse", ["root": .string("/p/web"), "group": .string("changed")])
+        try await f.dispatch("editor_changes_group_collapse", ["root": .string("/p/api"), "group": .string("untracked")])
+        guard case .object(let o) = await f.panes.readPane(paneId: f.pane, kind: "editor"),
+              case .object(let c)? = o["column"] else { Issue.record("no column"); return }
+        #expect(c["changes_closed_groups"] == .array([
+            .object(["root": .string("/p/api"), "group": .string("untracked")]),
+            .object(["root": .string("/p/web"), "group": .string("changed")])]))
+    }
+
     @Test func readPaneCarriesTheHighlightAndTheCollapsedRoots() async throws {
         let f = try await changesFixture()
         try await f.dispatch("editor_changes_collapse", ["root": .string("/p/web")])
@@ -102,6 +157,7 @@ private func highlight(_ f: EditorFixture) async -> EditorChangesRow? { await f.
         guard case .object(let o) = await f.panes.readPane(paneId: f.pane, kind: "editor"),
               case .object(let c)? = o["column"] else { Issue.record("no column"); return }
         #expect(c["changes_closed"] == .array([.string("/p/web")]))
+        #expect(c["changes_closed_groups"] == .array([]))
         #expect(c["changes_highlight"] == .object(["root": .string("/p/api"), "path": .string("a.go"),
                                                    "group": .string("staged")]))
     }

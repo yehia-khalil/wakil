@@ -15,6 +15,11 @@ import Foundation
 /// pane — the pane's own state moves only through the registry's `git_*` actions — so it is
 /// an answer binary in exactly §2.1's sense. The window runs a second copy of it for those
 /// actions (`WakilWiring.gitClient`); the two never share a process.
+///
+/// **3a-ii added seven git writes to the same binary**, registered only when the process starts
+/// with `WAKIL_GIT_WRITES=1` (`WakilWiring.gitWritesFlag`). Only the window's own copies get it;
+/// `agentMCPConfigJSON` never sets it, so the agent's copy still has the reads alone and a commit,
+/// discard or stage reaches git only through the registry's `editor_changes_*` actions (Invariant 2).
 public let agentFacingServers = ["wakil-pm", "wakil-recall", "wakil-git"]
 
 /// Builds the `--mcp-config` JSON one session launches with: the `wakil`
@@ -117,9 +122,11 @@ public func agentMCPConfigJSON(
 ///   are defined in the Go binaries, not here; enumerating them in Swift
 ///   would be precisely the stale second copy this function is derived to
 ///   avoid. Spec §5 records that the first two only read — Phase 1's
-///   capability layer has zero mutating operations — and `wakil-git` is
-///   read-only by construction (3a-i: an allowlist of subcommands and flags,
-///   confined to the project's roots). `agentMCPConfigJSON` gives the agent
+///   capability layer has zero mutating operations — and the agent's
+///   `wakil-git` is read-only: its reads are an allowlist of subcommands and
+///   flags confined to the project's roots (3a-i), and its write tools are not
+///   registered at all, because `agentMCPConfigJSON` never sets
+///   `WAKIL_GIT_WRITES` (3a-ii). `agentMCPConfigJSON` gives the agent
 ///   no other servers, `--strict-mcp-config` making that set closed.
 ///
 /// **The `--permission-prompt-tool` this list needs now exists**

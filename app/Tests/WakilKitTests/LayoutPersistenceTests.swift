@@ -734,6 +734,15 @@ private func conversation(
     #expect(try JSONDecoder().decode(EditorColumnState.self, from: JSONEncoder().encode(c)) == c)
 }
 
+// 3a-ii review I2: closed Changes groups are the window's life, never saved with the layout.
+@Test func closedChangesGroupsAreNeverSaved() throws {
+    var c = EditorColumnState(shown: true, view: .changes, width: 260, open: [], changesClosed: ["/p/web"])
+    c.changesClosedGroups = [EditorChangesGroup(root: "/p/api", group: "untracked")]
+    let back = try JSONDecoder().decode(EditorColumnState.self, from: JSONEncoder().encode(c))
+    #expect(back.changesClosedGroups.isEmpty)
+    #expect(back.changesClosed == ["/p/web"])
+}
+
 // MARK: - 3b-iii: a saved Git pane comes back as the editor on Changes
 
 @Test func aSavedGitPaneLoadsAsAnEditorPaneOnChangesWithItsFrameAndId() throws {

@@ -18,6 +18,8 @@ type ConfigTreeOrg struct {
 	DefaultProvider string `json:"defaultProvider"`
 	SpeechProvider  string `json:"speechProvider"`
 	QuickProvider   string `json:"quickProvider"`
+	GitName         string `json:"gitName"`
+	GitEmail        string `json:"gitEmail"`
 	GhostText       bool   `json:"ghostText"`
 	FastPath        bool   `json:"fastPath"`
 }
@@ -199,6 +201,8 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 		DefaultProvider: record.DefaultProvider,
 		SpeechProvider:  record.SpeechProvider,
 		QuickProvider:   record.QuickProvider,
+		GitName:         record.GitName,
+		GitEmail:        record.GitEmail,
 	}
 	tree.Org.GhostText = resolveOrgSwitch(record.GhostText, app.Editor.Resolved().GhostText)
 	tree.Org.FastPath = resolveOrgSwitch(record.FastPath, quickProviderIsLocal(org, record.QuickProvider))

@@ -98,6 +98,13 @@ func seedGitProject(root string, spec SeedSpec) (string, error) {
 	}); err != nil {
 		return "", err
 	}
+	if spec.GitHook {
+		// Written after the seed's own commit, so the seed never runs it; reads never run hooks.
+		hook := filepath.Join(portal, ".git", "hooks", "pre-commit")
+		if err := os.WriteFile(hook, []byte(gitHookScript), 0o755); err != nil {
+			return "", fmt.Errorf("seed: writing %s: %w", hook, err)
+		}
+	}
 
 	project := wakilcore.Project{
 		Name:  spec.GitProject,
@@ -150,6 +157,24 @@ var searchHaystackChecks = map[string]bool{
 func WantsSearchHaystack(checks []Check) bool {
 	for _, check := range checks {
 		if searchHaystackChecks[check.Name] {
+			return true
+		}
+	}
+	return false
+}
+
+// gitHookScript is the pre-commit hook SeedSpec.GitHook writes into e2e-portal: it refuses every
+// commit, and while a file named `slow` is in the root it first sleeps, long enough for a check to
+// see the commit in flight and press Cancel. `sleep 90.32` is the process a check looks for.
+const gitHookScript = "#!/bin/sh\nif [ -e slow ]; then sleep 90.32; fi\necho 'e2e hook says no' >&2\nexit 1\n"
+
+// gitHookChecks are the checks whose launch seeds the failing hook (SeedSpec.GitHook).
+var gitHookChecks = map[string]bool{"3a-ii-hook-fails.jsonl": true}
+
+// WantsGitHook reports whether a launch running these checks seeds the failing pre-commit hook.
+func WantsGitHook(checks []Check) bool {
+	for _, check := range checks {
+		if gitHookChecks[check.Name] {
 			return true
 		}
 	}

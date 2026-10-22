@@ -28,7 +28,7 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     var onLog: ((String) -> Void)?
     /// A key the page took from Monaco (`captureKeys`): "up", "down" or "escape".
     var onKey: ((String) -> Void)?
-    /// A peek control pressed in `key`: "up", "down", "revert" or "close".
+    /// A peek control pressed in `key`: "up", "down", "stage", "revert" or "close".
     var onPeek: ((String, String) -> Void)?
     /// 3b-viii: the page asks for ghost-text in `key`'s model — request `id`, the model's whole text
     /// and the caret as a UTF-16 offset into it. Answered by `resolveGhost(id:text:)`.

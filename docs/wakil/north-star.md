@@ -90,7 +90,7 @@ Rules no phase may break.
 5. **Exactly one place on screen; each agent keeps its own.** Implicit scope is the
    product; an explicit project argument would forfeit it. History: Decision 41.
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
-   deliberate justification, never by default. Five have earned in. The justification
+   deliberate justification, never by default. Six have earned in. The justification
    for each, and what each leaves refused, is in `decisions.md` under *"Invariant 6 — the
    writes that have earned in"*.
 
@@ -101,6 +101,7 @@ Rules no phase may break.
    | Request with a mutation method | HTTP | 2026-09-17 |
    | File write — local files inside the project's roots | wakil-files | 2026-10-11 |
    | File create, move, Move to Trash — inside the roots | wakil-files | 2026-10-17 |
+   | Stage, unstage, discard, commit — local git inside the project's roots | wakil-git | 2026-10-21 |
 
    **Still refused:** schema mutation (every DDL verb, `TRUNCATE` explicitly), Mongo
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`

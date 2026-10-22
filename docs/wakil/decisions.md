@@ -1317,8 +1317,8 @@ Each entry: the call, why, and what would change our mind.
     opens an inline **peek** whose **Revert** is a buffer edit — undoable, unsaved until ⌘S — and so
     asks nothing (Rule 1). The Files tree shows each changed file's status letter. **The Git pane
     kind is gone**, and a layout that saved one opens it as an editor pane on Changes — the first kind
-    migration; every other unknown kind is still dropped. Nothing writes to git: stage, unstage,
-    commit and discard stay 3a-ii's.
+    migration; every other unknown kind is still dropped. Stage, unstage, discard and commit are
+    3a-ii's (Decision 43).
     *Reverse if:* the Changes view is found unable to show something the operator relied on the Git
     pane's spine or names column for — then that piece comes back inside the editor, not as a pane.
 41. **File create, move and Move to Trash earn their way in: the Trash is the undo, and the price is allow.**
@@ -1445,6 +1445,27 @@ Each entry: the call, why, and what would change our mind.
     URL and serves both operations (the serves checkboxes are removed); each quick task has an
     on/off switch beside the model, per org (`ghostText`, `fastPath`). The fast path is built;
     next is agent status lines.*
+
+43. **Git writes earn their way in from the Changes view: priced allow, hooks run, a discard goes to
+    the Trash, and the organisation names the author.**
+    *(2026-10-21, operator, during the 3a-ii design —
+    `docs/superpowers/specs/2026-10-21-3a-ii-git-writes-design.md`.)*
+    The Changes view gets VS Code's Source Control: a message box per root, ⌘⏎ to commit, **+** /
+    **−** / **↺** on rows and group headers, **Commit All** when nothing is staged, *Amend Last
+    Commit* and *Undo Last Commit*, and the gutter peek's **Stage Change**. Seven
+    `editor_changes_*` actions reach them, **priced *allow* everywhere**, voice and the agent
+    included: a commit stays on this Mac and Undo Last Commit (a soft reset) reverses it. **Discard
+    sends the current copy to the Trash** (`<name> (discarded HH:MM)`) before restoring it, so it
+    asks nothing (Rule 1). **Writes go through `GitWriter`** in `wakil-git` (approach A), which
+    lets the repository's hooks, signing program and clean filters run, as a terminal or VS Code
+    does, and still blocks fsmonitor, pagers, external diff and every network path; `GitRunner`'s
+    reads still run none of them. **The author is the organisation's**: Settings → Organisation →
+    Git holds a name and an email, passed as `-c user.name/user.email` to every write; with none
+    set, git's own config decides, and the commit box says which. The identity moved here from
+    3a-iii; the SSH key, push, pull and fetch stay 3a-iii's. **Stage Selected Ranges** in the diff
+    tab is left to 3a-ii-b. A `git commit` the agent runs in its own shell is unchanged.
+    *Reverse if:* a commit or discard from Wakil is found to have lost work that the Trash or Undo
+    Last Commit could not bring back — then the price becomes *gate*.
 
 ## Invariant 6 — the writes that have earned in
 
@@ -1603,3 +1624,12 @@ included. The Trash is undoable, so nothing is destroyed. The agent's harness al
 `mkdir` and `rm`, so the editor adds no reach. All three are confined on the parent folder, so a
 link is acted on as itself, never followed. Still refused: permanent delete, a root, anything
 outside the roots, and a move across volumes. The reasoning is Decision 41.
+
+### 2026-10-21 — stage, unstage, discard and commit, inside the project's roots
+
+Local git only, through `wakil-git`'s `GitWriter`, on a root of the active project, priced *allow*
+everywhere, voice included. A commit stays on this Mac, and Undo Last Commit reverses it; a
+discard's old copy is in the Trash. A commit runs the repository's hooks and signing program — no
+more than the agent's shell can already run in that repository — while every read still runs
+none. Still refused: push, pull, fetch and every remote (3a-iii), branches and stash (3a-iv),
+rebase, and any flag off a tool's list. The reasoning is Decision 43.

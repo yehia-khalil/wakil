@@ -59,6 +59,8 @@ enum EditorPaneKind: PaneKind {
             "shown": .bool(c.shown), "view": .string(c.view.rawValue), "width": .number(c.width),
             "open": .array(c.open.map { .string($0) }),
             "changes_closed": .array(c.changesClosed.sorted().map { .string($0) }),
+            "changes_closed_groups": .array(editorChangesSortedGroups(c.changesClosedGroups).map { g in
+                .object(["root": .string(g.root), "group": .string(g.group)]) }),
             "changes_highlight": c.changesHighlight.map { h in
                 .object(["root": .string(h.root), "path": .string(h.path), "group": .string(h.group)]) } ?? .null,
         ]) } ?? .null

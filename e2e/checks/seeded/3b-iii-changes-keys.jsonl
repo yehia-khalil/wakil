@@ -13,7 +13,7 @@
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
 {"expect":{"pane":"editor-1","field":"column.shown","equals":"true"}}
-{"expect":{"tree":"contains","text":"STAGED"}}
+{"expect":{"tree":"contains","text":"Staged, "}}
 {"expect":{"focus":"editor.column"}}
 {"do":{"press":"Down"}}
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"app.txt"}}
@@ -43,7 +43,7 @@
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"notes"}}
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-1","field":"column.shown","equals":"false"}}
-{"expect":{"tree":"absent","text":"STAGED"}}
+{"expect":{"tree":"absent","text":"Staged, "}}
 {"do":{"hotkey":"cmd+shift+g"}}
 {"expect":{"pane":"editor-1","field":"column.shown","equals":"true"}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
@@ -52,3 +52,16 @@
 {"expect":{"pane":"editor-1","field":"column.changes_highlight.root","contains":"/e2e-portal"}}
 {"expect":{"pane":"editor-1","field":"tabs[1].diff.path","equals":"index.txt"}}
 {"expect":{"journal":{"contains":"\"action\":\"editor_changes_step\""}}}
+{"dispatch":{"action":"editor_changes_group_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","group":"untracked"}}}
+{"expect":{"tree":"contains","text":"Untracked, 2"}}
+{"expect":{"tree":"absent","text":"?, BookingController.php"}}
+{"expect":{"focus":"editor.column"}}
+{"do":{"press":"Up"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.path","equals":"app.txt"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.group","equals":"changed"}}
+{"expect":{"tree":"absent","text":"?, BookingController.php"}}
+{"do":{"press":"Down"}}
+{"expect":{"pane":"editor-1","field":"column.changes_highlight.root","contains":"/e2e-portal"}}
+{"expect":{"tree":"contains","text":"Untracked, 2"}}
+{"expect":{"tree":"absent","text":"?, BookingController.php"}}
+{"expect":{"pane":"editor-1","field":"column.changes_closed_groups","contains":"\"untracked\""}}

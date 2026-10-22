@@ -687,6 +687,40 @@ func TestOnlyTheSearchCancelCheckWantsTheHaystack(t *testing.T) {
 	}
 }
 
+// With GitHook, e2e-portal carries an executable pre-commit hook that refuses a commit in its own
+// words, and the seed's commit still happened; without it, no hook is written.
+func TestSeedWritesTheFailingHookOnlyWhenAsked(t *testing.T) {
+	plain, _ := seedInto(t, DefaultSeed())
+	if _, err := os.Stat(filepath.Join(plain.Root, GitRootPortal, ".git", "hooks", "pre-commit")); !os.IsNotExist(err) {
+		t.Errorf("the default seed wrote a pre-commit hook (stat: %v); only the hook check's launch gets it", err)
+	}
+
+	spec := DefaultSeed()
+	spec.GitHook = true
+	fixture, _ := seedInto(t, spec)
+	portal := filepath.Join(fixture.Root, GitRootPortal)
+	info, err := os.Stat(filepath.Join(portal, ".git", "hooks", "pre-commit"))
+	if err != nil || info.Mode()&0o111 == 0 {
+		t.Fatalf("pre-commit hook: %v, mode %v; want an executable hook", err, info)
+	}
+	git := func(args ...string) (string, error) {
+		cmd := exec.Command("git", append([]string{"-C", portal}, args...)...)
+		cmd.Env = seedGitEnv(fixture.Root)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := git("log", "--format=%s"); err != nil || strings.TrimSpace(out) != "seed" {
+		t.Errorf("e2e-portal's history = %q, %v; want the one seed commit", out, err)
+	}
+	out, err := git("commit", "-qam", "refused")
+	if err == nil || !strings.Contains(out, "e2e hook says no") {
+		t.Errorf("a commit under the hook = %q, %v; want it refused with 'e2e hook says no'", out, err)
+	}
+	if !WantsGitHook([]Check{{Name: "3a-ii-hook-fails.jsonl"}}) || WantsGitHook([]Check{{Name: "3a-ii-commit.jsonl"}}) {
+		t.Error("WantsGitHook must be true for 3a-ii-hook-fails.jsonl only")
+	}
+}
+
 // seedGit runs git in the fixture's e2e-api repository, with the seed's own environment.
 func seedGit(fixture Fixture, args ...string) (string, error) {
 	cmd := exec.Command("git", append([]string{"-C", filepath.Join(fixture.Root, GitRootAPI)}, args...)...)

@@ -61,6 +61,12 @@ type SeedSpec struct {
 	// search-Cancel and replace-Cancel checks' launches ask for it** (`WantsSearchHaystack`): every search over the git project would otherwise scan it, and a
 	// parity step could settle on a search still in flight.
 	SearchHaystack bool
+	// GitHook writes a pre-commit hook into the git project's e2e-portal, after its seed commit, that
+	// refuses every commit with `e2e hook says no` on stderr — and first sleeps while a file named
+	// `slow` sits in the root, so a commit is still running when a press on Cancel lands. **Only the
+	// hook check's launch asks for it** (`WantsGitHook`): every other commit from the Changes view
+	// would otherwise fail.
+	GitHook bool
 	// RootlessProject names a project in this org whose project.json declares
 	// no roots. Never active: a check switches to it with `ctx_set_project`,
 	// which is how the "no project root" note — derived from the live context

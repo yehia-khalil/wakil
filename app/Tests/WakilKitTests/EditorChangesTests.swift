@@ -11,6 +11,8 @@ private func row(_ r: String, _ p: String, _ g: GitGroup) -> EditorChangesRow {
     EditorChangesRow(root: r, path: p, group: g.rawValue)
 }
 
+private func group(_ r: String, _ g: GitGroup) -> EditorChangesGroup { EditorChangesGroup(root: r, group: g.rawValue) }
+
 private let two = [
     root("/p/api", [("z.go", .changed, "M"), ("a.go", .staged, "A"), ("n", .untracked, "?"), ("b.go", .changed, "M")]),
     root("/p/web", [("i.ts", .changed, "M")]),
@@ -43,6 +45,52 @@ private let two = [
         let roots = two + [root("/p/zed", [("q", .changed, "M")])]
         #expect(editorChangesStep(roots, closed: ["/p/web"], from: row("/p/api", "n", .untracked), by: 1)
             == row("/p/zed", "q", .changed))
+    }
+
+    // 3a-ii review I1: a closed group is stepped past as a closed root is, and stays closed.
+    @Test func aClosedGroupsRowsAreLeftOut() {
+        #expect(editorChangesRows(two, closed: [], closedGroups: [group("/p/api", .changed)]) == [
+            row("/p/api", "a.go", .staged), row("/p/api", "n", .untracked), row("/p/web", "i.ts", .changed)])
+    }
+
+    @Test func aStepSkipsAClosedGroup() {
+        let closed: Set = [group("/p/api", .untracked)]
+        #expect(editorChangesStep(two, closed: [], closedGroups: closed, from: row("/p/api", "z.go", .changed), by: 1)
+            == row("/p/web", "i.ts", .changed))
+        #expect(editorChangesStep(two, closed: [], closedGroups: closed, from: row("/p/web", "i.ts", .changed), by: -1)
+            == row("/p/api", "z.go", .changed))
+    }
+
+    @Test func aClosedGroupInOneRootLeavesTheSameGroupElsewhereDrawn() {
+        #expect(editorChangesRows(two, closed: [], closedGroups: [group("/p/web", .changed)]).last
+            == row("/p/api", "n", .untracked))
+        #expect(editorChangesRows(two, closed: [], closedGroups: [group("/p/api", .changed)]).last
+            == row("/p/web", "i.ts", .changed))
+    }
+
+    // Closing the group the highlight is in: it moves to its root's next drawn row, else the one
+    // before, else nothing — never left on a row that is not drawn.
+    @Test func aHighlightInAGroupJustClosedMovesToItsRootsNextDrawnRow() {
+        let h = row("/p/api", "b.go", .changed)
+        #expect(editorChangesShown(h, roots: two, closed: [], closedGroups: [group("/p/api", .changed)])
+            == row("/p/api", "n", .untracked))
+        #expect(editorChangesShown(h, roots: two, closed: [],
+                                   closedGroups: [group("/p/api", .changed), group("/p/api", .untracked)])
+            == row("/p/api", "a.go", .staged))
+        #expect(editorChangesShown(h, roots: two, closed: [], closedGroups: [
+            group("/p/api", .staged), group("/p/api", .changed), group("/p/api", .untracked)]) == nil)
+    }
+
+    @Test func aDrawnHighlightIsKeptWhenAnotherGroupCloses() {
+        let h = row("/p/api", "a.go", .staged)
+        #expect(editorChangesShown(h, roots: two, closed: [], closedGroups: [group("/p/api", .changed)]) == h)
+        #expect(editorChangesShown(nil, roots: two, closed: [], closedGroups: [group("/p/api", .changed)]) == nil)
+    }
+
+    @Test func closedGroupsSortByRootThenStepOrder() {
+        #expect(editorChangesSortedGroups([group("/p/web", .changed), group("/p/api", .untracked),
+                                           group("/p/api", .staged)])
+            == [group("/p/api", .staged), group("/p/api", .untracked), group("/p/web", .changed)])
     }
 
     @Test func aHighlightStillListedStays() {

@@ -62,17 +62,22 @@ struct ComposerBar: View {
             switch composer.bar {
             case .draft:
                 EmptyView()
-            case .hearing(let settled, let volatile, _):
-                (Text(settled).foregroundColor(coolWhite.opacity(0.90))
+            case .hearing(let before, let settled, let volatile, let after, _):
+                // The line as it will be on release: what it held stays in view, the words grow
+                // in place (3a-ii walk).
+                (Text(before).foregroundColor(coolWhite.opacity(0.90))
+                 + Text(settled).foregroundColor(coolWhite.opacity(0.90))
                  + Text(settled.isEmpty || volatile.isEmpty ? volatile : " " + volatile)
-                    .foregroundColor(coolWhite.opacity(0.45)))
+                    .foregroundColor(coolWhite.opacity(0.45))
+                 + Text(after).foregroundColor(coolWhite.opacity(0.90)))
                     .font(.system(size: 14))
                     .lineLimit(6)
                     .accessibilityIdentifier("window.composer.heard")
-            case .notice(let sentence, _):
-                Text(sentence)
+            case .notice(let sentence, let draft, _):
+                (Text(draft.isEmpty ? "" : draft + "  ").foregroundColor(coolWhite.opacity(0.90))
+                 + Text(sentence).foregroundColor(coolWhite.opacity(0.62)))
                     .font(.system(size: 14))
-                    .foregroundStyle(coolWhite.opacity(0.62))
+                    .lineLimit(6)
                     .accessibilityIdentifier("window.composer.heard")
             }
         }
@@ -102,7 +107,7 @@ struct ComposerBar: View {
     private var hint: some View {
         let text: String
         switch composer.bar {
-        case .draft(let h), .hearing(_, _, let h), .notice(_, let h): text = h
+        case .draft(let h), .hearing(_, _, _, _, let h), .notice(_, _, let h): text = h
         }
         let landed = text == ComposerBarContent.landedHint
         return Text(text.uppercased())

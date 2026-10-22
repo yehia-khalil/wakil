@@ -266,8 +266,10 @@ public func registerEditorActions(
     files: (any ToolCaller)?,
     fileLists: EditorFileLists?,
     gitStatus: GitStatus?,
-    roots: @escaping @Sendable () async -> [String]
+    roots: @escaping @Sendable () async -> [String],
+    gitWrites: GitWriteFlights = GitWriteFlights()
 ) async {
+    await registerEditorChangesWrites(into: registry, gitStatus: gitStatus, panes: panes, layout: layout, writes: gitWrites)
     @Sendable func requireFiles(_ action: String) throws -> any ToolCaller {
         guard let files else { throw StandardActionError.missingClient(action: action, role: "files") }
         return files
@@ -1509,7 +1511,8 @@ public func registerEditorActions(
     await registry.register(Action(
         name: "editor_changes_step",
         description: "Move an editor pane's Changes highlight delta rows (1 next, -1 previous) through every "
-            + "root's changed files in order — roots in project order, a collapsed root skipped, then staged, "
+            + "root's changed files in order — roots in project order, a collapsed root or closed group skipped "
+            + "(and left closed), then staged, "
             + "changed, untracked — stopping at either end. With nothing highlighted, the first row. It "
             + "moves the highlight and opens its diff as a preview tab, as editor_changes_select does. Returns "
             + "the pane's state.",
@@ -1523,7 +1526,7 @@ public func registerEditorActions(
             let status = await gitStatus?.roots ?? []
             let c = await updateColumn(pane, asDefault: false) { c in
                 c.changesHighlight = editorChangesStep(status, closed: c.changesClosed,
-                                                       from: editorChangesResolve(c.changesHighlight, roots: status), by: delta)
+                                                       closedGroups: c.changesClosedGroups, from: editorChangesResolve(c.changesHighlight, roots: status), by: delta)
             }
             if let h = c.changesHighlight { await openDiff(pane, h, pin: false) }
             return await reply(pane)
@@ -1542,6 +1545,43 @@ public func registerEditorActions(
                 let root = try await projectRoot(params, action: name)
                 await updateColumn(pane, asDefault: false) { c in
                     if closing { c.changesClosed.insert(root) } else { c.changesClosed.remove(root) }
+                }
+                return await reply(pane)
+            }))
+    }
+
+    for (name, closing) in [("editor_changes_group_collapse", true), ("editor_changes_group_expand", false)] {
+        await registry.register(Action(
+            name: name,
+            description: (closing ? "Collapse" : "Expand") + " one group (staged, changed or untracked) of one "
+                + "root (root, absolute) in an editor pane's Changes view. A closed group stays closed until "
+                + "expanded: a step skips its rows and a selection inside it leaves it closed. Collapsing the "
+                + "group the highlight is in moves the highlight to the root's next drawn row, else the one "
+                + "before, else none. Kept per pane for the window's life, never saved. Returns the pane's state.",
+            kind: .control, audience: .agentReachable,
+            schema: schema(["root": .object(["type": .string("string")]), "group": groupSchema],
+                           required: ["root", "group"]),
+            handler: { params in
+                let pane = try await editorPane(params, action: name)
+                guard let group = optionalString(params, "group") else {
+                    throw StandardActionError.missingParam(action: name, param: "group")
+                }
+                guard GitGroup(rawValue: group) != nil else { throw GitActionError.unknownGroup(action: name, group: group) }
+                let root = try await projectRoot(params, action: name)
+                let key = EditorChangesGroup(root: root, group: group)
+                let status = await gitStatus?.roots ?? []
+                await updateColumn(pane, asDefault: false) { c in
+                    if closing {
+                        c.changesClosedGroups.insert(key)
+                        // Only a highlight inside the group just closed moves; one elsewhere is left.
+                        let h = editorChangesResolve(c.changesHighlight, roots: status)
+                        if let h, EditorChangesGroup(root: h.root, group: h.group) == key {
+                            c.changesHighlight = editorChangesShown(h, roots: status, closed: c.changesClosed,
+                                                                    closedGroups: c.changesClosedGroups)
+                        }
+                    } else {
+                        c.changesClosedGroups.remove(key)
+                    }
                 }
                 return await reply(pane)
             }))

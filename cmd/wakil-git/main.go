@@ -3,11 +3,18 @@ package main
 import (
 	"context"
 	"log"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/yehia-khalil/wakil/internal/mcpx"
 	"github.com/yehia-khalil/wakil/internal/wakilcore"
 )
+
+// gitWritesEnv, set to "1", registers the seven write tools. Only the window's own copies of
+// wakil-git (AppWiring) set it; the agent's copy (agentMCPConfigJSON) never does.
+const gitWritesEnv = "WAKIL_GIT_WRITES"
 
 type statusArg struct {
 	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
@@ -34,6 +41,65 @@ func runner(root string) (*wakilcore.GitRunner, *mcp.CallToolResult) {
 		return nil, mcpx.ToolErr("wakil-git", err)
 	}
 	return g, nil
+}
+
+type pathsArg struct {
+	Root  string   `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Paths []string `json:"paths" jsonschema:"file paths relative to the root"`
+}
+type hunkArg struct {
+	Root    string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Path    string `json:"path" jsonschema:"file path relative to the root"`
+	Content string `json:"content" jsonschema:"the file's whole new index text"`
+	Expect  string `json:"expect" jsonschema:"the index blob id the content was computed against"`
+}
+type commitArg struct {
+	Root    string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Message string `json:"message" jsonschema:"the commit message"`
+	All     bool   `json:"all,omitempty" jsonschema:"stage every change, untracked included, first"`
+}
+type amendArg struct {
+	Root    string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Message string `json:"message,omitempty" jsonschema:"a new message; omit to keep the last commit's"`
+}
+type blobArg struct {
+	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Path string `json:"path" jsonschema:"file path relative to the root"`
+}
+type emptyResult struct{}
+type trashedResult struct {
+	Trashed []string `json:"trashed"`
+}
+type messageResult struct {
+	Message string `json:"message"`
+}
+type blobResult struct {
+	Blob string `json:"blob"`
+}
+type identityResult struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	From  string `json:"from"`
+}
+
+// writer confines every write to a root the active project declares. The organisation's
+// identity is read at each write, so a Settings change applies at once.
+func writer(root string) (*wakilcore.GitWriter, *mcp.CallToolResult) {
+	r, err := wakilcore.Resolve()
+	if err != nil {
+		return nil, mcpx.ToolErr("wakil-git", err)
+	}
+	// An unreadable org.json is refused, not read as "no identity": that would commit as git
+	// config's identity, which may be another organisation's (Invariant 4).
+	org, err := wakilcore.LoadOrg()
+	if err != nil {
+		return nil, mcpx.ToolErr("wakil-git", err)
+	}
+	w, err := wakilcore.NewGitWriter(root, wakilcore.ProjectRootPaths(*r), wakilcore.OrgGitIdentity(org))
+	if err != nil {
+		return nil, mcpx.ToolErr("wakil-git", err)
+	}
+	return w, nil
 }
 
 func newServer() *mcp.Server {
@@ -77,7 +143,141 @@ func newServer() *mcp.Server {
 			}
 			return nil, r, nil
 		})
+
+	if os.Getenv(gitWritesEnv) == "1" {
+		addWriteTools(s)
+	}
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_blob", Description: "Read-only. The id of one file's blob in the index (git rev-parse --verify :path): the expect value git_stage_hunk needs."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a blobArg) (*mcp.CallToolResult, blobResult, error) {
+			g, fail := runner(a.Root)
+			if fail != nil {
+				return fail, blobResult{}, nil
+			}
+			out, err := g.Run(ctx, "rev-parse", "--verify", ":"+a.Path)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), blobResult{}, nil
+			}
+			return nil, blobResult{Blob: strings.TrimSpace(string(out))}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_identity", Description: "Read-only. The name and email a commit here would carry. When the organisation sets both, those (from: organisation). Otherwise the repository's git config user.name and user.email. If the organisation sets only one of the two, that one is used and the other comes from git config. from names where the email came from: organisation or git config."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, identityResult, error) {
+			g, fail := runner(a.Root)
+			if fail != nil {
+				return fail, identityResult{}, nil
+			}
+			org, err := wakilcore.LoadOrg()
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), identityResult{}, nil
+			}
+			id := wakilcore.OrgGitIdentity(org)
+			// from names the email's source: the hint the window shows is the email.
+			res := identityResult{Name: id.Name, Email: id.Email, From: "organisation"}
+			if res.Name == "" {
+				res.Name = g.ConfigValue(ctx, "user.name")
+			}
+			if res.Email == "" {
+				res.Email = g.ConfigValue(ctx, "user.email")
+				res.From = "git config"
+			}
+			return nil, res, nil
+		})
 	return s
+}
+
+// addWriteTools registers the 3a-ii writes. Each runs the repository's hooks and signing.
+func addWriteTools(s *mcp.Server) {
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stage", Description: "Writes. Runs `git add` on the given paths in one root."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a pathsArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			if err := w.Stage(ctx, a.Paths); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_unstage", Description: "Writes. Takes the given paths out of the index of one root (git restore --staged); the work tree is untouched."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a pathsArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			if err := w.Unstage(ctx, a.Paths); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_discard", Description: "Writes. Throws away the work-tree changes to the given paths in one root, moving each file to the Trash first; returns the trashed names."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a pathsArg) (*mcp.CallToolResult, trashedResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, trashedResult{}, nil
+			}
+			names, err := w.Discard(ctx, a.Paths, time.Now())
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), trashedResult{}, nil
+			}
+			if names == nil {
+				names = []string{}
+			}
+			return nil, trashedResult{Trashed: names}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stage_hunk", Description: "Writes. Replaces one file's index entry with the given whole text, if the index still holds the blob the text was computed against (expect); otherwise refuses."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a hunkArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			if err := w.StageContent(ctx, a.Path, a.Content, a.Expect); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_commit", Description: "Writes. Commits what is staged (or, with all, every change) in one root, running the repository's hooks and signing, as the organisation's git identity when it sets one."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a commitArg) (*mcp.CallToolResult, wakilcore.GitCommitResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, wakilcore.GitCommitResult{}, nil
+			}
+			r, err := w.Commit(ctx, a.Message, a.All)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitCommitResult{}, nil
+			}
+			return nil, r, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_amend", Description: "Writes. Rewrites the last commit of one root with what is staged, keeping its message unless a new one is given (git commit --amend), running the repository's hooks and signing."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a amendArg) (*mcp.CallToolResult, wakilcore.GitCommitResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, wakilcore.GitCommitResult{}, nil
+			}
+			r, err := w.Amend(ctx, a.Message)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitCommitResult{}, nil
+			}
+			return nil, r, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_undo_commit", Description: "Writes. Undoes the last commit of one root with a soft reset (git reset --soft HEAD~1): its changes stay staged. Returns the undone commit's message."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, messageResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, messageResult{}, nil
+			}
+			m, err := w.UndoCommit(ctx)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), messageResult{}, nil
+			}
+			return nil, messageResult{Message: m}, nil
+		})
 }
 
 func main() {

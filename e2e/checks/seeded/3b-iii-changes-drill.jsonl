@@ -8,7 +8,7 @@
 {"dispatch":{"action":"editor_tree","params":{"view":"changes"}}}
 {"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
 {"expect":{"pane":"editor-1","field":"column.shown","equals":"true"}}
-{"expect":{"tree":"contains","text":"STAGED"}}
+{"expect":{"tree":"contains","text":"Staged, "}}
 {"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"app.txt","group":"staged"}}}
 {"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"app.txt"}}
 {"expect":{"pane":"editor-1","field":"tabs[0].diff.group","equals":"staged"}}

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/2d-ii-voice-second-hold.jsonl",
+  "baseCommit": "d12c2c5",
+  "provedAt": "2026-10-22T06:00:33.639618Z",
+  "checkBlob": "d9b63c5c4f1673ba42ff0a51875fd4af41769387"
+}

@@ -74,6 +74,9 @@ struct WakilWindow: View {
     /// sent the operator back to the organisation node after every USE.
     /// Reset when the organisation changes, whose tree has other nodes.
     @State var settingsSelection: SettingsNode = .organisation
+    /// Which branches of the settings tree are open (2026-10-21). Held here for the same reason,
+    /// window-life and never persisted; forgotten with the organisation, whose tree it described.
+    @State var settingsExpansion = SettingsTreeExpansion()
 
     /// The single in-flight snap preview, and the position it should ask
     /// about next. See `schedulePreview`.
@@ -461,6 +464,7 @@ struct WakilWindow: View {
         })
         .onChange(of: session?.model.organization ?? "") { _, _ in
             settingsSelection = .organisation
+            settingsExpansion.reset()
         }
         // ⌘P and ⌘K are menu commands (`AppScene`); they reach here as a token.
         .onChange(of: session?.model.paletteKeyPress) { _, press in

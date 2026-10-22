@@ -1,6 +1,6 @@
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.editor"}}
-{"expect":{"tree":"contains","text":"AUTOSAVE"}}
+{"expect":{"tree":"contains","text":"Autosave"}}
 {"do":{"click":"settings.editor.autosave.focus"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.autosave","equals":"focus"}}
 {"dispatch":{"action":"editor_new_scratch","params":{}}}

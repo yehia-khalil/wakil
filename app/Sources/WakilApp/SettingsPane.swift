@@ -195,6 +195,8 @@ struct SettingsPane: View {
     /// The field whose save is in flight, so its control can say so rather
     /// than look inert.
     @State private var saving: WindowModel.OrganisationField?
+    /// The organisation field holding the keyboard: Git name and email save when it leaves (3a-ii, Rule 2).
+    @FocusState private var focusedOrgField: WindowModel.OrganisationField?
 
     /// Where the operator is standing in the tree. Window state, not
     /// configuration: it survives a re-read, and a re-read that dropped it
@@ -202,6 +204,14 @@ struct SettingsPane: View {
     /// changed. **Owned by the window** (`WakilWindow.settingsSelection`)
     /// so it also survives the pane being rebuilt, as a provider switch does.
     @Binding var selection: SettingsNode
+    /// Which projects and environments are open in the tree. **Owned by the window**, for
+    /// `selection`'s reason: window-life, never persisted, and it survives the pane being rebuilt.
+    @Binding var expansion: SettingsTreeExpansion
+    /// The place on screen, whose project and environment start open.
+    var activeProject: String = ""
+    var activeEnvironment: String = ""
+    /// Whether the tree column holds the keyboard, for → and ←.
+    @FocusState private var treeFocused: Bool
     /// Whether the Adopt door is open (#236). Window state, like
     /// `selection` — an operator who opened it to compare directories
     /// should not have it shut by a re-read.
@@ -240,12 +250,28 @@ struct SettingsPane: View {
                 // gives every row, applied once to the column they share.
                 .padding(.leading, Scale.gutter)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // **The pane's width, never its content's.** `minWidth: 0` makes this frame the width it is
+        // given; without it a page wider than the pane (the account table, 2026-10-21) grew the
+        // whole slab, which the canvas then centred on the pane's frame — the tree cut off on the
+        // left. A page that is still too wide now runs past the right edge, where
+        // 2e-settings-pane and 2e-settings-narrow-rows hold its sections inside `settings.pane`.
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // The pane's extent, for those checks: a leaf behind the content, because macOS reports a
+        // container's frame as the union of its children — the overflow it is meant to catch.
+        .background(Color.clear.accessibilityElement().accessibilityIdentifier("settings.pane"))
         .task(id: tree) { quickStatus = await quickTaskStatus() }
     }
 
     // MARK: - The tree
 
+    /// The tree, with every project and environment a branch that opens and closes (2026-10-21).
+    ///
+    /// **Collapsing is the operator's alone** (Rule 6): `expansion` lays its defaults once — the
+    /// heading, the active project and its active environment open — and afterwards changes when
+    /// a chevron is pressed, → or ← is pressed on the selected branch, or the heading is pressed.
+    /// The one change made for them is an opening: a node selected inside a closed parent opens
+    /// its ancestors (`revealSelection`), so a node the operator was taken to is never hidden. A
+    /// place change, a rebuild or a reopened pane opens nothing once the defaults are laid.
     @ViewBuilder
     private var treeColumn: some View {
         ScrollView {
@@ -254,87 +280,236 @@ struct SettingsPane: View {
                 row(.organisation, label: tree?.org.label ?? "Organisation", depth: 0)
                 row(.providers, label: "Providers", depth: 0, badge: tree.map { "\($0.providers.count)" })
 
-                sectionLabel("Projects")
-                if let tree, tree.projects.isEmpty {
-                    emptyLine("no projects")
-                }
-                ForEach(tree?.projects ?? [], id: \.name) { project in
-                    row(.project(project.name), label: project.name, depth: 1)
-                    row(.projectEditor(project.name), label: "Editor", depth: 2)
-                    ForEach(project.environments, id: \.name) { environment in
-                        row(
-                            .environment(project: project.name, environment: environment.name),
-                            label: environment.name, depth: 2)
-                        row(
-                            .databases(project: project.name, environment: environment.name),
-                            label: "Databases", depth: 3,
-                            badge: "\(environment.databases.count)")
-                        // The API node is drawn whether or not the
-                        // environment declares an entry, and read-only
-                        // either way. The ninth artboard correction: *What
-                        // is editable* rules the API row read-only on
-                        // Decision 8's amendment, which presumes a row
-                        // exists, and none of the five drawn variants had
-                        // one until it was noticed.
-                        row(
-                            .api(project: project.name, environment: environment.name),
-                            label: "API", depth: 3)
+                projectsHeading
+                if expansion.projectsOpen {
+                    if let tree, tree.projects.isEmpty {
+                        emptyLine("no projects")
                     }
-                    // Marked rather than drawn silently, so the operator
-                    // learns the boundary by looking rather than by
-                    // pressing. Environment create, rename and remove are
-                    // #45 and are out of this phase.
-                    notThisPhase("+ Add an environment", depth: 2)
+                    ForEach(tree?.projects ?? [], id: \.name) { project in
+                        let projectOpen = expansion.isOpen(project: project.name)
+                        row(
+                            .project(project.name), label: project.name, depth: 1,
+                            disclosure: .branch(
+                                open: projectOpen,
+                                identifier: "settings.tree.project.\(project.name).disclosure")
+                        ) {
+                            expansion.setOpen(!projectOpen, project: project.name)
+                        }
+                        if projectOpen {
+                            row(.projectEditor(project.name), label: "Editor", depth: 2, disclosure: .leaf)
+                            ForEach(project.environments, id: \.name) { environment in
+                                let environmentOpen = expansion.isOpen(
+                                    project: project.name, environment: environment.name)
+                                row(
+                                    .environment(project: project.name, environment: environment.name),
+                                    label: environment.name, depth: 2,
+                                    disclosure: .branch(
+                                        open: environmentOpen,
+                                        identifier: "settings.tree.environment.\(project.name).\(environment.name).disclosure")
+                                ) {
+                                    expansion.setOpen(
+                                        !environmentOpen, project: project.name, environment: environment.name)
+                                }
+                                if environmentOpen {
+                                    row(
+                                        .databases(project: project.name, environment: environment.name),
+                                        label: "Databases", depth: 3, badge: "\(environment.databases.count)",
+                                        disclosure: .leaf)
+                                    // The API node is drawn whether or not the
+                                    // environment declares an entry, and read-only
+                                    // either way. The ninth artboard correction: *What
+                                    // is editable* rules the API row read-only on
+                                    // Decision 8's amendment, which presumes a row
+                                    // exists, and none of the five drawn variants had
+                                    // one until it was noticed.
+                                    row(
+                                        .api(project: project.name, environment: environment.name),
+                                        label: "API", depth: 3, disclosure: .leaf)
+                                }
+                            }
+                            // Marked rather than drawn silently, so the operator
+                            // learns the boundary by looking rather than by
+                            // pressing. Environment create, rename and remove are
+                            // #45 and are out of this phase.
+                            notThisPhase("+ Add an environment", depth: 2)
+                        }
+                    }
+                    notThisPhase("+ Add a project", depth: 1)
                 }
-                notThisPhase("+ Add a project", depth: 1)
             }
             .padding(.vertical, 2)
         }
+        .contentShape(Rectangle())
+        // The keyboard's way to open and close: → opens the selected branch, ← closes it. Taken
+        // by the column when a row is clicked, as the editor's file tree takes it.
+        .focusable()
+        .focused($treeFocused)
+        .focusEffectDisabled()
+        .onKeyPress(phases: .down, action: treeKey)
+        // Seeding only, on appear and on a place change: once the defaults are laid, neither
+        // reopening the pane nor moving the place opens a branch the operator closed (Rule 6).
+        .onAppear { seed() }
+        .onChange(of: activeProject) { _, _ in seed() }
+        .onChange(of: activeEnvironment) { _, _ in seed() }
+        // Another organisation's tree: the window forgot the old one's branches, so lay these.
+        .onChange(of: tree?.org.id) { _, _ in seed() }
+        // A navigation to a node inside a closed parent is the one opening made for the operator.
+        .onChange(of: selection) { _, _ in revealSelection() }
     }
 
-    private func row(
-        _ node: SettingsNode, label: String, depth: Int, badge: String? = nil
-    ) -> some View {
-        Button {
-            selection = node
+    /// The PROJECTS heading: pressing it opens or closes every project at once.
+    private var projectsHeading: some View {
+        let open = expansion.projectsOpen
+        return Button {
+            expansion.projectsOpen.toggle()
         } label: {
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: Scale.door))
-                    .foregroundStyle(coolWhite.opacity(selection == node ? 0.95 : 0.62))
-                    .lineLimit(1)
-                if let badge {
-                    Text(badge)
-                        .font(.system(size: Scale.meta, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.35))
-                }
+            HStack(spacing: 4) {
+                chevron(open: open)
+                Text("PROJECTS")
+                    .font(.system(size: Scale.micro, weight: .medium))
+                    .tracking(Scale.microTracking)
+                    .foregroundStyle(coolWhite.opacity(0.32))
                 Spacer(minLength: 0)
             }
-            .padding(.leading, CGFloat(depth) * 12 + 8)
-            .padding(.vertical, 3)
-            .padding(.trailing, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(coolWhite.opacity(selection == node ? 0.08 : 0)))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        // **On the Button, not on its label.** A modifier inside the
-        // `label:` closure names the content view; the accessibility
-        // element the driver resolves is the Button, and it carried no
-        // identifier at all. Caught by the check going red on a control
-        // that was supposedly named.
-        .accessibilityIdentifier("settings.tree.\(node.identifierFragment)")
-    }
-
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: Scale.micro, weight: .medium))
-            .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.32))
             .padding(.leading, 8)
             .padding(.top, 10)
             .padding(.bottom, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(open ? "Projects, open" : "Projects, closed")
+        .accessibilityValue(open ? "projects open" : "projects closed")
+        .accessibilityIdentifier("settings.tree.projectsHeading")
+    }
+
+    /// A branch's ▾ / ▸, or the empty column a leaf keeps so its label lines up under its parent's.
+    private func chevron(open: Bool?) -> some View {
+        Group {
+            if let open {
+                Image(systemName: open ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(coolWhite.opacity(0.45))
+            } else {
+                Color.clear
+            }
+        }
+        .frame(width: 10, height: 10)
+    }
+
+    /// Lays the defaults if they were never laid; afterwards does nothing, so a place change, a
+    /// rebuild or a reopened pane never opens what the operator closed (3a-ii review I3).
+    private func seed() {
+        expansion.seed(activeProject: activeProject, activeEnvironment: activeEnvironment)
+    }
+
+    /// Opens the selected node's ancestors, never the node: a project's heading, an environment's
+    /// project, a database's environment. Run only when the selection CHANGES — a navigation —
+    /// never on appear, so a selection left inside a branch the operator closed stays hidden.
+    private func revealSelection() {
+        switch selection {
+        case .organisation, .providers, .editor: return
+        case .project: expansion.projectsOpen = true
+        case .projectEditor(let project), .environment(let project, _):
+            expansion.reveal(project: project)
+        case .databases(let project, let environment), .api(let project, let environment):
+            expansion.reveal(project: project, environment: environment)
+        }
+    }
+
+    /// → opens the selected project or environment, ← closes it. Any other key is not the tree's.
+    private func treeKey(_ press: KeyPress) -> KeyPress.Result {
+        guard press.modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return .ignored }
+        let open: Bool
+        switch press.key {
+        case .rightArrow: open = true
+        case .leftArrow: open = false
+        default: return .ignored
+        }
+        switch selection {
+        case .project(let project):
+            expansion.setOpen(open, project: project)
+        case .environment(let project, let environment):
+            expansion.setOpen(open, project: project, environment: environment)
+        default:
+            return .ignored
+        }
+        return .handled
+    }
+
+    /// What a row draws before its label: nothing (the top-level rows), an empty chevron column
+    /// (a leaf under a project, so its label lines up with its siblings'), or a branch's chevron.
+    private enum Disclosure: Equatable {
+        case none
+        case leaf
+        /// `identifier` is written out at the call site, whole, so the control harvest sees each
+        /// family (`settings.tree.project.<…>.disclosure`) rather than one interpolated fragment.
+        case branch(open: Bool, identifier: String)
+    }
+
+    /// One node. A branch's chevron is its own button, calling `toggle`, beside the row's button,
+    /// so opening a branch never selects it and selecting one never opens or closes it.
+    private func row(
+        _ node: SettingsNode, label: String, depth: Int, badge: String? = nil,
+        disclosure: Disclosure = .none, toggle: (() -> Void)? = nil
+    ) -> some View {
+        let selected = selection == node
+        let fragment = node.identifierFragment
+        return HStack(spacing: 4) {
+            switch disclosure {
+            case .none:
+                EmptyView()
+            case .leaf:
+                chevron(open: nil)
+            case .branch(let state, let identifier):
+                if let toggle {
+                    Button(action: toggle) {
+                        chevron(open: state)
+                            .frame(width: 14, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, -2)
+                    .accessibilityLabel(state ? "Close \(label)" : "Open \(label)")
+                    // The state as words, named by the node, so the tree a check reads can say
+                    // which branch is open: `environment.e2e-project.qa closed`.
+                    .accessibilityValue(state ? "\(fragment) open" : "\(fragment) closed")
+                    .accessibilityIdentifier(identifier)
+                } else {
+                    chevron(open: state)
+                }
+            }
+            Button {
+                selection = node
+                treeFocused = true
+            } label: {
+                HStack(spacing: 6) {
+                    Text(label)
+                        .font(.system(size: Scale.door))
+                        .foregroundStyle(coolWhite.opacity(selected ? 0.95 : 0.62))
+                        .lineLimit(1)
+                    if let badge {
+                        Text(badge)
+                            .font(.system(size: Scale.meta, design: .monospaced))
+                            .foregroundStyle(coolWhite.opacity(0.35))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 3)
+                .padding(.trailing, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            // **On the Button, not on its label.** A modifier inside the
+            // `label:` closure names the content view; the accessibility
+            // element the driver resolves is the Button, and it carried no
+            // identifier at all. Caught by the check going red on a control
+            // that was supposedly named.
+            .accessibilityIdentifier("settings.tree.\(fragment)")
+        }
+        .padding(.leading, CGFloat(depth) * 12 + 8)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(coolWhite.opacity(selected ? 0.08 : 0)))
     }
 
     private func emptyLine(_ text: String) -> some View {
@@ -367,7 +542,8 @@ struct SettingsPane: View {
                         .stroke(coolWhite.opacity(0.14), lineWidth: 0.5))
             Spacer(minLength: 0)
         }
-        .padding(.leading, CGFloat(depth) * 12 + 8)
+        // After the chevron column its siblings keep, so it reads as one of them.
+        .padding(.leading, CGFloat(depth) * 12 + 8 + 14)
         .padding(.vertical, 3)
     }
 
@@ -427,46 +603,64 @@ struct SettingsPane: View {
             .tracking(Scale.microTracking)
             .foregroundStyle(coolWhite.opacity(0.40))
             .lineLimit(1)
+            .accessibilityIdentifier("settings.breadcrumb")
     }
 
     @ViewBuilder
     private func subject(of tree: SettingsTree) -> some View {
         switch selection {
         case .organisation:
-            // The id is the directory name, so there is one place it can
-            // be written and no way for the two to disagree. Not a
-            // setting, and drawn as the fact it is.
-            fields([("Id", tree.org.id, true)])
-            ForEach(WindowModel.OrganisationField.allCases.filter { $0 != .speechProvider && $0 != .quickProvider }, id: \.self) { field in
-                organisationEditor(field, in: tree)
+            // Four headed sections (2026-10-21), each a hairline, a micro header and its rows.
+            SettingsSection("Identity") {
+                // The id is the directory name, so there is one place it can
+                // be written and no way for the two to disagree. Not a
+                // setting, and drawn as the fact it is.
+                SettingsRow("ID") { SettingsValue(text: tree.org.id) }
+                organisationEditor(.displayName, label: "Display name", in: tree)
             }
-            speechRow(tree: tree)
+            SettingsSection("Accounts") {
+                organisationEditor(.defaultProvider, label: "Default", in: tree)
+                speechRow(tree: tree)
+            }
+            SettingsSection("Jira") {
+                organisationEditor(.jiraBase, label: "Site", in: tree)
+            }
+            // 3a-ii: who commits from the Changes view.
+            SettingsSection("Git") {
+                organisationEditor(.gitName, label: "Name", in: tree)
+                organisationEditor(.gitEmail, label: "Email", in: tree)
+                FormHint("Used for every commit from Wakil; empty uses git config.")
+                    .underRowValue()
+                    .padding(.top, 6)
+            }
             readOnlyNote(
                 "Saved one field at a time, read-modify-write from disk — so an edit you make "
                     + "to org.json by hand while this pane is open survives a save here.")
 
         case .providers:
-            accountTable()
-            // Above the local models it chooses between, so the choice and what it chooses from
-            // are read together; the organisation node does not repeat it.
-            // Accounts above, the models quick tasks run on below.
-            Rectangle().fill(coolWhite.opacity(0.10)).frame(height: 0.5)
-                .padding(.top, 18)
-                .accessibilityHidden(true)
-            quickTasksRow(tree: tree)
-                .padding(.top, 14)
-            LocalProvidersSection(
-                providers: tree.providers, status: quickStatus,
-                save: { id, label, url in
-                    let refusal = await saveLocalProvider(id, label, url)
-                    quickStatus = await quickTaskStatus()
-                    return refusal
-                },
-                remove: { id in
-                    let refusal = await removeLocalProvider(id)
-                    quickStatus = await quickTaskStatus()
-                    return refusal
-                })
+            // Three headed sections (2026-10-21): the accounts, the local models, and the choice
+            // quick tasks make between them — after both, so what it chooses from is read first.
+            SettingsSection("Accounts") {
+                // The subject column's own spacing, which the table's notes and rows were drawn in.
+                VStack(alignment: .leading, spacing: 10) { accountTable() }
+            }
+            SettingsSection("Local models") {
+                LocalProvidersSection(
+                    providers: tree.providers, status: quickStatus,
+                    save: { id, label, url in
+                        let refusal = await saveLocalProvider(id, label, url)
+                        quickStatus = await quickTaskStatus()
+                        return refusal
+                    },
+                    remove: { id in
+                        let refusal = await removeLocalProvider(id)
+                        quickStatus = await quickTaskStatus()
+                        return refusal
+                    })
+            }
+            SettingsSection("Quick tasks", accessory: { QuickTasksAboutButton() }) {
+                quickTasksRow(tree: tree)
+            }
         case .editor:
             EditorAppSettingsForm(editor: tree.editor, error: tree.editorError, save: saveEditorSettings)
         case .projectEditor(let name):
@@ -483,15 +677,17 @@ struct SettingsPane: View {
             }
         case .project(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {
-                fields([("Name", project.name, true), ("File", project.path, true)])
+                // Two groups, two headed sections (2026-10-21): what the project is, and its roots.
+                SettingsSection("Project") {
+                    fields([("Name", project.name, true), ("File", project.path, true)])
+                }
                 if !project.roots.isEmpty {
-                    label("Roots")
-                    ForEach(project.roots, id: \.path) { root in
-                        HStack(spacing: 8) {
-                            Text(root.path).font(.system(size: Scale.meta, design: .monospaced))
-                                .foregroundStyle(coolWhite.opacity(0.70))
-                            if !root.role.isEmpty {
-                                Text(root.role).font(.system(size: Scale.meta)).foregroundStyle(coolWhite.opacity(0.40))
+                    SettingsSection("Roots") {
+                        // A root's role is its label, its path the value; a root with no role
+                        // is labelled as what it is.
+                        ForEach(project.roots, id: \.path) { root in
+                            SettingsRow(root.role.isEmpty ? "Root" : root.role) {
+                                SettingsValue(text: root.path)
                             }
                         }
                     }
@@ -580,11 +776,13 @@ struct SettingsPane: View {
                     // request records, so the same request can run against
                     // staging and then production (2c-iv).
                     ForEach(environment.api, id: \.name) { api in
-                        fields([
-                            ("Name", api.name.isEmpty ? "unnamed" : api.name, true),
-                            ("Base URL", api.baseUrl, true),
-                            ("Auth ref", api.authRef.isEmpty ? "none" : api.authRef, true),
-                        ])
+                        // A section per entry, headed by its name (2026-10-21).
+                        SettingsSection(api.name.isEmpty ? "unnamed" : api.name) {
+                            fields([
+                                ("Base URL", api.baseUrl, true),
+                                ("Auth ref", api.authRef.isEmpty ? "none" : api.authRef, true),
+                            ])
+                        }
                     }
                 }
                 // Permanently read-only, and this merge is the argument
@@ -611,56 +809,65 @@ struct SettingsPane: View {
     /// belongs under the Jira site.
     @ViewBuilder
     private func organisationEditor(
-        _ field: WindowModel.OrganisationField, in tree: SettingsTree
+        _ field: WindowModel.OrganisationField, label: String, in tree: SettingsTree
     ) -> some View {
         let stored = storedValue(field, in: tree)
         let draft = drafts[field]
         VStack(alignment: .leading, spacing: 2) {
-            Text(field.label.uppercased())
-                .font(.system(size: Scale.micro, weight: .medium))
-                .tracking(Scale.microTracking)
-                .foregroundStyle(coolWhite.opacity(0.32))
-            HStack(spacing: 8) {
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { draft ?? stored },
-                        set: { drafts[field] = $0 }))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.88))
-                    .onSubmit { save(field, tree: tree) }
-                    .accessibilityIdentifier("settings.org.\(field.identifierFragment)")
-                if draft != nil, draft != stored {
-                    Button(saving == field ? "Saving…" : "Save") { save(field, tree: tree) }
-                        .buttonStyle(.plain)
+            SettingsRow(label) {
+                HStack(spacing: 8) {
+                    // Empty, it reads `—` until it is typed in; the field is there all along, so a
+                    // click edits it where it stands.
+                    TextField(
+                        "",
+                        text: Binding(
+                            get: { draft ?? stored },
+                            set: { drafts[field] = $0 }),
+                        prompt: Text("—").foregroundStyle(coolWhite.opacity(0.30)))
+                        .textFieldStyle(.plain)
                         .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(saving == field ? 0.35 : 0.70))
-                        .disabled(saving == field)
-                        .accessibilityIdentifier("settings.org.\(field.identifierFragment).save")
-                    // Revert is the escape from a typed value the
-                    // operator has changed their mind about. It clears
-                    // the draft rather than writing anything, so the
-                    // field goes back to showing disk.
-                    Button("Revert") { drafts[field] = nil; refusals[field] = nil }
-                        .buttonStyle(.plain)
-                        .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.40))
-                        .accessibilityIdentifier("settings.org.\(field.identifierFragment).revert")
+                        .foregroundStyle(coolWhite.opacity(0.88))
+                        .frame(maxWidth: 320)
+                        .inPlaceField(focused: focusedOrgField == field)
+                        .onSubmit { save(field, tree: tree) }
+                        .focused($focusedOrgField, equals: field)
+                        // 3a-ii, Rule 2: Git name and email save when the field is left, through Save's
+                        // path. A Return that saved already cleared the draft (or is still saving), so
+                        // leaving after it writes nothing twice. The other fields keep Return / Save.
+                        .onChange(of: focusedOrgField) { old, _ in
+                            guard old == field, field == .gitName || field == .gitEmail,
+                                  let d = drafts[field], d != storedValue(field, in: tree), saving != field else { return }
+                            save(field, tree: tree)
+                        }
+                        .accessibilityIdentifier("settings.org.\(field.identifierFragment)")
+                    if draft != nil, draft != stored {
+                        Button(saving == field ? "Saving…" : "Save") { save(field, tree: tree) }
+                            .buttonStyle(.plain)
+                            .font(.system(size: Scale.body))
+                            .foregroundStyle(coolWhite.opacity(saving == field ? 0.35 : 0.70))
+                            .disabled(saving == field)
+                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).save")
+                        // Revert is the escape from a typed value the
+                        // operator has changed their mind about. It clears
+                        // the draft rather than writing anything, so the
+                        // field goes back to showing disk.
+                        Button("Revert") { drafts[field] = nil; refusals[field] = nil }
+                            .buttonStyle(.plain)
+                            .font(.system(size: Scale.body))
+                            .foregroundStyle(coolWhite.opacity(0.40))
+                            .accessibilityIdentifier("settings.org.\(field.identifierFragment).revert")
+                    }
                 }
-            }
-            .padding(.vertical, 3)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(coolWhite.opacity(0.12)).frame(height: 0.5)
             }
             if let refusal = refusals[field] {
                 Text(refusal)
                     .font(.system(size: Scale.body))
                     .foregroundStyle(caution)
                     .fixedSize(horizontal: false, vertical: true)
+                    .underRowValue()
+                    .padding(.vertical, 4)
             }
         }
-        .padding(.bottom, 4)
     }
 
     /// 2d-ii: the organisation's speech engine (Invariant 11). One segment
@@ -674,41 +881,42 @@ struct SettingsPane: View {
         let known = engines.first(where: { $0.id == current })
         func idFor(_ name: String) -> String { engines.first(where: { $0.name == name })?.id ?? name }
         return VStack(alignment: .leading, spacing: 2) {
-            Text("SPEECH")
-                .font(.system(size: Scale.micro, weight: .medium))
-                .tracking(Scale.microTracking)
-                .foregroundStyle(coolWhite.opacity(0.32))
-            SegmentedChoice(
-                options: engines.map(\.name),
-                selection: Binding(
-                    get: { known?.name ?? current },
-                    set: { name in
+            SettingsRow("Speech", wraps: true) {
+                SegmentedChoice(
+                    options: engines.map(\.name),
+                    selection: Binding(
+                        get: { known?.name ?? current },
+                        set: { name in
+                            let id = idFor(name)
+                            guard id != current else { return }
+                            drafts[.speechProvider] = id
+                            save(.speechProvider, tree: tree)
+                        }),
+                    // Hoisted: the identifier harvest reads `\(…)` up to the first
+                    // `)`, so a call inside the literal harvested as
+                    // `settings.org.speechProvider.<…>)` — a family no check could
+                    // ever name, and so a control the coverage gate could never see
+                    // covered.
+                    identifier: { name in
                         let id = idFor(name)
-                        guard id != current else { return }
-                        drafts[.speechProvider] = id
-                        save(.speechProvider, tree: tree)
-                    }),
-                // Hoisted: the identifier harvest reads `\(…)` up to the first
-                // `)`, so a call inside the literal harvested as
-                // `settings.org.speechProvider.<…>)` — a family no check could
-                // ever name, and so a control the coverage gate could never see
-                // covered.
-                identifier: { name in
-                    let id = idFor(name)
-                    return "settings.org.speechProvider.\(id)"
-                },
-                held: known == nil ? current : nil)
+                        return "settings.org.speechProvider.\(id)"
+                    },
+                    held: known == nil ? current : nil)
+            }
             if let note = registry.note(for: stored) {
                 Text(note)
                     .font(.system(size: Scale.body))
                     .foregroundStyle(caution)
+                    .underRowValue()
+                    .padding(.vertical, 4)
                     .accessibilityIdentifier("settings.org.speechProvider.note")
             }
             if let refusal = refusals[.speechProvider] {
                 Text(refusal).font(.system(size: Scale.body)).foregroundStyle(caution)
+                    .underRowValue()
+                    .padding(.vertical, 4)
             }
         }
-        .padding(.bottom, 4)
     }
 
     /// 3b-viii: the provider quick tasks run on, as a dropdown. One item per provider that serves
@@ -720,14 +928,8 @@ struct SettingsPane: View {
         let known = options.first(where: { $0.id == stored })
         let localIds = Set(tree.providers.filter { $0.kind == "local" }.map(\.id))
         func isLocal(_ id: String) -> Bool { localIds.contains(id) }
+        // Under its section's header (`SettingsSection`), which carries the ⓘ.
         return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 6) {
-                Text("QUICK TASKS")
-                    .font(.system(size: Scale.micro, weight: .medium))
-                    .tracking(Scale.microTracking)
-                    .foregroundStyle(coolWhite.opacity(0.32))
-                QuickTasksAboutButton()
-            }
             // One table row, as the local models under it are drawn: the choice as plain text with
             // a chevron (the system's menu chrome would be the only bezel on the page), and where
             // code completion goes beside it.
@@ -735,7 +937,7 @@ struct SettingsPane: View {
                 Text("Model")
                     .font(.system(size: Scale.body, weight: .medium))
                     .foregroundStyle(coolWhite.opacity(0.86))
-                    .frame(width: 120, alignment: .leading)
+                    .frame(width: Scale.labelWidth, alignment: .leading)
                 // Same as agent, then the accounts, then the local models, each group headed.
                 Menu {
                     quickTaskItems(options.filter { $0.id.isEmpty }, stored: stored, tree: tree)
@@ -824,7 +1026,7 @@ struct SettingsPane: View {
                 Text(label)
                     .font(.system(size: Scale.body, weight: .medium))
                     .foregroundStyle(coolWhite.opacity(0.86))
-                    .frame(width: 120, alignment: .leading)
+                    .frame(width: Scale.labelWidth, alignment: .leading)
                 SegmentedChoice(
                     options: ["Off", "On"],
                     selection: Binding(
@@ -884,6 +1086,9 @@ struct SettingsPane: View {
         case .defaultProvider: return tree.org.defaultProvider
         case .speechProvider: return tree.org.speechProvider
         case .quickProvider: return tree.org.quickProvider
+        // Drawn under GIT, not in the generic list (3a-ii).
+        case .gitName: return tree.org.gitName
+        case .gitEmail: return tree.org.gitEmail
         }
     }
 
@@ -1010,7 +1215,6 @@ struct SettingsPane: View {
                 .accessibilityIdentifier("settings.capacity.strip")
             }
 
-            accountTableHeader()
             // **This organisation's bindings, and no others (#236).** The
             // table used to draw every binding on the machine, which on
             // this one is ten rows for three accounts — five of them
@@ -1018,11 +1222,23 @@ struct SettingsPane: View {
             // accounts are behind the Adopt door below, where the
             // operator is choosing rather than reading.
             let mine = accounts.accounts.filter(\.mine)
-            if mine.isEmpty {
-                emptyLine("no accounts registered in this organisation")
-            }
-            ForEach(mine) { account in
-                accountRow(account)
+            // **A table where it fits, a list where it does not (2026-10-21).** The four columns
+            // are fixed so their labels stay over them, and together they are wider than the
+            // subject column of a pane at its 640pt default — so there each account is drawn as
+            // its identity and then KIND, CREDENTIAL and SIGN-IN as labelled lines, the column
+            // labels moving beside the values they name. The wide branch states its width, so the
+            // choice turns on the columns and never on how long a note under a row happens to be.
+            ViewThatFits(in: .horizontal) {
+                VStack(alignment: .leading, spacing: 10) {
+                    accountTableHeader()
+                    accountRows(mine, stacked: false)
+                }
+                .frame(minWidth: Self.accountTableWidth, idealWidth: Self.accountTableWidth,
+                       maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 10) {
+                    accountRows(mine, stacked: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             if login.offersAddDoors { addAccountRow() }
 
@@ -1354,10 +1570,17 @@ struct SettingsPane: View {
             if rows.isEmpty {
                 emptyLine("every account on this machine is already bound here")
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(rows) { account in
-                        accountRow(account)
+                // The table's rows where its columns fit, stacked where they do not — as above.
+                ViewThatFits(in: .horizontal) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(rows) { account in accountRow(account) }
                     }
+                    .frame(minWidth: Self.accountTableWidth, idealWidth: Self.accountTableWidth,
+                           maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(rows) { account in accountRow(account, stacked: true) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.leading, 20)
             }
@@ -1491,6 +1714,20 @@ struct SettingsPane: View {
         .padding(.bottom, 8)
     }
 
+    /// The account table's four columns, the gaps between them and the verbs, which stack to
+    /// about the width of the longest (`RE-AUTHENTICATE (2 TRIPS)`). Narrower, rows are stacked.
+    private static let accountTableWidth: CGFloat = 300 + 104 + 200 + 175 + 5 * SettingsScale.columnGap + 170
+
+    @ViewBuilder
+    private func accountRows(_ mine: [Account], stacked: Bool) -> some View {
+        if mine.isEmpty {
+            emptyLine("no accounts registered in this organisation")
+        }
+        ForEach(mine) { account in
+            accountRow(account, stacked: stacked)
+        }
+    }
+
     private func accountTableHeader() -> some View {
         HStack(spacing: Scale.columnGap) {
             // **No ORGANISATION column (#236).** The table draws this
@@ -1520,51 +1757,87 @@ struct SettingsPane: View {
             .frame(width: width, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func accountRow(_ account: Account) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: Scale.columnGap) {
-                // **The id, and under it the ACCOUNT (#236).** Five
-                // bindings on this machine are called `main` and they
-                // span three different accounts, while `personal/work`
-                // and `initech/main` are one account under two names — so
-                // the id alone identifies nothing. Decision 32: the
-                // account is the config dir.
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(account.accountId)
-                        .font(.system(size: Scale.identifier, design: .monospaced))
-                        .foregroundStyle(coolWhite.opacity(0.92))
-                    accountDirectory(account)
-                    if !account.label.isEmpty {
-                        Text(account.label)
-                            .font(.system(size: Scale.meta))
-                            .foregroundStyle(coolWhite.opacity(0.38))
-                    }
-                }
-                .frame(width: 300, alignment: .leading)
+    /// **The id, and under it the ACCOUNT (#236).** Five bindings on this machine are called
+    /// `main` and they span three different accounts, while `personal/work` and `initech/main`
+    /// are one account under two names — so the id alone identifies nothing. Decision 32: the
+    /// account is the config dir.
+    private func accountIdentity(_ account: Account) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(account.accountId)
+                .font(.system(size: Scale.identifier, design: .monospaced))
+                .foregroundStyle(coolWhite.opacity(0.92))
+            accountDirectory(account)
+            if !account.label.isEmpty {
+                Text(account.label)
+                    .font(.system(size: Scale.meta))
+                    .foregroundStyle(coolWhite.opacity(0.38))
+            }
+        }
+    }
 
+    /// One account in a column too narrow for the table: its identity, then each column as a
+    /// labelled line, then its verbs — in a row with room, as a stack of words without.
+    private func stackedAccountLine(_ account: Account) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            accountIdentity(account)
+            stackedCell("KIND") {
                 Text(account.kind)
                     .font(.system(size: Scale.body))
                     .foregroundStyle(coolWhite.opacity(0.55))
-                    .frame(width: 104, alignment: .leading)
-
-                credentialCell(account).frame(width: 200, alignment: .leading)
-                livenessCell(account.liveness).frame(width: 175, alignment: .leading)
-                Spacer(minLength: 0)
-                // **Whole words, never letters** (#326). The data columns
-                // are fixed so their labels stay over them; the verbs are
-                // what gives way. With room they sit in a row, and in a
-                // narrower window they stack as words, one above another,
-                // rather than being squeezed a letter per line.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: Scale.columnGap) { rowVerbs(account) }
-                    VStack(alignment: .trailing, spacing: 6) { rowVerbs(account) }
-                }
             }
-            // `.row { height: 44px }`. A MINIMUM rather than a fixed
-            // height, because a shared binding's directory line can wrap
-            // and a clipped row is worse than a tall one.
-            .frame(minHeight: Scale.rowHeight, alignment: .leading)
+            stackedCell("CREDENTIAL") { credentialCell(account) }
+            stackedCell("SIGN-IN") { livenessCell(account.liveness) }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Scale.columnGap) { rowVerbs(account) }
+                VStack(alignment: .leading, spacing: 6) { rowVerbs(account) }
+            }
+            .padding(.top, 2)
+        }
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func stackedCell<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            columnLabel(label, width: 84)
+            value()
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func accountRow(_ account: Account, stacked: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            if stacked {
+                stackedAccountLine(account)
+            } else {
+                HStack(spacing: Scale.columnGap) {
+                    accountIdentity(account)
+                        .frame(width: 300, alignment: .leading)
+
+                    Text(account.kind)
+                        .font(.system(size: Scale.body))
+                        .foregroundStyle(coolWhite.opacity(0.55))
+                        .frame(width: 104, alignment: .leading)
+
+                    credentialCell(account).frame(width: 200, alignment: .leading)
+                    livenessCell(account.liveness).frame(width: 175, alignment: .leading)
+                    Spacer(minLength: 0)
+                    // **Whole words, never letters** (#326). The data columns
+                    // are fixed so their labels stay over them; the verbs are
+                    // what gives way. With room they sit in a row, and in a
+                    // narrower window they stack as words, one above another,
+                    // rather than being squeezed a letter per line.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: Scale.columnGap) { rowVerbs(account) }
+                        VStack(alignment: .trailing, spacing: 6) { rowVerbs(account) }
+                    }
+                }
+                // `.row { height: 44px }`. A MINIMUM rather than a fixed
+                // height, because a shared binding's directory line can wrap
+                // and a clipped row is worse than a tall one.
+                .frame(minHeight: Scale.rowHeight, alignment: .leading)
+            }
             if confirmingUnlink?.id == account.id {
                 // **The confirmation says what will NOT be destroyed**,
                 // because that is the part an operator otherwise assumes.
@@ -2005,30 +2278,14 @@ struct SettingsPane: View {
         note("\(name) is no longer in this organisation's configuration.", tone: caution)
     }
 
+    /// Read values as page rows: the label left, the value right, `—` for an empty one. The
+    /// third element says whether the value is an identifier, drawn monospace (§6).
     private func fields(_ rows: [(String, String, Bool)]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(rows, id: \.0) { row in
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.0.uppercased())
-                        .font(.system(size: Scale.micro, weight: .medium))
-                        .tracking(Scale.microTracking)
-                        .foregroundStyle(coolWhite.opacity(0.32))
-                    Text(row.1.isEmpty ? "—" : row.1)
-                        .font(.system(size: row.2 ? Scale.identifier : Scale.body,
-                                      design: row.2 ? .monospaced : .default))
-                        .foregroundStyle(coolWhite.opacity(row.1.isEmpty ? 0.30 : 0.85))
-                        .textSelection(.enabled)
-                }
+                SettingsRow(row.0) { SettingsValue(text: row.1, monospaced: row.2) }
             }
         }
-    }
-
-    private func label(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: Scale.micro, weight: .medium))
-            .tracking(Scale.microTracking)
-            .foregroundStyle(coolWhite.opacity(0.32))
-            .padding(.top, 4)
     }
 
     private func readOnlyNote(_ text: String) -> some View {

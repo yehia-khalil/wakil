@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // The gutter's change marks, the peek and Revert (3b-iii), pure. A file tab's text is compared with
@@ -215,4 +216,28 @@ public func editorRangeParam(_ r: EditorRange) -> JSONValue {
         .object(["line": .integer(Int64(x.line)), "column": .integer(Int64(x.column))])
     }
     return .object(["start": p(r.start), "end": p(r.end)])
+}
+
+/// The index text Stage Change writes (3a-ii, ruling R1): `text` with every hunk but `hunk` reverted
+/// to `base`, so the index gains exactly the one change the peek shows. Reverted from the last hunk
+/// up, so each earlier hunk's line numbers still hold. nil when `hunk` is out of range.
+public func editorStagedText(base: String, text: String, hunk: Int) -> String? {
+    let hunks = editorHunks(base: base, text: text)
+    guard hunks.indices.contains(hunk) else { return nil }
+    var out = text
+    for i in hunks.indices.reversed() where i != hunk {
+        let e = editorRevertEdit(hunks[i], text: out)
+        out = editorReplacing(out, e.range, with: e.text)
+    }
+    return out
+}
+
+/// Git's blob id of `text`: SHA-1 over "blob <bytes>\0" and the bytes, lowercase hex. What Stage Change
+/// sends as `expect` for the baseline the peek was computed from (3a-ii, ruling R1).
+public func gitBlobId(_ text: String) -> String {
+    let data = Data(text.utf8)
+    var h = Insecure.SHA1()
+    h.update(data: Data("blob \(data.count)\0".utf8))
+    h.update(data: data)
+    return h.finalize().map { String(format: "%02x", $0) }.joined()
 }

@@ -20,36 +20,36 @@ struct NumberSettingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label.uppercased())
-                .font(.system(size: SettingsScale.micro, weight: .medium))
-                .tracking(SettingsScale.microTracking)
-                .foregroundStyle(coolWhite.opacity(0.32))
-            HStack(spacing: 8) {
-                TextField("", text: Binding(get: { draft ?? "\(value)" }, set: { draft = $0 }))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: SettingsScale.body, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.88))
-                    .frame(width: 44)
-                    .focused($focused)
-                    .onSubmit(commit)
-                    .onChange(of: focused) { _, now in if !now { commit() } }
-                    .accessibilityIdentifier(identifier)
-                Stepper("", value: Binding(get: { value }, set: { n in draft = nil; write(n) }), in: range)
-                    .labelsHidden()
-                    .accessibilityIdentifier("\(identifier).stepper")
-                Text("\(range.lowerBound)–\(range.upperBound)")
-                    .font(.system(size: SettingsScale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.30))
+            SettingsRow(label) {
+                HStack(spacing: 8) {
+                    TextField("", text: Binding(get: { draft ?? "\(value)" }, set: { draft = $0 }))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: SettingsScale.body, design: .monospaced))
+                        .foregroundStyle(coolWhite.opacity(0.88))
+                        .frame(width: 44)
+                        .inPlaceField(focused: focused)
+                        .focused($focused)
+                        .onSubmit(commit)
+                        .onChange(of: focused) { _, now in if !now { commit() } }
+                        .accessibilityIdentifier(identifier)
+                    Stepper("", value: Binding(get: { value }, set: { n in draft = nil; write(n) }), in: range)
+                        .labelsHidden()
+                        .accessibilityIdentifier("\(identifier).stepper")
+                    Text("\(range.lowerBound)–\(range.upperBound)")
+                        .font(.system(size: SettingsScale.meta))
+                        .foregroundStyle(coolWhite.opacity(0.30))
+                }
             }
             if let refusal {
                 Text(refusal)
                     .font(.system(size: SettingsScale.body))
                     .foregroundStyle(SettingsPalette.caution)
                     .fixedSize(horizontal: false, vertical: true)
+                    .underRowValue()
+                    .padding(.vertical, 4)
                     .accessibilityIdentifier("\(identifier).refusal")
             }
         }
-        .padding(.bottom, 4)
     }
 
     private func commit() {
@@ -99,29 +99,28 @@ struct ChoiceSettingRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label.uppercased())
-                .font(.system(size: SettingsScale.micro, weight: .medium))
-                .tracking(SettingsScale.microTracking)
-                .foregroundStyle(coolWhite.opacity(0.32))
-            SegmentedChoice(
-                options: options,
-                selection: Binding(get: { selected }, set: { option in
-                    guard option != selected else { return }
-                    Task { refusal = await save(option) }
-                }),
-                identifier: identifier)
+            SettingsRow(label, wraps: true) {
+                    SegmentedChoice(
+                        options: options,
+                        selection: Binding(get: { selected }, set: { option in
+                            guard option != selected else { return }
+                            Task { refusal = await save(option) }
+                        }),
+                        identifier: identifier)
+            }
             if let hint {
-                FormHint(hint).padding(.top, 3)
+                FormHint(hint).underRowValue().padding(.vertical, 6)
             }
             if let refusal {
                 Text(refusal)
                     .font(.system(size: SettingsScale.body))
                     .foregroundStyle(SettingsPalette.caution)
                     .fixedSize(horizontal: false, vertical: true)
+                    .underRowValue()
+                    .padding(.vertical, 4)
                     .accessibilityIdentifier(refusalIdentifier)
             }
         }
-        .padding(.bottom, 4)
     }
 }
 
@@ -140,40 +139,45 @@ struct EditorAppSettingsForm: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("settings.editor.error")
             }
-            NumberSettingRow(
-                label: "Font size", value: editor.fontSize, range: 9...24,
-                identifier: "settings.editor.fontSize",
-                save: { n in await save(["fontSize": .integer(Int64(n))]) })
-            ChoiceSettingRow(
-                label: "Word wrap", options: ["Off", "On"], selected: editor.wordWrap ? "On" : "Off",
-                identifier: { option in
-                    let key = option.lowercased()
-                    return "settings.editor.wordWrap.\(key)"
-                },
-                refusalIdentifier: "settings.editor.wordWrap.refusal",
-                save: { option in await save(["wordWrap": .bool(option == "On")]) })
-            ChoiceSettingRow(
-                label: "Autosave", options: EditorAutosaveMode.allCases.map(\.label),
-                selected: editor.autosave.label,
-                identifier: { label in
-                    let mode = EditorAutosaveMode.allCases.first { $0.label == label }?.rawValue ?? label
-                    return "settings.editor.autosave.\(mode)"
-                },
-                refusalIdentifier: "settings.editor.autosave.refusal",
-                save: { label in
-                    let mode = EditorAutosaveMode.allCases.first { $0.label == label } ?? .off
-                    return await save(["autosave": .string(mode.rawValue)])
-                })
-            ChoiceSettingRow(
-                label: "Show ignored files", options: ["Off", "On"], selected: editor.showIgnored ? "On" : "Off",
-                identifier: { option in
-                    let key = option.lowercased()
-                    return "settings.editor.showIgnored.\(key)"
-                },
-                refusalIdentifier: "settings.editor.showIgnored.refusal",
-                hint: "Files your .gitignore excludes, like .env or build output. On, they show dimmed "
-                    + "in the Files tree and ⌘P; project search never looks inside them.",
-                save: { option in await save(["showIgnored": .bool(option == "On")]) })
+            // Two groups (2026-10-21): how text is edited, and which files are listed.
+            SettingsSection("Editing") {
+                NumberSettingRow(
+                    label: "Font size", value: editor.fontSize, range: 9...24,
+                    identifier: "settings.editor.fontSize",
+                    save: { n in await save(["fontSize": .integer(Int64(n))]) })
+                ChoiceSettingRow(
+                    label: "Word wrap", options: ["Off", "On"], selected: editor.wordWrap ? "On" : "Off",
+                    identifier: { option in
+                        let key = option.lowercased()
+                        return "settings.editor.wordWrap.\(key)"
+                    },
+                    refusalIdentifier: "settings.editor.wordWrap.refusal",
+                    save: { option in await save(["wordWrap": .bool(option == "On")]) })
+                ChoiceSettingRow(
+                    label: "Autosave", options: EditorAutosaveMode.allCases.map(\.label),
+                    selected: editor.autosave.label,
+                    identifier: { label in
+                        let mode = EditorAutosaveMode.allCases.first { $0.label == label }?.rawValue ?? label
+                        return "settings.editor.autosave.\(mode)"
+                    },
+                    refusalIdentifier: "settings.editor.autosave.refusal",
+                    save: { label in
+                        let mode = EditorAutosaveMode.allCases.first { $0.label == label } ?? .off
+                        return await save(["autosave": .string(mode.rawValue)])
+                    })
+            }
+            SettingsSection("Files") {
+                ChoiceSettingRow(
+                    label: "Show ignored files", options: ["Off", "On"], selected: editor.showIgnored ? "On" : "Off",
+                    identifier: { option in
+                        let key = option.lowercased()
+                        return "settings.editor.showIgnored.\(key)"
+                    },
+                    refusalIdentifier: "settings.editor.showIgnored.refusal",
+                    hint: "Files your .gitignore excludes, like .env or build output. On, they show dimmed "
+                        + "in the Files tree and ⌘P; project search never looks inside them.",
+                    save: { option in await save(["showIgnored": .bool(option == "On")]) })
+            }
             Text("Yours across every organisation and project — stored in ~/.wakil/settings.json.")
                 .font(.system(size: SettingsScale.meta))
                 .foregroundStyle(SettingsPalette.coolWhite.opacity(0.40))
@@ -188,21 +192,26 @@ struct EditorProjectSettingsForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            NumberSettingRow(
-                label: "Tab size", value: editor.tabSize, range: 1...16,
-                identifier: "settings.projectEditor.tabSize",
-                save: { n in await save(["tabSize": .integer(Int64(n))]) })
-            ChoiceSettingRow(
-                label: "Indent with", options: ["Spaces", "Tabs"], selected: editor.insertSpaces ? "Spaces" : "Tabs",
-                identifier: { option in
-                    let key = option.lowercased()
-                    return "settings.projectEditor.indent.\(key)"
-                },
-                refusalIdentifier: "settings.projectEditor.indent.refusal",
-                save: { option in await save(["insertSpaces": .bool(option == "Spaces")]) })
-            HeavyFoldersSettingRow(
-                folders: editor.heavyFolders,
-                save: { names in await save(["heavyFolders": .array(names.map { .string($0) })]) })
+            // Two groups (2026-10-21): indentation, and the heavy folders.
+            SettingsSection("Indentation") {
+                NumberSettingRow(
+                    label: "Tab size", value: editor.tabSize, range: 1...16,
+                    identifier: "settings.projectEditor.tabSize",
+                    save: { n in await save(["tabSize": .integer(Int64(n))]) })
+                ChoiceSettingRow(
+                    label: "Indent with", options: ["Spaces", "Tabs"], selected: editor.insertSpaces ? "Spaces" : "Tabs",
+                    identifier: { option in
+                        let key = option.lowercased()
+                        return "settings.projectEditor.indent.\(key)"
+                    },
+                    refusalIdentifier: "settings.projectEditor.indent.refusal",
+                    save: { option in await save(["insertSpaces": .bool(option == "Spaces")]) })
+            }
+            SettingsSection("Heavy folders") {
+                HeavyFoldersSettingRow(
+                    folders: editor.heavyFolders,
+                    save: { names in await save(["heavyFolders": .array(names.map { .string($0) })]) })
+            }
             Text("A file's own indentation wins: tab size and indent apply to new files and files with none. "
                  + "Stored in this project's project.json, so they travel with the code.")
                 .font(.system(size: SettingsScale.meta))
@@ -236,11 +245,8 @@ struct HeavyFoldersSettingRow: View {
     private var coolWhite: Color { SettingsPalette.coolWhite }
 
     var body: some View {
+        // Headed by the page's HEAVY FOLDERS section (`SettingsSection`), not by itself.
         VStack(alignment: .leading, spacing: 4) {
-            Text("HEAVY FOLDERS")
-                .font(.system(size: SettingsScale.micro, weight: .medium))
-                .tracking(SettingsScale.microTracking)
-                .foregroundStyle(coolWhite.opacity(0.32))
             FormHint("Big folders git ignores, like vendor or node_modules, matched by name at any depth. "
                      + "Each shows as one row and loads only when you open it, so the tree and ⌘P stay "
                      + "fast; project search skips them. Remove a name to list its files like any "

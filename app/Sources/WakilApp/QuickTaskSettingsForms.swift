@@ -20,12 +20,8 @@ struct LocalProvidersSection: View {
     private var local: [SettingsProvider] { providers.filter { $0.kind == "local" } }
 
     var body: some View {
+        // Headed by the page's LOCAL MODELS section (`SettingsSection`), not by itself.
         VStack(alignment: .leading, spacing: 0) {
-            Text("LOCAL MODELS")
-                .font(.system(size: SettingsScale.micro, weight: .medium))
-                .tracking(SettingsScale.microTracking)
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.32))
-                .padding(.bottom, 4)
             ForEach(local, id: \.id) { provider in
                 LocalProviderRow(
                     id: provider.id, label: provider.label, baseURL: provider.baseURL,
@@ -47,7 +43,6 @@ struct LocalProvidersSection: View {
                 .padding(.top, 10)
                 .accessibilityIdentifier("settings.localProvider.add")
         }
-        .padding(.top, 14)
     }
 
     /// `local`, else `local-2`, `local-3`, … the first no provider uses.
@@ -83,53 +78,44 @@ private struct LocalProviderRow: View {
     /// Set by CANCEL, so a focus change on the way out saves nothing.
     @State private var cancelled = false
     @FocusState private var focused: Bool
+    /// The row's width, measured, so a column too narrow for one line puts the URL under the name.
+    @State private var width: CGFloat = 0
 
     private var coolWhite: Color { SettingsPalette.coolWhite }
 
+    /// One line needs the label, a URL field wide enough to read a URL (200pt), whether it
+    /// answers and REMOVE. The settings pane's 640pt default leaves its subject column about 350.
+    private static let oneLineWidth: CGFloat = 520
+    /// Before the first measurement the row draws on one line, as it always did.
+    private var stacked: Bool { width > 0 && width < Self.oneLineWidth }
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: SettingsScale.columnGap) {
-            Text(isNew ? "New model" : (label.isEmpty ? id : label))
-                .font(.system(size: SettingsScale.body, weight: .medium))
-                .foregroundStyle(coolWhite.opacity(isNew ? 0.45 : 0.86))
-                .lineLimit(1)
-                .frame(width: 120, alignment: .leading)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 14) {
-                    urlField
-                    if !isNew, let status, !failing {
-                        HStack(spacing: 5) {
-                            Circle().fill(coolWhite.opacity(status == "reachable" ? 0.70 : 0.25))
-                                .frame(width: 5, height: 5)
-                            Text(status)
-                                .font(.system(size: SettingsScale.meta))
-                                .foregroundStyle(coolWhite.opacity(status == "reachable" ? 0.62 : 0.38))
-                                .lineLimit(1).fixedSize()
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityIdentifier("settings.localProvider.\(id).status")
-                    }
-                }
-                if !isNew, failing, let status {
-                    // The error whole (Rule 8): wrapped, never truncated.
-                    Text(status)
-                        .font(.system(size: SettingsScale.body))
-                        .foregroundStyle(SettingsPalette.caution)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("settings.localProvider.\(id).status")
-                }
-                if let refusal {
-                    Text(refusal)
-                        .font(.system(size: SettingsScale.body))
-                        .foregroundStyle(SettingsPalette.caution)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("settings.localProvider.\(id).refusal")
+        // **The URL field is never rebuilt by the switch** (Rule 2, Rule 3): it sits at the same
+        // place in the same HStack either way, and only the name and the verb move — above it in a
+        // narrow column, beside it in a wide one — so focus and what is typed survive a resize.
+        VStack(alignment: .leading, spacing: 6) {
+            if stacked {
+                HStack(alignment: .firstTextBaseline, spacing: SettingsScale.columnGap) {
+                    nameText
+                    Spacer(minLength: 0)
+                    rowAction
                 }
             }
-            Spacer(minLength: 0)
-            rowAction
+            HStack(alignment: .firstTextBaseline, spacing: SettingsScale.columnGap) {
+                if !stacked {
+                    nameText.frame(width: SettingsScale.labelWidth, alignment: .leading)
+                }
+                valueColumn
+                Spacer(minLength: 0)
+                if !stacked { rowAction }
+            }
         }
         .padding(.vertical, 10)
-        .frame(minHeight: SettingsScale.rowHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: SettingsScale.rowHeight, alignment: .leading)
+        .background(GeometryReader { proxy in
+            Color.clear.preference(key: LocalProviderRowWidthKey.self, value: proxy.size.width)
+        })
+        .onPreferenceChange(LocalProviderRowWidthKey.self) { width = $0 }
         .overlay(alignment: .bottom) { Rectangle().fill(coolWhite.opacity(0.06)).frame(height: 0.5) }
         .onAppear {
             guard !loaded else { return }
@@ -144,6 +130,49 @@ private struct LocalProviderRow: View {
         .onChange(of: focused) { _, now in
             guard !now, !cancelled else { return }
             if isNew, draft.trimmingCharacters(in: .whitespaces).isEmpty { onDismiss() } else { commit() }
+        }
+    }
+
+    private var nameText: some View {
+        Text(isNew ? "New model" : (label.isEmpty ? id : label))
+            .font(.system(size: SettingsScale.body, weight: .medium))
+            .foregroundStyle(coolWhite.opacity(isNew ? 0.45 : 0.86))
+            .lineLimit(1)
+    }
+
+    /// The URL, whether it answers, and the error or refusal under it, whole.
+    private var valueColumn: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                urlField
+                if !isNew, let status, !failing {
+                    HStack(spacing: 5) {
+                        Circle().fill(coolWhite.opacity(status == "reachable" ? 0.70 : 0.25))
+                            .frame(width: 5, height: 5)
+                        Text(status)
+                            .font(.system(size: SettingsScale.meta))
+                            .foregroundStyle(coolWhite.opacity(status == "reachable" ? 0.62 : 0.38))
+                            .lineLimit(1).fixedSize()
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("settings.localProvider.\(id).status")
+                }
+            }
+            if !isNew, failing, let status {
+                // The error whole (Rule 8): wrapped, never truncated.
+                Text(status)
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.localProvider.\(id).status")
+            }
+            if let refusal {
+                Text(refusal)
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.localProvider.\(id).refusal")
+            }
         }
     }
 
@@ -202,5 +231,14 @@ private struct LocalProviderRow: View {
             refusal = await save(id, label, url)
             if refusal == nil { onSaved() }
         }
+    }
+}
+
+/// A local model row's measured width (`LocalProviderRow.stacked`). A preference rather than
+/// `onGeometryChange`, which is macOS 15 while this app targets 14.4.
+private struct LocalProviderRowWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

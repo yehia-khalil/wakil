@@ -497,9 +497,11 @@ no full debugger.
     in this file* ask nothing (Decision 39): a file open in a tab is edited in its buffer, the rest are
     written, and one line — *Replaced 37 in 12 files · Undo replace* — offers the undo, which leaves
     any file changed since.
-  - **Changes** (3b-iii, Decision 40) — one header per root (`api · main · ↑2 ↓1`, or `docs · not a
-    git repository`; a header collapses its root), then Staged / Changes / Untracked. Rows show the
-    status letter in §5's tones (never red) and the name; a rename reads `old → new`. A click or Return
+  - **Changes** (3b-iii, Decision 40) — one block per root, a hairline between them: a header
+    (`api  main ↑2 ↓1`, the branch dimmed; a header collapses its root), and only while the root has
+    changes its message box and Commit, then Staged / Changes / Untracked, each collapsible. A clean
+    root is one line (`web  main · clean`); a root that is not a git repository is not drawn. Rows read
+    the file name, its folder dimmed, and the status letter in §5's tones (never red) at the far right. A click or Return
     opens a read-only inline diff tab under the preview-tab rule; ⌘⏎ in a diff opens the file at that
     line. It follows git live, with no refresh control.
   - **Find in file** — Monaco's own find and replace bar (⌘F, ⌥⌘F) in Wakil's colours,
@@ -681,6 +683,28 @@ artboard's `.note`: one or two plain sentences under a setting saying what it do
 setting it explains and never pooled in a footnote; a footnote keeps only where the setting is
 stored. A field that sits in a list (a project's heavy folders) takes the same boxed `.field`
 through `fieldBox`, and the list's add gesture is a `FormButton`.
+
+**A page with more than one group is drawn in sections (added 2026-10-21).** The operator found
+the pages bland, with nothing separating one group from the next. Each group is a
+**`SettingsSection`**: a hairline above it, a micro header in QUICK TASKS' style, and 12pt of
+rhythm; inside it, each setting is a **`SettingsRow`** — the label left at a fixed width
+(`SettingsScale.labelWidth`), the value right, on one line, as QUICK TASKS' rows were first drawn.
+An empty value reads `—` until it is typed in; a field is edited where it stands, its box drawn
+only on hover or focus (`inPlaceField`). The Organisation page is Identity · Accounts · Jira ·
+Git; Providers is Accounts · Local models · Quick tasks; the Editor pages are Editing · Files and
+Indentation · Heavy folders; a project is Project · Roots; each API entry is its own section.
+A page of one group (an environment) draws its rows without a header. **A page never draws wider than its pane:**
+the pane holds the width it is given, and what does not fit moves under its label rather than past
+the edge — the accounts table, whose four columns are wider than the subject column at the pane's
+640pt default, draws each account as its identity and then KIND, CREDENTIAL and SIGN-IN as labelled
+lines there, and a local model puts its URL under its name.
+
+**The tree's projects and environments open and close (2026-10-21).** Each is a branch with its
+own chevron, pressed apart from the row so opening never selects and selecting never opens; → and
+← on the selected branch do the same, and the PROJECTS heading closes them all. The heading, the
+active project and its active environment start open and everything else closed; the state is
+the window's, never persisted, and changes only by the operator (Rule 6) — the one change made
+for them is that reaching a node inside a closed parent opens its ancestors.
 
 ## 15. Open items
 

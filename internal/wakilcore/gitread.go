@@ -200,6 +200,17 @@ func (g *GitRunner) exec(ctx context.Context, pre []string, sub string, args []s
 	return out.Bytes(), strings.TrimSpace(errb.String()), err
 }
 
+// ConfigValue reads one config key through git, every scope followed. The argv is fixed
+// here, not a `config` entry in the public allowlist (as repoFilterOverrides does), so a
+// caller cannot reach `config <key> <value>`. An unset key, or any failure, is "".
+func (g *GitRunner) ConfigValue(ctx context.Context, key string) string {
+	out, _, err := g.exec(ctx, gitSafetyArgs, "config", []string{"--get", key})
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // repoFilterOverrides neutralises every clean/smudge/process filter driver the repository's
 // own config defines (R11): `git status` and a worktree `git diff` run a file's filter, so a
 // driver in `.git/config` is a program the repository chose. A driver from the user's global

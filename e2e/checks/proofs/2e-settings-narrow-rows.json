@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/2e-settings-narrow-rows.jsonl",
-  "baseCommit": "c861b6eaed6193294785a0838af5108e55437766",
-  "provedAt": "2026-10-15T15:13:27.175652Z",
-  "checkBlob": "0483cb8912c26392038d2e4d3b5165b2cbd61e28"
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T21:08:23.083049Z",
+  "checkBlob": "c90c29a782d78db9d1263d1ca6c1bdba82fb022d"
 }

@@ -7,7 +7,7 @@
 {"expect":{"tree":"contains","text":"e2e-git"}}
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.editor"}}
-{"expect":{"tree":"contains","text":"SHOW IGNORED FILES"}}
+{"expect":{"tree":"contains","text":"Show ignored files"}}
 {"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.showIgnored","equals":"true"}}
 {"dispatch":{"action":"editor_new_scratch","params":{}}}
 {"expect":{"pane":"editor-2","field":"tabs[0].scratch","equals":"1"}}

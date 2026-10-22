@@ -21,6 +21,11 @@ import Testing
 /// defends against is a property nobody thought about at all; it is not a
 /// substitute for checking the reset logic itself.
 private let orgDerived: Set<String> = [
+    // 3a-ii: the Changes view's drafts, history, errors, identity and writes in flight belong to the
+    // outgoing org's roots; `invalidateForOrgChange` empties them, cancels the tasks and bumps the generation
+    // that makes a late result drop (WindowModelChangesWritesTests).
+    "changesMessages", "changesHistory", "changesHistoryCursor", "changesErrors", "changesInFlight",
+    "changesIdentity", "changesTasks", "changesGeneration",
     "project", "projectKey", "environment", "environmentProduction",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",

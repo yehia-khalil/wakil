@@ -985,6 +985,8 @@ public func registerStandardActions(
                 "defaultProvider": .object(["type": .string("string")]),
                 "speechProvider": .object(["type": .string("string")]),
                 "quickProvider": .object(["type": .string("string")]),
+                "gitName": .object(["type": .string("string")]),
+                "gitEmail": .object(["type": .string("string")]),
                 "ghostText": .object(["type": .string("boolean")]),
                 "fastPath": .object(["type": .string("boolean")]),
             ]),
@@ -1004,7 +1006,7 @@ public func registerStandardActions(
                 throw StandardActionError.missingParam(action: "ctx_update_org", param: "id")
             }
             var arguments: [String: JSONValue] = ["id": .string(id)]
-            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider"] {
+            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
             for key in ["ghostText", "fastPath"] {

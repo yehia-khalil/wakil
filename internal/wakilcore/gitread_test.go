@@ -543,3 +543,14 @@ func TestPartialCloneNeverFetchesWithoutNoLazyFetch(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigValueReadsAKey(t *testing.T) {
+	repo := gitTestRepo(t)
+	g, _ := NewGitRunner(repo, []string{repo})
+	if got := g.ConfigValue(context.Background(), "user.email"); got != "t@example.com" {
+		t.Fatalf("got %q", got)
+	}
+	if got := g.ConfigValue(context.Background(), "user.nosuchkey"); got != "" {
+		t.Fatalf("got %q", got)
+	}
+}

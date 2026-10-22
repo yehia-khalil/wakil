@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/2d-ii-settings-speech.jsonl",
+  "baseCommit": "b2dd35bfad70eb3d9ee03597a5d2cc1bba194750",
+  "provedAt": "2026-10-21T21:06:32.502374Z",
+  "checkBlob": "78cd2366a448feb758d4da84c5cd13bf5fbf47a0"
+}

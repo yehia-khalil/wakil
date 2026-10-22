@@ -932,6 +932,10 @@ private let registeredBeforeThePalette: Set<String> = [
     "editor_tree", "editor_tree_expand", "editor_tree_collapse", "editor_tree_reveal", "editor_move_tab",
     // 3b-iii: the Changes view's four, all agent-reachable.
     "editor_changes_select", "editor_changes_step", "editor_changes_collapse", "editor_changes_expand",
+    // 3a-ii review I2: a group collapses as a root does.
+    "editor_changes_group_collapse", "editor_changes_group_expand",
+    // 3a-ii: the seven git writes, agent-reachable mutations.
+    "editor_changes_stage", "editor_changes_unstage", "editor_changes_discard", "editor_changes_commit", "editor_changes_amend", "editor_changes_undo_commit", "editor_changes_stage_hunk",
     "editor_peek", "editor_peek_step", "editor_peek_close",
     "editor_find", "editor_search", "files_search",
     // 3b-iv: file operations in the tree, all agent-reachable mutations.
@@ -968,6 +972,7 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__editor_move_tab", "mcp__wakil__editor_tree_reveal",
     "mcp__wakil__editor_changes_select", "mcp__wakil__editor_changes_step",
     "mcp__wakil__editor_changes_collapse", "mcp__wakil__editor_changes_expand",
+    "mcp__wakil__editor_changes_group_collapse", "mcp__wakil__editor_changes_group_expand",
     "mcp__wakil__editor_peek", "mcp__wakil__editor_peek_step", "mcp__wakil__editor_peek_close",
     "mcp__wakil__editor_find", "mcp__wakil__editor_search", "mcp__wakil__files_search",
     "mcp__wakil__editor_open", "mcp__wakil__editor_open_file", "mcp__wakil__editor_new_scratch", "mcp__wakil__editor_focus_tab", "mcp__wakil__editor_close", "mcp__wakil__editor_goto", "mcp__wakil__editor_select", "mcp__wakil__editor_set_language", "mcp__wakil__editor_replace_range", "mcp__wakil__editor_reload", "mcp__wakil__editor_restore",
