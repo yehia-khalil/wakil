@@ -94,6 +94,28 @@
 
 {"expect":{"tree":"absent","text":"Store a token for orders-v2 in staging?"}}
 
+{"do":{"click":"settings.api.orders-v2.replaceToken"}}
+
+{"do":{"type":{"into":"settings.api.orders-v2.token","text":"Bearer e2e-secret-777"}}}
+
+{"expect":{"tree":"contains","text":"Store a token for orders-v2 in staging?"}}
+
+{"do":{"click":"settings.apiToken.confirm"}}
+
+{"expect":{"tree":"contains","text":"in Keychain (api:e2e-project:staging:orders-v2)"}}
+
+{"expect":{"tree":"absent","text":"e2e-secret-777"}}
+
+{"expect":{"journal":{"contains":"[redacted]"}}}
+
+{"do":{"click":"settings.api.orders-v2.clearToken"}}
+
+{"expect":{"tree":"contains","text":"none"}}
+
+{"expect":{"tree":"absent","text":"in Keychain (api:e2e-project:staging:orders-v2)"}}
+
+{"expect":{"tree":"absent","text":"settings.api.orders-v2.clearToken"}}
+
 {"do":{"click":"settings.api.orders-v2.remove"}}
 
 {"expect":{"tree":"contains","text":"Remove orders-v2 from staging? Its Keychain item is kept."}}
@@ -131,6 +153,22 @@
 {"dispatch":{"action":"api_remove_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"disp-two"}}}
 
 {"expect":{"tree":"absent","text":"settings.api.disp-two.name"}}
+
+{"do":{"type":{"into":"settings.api.name","text":"token-api"}}}
+
+{"do":{"type":{"into":"settings.api.baseUrl","text":"https://token.e2e-fixture.invalid"}}}
+
+{"do":{"type":{"into":"settings.api.token","text":"Bearer e2e-secret-888"}}}
+
+{"do":{"click":"settings.api.save"}}
+
+{"expect":{"tree":"contains","text":"Store a token for token-api in staging? It goes to your Keychain, not to the project file."}}
+
+{"do":{"click":"settings.apiToken.confirm"}}
+
+{"expect":{"tree":"contains","text":"in Keychain (api:e2e-project:staging:token-api)"}}
+
+{"expect":{"tree":"absent","text":"e2e-secret-888"}}
 
 {"do":{"type":{"into":"settings.api.name","text":"card-api"}}}
 

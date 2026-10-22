@@ -69,11 +69,11 @@ Walk in order, in `personal`.
 
 ## 3. Residue: what the walk cannot establish
 
-- **Storing, replacing and clearing a token** (rows 1 to 8) write the real login Keychain of
-  the Mac; a check would leave an item no removal cleans up, so the harness asserts the
-  question and Cancel and the walk presses **Store it** and **Clear token**.
-  `settings.apiToken.confirm` and `settings.api.<…>.clearToken` are excused in
-  `e2e/checks/uncoverable.tsv` for that reason.
+- **Storing and clearing a token** are checked on screen: `2e-iii-api-entries.jsonl` stores
+  one from the card and from **Replace token**, reads the Keychain line, asserts the typed text
+  is absent from the tree and `[redacted]` in the journal, and presses **Clear token**. They
+  write the harness's throwaway fixture keychain, which a check cannot read back, so rows 1 to
+  8 keep the real login Keychain: `security find-generic-password` and the real-host send.
 - **Sending with the token** (row 5) needs the real Keychain item and a real host.
 - **The agent's refusal** (row 10) needs a running agent, a real provider and quota; the
   actions' operator-only audience is pinned in the Swift tests and the checks dispatch them on
