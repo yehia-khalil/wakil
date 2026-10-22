@@ -149,6 +149,22 @@ extension View {
     }
 }
 
+extension View {
+    /// The boxed `.field` at most `maxWidth` wide, narrowing with its column: a field that opens
+    /// under a row's value (an API entry's **Replace token**) and must not run past the pane.
+    func fieldBox(maxWidth: CGFloat) -> some View {
+        padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(SettingsPalette.coolWhite.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .stroke(SettingsPalette.coolWhite.opacity(0.14), lineWidth: 0.5)))
+    }
+}
+
 /// What a setting does, in one or two plain sentences under its label: the artboard's `.note`.
 /// It sits beside the one setting it explains, never pooled in a footnote, and reads at a
 /// legible step of cool white — it is meant to be read, not to recede.

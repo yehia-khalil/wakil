@@ -135,6 +135,27 @@ struct SettingsPane: View {
     let removeDatabase: (
         _ projectPath: String, _ environment: String, _ name: String
     ) async -> String?
+    /// Renames a database (`newName`) or drops its write access (`revokeWrite`); nil leaves a
+    /// part as it is. Answers the refusal or nil (2e-iii).
+    var updateDatabase: (
+        _ projectPath: String, _ environment: String, _ name: String,
+        _ newName: String?, _ revokeWrite: Bool?
+    ) async -> String? = { _, _, _, _, _ in nil }
+    /// Adds or replaces an API entry by name. The token, when there is one, goes to the
+    /// Keychain; without one an existing entry keeps its `authRef` (2e-iii).
+    var setApiEntry: (
+        _ projectPath: String, _ environment: String, _ name: String, _ baseUrl: String,
+        _ authHeader: String, _ token: String?
+    ) async -> String? = { _, _, _, _, _, _ in nil }
+    /// Edits one API entry in place; nil leaves a part as it is.
+    var updateApiEntry: (
+        _ projectPath: String, _ environment: String, _ name: String, _ newName: String?,
+        _ baseUrl: String?, _ authHeader: String?, _ clearToken: Bool?
+    ) async -> String? = { _, _, _, _, _, _, _ in nil }
+    /// Drops an API entry, keeping its Keychain item.
+    var removeApiEntry: (
+        _ projectPath: String, _ environment: String, _ name: String
+    ) async -> String? = { _, _, _ in nil }
 
     /// Adds a project from the folder chosen (2e-ii): its name, or the refusal whole.
     var createProject: (String) async -> (name: String?, error: String?) = { _ in (nil, nil) }
@@ -180,6 +201,24 @@ struct SettingsPane: View {
     /// Whether the DSN write is awaiting its pane-local confirmation.
     @State private var confirmingDSN: Bool = false
     @State private var databaseRefusal: String?
+
+    /// The API card's fields (2e-iii), the database card's twin. The token is the second secret
+    /// typed in this pane, kept here only while the card is filled and cleared on success.
+    @State private var apiName: String = ""
+    @State private var apiBaseUrl: String = ""
+    @State private var apiAuthHeader: String = ""
+    @State private var apiToken: String = ""
+    /// Whether the card's token write is awaiting its pane-local confirmation.
+    @State private var confirmingApiToken: Bool = false
+    @State private var apiSaving: Bool = false
+    @State private var apiRefusal: String?
+    /// The entry whose **Replace token** is open, by key, and what is typed in it. One at a time,
+    /// and never beside the card's confirmation: both answer to `settings.apiToken.confirm`.
+    @State private var replacingToken: String?
+    @State private var replacementToken: String = ""
+    @FocusState private var replacementTokenFocused: Bool
+    /// A section to bring into view: **Replace connection** scrolls to the database card.
+    @State private var scrollRequest: String?
 
     /// The row whose unlink is awaiting confirmation.
     ///
@@ -809,20 +848,29 @@ struct SettingsPane: View {
             // in both placements. The tree column has scrolled since the
             // pane was built; this column is only now long enough to
             // need it.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if let failure {
-                        // Not an empty pane. A read that failed and a
-                        // configuration that is empty are different facts.
-                        note(failure, tone: caution)
-                    } else if tree == nil {
-                        emptyLine("reading…")
-                    } else if let tree {
-                        subject(of: tree)
-                        if tree.hasResidue { residue(of: tree) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let failure {
+                            // Not an empty pane. A read that failed and a
+                            // configuration that is empty are different facts.
+                            note(failure, tone: caution)
+                        } else if tree == nil {
+                            emptyLine("reading…")
+                        } else if let tree {
+                            subject(of: tree)
+                            if tree.hasResidue { residue(of: tree) }
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                // **Replace connection** fills the card and brings it into view (2e-iii): the
+                // operator asked for the card, so the page goes to it, on the same page (Rule 6).
+                .onChange(of: scrollRequest) { _, target in
+                    guard let target else { return }
+                    withAnimation(.easeOut(duration: 0.45)) { proxy.scrollTo(target, anchor: .top) }
+                    scrollRequest = nil
+                }
             }
 
             HStack(spacing: 10) {
@@ -993,84 +1041,40 @@ struct SettingsPane: View {
             }
 
         case .databases(let projectName, let environmentName):
-            if let environment = environment(projectName, environmentName, in: tree) {
+            if let environment = environment(projectName, environmentName, in: tree),
+               let project = tree.projects.first(where: { $0.name == projectName }) {
                 if environment.databases.isEmpty {
                     emptyLine("no databases in this environment")
                 }
                 ForEach(environment.databases, id: \.name) { database in
-                    // A row like the account table's (#327): what it is on
-                    // the left, its one verb on the right edge.
-                    HStack(alignment: .center, spacing: Scale.columnGap) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 8) {
-                                Text(database.name)
-                                    .font(.system(size: Scale.identifier, design: .monospaced))
-                                    .foregroundStyle(coolWhite.opacity(0.90))
-                                Chip(text: database.driver, tone: coolWhite.opacity(0.62))
-                                if database.writable { Chip(text: "writable", tone: caution) }
-                            }
-                            // The reference, never the value: the Keychain
-                            // entry NAME. The secret it names is read by
-                            // the driver at query time and by nothing here.
-                            Text(database.writeRef.isEmpty
-                                ? "read \(database.ref)"
-                                : "read \(database.ref)   ·   write \(database.writeRef)")
-                                .font(.system(size: Scale.meta, design: .monospaced))
-                                .foregroundStyle(coolWhite.opacity(0.34))
-                        }
-                        Spacer(minLength: 0)
-                        // **No confirmation, and that is a ruling.**
-                        // Removing a database KEEPS its Keychain entry, so
-                        // nothing is destroyed, and the pane-local
-                        // confirmation list is destructive-only.
-                        rowAction("Remove", tone: coolWhite.opacity(0.52),
-                                  identifier: "settings.db.\(database.name).remove") {
-                            let path = tree.projects
-                                .first { $0.name == projectName }?.path ?? ""
-                            databaseRefusal = nil
-                            Task {
-                                databaseRefusal = await removeDatabase(
-                                    path, environmentName, database.name)
-                            }
-                        }
-                    }
-                    .frame(minHeight: Scale.rowHeight, alignment: .leading)
-                    .overlay(alignment: .bottom) {
-                        Rectangle().fill(coolWhite.opacity(0.06)).frame(height: 0.5)
-                    }
+                    databaseRow(database, project: project, environment: environmentName)
+                        // A row's field state is its database's: a rename draws a new row.
+                        .id("db.\(project.path).\(environmentName).\(database.name)")
                 }
                 databaseForm(project: projectName, environment: environmentName, in: tree)
+                    .id(Self.databaseCardAnchor)
             } else {
                 gone(environmentName)
             }
 
         case .api(let projectName, let environmentName):
-            if let environment = environment(projectName, environmentName, in: tree) {
+            if let environment = environment(projectName, environmentName, in: tree),
+               let project = tree.projects.first(where: { $0.name == projectName }) {
                 if environment.api.isEmpty {
                     emptyLine("this environment declares no API entries")
-                } else {
-                    // One block per entry, keyed by NAME — which is what a
-                    // request records, so the same request can run against
-                    // staging and then production (2c-iv).
-                    ForEach(environment.api, id: \.name) { api in
-                        // A section per entry, headed by its name (2026-10-21).
-                        SettingsSection(api.name.isEmpty ? "unnamed" : api.name) {
-                            fields([
-                                ("Base URL", api.baseUrl, true),
-                                ("Auth ref", api.authRef.isEmpty ? "none" : api.authRef, true),
-                            ])
-                        }
-                    }
                 }
-                // Permanently read-only, and this merge is the argument
-                // for it: the shape changed under this pane while it sat
-                // in a branch, exactly as the note predicted, and the cost
-                // was a list where a value had been — not a form to
-                // rewrite.
-                readOnlyNote(
-                    "The API entries are read-only, and stay so: this shape changed once "
-                        + "already while this pane was being built, and a form built on "
-                        + "today's is one rebuilt on someone else's schedule.")
+                // One section per entry, keyed by NAME — which is what a request records, so the
+                // same request can run against staging and then production (2c-iv). Drawn by
+                // position too, because a hand-edited file can hold two of one name and both are
+                // drawn (2e-iii).
+                let names = environment.api.map(\.name)
+                ForEach(Array(environment.api.enumerated()), id: \.offset) { index, api in
+                    apiEntrySection(
+                        api, clash: ApiEntryWording.clash(names: names, at: index),
+                        project: project, environment: environmentName)
+                        .id("api.\(project.path).\(environmentName).\(index).\(api.name)")
+                }
+                apiForm(path: project.path, environment: environmentName)
             } else {
                 gone(environmentName)
             }
@@ -2758,6 +2762,446 @@ private struct QuickTasksAboutButton: View {
                 .padding(14)
                 .background(Color(red: 0.055, green: 0.063, blue: 0.098))   // #0e1019, as the agent chips' list
                 .accessibilityIdentifier("settings.quickTasks.about.text")
+        }
+    }
+}
+
+// MARK: - Databases and API entries, edited where they stand (2e-iii)
+
+extension SettingsPane {
+    /// Where **Replace connection** scrolls to.
+    static let databaseCardAnchor = "databaseCard"
+
+    /// One database: its name edited in place beside its driver and write chips, the Keychain
+    /// refs it reads under that, and its verbs on the right edge as the account table's are —
+    /// in a row with room, stacked as words without.
+    ///
+    /// **Remove asks now (2e-iii), and that is the operator's ruling on review.** It keeps every
+    /// Keychain entry, so nothing is destroyed, which is why it asked nothing before; but the
+    /// operator counts a database gone from the page as a removal to confirm, as a project's and
+    /// an environment's are (Rule 1). Remove write access asks nothing: the write entry stays in
+    /// the Keychain and storing the connection again with writes allowed brings it back.
+    func databaseRow(_ database: SettingsDatabase, project: SettingsProject, environment: String) -> some View {
+        let removeKey = "remove.db.\(environment).\(database.name)"
+        let revokeKey = "revokeWrite.db.\(environment).\(database.name)"
+        let path = project.path
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: SettingsScale.columnGap) {
+                // Identity first, then what it is: the name on its own line, edited where it
+                // stands; the chips and the Keychain refs quieter beneath it.
+                VStack(alignment: .leading, spacing: 5) {
+                    LeaveSavedTextField(
+                        label: nil, stored: database.name,
+                        identifier: "settings.db.\(database.name).name", maxWidth: 240,
+                        save: { new in await updateDatabase(path, environment, database.name, new, nil) },
+                        unseen: showUnseenRefusal)
+                    HStack(alignment: .center, spacing: 8) {
+                        Chip(text: database.driver, tone: SettingsPalette.coolWhite.opacity(0.62))
+                        if database.writable { Chip(text: "writable", tone: SettingsPalette.caution) }
+                        // The reference, never the value: the Keychain entry NAME. The secret it
+                        // names is read by the driver at query time and by nothing here.
+                        Text(database.writeRef.isEmpty
+                            ? "read \(database.ref)"
+                            : "read \(database.ref)   ·   write \(database.writeRef)")
+                            .font(.system(size: SettingsScale.meta, design: .monospaced))
+                            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.34))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+                Spacer(minLength: 0)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: SettingsScale.columnGap) {
+                        databaseVerbs(database, path: path, environment: environment,
+                                      removeKey: removeKey, revokeKey: revokeKey)
+                    }
+                    VStack(alignment: .trailing, spacing: 8) {
+                        databaseVerbs(database, path: path, environment: environment,
+                                      removeKey: removeKey, revokeKey: revokeKey)
+                    }
+                }
+            }
+            .frame(minHeight: SettingsScale.rowHeight, alignment: .leading)
+            .padding(.vertical, 6)
+            if confirmingRemoval == removeKey {
+                removalConfirmation(
+                    DatabaseWording.removal(name: database.name, environment: environment),
+                    confirm: "settings.db.\(database.name).remove.confirm",
+                    keep: "settings.db.\(database.name).remove.keep"
+                ) {
+                    rowWrite(removeKey) { await removeDatabase(path, environment, database.name) }
+                }
+            }
+            rowRefusal(revokeKey)
+            rowRefusal(removeKey)
+        }
+        .padding(.bottom, 4)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(SettingsPalette.coolWhite.opacity(0.06)).frame(height: 0.5)
+        }
+    }
+
+    /// A database's verbs, laid out by the caller in a row or a stack, whichever fits.
+    @ViewBuilder
+    private func databaseVerbs(
+        _ database: SettingsDatabase, path: String, environment: String,
+        removeKey: String, revokeKey: String
+    ) -> some View {
+        rowAction("Replace connection", tone: SettingsPalette.coolWhite.opacity(0.62),
+                  identifier: "settings.db.\(database.name).replaceConnection") {
+            // The card below is where a connection is typed; this fills what is known about the
+            // row — never a secret, which is never read back — and brings the card into view.
+            databaseName = database.name
+            databaseConnection = DatabaseConnectionFields(
+                driver: databaseDrivers.contains(database.driver) ? database.driver : "mysql")
+            databaseGrantWrite = false
+            databaseWriteUser = ""
+            databaseWritePassword = ""
+            confirmingDSN = false
+            databaseRefusal = nil
+            scrollRequest = Self.databaseCardAnchor
+        }
+        if database.writable {
+            busyVerb(revokeKey) {
+                rowAction("Remove write access", tone: SettingsPalette.coolWhite.opacity(0.52),
+                          identifier: "settings.db.\(database.name).revokeWrite",
+                          enabled: !lifecycleBusy.contains(revokeKey)) {
+                    rowWrite(revokeKey) { await updateDatabase(path, environment, database.name, nil, true) }
+                }
+            }
+        }
+        busyVerb(removeKey) {
+            rowAction("Remove", tone: SettingsPalette.coolWhite.opacity(0.52),
+                      identifier: "settings.db.\(database.name).remove",
+                      enabled: !lifecycleBusy.contains(removeKey)) {
+                lifecycleRefusals[removeKey] = nil
+                confirmingRemoval = removeKey
+            }
+        }
+    }
+
+    /// One API entry as a section headed by its name: its values edited where they stand, the
+    /// token by reference, and **Remove** quiet on the head's right edge.
+    ///
+    /// **This page was read-only until 2e-iii** (Decision 21's 2026-10-22 note): the 2c-iv pane
+    /// held that a form here would be rebuilt whenever the shape moved. The shape has settled, and
+    /// the form is built from the writers' own validation, so a refusal is Go's sentence whole.
+    func apiEntrySection(
+        _ api: SettingsAPI, clash: String?, project: SettingsProject, environment: String
+    ) -> some View {
+        let path = project.path
+        let removeKey = "remove.api.\(environment).\(api.name)"
+        return SettingsSection(api.name.isEmpty ? "unnamed" : api.name, accessory: {
+            Spacer(minLength: 0)
+            busyVerb(removeKey) {
+                rowAction("Remove", tone: SettingsPalette.coolWhite.opacity(0.52),
+                          identifier: "settings.api.\(api.name).remove",
+                          enabled: !lifecycleBusy.contains(removeKey)) {
+                    lifecycleRefusals[removeKey] = nil
+                    confirmingRemoval = removeKey
+                }
+            }
+        }) {
+            if let clash {
+                Text(clash)
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 4)
+            }
+            if confirmingRemoval == removeKey {
+                removalConfirmation(
+                    ApiEntryWording.removal(name: api.name, environment: environment),
+                    confirm: "settings.api.\(api.name).remove.confirm",
+                    keep: "settings.api.\(api.name).remove.keep"
+                ) {
+                    rowWrite(removeKey) { await removeApiEntry(path, environment, api.name) }
+                }
+                .padding(.bottom, 6)
+            }
+            rowRefusal(removeKey)
+            LeaveSavedTextField(
+                label: "Name", stored: api.name, identifier: "settings.api.\(api.name).name",
+                save: { new in await updateApiEntry(path, environment, api.name, new, nil, nil, nil) },
+                unseen: showUnseenRefusal)
+            LeaveSavedTextField(
+                label: "Base URL", stored: api.baseUrl, identifier: "settings.api.\(api.name).baseUrl",
+                prompt: "https://api.example.com", maxWidth: 420,
+                save: { new in await updateApiEntry(path, environment, api.name, nil, new, nil, nil) },
+                unseen: showUnseenRefusal)
+            LeaveSavedTextField(
+                label: "Auth header", stored: api.authHeader,
+                identifier: "settings.api.\(api.name).authHeader", prompt: "Authorization",
+                save: { new in await updateApiEntry(path, environment, api.name, nil, nil, new, nil) },
+                unseen: showUnseenRefusal)
+            tokenRow(api, path: path, environment: environment)
+        }
+    }
+
+    /// The Token row: where the token lives, by ref, and its two verbs. **Replace token** opens a
+    /// masked field under the value with the confirmation it answers to; nothing else is ever
+    /// drawn for a token, and no stored token is read back.
+    @ViewBuilder
+    private func tokenRow(_ api: SettingsAPI, path: String, environment: String) -> some View {
+        let tokenKey = "token.api.\(environment).\(api.name)"
+        let clearKey = "clearToken.api.\(environment).\(api.name)"
+        SettingsRow("Token") {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: SettingsScale.columnGap) {
+                    tokenValue(api)
+                    Spacer(minLength: 0)
+                    tokenVerbs(api, path: path, environment: environment, tokenKey: tokenKey, clearKey: clearKey)
+                }
+                VStack(alignment: .leading, spacing: 7) {
+                    tokenValue(api)
+                    HStack(spacing: SettingsScale.columnGap) {
+                        tokenVerbs(api, path: path, environment: environment, tokenKey: tokenKey, clearKey: clearKey)
+                    }
+                }
+                .padding(.vertical, 10)
+            }
+        }
+        if replacingToken == tokenKey {
+            tokenReplacement(api, path: path, environment: environment, key: tokenKey)
+        }
+        rowRefusal(clearKey, underValue: true)
+    }
+
+    private func tokenValue(_ api: SettingsAPI) -> some View {
+        Text(ApiEntryWording.token(authRef: api.authRef))
+            .font(.system(size: SettingsScale.identifier, design: .monospaced))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(api.authRef.isEmpty ? 0.36 : 0.62))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+            .help(ApiEntryWording.token(authRef: api.authRef))
+    }
+
+    @ViewBuilder
+    private func tokenVerbs(
+        _ api: SettingsAPI, path: String, environment: String, tokenKey: String, clearKey: String
+    ) -> some View {
+        rowAction("Replace token", tone: SettingsPalette.coolWhite.opacity(replacingToken == tokenKey ? 0.32 : 0.62),
+                  identifier: "settings.api.\(api.name).replaceToken") {
+            // A second press puts it away; opening one closes any other and the card's question,
+            // so one confirmation is ever on the page.
+            replacementToken = ""
+            if replacingToken == tokenKey {
+                replacingToken = nil
+            } else {
+                confirmingApiToken = false
+                lifecycleRefusals[tokenKey] = nil
+                replacingToken = tokenKey
+            }
+        }
+        // Clearing forgets the ref and keeps the Keychain item, so it destroys nothing and asks
+        // nothing (Rule 1). With no token there is nothing to clear.
+        if !api.authRef.isEmpty {
+            busyVerb(clearKey) {
+                rowAction("Clear token", tone: SettingsPalette.coolWhite.opacity(0.52),
+                          identifier: "settings.api.\(api.name).clearToken",
+                          enabled: !lifecycleBusy.contains(clearKey)) {
+                    rowWrite(clearKey) { await updateApiEntry(path, environment, api.name, nil, nil, nil, true) }
+                }
+            }
+        }
+    }
+
+    /// **Replace token**, open: the masked field (focused, Rule 3), the question it answers to,
+    /// and **Store it** / **Cancel**.
+    ///
+    /// **Leaving discards, it does not save** — the one in-place field on this page Rule 2 does
+    /// not reach, because a token is written only behind its confirmation. What was typed is
+    /// dropped the moment the field leaves the screen, so a secret outlives no page.
+    private func tokenReplacement(
+        _ api: SettingsAPI, path: String, environment: String, key: String
+    ) -> some View {
+        let busy = lifecycleBusy.contains(key)
+        let ready = !replacementToken.isEmpty && !busy
+        return VStack(alignment: .leading, spacing: 8) {
+            SecureField("Bearer …", text: $replacementToken)
+                .textFieldStyle(.plain)
+                .font(.system(size: SettingsScale.identifier, design: .monospaced))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.90))
+                .focused($replacementTokenFocused)
+                .fieldBox(maxWidth: 320)
+                .accessibilityIdentifier("settings.api.\(api.name).token")
+                .accessibilityLabel("token")
+                .onAppear { replacementTokenFocused = true }
+                .onDisappear {
+                    replacementToken = ""
+                    if replacingToken == key { replacingToken = nil }
+                }
+            Text(ApiEntryWording.tokenConfirmation(name: api.name, environment: environment))
+                .font(.system(size: SettingsScale.body))
+                .foregroundStyle(SettingsPalette.caution)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                confirmButton("Store it", tone: SettingsPalette.caution.opacity(ready ? 1 : 0.45), filled: true,
+                              identifier: "settings.apiToken.confirm") {
+                    guard ready else { return }
+                    let token = replacementToken
+                    rowWrite(key) {
+                        let refusal = await setApiEntry(
+                            path, environment, api.name, api.baseUrl, api.authHeader, token)
+                        if refusal == nil {
+                            replacementToken = ""
+                            replacingToken = nil
+                        }
+                        return refusal
+                    }
+                }
+                .disabled(!ready)
+                confirmButton("Cancel", tone: SettingsPalette.coolWhite.opacity(0.62),
+                              identifier: "settings.apiToken.cancel") {
+                    replacementToken = ""
+                    replacingToken = nil
+                }
+                if busy { ProgressView().controlSize(.small) }
+            }
+            rowRefusal(key)
+        }
+        .underRowValue()
+        .padding(.vertical, 12)
+    }
+
+    /// The card under the entries: the database card's twin, field for field in its widths.
+    func apiForm(path: String, environment: String) -> some View {
+        let ready = ApiEntryWording.canSave(name: apiName, baseUrl: apiBaseUrl) && !apiSaving
+        return FormCard(title: "ADD OR REPLACE AN API ENTRY") {
+            HStack(alignment: .bottom, spacing: 12) {
+                LabelledField(label: "NAME", prompt: "orders-api", text: $apiName,
+                              width: 160, identifier: "settings.api.name")
+                LabelledField(label: "AUTH HEADER", prompt: "Authorization", text: $apiAuthHeader,
+                              width: 200, identifier: "settings.api.authHeader")
+            }
+            LabelledField(label: "BASE URL", prompt: "https://api.example.com", text: $apiBaseUrl,
+                          width: 456, identifier: "settings.api.baseUrl")
+            // Masked, as the database password is. Optional: without one, a replaced entry keeps
+            // the token it had.
+            LabelledField(label: "TOKEN", prompt: "optional", text: $apiToken,
+                          width: 456, identifier: "settings.api.token", secure: true)
+
+            if confirmingApiToken {
+                // **Names no part of the token.** The operator knows what they typed.
+                Text(ApiEntryWording.tokenConfirmation(name: apiName, environment: environment))
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    confirmButton("Store it", tone: SettingsPalette.caution, filled: true,
+                                  identifier: "settings.apiToken.confirm") {
+                        confirmingApiToken = false
+                        commitApiEntry(path: path, environment: environment)
+                    }
+                    confirmButton("Cancel", tone: SettingsPalette.coolWhite.opacity(0.62),
+                                  identifier: "settings.apiToken.cancel") {
+                        confirmingApiToken = false
+                    }
+                }
+            } else {
+                HStack(spacing: 10) {
+                    confirmButton("Save", tone: SettingsPalette.coolWhite.opacity(ready ? 0.90 : 0.35),
+                                  filled: true, identifier: "settings.api.save") {
+                        guard ready else { return }
+                        apiRefusal = nil
+                        if apiToken.isEmpty {
+                            commitApiEntry(path: path, environment: environment)
+                        } else {
+                            replacingToken = nil
+                            confirmingApiToken = true
+                        }
+                    }
+                    .disabled(!ready)
+                    if apiSaving { ProgressView().controlSize(.small) }
+                }
+            }
+
+            if let apiRefusal {
+                Text(apiRefusal)
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, 14)
+    }
+
+    private func commitApiEntry(path: String, environment: String) {
+        guard !apiSaving else { return }
+        let name = apiName, baseUrl = apiBaseUrl, header = apiAuthHeader
+        let token = apiToken.isEmpty ? nil : apiToken
+        apiSaving = true
+        apiRefusal = nil
+        Task {
+            let refusal = await setApiEntry(path, environment, name, baseUrl, header, token)
+            apiSaving = false
+            apiRefusal = refusal
+            // **Cleared on success, and only on success** (Rule 8), as the database card.
+            if refusal == nil {
+                apiName = ""
+                apiBaseUrl = ""
+                apiAuthHeader = ""
+                apiToken = ""
+            }
+        }
+    }
+
+    // MARK: Shared by both pages
+
+    /// A removal's question in place, under what it removes: 2e-ii's **Remove** / **Keep it**.
+    private func removalConfirmation(
+        _ sentence: String, confirm: String, keep: String, _ run: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(sentence)
+                .font(.system(size: SettingsScale.body))
+                .foregroundStyle(SettingsPalette.caution)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                confirmButton("Remove", tone: SettingsPalette.caution, filled: true, identifier: confirm) {
+                    confirmingRemoval = nil
+                    run()
+                }
+                confirmButton("Keep it", tone: SettingsPalette.coolWhite.opacity(0.62), identifier: keep) {
+                    confirmingRemoval = nil
+                }
+            }
+        }
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+
+    /// Runs one row's write: one at a time per key (Rule 5), its refusal kept by the key for the
+    /// row to draw whole (Rule 8).
+    private func rowWrite(_ key: String, _ act: @escaping () async -> String?) {
+        guard !lifecycleBusy.contains(key) else { return }
+        lifecycleBusy.insert(key)
+        lifecycleRefusals[key] = nil
+        Task {
+            let refusal = await act()
+            lifecycleBusy.remove(key)
+            lifecycleRefusals[key] = refusal
+        }
+    }
+
+    /// A verb with its spinner beside it while its write runs.
+    private func busyVerb<Verb: View>(_ key: String, @ViewBuilder _ verb: () -> Verb) -> some View {
+        HStack(spacing: 6) {
+            if lifecycleBusy.contains(key) { ProgressView().controlSize(.mini) }
+            verb()
+        }
+    }
+
+    @ViewBuilder
+    private func rowRefusal(_ key: String, underValue: Bool = false) -> some View {
+        if let refusal = lifecycleRefusals[key] {
+            Text(refusal)
+                .font(.system(size: SettingsScale.body))
+                .foregroundStyle(SettingsPalette.caution)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, underValue ? SettingsScale.labelWidth + SettingsScale.columnGap : 0)
+                .padding(.vertical, 4)
         }
     }
 }

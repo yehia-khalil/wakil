@@ -578,6 +578,28 @@ extension WakilWindow {
                         await model.removeDatabase(
                             projectPath: path, environment: environment, name: name)
                     },
+                    // 2e-iii. Each passes the settings tree's own `project.path`, which the window
+                    // compares verbatim to decide whether open API panes re-point on a rename.
+                    updateDatabase: { path, environment, name, newName, revokeWrite in
+                        await model.updateDatabase(
+                            projectPath: path, environment: environment, name: name,
+                            newName: newName, revokeWrite: revokeWrite)
+                    },
+                    setApiEntry: { path, environment, name, baseUrl, authHeader, token in
+                        await model.setApiEntry(
+                            projectPath: path, environment: environment, name: name,
+                            baseUrl: baseUrl, authHeader: authHeader, token: token)
+                    },
+                    updateApiEntry: { path, environment, name, newName, baseUrl, authHeader, clearToken in
+                        await model.updateApiEntry(
+                            projectPath: path, environment: environment, name: name,
+                            newName: newName, baseUrl: baseUrl, authHeader: authHeader,
+                            clearToken: clearToken)
+                    },
+                    removeApiEntry: { path, environment, name in
+                        await model.removeApiEntry(
+                            projectPath: path, environment: environment, name: name)
+                    },
                     createProject: { folder in await model.createProject(folder: folder) },
                     renameProject: { old, new in await model.renameProject(old, to: new) },
                     removeProject: { name in await model.removeProject(name) },
