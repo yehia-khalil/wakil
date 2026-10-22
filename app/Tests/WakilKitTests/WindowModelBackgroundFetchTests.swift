@@ -7,6 +7,9 @@ private actor FetchGit: ToolCaller {
     var calls: [String] = []
     var failFetch: String?
     var gatePush = false
+    var hangNextFetch = false
+    var fetchCancelled = false
+    func hangFetch() { hangNextFetch = true }
     private var parked: CheckedContinuation<Void, Never>?
     func fail(_ text: String?) { failFetch = text }
     func gate() { gatePush = true }
@@ -26,6 +29,11 @@ private actor FetchGit: ToolCaller {
             return ok(["root": .string("/p"), "branch": .string("main"), "detached": .string(""), "upstream": .string("origin/main"),
                        "ahead": .integer(1), "behind": .integer(0), "files": .array([])])
         case "git_fetch":
+            if hangNextFetch {
+                hangNextFetch = false
+                // A host that never answers: only cancelling the call ends it.
+                do { try await Task.sleep(for: .seconds(3600)) } catch { fetchCancelled = true; throw error }
+            }
             if let failFetch { return err(failFetch) }
             return ok(["summary": .string(""), "ahead": .integer(1), "behind": .integer(0)])
         case "git_push":
@@ -106,5 +114,30 @@ private func fetchWindow() async -> (WindowModel, FetchGit) {
         await git.release()
         await push.value
         #expect(window.changesErrors["/p"] == nil)
+    }
+
+    // Review I5: a background fetch stuck on a host that never answers must not refuse the
+    // operator's own write on that root — the write cancels it and runs.
+    @Test func anOperatorWriteCancelsAHungBackgroundFetch() async {
+        let (window, git) = await fetchWindow()
+        await git.hangFetch()
+        let background = Task { await window.backgroundFetchOnce() }
+        for _ in 0..<200 where await git.count("git_fetch") == 0 { try? await Task.sleep(for: .milliseconds(10)) }
+        await window.changesFetch(root: "/p")
+        #expect(window.changesErrors["/p"] == nil)
+        #expect(await git.fetchCancelled)
+        #expect(await git.count("git_fetch") == 2)
+        await background.value
+    }
+
+    @Test func aBackgroundFetchGivesUpAfterItsDeadline() async {
+        let (window, git) = await fetchWindow()
+        window.backgroundFetchTimeout = .milliseconds(100)
+        await git.hangFetch()
+        let started = ContinuousClock.now
+        await window.backgroundFetchOnce()
+        #expect(ContinuousClock.now - started < .seconds(5))
+        #expect(await git.fetchCancelled)
+        #expect(window.changesInFlight.isEmpty)
     }
 }

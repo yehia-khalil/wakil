@@ -181,6 +181,7 @@ extension WindowModel {
         guard !changesInFlight.contains(root) else { return nil }
         let generation = changesGeneration
         changesInFlight.insert(root)
+        await preemptBackgroundFetch(root)
         let caller = DispatchCaller(place: place, session: nil)
         let registry = self.registry
         let task = Task { @MainActor in

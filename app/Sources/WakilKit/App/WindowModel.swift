@@ -694,6 +694,11 @@ public final class WindowModel {
     public let backgroundFetchInterval: Duration = .seconds(300)
     var backgroundFetchSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     var backgroundFetchTask: Task<Void, Never>?
+    /// How long one background fetch may take before it is given up: a host that never answers
+    /// must not hold the root's write slot (review I5).
+    var backgroundFetchTimeout: Duration = .seconds(60)
+    /// The background fetch running now and its root, which an operator's write on that root cancels.
+    var backgroundFetchCurrent: (root: String, cancel: () -> Void, done: Task<Void, Never>)?
     var appActive = true
     /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
     public private(set) var gitRoots: [GitRootState] = []

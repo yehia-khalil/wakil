@@ -40,17 +40,42 @@ extension WindowModel {
         let roots = (await gitStatus?.roots ?? []).filter { $0.error == nil && !changesInFlight.contains($0.root) }
         let generation = changesGeneration
         let caller = DispatchCaller(place: place, session: nil)
-        for root in roots {
-            do {
-                _ = try await registry.dispatch(name: "editor_changes_fetch", params: .object(["root": .string(root.root)]),
-                                                origin: .ui, caller: caller, confirmation: nil)
-                guard generation == changesGeneration else { return }
-                changesRemoteNotes[root.root] = nil
-            } catch {
-                guard generation == changesGeneration else { return }
-                changesRemoteNotes[root.root] = statusDescribingFailure("editor_changes_fetch", error)
+        let registry = self.registry
+        for root in roots where !changesInFlight.contains(root.root) {
+            // Its own task, so a deadline or the operator's write on this root can cancel it: the
+            // cancel reaches wakil-git, which stops git and frees the root (review I5).
+            let fetch = Task<Result<JSONValue, Error>, Never> { @MainActor in
+                do {
+                    return .success(try await registry.dispatch(
+                        name: "editor_changes_fetch", params: .object(["root": .string(root.root)]),
+                        origin: .ui, caller: caller, confirmation: nil))
+                } catch { return .failure(error) }
+            }
+            backgroundFetchCurrent = (root.root, { fetch.cancel() }, Task { _ = await fetch.value })
+            let timeout = backgroundFetchTimeout
+            let deadline = Task { @MainActor in
+                try? await Task.sleep(for: timeout)
+                if !Task.isCancelled { fetch.cancel() }
+            }
+            let outcome = await fetch.value
+            deadline.cancel()
+            if backgroundFetchCurrent?.root == root.root { backgroundFetchCurrent = nil }
+            guard generation == changesGeneration else { return }
+            switch outcome {
+            case .success: changesRemoteNotes[root.root] = nil
+            case .failure where fetch.isCancelled: break   // given up or pre-empted: nothing to say
+            case .failure(let error): changesRemoteNotes[root.root] = statusDescribingFailure("editor_changes_fetch", error)
             }
         }
         await refreshPanes()
+    }
+
+    /// Cancels the background fetch running in `root`, if any, and returns once it has let go —
+    /// so the operator's own write there runs instead of being refused (Rules 5 and 7).
+    func preemptBackgroundFetch(_ root: String) async {
+        guard let running = backgroundFetchCurrent, running.root == root else { return }
+        backgroundFetchCurrent = nil
+        running.cancel()
+        await running.done.value
     }
 }
