@@ -4,7 +4,10 @@ import (
 	"context"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -240,6 +243,8 @@ func addWriteTools(s *mcp.Server) {
 				if fail != nil {
 					return fail, wakilcore.GitRemoteResult{}, nil
 				}
+				ctx, done := remoteContext(ctx)
+				defer done()
 				r, err := op.run(g, ctx)
 				if err != nil {
 					// A conflicting pull reports its paths beside the refusal.
@@ -258,6 +263,8 @@ func addWriteTools(s *mcp.Server) {
 			if err != nil {
 				return mcpx.ToolErr("wakil-git", err), cloneOut{}, nil
 			}
+			ctx, done := remoteContext(ctx)
+			defer done()
 			path, r, err := wakilcore.CloneInto(ctx, org, a.URL, a.Folder, a.Operator, remoteOptions())
 			if err != nil {
 				return mcpx.ToolErr("wakil-git", err), cloneOut{}, nil
@@ -357,8 +364,40 @@ func addWriteTools(s *mcp.Server) {
 		})
 }
 
+// shutdown is cancelled by SIGTERM — how the window stops wakil-git, an org switch included — and
+// remoteWork counts the remote operations and clones running. Stopping cancels them through their
+// context, so a pull aborts what it started and a clone removes its folder, and the process exits
+// once they have (3a-iii review I4); git itself runs in its own process group and would otherwise
+// outlive this process with closed pipes.
+var (
+	shutdown   = context.Background()
+	remoteWork sync.WaitGroup
+)
+
+// remoteContext is ctx, also cancelled by shutdown, and counted in remoteWork until done is called.
+func remoteContext(ctx context.Context) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(shutdown, cancel)
+	remoteWork.Add(1)
+	return ctx, func() {
+		stop()
+		cancel()
+		remoteWork.Done()
+	}
+}
+
 func main() {
-	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+	var stop context.CancelFunc
+	shutdown, stop = signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	go func() {
+		<-shutdown.Done()
+		remoteWork.Wait()
+		os.Exit(0)
+	}()
+	err := newServer().Run(context.Background(), &mcp.StdioTransport{})
+	remoteWork.Wait()
+	if err != nil {
 		log.Fatal(err)
 	}
 }

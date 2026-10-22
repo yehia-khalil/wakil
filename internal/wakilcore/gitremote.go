@@ -317,16 +317,15 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 		return g.result(out, stderr), nil
 	}
 	if ctx.Err() != nil {
+		// Cancelled part-way (an org switch stops wakil-git): nothing was under way before this
+		// pull, so whatever is now is its own, and is undone.
+		g.abortInProgress()
 		return GitRemoteResult{}, ctx.Err()
 	}
 	if rebasing, merging := g.inProgress(); rebasing || merging {
 		paths, _ := g.plain("diff", "--name-only", "--diff-filter=U")
 		conflicts := strings.Fields(paths)
-		abort := []string{"merge", "--abort"}
-		if rebasing {
-			abort = []string{"rebase", "--abort"}
-		}
-		g.git(context.Background(), GitInvocation{}, abort[0], abort[1:]...)
+		g.abortInProgress()
 		r := g.result(nil, stderr)
 		r.Conflicts = conflicts
 		return r, UserError("Pull stopped on conflicts in " + strings.Join(conflicts, ", ") +
@@ -343,6 +342,16 @@ func (g *GitRemote) inProgress() (rebasing, merging bool) {
 	}
 	rebasing = fileExists(filepath.Join(gitDir, "rebase-merge")) || fileExists(filepath.Join(gitDir, "rebase-apply"))
 	return rebasing, fileExists(filepath.Join(gitDir, "MERGE_HEAD"))
+}
+
+// abortInProgress aborts the rebase or merge this pull started.
+func (g *GitRemote) abortInProgress() {
+	switch rebasing, merging := g.inProgress(); {
+	case rebasing:
+		g.git(context.Background(), GitInvocation{}, "rebase", "--abort")
+	case merging:
+		g.git(context.Background(), GitInvocation{}, "merge", "--abort")
+	}
 }
 
 // Push sends the branch to its upstream. It needs one (Publish makes it) and never forces.

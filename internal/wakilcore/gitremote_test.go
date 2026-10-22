@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // remoteFixture: a bare remote with one commit on main, and a clone of it as the project root,
@@ -355,6 +356,46 @@ func TestPullLeavesTheOperatorsMergeAlone(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(work, ".git", "MERGE_HEAD")); err != nil {
 		t.Fatal("the operator's merge was aborted")
+	}
+	if after := porcelain(t, work); after != before {
+		t.Fatalf("tree changed:\n%s\n%s", before, after)
+	}
+}
+
+// Review I4: a pull cancelled part-way (an org switch stopping wakil-git) undoes the rebase it
+// started, so the tree is back as it was rather than left mid-rebase.
+func TestACancelledPullUndoesItsRebase(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	pushFromElsewhere(t, bare, "one\ntwo\nthree\nfour\n")
+	commitHere(t, work, "ZERO\none\ntwo\nthree\n")
+	// The rebase's checkout runs post-checkout: hold the rebase there until it is cancelled.
+	hook := filepath.Join(work, ".git", "hooks", "post-checkout")
+	os.WriteFile(hook, []byte("#!/bin/sh\nsleep 30\n"), 0o755)
+	before := porcelain(t, work)
+	head := func() string {
+		out, _ := exec.Command("git", "-C", work, "rev-parse", "HEAD").Output()
+		return strings.TrimSpace(string(out))
+	}
+	was := head()
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		for i := 0; i < 200; i++ {
+			if _, err := os.Stat(filepath.Join(work, ".git", "rebase-merge")); err == nil {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+	if _, err := g.Pull(ctx); err == nil {
+		t.Fatal("a cancelled pull reported success")
+	}
+	if _, err := os.Stat(filepath.Join(work, ".git", "rebase-merge")); err == nil {
+		t.Fatal("left mid-rebase")
+	}
+	if head() != was {
+		t.Fatalf("HEAD moved: %s → %s", was, head())
 	}
 	if after := porcelain(t, work); after != before {
 		t.Fatalf("tree changed:\n%s\n%s", before, after)

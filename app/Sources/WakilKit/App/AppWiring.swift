@@ -819,6 +819,8 @@ public struct WakilWiring: Sendable {
     /// How long `switchOrg` waits for a running git write before it stops `wakil-git` anyway. The
     /// ruling is that an org switch lets a commit finish (its result is dropped, by generation, in
     /// `WindowModel`); a hook that runs past this is cut off, as any client's call is on a switch.
+    /// Remote work and clones still running are cancelled by the stop: wakil-git takes SIGTERM as a
+    /// cancel, so a pull aborts what it started and a clone removes its folder before it exits (3a-iii).
     static let orgSwitchGitWriteDrainLimit: TimeInterval = 60
 
     public func switchOrg(to org: String) async -> [String] {
