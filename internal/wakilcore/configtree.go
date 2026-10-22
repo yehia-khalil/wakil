@@ -24,8 +24,9 @@ type ConfigTreeOrg struct {
 	FastPath        bool   `json:"fastPath"`
 	CommitDrafts    bool   `json:"commitDrafts"`
 	// 3a-iii: the accounts (no secrets) and the strategy, resolved to rebase when unset.
-	GitAccounts  []GitAccount `json:"gitAccounts"`
-	PullStrategy string       `json:"pullStrategy"`
+	GitAccounts     []GitAccount `json:"gitAccounts"`
+	PullStrategy    string       `json:"pullStrategy"`
+	LastCloneFolder string       `json:"lastCloneFolder"`
 }
 
 // ConfigTreeProvider is a provider binding as the settings tree draws it.
@@ -213,6 +214,7 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 	tree.Org.CommitDrafts = resolveOrgSwitch(record.CommitDrafts, true)
 	tree.Org.GitAccounts = append([]GitAccount{}, record.GitAccounts...)
 	tree.Org.PullStrategy = PullStrategyOf(record)
+	tree.Org.LastCloneFolder = record.LastCloneFolder
 
 	providers, skipped, err := listProvidersFor(org)
 	if err != nil {

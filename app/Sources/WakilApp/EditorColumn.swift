@@ -471,6 +471,7 @@ struct EditorColumn: View {
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: ChangesSpace.m)
+                remoteButton(root)
                 if !root.files.isEmpty {
                     Image(systemName: closed ? "chevron.right" : "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
@@ -501,6 +502,24 @@ struct EditorColumn: View {
         }
     }
 
+    /// 3a-iii-a: Publish, Push, Pull or Sync as the branch needs (`changesRemoteButton`); nothing when
+    /// even. Disabled while the root has a write in flight (Rule 5), which shows its spinner and Cancel.
+    @ViewBuilder
+    private func remoteButton(_ root: GitRootState) -> some View {
+        let button = changesRemoteButton(root)
+        if button != .none, root.error == nil {
+            Button(button.title) { Task { await changes.remote(root.root, button) } }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
+                .padding(.horizontal, 6).padding(.vertical, 1)
+                .background(RoundedRectangle(cornerRadius: 3).stroke(EditorPaneStyle.text.opacity(0.18), lineWidth: 0.5))
+                .disabled(changes.inFlight.contains(root.root))
+                .help(button == .sync ? "Pull, then push" : button.title)
+                .accessibilityIdentifier("editor.changes.\(root.name).remote")
+        }
+    }
+
     /// A root line's spinner and Cancel while its write runs: a clean root's, or a collapsed one's.
     @ViewBuilder
     private func rootBusyActions(_ root: GitRootState) -> some View {
@@ -524,6 +543,8 @@ struct EditorColumn: View {
         Menu {
             Button("Undo Last Commit") { Task { await changes.undo(key) } }
                 .accessibilityIdentifier("editor.changes.\(root.name).undo")
+            Button("Fetch") { Task { await changes.fetch(key) } }
+                .accessibilityIdentifier("editor.changes.\(root.name).fetch")
         } label: { Image(systemName: "ellipsis").font(.system(size: 10, weight: .semibold)) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .foregroundStyle(EditorPaneStyle.text.opacity(0.62))
@@ -702,6 +723,16 @@ struct EditorColumn: View {
                 .padding(.top, ChangesSpace.s)
                 .accessibilityIdentifier("editor.changes.\(root.name).error")
         }
+        // 3a-iii-a: the background fetch's failure, quiet — a note, never an error (call 9).
+        if changes.errors[root.root] == nil, let note = changes.notes[root.root] {
+            Text(note)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .padding(.top, ChangesSpace.s)
+                .accessibilityIdentifier("editor.changes.\(root.name).note")
+        }
     }
 
     /// The root's message box — its placeholder naming who commits and ⌘⏎ — then one Commit bar the
@@ -805,6 +836,9 @@ struct EditorColumn: View {
                         .accessibilityIdentifier("editor.changes.\(root.name).amend")
                     Button("Undo Last Commit") { Task { await changes.undo(key) } }
                         .accessibilityIdentifier("editor.changes.\(root.name).undo")
+                    Divider()
+                    Button("Fetch") { Task { await changes.fetch(key) } }
+                        .accessibilityIdentifier("editor.changes.\(root.name).fetch")
                 } label: { Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
@@ -1701,6 +1735,10 @@ struct EditorChangesControls {
     var draftsOn: Bool
     let draft: (String) async -> String?
     let cancelDraft: (String) -> Void
+    /// 3a-iii-a: the remote button's action for a root, ▾ Fetch, and the background fetch's quiet notes.
+    let remote: (String, ChangesRemoteButton) async -> Void
+    let fetch: (String) async -> Void
+    var notes: [String: String]
 }
 
 /// The message box's keys (3a-ii), taken ahead of SwiftUI and the menu while a box holds the keyboard:

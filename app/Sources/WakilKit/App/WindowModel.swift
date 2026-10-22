@@ -2824,6 +2824,8 @@ public final class WindowModel {
         case quickProvider
         case gitName
         case gitEmail
+        /// 3a-iii: how Pull and Sync integrate (rebase, merge, ff-only).
+        case pullStrategy
 
         /// A stable fragment for this field's accessibility identifier —
         /// the case name, not the label, which is prose and may be
@@ -2844,6 +2846,7 @@ public final class WindowModel {
             case .quickProvider: return "Quick tasks"
             case .gitName: return "Git name"
             case .gitEmail: return "Git email"
+            case .pullStrategy: return "Pull strategy"
             }
         }
     }

@@ -75,6 +75,8 @@ struct SettingsPane: View {
     var saveOrganisationSwitch: (WindowModel.OrganisationSwitch, Bool) async -> String? = { _, _ in nil }
     /// Removes a local model by id (3b-viii). Answers the refusal or nil.
     var removeLocalProvider: (String) async -> String? = { _ in nil }
+    /// 3a-iii: the organisation's git accounts.
+    var git = GitAccountActions()
     /// Each quick-task provider's last error whole and which have answered, by id; the provider
     /// code completion goes to; and why the configuration could not be read.
     var quickTaskStatus: () async -> QuickTaskStatus = { QuickTaskStatus() }
@@ -138,6 +140,8 @@ struct SettingsPane: View {
 
     /// Adds a project from the folder chosen (2e-ii): its name, or the refusal whole.
     var createProject: (String) async -> (name: String?, error: String?) = { _ in (nil, nil) }
+    /// 3a-iii: clone a link into a folder, then add it as a project.
+    var cloneProject: (String, String) async -> (name: String?, error: String?) = { _, _ in (nil, nil) }
     /// Renames a project: old, new. Answers the refusal or nil.
     var renameProject: (String, String) async -> String? = { _, _ in nil }
     /// Removes a project from this organisation. Answers the refusal or nil.
@@ -157,6 +161,8 @@ struct SettingsPane: View {
     @State private var lifecycleBusy: Set<String> = []
     /// A failed add or remove, whole, beside the control that caused it (Rule 8).
     @State private var lifecycleRefusals: [String: String] = [:]
+    /// 3a-iii: + Add a project's sheet — Choose a folder… or Clone from a link….
+    @State private var addingProject = false
     /// The removal awaiting its pane-local confirmation, by its key. Only a
     /// removal that passes a `confirmation` asks (Rule 1: the operator
     /// counts removing a project or an environment as destroying).
@@ -301,6 +307,20 @@ struct SettingsPane: View {
         // container's frame as the union of its children — the overflow it is meant to catch.
         .background(Color.clear.accessibilityElement().accessibilityIdentifier("settings.pane"))
         .task(id: tree) { quickStatus = await quickTaskStatus() }
+        .sheet(isPresented: $addingProject) {
+            AddProjectSheet(
+                lastFolder: tree?.org.lastCloneFolder ?? "",
+                chooseFolder: {
+                    addingProject = false
+                    Task { await addProject() }
+                },
+                clone: cloneProject,
+                finished: { name in
+                    addingProject = false
+                    land(on: node(for: SettingsLanding.afterCreatingProject(name)), focusName: true)
+                },
+                close: { addingProject = false })
+        }
     }
 
     // MARK: - The tree
@@ -380,7 +400,7 @@ struct SettingsPane: View {
                         "+ Add a project", depth: 1, key: "addProject",
                         identifier: "settings.tree.addProject"
                     ) {
-                        await addProject()
+                        addingProject = true
                     }
                 }
             }
@@ -873,6 +893,9 @@ struct SettingsPane: View {
                 FormHint("Used for every commit from Wakil; empty uses git config.")
                     .underRowValue()
                     .padding(.top, 6)
+                // 3a-iii: the accounts pushes and pulls use, and how Pull and Sync integrate.
+                SettingsRow("Accounts", wraps: true) { GitAccountsBlock(org: tree.org, git: git) }
+                SettingsRow("Pull strategy") { pullStrategyChoice(tree) }
             }
             readOnlyNote(
                 "Saved one field at a time, read-modify-write from disk — so an edit you make "
@@ -1363,6 +1386,23 @@ struct SettingsPane: View {
         }
     }
 
+    /// Merge · Rebase · Fast-forward only, saved on click (Rule 2), Rebase by default (Rule 9).
+    private func pullStrategyChoice(_ tree: SettingsTree) -> some View {
+        let labels = ["rebase": "Rebase", "merge": "Merge", "ff-only": "Fast-forward only"]
+        return SegmentedChoice(
+            options: ["Rebase", "Merge", "Fast-forward only"],
+            selection: Binding(
+                get: { labels[tree.org.pullStrategy] ?? "Rebase" },
+                set: { label in
+                    guard let value = labels.first(where: { $0.value == label })?.key, value != tree.org.pullStrategy else { return }
+                    Task { _ = await saveOrganisationField(.pullStrategy, value) }
+                }),
+            identifier: { label in
+                let value = labels.first(where: { $0.value == label })?.key ?? label
+                return "settings.org.git.pullStrategy.\(value)"
+            })
+    }
+
     private func storedValue(
         _ field: WindowModel.OrganisationField, in tree: SettingsTree
     ) -> String {
@@ -1375,6 +1415,7 @@ struct SettingsPane: View {
         // Drawn under GIT, not in the generic list (3a-ii).
         case .gitName: return tree.org.gitName
         case .gitEmail: return tree.org.gitEmail
+        case .pullStrategy: return tree.org.pullStrategy
         }
     }
 

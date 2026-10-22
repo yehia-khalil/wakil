@@ -517,7 +517,10 @@ extension WakilWindow {
                         refreshIdentity: { root in await model.refreshChangesIdentity(root: root) },
                         drafting: model.changesDrafting, draftsOn: model.commitDraftsEnabled,
                         draft: { root in await model.changesDraft(root: root) },
-                        cancelDraft: { root in model.changesCancelDraft(root: root) }),
+                        cancelDraft: { root in model.changesCancelDraft(root: root) },
+                        remote: { root, button in await model.changesRemote(root: root, button) },
+                        fetch: { root in await model.changesFetch(root: root) },
+                        notes: model.changesRemoteNotes),
                     stageHunk: { await model.changesStageHunk() },
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
                     unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) })
@@ -547,6 +550,17 @@ extension WakilWindow {
                     },
                     saveOrganisationSwitch: { key, on in await model.saveOrganisationSwitch(key, on: on) },
                     removeLocalProvider: { id in await model.removeLocalProvider(id: id) },
+                    git: GitAccountActions(
+                        suggestions: { await model.gitHostSuggestions() },
+                        sshKeys: { await model.gitSSHKeys() },
+                        add: { host, provider, method, keyPath, username in
+                            await model.addGitAccount(host: host, provider: provider, method: method, keyPath: keyPath, username: username)
+                        },
+                        remove: { host in await model.removeGitAccount(host: host) },
+                        generateKey: { host, comment in await model.generateGitKey(host: host, comment: comment) },
+                        setToken: { host, token in await model.setGitToken(host: host, token: token) },
+                        setPassphrase: { host, pass in await model.setGitKeyPassphrase(host: host, passphrase: pass) },
+                        test: { host in await model.testGitAccount(host: host) }),
                     quickTaskStatus: { await model.quickTaskStatus() },
                     accounts: model.accounts,
                     capacity: model.capacity.readings,
@@ -579,6 +593,7 @@ extension WakilWindow {
                             projectPath: path, environment: environment, name: name)
                     },
                     createProject: { folder in await model.createProject(folder: folder) },
+                    cloneProject: { link, folder in await model.cloneProject(link: link, into: folder) },
                     renameProject: { old, new in await model.renameProject(old, to: new) },
                     removeProject: { name in await model.removeProject(name) },
                     createEnvironment: { project, path in
