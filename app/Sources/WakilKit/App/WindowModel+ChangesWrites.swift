@@ -91,13 +91,18 @@ extension WindowModel {
         _ = await changesWrite(root, "editor_changes_stage_hunk", params)
     }
 
-    /// Stage (or unstage) Selected Ranges (3a-ii-b): the focused pane's active Changes (or Staged) diff
-    /// tab, with `ranges` — every selection the page holds, read at the press (ruling R1).
-    public func changesStageRanges(_ ranges: [EditorLineSpan]) async { await changesRanges("editor_changes_stage_ranges", ranges) }
-    public func changesUnstageRanges(_ ranges: [EditorLineSpan]) async { await changesRanges("editor_changes_unstage_ranges", ranges) }
+    /// Stage (or unstage) Selected Ranges (3a-ii-b): `pane`'s active Changes (or Staged) diff tab — the
+    /// pane the press was made in, focused or not (final review M1) — with `ranges`, every selection
+    /// the page holds, read at the press (ruling R1).
+    public func changesStageRanges(pane: String, _ ranges: [EditorLineSpan]) async {
+        await changesRanges("editor_changes_stage_ranges", pane, ranges)
+    }
+    public func changesUnstageRanges(pane: String, _ ranges: [EditorLineSpan]) async {
+        await changesRanges("editor_changes_unstage_ranges", pane, ranges)
+    }
 
-    private func changesRanges(_ name: String, _ ranges: [EditorLineSpan]) async {
-        guard let pane = focusedEditorPane(), let s = editor(pane), let i = s.active, i < s.tabs.count,
+    private func changesRanges(_ name: String, _ pane: String, _ ranges: [EditorLineSpan]) async {
+        guard let s = editor(pane), let i = s.active, i < s.tabs.count,
               case .diff(let root, let path, _) = s.tabs[i].subject else { return }
         let spans: JSONValue = .array(ranges.map { .object(["start": .integer(Int64($0.start)), "end": .integer(Int64($0.end))]) })
         _ = await changesWrite(root, name, ["path": .string(root + "/" + path), "pane": .string(pane), "ranges": spans])

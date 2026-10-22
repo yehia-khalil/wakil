@@ -267,13 +267,19 @@ func registerEditorChangesWrites(
                 if group == .staged, rows.contains(where: { $0.group == .staged && $0.status == "D" }) {
                     throw EditorFilesError(description: "\(name): \(rel) is staged as deleted; − on its row unstages it")
                 }
+                // Final review M2: a deleted file has no lines to select; + on its row stages the deletion.
+                if group == .changed, rows.contains(where: { $0.group == .changed && $0.status == "D" }) {
+                    throw EditorFilesError(description: "\(name): \(rel) is deleted; + on its row stages the deletion")
+                }
                 var tab: EditorTab?
                 if let layout {
                     let wanted = optionalString(params, "pane")
                     let editors = await layout.snapshot().panes.filter { $0.kind == "editor" }
                     for pane in editors.filter({ $0.id == wanted }) + editors.filter({ $0.id != wanted }) {
+                        // A refreshing tab (loading) keeps the texts on screen, which the selection is of
+                        // (final review I2); a first load's empty texts hold no change and are refused.
                         if let t = await panes.editorSnapshot(paneId: pane.id).tabs.first(where: {
-                            if case .diff(root, rel, group) = $0.subject { $0.diffState?.loading == false } else { false }
+                            if case .diff(root, rel, group) = $0.subject { $0.diffState != nil } else { false }
                         }) { tab = t; break }
                     }
                 }

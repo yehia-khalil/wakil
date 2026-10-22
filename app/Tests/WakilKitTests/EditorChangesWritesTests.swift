@@ -295,7 +295,8 @@ private func args(_ call: WriteGit.Call?, _ key: String) -> JSONValue? {
     // MARK: 3a-ii-b — Stage and Unstage Selected Ranges
 
     private func openDiff(_ f: Fixture, group: GitGroup, original: String, modified: String,
-                          selection: EditorRange? = nil, binary: Bool = false, truncated: Bool = false) async {
+                          selection: EditorRange? = nil, binary: Bool = false, truncated: Bool = false,
+                          loading: Bool = false) async {
         await f.panes.updateEditor(paneId: f.pane, create: true) { s in
             s.tabs = [EditorTab(subject: .diff(root: "/p", path: "a.go", group: group), text: "", savedText: "", language: "go",
                                 diskState: .inSync, mtime: 1, cursor: EditorPosition(line: 1, column: 1), selection: selection,
@@ -303,7 +304,7 @@ private func args(_ call: WriteGit.Call?, _ key: String) -> JSONValue? {
                                 lastAgentEdit: nil,
                                 diffState: GitDiffState(original: original, modified: modified, language: "go", binary: binary,
                                                         bytes: modified.utf8.count, lines: 0, truncated: truncated, error: nil,
-                                                        loading: false))]
+                                                        loading: loading))]
             s.active = 0
         }
     }
@@ -357,6 +358,28 @@ private func args(_ call: WriteGit.Call?, _ key: String) -> JSONValue? {
         await f.panes.updateEditor(paneId: f.pane, create: false) { s in s.tabs[0].cursor = EditorPosition(line: 2, column: 1) }
         _ = try await f.dispatch("editor_changes_stage_ranges", ["path": .string("/p/a.go")])
         #expect(args(await f.git.calls.last { $0.name == "git_stage_hunk" }, "content") == .string("a\nb\n"))
+    }
+
+    // Final review I2: a refresh marks the tab loading but keeps the texts the operator is looking at;
+    // the lines they selected are of those texts, never of a fresh read.
+    @Test func aRefreshingTabStillStagesTheTextsOnScreen() async throws {
+        let f = try await fixture(rows: ["/p": [("a.go", "changed", "M")], "/q": []])
+        await openDiff(f, group: .changed, original: "a\n", modified: "a\nb\nc\n", loading: true)
+        await f.git.set(show: "a\n", rev: "index")
+        await f.git.set(show: "a\nNEW\nb\nc\n", rev: "worktree")
+        _ = try await f.dispatch("editor_changes_stage_ranges", ["path": .string("/p/a.go"), "ranges": spans([(2, 2)])])
+        #expect(await f.git.count("git_show") == 0)
+        #expect(args(await f.git.calls.last { $0.name == "git_stage_hunk" }, "content") == .string("a\nb\n"))
+    }
+
+    // Final review M2: a file deleted in the work tree has no lines to select; staging "ranges" of it
+    // would write an empty file into the index instead of the deletion.
+    @Test func refusesAWorkTreeDeletionForStage() async throws {
+        let f = try await fixture(rows: ["/p": [("a.go", "changed", "D")], "/q": []])
+        await openDiff(f, group: .changed, original: "a\nb\n", modified: "")
+        let e = await refusal(f, "editor_changes_stage_ranges", ["path": .string("/p/a.go"), "ranges": spans([(1, 1)])])
+        #expect(e.contains("deleted"), "\(e)")
+        #expect(await f.git.count("git_stage_hunk") == 0)
     }
 
     private func refusal(_ f: Fixture, _ action: String, _ params: [String: JSONValue]) async -> String {
