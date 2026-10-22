@@ -1,0 +1,61 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-1"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"printf 'API\\n' > ../e2e-api/README.md"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"changes"}}
+{"expect":{"tree":"contains","text":"M, README.md"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-2","root":"{fixtureRoot}/e2e-api","path":"app.txt","group":"changed"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].diff.path","equals":"app.txt"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].diff.group","equals":"changed"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].diff.loading","equals":"false"}}
+{"expect":{"frame":"editor.diff.stageRanges","inside":"window"}}
+{"dispatch":{"action":"editor_changes_stage_ranges","params":{"path":"{fixtureRoot}/e2e-api/app.txt","ranges":[{"start":1,"end":2}]},"refuses":"the selection holds no change"}}
+{"dispatch":{"action":"editor_changes_stage_ranges","params":{"path":"{fixtureRoot}/e2e-api/app.txt","ranges":[{"start":3,"end":3}]}}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_changes_stage_ranges\""}}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"git -C ../e2e-api --no-pager diff --cached --numstat -- app.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"2\t1\tapp.txt"}}
+{"do":{"click":"rail.editor-2"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-2","root":"{fixtureRoot}/e2e-api","path":"README.md","group":"changed"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].diff.path","equals":"README.md"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].diff.group","equals":"changed"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].diff.loading","equals":"false"}}
+{"do":{"click":"editor.diff.stageRanges"}}
+{"expect":{"tree":"contains","text":"M, README.md"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"git -C ../e2e-api --no-pager diff --cached --numstat -- README.md"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"1\t1\tREADME.md"}}
+{"do":{"click":"rail.editor-2"}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-2","root":"{fixtureRoot}/e2e-api","path":"README.md","group":"staged"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].diff.path","equals":"README.md"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].diff.group","equals":"staged"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].diff.loading","equals":"false"}}
+{"expect":{"frame":"editor.diff.unstageRanges","inside":"window"}}
+{"do":{"click":"editor.diff.unstageRanges"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"git -C ../e2e-api --no-pager diff --numstat -- README.md"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"1\t1\tREADME.md"}}
+{"do":{"keys":"git -C ../e2e-api --no-pager diff --cached --name-only -- README.md | wc -l | tr -d ' '"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"0"}}
+{"dispatch":{"action":"editor_changes_unstage_ranges","params":{"path":"{fixtureRoot}/e2e-api/app.txt","ranges":[{"start":3,"end":3}]}}}
+{"do":{"keys":"git -C ../e2e-api --no-pager diff --cached --numstat -- app.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"1\t1\tapp.txt"}}

@@ -29,6 +29,13 @@ var FastPathReplies = map[string]string{
 	"tables in cells": `{"action":"db_list_tables","params":{"database":"cells"}}`,
 }
 
+// CommitDraftReply is what the stub answers a commit-message draft with
+// (3a-ii-b): a request whose instructions ask for a git commit message.
+const CommitDraftReply = `{"message":"Stage the e2e change"}`
+
+// commitDraftAsk is the phrase CommitDraft's instructions open with in WakilKit.
+const commitDraftAsk = "Write a git commit message"
+
 // SlowPrefix makes the stub answer late: "slow go to qa" answers as "go to
 // qa" does, after SlowReply — past the fast path's 400 ms local deadline.
 const SlowPrefix = "slow "
@@ -57,6 +64,10 @@ func StartChatStub() (string, func(), error) {
 		if n := len(body.Messages); n > 0 {
 			line = FastPathLine(body.Messages[n-1].Content)
 		}
+		drafting := false
+		for _, m := range body.Messages {
+			drafting = drafting || strings.Contains(m.Content, commitDraftAsk)
+		}
 		if rest, ok := strings.CutPrefix(line, SlowPrefix); ok {
 			line = rest
 			select {
@@ -68,6 +79,9 @@ func StartChatStub() (string, func(), error) {
 		reply, ok := FastPathReplies[line]
 		if !ok {
 			reply = `{"action":"agent","params":{}}`
+		}
+		if drafting {
+			reply = CommitDraftReply
 		}
 		w.Header().Set("content-type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{

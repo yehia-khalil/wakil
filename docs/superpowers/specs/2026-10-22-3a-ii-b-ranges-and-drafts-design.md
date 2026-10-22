@@ -259,8 +259,9 @@ gets **Unstage Selected Ranges**, the mirror of Stage.
 
 - **Pure:** `editorUnstagedText(base:text:ranges:) -> String?`, `base` the HEAD text (empty for a
   file new in the index), `text` the index text. The touched part of each hunk is reverted to
-  HEAD's lines with the same per-kind rules as staging (a partly selected `changed` hunk gets all
-  its old lines back); untouched hunks stay staged. Nil when no hunk is touched.
+  HEAD's lines: a hunk whose every new line is selected (or a deletion) gets its old lines back; a
+  partly selected one loses only its selected new lines (amendment below); untouched hunks stay
+  staged. Nil when no hunk is touched.
 - **Action:** `editor_changes_unstage_ranges`, the same params, kind, audience and price as
   `editor_changes_stage_ranges`. Texts come from the pane's Staged diff tab, else `git_show`
   (`HEAD`, `index`). Write: `git_stage_hunk` with `content` = the result and `expect` =
@@ -273,3 +274,12 @@ gets **Unstage Selected Ranges**, the mirror of Stage.
 - **Tests:** the pure function per kind and the round trip (unstage the ranges, then diff HEAD
   against the index, and only the unselected changes remain); the action's refusals; an e2e that
   stages a file whole and then unstages two selected lines.
+
+## Amendment 2026-10-22 — a partial unstage takes out only the selected lines (Cover)
+
+The e2e run on the fixture's `app.txt` (HEAD `line two`; index `line two, staged` plus an added
+`line three`, one hunk) found the rule above wrong: unstaging only `line three` put HEAD's
+`line two` back *beside* `line two, staged`, which stayed, so the index held both. Ruled: a hunk
+is reverted to HEAD's lines only when every one of its new lines is unstaged; a partial unstage
+removes the selected new lines and leaves HEAD's old lines out. Staging is unchanged. Tests:
+`unstagingTheAddedLineOfAChangedHunkKeepsTheChangeStaged`, `unstageRevertsOnlyTheSelectedPart`.

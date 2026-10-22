@@ -65,8 +65,10 @@ private func r(_ l1: Int, _ c1: Int, _ l2: Int, _ c2: Int) -> EditorRange {
     @Test func unstageRevertsOnlyTheSelectedPart() {
         #expect(editorUnstagedText(base: "a\nb\n", text: "a\nX\nY\nb\n", ranges: [s(2, 2)]) == "a\nY\nb\n")
         #expect(editorUnstagedText(base: "", text: "p\nq\n", ranges: [s(1, 2)]) == "")
-        // A partly selected changed hunk gets all its old lines back; the unselected new line stays.
-        #expect(editorUnstagedText(base: "a\nold\nz\n", text: "a\nn1\nn2\nz\n", ranges: [s(2, 2)]) == "a\nold\nn2\nz\n")
+        // Amended 2026-10-22 (e2e): a partly unstaged changed hunk loses only its selected new lines;
+        // its old lines come back only when every new line is unstaged, never beside a kept one.
+        #expect(editorUnstagedText(base: "a\nold\nz\n", text: "a\nn1\nn2\nz\n", ranges: [s(2, 2)]) == "a\nn2\nz\n")
+        #expect(editorUnstagedText(base: "a\nold\nz\n", text: "a\nn1\nn2\nz\n", ranges: [s(2, 3)]) == "a\nold\nz\n")
         #expect(editorUnstagedText(base: "a\nb\n", text: "a\nb\nc\n", ranges: [s(1, 1)]) == nil)
     }
 
@@ -81,5 +83,12 @@ private func r(_ l1: Int, _ c1: Int, _ l2: Int, _ c2: Int) -> EditorRange {
     @Test func aPartialSelectionBeforeAnUnterminatedLastLineKeepsItsNewline() {
         #expect(editorStagedText(base: "x\n", text: "x\na\nb", ranges: [s(2, 2)]) == "x\na\n")
         #expect(editorUnstagedText(base: "x\n", text: "x\na\nb", ranges: [s(3, 3)]) == "x\na\n")
+    }
+
+    // The e2e fixture's app.txt: "line two" changed and "line three" added, one hunk against HEAD.
+    @Test func unstagingTheAddedLineOfAChangedHunkKeepsTheChangeStaged() {
+        let head = "line one\nline two\n", index = "line one\nline two, staged\nline three, unstaged\n"
+        #expect(editorUnstagedText(base: head, text: index, ranges: [s(3, 3)]) == "line one\nline two, staged\n")
+        #expect(editorUnstagedText(base: head, text: index, ranges: [s(2, 3)]) == head)
     }
 }

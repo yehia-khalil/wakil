@@ -279,8 +279,9 @@ public func editorStagedText(base: String, text: String, ranges: [EditorLineSpan
 }
 
 /// The index text Unstage Selected Ranges writes: `text` (the index) with the selected part of each
-/// touched hunk reverted to `base` (HEAD; "" for a file new in the index). A touched changed hunk gets
-/// all its old lines back and keeps its unselected new ones. nil when no hunk is touched.
+/// touched hunk taken out toward `base` (HEAD; "" for a file new in the index). A hunk wholly selected
+/// gets its old lines back; one partly selected loses only its selected new lines. nil when no hunk
+/// is touched.
 public func editorUnstagedText(base: String, text: String, ranges: [EditorLineSpan]) -> String? {
     editorMergedText(base: base, text: text, ranges: ranges, stage: false)
 }
@@ -328,8 +329,10 @@ private func editorMergedText(base: String, text: String, ranges: [EditorLineSpa
         if stage {
             if touched { takeNew(selected: true) } else { takeOld() }
         } else if touched {
-            takeOld()
-            if h.kind != .deleted { takeNew(selected: false) }
+            // Unstaging: a hunk whose every new line is selected (or a deletion) goes back to HEAD's
+            // lines; a partly selected one only loses its selected new lines, so HEAD's old lines
+            // never land beside a new line that stays staged (amended 2026-10-22, from the e2e run).
+            if lines.allSatisfy({ editorLineSelected($0, ranges) }) { takeOld() } else { takeNew(selected: false) }
         } else {
             for k in 0..<h.newCount { keep(new[j + k], fromBase: false, at: j + k) }
         }
