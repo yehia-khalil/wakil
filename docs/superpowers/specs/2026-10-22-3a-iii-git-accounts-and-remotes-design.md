@@ -345,6 +345,7 @@ the status re-read after every remote operation also reads `ahead`/`behind` (alr
 - **Phase map:** 3a-iii reworded to name clone and agent instructions; *Met* on its walk. A new
   row, **New conversation** (`session_new`: end this place's conversation and return to its
   Landing — the path `WindowModel.sessionStarted`'s note records as owed), added by the operator
-  2026-10-22, not part of 3a-iii.
+  2026-10-22, not part of 3a-iii; and after it **Track** (two sessions in one place, each its own
+  thread — revisits Decision 41; its agenda is the parked #78–#86), also added by the operator.
 - **operator-todo:** register the GitHub OAuth App and the GitLab.com application, and record their
   client IDs.
