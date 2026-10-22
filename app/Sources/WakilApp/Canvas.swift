@@ -585,6 +585,7 @@ extension WakilWindow {
                     removeEnvironment: { project, path, name in
                         await model.removeEnvironment(project: project, projectPath: path, name)
                     },
+                    showUnseenRefusal: { text in model.showUnseenRefusal(text) },
                     selection: $settingsSelection,
                     expansion: $settingsExpansion,
                     activeProject: model.project,

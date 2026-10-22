@@ -178,6 +178,14 @@ private func lifecycleWindow(saved: [(String, String, String)] = [])
         #expect(persistence.load(for: scope("p", "dev")).snapshot != nil)
     }
 
+    /// Minor 3: a Name field left by moving to another page is gone when its refusal lands, so
+    /// the refusal is said in the window's status instead of under nothing (Rules 2, 8).
+    @Test func aRefusalWhoseFieldIsGoneIsSaidInTheStatus() async throws {
+        let (window, _, _) = try await lifecycleWindow()
+        window.showUnseenRefusal("an environment named local already exists")
+        #expect(window.status == "an environment named local already exists")
+    }
+
     @Test func aSuccessfulActionRefreshesSettingsAndContext() async throws {
         let (window, ctx, _) = try await lifecycleWindow()
         let settings = await ctx.count("config_tree")

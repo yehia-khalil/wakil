@@ -81,8 +81,10 @@ Walk in order, in `personal`.
 - **Voice** (row 14) runs a real provider; the checks dispatch the same actions on the
   agent's socket and the walk hears the agent say it can't.
 - **The field keeping what was typed** is asserted in the tree as the field's `Value:` line (the accessibility value of the text field), which only the field carries; row 15 is the walk's look at it.
-- **A refused name on leaving the field** (row 8) is visible only until the page changes; the
-  checks pin the refusal on Return and the unchanged tree after leaving.
+- **A refused name on leaving the field** shows under the field while its page is still there;
+  left by moving to another page, it shows in the window's status line instead. No row walks
+  it (rows 8 and 15 press Return); the checks pin the refusal on Return and the unchanged tree
+  after leaving.
 
 ## 4. The machine walk
 

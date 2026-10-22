@@ -3240,6 +3240,12 @@ public final class WindowModel {
         if let shown = layoutScope, affected(shown) { layoutScope = nil }
     }
 
+    /// A refusal whose control is no longer on screen — a Settings Name field left by moving to
+    /// another page, refused after its page went — said here so it is not dropped (Rules 2, 8).
+    public func showUnseenRefusal(_ text: String) {
+        status = text
+    }
+
     /// Adds a project from a folder. The name defaults to the folder's last path component.
     public func createProject(folder: String) async -> (name: String?, error: String?) {
         let name = URL(fileURLWithPath: folder).lastPathComponent

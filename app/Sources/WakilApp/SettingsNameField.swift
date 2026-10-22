@@ -6,7 +6,9 @@ import SwiftUI
 ///
 /// **A refusal is shown whole beneath the field and the typed text stays** (Rule 8) — a name in
 /// use, an empty one, one with a `/` — so it can be corrected rather than retyped. While the
-/// write is in flight the field says so and a second write is not started (Rule 5).
+/// write is in flight the field says so and a second write is not started (Rule 5). A refusal
+/// that lands after the field is gone — left by moving to another page — goes to `unseen`, the
+/// window's status, rather than nowhere.
 struct LifecycleNameField: View {
     let stored: String
     let identifier: String
@@ -15,11 +17,20 @@ struct LifecycleNameField: View {
     @Binding var wantsFocus: Bool
     /// Writes the new name and answers the refusal's own sentence, or nil on success.
     let save: (String) async -> String?
+    /// Where a refusal goes when the field is no longer on screen to show it.
+    var unseen: (String) -> Void = { _ in }
 
     @State private var draft: String?
     @State private var refusal: String?
     @State private var saving = false
     @FocusState private var focused: Bool
+    /// Whether the field is on screen, read by a write that lands after it may have gone. A
+    /// reference, so the write's task reads the live answer rather than a copy taken at commit.
+    @State private var presence = Presence()
+
+    private final class Presence {
+        var shown = false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -55,7 +66,11 @@ struct LifecycleNameField: View {
                     .accessibilityIdentifier("\(identifier).error")
             }
         }
-        .onAppear { takeFocusIfAsked() }
+        .onAppear {
+            presence.shown = true
+            takeFocusIfAsked()
+        }
+        .onDisappear { presence.shown = false }
         .onChange(of: wantsFocus) { _, _ in takeFocusIfAsked() }
     }
 
@@ -76,11 +91,13 @@ struct LifecycleNameField: View {
         guard let value = draft, value != stored, !saving else { return }
         saving = true
         refusal = nil
+        let presence = presence
         Task {
             let result = await save(value)
             saving = false
             refusal = result
             if result == nil { draft = nil }
+            if let result, !presence.shown { unseen(result) }
         }
     }
 }

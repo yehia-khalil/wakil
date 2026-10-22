@@ -149,6 +149,8 @@ struct SettingsPane: View {
     /// Removes an environment: project, project file, name. The receipt or the refusal.
     var removeEnvironment: (String, String, String) async -> (receipt: String?, error: String?) =
         { _, _, _ in (nil, nil) }
+    /// Says a refusal in the window's status, for a Name field gone before its write answered.
+    var showUnseenRefusal: (String) -> Void = { _ in }
 
     /// Writes in flight, by key (`addProject`, `addEnvironment.<p>`, `remove.<node>`): a control
     /// shows a spinner and cannot be fired a second time (Rule 5).
@@ -875,7 +877,8 @@ struct SettingsPane: View {
                     LifecycleNameField(
                         stored: project.name, identifier: "settings.project.name",
                         wantsFocus: wantsNameFocus(.project(name)),
-                        save: { new in await rename(project: name, to: new) })
+                        save: { new in await rename(project: name, to: new) },
+                        unseen: showUnseenRefusal)
                     .id("name.\(project.path)")
                     fields([("File", project.path, true)])
                 }
@@ -911,7 +914,8 @@ struct SettingsPane: View {
                     LifecycleNameField(
                         stored: environment.name, identifier: "settings.environment.name",
                         wantsFocus: wantsNameFocus(.environment(project: projectName, environment: environmentName)),
-                        save: { new in await rename(project: project, environment: environmentName, to: new) })
+                        save: { new in await rename(project: project, environment: environmentName, to: new) },
+                        unseen: showUnseenRefusal)
                     .id("name.\(project.path).\(environmentName)")
                 }
                 fields([
