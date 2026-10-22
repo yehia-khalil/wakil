@@ -536,3 +536,50 @@ func TestUpdateDatabaseRefusesAnotherOrganisationsProject(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// TestANewDatabaseUnderARenamedDatabasesOldNameGetsItsOwnRefs — the same
+// finding for databases: a rename keeps `ref` and `writeRef`, so a new
+// database under the old name must derive refs nothing else names.
+func TestANewDatabaseUnderARenamedDatabasesOldNameGetsItsOwnRefs(t *testing.T) {
+	path := dbEditSetup(t)
+	for _, ref := range []string{"db:shop:staging:core", "db:shop:staging:core:rw"} {
+		if err := SecretSetFor("acme", ref, "old "+ref); err != nil {
+			t.Fatal(err)
+		}
+	}
+	renamed := "reports"
+	if err := UpdateDatabase(path, "staging", "core", DatabaseEdit{NewName: &renamed}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "mysql://ro@new/core", GrantWrite: true, WriteDSN: "mysql://rw@new/core",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := LoadProject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbs := p.Environments["staging"].Databases
+	if len(dbs) != 3 || dbs[0].Name != "reports" || dbs[2].Name != "core" {
+		t.Fatalf("databases = %+v", dbs)
+	}
+	if dbs[0].Ref != "db:shop:staging:core" || dbs[0].WriteRef != "db:shop:staging:core:rw" {
+		t.Errorf("the renamed database's refs moved: %+v", dbs[0])
+	}
+	if dbs[2].Ref != "db:shop:staging:core:2" || dbs[2].WriteRef != "db:shop:staging:core:2:rw" {
+		t.Errorf("the new database's refs = %q / %q; want distinct :2 refs", dbs[2].Ref, dbs[2].WriteRef)
+	}
+	for ref, want := range map[string]string{
+		"db:shop:staging:core":      "old db:shop:staging:core",
+		"db:shop:staging:core:rw":   "old db:shop:staging:core:rw",
+		"db:shop:staging:core:2":    "mysql://ro@new/core",
+		"db:shop:staging:core:2:rw": "mysql://rw@new/core",
+	} {
+		if got, _ := SecretGetFor("acme", ref); got != want {
+			t.Errorf("%s = %q; want %q", ref, got, want)
+		}
+	}
+}

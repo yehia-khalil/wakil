@@ -240,6 +240,7 @@ type removeDatabaseArgs struct {
 	Name        string `json:"name" jsonschema:"the database's name"`
 }
 
+// setApiEntryArgs: Token is secret-bearing; the Swift action redacts it, so the journal records `[redacted]`.
 type setApiEntryArgs struct {
 	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
 	Environment string `json:"environment" jsonschema:"the environment the API entry belongs to"`

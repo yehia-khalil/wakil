@@ -26,7 +26,9 @@ type ApiEntryRequest struct {
 // **The token never reaches the project file.** It goes to the Keychain under
 // `ApiRef`, before the file is written, and the file keeps the ref. An empty
 // token keeps whatever `authRef` an existing entry already has: editing the
-// base URL is not a request to drop its credential.
+// base URL is not a request to drop its credential. A token is stored under
+// the derived `ApiRef`, suffixed `:2`, `:3`, … when another row of the
+// project already names it (a renamed entry keeps its old name's ref).
 //
 // Every refusal happens before the Keychain is touched, so a refused write
 // writes nothing.
@@ -54,7 +56,13 @@ func SetApiEntry(r ApiEntryRequest) error {
 
 	ref := ""
 	if r.Token != "" {
-		ref = ApiRef(project.Name, r.Environment, name)
+		// **A derived ref another row already names gets `:2`, `:3`, ….**
+		// A rename keeps its `authRef`, so a new entry under the old name
+		// would otherwise overwrite the renamed one's credential, which goes
+		// to the renamed one's host. The entry's own ref is not taken: one
+		// replacing its own token keeps the derived ref it has.
+		ref = freshRef(ApiRef(project.Name, r.Environment, name),
+			refsNamedByOthers(project, r.Environment, "api", name))
 		org, err := CurrentOrg()
 		if err != nil {
 			return err

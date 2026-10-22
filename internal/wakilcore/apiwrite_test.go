@@ -205,3 +205,63 @@ func TestApiWritesRefuseAnotherOrganisationsProject(t *testing.T) {
 		t.Error("a Keychain item was written for another org's project")
 	}
 }
+
+// TestANewEntryUnderARenamedEntrysOldNameGetsItsOwnRef — the final review's
+// critical finding. A rename keeps `authRef`, so a new entry under the old
+// name derives the renamed one's ref; writing it would silently swap the
+// credential the renamed entry sends to ITS host.
+func TestANewEntryUnderARenamedEntrysOldNameGetsItsOwnRef(t *testing.T) {
+	path := apiSetup(t, `[]`)
+	if err := SetApiEntry(ApiEntryRequest{
+		ProjectPath: path, Environment: "staging", Name: "orders",
+		BaseURL: "https://orders.example.com", Token: "Bearer first",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	renamed := "billing"
+	if err := UpdateApiEntry(path, "staging", "orders", ApiEntryEdit{NewName: &renamed}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetApiEntry(ApiEntryRequest{
+		ProjectPath: path, Environment: "staging", Name: "orders",
+		BaseURL: "https://other.example.com", Token: "Bearer second",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	api := apiEntries(t, path)
+	if len(api) != 2 || api[0].Name != "billing" || api[1].Name != "orders" {
+		t.Fatalf("api = %+v", api)
+	}
+	if api[0].AuthRef != "api:shop:staging:orders" {
+		t.Errorf("the renamed entry's ref moved: %q", api[0].AuthRef)
+	}
+	if api[1].AuthRef == api[0].AuthRef || api[1].AuthRef != "api:shop:staging:orders:2" {
+		t.Errorf("the new entry's ref = %q; want a distinct api:shop:staging:orders:2", api[1].AuthRef)
+	}
+	if got, _ := SecretGetFor("acme", api[0].AuthRef); got != "Bearer first" {
+		t.Errorf("the renamed entry's credential changed: %q", got)
+	}
+	if got, _ := SecretGetFor("acme", api[1].AuthRef); got != "Bearer second" {
+		t.Errorf("the new entry's credential = %q", got)
+	}
+
+	// Replacing an entry's own token is not a collision with itself: the
+	// new entry stores its replacement under the ref it already has.
+	if err := SetApiEntry(ApiEntryRequest{
+		ProjectPath: path, Environment: "staging", Name: "orders",
+		BaseURL: "https://other.example.com", Token: "Bearer third",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	api = apiEntries(t, path)
+	if api[1].AuthRef != "api:shop:staging:orders:2" {
+		t.Errorf("replacing its own token moved the ref: %q", api[1].AuthRef)
+	}
+	if got, _ := SecretGetFor("acme", api[1].AuthRef); got != "Bearer third" {
+		t.Errorf("the replaced credential = %q", got)
+	}
+	if got, _ := SecretGetFor("acme", api[0].AuthRef); got != "Bearer first" {
+		t.Errorf("the renamed entry's credential changed: %q", got)
+	}
+}
