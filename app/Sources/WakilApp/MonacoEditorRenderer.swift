@@ -36,6 +36,9 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     /// The page dropped request `id` (Monaco cancelled it: more typing, the caret moved). It has
     /// already resolved it empty; nothing is owed back.
     var onGhostCancel: ((Int) -> Void)?
+    /// 3a-ii-b: Stage ("stage") or Unstage ("unstage") Selected Ranges from the diff's right-click
+    /// menu in `key`, with every selection the page held.
+    var onRanges: ((String, String, [EditorRange]) -> Void)?
     private var capturing: [String] = []
 
     /// Held so `tearDown` can reach it from `deinit`, which is not main-actor isolated.
@@ -119,6 +122,24 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     func showDiff(key: String, original: String, modified: String, language: String, cursor: EditorPosition, scrollTop: Double) {
         let texts = [key, original, modified, language].map(Self.jsString).joined(separator: ",")
         run("wakilShowDiff(\(texts),\(cursor.line),\(cursor.column),\(scrollTop.isFinite ? scrollTop : 0))")
+    }
+
+    /// Every selection of the diff's modified side, as the page holds them now (3a-ii-b, ruling R1).
+    /// Empty when the page is not ready or the call fails.
+    func diffSelections() async -> [EditorRange] {
+        guard ready, !tornDown else { return [] }
+        let json: String? = await withCheckedContinuation { c in
+            webView.evaluateJavaScript("wakilDiffSelections()") { value, _ in c.resume(returning: value as? String) }
+        }
+        guard let data = json?.data(using: .utf8),
+              let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        return list.compactMap(Self.selection)
+    }
+
+    private static func selection(_ o: [String: Any]) -> EditorRange? {
+        guard let l1 = int(o["startLine"]), let c1 = int(o["startColumn"]), let l2 = int(o["endLine"]),
+              let c2 = int(o["endColumn"]) else { return nil }
+        return EditorRange(start: EditorPosition(line: l1, column: c1), end: EditorPosition(line: l2, column: c2))
     }
 
     func showPeek(key: String, _ p: EditorPeekView?) {
@@ -221,6 +242,9 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
             if let key = body["key"] as? String { onKey?(key) }
         case "peek":
             if let key = body["key"] as? String, let op = body["op"] as? String { onPeek?(key, op) }
+        case "ranges":
+            guard let key = body["key"] as? String, let op = body["op"] as? String else { return }
+            onRanges?(key, op, (body["selections"] as? [[String: Any]] ?? []).compactMap(Self.selection))
         case "mark":
             if let key = body["key"] as? String, let line = Self.int(body["line"]) { onMark?(key, line) }
         case "ghost":

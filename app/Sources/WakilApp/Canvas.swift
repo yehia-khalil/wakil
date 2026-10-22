@@ -514,8 +514,13 @@ extension WakilWindow {
                             await model.changesDiscard(root: root, paths: paths, group: group)
                         },
                         cancel: { root in model.changesCancel(root: root) },
-                        refreshIdentity: { root in await model.refreshChangesIdentity(root: root) }),
-                    stageHunk: { await model.changesStageHunk() })
+                        refreshIdentity: { root in await model.refreshChangesIdentity(root: root) },
+                        drafting: model.changesDrafting, draftsOn: model.commitDraftsEnabled,
+                        draft: { root in await model.changesDraft(root: root) },
+                        cancelDraft: { root in model.changesCancelDraft(root: root) }),
+                    stageHunk: { await model.changesStageHunk() },
+                    stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
+                    unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) })
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw
                 // its kind — the rule `Pane.kinds` has always stated.

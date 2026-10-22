@@ -12,6 +12,7 @@ extension WindowModel {
         let mine = quickTasksGeneration
         await shutDownQuickTasks()
         fastPathEnabled = false
+        commitDraftsEnabled = false
         let org = organization
         let active = providerId
         guard let factory = quickModelFactory, let context, !org.isEmpty else { return }
@@ -46,6 +47,7 @@ extension WindowModel {
         quickTasks = QuickTasks(config: config) { record in try await factory(record, org) }
         ghostTextEnabled = tree.org.ghostText
         fastPathEnabled = tree.org.fastPath
+        commitDraftsEnabled = tree.org.commitDrafts
         // Only a local server has a prompt cache to fill; a session-backed model would spend a turn.
         if fastPathEnabled, let tasks = quickTasks, await tasks.routedKind(.respond) == "local" {
             let schemas = await fastPathSchemas()
@@ -131,7 +133,7 @@ extension WindowModel {
     }
 
     /// An org's quick-task switch (3b-ix): written with `ctx_update_org`, then re-read and rebuilt.
-    public enum OrganisationSwitch: String, Sendable, CaseIterable { case ghostText, fastPath }
+    public enum OrganisationSwitch: String, Sendable, CaseIterable { case ghostText, fastPath, commitDrafts }
 
     public func saveOrganisationSwitch(_ s: OrganisationSwitch, on: Bool) async -> String? {
         do {

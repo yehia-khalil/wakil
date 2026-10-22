@@ -395,6 +395,11 @@ final class WindowSession {
         // exported at all (final review, Critical 3). Asked on every
         // open, never captured: see `ActiveShellContext`.
         wiring.useActiveContext(of: model)
+        // 3a-ii-b. `editor_changes_draft_message` reaches this window's ✨ through the sink.
+        await wiring.commitDrafts.bind { [weak model] root in
+            guard let model else { throw CancellationError() }
+            return try await model.changesDraftMessage(root: root)
+        }
         screen.model = model
         let composer = ComposerModel(window: model, speech: wiring.speech)
 
@@ -413,6 +418,7 @@ final class WindowSession {
     /// a child in the middle of a slow tool call would not read that EOF
     /// promptly.
     func shutdown() async {
+        await wiring.commitDrafts.bind(nil)
         await model.shutdown()
         await wiring.shutdown()
     }

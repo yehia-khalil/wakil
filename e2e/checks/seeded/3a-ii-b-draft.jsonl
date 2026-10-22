@@ -1,0 +1,31 @@
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"{chatStub}"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"do":{"click":"settings.org.quickProvider.qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.commitDrafts","equals":"true"}}
+{"expect":{"tree":"contains","text":"Commit drafts"}}
+{"parity":{"action":"ctx_update_org","params":{"id":"e2e-fixture","commitDrafts":false},"click":"settings.org.commitDrafts.off","assert":"tree"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.commitDrafts","equals":"false"}}
+{"dispatch":{"action":"editor_changes_draft_message","params":{"root":"{fixtureRoot}/e2e-api"},"refuses":"commit drafts are off"}}
+{"do":{"click":"settings.org.commitDrafts.on"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.commitDrafts","equals":"true"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"changes"}}
+{"expect":{"frame":"editor.changes.e2e-api.draft","inside":"editor.column"}}
+{"parity":{"action":"editor_changes_draft_message","params":{"root":"{fixtureRoot}/e2e-api"},"click":"editor.changes.e2e-api.draft","assert":"tree"}}
+{"expect":{"tree":"contains","text":"Stage the e2e change"}}
+{"do":{"type":{"into":"editor.changes.e2e-api.message","text":" now"}}}
+{"expect":{"tree":"contains","text":"Stage the e2e change now"}}
+{"dispatch":{"action":"editor_changes_draft_message","params":{"root":"{fixtureRoot}/e2e-api"}}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_changes_draft_message\""}}}
+{"expect":{"tree":"absent","text":"Stage the e2e change now"}}
+{"expect":{"tree":"contains","text":"Stage the e2e change"}}

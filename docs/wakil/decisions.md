@@ -1446,7 +1446,7 @@ Each entry: the call, why, and what would change our mind.
     Qwen2.5-Coder 1.5B 30–210 ms. The Anthropic API with the subscription token stays
     excluded (§5).
     **Next quick task:** agent status lines. **Candidates, unscheduled:** shrinking what the agent reads (lossy; opt-in at
-    most), session titles and commit drafts, voice cleanup, and a natural-language query in the
+    most), session titles, voice cleanup, and a natural-language query in the
     DB query line (plain English drafted into SQL the operator reviews before it runs), and
     ghost-text in the API pane's JSON body (from the method, the URL and the text around the
     caret) — both added by the operator 2026-10-20. **Never a quick task:** the write
@@ -1457,6 +1457,9 @@ Each entry: the call, why, and what would change our mind.
     URL and serves both operations (the serves checkboxes are removed); each quick task has an
     on/off switch beside the model, per org (`ghostText`, `fastPath`). The fast path is built;
     next is agent status lines.*
+    *Amended 2026-10-22 (3a-ii-b): commit drafts are built — ✨ in the commit box and
+    `editor_changes_draft_message`, from what Commit would commit — with a third switch,
+    `commitDrafts`, on by default.*
 
 43. **Git writes earn their way in from the Changes view: priced allow, hooks run, a discard goes to
     the Trash, and the organisation names the author.**
@@ -1475,7 +1478,8 @@ Each entry: the call, why, and what would change our mind.
     Git holds a name and an email, passed as `-c user.name/user.email` to every write; with none
     set, git's own config decides, and the commit box says which. The identity moved here from
     3a-iii; the SSH key, push, pull and fetch stay 3a-iii's. **Stage Selected Ranges** in the diff
-    tab is left to 3a-ii-b. A `git commit` the agent runs in its own shell is unchanged.
+    tab came in 3a-ii-b, with Unstage, through the same `git_stage_hunk` and guard. A `git commit` the
+    agent runs in its own shell is unchanged.
     *Reverse if:* a commit or discard from Wakil is found to have lost work that the Trash or Undo
     Last Commit could not bring back — then the price becomes *gate*.
 

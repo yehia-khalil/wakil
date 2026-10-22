@@ -241,3 +241,118 @@ public func gitBlobId(_ text: String) -> String {
     h.update(data: data)
     return h.finalize().map { String(format: "%02x", $0) }.joined()
 }
+
+// MARK: Selected ranges (3a-ii-b)
+
+/// Lines `start`…`end` of a diff's modified side, 1-based and inclusive: one selection in a diff tab.
+public struct EditorLineSpan: Sendable, Equatable, Codable {
+    public var start: Int
+    public var end: Int
+    public init(start: Int, end: Int) {
+        self.start = start
+        self.end = end
+    }
+}
+
+/// Monaco's selections as line spans. A selection ending at column 1 of a later line leaves that
+/// line out (a whole-line drag); a caret is its one line.
+public func editorLineSpans(_ ranges: [EditorRange]) -> [EditorLineSpan] {
+    ranges.map { r in
+        let a = min(r.start.line, r.end.line), b = max(r.start.line, r.end.line)
+        let endsAtLineHead = b > a && (r.start.line < r.end.line ? r.end.column : r.start.column) == 1
+        return EditorLineSpan(start: a, end: endsAtLineHead ? b - 1 : b)
+    }
+}
+
+/// Whether `ranges` touch a hunk of `text` against `base`: one of its new lines, or, for a deletion,
+/// the line its gutter mark sits on.
+public func editorRangesTouchChange(base: String, text: String, ranges: [EditorLineSpan]) -> Bool {
+    let hunks = editorHunks(base: base, text: text)
+    return hunks.indices.contains { editorHunkTouched(hunks[$0], ranges) }
+}
+
+/// The index text Stage Selected Ranges writes: `base` (the index) with the selected part of each
+/// touched hunk of `text` (the working tree) applied, old and new lines paired one to one: a
+/// selected new line replaces its pair, or is added past the old ones. nil when no hunk is touched.
+public func editorStagedText(base: String, text: String, ranges: [EditorLineSpan]) -> String? {
+    editorMergedText(base: base, text: text, ranges: ranges, stage: true)
+}
+
+/// The index text Unstage Selected Ranges writes: `text` (the index) with the selected part of each
+/// touched hunk taken back to `base` (HEAD; "" for a file new in the index), paired the same way: a
+/// selected new line gets its old pair back, or is dropped when it was an addition. nil when no hunk
+/// is touched.
+public func editorUnstagedText(base: String, text: String, ranges: [EditorLineSpan]) -> String? {
+    editorMergedText(base: base, text: text, ranges: ranges, stage: false)
+}
+
+private func editorLineSelected(_ line: Int, _ ranges: [EditorLineSpan]) -> Bool {
+    ranges.contains { $0.start <= line && line <= $0.end }
+}
+
+private func editorHunkTouched(_ h: EditorHunk, _ ranges: [EditorLineSpan]) -> Bool {
+    if h.kind == .deleted { return editorLineSelected(h.newStart > 1 ? h.newStart - 1 : 1, ranges) }
+    return (h.newStart..<(h.newStart + h.newCount)).contains { editorLineSelected($0, ranges) }
+}
+
+/// Walks the two texts' lines once, hunk by hunk. Unchanged and untouched lines come from the side
+/// the write starts from (the index's base when staging, the index's text when unstaging). The result
+/// ends without a newline only when its last line is the last line of a side that has none, so a
+/// missing final newline (R9) is never moved onto a line it did not belong to.
+private func editorMergedText(base: String, text: String, ranges: [EditorLineSpan], stage: Bool) -> String? {
+    let hunks = editorHunks(base: base, text: text)
+    guard hunks.contains(where: { editorHunkTouched($0, ranges) }) else { return nil }
+    let old = editorHunkLines(base), new = editorHunkLines(text)
+    var out: [String] = []
+    var lastIsUnterminated = false
+    let baseUnterminated = !base.isEmpty && base.unicodeScalars.last != "\n"
+    let textUnterminated = !text.isEmpty && text.unicodeScalars.last != "\n"
+    /// `at` is the line's index in its side: the side's last line carries that side's ending.
+    func keep(_ line: String, fromBase: Bool, at: Int) {
+        out.append(line)
+        lastIsUnterminated = fromBase ? (at == old.count - 1 && baseUnterminated) : (at == new.count - 1 && textUnterminated)
+    }
+    var i = 0, j = 0      // positions in old and new
+    for h in hunks {
+        while j < h.newStart - 1 {      // the unchanged lines before the hunk
+            if stage { keep(old[i], fromBase: true, at: i) } else { keep(new[j], fromBase: false, at: j) }
+            i += 1; j += 1
+        }
+        let lines = Array(h.newStart..<(h.newStart + h.newCount))
+        let touched = editorHunkTouched(h, ranges)
+        if !touched {
+            if stage {
+                for (k, line) in h.oldLines.enumerated() { keep(line, fromBase: true, at: i + k) }
+            } else {
+                for k in 0..<h.newCount { keep(new[j + k], fromBase: false, at: j + k) }
+            }
+        } else {
+            // A touched hunk pairs its old and new lines one to one (amended 2026-10-22, from Cover):
+            // new line k replaces old line k, or is an addition past the old ones. Staging writes
+            // the selected new lines over their pairs and keeps the rest of the index; unstaging puts
+            // each selected new line's pair back (or drops an addition) and keeps the rest staged.
+            // Old lines past the new ones change side only when the whole hunk is selected.
+            let all = lines.allSatisfy { editorLineSelected($0, ranges) }
+            let m = h.oldLines.count
+            for (k, line) in lines.enumerated() {
+                let selected = editorLineSelected(line, ranges)
+                if selected == stage {
+                    keep(new[j + k], fromBase: false, at: j + k)
+                } else if k < m {
+                    keep(h.oldLines[k], fromBase: true, at: i + k)
+                }
+            }
+            if m > h.newCount, all != stage {
+                for k in h.newCount..<m { keep(h.oldLines[k], fromBase: true, at: i + k) }
+            }
+        }
+        i += h.oldLines.count
+        j += h.newCount
+    }
+    while j < new.count {               // the unchanged lines after the last hunk
+        if stage { keep(old[i], fromBase: true, at: i) } else { keep(new[j], fromBase: false, at: j) }
+        i += 1; j += 1
+    }
+    if out.isEmpty { return "" }
+    return out.joined(separator: "\n") + (lastIsUnterminated ? "" : "\n")
+}

@@ -160,6 +160,7 @@ type updateOrgArgs struct {
 	GitEmail        *string `json:"gitEmail,omitempty" jsonschema:"author email for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
 	GhostText       *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
 	FastPath        *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
+	CommitDrafts    *bool   `json:"commitDrafts,omitempty" jsonschema:"the commit box's drafted message (✨) on or off for this organisation"`
 }
 
 // setEditorSettingsArgs is the app-wide editor tier's edit (3b-v). Pointers for updateOrgArgs'
@@ -546,6 +547,7 @@ func newServer() *mcp.Server {
 				GitEmail:        a.GitEmail,
 				GhostText:       a.GhostText,
 				FastPath:        a.FastPath,
+				CommitDrafts:    a.CommitDrafts,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}

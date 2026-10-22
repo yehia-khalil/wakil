@@ -154,3 +154,20 @@ private func paneKind(_ c: CatalogCommand) -> String? {
     c.editorActiveIsFile = true
     #expect(CommandCatalog.entries(for: c).map(\.title).contains("Reveal Active File in Tree"))
 }
+
+// 3a-ii-b final review I6: ⌘K offers Stage Selected Ranges on a Changes diff in front, Unstage on a
+// Staged one, each naming the pane and the file (the action takes the tab's selection or caret).
+@Test func rangeCommandsFollowTheDiffInFront() {
+    var c = ctx("editor")
+    let titles = { CommandCatalog.entries(for: c).map(\.title) }
+    #expect(!titles().contains("Stage Selected Ranges") && !titles().contains("Unstage Selected Ranges"))
+    c.editorActiveDiff = EditorActiveDiff(path: "/p/a.go", group: .changed)
+    #expect(titles().contains("Stage Selected Ranges") && !titles().contains("Unstage Selected Ranges"))
+    let stage = CommandCatalog.entries(for: c).first { $0.title == "Stage Selected Ranges" }
+    #expect(stage?.action == .dispatch(action: "editor_changes_stage_ranges",
+                                       params: .object(["pane": .string("editor-1"), "path": .string("/p/a.go")])))
+    c.editorActiveDiff = EditorActiveDiff(path: "/p/a.go", group: .staged)
+    #expect(titles().contains("Unstage Selected Ranges") && !titles().contains("Stage Selected Ranges"))
+    c.editorActiveDiff = EditorActiveDiff(path: "/p/n.go", group: .untracked)
+    #expect(!titles().contains("Stage Selected Ranges") && !titles().contains("Unstage Selected Ranges"))
+}

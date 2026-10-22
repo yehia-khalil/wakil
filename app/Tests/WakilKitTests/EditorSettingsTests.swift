@@ -225,3 +225,19 @@ private actor GhostRecordingCaller: ToolCaller {
         return .object(["structuredContent": .object([:])])
     }
 }
+
+/// 3a-ii-b: the commit-drafts switch reaches `update_org` with the other quick-task switches, and
+/// only as a boolean (found by the e2e run: the action forwarded it nowhere, and Settings' Off did nothing).
+@Test func theCommitDraftsSwitchIsForwarded() async throws {
+    let caller = GhostRecordingCaller()
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "drafts-switch")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    _ = try await registry.dispatch(
+        name: "ctx_update_org", params: .object(["id": .string("o"), "commitDrafts": .bool(false)]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_update_org", params: .object(["id": .string("o"), "commitDrafts": .string("off")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    #expect(await caller.arguments == [.object(["id": .string("o"), "commitDrafts": .bool(false)]), .object(["id": .string("o")])])
+}

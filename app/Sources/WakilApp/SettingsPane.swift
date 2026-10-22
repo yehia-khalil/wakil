@@ -1265,6 +1265,9 @@ struct SettingsPane: View {
                 "Ghost-text", hint: "suggestions as you type", on: tree.org.ghostText, key: .ghostText)
             quickTaskSwitchRow(
                 "Fast path", hint: fastPathHint(tree), on: tree.org.fastPath, key: .fastPath)
+            quickTaskSwitchRow(
+                "Commit drafts", hint: "Drafts a message from what you are about to commit, when you press ✨",
+                on: tree.org.commitDrafts, key: .commitDrafts)
             if let note = quickTaskNote(tree, activeProvider: runningAccountId) {
                 Text(note)
                     .font(.system(size: Scale.body))

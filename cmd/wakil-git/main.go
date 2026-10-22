@@ -21,7 +21,7 @@ type statusArg struct {
 }
 type diffArg struct {
 	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
-	Path string `json:"path" jsonschema:"file path relative to the root"`
+	Path string `json:"path,omitempty" jsonschema:"file path relative to the root; omit for the whole root"`
 	Side string `json:"side" jsonschema:"staged (index vs HEAD) or changed (work tree vs index)"`
 }
 type showArg struct {
@@ -118,7 +118,7 @@ func newServer() *mcp.Server {
 			return nil, st, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "git_diff", Description: "Read-only. The unified diff of one file on one side: staged or changed. Capped at 5,000 lines; truncated says so and lines is the true total."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_diff", Description: "Read-only. The unified diff of one file, or of the whole root when path is omitted, on one side: staged or changed. Capped at 5,000 lines; truncated says so and lines is the true total."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a diffArg) (*mcp.CallToolResult, wakilcore.GitDiffResult, error) {
 			g, fail := runner(a.Root)
 			if fail != nil {

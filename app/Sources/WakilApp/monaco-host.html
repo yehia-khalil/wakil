@@ -132,13 +132,34 @@
     // computed is reported as the one it will be, never the top it passes through.
     function reportDiff() {
       if (!diffKey) return;
-      const p = dme.getPosition(), vr = dme.getVisibleRanges();
+      const p = dme.getPosition(), sel = dme.getSelection(), vr = dme.getVisibleRanges();
       post({ type: 'view', key: diffKey, cursor: p ? { line: p.lineNumber, column: p.column } : { line: 1, column: 1 },
-             selection: null,
+             // 3a-ii-b: the primary selection, which enables Stage / Unstage Selected Ranges.
+             selection: (sel && !sel.isEmpty()) ? { start: { line: sel.startLineNumber, column: sel.startColumn },
+                                                    end: { line: sel.endLineNumber, column: sel.endColumn } } : null,
              visible: vr.length ? { first: vr[0].startLineNumber, last: vr[vr.length - 1].endLineNumber } : null,
              scrollTop: diffScroll !== null ? diffScroll : dme.getScrollTop() });
     }
     dme.onDidChangeCursorPosition(reportDiff);
+    dme.onDidChangeCursorSelection(reportDiff);
+    // 3a-ii-b: every selection of the diff's modified side, read when Stage / Unstage Selected
+    // Ranges is pressed (ruling R1); a caret is a one-line selection.
+    function diffSelections() {
+      return (dme.getSelections() || []).map(function (s) {
+        return { startLine: s.startLineNumber, startColumn: s.startColumn, endLine: s.endLineNumber, endColumn: s.endColumn };
+      });
+    }
+    window.wakilDiffSelections = function () { return JSON.stringify(diffSelections()); };
+    // The right-click entries, shown on the group each one takes: a diff tab's key is
+    // `diff:<group>:<root>/<path>` (EditorRenderer's key), so the group is read off it.
+    const onChangedDiff = dme.createContextKey('wakilChangedDiff', false);
+    const onStagedDiff = dme.createContextKey('wakilStagedDiff', false);
+    function rangesAction(id, label, when, op) {
+      dme.addAction({ id: id, label: label, precondition: when, contextMenuGroupId: 'navigation', contextMenuOrder: 0,
+                      run: function () { if (diffKey) post({ type: 'ranges', key: diffKey, op: op, selections: diffSelections() }); } });
+    }
+    rangesAction('wakil.stageRanges', 'Stage Selected Ranges', 'wakilChangedDiff', 'stage');
+    rangesAction('wakil.unstageRanges', 'Unstage Selected Ranges', 'wakilStagedDiff', 'unstage');
     dme.onDidScrollChange(function (e) { if (e.scrollTopChanged) reportDiff(); });
     function showCode() { dd.style.display = 'none'; codeHost.style.display = 'block'; diffKey = null; }
     // The same key again (a refresh) keeps the diff's own cursor and scroll; another key lands at the
@@ -164,6 +185,8 @@
       dme.setScrollTop(scroll);
       diffScroll = scroll;
       diffKey = key;
+      onChangedDiff.set(key.indexOf('diff:changed:') === 0);
+      onStagedDiff.set(key.indexOf('diff:staged:') === 0);
       reportDiff();
     };
     // The keys the app asks for (editorCapturedKeys), taken before Monaco's own and posted back.
