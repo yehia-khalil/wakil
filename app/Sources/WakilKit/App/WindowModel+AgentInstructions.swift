@@ -1,5 +1,10 @@
 import Foundation
 
+/// The marked block a live agent's next turn opens with when its instructions changed (spec
+/// amendment 2026-10-22: a resumed session ignores a new appended prompt).
+public let agentInstructionsUpdateHeader =
+    "[Wakil: the operator updated your instructions. They replace any earlier ones under the same headings.]"
+
 /// 3a-iii-b: the operator's agent instructions (Decision 45). Every Settings read publishes the
 /// composed text per project to `AgentInstructionsBox`, which an agent's launch reads.
 extension WindowModel {
@@ -23,5 +28,19 @@ extension WindowModel {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
+    }
+
+    /// The update block for `agent`'s next turn, or nil when its instructions are what it has. The
+    /// first turn of a session records what the launch carried and adds nothing.
+    func instructionsUpdate(for agent: PlaceAgent) -> String? {
+        let current = agentInstructionsBox.text(org: agent.place.organization, project: agent.place.project)
+        guard let had = agent.launchedInstructions else {
+            agent.launchedInstructions = current
+            return nil
+        }
+        guard current != had else { return nil }
+        agent.launchedInstructions = current
+        let body = current.isEmpty ? "(The operator removed their instructions.)" : current
+        return agentInstructionsUpdateHeader + "\n\n" + body
     }
 }

@@ -6843,6 +6843,7 @@ public final class WindowModel {
     /// Installs `started` as `agent`'s live session: its harness and its socket.
     private func install(_ started: StartedSession, in agent: PlaceAgent) {
         agent.harness = started.harness
+        agent.launchedInstructions = nil   // the new session's first turn records what it launched with
         agent.socket = started.socket
         agent.socketFailure = started.socketFailure
     }
@@ -7017,7 +7018,13 @@ public final class WindowModel {
             // 2d-ii: the operator's own turn is a row, so what was actually
             // sent — a misheard sentence included — stays on screen.
             agent.appendRow(label: "you", detail: text)
-            try await harness.send(await textWithIdentifierNote(text, for: agent))
+            var outgoing = await textWithIdentifierNote(text, for: agent)
+            // 3a-iii-b: instructions edited since this session started ride ahead of the words.
+            if let update = instructionsUpdate(for: agent) {
+                outgoing = update + "\n\n" + outgoing
+                agent.appendRow(label: "instructions", detail: "Instructions updated — the agent has the new ones from this turn.")
+            }
+            try await harness.send(outgoing)
             // After the send succeeded: a turn that never went leaves no
             // `voice_turn` line, and no suspension sits before the
             // org-switch generation guard in `textWithIdentifierNote`.
