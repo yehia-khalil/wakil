@@ -847,6 +847,16 @@ private struct FailingLookupForWiringTests: ProviderCredentialsLookup {
     }
 }
 
+/// 3a-iii walk row 1: the launcher's switch for file remotes reaches wakil-git; only `1` is forwarded.
+@Test func childEnvironmentForwardsTheFileRemoteSwitch() {
+    let env = WakilWiring.childProcessEnvironment(
+        from: ["HOME": "/h", "PATH": "/p", "WAKIL_GIT_ALLOW_FILE": "1"], org: "initech", provider: "main")
+    #expect(env["WAKIL_GIT_ALLOW_FILE"] == "1")
+    let other = WakilWiring.childProcessEnvironment(
+        from: ["HOME": "/h", "PATH": "/p", "WAKIL_GIT_ALLOW_FILE": "yes"], org: "initech", provider: "main")
+    #expect(other["WAKIL_GIT_ALLOW_FILE"] == nil)
+}
+
 @Test func childEnvironmentForwardsTheAnthropicBaseURL() {
     let env = WakilWiring.childProcessEnvironment(
         from: ["HOME": "/h", "PATH": "/p", "WAKIL_ANTHROPIC_BASE_URL": "http://127.0.0.1:4545"],
