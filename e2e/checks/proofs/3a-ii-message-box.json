@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-ii-message-box.jsonl",
+  "baseCommit": "d12c2c5",
+  "provedAt": "2026-10-22T06:00:33.639618Z",
+  "checkBlob": "a6ed9133e6acf07ec12f6a700954a8f0d6c5a556"
+}
