@@ -232,3 +232,56 @@ func RemoveDatabase(projectPath, environment, name string) error {
 	project.Environments[environment] = env
 	return SaveProject(projectPath, *project)
 }
+
+// DatabaseEdit is what an edit changes; a nil NewName leaves the name as it
+// is. RevokeWrite drops the `writeRef` and nothing else.
+type DatabaseEdit struct {
+	NewName     *string
+	RevokeWrite bool
+}
+
+// UpdateDatabase renames a database or revokes its write access in place.
+//
+// **Both edits keep the Keychain.** A rename leaves `ref` and `writeRef`
+// alone — they are entry names, not labels — and a revoke forgets the
+// `writeRef` without deleting the credential, for the reason `RemoveDatabase`
+// keeps a removed database's. A rename onto another database's name is
+// refused naming it.
+func UpdateDatabase(projectPath, environment, name string, edit DatabaseEdit) error {
+	newName := name
+	if edit.NewName != nil {
+		valid, err := ValidName(*edit.NewName)
+		if err != nil {
+			return err
+		}
+		newName = valid
+	}
+	project, err := loadOwnProject(projectPath)
+	if err != nil {
+		return err
+	}
+	env, ok := project.Environments[environment]
+	if !ok {
+		return UserError("no environment " + strconv.Quote(environment) +
+			" in project " + strconv.Quote(project.Name))
+	}
+	index := -1
+	for i, database := range env.Databases {
+		if database.Name == name {
+			index = i
+		} else if database.Name == newName {
+			return UserError("environment " + strconv.Quote(environment) +
+				" already has a database named " + strconv.Quote(newName))
+		}
+	}
+	if index < 0 {
+		return UserError("no database " + strconv.Quote(name) + " in environment " +
+			strconv.Quote(environment))
+	}
+	env.Databases[index].Name = newName
+	if edit.RevokeWrite {
+		env.Databases[index].WriteRef = ""
+	}
+	project.Environments[environment] = env
+	return SaveProject(projectPath, *project)
+}

@@ -457,3 +457,82 @@ func TestARefusedGrantStoresNothing(t *testing.T) {
 		t.Error("a refused write still recorded the database")
 	}
 }
+
+func dbEditSetup(t *testing.T) string {
+	t.Helper()
+	fakeKeychain(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "acme")
+	if err := CreateOrg("acme", Org{}); err != nil {
+		t.Fatal(err)
+	}
+	return projectFixture(t, "acme", `{"name":"shop","org":"acme","environments":{"staging":{"databases":[
+	  {"name":"core","driver":"mysql","ref":"db:shop:staging:core","writeRef":"db:shop:staging:core:rw"},
+	  {"name":"orders","driver":"mysql","ref":"db:shop:staging:orders"}]}}}`)
+}
+
+func TestUpdateDatabaseRenameKeepsItsRefs(t *testing.T) {
+	path := dbEditSetup(t)
+	name := "reports"
+	if err := UpdateDatabase(path, "staging", "core", DatabaseEdit{NewName: &name}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := LoadProject(path)
+	d := p.Environments["staging"].Databases[0]
+	if d.Name != "reports" || d.Ref != "db:shop:staging:core" || d.WriteRef != "db:shop:staging:core:rw" {
+		t.Errorf("database = %+v", d)
+	}
+
+	clash := "orders"
+	if err := UpdateDatabase(path, "staging", "reports", DatabaseEdit{NewName: &clash}); err == nil ||
+		!strings.Contains(err.Error(), "orders") {
+		t.Errorf("clash = %v", err)
+	}
+	same := "reports"
+	if err := UpdateDatabase(path, "staging", "reports", DatabaseEdit{NewName: &same}); err != nil {
+		t.Errorf("rename to its own name: %v", err)
+	}
+	for _, bad := range []string{"", "a/b"} {
+		if err := UpdateDatabase(path, "staging", "reports", DatabaseEdit{NewName: &bad}); err == nil {
+			t.Errorf("name %q accepted", bad)
+		}
+	}
+	if err := UpdateDatabase(path, "staging", "nope", DatabaseEdit{}); err == nil ||
+		!strings.Contains(err.Error(), `no database "nope" in environment "staging"`) {
+		t.Errorf("missing database = %v", err)
+	}
+	if err := UpdateDatabase(path, "prod", "reports", DatabaseEdit{}); err == nil {
+		t.Error("a missing environment was accepted")
+	}
+}
+
+func TestRevokeWriteKeepsTheKeychainEntry(t *testing.T) {
+	path := dbEditSetup(t)
+	if err := SecretSetFor("acme", "db:shop:staging:core:rw", "mysql://rw"); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateDatabase(path, "staging", "core", DatabaseEdit{RevokeWrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := LoadProject(path)
+	d := p.Environments["staging"].Databases[0]
+	if d.WriteRef != "" || d.Ref != "db:shop:staging:core" || d.Name != "core" {
+		t.Errorf("database = %+v", d)
+	}
+	if got, err := SecretGetFor("acme", "db:shop:staging:core:rw"); err != nil || got != "mysql://rw" {
+		t.Errorf("the write credential did not survive: %q, %v", got, err)
+	}
+}
+
+func TestUpdateDatabaseRefusesAnotherOrganisationsProject(t *testing.T) {
+	dbEditSetup(t)
+	if err := CreateOrg("other", Org{}); err != nil {
+		t.Fatal(err)
+	}
+	path := projectFixture(t, "other",
+		`{"name":"elsewhere","org":"other","environments":{"staging":{"databases":[{"name":"core","driver":"mysql","ref":"r"}]}}}`)
+	err := UpdateDatabase(path, "staging", "core", DatabaseEdit{RevokeWrite: true})
+	if err == nil || !strings.Contains(err.Error(), "read-only here") {
+		t.Errorf("err = %v", err)
+	}
+}
