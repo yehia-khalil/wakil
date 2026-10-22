@@ -53,7 +53,8 @@ import Testing
     _ = m.optionDown(at: 0); _ = m.tick(at: 0.2)
     _ = m.receive(.partial(settled: "open the", volatile: "book"))
     #expect(ComposerBarContent.make(machine: m, landedUnsent: false)
-            == .hearing(settled: "open the", volatile: "book", hint: "release to put it in the line"))
+            == .hearing(before: "", settled: "open the", volatile: "book", after: "",
+                        hint: "release to put it in the line"))
 }
 
 @Test func theBarSaysTheNoticesInWords() {
@@ -85,6 +86,52 @@ import Testing
     _ = m.receive(.permissionPending)
     _ = m.optionUp(at: 1); _ = m.tick(at: 4)
     #expect(ComposerBarContent.make(machine: m, landedUnsent: false)
-            == .notice("Allow Wakil to use the microphone in the macOS prompt, then hold ⌥ again",
+            == .notice("Allow Wakil to use the microphone in the macOS prompt, then hold ⌥ again", draft: "",
                        hint: ComposerBarContent.keysHint))
+}
+
+// 3a-ii walk: a second hold hid what the first had landed, so the operator said it all again and it
+// landed twice. The line stays in view and the words grow where they will land.
+
+@Test func aHoldKeepsTheLineInViewAndDrawsTheWordsWhereTheyWillLand() {
+    var m = ListeningMachine()
+    _ = m.optionDown(at: 0); _ = m.tick(at: 0.2)
+    _ = m.receive(.partial(settled: "say hello", volatile: "from the"))
+    let draft = "please say hello from the microphone"
+    #expect(ComposerBarContent.make(machine: m, landedUnsent: true, draft: draft, caret: draft.utf16.count)
+            == .hearing(before: draft + " ", settled: "say hello", volatile: "from the", after: "",
+                        hint: ComposerBarContent.releaseHint))
+}
+
+@Test func aHoldWithNothingHeardYetStillDrawsTheLine() {
+    var m = ListeningMachine()
+    _ = m.optionDown(at: 0); _ = m.tick(at: 0.2)
+    #expect(ComposerBarContent.make(machine: m, landedUnsent: false, draft: "please", caret: 6)
+            == .hearing(before: "please", settled: "", volatile: "", after: "", hint: ComposerBarContent.releaseHint))
+}
+
+@Test func aNoticeMidHoldKeepsTheLineInView() {
+    var m = ListeningMachine()
+    _ = m.optionDown(at: 0); _ = m.tick(at: 0.2)
+    _ = m.receive(.started(device: "E2E Microphone"), at: 0.2)
+    _ = m.tick(at: 5)
+    guard case .notice(_, let draft, _) = ComposerBarContent.make(machine: m, landedUnsent: false,
+                                                                  draft: "please", caret: 6) else {
+        Issue.record("expected the silence notice"); return
+    }
+    #expect(draft == "please")
+}
+
+@Test func theWordsAroundTheCaretArePaddedAsTheLandingPadsThem() {
+    let around = ComposerText.around("all", in: "showtables", at: 4)
+    #expect(around.before == "show ")
+    #expect(around.after == " tables")
+    let landed = ComposerText.insert("all", into: "showtables", at: 4)
+    #expect(around.before + "all" + around.after == landed.draft)
+}
+
+@Test func nothingHeardSplitsTheLineAtTheCaretUnpadded() {
+    let around = ComposerText.around("", in: "a\r\nb", at: 2)
+    #expect(around.before == "a")
+    #expect(around.after == "\r\nb")
 }

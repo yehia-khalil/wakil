@@ -83,7 +83,8 @@ private func settle(until done: () -> Bool) async {
     clock.t = 0.2; composer.tick()
     #expect(window.coreState == .listening)
     await settle(until: { !composer.machine.settled.isEmpty })
-    #expect(composer.bar == .hearing(settled: "show", volatile: "tables", hint: ComposerBarContent.releaseHint))
+    #expect(composer.bar == .hearing(before: "", settled: "show", volatile: "tables", after: "",
+                                     hint: ComposerBarContent.releaseHint))
     clock.t = 1; composer.optionUp()
     await settle(until: { composer.machine.phase == .idle })
     #expect(composer.draft == "show tables")
@@ -399,4 +400,28 @@ private final class HarnessesByPlace: @unchecked Sendable {
     #expect(harnesses.sent(in: window.place).isEmpty)
     let entries = try await window.registryForTesting.journalEntries()
     #expect(entries.contains { $0.action == "voice_turn" }, "the re-send keeps the line's voice provenance")
+}
+
+/// 3a-ii walk: a second hold hid what the first had landed, so the operator said the sentence again and
+/// it landed twice. The second hold draws the line it already holds, the new words after it.
+@MainActor
+@Test func aSecondHoldKeepsTheFirstWordsInView() async {
+    let clock = Clock()
+    let (composer, _, _) = model(steps: [.init(after: 0, event: .partial(settled: "open the", volatile: "book"))],
+                                 clock: clock)
+    composer.optionDown(); clock.t = 0.2; composer.tick()
+    await settle(until: { !composer.machine.settled.isEmpty })
+    clock.t = 1; composer.optionUp()
+    await settle(until: { composer.machine.phase == .idle })
+    #expect(composer.draft == "open the book")
+
+    clock.t = 2; composer.optionDown(); clock.t = 2.2; composer.tick()
+    #expect(composer.bar == .hearing(before: "open the book", settled: "", volatile: "", after: "",
+                                     hint: ComposerBarContent.releaseHint))
+    await settle(until: { !composer.machine.settled.isEmpty })
+    #expect(composer.bar == .hearing(before: "open the book ", settled: "open the", volatile: "book", after: "",
+                                     hint: ComposerBarContent.releaseHint))
+    clock.t = 3; composer.optionUp()
+    await settle(until: { composer.machine.phase == .idle })
+    #expect(composer.draft == "open the book open the book")
 }
