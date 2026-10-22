@@ -241,3 +241,103 @@ public func gitBlobId(_ text: String) -> String {
     h.update(data: data)
     return h.finalize().map { String(format: "%02x", $0) }.joined()
 }
+
+// MARK: Selected ranges (3a-ii-b)
+
+/// Lines `start`…`end` of a diff's modified side, 1-based and inclusive: one selection in a diff tab.
+public struct EditorLineSpan: Sendable, Equatable, Codable {
+    public var start: Int
+    public var end: Int
+    public init(start: Int, end: Int) {
+        self.start = start
+        self.end = end
+    }
+}
+
+/// Monaco's selections as line spans. A selection ending at column 1 of a later line leaves that
+/// line out (a whole-line drag); a caret is its one line.
+public func editorLineSpans(_ ranges: [EditorRange]) -> [EditorLineSpan] {
+    ranges.map { r in
+        let a = min(r.start.line, r.end.line), b = max(r.start.line, r.end.line)
+        let endsAtLineHead = b > a && (r.start.line < r.end.line ? r.end.column : r.start.column) == 1
+        return EditorLineSpan(start: a, end: endsAtLineHead ? b - 1 : b)
+    }
+}
+
+/// Whether `ranges` touch a hunk of `text` against `base`: one of its new lines, or, for a deletion,
+/// the line its gutter mark sits on.
+public func editorRangesTouchChange(base: String, text: String, ranges: [EditorLineSpan]) -> Bool {
+    let hunks = editorHunks(base: base, text: text)
+    return hunks.indices.contains { editorHunkTouched(hunks[$0], ranges) }
+}
+
+/// The index text Stage Selected Ranges writes: `base` (the index) with the selected part of each
+/// touched hunk of `text` (the working tree) applied. A touched changed hunk loses all its old lines
+/// and gains only its selected new ones. nil when no hunk is touched.
+public func editorStagedText(base: String, text: String, ranges: [EditorLineSpan]) -> String? {
+    editorMergedText(base: base, text: text, ranges: ranges, stage: true)
+}
+
+/// The index text Unstage Selected Ranges writes: `text` (the index) with the selected part of each
+/// touched hunk reverted to `base` (HEAD; "" for a file new in the index). A touched changed hunk gets
+/// all its old lines back and keeps its unselected new ones. nil when no hunk is touched.
+public func editorUnstagedText(base: String, text: String, ranges: [EditorLineSpan]) -> String? {
+    editorMergedText(base: base, text: text, ranges: ranges, stage: false)
+}
+
+private func editorLineSelected(_ line: Int, _ ranges: [EditorLineSpan]) -> Bool {
+    ranges.contains { $0.start <= line && line <= $0.end }
+}
+
+private func editorHunkTouched(_ h: EditorHunk, _ ranges: [EditorLineSpan]) -> Bool {
+    if h.kind == .deleted { return editorLineSelected(h.newStart > 1 ? h.newStart - 1 : 1, ranges) }
+    return (h.newStart..<(h.newStart + h.newCount)).contains { editorLineSelected($0, ranges) }
+}
+
+/// Walks the two texts' lines once, hunk by hunk. Unchanged and untouched lines come from the side
+/// the write starts from (the index's base when staging, the index's text when unstaging); the text
+/// ends with a newline when the side its last line came from does, so a missing final newline (R9)
+/// is never staged or unstaged by a selection that did not reach it.
+private func editorMergedText(base: String, text: String, ranges: [EditorLineSpan], stage: Bool) -> String? {
+    let hunks = editorHunks(base: base, text: text)
+    guard hunks.contains(where: { editorHunkTouched($0, ranges) }) else { return nil }
+    let old = editorHunkLines(base), new = editorHunkLines(text)
+    var out: [String] = []
+    var lastFromBase = stage
+    func keep(_ line: String, fromBase: Bool) { out.append(line); lastFromBase = fromBase }
+    var i = 0, j = 0      // positions in old and new
+    for h in hunks {
+        while j < h.newStart - 1 {      // the unchanged lines before the hunk
+            keep(stage ? old[i] : new[j], fromBase: stage)
+            i += 1; j += 1
+        }
+        let added = Array(new[j..<(j + h.newCount)])
+        let lines = Array(h.newStart..<(h.newStart + h.newCount))
+        let touched = editorHunkTouched(h, ranges)
+        if stage {
+            if touched {
+                for (k, line) in lines.enumerated() where editorLineSelected(line, ranges) { keep(added[k], fromBase: false) }
+            } else {
+                for line in h.oldLines { keep(line, fromBase: true) }
+            }
+        } else {
+            if touched {
+                for line in h.oldLines { keep(line, fromBase: true) }
+                if h.kind != .deleted {
+                    for (k, line) in lines.enumerated() where !editorLineSelected(line, ranges) { keep(added[k], fromBase: false) }
+                }
+            } else {
+                for line in added { keep(line, fromBase: false) }
+            }
+        }
+        i += h.oldLines.count
+        j += h.newCount
+    }
+    while j < new.count {               // the unchanged lines after the last hunk
+        keep(stage ? old[i] : new[j], fromBase: stage)
+        i += 1; j += 1
+    }
+    if out.isEmpty { return "" }
+    let side = lastFromBase ? base : text
+    return out.joined(separator: "\n") + (side.unicodeScalars.last == "\n" ? "\n" : "")
+}
