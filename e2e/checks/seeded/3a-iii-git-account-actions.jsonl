@@ -3,6 +3,10 @@
 {"do":{"keys":"mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N e2epass -C e2e-key -f ~/.ssh/e2ekey && echo made"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"made"}}
+{"dispatch":{"action":"ctx_git_ssh_keys","params":{"id":"e2e-fixture"}}}
+{"dispatch":{"action":"ctx_git_host_suggestions","params":{"id":"e2e-fixture"}}}
+{"dispatch":{"action":"ctx_git_gh_logins","params":{"id":"e2e-fixture"}}}
+{"dispatch":{"action":"ctx_git_device_start","params":{"id":"e2e-fixture","provider":"github"},"refuses":"Sign in is not set up for github in this build; use an SSH key or a token"}}
 {"dispatch":{"action":"ctx_git_gh_import","params":{"id":"e2e-fixture","host":"github.com","user":"e2e-nobody"},"refuses":"gh has no token for e2e-nobody on github.com"}}
 {"dispatch":{"action":"ctx_git_device_poll","params":{"id":"e2e-fixture","provider":"e2e","host":"e2ehost","deviceCode":"e2e"},"refuses":"no sign-in for e2e"}}
 {"dispatch":{"action":"ctx_git_account_test","params":{"id":"e2e-fixture","host":"e2ehost"},"refuses":"No git account for e2ehost in e2e-fixture — add one in Settings → Organisation → Git"}}

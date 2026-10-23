@@ -18,6 +18,7 @@
 {"do":{"click":"settings.org.git.account.add.method.token"}}
 {"do":{"click":"settings.org.git.account.add.primary"}}
 {"expect":{"tree":"contains","text":"The token is kept in the Keychain, never in a file."}}
+{"expect":{"focus":"settings.org.git.account.add.username"}}
 {"do":{"type":{"into":"settings.org.git.account.add.username","text":"e2e-user"}}}
 {"expect":{"tree":"contains","text":"e2e-user"}}
 {"do":{"click":"settings.org.git.account.add.back"}}
@@ -30,6 +31,7 @@
 {"expect":{"tree":"contains","text":"How should Wakil sign in to e2ehost?"}}
 {"do":{"click":"settings.org.git.account.add.method.token"}}
 {"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"focus":"settings.org.git.account.add.token"}}
 {"do":{"type":{"into":"settings.org.git.account.add.token","text":"e2e-token-value"}}}
 {"do":{"click":"settings.org.git.account.add.primary"}}
 {"expect":{"tree":"contains","text":"Wakil cannot test a token on e2ehost; the next fetch will."}}
@@ -57,6 +59,11 @@
 {"do":{"click":"settings.org.git.account.add.primary"}}
 {"expect":{"tree":"contains","text":"Wakil keeps the key in e2e-fixture's folder and its passphrase in the Keychain; ~/.ssh is left alone."}}
 {"do":{"click":"settings.org.git.account.add.keySource.existing"}}
+{"expect":{"tree":"contains","text":"e2e-key"}}
+{"expect":{"tree":"contains","text":"~/.ssh/e2ekey"}}
+{"do":{"click":"settings.org.git.account.add.key.e2ekey"}}
+{"expect":{"focus":"settings.org.git.account.add.passphrase"}}
+{"do":{"type":{"into":"settings.org.git.account.add.passphrase","text":"e2epass"}}}
 {"do":{"click":"settings.org.git.account.add.keySource.generate"}}
 {"expect":{"tree":"contains","text":"Recommended: a key just for e2e-fixture, so this organisation never pushes as another."}}
 {"do":{"click":"settings.org.git.account.add.primary"}}

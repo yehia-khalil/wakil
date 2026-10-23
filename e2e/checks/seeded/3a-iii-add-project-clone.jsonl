@@ -12,6 +12,7 @@
 {"do":{"click":"settings.tree.addProject"}}
 {"do":{"click":"settings.projects.add.clone"}}
 {"expect":{"tree":"contains","text":"It is cloned with this organisation's git account for the link's host, then added as a project."}}
+{"expect":{"focus":"settings.projects.clone.link"}}
 {"expect":{"tree":"contains","text":"/e2e-clones"}}
 {"do":{"click":"settings.projects.clone.back"}}
 {"expect":{"tree":"contains","text":"Open a folder on this Mac, or clone a repository from a link."}}
