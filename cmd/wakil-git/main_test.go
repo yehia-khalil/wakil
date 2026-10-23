@@ -171,7 +171,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) string {
 // has the reads alone; a write reaches git only through the registry's editor_changes_* actions.
 func TestWithoutTheWritesFlagTheToolListIsTheReadsAlone(t *testing.T) {
 	t.Setenv(gitWritesEnv, "")
-	if got := toolNames(t, connectedClient(t)); got != "git_blob,git_branches,git_diff,git_identity,git_show,git_stashes,git_status" {
+	if got := toolNames(t, connectedClient(t)); got != "git_blame,git_blob,git_branches,git_diff,git_file_history,git_identity,git_show,git_stashes,git_status" {
 		t.Fatalf("tools %s", got)
 	}
 }
@@ -188,8 +188,8 @@ func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"git_amend", "git_blob", "git_branch_delete", "git_branch_rename", "git_branches", "git_clone",
-		"git_commit", "git_diff", "git_discard", "git_fetch", "git_identity", "git_publish", "git_pull", "git_push",
+	want := []string{"git_amend", "git_blame", "git_blob", "git_branch_delete", "git_branch_rename", "git_branches", "git_clone",
+		"git_commit", "git_diff", "git_discard", "git_fetch", "git_file_history", "git_identity", "git_publish", "git_pull", "git_push",
 		"git_show", "git_stage", "git_stage_hunk", "git_stash", "git_stash_apply", "git_stash_drop",
 		"git_stash_drop_all", "git_stash_pop", "git_stashes", "git_status", "git_switch", "git_sync",
 		"git_undo_commit", "git_unstage"}
@@ -438,5 +438,35 @@ func TestSwitchToolReportsBlockedPaths(t *testing.T) {
 	raw, _ := json.Marshal(res.StructuredContent)
 	if !strings.Contains(string(raw), `"blocked":["seed.txt"]`) || strings.Contains(string(raw), `"switched":true`) {
 		t.Fatalf("result %s", raw)
+	}
+}
+
+func TestGitFileHistoryTool(t *testing.T) {
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	cs := connectedClient(t)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "git_file_history", Arguments: map[string]any{"root": root, "path": "seed.txt"}})
+	if err != nil || res.IsError {
+		t.Fatalf("%+v %v", res, err)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(b), `"subject":"seed"`) || !strings.Contains(string(b), `"path":"seed.txt"`) {
+		t.Fatalf("%s", b)
+	}
+}
+
+func TestGitBlameTool(t *testing.T) {
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	cs := connectedClient(t)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "git_blame", Arguments: map[string]any{"root": root, "path": "seed.txt", "text": "new\nseed\n"}})
+	if err != nil || res.IsError {
+		t.Fatalf("%+v %v", res, err)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(b), `"author":"t"`) || !strings.Contains(string(b), `"id":"0000000000000000000000000000000000000000"`) {
+		t.Fatalf("%s", b)
 	}
 }

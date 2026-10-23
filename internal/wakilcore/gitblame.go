@@ -50,7 +50,7 @@ func parseBlamePorcelain(out []byte) []GitBlameLine {
 		date            time.Time
 	}
 	seen := map[string]*info{}
-	var lines []GitBlameLine
+	lines := []GitBlameLine{}
 	var cur *GitBlameLine
 	sc := bufio.NewScanner(bytes.NewReader(out))
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)

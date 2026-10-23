@@ -30,7 +30,24 @@ type diffArg struct {
 type showArg struct {
 	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
 	Path string `json:"path" jsonschema:"file path relative to the root"`
-	Rev  string `json:"rev" jsonschema:"HEAD, index or worktree; or a stash side: stash:<id>, stash-base:<id>, stash-untracked:<id>"`
+	Rev  string `json:"rev" jsonschema:"HEAD, index or worktree; or a stash side: stash:<id>, stash-base:<id>, stash-untracked:<id>; or a commit side: commit:<id> (the file after it), commit-parent:<id> (before it), commit-parent:<id>:<old path> (before it, under the name it had there)"`
+}
+type historyArg struct {
+	Root  string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Path  string `json:"path" jsonschema:"file path relative to the root"`
+	Skip  int    `json:"skip,omitempty" jsonschema:"commits to skip, for the next page"`
+	Count int    `json:"count,omitempty" jsonschema:"commits to return; 50 when omitted"`
+}
+type historyResult struct {
+	Commits []wakilcore.GitCommit `json:"commits"`
+}
+type blameArg struct {
+	Root string  `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Path string  `json:"path" jsonschema:"file path relative to the root"`
+	Text *string `json:"text,omitempty" jsonschema:"the file's unsaved text, blamed in place of the file on disk"`
+}
+type blameResult struct {
+	Lines []wakilcore.GitBlameLine `json:"lines"`
 }
 
 // runner confines every call to a root the active project declares.
@@ -206,7 +223,7 @@ func newServer() *mcp.Server {
 			return nil, r, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "git_show", Description: "Read-only. One file's text at HEAD, in the index, or in the work tree. Capped at 2 MB; binary files return no text."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_show", Description: "Read-only. One file's text at HEAD, in the index, in the work tree, or at a stash's or a commit's side. Capped at 2 MB; binary files return no text."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a showArg) (*mcp.CallToolResult, wakilcore.GitShowResult, error) {
 			g, fail := runner(a.Root)
 			if fail != nil {
@@ -247,6 +264,30 @@ func newServer() *mcp.Server {
 				return mcpx.ToolErr("wakil-git", err), wakilcore.GitBranches{}, nil
 			}
 			return nil, b, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_file_history", Description: "Read-only. One file's commits, newest first, following renames: id, parents, author, email, date, subject, body, and the file's path at that commit. 50 a page; skip for the next."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a historyArg) (*mcp.CallToolResult, historyResult, error) {
+			g, fail := runner(a.Root)
+			if fail != nil {
+				return fail, historyResult{}, nil
+			}
+			h, err := wakilcore.ReadFileHistory(ctx, g, a.Path, a.Skip, a.Count)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), historyResult{}, nil
+			}
+			return nil, historyResult{Commits: h}, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_blame", Description: "Read-only. Who last changed each line of one file: line, commit id, author, date, subject. A line not yet committed has an all-zero id. With text, that text is blamed in place of the file on disk."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a blameArg) (*mcp.CallToolResult, blameResult, error) {
+			g, fail := runner(a.Root)
+			if fail != nil {
+				return fail, blameResult{}, nil
+			}
+			b, err := wakilcore.ReadBlame(ctx, g, a.Path, a.Text)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), blameResult{}, nil
+			}
+			return nil, blameResult{Lines: b}, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "git_stashes", Description: "Read-only. One root's stashes, newest first: index, id, message, the branch it was made on, date, and the files it holds (untracked ones included)."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, stashesResult, error) {
