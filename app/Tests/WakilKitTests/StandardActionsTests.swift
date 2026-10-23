@@ -2402,12 +2402,16 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
     // covers `registerStandardActions` alone.
     #expect(await r.all().map(\.name).sorted() ==
             ["ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_environment",
-             "ctx_create_org", "ctx_create_project", "ctx_editor_settings", "ctx_list_accounts",
+             "ctx_create_org", "ctx_create_project", "ctx_editor_settings",
+             "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
+             "ctx_git_device_start", "ctx_git_gh_import", "ctx_git_gh_logins", "ctx_git_host_suggestions",
+             "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set",
+             "ctx_list_accounts",
              "ctx_list_environments", "ctx_list_machine_providers",
              "ctx_list_orgs", "ctx_list_projects", "ctx_list_providers",
              "ctx_provider_login", "ctx_remove_environment", "ctx_remove_project",
              "ctx_rename_environment", "ctx_rename_project", "ctx_set_editor_settings", "ctx_set_environment",
-             "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_editor_settings", "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
+             "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions", "ctx_set_project_editor_settings", "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
              "db_cancel", "db_classify_statement", "db_describe_table",
              "db_list_databases", "db_list_tables", "db_page", "db_read_table", "db_refetch",
              "db_remove_database",
@@ -2684,6 +2688,19 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         "ctx_set_editor_settings": .object(["fontSize": .integer(14)]),
         // 3b-viii. Needs its `id`, or it throws `.missingParam` first.
         "ctx_set_local_provider": .object(["id": .string("qwen"), "baseURL": .string("http://127.0.0.1:8012")]),
+        "ctx_git_account_add": .object(["id": .string("o"), "host": .string("github.com"), "provider": .string("github"), "method": .string("ssh")]),
+        "ctx_git_account_remove": .object(["id": .string("o"), "host": .string("github.com")]),
+        "ctx_git_account_test": .object(["id": .string("o"), "host": .string("github.com")]),
+        "ctx_git_host_suggestions": .object(["id": .string("o")]),
+        "ctx_git_key_generate": .object(["id": .string("o"), "host": .string("github.com"), "comment": .string("c")]),
+        "ctx_git_key_passphrase_set": .object(["id": .string("o"), "host": .string("github.com"), "passphrase": .string("p")]),
+        "ctx_git_ssh_keys": .object(["id": .string("o")]),
+        "ctx_git_token_set": .object(["id": .string("o"), "host": .string("github.com"), "token": .string("t")]),
+        "ctx_git_device_start": .object(["id": .string("o"), "provider": .string("github")]),
+        "ctx_git_device_poll": .object(["id": .string("o"), "provider": .string("github"), "host": .string("github.com"), "deviceCode": .string("d")]),
+        "ctx_git_gh_logins": .object(["id": .string("o")]),
+        "ctx_git_gh_import": .object(["id": .string("o"), "host": .string("github.com"), "user": .string("u")]),
+        "ctx_set_project_agent_instructions": .object(["projectPath": .string("/p/project.json"), "general": .string("g")]),
         "ctx_set_project_editor_settings": .object(["projectPath": .string("/p.json"), "tabSize": .integer(2)]),
         "ctx_editor_settings": .object([:]),
         "ctx_set_provider": .object(["name": .string("work")]),
@@ -3234,7 +3251,7 @@ private func projectEnvironmentRegistry(
     } catch {
         let text = "\(error)"
         #expect(text.contains("agent-1 is running in acme"))
-        #expect(text.contains("Invariant 5"))
+        #expect(text.contains("an agent keeps its own place"))
     }
     do {
         _ = try await registry.dispatch(
@@ -3248,7 +3265,7 @@ private func projectEnvironmentRegistry(
     } catch {
         let text = "\(error)"
         #expect(text.contains("agent-1 is running in acme / dev"))
-        #expect(text.contains("Invariant 5"))
+        #expect(text.contains("an agent keeps its own place"))
     }
     // An environment the agent is not in, and a project it is not in, go through.
     _ = try await registry.dispatch(

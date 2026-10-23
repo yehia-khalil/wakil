@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/3a-iii-instructions-reach-agent.jsonl",
+  "baseCommit": "dd65cbf2bbacdf39358e36f7e0797eb1bd593313",
+  "provedAt": "2026-10-22T21:28:20.857454Z",
+  "checkBlob": "cbbf0562232259a5e2f1f2b04d963128ac57594d"
+}

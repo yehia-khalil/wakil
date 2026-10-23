@@ -108,6 +108,16 @@ extension WindowModel {
         _ = await changesWrite(root, name, ["path": .string(root + "/" + path), "pane": .string(pane), "ranges": spans])
     }
 
+    /// 3a-iii-a: the remote operations, through the same per-root write path as a commit.
+    public func changesRemote(root: String, _ button: ChangesRemoteButton) async {
+        guard let action = button.action else { return }
+        _ = await changesWrite(root, action, ["root": .string(root)])
+    }
+
+    public func changesFetch(root: String) async {
+        _ = await changesWrite(root, "editor_changes_fetch", ["root": .string(root)])
+    }
+
     /// Ends that root's running dispatch. The write itself may already be past the point of stopping;
     /// whatever the action reports is shown.
     public func changesCancel(root: String) { changesTasks[root]?.cancel() }
@@ -171,6 +181,7 @@ extension WindowModel {
         guard !changesInFlight.contains(root) else { return nil }
         let generation = changesGeneration
         changesInFlight.insert(root)
+        await preemptBackgroundFetch(root)
         let caller = DispatchCaller(place: place, session: nil)
         let registry = self.registry
         let task = Task { @MainActor in

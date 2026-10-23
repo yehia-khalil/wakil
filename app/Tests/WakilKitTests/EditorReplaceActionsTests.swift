@@ -243,7 +243,7 @@ private func replaceFixture() async throws -> EditorFixture {
     do {
         try await f.dispatch("editor_replace", ["replacement": .string("x"), "file": .string("/etc/hosts")])
         Issue.record("expected the refusal")
-    } catch { #expect(String(describing: error).contains("Invariant 6")) }
+    } catch { #expect(String(describing: error).contains("is outside the active project's roots")) }
 }
 
 @Test func aReplaceWithNoQueryChangesNothing() async throws {

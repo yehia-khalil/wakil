@@ -115,6 +115,8 @@ func layoutActions(
             schema: .object(["type": .string("object"), "properties": .object([:])]),
             handler: { _ in
                 let result = await layout.openSettings()
+                // Settings opens full screen, each time it opens or comes forward (3a-iii walk).
+                try? await layout.maximize(id: result.pane.id)
                 return .object([
                     "id": .string(result.pane.id),
                     // False means "you already had one, and it is now

@@ -1,0 +1,11 @@
+{"do":{"resize":{"width":1400,"height":900}}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"expect":{"frame":"settings.pane","minWidth":1100}}
+{"dispatch":{"action":"pane_restore","params":{}}}
+{"expect":{"frame":"settings.pane","maxWidth":900}}
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"expect":{"frame":"settings.pane","minWidth":1100}}

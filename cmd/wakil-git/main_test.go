@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/yehia-khalil/wakil/internal/wakilcore"
@@ -187,8 +188,9 @@ func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"git_amend", "git_blob", "git_commit", "git_diff", "git_discard", "git_identity",
-		"git_show", "git_stage", "git_stage_hunk", "git_status", "git_undo_commit", "git_unstage"}
+	want := []string{"git_amend", "git_blob", "git_clone", "git_commit", "git_diff", "git_discard", "git_fetch",
+		"git_identity", "git_publish", "git_pull", "git_push", "git_show", "git_stage", "git_stage_hunk",
+		"git_status", "git_sync", "git_undo_commit", "git_unstage"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("tools %v", names)
 	}
@@ -378,4 +380,31 @@ func TestIdentityWithOnlyTheOrganisationsNameSaysTheEmailIsGitConfigs(t *testing
 	if b, _ := json.Marshal(id.StructuredContent); !strings.Contains(string(b), `"from":"organisation"`) {
 		t.Fatalf("identity %s", b)
 	}
+}
+
+// Review I4: an org switch stops wakil-git with SIGTERM. Remote work is cancelled through its
+// context, so its own cleanup (abort a pull, remove a clone's folder) runs before the process exits.
+func TestShutdownCancelsRemoteWork(t *testing.T) {
+	sd, stop := context.WithCancel(context.Background())
+	defer stop()
+	prev := shutdown
+	shutdown = sd
+	defer func() { shutdown = prev }()
+
+	ctx, done := remoteContext(context.Background())
+	waited := make(chan struct{})
+	go func() { remoteWork.Wait(); close(waited) }()
+	stop()
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not cancel the remote work")
+	}
+	select {
+	case <-waited:
+		t.Fatal("the exit did not wait for the work's cleanup")
+	case <-time.After(50 * time.Millisecond):
+	}
+	done()
+	<-waited
 }

@@ -160,7 +160,7 @@ func TestCreateProjectRefusesOtherOrg(t *testing.T) {
 	folder := t.TempDir()
 	writeProjectFile(t, folder, `{"name":"x","org":"other","roots":[],"environments":{}}`)
 	_, _, err := CreateProject(folder, "orders")
-	if err == nil || !strings.Contains(err.Error(), "other") || !strings.Contains(err.Error(), "Invariant 4") {
+	if err == nil || !strings.Contains(err.Error(), "other") || !strings.Contains(err.Error(), "can only be registered under the org it declares") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(lifeRegistry(t)) != 0 {

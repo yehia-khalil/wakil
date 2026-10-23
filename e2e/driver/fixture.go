@@ -133,6 +133,10 @@ func (f Fixture) Env(basePATH string, seeded Seeded) []string {
 		base = "http://127.0.0.1:9"
 	}
 	env = append(env, "WAKIL_ANTHROPIC_BASE_URL="+base)
+	// 3a-iii: wakil-git allows a file remote — a bare repository on this Mac — only when the
+	// launcher sets this, and the app forwards it to its children. Every remote a check pushes to
+	// or pulls from is one the check made inside the fixture, so no launch reaches a network host.
+	env = append(env, "WAKIL_GIT_ALLOW_FILE=1")
 	return env
 }
 

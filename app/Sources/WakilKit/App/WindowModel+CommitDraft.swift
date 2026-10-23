@@ -43,6 +43,7 @@ extension WindowModel {
         let untracked = staged ? [] : files.filter { $0.group == .untracked }.map(\.path)
         let committed = files.filter { $0.group == (staged ? .staged : .changed) }.map(\.path)
         let examples = changesHistory[root] ?? []
+        let rules = commitInstructions
         let generation = quickTasksGeneration, changes = changesGeneration
         changesErrors[root] = nil
         changesDrafting.insert(root)
@@ -58,7 +59,7 @@ extension WindowModel {
             }
             try Task.checkCancellation()
             let request = CommitDraft.request(diff: diff, truncated: truncated, files: committed, untracked: untracked,
-                                              examples: examples)
+                                              examples: examples, commitInstructions: rules)
             return try CommitDraft.parse(try await tasks.respond(request))
         }
         changesDraftTasks[root] = task

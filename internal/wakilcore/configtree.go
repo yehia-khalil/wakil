@@ -23,6 +23,16 @@ type ConfigTreeOrg struct {
 	GhostText       bool   `json:"ghostText"`
 	FastPath        bool   `json:"fastPath"`
 	CommitDrafts    bool   `json:"commitDrafts"`
+	// 3a-iii: the accounts (no secrets) and the strategy, resolved to rebase when unset.
+	GitAccounts     []GitAccount `json:"gitAccounts"`
+	PullStrategy    string       `json:"pullStrategy"`
+	LastCloneFolder string       `json:"lastCloneFolder"`
+	// GitSignIn names the providers Sign in is offered for (those Wakil has a client id for).
+	GitSignIn []string `json:"gitSignIn"`
+	// 3a-iii-b: the agent instructions.
+	AgentGeneral          string `json:"agentGeneral"`
+	GitCommitInstructions string `json:"gitCommitInstructions"`
+	GitPRInstructions     string `json:"gitPRInstructions"`
 }
 
 // ConfigTreeProvider is a provider binding as the settings tree draws it.
@@ -116,6 +126,8 @@ type ConfigTreeProject struct {
 	// Editor is the project's editor settings with defaults filled (3b-v). Never absent: a
 	// project with no editor block shows the defaults its Editor node edits.
 	Editor EditorProjectValues `json:"editor"`
+	// Agent is the project's agent instructions (3a-iii-b); empty texts when it has none.
+	Agent ProjectAgentInstructions `json:"agent"`
 }
 
 // ConfigTree is the whole of one organisation's configuration, shaped the
@@ -208,6 +220,18 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 	tree.Org.GhostText = resolveOrgSwitch(record.GhostText, app.Editor.Resolved().GhostText)
 	tree.Org.FastPath = resolveOrgSwitch(record.FastPath, quickProviderIsLocal(org, record.QuickProvider))
 	tree.Org.CommitDrafts = resolveOrgSwitch(record.CommitDrafts, true)
+	tree.Org.GitAccounts = append([]GitAccount{}, record.GitAccounts...)
+	tree.Org.PullStrategy = PullStrategyOf(record)
+	tree.Org.LastCloneFolder = record.LastCloneFolder
+	tree.Org.AgentGeneral = record.AgentGeneral
+	tree.Org.GitCommitInstructions = record.GitCommitInstructions
+	tree.Org.GitPRInstructions = record.GitPRInstructions
+	tree.Org.GitSignIn = []string{}
+	for _, p := range []string{"github", "gitlab"} {
+		if SignInProviders()[p] {
+			tree.Org.GitSignIn = append(tree.Org.GitSignIn, p)
+		}
+	}
 
 	providers, skipped, err := listProvidersFor(org)
 	if err != nil {
@@ -259,6 +283,7 @@ func configTreeProject(name, path string, project *Project) ConfigTreeProject {
 		Scopes:       project.Scopes,
 		Environments: []ConfigTreeEnvironment{},
 		Editor:       project.Editor.Resolved(),
+		Agent:        project.agentTexts(),
 	}
 	if out.Roots == nil {
 		out.Roots = []Root{}

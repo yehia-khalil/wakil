@@ -108,7 +108,8 @@ public func buildLaunch(
     mcpConfigJSON: String,
     allowedTools: [String],
     workingDirectory: String,
-    resumingFrom parentSessionId: String? = nil
+    resumingFrom parentSessionId: String? = nil,
+    appendedInstructions: String = ""
 ) -> HarnessLaunch {
     let environment = harnessEnvironment(configDir: configDir, oauthToken: oauthToken)
     var arguments = streamingArguments
@@ -139,7 +140,9 @@ public func buildLaunch(
         // Asked a fourth time for a pane it had already described in chat,
         // it declined to draw one — reasoning about the conversation,
         // because that was the only surface it had been told about.
-        "--append-system-prompt", agentSystemPrompt,
+        // 3a-iii-b: the operator's instructions follow Wakil's own, never replace them (Decision 45).
+        "--append-system-prompt",
+        appendedInstructions.isEmpty ? agentSystemPrompt : agentSystemPrompt + "\n\n" + appendedInstructions,
         // The approval surface. Probe §6 of `phase-2a-probe.md` measured the
         // CLI denying an unlisted MCP tool outright in a `-p` session — "it
         // requires approval, and this session has no approval surface" — which
@@ -294,7 +297,8 @@ public final class ClaudeCodeCLIHarness: AgentHarness, Sendable {
         configDir: String,
         oauthToken: String,
         mcpConfigJSON: String,
-        allowedTools: [String]
+        allowedTools: [String],
+        appendedInstructions: @escaping @Sendable () -> String = { "" }
     ) {
         self.init { sessionId, parentSessionId, workingDirectory in
             buildLaunch(
@@ -305,7 +309,8 @@ public final class ClaudeCodeCLIHarness: AgentHarness, Sendable {
                 mcpConfigJSON: mcpConfigJSON,
                 allowedTools: allowedTools,
                 workingDirectory: workingDirectory,
-                resumingFrom: parentSessionId
+                resumingFrom: parentSessionId,
+                appendedInstructions: appendedInstructions()
             )
         }
     }

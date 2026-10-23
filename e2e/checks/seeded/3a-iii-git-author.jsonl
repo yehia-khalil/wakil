@@ -1,0 +1,18 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"GIT"}}
+{"expect":{"tree":"contains","text":"Author"}}
+{"expect":{"tree":"contains","text":"Who Wakil's commits are by; empty uses your git config."}}
+{"do":{"type":{"into":"settings.org.gitName","text":"E2E Author"}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitName","equals":"E2E Author"}}
+{"expect":{"focus":"settings.org.gitName"}}
+{"do":{"type":{"into":"settings.org.gitEmail","text":"author@e2e.invalid"}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.gitEmail","equals":"author@e2e.invalid"}}
+{"expect":{"focus":"settings.org.gitEmail"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.pullStrategy","equals":"rebase"}}
+{"do":{"click":"settings.org.git.pullStrategy.merge"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.pullStrategy","equals":"merge"}}
+{"do":{"click":"settings.org.git.pullStrategy.ff-only"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.pullStrategy","equals":"ff-only"}}
+{"do":{"click":"settings.org.git.pullStrategy.rebase"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.pullStrategy","equals":"rebase"}}

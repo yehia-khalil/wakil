@@ -13,7 +13,7 @@ const (
 	QuickOpRespond = "respond"
 )
 
-const errLocalOnly = "baseURL applies only to --kind local — only a local endpoint speaks /infill (Decision 42)"
+const errLocalOnly = "baseURL applies only to --kind local — only a local endpoint speaks /infill"
 
 // normaliseLocal trims and checks a local provider's URL and drops the retired serves field.
 func normaliseLocal(p *Provider) error {

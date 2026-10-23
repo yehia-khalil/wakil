@@ -59,7 +59,7 @@ private func threeTabs() async throws -> EditorFixture {
     do {
         try await f.dispatch("editor_tree_reveal", ["path": .string("/etc/hosts")])
         Issue.record("expected the refusal")
-    } catch { #expect(String(describing: error).contains("Invariant 6")) }
+    } catch { #expect(String(describing: error).contains("is outside the active project's roots")) }
     await #expect(throws: EditorActionError.noTab(action: "editor_tree_reveal")) { try await f.dispatch("editor_tree_reveal") }
     try await f.dispatch("editor_new_scratch")
     await #expect(throws: EditorActionError.notAFile(action: "editor_tree_reveal")) { try await f.dispatch("editor_tree_reveal") }

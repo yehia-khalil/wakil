@@ -1,0 +1,36 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N e2epass -C e2e-key -f ~/.ssh/e2ekey && echo made"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"made"}}
+{"dispatch":{"action":"ctx_git_ssh_keys","params":{"id":"e2e-fixture"}}}
+{"dispatch":{"action":"ctx_git_host_suggestions","params":{"id":"e2e-fixture"}}}
+{"dispatch":{"action":"ctx_git_gh_logins","params":{"id":"e2e-fixture"}}}
+{"dispatch":{"action":"ctx_git_device_start","params":{"id":"e2e-fixture","provider":"github"},"refuses":"Sign in is not set up for github in this build; use an SSH key or a token"}}
+{"dispatch":{"action":"ctx_git_gh_import","params":{"id":"e2e-fixture","host":"github.com","user":"e2e-nobody"},"refuses":"gh has no token for e2e-nobody on github.com"}}
+{"dispatch":{"action":"ctx_git_device_poll","params":{"id":"e2e-fixture","provider":"e2e","host":"e2ehost","deviceCode":"e2e"},"refuses":"no sign-in for e2e"}}
+{"dispatch":{"action":"ctx_git_account_test","params":{"id":"e2e-fixture","host":"e2ehost"},"refuses":"No git account for e2ehost in e2e-fixture — add one in Settings → Organisation → Git"}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"e2ehost","provider":"other","method":"nope"},"refuses":"a git account's method is ssh, token or signin"}}
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"e2ehost","token":"e2e-token-value"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"e2ehost","provider":"other","method":"token"}}}
+{"dispatch":{"action":"ctx_git_account_test","params":{"id":"e2e-fixture","host":"e2ehost"},"refuses":"Wakil cannot test a token on e2ehost; it is used on the next fetch"}}
+{"dispatch":{"action":"ctx_git_key_passphrase_set","params":{"id":"e2e-fixture","host":"e2essh","passphrase":"e2epass"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"e2essh","provider":"other","method":"ssh","keyPath":"{fixtureRoot}/home/.ssh/e2ekey"}}}
+{"dispatch":{"action":"ctx_git_key_generate","params":{"id":"e2e-fixture","host":"e2egen","comment":"e2e generated"}}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"ls ~/.wakil/orgs/e2e-fixture/git/ssh | paste -sd, -"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"e2egen_ed25519,e2egen_ed25519.pub"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"ls ~/.ssh | paste -sd, -"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"e2ekey,e2ekey.pub"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"e2ehost"}}
+{"expect":{"tree":"contains","text":"e2essh"}}
+{"dispatch":{"action":"ctx_git_account_remove","params":{"id":"e2e-fixture","host":"e2ehost"}}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"tree":"contains","text":"e2essh"}}
+{"expect":{"tree":"absent","text":"e2ehost"}}
+{"dispatch":{"action":"ctx_git_account_remove","params":{"id":"e2e-fixture","host":"e2ehost"},"refuses":"no git account for e2ehost in e2e-fixture"}}

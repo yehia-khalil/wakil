@@ -71,7 +71,15 @@
 - [ ] **Step 4: Run** `make app-test`. Expected: PASS.
 - [ ] **Step 5: Commit** `3a-iii-b: the agent and the draft receive the instructions`.
 
-### Task 4: From the next turn — stale agents fork with the new text
+### Task 4: From the next turn — the update rides in the next message
+
+> **Amended after Task 1's probe (2026-10-22):** a resumed session ignores a new appended prompt, so
+> nothing is forked. `refreshInstructionsIfStale(place:)` instead returns the block
+> `[Wakil: the operator updated your instructions. They replace any earlier ones under the same
+> headings.]\n\n<composed text>`, which the send path puts before the operator's words in that
+> turn's input (not in the thread's display of them), then records the composed text as
+> `launchedInstructions`. Tests below read "the turn's input starts with the block" where they say
+> "the second launch has `--resume`".
 
 **Files:**
 - Create: `app/Sources/WakilKit/App/WindowModel+AgentInstructions.swift`

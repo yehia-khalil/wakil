@@ -9,7 +9,7 @@
 {"do":{"keys":"../outside.txt"}}
 {"expect":{"tree":"contains","text":"e2e-project/../outside.txt"}}
 {"do":{"click":"editor.saveAs.save"}}
-{"expect":{"tree":"contains","text":"is outside the active project's roots; editor reads and writes are confined to them (Invariant 6, Decision 36)"}}
+{"expect":{"tree":"contains","text":"is outside the active project's roots; editor reads and writes are confined to them"}}
 {"expect":{"tree":"contains","text":"e2e-project/../outside.txt"}}
 {"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
 {"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}

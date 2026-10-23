@@ -57,7 +57,7 @@ type FileWritten struct {
 
 func outsideRoots(path string) error {
 	return UserError(path + " is outside the active project's roots; editor writes and reads are " +
-		"confined to them (Invariant 6, Decision 36)")
+		"confined to them")
 }
 
 // realRoots answers each root symlink-resolved; a root that cannot be resolved is skipped.

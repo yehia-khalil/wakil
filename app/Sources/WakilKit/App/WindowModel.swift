@@ -685,6 +685,21 @@ public final class WindowModel {
     /// The last draft that landed, by any path (✨, the agent, voice): what it replaced, for the view's
     /// one ⌘Z (final review I4). `serial` tells two drafts with the same text apart.
     public internal(set) var changesLastDraft: ChangesDraftReplacement?
+    /// 3a-iii-a: a quiet note per root from the last background fetch (shown on the root's header,
+    /// never as an error); the fetch loop, its interval, its sleep (tests replace it), and whether the
+    /// app is frontmost.
+    public internal(set) var changesRemoteNotes: [String: String] = [:]
+    /// 3a-iii-b: where the composed agent instructions go; the process's own unless a test swaps it.
+    var agentInstructionsBox: AgentInstructionsBox = .shared
+    public let backgroundFetchInterval: Duration = .seconds(300)
+    var backgroundFetchSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    var backgroundFetchTask: Task<Void, Never>?
+    /// How long one background fetch may take before it is given up: a host that never answers
+    /// must not hold the root's write slot (review I5).
+    var backgroundFetchTimeout: Duration = .seconds(60)
+    /// The background fetch running now and its root, which an operator's write on that root cancels.
+    var backgroundFetchCurrent: (root: String, cancel: () -> Void, done: Task<Void, Never>)?
+    var appActive = true
     /// The status as last mirrored, for the views: the Changes view, the tree's letters, ⌘P.
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
@@ -1505,7 +1520,8 @@ public final class WindowModel {
         agentSocketFactory: @escaping AgentSocketFactory = { _, _ in NoAgentSocket() },
         quickModelFactory: (@Sendable (QuickProviderRecord, String) async throws -> (any QuickModel)?)? = nil,
         paletteClients: PaletteClients = PaletteClients(),
-        gitStatus: GitStatus? = nil
+        gitStatus: GitStatus? = nil,
+        claudeLocator: ClaudeExecutableLocator? = nil
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1577,6 +1593,7 @@ public final class WindowModel {
             confirmations: confirmations,
             orgSwitcher: orgSwitcher,
             terminals: terminals,
+            claudeLocator: claudeLocator,
             vocabulary: vocabulary,
             rootWatcher: nil,
             editorRootWatcher: nil,
@@ -1798,7 +1815,7 @@ public final class WindowModel {
     public var noActiveProviderNote: String? {
         guard providerId.isEmpty else { return nil }
         return "no active provider is set for this org yet — pick one in ⌘P, or bootstrap "
-            + "headlessly with `--dispatch ctx_set_provider` (phase-2b-vi-acceptance.md §1.4)"
+            + "headlessly with `--dispatch ctx_set_provider`"
     }
 
     /// The word this codebase uses for "no provider chosen yet", shared so
@@ -2135,6 +2152,7 @@ public final class WindowModel {
         changesDraftTasks = [:]
         changesDrafting = []
         changesLastDraft = nil
+        changesRemoteNotes = [:]
         changesMessages = [:]
         changesHistory = [:]
         changesHistoryCursor = [:]
@@ -2653,7 +2671,7 @@ public final class WindowModel {
             name: "settings_open", params: .object([:]), origin: .ui,
             caller: DispatchCaller(place: place, session: nil), confirmation: nil)) != nil
         else { return }
-        await refreshLayout()
+        await refreshLayout()   // `settings_open` opened it full screen
         await refreshSettings()
     }
 
@@ -2681,7 +2699,6 @@ public final class WindowModel {
     /// freshly created organisation genuinely has no projects, and a read
     /// that never answered has learned nothing about whether it does.
     public func refreshSettings() async {
-        await locateClaudeIfNeeded()
         do {
             let result = try await registry.dispatch(
                 name: "ctx_config_tree", params: .object([:]), origin: .ui,
@@ -2692,6 +2709,10 @@ public final class WindowModel {
             }
             settings = tree
             settingsFailure = nil
+            publishAgentInstructions(tree)
+            // The tree first, so the pane fills at once; finding `claude` (a login-shell lookup)
+            // is for the account table below, and waits until the tree is drawn.
+            await locateClaudeIfNeeded()
 
             // The account table, in the same refresh. **One read, two
             // halves**: the tree's Providers node and this table describe
@@ -2787,6 +2808,27 @@ public final class WindowModel {
         return refusal
     }
 
+    /// 3a-iii-b: saves one project's agent instructions into its project.json — only the boxes
+    /// passed. The re-read publishes the new text, which the agent receives in its next turn.
+    public func saveProjectAgentInstructions(
+        projectPath: String, general: String? = nil, commits: String? = nil, pullRequests: String? = nil
+    ) async -> String? {
+        var params: [String: JSONValue] = ["projectPath": .string(projectPath)]
+        if let general { params["general"] = .string(general) }
+        if let commits { params["commits"] = .string(commits) }
+        if let pullRequests { params["pullRequests"] = .string(pullRequests) }
+        do {
+            _ = try await registry.dispatch(
+                name: "ctx_set_project_agent_instructions", params: .object(params), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+            await refreshSettings()
+            return nil
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure("ctx_set_project_agent_instructions", error)
+        }
+    }
+
     private func saveEditorSettings(action: String, params: JSONValue) async -> String? {
         var refusal: String?
         do {
@@ -2815,6 +2857,12 @@ public final class WindowModel {
         case quickProvider
         case gitName
         case gitEmail
+        /// 3a-iii: how Pull and Sync integrate (rebase, merge, ff-only).
+        case pullStrategy
+        /// 3a-iii-b: the organisation's agent instructions — General under AGENT, the other two under GIT.
+        case agentGeneral
+        case gitCommitInstructions
+        case gitPRInstructions
 
         /// A stable fragment for this field's accessibility identifier —
         /// the case name, not the label, which is prose and may be
@@ -2822,8 +2870,14 @@ public final class WindowModel {
         public var identifierFragment: String { rawValue }
 
         /// Whether leaving the field saves it — by focus moving on or its page going (3a-ii,
-        /// Rule 2). The others keep Return and Save.
-        public var savesOnLeave: Bool { self == .gitName || self == .gitEmail }
+        /// Rule 2). The agent boxes are multi-line, so Return is a new line and leaving is the
+        /// only save. The others keep Return and Save.
+        public var savesOnLeave: Bool {
+            switch self {
+            case .gitName, .gitEmail, .agentGeneral, .gitCommitInstructions, .gitPRInstructions: return true
+            default: return false
+            }
+        }
 
         /// What the form labels it.
         public var label: String {
@@ -2835,6 +2889,10 @@ public final class WindowModel {
             case .quickProvider: return "Quick tasks"
             case .gitName: return "Git name"
             case .gitEmail: return "Git email"
+            case .pullStrategy: return "Pull strategy"
+            case .agentGeneral: return "General"
+            case .gitCommitInstructions: return "Commits"
+            case .gitPRInstructions: return "Pull requests"
             }
         }
     }
@@ -3354,6 +3412,22 @@ public final class WindowModel {
     /// another page, refused after its page went — said here so it is not dropped (Rules 2, 8).
     public func showUnseenRefusal(_ text: String) {
         status = text
+    }
+
+    /// 3a-iii-a: Clone from a link…, then the clone becomes a project as a chosen folder does.
+    public func cloneProject(link: String, into folder: String) async -> (name: String?, error: String?) {
+        let reply: JSONValue
+        do {
+            reply = try await registry.dispatch(
+                name: "editor_clone", params: .object(["url": .string(link), "folder": .string(folder)]),
+                origin: .ui, caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        } catch {
+            return (nil, statusDescribingFailure("editor_clone", error))
+        }
+        guard case .object(let o) = reply, case .string(let path)? = o["path"] else {
+            return (nil, "editor_clone: the clone answered no path")
+        }
+        return await createProject(folder: path)
     }
 
     /// Adds a project from a folder. The name defaults to the folder's last path component.
@@ -4377,6 +4451,8 @@ public final class WindowModel {
             // returned, the file says what the canvas says.
             _ = await pendingSave?.value
         }
+        // 3a-iii-a: the background fetch follows whether an editor pane is open.
+        updateBackgroundFetch()
     }
 
     /// Re-reads the arrangement and writes nothing.
@@ -5469,8 +5545,7 @@ public final class WindowModel {
     /// Nil when the path is outside the project's roots, missing, or the read failed.
     public func editorDiskText(pane: String, path: String) async -> String? {
         guard let files = paletteClients.files else { return nil }
-        let clean = (path as NSString).standardizingPath
-        guard gitRootPaths.contains(where: { clean == $0 || clean.hasPrefix($0 + "/") }) else { return nil }
+        guard let clean = confinedPath(path, roots: gitRootPaths)?.path else { return nil }
         guard case .object(let o)? = try? await files.callTool(
                   name: "files_read", arguments: .object(["path": .string(clean)]), timeout: MCPClient.readReplyTimeout),
               o["isError"] != .bool(true),
@@ -6808,8 +6883,12 @@ public final class WindowModel {
     }
 
     /// Installs `started` as `agent`'s live session: its harness and its socket.
-    private func install(_ started: StartedSession, in agent: PlaceAgent) {
+    private func install(_ started: StartedSession, in agent: PlaceAgent, resumed: Bool = false) {
         agent.harness = started.harness
+        // A new session's first turn records what it launched with. A resumed one keeps the prompt
+        // its parent was first launched with (the 3a-iii-b probe), which may predate the current
+        // text — so its first turn carries the text as an update.
+        agent.launchedInstructions = resumed ? resumedInstructionsUnknown : nil
         agent.socket = started.socket
         agent.socketFailure = started.socketFailure
     }
@@ -6984,7 +7063,13 @@ public final class WindowModel {
             // 2d-ii: the operator's own turn is a row, so what was actually
             // sent — a misheard sentence included — stays on screen.
             agent.appendRow(label: "you", detail: text)
-            try await harness.send(await textWithIdentifierNote(text, for: agent))
+            var outgoing = await textWithIdentifierNote(text, for: agent)
+            // 3a-iii-b: instructions edited since this session started ride ahead of the words.
+            if let update = instructionsUpdate(for: agent) {
+                outgoing = update + "\n\n" + outgoing
+                agent.appendRow(label: "instructions", detail: "Instructions updated — the agent has the new ones from this turn.")
+            }
+            try await harness.send(outgoing)
             // After the send succeeded: a turn that never went leaves no
             // `voice_turn` line, and no suspension sits before the
             // org-switch generation guard in `textWithIdentifierNote`.
@@ -7219,7 +7304,7 @@ public final class WindowModel {
         agent.thoughts = rebuiltThread(thread, parent: parent, for: agent)
         agent.turnInFlight = false
 
-        install(started, in: agent)
+        install(started, in: agent, resumed: true)
         agent.providerId = providerId
         retainAgentPlace()
         agent.sessionId = child
@@ -8815,6 +8900,7 @@ public final class WindowModel {
     /// outlives the window.
     public func shutdown() async {
         socketsClosed = true
+        stopBackgroundFetch()
         for agent in agents.values { agent.eventPump?.cancel() }
         confirmationPump?.cancel()
         observationPump?.cancel()

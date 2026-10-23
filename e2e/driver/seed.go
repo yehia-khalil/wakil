@@ -67,6 +67,12 @@ type SeedSpec struct {
 	// hook check's launch asks for it** (`WantsGitHook`): every other commit from the Changes view
 	// would otherwise fail.
 	GitHook bool
+	// CloneFolder records `e2e-clones/` under the fixture root as the organisation's last clone
+	// folder (3a-iii), so + Add a project → Clone a repository opens with a folder chosen — the only
+	// other way to choose one is the macOS folder picker, which no check can drive — and the agent's
+	// `editor_clone` has the folder it may clone into. **Only the clone check's launch asks for it**
+	// (`WantsCloneFolder`): every other launch opens the sheet as an operator's first clone would.
+	CloneFolder bool
 	// RootlessProject names a project in this org whose project.json declares
 	// no roots. Never active: a check switches to it with `ctx_set_project`,
 	// which is how the "no project root" note — derived from the live context
@@ -296,10 +302,17 @@ func seedOrgState(fixture Fixture, spec SeedSpec) error {
 
 	// Now that the provider exists, the org may name it as its default — see
 	// the ordering note above `CreateOrg`.
-	if err := wakilcore.SaveOrg(spec.Org, wakilcore.Org{
+	org := wakilcore.Org{
 		DisplayName:     spec.DisplayName,
 		DefaultProvider: spec.Provider,
-	}); err != nil {
+	}
+	if spec.CloneFolder {
+		org.LastCloneFolder = filepath.Join(fixture.Root, CloneFolderName)
+		if err := os.MkdirAll(org.LastCloneFolder, 0o755); err != nil {
+			return fmt.Errorf("seed: making the clone folder: %w", err)
+		}
+	}
+	if err := wakilcore.SaveOrg(spec.Org, org); err != nil {
 		return fmt.Errorf("seed: setting the org's default provider: %w", err)
 	}
 

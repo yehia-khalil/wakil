@@ -23,13 +23,19 @@ type OrgPatch struct {
 	GhostText       *bool
 	FastPath        *bool
 	CommitDrafts    *bool
+	PullStrategy    *string
+	// 3a-iii-b: the organisation's agent instructions.
+	AgentGeneral          *string
+	GitCommitInstructions *string
+	GitPRInstructions     *string
 }
 
 // isEmpty reports whether this patch would change nothing.
 func (p OrgPatch) isEmpty() bool {
 	return p.DisplayName == nil && p.JiraBase == nil && p.DefaultProvider == nil &&
 		p.SpeechProvider == nil && p.QuickProvider == nil && p.GitName == nil && p.GitEmail == nil && p.GhostText == nil && p.FastPath == nil &&
-		p.CommitDrafts == nil
+		p.CommitDrafts == nil && p.PullStrategy == nil &&
+		p.AgentGeneral == nil && p.GitCommitInstructions == nil && p.GitPRInstructions == nil
 }
 
 // apply returns o with this patch's named fields replaced.
@@ -62,6 +68,18 @@ func (p OrgPatch) apply(o Org) Org {
 	if p.FastPath != nil {
 		v := *p.FastPath
 		o.FastPath = &v
+	}
+	if p.AgentGeneral != nil {
+		o.AgentGeneral = *p.AgentGeneral
+	}
+	if p.GitCommitInstructions != nil {
+		o.GitCommitInstructions = *p.GitCommitInstructions
+	}
+	if p.GitPRInstructions != nil {
+		o.GitPRInstructions = *p.GitPRInstructions
+	}
+	if p.PullStrategy != nil {
+		o.PullStrategy = *p.PullStrategy
 	}
 	if p.CommitDrafts != nil {
 		v := *p.CommitDrafts
