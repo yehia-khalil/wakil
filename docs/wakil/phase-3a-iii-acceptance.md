@@ -20,6 +20,7 @@ with `WAKIL_GIT_ALLOW_FILE=1`; rows 8 and 9 use your GitHub account.
 ```bash
 (
 set -e
+REPO="$(git rev-parse --show-toplevel)"
 ORG=personal
 W="$TMPDIR/walk-3a-iii"
 rm -rf "$W"
@@ -37,7 +38,7 @@ echo ahead > ahead.txt && git add . && g commit -qm 'walk: ahead'
 cat > "$W/project/project.json" <<J
 {"name":"walk-3a-iii","org":"$ORG","roots":[{"path":"$W/work"}],"scopes":{},"environments":{}}
 J
-cd /Users/yehia/orca/workspaces/wakil-public/sealion
+cd "$REPO"
 ./bin/wakil project rm walk-3a-iii --org "$ORG" || true
 ./bin/wakil project add walk-3a-iii --path "$W/project/project.json" --org "$ORG"
 )
@@ -47,8 +48,8 @@ cd /Users/yehia/orca/workspaces/wakil-public/sealion
 push from in Terminal, to play a teammate. Set Settings → Organisation → Git → Pull strategy to
 **Rebase** before row 1 if an earlier walk changed it.
 
-Launch with
-`cd /Users/yehia/orca/workspaces/wakil-public/sealion && WAKIL_ORG=personal WAKIL_GIT_ALLOW_FILE=1 app/Wakil.app/Contents/MacOS/Wakil`,
+Launch from the worktree root with
+`WAKIL_ORG=personal WAKIL_GIT_ALLOW_FILE=1 app/Wakil.app/Contents/MacOS/Wakil`,
 make `walk-3a-iii` active with ⌘P, open an editor pane and press ⌘⇧G. Keep a Terminal window open;
 every Terminal command below is run from any folder.
 
