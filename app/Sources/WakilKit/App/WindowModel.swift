@@ -47,6 +47,8 @@ public final class WindowModel {
     public private(set) var conversations: [String: PlaceAgent] = [:]
     /// The conversations' ids in the order they were created: what `liveConversations` lists by.
     @ObservationIgnored private var conversationOrder: [String] = []
+    /// How many conversations this window has made: the next one's `PlaceAgent.ordinal`.
+    @ObservationIgnored private var conversationsMade = 0
     /// Which conversation each place shows: the one its screen, its thread and its turn are.
     public private(set) var screenConversations: [Place: String] = [:]
     /// The id each place's next conversation takes: reserved by the socket the place opened when
@@ -7296,6 +7298,7 @@ public final class WindowModel {
             refreshChipProduction(of: agent)
             // 2d-ii: the operator's own turn is a row, so what was actually
             // sent — a misheard sentence included — stays on screen.
+            agent.noteSend(text)
             agent.appendRow(label: "you", detail: text)
             var outgoing = await textWithIdentifierNote(text, for: agent)
             // 3a-iii-b: instructions edited since this session started ride ahead of the words.
@@ -7547,6 +7550,7 @@ public final class WindowModel {
         agent.providerId = providerId
         retainAgentPlace()
         agent.sessionId = child
+        agent.sessionIds.insert(parent)
         // A resume is a fork: the child is a new conversation id, so the
         // window's assigned identity moves with it.
         agent.assignedSessionId = child
@@ -8190,7 +8194,8 @@ public final class WindowModel {
         let id = reservedConversations.removeValue(forKey: place) ?? UUID().uuidString
         let created = PlaceAgent(
             id: id, place: place, providerId: providerId,
-            mirror: TerminalMirrorFeed(panes: panes, layout: layout))
+            mirror: TerminalMirrorFeed(panes: panes, layout: layout), ordinal: conversationsMade)
+        conversationsMade += 1
         conversations[id] = created
         conversationOrder.append(id)
         screenConversations[place] = id
@@ -8832,6 +8837,7 @@ public final class WindowModel {
         guard let row = thoughtRow(id: agent.nextThoughtId, for: event) else { return }
         agent.nextThoughtId += 1
         agent.thoughts.append(row)
+        agent.lastActivity = Date()
     }
 
     // MARK: - Terminal mirror (Task 15) — see `TerminalMirrorFeed`

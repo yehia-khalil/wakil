@@ -127,7 +127,7 @@ private let keptPerPlace: Set<String> = [
     // shows: an unseen result or failure, and whether its environment is production (Plan 4) —
     // the order they were created in, which one each place shows, and the id each place's next
     // one takes (conversations 1 of 3). `agents` is their projection by place.
-    "conversations", "conversationOrder", "screenConversations", "reservedConversations",
+    "conversations", "conversationOrder", "conversationsMade", "screenConversations", "reservedConversations",
     // The socket each shown place opened before a session took it, by its conversation, pinned
     // to that place.
     "shownSockets",

@@ -423,3 +423,20 @@ private final class ReplyGeneration: @unchecked Sendable {
         set { lock.withLock { _value = newValue } }
     }
 }
+
+private func sessionRow(_ id: String, parent: String? = nil) -> JSONValue {
+    var fields: [String: JSONValue] = ["id": .string(id), "firstPrompt": .string(id)]
+    if let parent { fields["parent"] = .string(parent) }
+    return .object(fields)
+}
+
+@Test func continueLeavesOutEveryChainALiveConversationHolds() {
+    let rows = PaletteItems.sessionItems(from: [
+        sessionRow("c", parent: "p"), sessionRow("p"), sessionRow("other"),
+    ])
+    #expect(PaletteItems.continueItems(rows, excluding: ["c"]).map(\.payload) == ["other"])
+    #expect(PaletteItems.continueItems(rows, excluding: ["p"]).map(\.payload) == ["other"],
+            "the child's transcript not listed yet: its parent is the chain's row")
+    let lone = PaletteItems.sessionItems(from: [sessionRow("c", parent: "gone"), sessionRow("other")])
+    #expect(PaletteItems.continueItems(lone, excluding: ["gone"]).map(\.payload) == ["other"])
+}

@@ -20,8 +20,15 @@ public struct PaletteItem: Sendable, Equatable, Identifiable {
     public let subtitle: String
     public let payload: String
     public let caution: Bool
+    /// A session row's chain: its own id and every ancestor its listing folded into it (plus the
+    /// parent it names, listed or not). Empty on every other row.
+    public let chain: Set<String>
 
-    public init(id: String, kind: Kind, title: String, subtitle: String, payload: String, caution: Bool = false) {
+    public init(
+        id: String, kind: Kind, title: String, subtitle: String, payload: String, caution: Bool = false,
+        chain: Set<String> = []
+    ) {
+        self.chain = chain
         self.id = id
         self.kind = kind
         self.title = title

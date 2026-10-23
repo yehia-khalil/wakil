@@ -29,7 +29,9 @@ public final class PlaceAgent {
     /// since. nil until the session's first turn records it.
     var launchedInstructions: String?
     /// The id the running child was started with; set and cleared with `harness`.
-    public internal(set) var sessionId: String?
+    public internal(set) var sessionId: String? {
+        didSet { if let sessionId { sessionIds.insert(sessionId) } }
+    }
     /// The socket the live session's shim reaches Wakil on (background agents 3 of 4, Task 4):
     /// the one the place opened when it was shown (`WindowModel.openShownSocket`), or for a
     /// replacement session one started before its harness; stopped when that harness is
@@ -73,15 +75,28 @@ public final class PlaceAgent {
     /// The conversation this place is in: what its arrangement is filed under.
     public internal(set) var lineageRoot: String?
     /// The conversation id minted for this place's work, before or with its first session.
-    public internal(set) var assignedSessionId: String?
+    public internal(set) var assignedSessionId: String? {
+        didSet { if let assignedSessionId { sessionIds.insert(assignedSessionId) } }
+    }
+    /// The conversation's title: `newConversationTitle` until its first `send` sets it, once,
+    /// from the typed text.
+    public internal(set) var title = newConversationTitle
+    /// Creation, each `send`, each event appended: what "most recent" orders by.
+    public internal(set) var lastActivity = Date()
+    /// The window-wide creation counter's value when this conversation was made.
+    public let ordinal: Int
+    /// Every session the conversation ran, plus the parent it forked from: Continue leaves out
+    /// whatever chain these name.
+    public internal(set) var sessionIds: Set<String> = []
     /// Whether work has begun here: the Landing draws until it has.
     public internal(set) var sessionStarted = false
     /// The provider the running session was built for; the window's `providerId` is the one a
     /// new session starts on.
     public internal(set) var providerId: String
 
-    init(id: String, place: Place, providerId: String, mirror: TerminalMirrorFeed) {
+    init(id: String, place: Place, providerId: String, mirror: TerminalMirrorFeed, ordinal: Int = 0) {
         self.id = id
+        self.ordinal = ordinal
         self.place = place
         self.providerId = providerId
         self.mirror = mirror
@@ -101,6 +116,12 @@ public final class PlaceAgent {
             environment: place.environment, lineageRoot: lineageRoot)
     }
 
+    /// A `send`: the first one names the conversation from the typed text.
+    func noteSend(_ text: String) {
+        if title == newConversationTitle { title = conversationTitle(text) }
+        lastActivity = Date()
+    }
+
     /// Lets every turn waiting on the session's start go on.
     func releaseStartWaiters() {
         let waiters = startWaiters ?? []
@@ -112,6 +133,7 @@ public final class PlaceAgent {
     func appendRow(label: String, detail: String, isError: Bool = false) {
         thoughts.append(ThoughtRow(id: nextThoughtId, label: label, detail: detail, isError: isError))
         nextThoughtId += 1
+        lastActivity = Date()
     }
 }
 
