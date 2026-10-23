@@ -769,8 +769,11 @@ struct ConversationSwitchTests {
 
         #expect(model.currentAgent === x, "the switch happened")
         #expect(x.thoughts == rowsBefore, "X's thread is untouched")
-        #expect(!(sessions.harnesses.in(placeA).first?.log ?? []).contains { $0.contains("landing message") },
-                "\(sessions.harnesses.in(placeA).first?.log ?? [])")
+        // X's own harness, by identity, not by the order harnesses were made in; and every
+        // harness's log, so a failure says which one heard what.
+        let xHarness = try #require(x.harness as? ScriptedHarness)
+        #expect(!xHarness.log.contains { $0.contains("landing message") },
+                "\(sessions.harnesses.issued.map { ($0 === xHarness ? "X" : "other", $0.log) })")
         #expect(model.liveConversations(in: placeA).map(\.id) == [x.id], "no conversation was made")
         #expect(model.status.contains("not sent"), "\(model.status)")
         #expect(composer.draft.isEmpty, "the Landing's words are not staged on X")
