@@ -170,7 +170,8 @@ struct ChangesStashesGroup: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("editor.changes.\(root.name).stash.\(id7)")
                 Spacer(minLength: 0)
-                if hovered == s.id || confirming == s.id {
+                // Always there, so VoiceOver and the checks reach them; quiet until the row is hovered.
+                Group {
                     action("Apply", "editor.changes.\(root.name).stash.\(id7).apply") {
                         Task { _ = await controls.apply(root.root, s, false); stashes = await controls.stashes(root.root) }
                     }
@@ -179,6 +180,7 @@ struct ChangesStashesGroup: View {
                     }
                     action("Drop", "editor.changes.\(root.name).stash.\(id7).drop") { confirming = s.id }
                 }
+                .opacity(hovered == s.id || confirming == s.id ? 1 : 0.35)
             }
             .padding(.leading, EditorColumn.ChangesSpace.m)
             .padding(.vertical, 3)
