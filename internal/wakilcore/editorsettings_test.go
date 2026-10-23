@@ -29,7 +29,7 @@ func TestNoSettingsFileReadsAsDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := s.Editor.Resolved()
-	want := EditorAppValues{FontSize: 12, WordWrap: false, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true}
+	want := EditorAppValues{FontSize: 12, WordWrap: false, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true, InlineBlame: true}
 	if got != want {
 		t.Errorf("Resolved() = %+v, want %+v", got, want)
 	}
@@ -64,7 +64,7 @@ func TestUpdateEditorAppSettingsWritesOnlyWhatItWasGiven(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Editor.Resolved(); got != (EditorAppValues{FontSize: 14, WordWrap: true, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true}) {
+	if got := s.Editor.Resolved(); got != (EditorAppValues{FontSize: 14, WordWrap: true, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true, InlineBlame: true}) {
 		t.Errorf("Resolved() = %+v", got)
 	}
 }

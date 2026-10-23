@@ -337,7 +337,7 @@ func TestConfigTreeCarriesTheEditorTiers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tree.Editor != (EditorAppValues{FontSize: 15, WordWrap: false, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true}) {
+	if tree.Editor != (EditorAppValues{FontSize: 15, WordWrap: false, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true, InlineBlame: true}) {
 		t.Errorf("tree.Editor = %+v", tree.Editor)
 	}
 	if tree.EditorError != "" {
