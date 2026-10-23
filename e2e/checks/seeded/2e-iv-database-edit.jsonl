@@ -6,9 +6,9 @@
 
 {"do":{"type":{"into":"settings.db.name","text":"ledger"}}}
 
-{"do":{"type":{"into":"settings.db.host","text":"db.internal"}}}
+{"do":{"type":{"into":"settings.db.host","text":"pg.local"}}}
 
-{"do":{"type":{"into":"settings.db.port","text":"3306"}}}
+{"do":{"type":{"into":"settings.db.port","text":"3311"}}}
 
 {"do":{"type":{"into":"settings.db.database","text":"ledger"}}}
 
@@ -24,7 +24,7 @@
 
 {"do":{"click":"settings.dsn.confirm"}}
 
-{"expect":{"tree":"contains","text":"e2e@db.internal:3306/ledger"}}
+{"expect":{"tree":"contains","text":"e2e@pg.local:3311/ledger"}}
 
 {"expect":{"tree":"absent","text":"Store a connection for ledger in staging?"}}
 
@@ -36,23 +36,23 @@
 
 {"expect":{"tree":"contains","text":"EDIT ledger"}}
 
-{"expect":{"tree":"contains","text":"Value: db.internal"}}
+{"expect":{"tree":"contains","text":"Value: pg.local"}}
 
-{"expect":{"tree":"contains","text":"Value: 3306"}}
+{"expect":{"tree":"contains","text":"Value: 3311"}}
 
 {"do":{"focus":"settings.db.port"}}
 
 {"do":{"hotkey":"cmd+a"}}
 
-{"do":{"keys":"3307"}}
+{"do":{"keys":"3399"}}
 
-{"expect":{"tree":"contains","text":"Value: 3307"}}
+{"expect":{"tree":"contains","text":"Value: 3399"}}
 
 {"do":{"click":"settings.db.save"}}
 
-{"expect":{"tree":"contains","text":"e2e@db.internal:3307/ledger"}}
+{"expect":{"tree":"contains","text":"e2e@pg.local:3399/ledger"}}
 
-{"expect":{"tree":"absent","text":"e2e@db.internal:3306/ledger"}}
+{"expect":{"tree":"absent","text":"e2e@pg.local:3311/ledger"}}
 
 {"expect":{"tree":"absent","text":"Store a connection for ledger in staging?"}}
 
@@ -76,7 +76,7 @@
 
 {"expect":{"tree":"contains","text":"ADD OR REPLACE A DATABASE"}}
 
-{"expect":{"tree":"contains","text":"e2e@db.internal:3307/ledger"}}
+{"expect":{"tree":"contains","text":"e2e@pg.local:3399/ledger"}}
 
 {"expect":{"tree":"absent","text":"newsecret"}}
 
@@ -98,7 +98,7 @@
 
 {"expect":{"tree":"contains","text":"Value: other"}}
 
-{"expect":{"tree":"contains","text":"e2e@db.internal:3307/ledger"}}
+{"expect":{"tree":"contains","text":"e2e@pg.local:3399/ledger"}}
 
 {"do":{"focus":"settings.db.name"}}
 
@@ -132,7 +132,7 @@
 
 {"expect":{"tree":"absent","text":"Value: other"}}
 
-{"expect":{"tree":"contains","text":"e2e@db.internal:3307/ledger"}}
+{"expect":{"tree":"contains","text":"e2e@pg.local:3399/ledger"}}
 
 {"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"orders","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/orders"}}}
 
