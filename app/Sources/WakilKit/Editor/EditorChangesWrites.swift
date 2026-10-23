@@ -410,11 +410,14 @@ func registerEditorChangesWrites(
          "Apply one stash by index and id and drop it. A clash puts back the files it touched and keeps the stash.", nil),
         ("editor_changes_stash_drop", "git_stash_drop", ["index", "id"], ["root", "index", "id"],
          "Drop one stash by index and id; it cannot be applied again. Asks the operator when you ask.", .gate),
-        ("editor_changes_stash_drop_all", "git_stash_drop_all", [], ["root"],
-         "Drop every stash in one root; none can be applied again. Asks the operator when you ask.", .gate),
+        ("editor_changes_stash_drop_all", "git_stash_drop_all", ["ids"], ["root"],
+         "Drop the stashes listed by editor_changes_stashes (ids) in one root's repository — its worktrees share the list; one pushed since is kept. None can be applied again. Asks the operator when you ask.", .gate),
     ] as [(String, String, [String], [String], String, GateDecision?)] {
         var props: [String: JSONValue] = [:]
-        for k in keys { props[k] = ["index"].contains(k) ? integer : ["force"].contains(k) ? boolean : string }
+        for k in keys {
+            props[k] = k == "index" ? integer : k == "force" ? boolean
+                : k == "ids" ? .object(["type": .string("array"), "items": string]) : string
+        }
         await registry.register(Action(
             name: name, description: what + " root (absolute).", kind: .mutate, audience: .agentReachable,
             schema: rootSchema(props, required: required),

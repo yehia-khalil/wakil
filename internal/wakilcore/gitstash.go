@@ -76,6 +76,10 @@ func stashUntracked(ctx context.Context, g *GitRunner, id string) []string {
 // Stash sets the root's changes aside: mode "default" (tracked changes), "untracked" (with untracked
 // files) or "staged" (what is staged only).
 func (w *GitWriter) Stash(ctx context.Context, message, mode string) error {
+	// Mid-merge, a stash takes the merge's state with it and the merge is gone.
+	if what := w.inProgress(ctx); what != "" {
+		return UserError(what + " is in progress in " + w.Root + "; finish or abort it first")
+	}
 	args := []string{"push"}
 	switch mode {
 	case "untracked":
@@ -170,10 +174,34 @@ func (w *GitWriter) StashDrop(ctx context.Context, index int, id string) error {
 	return err
 }
 
-// StashDropAll drops every stash in the root.
-func (w *GitWriter) StashDropAll(ctx context.Context) error {
-	_, err := w.git(ctx, nil, "stash", "clear")
-	return err
+// stashRef is the stash with commit id where it sits now ("stash@{n}"); false when it is gone. The
+// list is shared with the terminal and every worktree, so a position is looked up, never assumed.
+func (w *GitWriter) stashRef(ctx context.Context, id string) (string, bool) {
+	out, err := w.runner().Run(ctx, "log", "-g", "--format=%H", "refs/stash", "--")
+	if err != nil {
+		return "", false
+	}
+	for i, h := range strings.Fields(string(out)) {
+		if h == id {
+			return "stash@{" + strconv.Itoa(i) + "}", true
+		}
+	}
+	return "", false
+}
+
+// StashDropAll drops the stashes with these ids — the ones the operator was shown — and none pushed
+// since, in this worktree or another. One already gone is skipped.
+func (w *GitWriter) StashDropAll(ctx context.Context, ids []string) error {
+	for _, id := range ids {
+		ref, ok := w.stashRef(ctx, id)
+		if !ok {
+			continue
+		}
+		if _, err := w.git(ctx, nil, "stash", "drop", ref); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // removeInRoot deletes rel, an untracked file a failed apply restored, if it resolves inside root.

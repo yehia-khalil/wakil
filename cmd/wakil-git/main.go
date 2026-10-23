@@ -96,6 +96,10 @@ type stashRefArg struct {
 	Index int    `json:"index" jsonschema:"the stash's position in git_stashes"`
 	ID    string `json:"id" jsonschema:"the stash's commit id from git_stashes; refused if the position no longer holds it"`
 }
+type dropAllArg struct {
+	Root string   `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	IDs  []string `json:"ids" jsonschema:"the ids of the stashes shown (git_stashes); one pushed since is kept"`
+}
 type stashesResult struct {
 	Stashes []wakilcore.GitStash `json:"stashes"`
 }
@@ -410,13 +414,13 @@ func addWriteTools(s *mcp.Server) {
 			}
 			return nil, emptyResult{}, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_drop_all", Description: "Writes. Drops every stash in one root; none can be applied again."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, emptyResult, error) {
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_drop_all", Description: "Writes. Drops the listed stashes (by id) of the repository a root is in — the stash list is shared by its worktrees; one pushed since the list was read is kept. None can be applied again."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a dropAllArg) (*mcp.CallToolResult, emptyResult, error) {
 			w, fail := writer(a.Root)
 			if fail != nil {
 				return fail, emptyResult{}, nil
 			}
-			if err := w.StashDropAll(ctx); err != nil {
+			if err := w.StashDropAll(ctx, a.IDs); err != nil {
 				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
 			}
 			return nil, emptyResult{}, nil

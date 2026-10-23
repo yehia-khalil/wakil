@@ -71,7 +71,7 @@ private func branchWindow() async -> (WindowModel, BranchGit) {
         for (name, params) in [
             ("editor_changes_branch_delete", ["root": JSONValue.string("/p"), "branch": .string("side")]),
             ("editor_changes_stash_drop", ["root": .string("/p"), "index": .integer(0), "id": .string(id)]),
-            ("editor_changes_stash_drop_all", ["root": .string("/p")]),
+            ("editor_changes_stash_drop_all", ["root": .string("/p"), "ids": .array([.string(id)])]),
         ] {
             await #expect(throws: ActionError.needsConfirmation(name)) {
                 _ = try await registry.dispatch(name: name, params: .object(params), origin: .agent,

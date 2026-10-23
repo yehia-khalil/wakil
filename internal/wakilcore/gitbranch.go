@@ -207,24 +207,36 @@ func (w *GitWriter) Switch(ctx context.Context, branch string, o SwitchOptions) 
 			stash = strings.TrimSpace(string(id))
 		}
 	}
+	var hookNote string
 	if _, err := w.git(steady, nil, "switch", args...); err != nil {
 		if paths := overwrittenPaths(err.Error()); len(paths) > 0 && stash == "" {
 			return SwitchResult{Blocked: paths}, nil
 		}
-		if stash != "" { // put the changes back where they were
-			w.git(steady, nil, "stash", "pop", "--index")
+		// A post-checkout hook's failure is reported as the switch's own: if HEAD moved, the
+		// switch happened, and the changes must not be popped back onto the new branch.
+		if cur, _ := ReadBranches(steady, w.runner()); cur.Current != branch {
+			if stash != "" { // put the changes back where they were, by the stash's own id
+				if ref, ok := w.stashRef(steady, stash); ok {
+					w.git(steady, nil, "stash", "pop", "--index", ref)
+				}
+			}
+			return SwitchResult{}, err
 		}
-		return SwitchResult{}, err
+		hookNote = "Switched to " + branch + ", but: " + err.Error()
 	}
-	r := SwitchResult{Switched: true, Stash: stash}
+	r := SwitchResult{Switched: true, Stash: stash, Note: hookNote}
 	if o.Carry != "bring" || stash == "" {
 		return r, nil
 	}
+	ref, ok := w.stashRef(steady, stash)
+	if !ok {
+		return r, nil // dropped elsewhere between the push and now: nothing of ours to pop
+	}
 	if ctx.Err() != nil {
-		r.Note = "Your changes are in git stash (stash@{0})"
+		r.Note = "Your changes are in git stash (" + ref + ")"
 		return r, nil
 	}
-	if _, err := w.git(steady, nil, "stash", "pop"); err != nil {
+	if _, err := w.git(steady, nil, "stash", "pop", ref); err != nil {
 		// git keeps the stash on a clash; the tree goes back to the branch's, so nothing is left
 		// half-merged — the stash holds every change (it was taken with the untracked files).
 		w.git(steady, nil, "reset", "--hard", "-q")

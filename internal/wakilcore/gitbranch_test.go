@@ -309,3 +309,42 @@ func TestSwitchRefusesAFlagForABranch(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// Review I1: Bring Them Along pops the stash it made, even when another lands on top before the pop.
+func TestBringAlongPopsItsOwnStash(t *testing.T) {
+	work, w, git := branchFixture(t)
+	git("branch", "other")
+	writeIn(t, work, "a.txt", "one\nMINE\nthree\n")
+	gitDir := git("rev-parse", "--absolute-git-dir")
+	// The switch's post-checkout hook stands in for another worktree stashing between push and pop.
+	os.WriteFile(filepath.Join(gitDir, "hooks", "post-checkout"), []byte("#!/bin/sh\n"+
+		"git -c user.name=t -c user.email=t@x stash push -q -m elsewhere --allow-empty 2>/dev/null || "+
+		"(echo e > elsewhere.txt && git stash push -q -u -m elsewhere)\n"), 0o755)
+	r, err := w.Switch(context.Background(), "other", SwitchOptions{Carry: "bring"})
+	if err != nil || !r.Switched {
+		t.Fatalf("r = %+v err %v", r, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(work, "a.txt")); string(b) != "one\nMINE\nthree\n" {
+		t.Fatalf("a.txt = %q", b)
+	}
+	if l := git("stash", "list"); !strings.Contains(l, "elsewhere") || strings.Contains(l, "wakil: switch") {
+		t.Fatalf("stashes = %q", l)
+	}
+}
+
+// Review I4: a post-checkout hook that fails after the checkout happened — the switch is reported
+// as done, and the stash is not popped back onto the new branch.
+func TestAFailingPostCheckoutHookStillSwitched(t *testing.T) {
+	work, w, git := branchFixture(t)
+	git("branch", "other")
+	writeIn(t, work, "a.txt", "one\nMINE\nthree\n")
+	gitDir := git("rev-parse", "--absolute-git-dir")
+	os.WriteFile(filepath.Join(gitDir, "hooks", "post-checkout"), []byte("#!/bin/sh\necho hook failed >&2\nexit 1\n"), 0o755)
+	r, err := w.Switch(context.Background(), "other", SwitchOptions{Carry: "stash"})
+	if err != nil || !r.Switched || current(t, w) != "other" {
+		t.Fatalf("r = %+v err %v on %s", r, err, current(t, w))
+	}
+	if !strings.Contains(r.Note, "hook failed") || git("stash", "list") == "" {
+		t.Fatalf("note %q, stashes %q", r.Note, git("stash", "list"))
+	}
+}

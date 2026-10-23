@@ -90,7 +90,8 @@ extension WindowModel {
         await plainWrite(root, "editor_changes_stash_drop", ["index": .integer(Int64(stash.index)), "id": .string(stash.id)])
     }
 
-    public func changesStashDropAll(root: String) async -> String? {
-        await plainWrite(root, "editor_changes_stash_drop_all", [:])
+    /// Drops the stashes the operator was shown, and none pushed since.
+    public func changesStashDropAll(root: String, stashes: [GitStashInfo]) async -> String? {
+        await plainWrite(root, "editor_changes_stash_drop_all", ["ids": .array(stashes.map { .string($0.id) })])
     }
 }

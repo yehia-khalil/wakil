@@ -534,7 +534,7 @@ extension WakilWindow {
                             stash: { root, message, mode in await model.changesStash(root: root, message: message, mode: mode) },
                             apply: { root, stash, pop in await model.changesStashApply(root: root, stash: stash, pop: pop) },
                             drop: { root, stash in await model.changesStashDrop(root: root, stash: stash) },
-                            dropAll: { await model.changesStashDropAll(root: $0) },
+                            dropAll: { root, shown in await model.changesStashDropAll(root: root, stashes: shown) },
                             rename: { root, to in await model.changesBranchRename(root: root, to: to) },
                             create: { root, name in await model.changesBranchCreate(root: root, name: name) })),
                     stageHunk: { await model.changesStageHunk() },

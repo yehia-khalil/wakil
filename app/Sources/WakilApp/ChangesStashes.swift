@@ -7,7 +7,7 @@ struct BranchStashControls {
     var stash: (_ root: String, _ message: String, _ mode: String) async -> String? = { _, _, _ in nil }
     var apply: (_ root: String, _ stash: GitStashInfo, _ pop: Bool) async -> String? = { _, _, _ in nil }
     var drop: (_ root: String, _ stash: GitStashInfo) async -> String? = { _, _ in nil }
-    var dropAll: (String) async -> String? = { _ in nil }
+    var dropAll: (_ root: String, _ shown: [GitStashInfo]) async -> String? = { _, _ in nil }
     var rename: (_ root: String, _ to: String) async -> String? = { _, _ in nil }
     var create: (_ root: String, _ name: String) async -> ChangesSwitchOutcome = { _, _ in .refused("") }
     var openStashFile: (_ root: String, _ path: String, _ stash: String, _ untracked: Bool) async -> Void = { _, _, _, _ in }
@@ -145,7 +145,8 @@ struct ChangesStashesGroup: View {
                 confirm(dropAllStashesConfirmation(stashes.count),
                         keepId: "editor.changes.\(root.name).stashes.dropAll.keep",
                         confirmId: "editor.changes.\(root.name).stashes.dropAll.confirm") {
-                    Task { _ = await controls.dropAll(root.root); stashes = await controls.stashes(root.root) }
+                    let shown = stashes
+                    Task { _ = await controls.dropAll(root.root, shown); stashes = await controls.stashes(root.root) }
                 }
             }
         }

@@ -112,7 +112,7 @@ func TestAMovedStashListIsRefused(t *testing.T) {
 	if n := len(strings.Split(git("stash", "list"), "\n")); n != 2 {
 		t.Fatalf("a stash went: %d left", n)
 	}
-	if err := w.StashDropAll(ctx); err != nil || git("stash", "list") != "" {
+	if err := w.StashDropAll(ctx, []string{read[0].ID, git("rev-parse", "stash@{0}")}); err != nil || git("stash", "list") != "" {
 		t.Fatalf("drop all: %v", err)
 	}
 }
@@ -178,7 +178,7 @@ func TestAClashNeverDeletesTheOperatorsFiles(t *testing.T) {
 	}
 	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
 	git("commit", "-qam", "moved on")
-	writeIn(t, work, "u.txt", "OPERATOR\n")     // the operator's own, untracked
+	writeIn(t, work, "u.txt", "OPERATOR\n")      // the operator's own, untracked
 	writeIn(t, work, "notes.txt", "unrelated\n") // a name a split on spaces would hit
 	s, _ := ReadStashes(ctx, w.runner())
 	if got := strings.Join(s[0].Files, "|"); got != "a.txt|café.txt|my notes.txt|u.txt" {
@@ -195,5 +195,44 @@ func TestAClashNeverDeletesTheOperatorsFiles(t *testing.T) {
 	}
 	if git("stash", "list") == "" {
 		t.Fatal("the stash went")
+	}
+}
+
+// Review I3: a stash mid-merge would throw the merge away; it is refused, as a switch is.
+func TestStashRefusesMidMerge(t *testing.T) {
+	work, w, git := branchFixture(t)
+	git("switch", "-q", "-c", "side")
+	writeIn(t, work, "s.txt", "s\n")
+	git("add", "s.txt")
+	git("commit", "-qm", "side")
+	git("switch", "-q", "main")
+	git("merge", "--no-commit", "--no-ff", "side")
+	err := w.Stash(context.Background(), "", "default")
+	if err == nil || !strings.HasPrefix(err.Error(), "A merge is in progress in ") {
+		t.Fatalf("err = %v", err)
+	}
+	gitDir := git("rev-parse", "--absolute-git-dir")
+	if _, err := os.Stat(filepath.Join(gitDir, "MERGE_HEAD")); err != nil {
+		t.Fatal("the merge was thrown away")
+	}
+}
+
+// Review I2: Drop All drops the stashes the operator was shown, not one pushed since.
+func TestDropAllDropsOnlyTheListedStashes(t *testing.T) {
+	work, w, git := branchFixture(t)
+	ctx := context.Background()
+	writeIn(t, work, "a.txt", "1\n")
+	w.Stash(ctx, "one", "default")
+	writeIn(t, work, "a.txt", "2\n")
+	w.Stash(ctx, "two", "default")
+	shown, _ := ReadStashes(ctx, w.runner())
+	writeIn(t, work, "a.txt", "3\n")
+	git("stash", "push", "-q", "-m", "from the terminal")
+	ids := []string{shown[0].ID, shown[1].ID}
+	if err := w.StashDropAll(ctx, ids); err != nil {
+		t.Fatal(err)
+	}
+	if l := git("stash", "list"); !strings.Contains(l, "from the terminal") || strings.Contains(l, "one") || strings.Contains(l, "two") {
+		t.Fatalf("list = %q", l)
 	}
 }
