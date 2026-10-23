@@ -3326,6 +3326,32 @@ The operator walked it on this Mac, under `personal`, and **all ten steps pass**
   4 runs on 2026-10-16); `3b-i-editor-unsaved-save.jsonl` lost its app once with no crash report.
 - North-star §8 has no Phase 3b rows, so 3b-iii's `Met` is recorded here and in the runbook.
 
+## 2026-10-22 — 3a-ii walked: stage, unstage, discard and commit from the Changes view
+
+**3a-ii is the fourth write** (Invariant 6, Decision 43). The Changes view gets VS Code's Source Control:
+a message box per root, ⌘⏎ to commit, Commit All with nothing staged, Amend and Undo Last Commit,
++ / − / ↺ on rows and group headers, and Stage Change in the gutter peek. Discard sends the current copy
+to the Trash first, so nothing asks. Writes go through `GitWriter` in `wakil-git`, which lets hooks and
+signing run while reads still run none, and every commit carries the organisation's name and email from
+Settings → Organisation → Git. Design in `docs/superpowers/specs/2026-10-21-3a-ii-git-writes-design.md`;
+walk in `phase-3a-ii-acceptance.md`. Shipped as #40 and #41.
+
+The operator walked it on this Mac and **all twenty steps pass**, after the three walk fixes below.
+
+### What the walk found that no unit test could
+
+| Found at | Defect | Fixed in |
+|---|---|---|
+| walk | only the message box's first line took a click | #41 |
+| walk | a second ⌥ hold hid the text already typed, so it was said again and went in twice | #41 |
+| walk | + − ↺ gave no sign of the pointer | #41 |
+
+### What the walk left unestablished
+
+- The runbook's §2 (known and not fixed) and §3 (signing, the Trash's names, the peek's HTML button,
+  the Commit / Commit All label) stand as written there.
+- `make e2e-full` was not run on #41's head; its runbook records which checks ran on that build.
+
 ## 2026-10-22 — 3a-ii-b walked: stage and unstage selected ranges, and a drafted commit message
 
 **3a-ii-b finishes 3a-ii's write path.** A Changes diff tab stages only the selected lines (a
@@ -3352,4 +3378,38 @@ The operator walked it on this Mac and **all ten steps pass**, after the two wal
   `bg-agent-chip-over-landing.jsonl` are red there **and on `main`** (re-run against a 91f64b7 bundle,
   same failures), so not this branch's; neither has an issue yet.
 - Deferred minors from the final review are listed in the runbook's §2.
+
+## 2026-10-22 — 3a-iii walked: git accounts, remotes and agent instructions
+
+**3a-iii is the seventh write** (Invariant 6, Decisions 44 and 45). Each organisation keeps one git
+account per host in Settings → Organisation → Git — an SSH key Wakil generates or one picked from
+`~/.ssh`, a pasted token, a GitHub CLI login, or Sign in once Wakil's OAuth apps exist — and Wakil
+hands each git command that account alone, writing nothing to `~/.ssh` or any git config. The Changes
+view fetches, pulls, pushes, publishes and syncs; + Add a project clones from a link; Pull's strategy
+is the organisation's. Agent instructions (General, Commits, Pull requests, per organisation and per
+project) are appended after Wakil's own prompt and reach a live agent in its next turn. Design in
+`docs/superpowers/specs/2026-10-22-3a-iii-git-accounts-and-remotes-design.md`; walk in
+`phase-3a-iii-acceptance.md`. Shipped as #48 and #49.
+
+The operator walked it on this Mac and **all ten steps pass**, after the fixes below.
+
+### What review, Cover and the walk found that no unit test could
+
+| Found at | Defect | Fixed in |
+|---|---|---|
+| review | a generated key never authenticated: ssh cannot run an askpass with arguments | #49 |
+| review | the credential helper gave its token to any host git asked | #49 |
+| review | Pull aborted a merge the operator was in the middle of | #49 |
+| review | a resumed conversation missed instruction edits | #49 |
+| walk | a remote recorded as a local path was refused, and the file-remote switch never reached wakil-git | #49 |
+| walk | Pull under Rebase refused uncommitted changes; ruled: Pull and Sync use `--autostash` | #49 |
+| walk | the account sheet read empty answers: Generate showed no key, Remove left it behind | #49 |
+| walk | a clone under `/private/var` was outside the project's roots | #49 |
+| walk | the Git section, the account sheet and the clone sheet read badly; redesigned at the operator's ask | #49 |
+| Cover | the sheet's lists were refused by their own schema; the remote button was hidden from accessibility | #49 |
+
+### What the walk left unestablished
+
+- Sign in (device flow) waits on Wakil's OAuth apps (`operator-todo.md`).
+- The runbook's §2 and §3 stand as written there; `make e2e-full` was not run on #49's head.
 
