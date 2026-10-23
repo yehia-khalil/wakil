@@ -40,12 +40,31 @@ public final class WindowModel {
     public var place: Place {
         Place(organization: organization, project: projectKey, environment: environment)
     }
-    /// One agent per place (background agents, 3 of 4): each with its own harness, session,
-    /// thread and turn, alive while the screen shows another place. Created on the first work
-    /// in a place; no switch of organisation, project or environment stops or drops one.
-    public private(set) var agents: [Place: PlaceAgent] = [:]
+    /// Every conversation, by its id (`PlaceAgent.id`, conversations 1 of 3): each with its own
+    /// harness, session, thread and turn, alive while the screen shows another place. Created on
+    /// the first work in a place; no switch of organisation, project or environment stops or
+    /// drops one.
+    public private(set) var conversations: [String: PlaceAgent] = [:]
+    /// The conversations' ids in the order they were created: what `liveConversations` lists by.
+    @ObservationIgnored private var conversationOrder: [String] = []
+    /// Which conversation each place shows: the one its screen, its thread and its turn are.
+    public private(set) var screenConversations: [Place: String] = [:]
+    /// The id each place's next conversation takes: reserved by the socket the place opened when
+    /// it was shown (`openShownSocket`), and taken when the conversation is created (`agent(for:)`).
+    private var reservedConversations: [Place: String] = [:]
+    /// The conversation each place shows, by place (background agents, 3 of 4): what every
+    /// place-level reader reads, one per place.
+    public var agents: [Place: PlaceAgent] {
+        screenConversations.compactMapValues { conversations[$0] }
+    }
     /// The agent of the place on screen, if work has begun there.
-    public var currentAgent: PlaceAgent? { agents[place] }
+    public var currentAgent: PlaceAgent? { screenConversations[place].flatMap { conversations[$0] } }
+    /// The conversation stored under `id`, on screen or not.
+    public func conversation(id: String) -> PlaceAgent? { conversations[id] }
+    /// Every conversation — or, given a place, that place's — in the order they were created.
+    public func liveConversations(in place: Place? = nil) -> [PlaceAgent] {
+        conversationOrder.compactMap { conversations[$0] }.filter { place == nil || $0.place == place }
+    }
     /// The name of an agent whose session is live in `project` (and, when given, in that
     /// `environment` of it) of the window's current organisation, or nil: what renaming or
     /// removing the place checks first (Invariant 5). Live is a harness, as in `agentPlaces`.
@@ -498,10 +517,11 @@ public final class WindowModel {
     /// place wherever the screen is. One per session, opened when its place is first shown
     /// (`openShownSocket`) and stopped with the session that took it.
     private let agentSocketFactory: AgentSocketFactory
-    /// The socket each shown place opened before a session there took it, by place
-    /// (`openShownSocket`). A place's first session takes its socket and its id (`makeSession`);
-    /// a session replaced before then (`resume`, `setProvider`) stops it (`stopSession`).
-    @ObservationIgnored private var shownSockets: [Place: ShownSocket] = [:]
+    /// The socket each shown place opened before a session there took it, by the conversation
+    /// it answers for (`openShownSocket`). A conversation's first session takes its socket and its
+    /// id (`makeSession`); a session replaced before then (`resume`, `setProvider`) stops it
+    /// (`stopSession`).
+    @ObservationIgnored private var shownSockets: [String: ShownSocket] = [:]
     /// Set by `shutdown`: no place opens a socket after it.
     @ObservationIgnored private var socketsClosed = false
     /// Builds a credentials lookup for a given org.
@@ -1654,7 +1674,7 @@ public final class WindowModel {
     /// TEST-ONLY: the session id `place`'s shown socket answers for, while no session has taken
     /// it (`openShownSocket`).
     func shownSocketSessionIdForTesting(_ place: Place) -> String? {
-        shownSockets[place]?.sessionId
+        shownSockets.values.first { $0.place == place }?.sessionId
     }
 
     /// TEST-ONLY: waits for every shown socket's start.
@@ -1668,7 +1688,8 @@ public final class WindowModel {
     }
 
     func startHarnessForTesting() async -> AgentHarness? {
-        guard let started = await startHarness(in: place, provider: providerId, sessionId: UUID().uuidString)
+        let id = UUID().uuidString
+        guard let started = await startHarness(in: place, provider: providerId, sessionId: id, conversation: id)
         else { return nil }
         await started.socket?.stop()
         return started.harness
@@ -3524,10 +3545,10 @@ public final class WindowModel {
             && from.project == project && (environment == nil || from.environment == environment)
         {
             let to = renamed(from)
-            guard agents[to] == nil else { continue }
-            agents[from] = nil
+            guard screenConversations[to] == nil else { continue }
+            screenConversations[from] = nil
             agent.place = to
-            agents[to] = agent
+            screenConversations[to] = agent.id
         }
     }
 
@@ -6896,7 +6917,7 @@ public final class WindowModel {
     /// captures the first two when the turn is typed, and the operator can have moved the screen
     /// by the time this runs. The session id names the socket, which is started first.
     private func startHarness(
-        in startPlace: Place, provider: String, sessionId: String
+        in startPlace: Place, provider: String, sessionId: String, conversation: String
     ) async -> StartedSession? {
         guard !provider.isEmpty else {
             status = "no agent session: no provider is active for this window yet"
@@ -6908,7 +6929,8 @@ public final class WindowModel {
             return nil
         }
         guard let started = await makeSession(
-            in: startPlace, ProviderSelection(id: provider, credentials: credentials), sessionId: sessionId)
+            in: startPlace, ProviderSelection(id: provider, credentials: credentials), sessionId: sessionId,
+            conversation: conversation)
         else {
             status = "no agent session: no agent available for provider \(provider)"
             return nil
@@ -6925,9 +6947,11 @@ public final class WindowModel {
     }
 
     /// A socket a place opened when it was shown, before any session there took it: the session
-    /// id it answers for, and its start, which whoever takes or stops it awaits.
+    /// id it answers for, the place it is pinned to, and its start, which whoever takes or stops
+    /// it awaits.
     private struct ShownSocket {
         let sessionId: String
+        let place: Place
         let opening: Task<OpenedSocket, Never>
     }
 
@@ -6937,14 +6961,15 @@ public final class WindowModel {
         let failure: String?
     }
 
-    /// Starts the socket at `agentSocketPath(agentSessionId:)`, answering for `place` and
-    /// `sessionId` — every call on it is that session's, from its first frame to its last,
-    /// wherever the screen is. A throw is kept as the sentence the session's status shows.
+    /// Starts the socket at `agentSocketPath(agentSessionId:)`, answering for `place`,
+    /// `sessionId` and `conversation` — every call on it is that session's, in that conversation,
+    /// from its first frame to its last, wherever the screen is. A throw is kept as the sentence
+    /// the session's status shows.
     private nonisolated static func openSocket(
-        _ factory: AgentSocketFactory, in place: Place, sessionId: String
+        _ factory: AgentSocketFactory, in place: Place, sessionId: String, conversation: String
     ) async -> OpenedSocket {
         let path = agentSocketPath(agentSessionId: sessionId)
-        let caller = DispatchCaller(place: place, session: sessionId)
+        let caller = DispatchCaller(place: place, session: sessionId, conversation: conversation)
         do {
             return OpenedSocket(socket: try await factory(path, { caller }), failure: nil)
         } catch {
@@ -6969,21 +6994,37 @@ public final class WindowModel {
     /// **Not mid organisation switch** (`switching`): the window passes through the outgoing
     /// organisation with its project cleared, which is no place the operator was shown.
     /// `setOrganization` opens the place it lands on once the switch is over.
+    ///
+    /// **Keyed by the conversation it answers for**: the place's screen conversation when it has
+    /// one, else the id the place reserves for its next conversation (`reservedConversations`),
+    /// which `agent(for:)` gives the conversation it creates there.
     private func openShownSocket() {
         let place = self.place
-        guard !socketsClosed, !switching, shownSockets[place] == nil else { return }
-        if let agent = agents[place], agent.harness != nil || agent.socket != nil { return }
-        let sessionId = agents[place]?.assignedSessionId ?? UUID().uuidString
+        guard !socketsClosed, !switching, !shownSockets.values.contains(where: { $0.place == place })
+        else { return }
+        let screen = currentAgent
+        if let screen, screen.harness != nil || screen.socket != nil { return }
+        let conversation: String
+        let sessionId: String
+        if let screen {
+            conversation = screen.id
+            sessionId = screen.assignedSessionId ?? screen.id
+        } else {
+            conversation = reservedConversations[place] ?? UUID().uuidString
+            reservedConversations[place] = conversation
+            sessionId = conversation
+        }
         let factory = agentSocketFactory
         // One that would not start is forgotten, so the place's next showing tries again.
         let opening = Task { [weak self] () -> OpenedSocket in
-            let opened = await Self.openSocket(factory, in: place, sessionId: sessionId)
-            if opened.socket == nil, let self, self.shownSockets[place]?.sessionId == sessionId {
-                self.shownSockets[place] = nil
+            let opened = await Self.openSocket(
+                factory, in: place, sessionId: sessionId, conversation: conversation)
+            if opened.socket == nil, let self, self.shownSockets[conversation]?.sessionId == sessionId {
+                self.shownSockets[conversation] = nil
             }
             return opened
         }
-        shownSockets[place] = ShownSocket(sessionId: sessionId, opening: opening)
+        shownSockets[conversation] = ShownSocket(sessionId: sessionId, place: place, opening: opening)
     }
 
     /// A new session's socket, then its harness, told that socket's path (background agents 3
@@ -6999,24 +7040,26 @@ public final class WindowModel {
     /// window-wide socket did before): the agent runs without Wakil's own tools, and
     /// `socketFailure` is the sentence its status shows, the reason whole.
     private func makeSession(
-        in place: Place, _ selection: ProviderSelection, sessionId: String
+        in place: Place, _ selection: ProviderSelection, sessionId: String, conversation: String
     ) async -> StartedSession? {
         let path = agentSocketPath(agentSessionId: sessionId)
         var opened: OpenedSocket?
         // Taken before the await, so nothing else can take or stop it meanwhile.
-        let shown = shownSockets[place].flatMap { $0.sessionId == sessionId ? $0 : nil }
+        let shown = shownSockets[conversation].flatMap { $0.sessionId == sessionId ? $0 : nil }
         if let shown {
-            shownSockets[place] = nil
+            shownSockets[conversation] = nil
             opened = await shown.opening.value
         }
         // None shown for this id, or it would not start: once more, now.
         if opened?.socket == nil {
-            opened = await Self.openSocket(agentSocketFactory, in: place, sessionId: sessionId)
+            opened = await Self.openSocket(
+                agentSocketFactory, in: place, sessionId: sessionId, conversation: conversation)
         }
         let socket = opened?.socket
         guard let harness = harnessFactory(place, selection, path) else {
-            if let shown, let opened, socket != nil, !socketsClosed, shownSockets[place] == nil {
-                shownSockets[place] = ShownSocket(sessionId: shown.sessionId, opening: Task { opened })
+            if let shown, let opened, socket != nil, !socketsClosed, shownSockets[conversation] == nil {
+                shownSockets[conversation] = ShownSocket(
+                    sessionId: shown.sessionId, place: shown.place, opening: Task { opened })
             } else {
                 await socket?.stop()
             }
@@ -7046,12 +7089,19 @@ public final class WindowModel {
         await agent.socket?.stop()
         agent.socket = nil
         agent.socketFailure = nil
-        // A socket the place opened for a session that never started: the one replacing it has
-        // its own, and two for one place would leave the place's channel ambiguous.
-        if let shown = shownSockets.removeValue(forKey: agent.place) {
+        // A socket the place opened for a session of this conversation that never started: the
+        // one replacing it has its own, and two for one conversation would leave its channel
+        // ambiguous.
+        if let shown = shownSockets.removeValue(forKey: agent.id) {
             await shown.opening.value.socket?.stop()
         }
-        await confirmations.cancelAgentProposal(in: agent.place)
+        await confirmations.cancelAgentProposal(inConversation: agent.id)
+        // And an agent's proposal in its place that names no conversation: no other conversation
+        // can claim it, and left parked it would hold the place's slot for ever (R1).
+        for (slot, parked) in await confirmations.allSlots()
+        where slot.place == agent.place && slot.conversation == nil && parked.origin == .agent {
+            await confirmations.cancel(id: parked.id)
+        }
     }
 
     /// Sends one turn to the agent, starting the session on the first call.
@@ -7151,7 +7201,9 @@ public final class WindowModel {
             // fallback described where the session starts below.
             let id = agent.assignedSessionId ?? UUID().uuidString
             agent.assignedSessionId = id
-            if let started = await startHarness(in: agent.place, provider: startProvider, sessionId: id) {
+            if let started = await startHarness(
+                in: agent.place, provider: startProvider, sessionId: id, conversation: agent.id
+            ) {
                 install(started, in: agent)
                 agent.providerId = startProvider
             }
@@ -7301,7 +7353,7 @@ public final class WindowModel {
         let read = agent.productionReads
         Task { [weak self] in
             guard let flags = try? await placeContexts.context(for: place).environmentProduction else { return }
-            guard let self, self.agents[place] === agent, agent.productionReads == read else { return }
+            guard let self, self.conversations[agent.id] === agent, agent.productionReads == read else { return }
             agent.showProduction(flags)
         }
     }
@@ -7400,7 +7452,8 @@ public final class WindowModel {
         // Minted before the harness: it names the fork's own socket, started first.
         let child = UUID().uuidString
         guard let started = await makeSession(
-            in: agent.place, ProviderSelection(id: providerId, credentials: credentials), sessionId: child)
+            in: agent.place, ProviderSelection(id: providerId, credentials: credentials), sessionId: child,
+            conversation: agent.id)
         else {
             status = "resume \(parent): no agent session available"
             return
@@ -7672,7 +7725,8 @@ public final class WindowModel {
         // Minted before the harness: it names the new session's own socket, started first.
         let fresh = UUID().uuidString
         guard let started = await makeSession(
-            in: agent.place, ProviderSelection(id: id, credentials: credentials), sessionId: fresh)
+            in: agent.place, ProviderSelection(id: id, credentials: credentials), sessionId: fresh,
+            conversation: agent.id)
         else {
             status = "set provider \(id): no agent session available"
             return
@@ -8060,9 +8114,9 @@ public final class WindowModel {
         // with the flag above: this is reached from a turn, a pane and a
         // resume, and two of those can happen in one gesture.
         if agent.assignedSessionId == nil {
-            // The id the place's shown socket answers for, so the session that starts here takes
-            // that socket (`openShownSocket`).
-            let id = shownSockets[agent.place]?.sessionId ?? UUID().uuidString
+            // The conversation's own id: the one the place's shown socket reserved, so the
+            // session that starts here takes that socket (`openShownSocket`, `agent(for:)`).
+            let id = agent.id
             agent.assignedSessionId = id
             // **A conversation started fresh is its own root**, which is
             // the same answer `wakilcore.LineageRootIn` gives for an id
@@ -8075,12 +8129,17 @@ public final class WindowModel {
         }
     }
 
-    /// The place's agent, created the first time work begins there.
+    /// The place's screen conversation, created the first time work begins there under the id the
+    /// place's shown socket reserved, or a fresh one.
     private func agent(for place: Place) -> PlaceAgent {
         if let existing = agents[place] { return existing }
+        let id = reservedConversations.removeValue(forKey: place) ?? UUID().uuidString
         let created = PlaceAgent(
-            place: place, providerId: providerId, mirror: TerminalMirrorFeed(panes: panes, layout: layout))
-        agents[place] = created
+            id: id, place: place, providerId: providerId,
+            mirror: TerminalMirrorFeed(panes: panes, layout: layout))
+        conversations[id] = created
+        conversationOrder.append(id)
+        screenConversations[place] = id
         return created
     }
 
