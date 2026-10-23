@@ -2846,17 +2846,15 @@ extension SettingsPane {
                 HStack(alignment: .center, spacing: 8) {
                     Chip(text: database.driver, tone: SettingsPalette.coolWhite.opacity(0.62))
                     if database.writable { Chip(text: "writable", tone: SettingsPalette.caution) }
-                    // The reference, never the value: the Keychain entry NAME. The secret it
-                    // names is read by the driver at query time and by nothing here.
-                    Text(database.writeRef.isEmpty
-                        ? "read \(database.ref)"
-                        : "read \(database.ref)   ·   write \(database.writeRef)")
-                        .font(.system(size: SettingsScale.meta, design: .monospaced))
-                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.34))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
                 }
-                HStack(spacing: SettingsScale.columnGap) {
+                // The reference, never the value: the Keychain entry NAME. The secret it names is
+                // read by the driver at query time and by nothing here. One ref a line, shortened
+                // in the middle when the column is narrow, so a ref never breaks inside its name.
+                VStack(alignment: .leading, spacing: 2) {
+                    keychainRef("read", database.ref)
+                    if !database.writeRef.isEmpty { keychainRef("write", database.writeRef) }
+                }
+                HStack(spacing: SettingsScale.fieldGap) {
                     databaseVerbs(database, path: path, environment: environment,
                                   removeKey: removeKey, revokeKey: revokeKey)
                 }
@@ -2879,6 +2877,16 @@ extension SettingsPane {
         .overlay(alignment: .bottom) {
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.06)).frame(height: 0.5)
         }
+    }
+
+    /// One Keychain ref of a database row, on a line of its own.
+    private func keychainRef(_ role: String, _ ref: String) -> some View {
+        Text("\(role) \(ref)")
+            .font(.system(size: SettingsScale.meta, design: .monospaced))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.34))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
     }
 
     /// A database's verbs, laid out by the caller on one line.

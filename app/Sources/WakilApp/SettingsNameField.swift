@@ -89,6 +89,9 @@ struct LeaveSavedTextField: View {
                     : .system(size: SettingsScale.body))
                 .foregroundStyle(SettingsPalette.coolWhite.opacity(0.88))
                 .lineLimit(1)
+                // A value longer than its column (a base URL) is shortened in the middle while
+                // it is not being edited, rather than cut at the column's edge.
+                .truncationMode(.middle)
                 .frame(maxWidth: maxWidth)
                 .inPlaceField(focused: focused)
                 .focused($focused)
