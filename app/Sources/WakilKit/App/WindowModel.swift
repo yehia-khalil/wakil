@@ -5243,13 +5243,19 @@ public final class WindowModel {
         let providers = await providerPaletteItems()
         let notes = [projects.note, sessions.note, providers.note].compactMap { $0 }
         if !notes.isEmpty { status = notes.joined(separator: "; ") }
-        return sessions.items
+        return PaletteItems.continueItems(sessions.items, excluding: liveSessionIds)
     }
 
     /// A Continue row: `session_resume` through the registry, origin `ui`, as ⌘P's session row
     /// runs it.
     public func continueSession(_ id: String) async {
         await dispatchLayout("session_resume", .object(["id": .string(id)]))
+    }
+
+    /// A Running row: `session_switch` through the registry, origin `ui`, as ⌘P's Running row
+    /// runs it — the same session brought back, no fork.
+    public func switchToRunning(_ conversation: String) async {
+        await dispatchLayout("session_switch", .object(["conversation": .string(conversation)]))
     }
 
     // MARK: Editor (3b-i)
@@ -6385,7 +6391,10 @@ public final class WindowModel {
 
     /// ⌘P's sources, in group order.
     private func paletteOpenSources(tables: TablesSource?) -> [any PaletteSource] {
+        // Read now, on the main actor: the live set as the palette opens.
+        let running = liveConversationRows()
         var sources: [any PaletteSource] = [
+            RunningConversationsSource(conversations: { running }),
             OpenPanesSource(panes: { [weak self] in await self?.palettePaneSummaries() ?? [] }),
             NewPaneSource(),
         ]
@@ -6404,7 +6413,12 @@ public final class WindowModel {
         sources.append(ItemsSource.projects(
             organisation: { [weak self] in await self?.organization ?? "" },
             read: { [weak self] org in await self?.currentOrganisationProjects(org) ?? ([], nil) }))
-        sources.append(ItemsSource.sessions(read: { [weak self] in await self?.sessionPaletteItems() ?? ([], nil) }))
+        // Ended sessions only: a live conversation's chain is listed once, under Running.
+        sources.append(ItemsSource.sessions(read: { [weak self] in
+            guard let self else { return ([], nil) }
+            let (items, note) = await self.sessionPaletteItems()
+            return (PaletteItems.continueItems(items, excluding: await self.liveSessionIds), note)
+        }))
         sources.append(ItemsSource.providers(read: { [weak self] in await self?.providerPaletteItems() ?? ([], nil) }))
         return sources
     }
@@ -6692,6 +6706,12 @@ public final class WindowModel {
         ofRFC3339 stamp: String, now: Date = Date()
     ) -> String? {
         PaletteItems.age(ofRFC3339: stamp, now: now)
+    }
+
+    /// How long ago `date` was, in Continue's vocabulary (`2m`, `1h 5m`, `yesterday`): a Running
+    /// row's age since its conversation's last activity.
+    public nonisolated static func age(since date: Date, now: Date = Date()) -> String {
+        PaletteItems.age(since: date, now: now)
     }
 
     /// ⌘P's provider rows — Task 12, the fix for the sub-phase's own
@@ -8076,10 +8096,7 @@ public final class WindowModel {
     /// organisation, project and environment (background agents 4 of 4). Empty when no agent
     /// works elsewhere, so the window's resting state is unchanged.
     public var chips: [AgentChip] {
-        // A conversation waits only on its own proposal; the operator's, parked in the same
-        // place, is not the agent asking for anything (final review, minor 1), nor is another
-        // conversation's.
-        let waiting = Set(parkedSlots.filter { $0.value.origin == .agent }.keys.compactMap(\.conversation))
+        let waiting = waitingConversations
         let shown = currentAgent
         return conversations.values
             .compactMap { agent -> AgentChip? in
@@ -8096,6 +8113,38 @@ public final class WindowModel {
                 ($0.place.organization, $0.place.project, $0.place.environment)
                     < ($1.place.organization, $1.place.project, $1.place.environment)
             }
+    }
+
+    /// The conversations an agent's own proposal waits on. A conversation waits only on its own
+    /// proposal; the operator's, parked in the same place, is not the agent asking for anything
+    /// (final review, minor 1), nor is another conversation's.
+    private var waitingConversations: Set<String> {
+        Set(parkedSlots.filter { $0.value.origin == .agent }.keys.compactMap(\.conversation))
+    }
+
+    /// Every live conversation — or, given a place, that place's — newest `lastActivity` first,
+    /// with its state: what the Landing's Running column and ⌘P's Running group list. Unlike a
+    /// chip, an idle, seen conversation and the one on screen are listed too (`.idle`).
+    public func liveConversationRows(in place: Place? = nil) -> [LiveConversation] {
+        let waiting = waitingConversations
+        let shown = currentAgent
+        return liveConversations(in: place)
+            .sorted { $0.lastActivity > $1.lastActivity }
+            .map { agent in
+                LiveConversation(
+                    id: agent.id, session: agent.sessionId, place: agent.place, title: agent.title,
+                    state: .of(
+                        waiting: waiting.contains(agent.id), failed: agent.unseenFailure,
+                        working: agent.turnInFlight, done: agent.unseenResult),
+                    onScreen: agent === shown, lastActivity: agent.lastActivity,
+                    isProduction: agent.productionEnvironment)
+            }
+    }
+
+    /// Every session a live conversation holds, its own and the parent it forked from: what
+    /// Continue and ⌘P's Sessions leave out, so a conversation is in one list only.
+    private var liveSessionIds: Set<String> {
+        conversations.values.reduce(into: Set<String>()) { $0.formUnion($1.sessionIds) }
     }
 
     // MARK: - Conversations 2 of 3: new and switch

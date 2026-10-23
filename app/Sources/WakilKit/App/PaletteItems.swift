@@ -150,7 +150,11 @@ enum PaletteItems {
                 return plain.date(from: stamp)
             }()
         guard let date = parsed else { return nil }
+        return age(since: date, now: now)
+    }
 
+    /// `age(ofRFC3339:)` for a date already in hand: a live conversation's last activity.
+    nonisolated internal static func age(since date: Date, now: Date = Date()) -> String {
         let seconds = now.timeIntervalSince(date)
         guard seconds > 0 else { return "now" }
 

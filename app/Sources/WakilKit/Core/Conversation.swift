@@ -58,10 +58,13 @@ public struct LiveConversation: Sendable, Equatable {
     public let state: ConversationState
     public let onScreen: Bool
     public let lastActivity: Date
+    /// Whether its place's environment is production, so its row keeps production red
+    /// (Invariant 8): the chip's own reading (`PlaceAgent.productionEnvironment`).
+    public let isProduction: Bool
 
     public init(
         id: String, session: String?, place: Place, title: String, state: ConversationState,
-        onScreen: Bool, lastActivity: Date
+        onScreen: Bool, lastActivity: Date, isProduction: Bool = false
     ) {
         self.id = id
         self.session = session
@@ -70,6 +73,12 @@ public struct LiveConversation: Sendable, Equatable {
         self.state = state
         self.onScreen = onScreen
         self.lastActivity = lastActivity
+        self.isProduction = isProduction
+    }
+
+    /// `<org> · <project> · <environment>`, empty members left out: the chip's label.
+    public var placeLabel: String {
+        [place.organization, place.project, place.environment].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     public var json: JSONValue {

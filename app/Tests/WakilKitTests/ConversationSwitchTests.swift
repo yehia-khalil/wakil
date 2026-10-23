@@ -8,6 +8,7 @@ import Testing
 
 private let org = "initech"
 private let placeA = Place(organization: org, project: "api", environment: "staging")
+private let placeB = Place(organization: org, project: "web", environment: "staging")
 
 @MainActor
 private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
@@ -430,6 +431,130 @@ struct ConversationSwitchTests {
         let caller = try #require(await caller(of: next.id, sessions))
         #expect(caller.place == renamed, "the reserved id's socket answers for the renamed place")
         await model.shutdown()
+    }
+
+    // MARK: Task 3: the Landing's Running column and ⌘P's Running group
+
+    @Test func runningListsThePlacesLiveConversationsNewestFirstWithTheirState() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        await model.newConversation()
+        #expect(await model.send("second job"))
+        await model.newConversation()
+
+        #expect(model.liveConversationRows(in: placeA).map(\.title) == ["second job", "first job"])
+        #expect(model.liveConversationRows(in: placeA).map(\.state) == [.working, .working])
+        #expect(model.liveConversationRows(in: placeA).allSatisfy { !$0.onScreen }, "the Landing is on screen")
+        #expect(model.liveConversationRows(in: placeB).isEmpty)
+        #expect(model.liveConversationRows().count == 2)
+
+        // A finished turn off screen is done, unseen — and, being the latest activity, first; one
+        // seen and finished is idle.
+        let first = try #require(model.liveConversations(in: placeA).first)
+        try #require(sessions.harnesses.in(placeA).first).emit(.result(isError: false, text: "done"))
+        #expect(await waitUntil { model.liveConversationRows(in: placeA).first?.state == .done })
+        #expect(model.liveConversationRows(in: placeA).map(\.title) == ["first job", "second job"])
+        await model.switchToConversation(first.id)
+        let onScreen = try #require(model.liveConversationRows(in: placeA).first { $0.id == first.id })
+        #expect(onScreen.state == .idle && onScreen.onScreen)
+        await model.shutdown()
+    }
+
+    @Test func aResumedPastSessionLeavesContinueAndJoinsRunning() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        await registerPastSessions(["parent-1", "other-1"], into: w.registry)
+        show(placeA, in: model)
+        #expect(await model.landingSessions().map(\.payload) == ["parent-1", "other-1"])
+
+        await model.continueSession("parent-1")
+        #expect(await waitUntil { model.currentAgent?.sessionIds.contains("parent-1") == true })
+        await model.newConversation()
+
+        #expect(await model.landingSessions().map(\.payload).contains("parent-1") == false)
+        #expect(await model.landingSessions().map(\.payload) == ["other-1"])
+        #expect(model.liveConversationRows(in: placeA).count == 1, "it is listed under Running instead")
+        let open = await model.paletteRootEntries(mode: .open) { _ in }
+        #expect(!open.contains { $0.group == .sessions && $0.payloadSession == "parent-1" },
+                "⌘P lists it once too, under Running")
+        await model.shutdown()
+    }
+
+    @Test func aRunningRowsClickSwitchesThroughTheRegistryAsTheOperator() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let first = try #require(model.currentAgent)
+        await model.newConversation()
+
+        await model.switchToRunning(first.id)
+
+        #expect(await waitUntil { model.currentAgent === first })
+        let journal = try await w.registry.journalEntries()
+        #expect(journal.contains { $0.action == "session_switch" && $0.origin == .ui })
+        #expect(sessions.harnesses.in(placeA).count == 1, "no fork")
+        await model.shutdown()
+    }
+
+    @Test func openModeListsRunningFirstAcrossPlaces() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeB, in: model)
+        #expect(await model.send("other place"))
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        await model.newConversation()
+
+        let entries = await model.paletteRootEntries(mode: .open) { _ in }
+
+        #expect(entries.first?.group == .running)
+        let running = entries.filter { $0.group == .running }
+        #expect(running.count == 2)
+        let first = try #require(model.liveConversations(in: placeA).first)
+        let row = try #require(running.first { $0.title == "first job" })
+        #expect(row.subtitle == "initech · api · staging · working")
+        #expect(row.verb == "switch to" && row.kindLabel == "conversation" && row.state == .working)
+        #expect(row.action == .dispatch(action: "session_switch", params: .object(["conversation": .string(first.id)])))
+
+        #expect(await model.performPalette(.run(row.action)) == nil)
+        #expect(await waitUntil { model.currentAgent === first }, "picking it switches there, no fork")
+        #expect(sessions.harnesses.in(placeA).count == 1)
+        await model.shutdown()
+    }
+}
+
+/// A `session_list` listing `ids`, newest first, and a `session_read` answering an empty
+/// transcript, so a Continue row can be resumed.
+private func registerPastSessions(_ ids: [String], into registry: ActionRegistry) async {
+    await registry.register(Action(
+        name: "session_list", description: "test double", kind: .read,
+        schema: .object(["type": .string("object")]),
+        handler: { _ in
+            .object(["structuredContent": .object(["sessions": .array(ids.map {
+                .object(["id": .string($0), "title": .string("past \($0)"), "provider": .string("test-provider")])
+            })])])
+        }))
+    await registry.register(Action(
+        name: "session_read", description: "test double", kind: .read,
+        schema: .object(["type": .string("object")]),
+        handler: { _ in
+            .object(["structuredContent": .object([
+                "cwd": .string("/tmp"), "provider": .string("test-provider"), "parent": .string(""),
+                "truncated": .bool(false), "entries": .array([]),
+            ])])
+        }))
+}
+
+private extension PaletteEntry {
+    /// The session a ⌘P Sessions row resumes.
+    var payloadSession: String? {
+        if case .resumeSession(let id) = action { return id }
+        return nil
     }
 }
 

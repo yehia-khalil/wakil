@@ -79,6 +79,31 @@ private extension AgentChip.State {
     }
 }
 
+extension ConversationState {
+    /// The dot's hue on a Running row (the Landing's, ⌘P's): the chip's own hue for the state,
+    /// and for an idle, seen conversation — which has no chip — §5's text luminance at half, grey.
+    var hue: Color {
+        switch self {
+        case .working: AgentChip.State.working.hue
+        case .waiting: AgentChip.State.waiting.hue
+        case .done: AgentChip.State.done.hue
+        case .failed: AgentChip.State.failed.hue
+        case .idle: coolWhite.opacity(0.50)
+        }
+    }
+
+    /// What VoiceOver says for the row's dot: the chip's word, and "idle".
+    var spoken: String {
+        switch self {
+        case .working: AgentChip.State.working.word
+        case .waiting: AgentChip.State.waiting.word
+        case .done: AgentChip.State.done.word
+        case .failed: AgentChip.State.failed.word
+        case .idle: "idle"
+        }
+    }
+}
+
 /// `#e8ecf6`, §5's text luminance, stepped by opacity.
 private let coolWhite = Color(EnvironmentBadge.ordinaryColour)
 
@@ -226,7 +251,8 @@ private struct MoreChip: View {
 /// time, so a dot that stops breathing — the agent's turn ends, or reduced motion comes on — is
 /// simply full on the next frame, with no running animation to unwind. Drawn at 120 frames a
 /// cycle, the room's own rule for its cadence (§7: at least 25 a cycle), and paused when still.
-private struct ChipDot: View {
+/// The Landing's and ⌘P's Running rows draw the same dot, so a conversation reads alike in all three.
+struct ChipDot: View {
     let colour: Color
     let breathes: Bool
 

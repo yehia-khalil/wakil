@@ -188,6 +188,31 @@ public struct OpenPanesSource: PaletteSource {
     }
 }
 
+// MARK: - Running
+
+/// Every live conversation, across every place (conversations 2 of 3): Return switches to it —
+/// the same session, brought on screen, no fork and no cost (`session_switch`).
+public struct RunningConversationsSource: PaletteSource {
+    public let id = "running"
+    public let group = PaletteGroup.running
+    private let conversations: @Sendable () async -> [LiveConversation]
+
+    public init(conversations: @escaping @Sendable () async -> [LiveConversation]) {
+        self.conversations = conversations
+    }
+
+    public func entries() async -> [PaletteEntry] {
+        await conversations().map { c in
+            PaletteEntry(
+                id: "running:\(c.id)", group: group, title: c.title,
+                subtitle: "\(c.placeLabel) \u{00b7} \(c.state.rawValue)", kindLabel: "conversation",
+                verb: "switch to",
+                action: .dispatch(action: "session_switch", params: .object(["conversation": .string(c.id)])),
+                isProduction: c.isProduction, state: c.state)
+        }
+    }
+}
+
 // MARK: - New pane
 
 /// The kinds the palette may open, in the order they are offered. `pane_open` refuses
