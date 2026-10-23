@@ -47,6 +47,59 @@ public enum DatabaseWording {
     public static func removal(name: String, environment: String) -> String {
         "Remove \(name) from \(environment)? Its Keychain entries are kept."
     }
+
+    /// The card's title, and in edit mode (2e-iv) the database it is filled from.
+    public static let cardTitle = "ADD OR REPLACE A DATABASE"
+    public static func editTitle(name: String) -> String { "EDIT \(name)" }
+
+    /// A password field left empty on Edit keeps the stored password (Rule 9).
+    public static let unchanged = "unchanged"
+
+    /// Above the card's fields when Edit opened a legacy record: its Keychain item is the whole
+    /// string, and splitting it would mean parsing a secret.
+    public static let legacyNote = "This connection was saved as one string, so it can't be shown. "
+        + "Type it once and it will be editable from then on."
+
+    /// A database row's location line, under its chips: `user@host:port/database` for a server
+    /// (the driver's default port when none is stored), the file for SQLite, and for a legacy
+    /// record the fact that there is nothing to show. Never a password — the tree has none.
+    public static func location(_ database: SettingsDatabase) -> String {
+        guard let connection = database.connection else { return "saved as one string" }
+        guard databaseDriverHasServer(database.driver) else { return connection.path }
+        let port = connection.port.isEmpty
+            ? (defaultDatabasePort(for: database.driver) ?? "") : connection.port
+        return "\(connection.user)@\(connection.host):\(port)/\(connection.database)"
+    }
+
+    /// The one check the card makes before Go does: a required part left empty, in Go's own
+    /// words and order. Everything else — the port's range, characters a driver reads as
+    /// structure, a MySQL user's colon — is Go's refusal, shown whole under the card.
+    public static func missingPart(_ fields: DatabaseConnectionFields) -> String? {
+        switch fields.driver {
+        case "sqlite":
+            return fields.path.isEmpty ? "a SQLite database needs the path to its file" : nil
+        case let driver where databaseDriverHasServer(driver):
+            if fields.host.isEmpty { return "a host is needed" }
+            if fields.user.isEmpty { return "a user is needed" }
+            if fields.database.isEmpty { return "a database name is needed" }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    /// Whether Save asks first (Rule 1): only when a password goes to the Keychain. A save of
+    /// host, port, database, user or path alone is an ordinary edit.
+    public static func asksBeforeSaving(password: String, grantWrite: Bool, writePassword: String) -> Bool {
+        !password.isEmpty || (grantWrite && !writePassword.isEmpty)
+    }
+
+    /// Asked before a password is stored. It names no part of the connection. A save that makes
+    /// the database writable says so: that is the other thing a Store it grants.
+    public static func connectionConfirmation(name: String, environment: String, becomesWritable: Bool) -> String {
+        "Store a connection for \(name) in \(environment)? The password goes to your Keychain, "
+            + "not to the project file" + (becomesWritable ? ", and this database becomes writable." : ".")
+    }
 }
 
 /// The keys an API entry's and a database's in-place writes, refusals and confirmations are held
@@ -74,18 +127,8 @@ public enum SettingsRowKey {
 }
 
 extension DatabaseConnectionFields {
-    /// The card field **Replace connection** puts the keyboard in (Rule 3): the first empty one a
-    /// connection needs, in the order the card draws them — host, database, user, password for a
-    /// server (the port has its default), the file for SQLite. Nil when all are filled.
+    /// The card's fields the keyboard can be put in (Rule 3), by focus key.
     public enum CredentialField: String, Sendable {
         case host, database, user, password, path
-    }
-
-    public var firstEmptyCredentialField: CredentialField? {
-        guard databaseDriverHasServer(driver) else { return path.isEmpty ? .path : nil }
-        let order: [(CredentialField, String)] = [
-            (.host, host), (.database, database), (.user, user), (.password, password),
-        ]
-        return order.first { $0.1.isEmpty }?.0
     }
 }

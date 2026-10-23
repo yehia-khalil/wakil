@@ -65,16 +65,32 @@ enum SettingsPalette {
 
 /// A form's own surface inside a pane: a slightly raised slab with a
 /// half-pixel luminous edge, brighter on top, and no outline.
-struct FormCard<Content: View>: View {
+///
+/// `accessory` sits on the title's line at the trailing edge — a quiet verb about the card itself,
+/// such as edit mode's **Cancel** (2e-iv) — so the card gains no row for it.
+struct FormCard<Accessory: View, Content: View>: View {
     let title: String
+    @ViewBuilder let accessory: Accessory
     @ViewBuilder let content: Content
+
+    init(title: String, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.accessory = accessory()
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.system(size: SettingsScale.micro, weight: .medium))
-                .tracking(SettingsScale.microTracking)
-                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.42))
+            HStack(alignment: .firstTextBaseline, spacing: SettingsScale.fieldGap) {
+                Text(title)
+                    .font(.system(size: SettingsScale.micro, weight: .medium))
+                    .tracking(SettingsScale.microTracking)
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.42))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+                accessory
+            }
             content
         }
         .padding(16)
@@ -89,6 +105,12 @@ struct FormCard<Content: View>: View {
                         colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)],
                         startPoint: .top, endPoint: .bottom),
                     lineWidth: 0.5))
+    }
+}
+
+extension FormCard where Accessory == EmptyView {
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.init(title: title, accessory: { EmptyView() }, content: content)
     }
 }
 
@@ -135,8 +157,8 @@ struct LabelledField: View {
     /// `width` is the most it takes rather than what it always takes: it narrows with the card,
     /// so a long field (a base URL, a token, a host) never runs past the pane (§14).
     var narrows: Bool = false
-    /// A focus the caller moves into this field, as `focusKey` (Rule 3): **Replace connection**
-    /// puts the keyboard in the first empty credential field.
+    /// A focus the caller moves into this field, as `focusKey` (Rule 3): **Edit** on a database
+    /// puts the keyboard in the first connection field.
     var focus: FocusState<String?>.Binding? = nil
     var focusKey: String = ""
 

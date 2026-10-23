@@ -591,10 +591,12 @@ extension WakilWindow {
                     // change it — `setProvider` is exactly what ⌘P calls.
                     runningAccountId: model.providerId,
                     use: { account in await model.setProvider(account.accountId) },
-                    setDatabaseDSN: { path, environment, name, driver, dsn, grant, writeDsn in
-                        await model.setDatabaseDSN(
+                    setDatabaseConnection: { path, environment, name, driver, connection, password,
+                                             grant, writePassword in
+                        await model.setDatabaseConnection(
                             projectPath: path, environment: environment, name: name,
-                            driver: driver, dsn: dsn, grantWrite: grant, writeDsn: writeDsn)
+                            driver: driver, connection: connection, password: password,
+                            grantWrite: grant, writePassword: writePassword)
                     },
                     removeDatabase: { path, environment, name in
                         await model.removeDatabase(

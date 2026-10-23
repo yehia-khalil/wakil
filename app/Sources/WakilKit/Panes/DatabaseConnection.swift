@@ -1,17 +1,15 @@
 import Foundation
 
-/// What the settings pane's database form asks for, before it is a
-/// connection string.
+/// What the settings pane's database card asks for: the parts of a
+/// connection, never the string.
 ///
-/// **The operator types parts; the driver's shape is this file's job.**
-/// The form used to take the string itself, and the fixture's own
-/// `mysql://e2e:secret@localhost/ledger` shows what that costs: URL form,
-/// which `go-sql-driver`'s `ParseDSN` refuses at first use, nowhere near the
-/// paste that caused it. Three drivers want three shapes, so the form asks
-/// for what a person knows and this builds what the driver reads.
-///
-/// `db_set_dsn` is unchanged: it still stores one string in the Keychain,
-/// redacted in the journal. Only the way the string is made moved.
+/// **The operator types parts; the driver's shape is Go's job (2e-iv).**
+/// The form once took the string itself, and the fixture's own
+/// `mysql://e2e:secret@localhost/ledger` showed what that costs: URL form,
+/// which `go-sql-driver`'s `ParseDSN` refuses at first use. The parts went
+/// to a Swift builder in 2e-ii; since 2e-iv they go to `db_set_connection`
+/// whole, and `wakilcore.BuildConnectionString` builds and refuses, so the
+/// shell, the agent's tools and this card share one builder.
 public struct DatabaseConnectionFields: Equatable, Sendable {
     public var driver: String
     public var host: String
@@ -36,14 +34,6 @@ public struct DatabaseConnectionFields: Equatable, Sendable {
     }
 }
 
-/// A connection string, or the sentence saying why none could be built.
-///
-/// A refusal never quotes the password: it is drawn on screen.
-public enum ConnectionStringResult: Equatable, Sendable {
-    case built(String)
-    case refused(String)
-}
-
 /// The drivers `wakilcore` registers, in the order the form offers them.
 public let databaseDrivers = ["mysql", "mongo", "sqlite"]
 
@@ -62,104 +52,62 @@ public func databaseDriverHasServer(_ driver: String) -> Bool {
     defaultDatabasePort(for: driver) != nil
 }
 
-/// Builds the connection string `fields.driver` reads.
+/// The card in edit mode (2e-iv): **Edit** on a row fills the ADD OR REPLACE A DATABASE card with
+/// everything known about that database but its password(s), which are never read back.
 ///
-/// **Refused rather than guessed.** Each shape has characters it treats as
-/// structure and no way to escape some of them — MySQL splits a user from
-/// its password on the FIRST `:` — so a part that would be read back as a
-/// different part is refused in words, and nothing is stored.
-public func databaseConnectionString(_ fields: DatabaseConnectionFields) -> ConnectionStringResult {
-    switch fields.driver {
-    case "sqlite":
-        return fields.path.isEmpty
-            ? .refused("a SQLite database needs the path to its file")
-            : .built(fields.path)
-    case "mysql", "mongo":
-        return serverConnectionString(fields)
-    default:
-        return .refused("\(fields.driver.debugDescription) is not a driver Wakil has — "
-            + "choose one of \(databaseDrivers.joined(separator: ", "))")
-    }
-}
+/// It also remembers what was there, so a password prompt can say `unchanged` only while that is
+/// true: Go keeps a stored password only for the same driver and the same user, and a prompt that
+/// promised otherwise would be refused at Save.
+public struct DatabaseCardEdit: Equatable, Sendable {
+    /// The database being edited, as the row names it.
+    public let name: String
+    /// Saved as one string (no `connection`): nothing to show, and every login must be typed.
+    public let legacy: Bool
+    /// The card's fields as Edit fills them. Passwords empty.
+    public let fields: DatabaseConnectionFields
+    /// Pre-checked on a writable record: saving without it would drop nothing (Go keeps the
+    /// writeRef) but a legacy writable record is refused without it, so the card starts where a
+    /// save works.
+    public let grantWrite: Bool
+    public let writeUser: String
+    private let originalDriver: String
+    private let storedUser: String
+    private let storedWriteUser: String
 
-private func serverConnectionString(_ fields: DatabaseConnectionFields) -> ConnectionStringResult {
-    if fields.host.isEmpty { return .refused("a host is needed") }
-    if fields.user.isEmpty { return .refused("a user is needed") }
-    if fields.database.isEmpty { return .refused("a database name is needed") }
-
-    let hostBreakers = CharacterSet(charactersIn: "/?#@()").union(.whitespacesAndNewlines)
-    if fields.host.rangeOfCharacter(from: hostBreakers) != nil {
-        return .refused("the host \(fields.host.debugDescription) contains a character "
-            + "that would be read as part of the address — give the name or IP alone")
-    }
-    let databaseBreakers = CharacterSet(charactersIn: "/?#").union(.whitespacesAndNewlines)
-    if fields.database.rangeOfCharacter(from: databaseBreakers) != nil {
-        return .refused("the database name \(fields.database.debugDescription) cannot "
-            + "contain / ? # or spaces")
-    }
-
-    let port = fields.port.isEmpty ? (defaultDatabasePort(for: fields.driver) ?? "") : fields.port
-    guard port.allSatisfy(\.isASCII), port.allSatisfy(\.isNumber),
-          let number = Int(port), (1...65535).contains(number)
-    else {
-        return .refused("the port must be a number from 1 to 65535")
+    public init(editing database: SettingsDatabase) {
+        name = database.name
+        let driver = databaseDrivers.contains(database.driver) ? database.driver : "mysql"
+        legacy = database.connection == nil
+        let connection = database.connection ?? SettingsDatabaseConnection()
+        fields = DatabaseConnectionFields(
+            driver: driver, host: connection.host, port: connection.port, user: connection.user,
+            database: connection.database, path: connection.path)
+        grantWrite = database.writable
+        writeUser = database.writable ? connection.writeUser : ""
+        storedUser = connection.user
+        storedWriteUser = database.writable ? connection.writeUser : ""
+        originalDriver = driver
     }
 
-    if fields.driver == "mysql" {
-        // `ParseDSN` takes the last `@` before the address and the first
-        // `:` of what precedes it — so a password may carry anything and a
-        // user may not carry a colon. The format has no escape for it.
-        if fields.user.contains(":") {
-            return .refused("a MySQL user cannot contain \":\" — the connection string "
-                + "has no way to escape it")
-        }
-        return .built("\(fields.user):\(fields.password)@tcp(\(fields.host):\(port))/\(fields.database)")
+    /// `unchanged` while leaving the password empty keeps the stored one: a split server record,
+    /// the same driver, the same user. Otherwise no prompt — the password is needed.
+    public func passwordPrompt(driver: String, user: String) -> String {
+        !legacy && databaseDriverHasServer(driver) && driver == originalDriver
+            && !storedUser.isEmpty && user == storedUser
+            ? DatabaseWording.unchanged : ""
     }
-    return .built("mongodb://\(percentEncodedUserinfo(fields.user)):"
-        + "\(percentEncodedUserinfo(fields.password))@\(fields.host):\(port)/\(fields.database)")
-}
 
-/// RFC 3986's unreserved characters stay; everything else is encoded, which
-/// is stricter than a URI requires and exactly what a mongo URI's parser
-/// decodes.
-private func percentEncodedUserinfo(_ text: String) -> String {
-    let unreserved = CharacterSet(
-        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-    return text.addingPercentEncoding(withAllowedCharacters: unreserved) ?? text
-}
-
-/// The two strings the form's Save sends, or why it cannot send them.
-public enum DatabaseFormCredentials: Equatable, Sendable {
-    /// `write` is nil unless writes were granted.
-    case built(read: String, write: String?)
-    case refused(String)
-}
-
-/// Builds what `db_set_dsn` takes from the whole form.
-///
-/// **The write credential is a second login to the same server**, so it
-/// shares host, port and database and changes only the user and password.
-/// A SQLite file has no logins, so writing it is the same path again.
-public func databaseFormCredentials(
-    _ fields: DatabaseConnectionFields, grantWrite: Bool,
-    writeUser: String, writePassword: String
-) -> DatabaseFormCredentials {
-    let read: String
-    switch databaseConnectionString(fields) {
-    case .refused(let reason): return .refused(reason)
-    case .built(let string): read = string
+    /// The same for the write login: a split record that already writes through `writeUser`.
+    public func writePasswordPrompt(driver: String, writeUser: String) -> String {
+        !legacy && databaseDriverHasServer(driver) && driver == originalDriver
+            && !storedWriteUser.isEmpty && writeUser == storedWriteUser
+            ? DatabaseWording.unchanged : ""
     }
-    guard grantWrite else { return .built(read: read, write: nil) }
-    guard databaseDriverHasServer(fields.driver) else { return .built(read: read, write: read) }
-    if writeUser.isEmpty {
-        return .refused("allowing writes needs the write login's user — write authority is a "
-            + "second credential the server granted, not the read one with a flag set")
-    }
-    var writeFields = fields
-    writeFields.user = writeUser
-    writeFields.password = writePassword
-    switch databaseConnectionString(writeFields) {
-    case .refused(let reason): return .refused("the write login: " + reason)
-    case .built(let write): return .built(read: read, write: write)
+
+    /// Where Edit puts the keyboard (Rule 3): the first connection field — the host, or the file
+    /// for SQLite. Not NAME: a database is renamed on its row, and a name typed here saves as a
+    /// second database.
+    public var focus: DatabaseConnectionFields.CredentialField {
+        databaseDriverHasServer(fields.driver) ? .host : .path
     }
 }
