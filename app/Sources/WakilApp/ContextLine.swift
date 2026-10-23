@@ -155,7 +155,10 @@ struct ContextLine: View {
         }
         .coordinateSpace(name: Self.space)
         .onPreferenceChange(SegmentFrameKey.self) { frames in
-            segmentFrames = frames
+            // Merged, not replaced: the Branch segment drops out for a moment while a switch re-reads
+            // its root, and a replaced map left its menu nowhere to hang until the line was drawn
+            // again (3a-iv walk). A segment's last place stands until it reports a new one.
+            segmentFrames.merge(frames) { _, new in new }
         }
         // **No opacity and no blur, in either state.** This line was filed on
         // §3's far plane, and `EnvironmentBadge` was then created to exempt
