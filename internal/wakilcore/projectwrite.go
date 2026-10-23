@@ -110,6 +110,18 @@ func SetDatabaseDSN(request DatabaseDSNRequest) error {
 			"write authority is a SECOND credential the database server granted, " +
 			"not the read credential with a flag set")
 	}
+	// **A string cannot keep a write login saved in parts.** A record saved
+	// in parts keeps only a password (or a SQLite path) in its write item;
+	// once this call stores a whole string, the record is no longer in
+	// parts and the resolver would read that kept item whole. The reverse
+	// of the refusal in `SetDatabaseConnection`.
+	for _, existing := range environment.Databases {
+		if existing.Name == request.Name && existing.Connection != nil &&
+			existing.WriteRef != "" && !request.GrantWrite {
+			return UserError("this database writes through a login saved in parts — " +
+				"allow writes and give the write connection string, or remove write access first")
+		}
+	}
 
 	// **A derived ref another row already names is not this row's to
 	// overwrite.** A rename keeps its refs (`UpdateDatabase`), so after
@@ -145,6 +157,10 @@ func SetDatabaseDSN(request DatabaseDSNRequest) error {
 		}
 		environment.Databases[i].Driver = request.Driver
 		environment.Databases[i].Ref = ref
+		// The item now holds a whole connection string, so the record is
+		// no longer in parts: parts kept beside it would make the resolver
+		// read that string as a password.
+		environment.Databases[i].Connection = nil
 		// **An existing writeRef is KEPT when this call does not grant
 		// one.** Setting a DSN is not a request to revoke write access,
 		// and silently dropping it would make an edit to the read
@@ -335,18 +351,37 @@ func SetDatabaseConnection(r DatabaseConnectionRequest) error {
 		return UserError("this database writes through a login saved another way — " +
 			"allow writes and type the write login, or remove write access first")
 	}
+	// A SQLite write item is the file's path: kept while the path moves, it
+	// would send writes to the old file and reads to the new one.
+	if !r.GrantWrite && index >= 0 && existing.WriteRef != "" && !server &&
+		(existing.Driver != r.Driver || existing.Connection == nil ||
+			existing.Connection.Path != conn.Path) {
+		return UserError("this database writes to a file saved another way — " +
+			"allow writes so writes go to this file too, or remove write access first")
+	}
 
 	// ---- refs ----
 	// An existing row keeps its own refs (a rename keeps them too); a new
-	// one derives a ref no other row names (2e-iii's fresh-ref rule).
+	// one derives a ref no other row names (2e-iii's fresh-ref rule). A ref
+	// another row also names is kept only while nothing is written to it:
+	// a password written there would break the other row.
 	taken := refsNamedByOthers(project, r.Environment, "database", r.Name)
+	writesRead := !server || r.Password != ""
+	writesWrite := r.GrantWrite && (!server || r.WritePassword != "")
 	ref := existing.Ref
-	if ref == "" {
+	if ref == "" || (writesRead && taken[ref]) {
+		// Not this row's own write ref either, without marking it taken
+		// for the write ref's own check below.
+		ownWriteTaken := taken[existing.WriteRef]
+		if existing.WriteRef != "" {
+			taken[existing.WriteRef] = true
+		}
 		ref = freshRef(DatabaseRef(project.Name, r.Environment, r.Name), taken)
+		taken[existing.WriteRef] = ownWriteTaken
 	}
+	taken[ref] = true
 	writeRef := existing.WriteRef
-	if r.GrantWrite && writeRef == "" {
-		taken[ref] = true
+	if r.GrantWrite && (writeRef == "" || (writesWrite && taken[writeRef])) {
 		writeRef = freshRef(ref+":rw", taken)
 	}
 
@@ -534,6 +569,12 @@ func UpdateDatabase(projectPath, environment, name string, edit DatabaseEdit) er
 	env.Databases[index].Name = newName
 	if edit.RevokeWrite {
 		env.Databases[index].WriteRef = ""
+		// The write login goes with the write access it named.
+		if c := env.Databases[index].Connection; c != nil {
+			kept := *c
+			kept.WriteUser = ""
+			env.Databases[index].Connection = &kept
+		}
 	}
 	project.Environments[environment] = env
 	return SaveProject(projectPath, *project)

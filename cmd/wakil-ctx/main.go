@@ -869,7 +869,7 @@ func newServer() *mcp.Server {
 			return nil, empty{}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "set_database_connection", Description: "Save a database as its parts (host, port, database, user, or a path for sqlite) and record it in an environment. Only the password goes to the Keychain, as a connection string built from the parts; the parts themselves are written to the project file, and passwords are never returned. An empty password keeps the one already stored. Granting write access is a separate parameter with its own login (writeUser, writePassword). Read-modify-write from disk. Refuses a project filed under another organisation."},
+	mcp.AddTool(s, &mcp.Tool{Name: "set_database_connection", Description: "Save a database as its parts (host, port, database, user, or a path for sqlite) and record it in an environment. Only the password goes to the Keychain; the parts themselves are written to the project file, and passwords are never returned. An empty password keeps the one already stored. Granting write access is a separate parameter with its own login (writeUser, writePassword). Read-modify-write from disk. Refuses a project filed under another organisation."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setDatabaseConnectionArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.SetDatabaseConnection(wakilcore.DatabaseConnectionRequest{
 				ProjectPath: a.ProjectPath, Environment: a.Environment, Name: a.Name, Driver: a.Driver,

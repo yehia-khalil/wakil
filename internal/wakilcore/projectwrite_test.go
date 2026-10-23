@@ -971,3 +971,205 @@ func TestADriverIsRequired(t *testing.T) {
 		t.Fatal("an unknown environment was accepted")
 	}
 }
+
+func TestADSNOverASplitRecordMakesItLegacy(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	if err := SetDatabaseConnection(mysqlRequest(path)); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "e2e:pw@tcp(other:3306)/ledger",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if d.Connection != nil {
+		t.Fatalf("a record holding a whole string kept its parts: %+v", d.Connection)
+	}
+	if got, _ := SecretGet(d.Ref); got != "e2e:pw@tcp(other:3306)/ledger" {
+		t.Fatalf("item = %q", got)
+	}
+}
+
+func TestADSNCannotKeepAWriteLoginSavedInParts(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.GrantWrite, r.Connection.WriteUser, r.WritePassword = true, "writer", "writepw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	n := writes()
+	msg, ok := IsUserError(SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "e2e:pw@tcp(other:3306)/ledger",
+	}))
+	if !ok || !strings.HasPrefix(msg, "this database writes through a login saved in parts") {
+		t.Fatalf("got %q", msg)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) || writes() != n {
+		t.Fatal("a refused DSN wrote something")
+	}
+
+	// Granting with its own write string goes through, as legacy.
+	if err := SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "e2e:pw@tcp(other:3306)/ledger", GrantWrite: true, WriteDSN: "w:pw@tcp(other:3306)/ledger",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if d := storedDatabase(t, path, "core"); d.Connection != nil {
+		t.Fatalf("still in parts: %+v", d.Connection)
+	}
+}
+
+// sharedRefFixture is two environments whose `core` rows were hand-written
+// to name the same Keychain items.
+func sharedRefFixture(t *testing.T) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "acme")
+	if err := CreateOrg("acme", Org{}); err != nil {
+		t.Fatal(err)
+	}
+	conn := `"connection":{"host":"db.internal","port":"3306","database":"ledger","user":"e2e","writeUser":"writer"}`
+	row := `{"name":"core","driver":"mysql","ref":"db:shared","writeRef":"db:shared:rw",` + conn + `}`
+	path := projectFixture(t, "acme", `{"name":"orders","org":"acme","environments":{`+
+		`"staging":{"databases":[`+row+`]},"production":{"databases":[`+row+`]}}}`)
+	for ref, value := range map[string]string{"db:shared": "sharedpw", "db:shared:rw": "sharedwpw"} {
+		if err := SecretSetFor("acme", ref, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path
+}
+
+func TestEditingARowThatSharesARefWritesItsPasswordElsewhere(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := sharedRefFixture(t)
+	n := writes()
+
+	// Keeping both stored passwords writes nothing, so the shared refs stay.
+	keep := mysqlRequest(path)
+	keep.Password = ""
+	keep.GrantWrite, keep.Connection.WriteUser = true, "writer"
+	keep.Connection.Port = "3311"
+	if err := SetDatabaseConnection(keep); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if d.Ref != "db:shared" || d.WriteRef != "db:shared:rw" || writes() != n {
+		t.Fatalf("keeping the passwords moved the refs or wrote: %+v", d)
+	}
+
+	// A typed password goes to a ref of this row's own.
+	r := mysqlRequest(path)
+	r.Password = "newpw"
+	r.GrantWrite, r.Connection.WriteUser, r.WritePassword = true, "writer", "newwpw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	d = storedDatabase(t, path, "core")
+	if d.Ref == "db:shared" || d.WriteRef == "db:shared:rw" || d.Ref == d.WriteRef {
+		t.Fatalf("wrote into a ref another row names: %+v", d)
+	}
+	if got, _ := SecretGet(d.Ref); got != "newpw" {
+		t.Fatalf("read item = %q", got)
+	}
+	if got, _ := SecretGet(d.WriteRef); got != "newwpw" {
+		t.Fatalf("write item = %q", got)
+	}
+	if got, _ := SecretGet("db:shared"); got != "sharedpw" {
+		t.Fatalf("the other row's password was overwritten: %q", got)
+	}
+	if got, _ := SecretGet("db:shared:rw"); got != "sharedwpw" {
+		t.Fatalf("the other row's write password was overwritten: %q", got)
+	}
+}
+
+func TestASQLiteFileCannotMoveUnderAKeptWriteItem(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	lite := DatabaseConnectionRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "sqlite",
+		Connection: DatabaseConnection{Path: "/data/a.db"}, GrantWrite: true,
+	}
+	if err := SetDatabaseConnection(lite); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+
+	moved := lite
+	moved.GrantWrite = false
+	moved.Connection.Path = "/data/b.db"
+	msg, ok := IsUserError(SetDatabaseConnection(moved))
+	if !ok || !strings.HasPrefix(msg, "this database writes to a file saved another way") {
+		t.Fatalf("got %q", msg)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("a refused move changed the file")
+	}
+
+	// The same path without a grant keeps the write item: allowed.
+	same := lite
+	same.GrantWrite = false
+	if err := SetDatabaseConnection(same); err != nil {
+		t.Fatal(err)
+	}
+	// Moving with the grant moves both items.
+	moved.GrantWrite = true
+	if err := SetDatabaseConnection(moved); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if got, _ := SecretGet(d.WriteRef); got != "/data/b.db" {
+		t.Fatalf("write item = %q", got)
+	}
+}
+
+func TestSwitchingAWritableServerRecordToSQLiteNeedsTheGrant(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.GrantWrite, r.Connection.WriteUser, r.WritePassword = true, "writer", "writepw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	msg, ok := IsUserError(SetDatabaseConnection(DatabaseConnectionRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "sqlite",
+		Connection: DatabaseConnection{Path: "/data/a.db"},
+	}))
+	if !ok || !strings.HasPrefix(msg, "this database writes to a file saved another way") {
+		t.Fatalf("got %q", msg)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("a refused switch changed the file")
+	}
+}
+
+func TestRevokingWritesForgetsTheWriteUser(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.GrantWrite, r.Connection.WriteUser, r.WritePassword = true, "writer", "writepw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateDatabase(path, "staging", "core", DatabaseEdit{RevokeWrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if d.WriteRef != "" || d.Connection == nil || d.Connection.WriteUser != "" {
+		t.Fatalf("revoke left the write login: %+v %+v", d, d.Connection)
+	}
+	if d.Connection.User != "e2e" {
+		t.Fatalf("revoke touched the read login: %+v", d.Connection)
+	}
+}
