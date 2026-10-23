@@ -29,6 +29,8 @@ private let orgDerived: Set<String> = [
     // 3a-ii-b: a ✨ draft reads the outgoing org's diff with its quick model; `invalidateForOrgChange`
     // cancels it and empties both, and the generation drops a late reply (WindowModelCommitDraftTests).
     "changesDrafting", "changesDraftTasks", "changesLastDraft",
+    // 3a-iii-a: the background fetch's notes are the outgoing org's roots'.
+    "changesRemoteNotes",
     "project", "projectKey", "environment", "environmentProduction",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
@@ -150,6 +152,12 @@ private let keptPerPlace: Set<String> = [
 ]
 
 private let orgIndependent: Set<String> = [
+    // 3a-iii-a: the fetch loop runs for whatever roots the window has; its interval, sleep and the
+    // app's activity are no organisation's.
+    "backgroundFetchInterval", "backgroundFetchSleep", "backgroundFetchTask", "appActive",
+    "backgroundFetchTimeout", "backgroundFetchCurrent",
+    // 3a-iii-b: the box is keyed by organisation itself; no switch empties it.
+    "agentInstructionsBox",
     // 2d-ii: the operator's hand on ⌥, not either organisation's state.
     "isListening",
     // 2e (#202). Both are injected at construction and describe HOW to

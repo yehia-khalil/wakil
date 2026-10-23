@@ -34,3 +34,12 @@ func TestAnthropicStub_AnswersWithTheHeaders(t *testing.T) {
 		t.Errorf("status %d headers %v", resp.StatusCode, resp.Header)
 	}
 }
+
+// 3a-iii: every launch lets wakil-git use a file remote, which is what a bare-remote check pushes to.
+func TestFixtureEnv_AllowsFileRemotes(t *testing.T) {
+	f := Fixture{Home: "/h", TmpDir: "/t", BinDir: "/b", Keychain: "/k"}
+	env := strings.Join(f.Env("/usr/bin", Seeded{}), "\n")
+	if !strings.Contains(env, "WAKIL_GIT_ALLOW_FILE=1") {
+		t.Errorf("env = %s", env)
+	}
+}

@@ -150,17 +150,86 @@ type updateOrgArgs struct {
 	// the active one: this writes across the boundary Invariant 4
 	// defines, and a write that guesses which organisation it lands in is
 	// a write that can land in the wrong one.
-	ID              string  `json:"id" jsonschema:"the organisation to edit"`
-	DisplayName     *string `json:"displayName,omitempty" jsonschema:"optional human-readable name; omit to leave unchanged, send \"\" to clear"`
-	JiraBase        *string `json:"jiraBase,omitempty" jsonschema:"optional Atlassian site, absolute https; omit to leave unchanged, send \"\" to clear"`
-	DefaultProvider *string `json:"defaultProvider,omitempty" jsonschema:"optional account id, which must already be registered in this organisation; omit to leave unchanged, send \"\" to clear"`
-	SpeechProvider  *string `json:"speechProvider,omitempty" jsonschema:"optional speech engine id (apple); omit to leave unchanged, send \"\" to clear"`
-	QuickProvider   *string `json:"quickProvider,omitempty" jsonschema:"optional provider id quick tasks run on; omit to leave unchanged, send \"\" for the active provider"`
-	GitName         *string `json:"gitName,omitempty" jsonschema:"author name for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
-	GitEmail        *string `json:"gitEmail,omitempty" jsonschema:"author email for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
-	GhostText       *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
-	FastPath        *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
-	CommitDrafts    *bool   `json:"commitDrafts,omitempty" jsonschema:"the commit box's drafted message (✨) on or off for this organisation"`
+	ID                    string  `json:"id" jsonschema:"the organisation to edit"`
+	DisplayName           *string `json:"displayName,omitempty" jsonschema:"optional human-readable name; omit to leave unchanged, send \"\" to clear"`
+	JiraBase              *string `json:"jiraBase,omitempty" jsonschema:"optional Atlassian site, absolute https; omit to leave unchanged, send \"\" to clear"`
+	DefaultProvider       *string `json:"defaultProvider,omitempty" jsonschema:"optional account id, which must already be registered in this organisation; omit to leave unchanged, send \"\" to clear"`
+	SpeechProvider        *string `json:"speechProvider,omitempty" jsonschema:"optional speech engine id (apple); omit to leave unchanged, send \"\" to clear"`
+	QuickProvider         *string `json:"quickProvider,omitempty" jsonschema:"optional provider id quick tasks run on; omit to leave unchanged, send \"\" for the active provider"`
+	GitName               *string `json:"gitName,omitempty" jsonschema:"author name for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
+	GitEmail              *string `json:"gitEmail,omitempty" jsonschema:"author email for commits from Wakil; omit to leave unchanged, send \"\" to clear"`
+	GhostText             *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
+	FastPath              *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
+	CommitDrafts          *bool   `json:"commitDrafts,omitempty" jsonschema:"the commit box's drafted message (✨) on or off for this organisation"`
+	PullStrategy          *string `json:"pullStrategy,omitempty" jsonschema:"how Pull and Sync integrate: rebase, merge or ff-only"`
+	AgentGeneral          *string `json:"agentGeneral,omitempty" jsonschema:"the organisation's general agent instructions"`
+	GitCommitInstructions *string `json:"gitCommitInstructions,omitempty" jsonschema:"how the agent writes commit messages here"`
+	GitPRInstructions     *string `json:"gitPRInstructions,omitempty" jsonschema:"how the agent writes PR titles and descriptions here"`
+}
+
+type setProjectAgentArgs struct {
+	ProjectPath  string  `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	General      *string `json:"general,omitempty" jsonschema:"the project's general agent instructions"`
+	Commits      *string `json:"commits,omitempty" jsonschema:"the project's commit message instructions"`
+	PullRequests *string `json:"pullRequests,omitempty" jsonschema:"the project's PR instructions"`
+}
+
+type gitSecretArgs struct {
+	ID         string `json:"id" jsonschema:"the organisation's id"`
+	Host       string `json:"host" jsonschema:"the git host"`
+	Comment    string `json:"comment,omitempty" jsonschema:"a generated key's comment"`
+	Token      string `json:"token,omitempty" jsonschema:"the token to keep"`
+	Passphrase string `json:"passphrase,omitempty" jsonschema:"the picked key's passphrase"`
+}
+
+type gitDevicePollArgs struct {
+	ID         string `json:"id" jsonschema:"the organisation's id"`
+	Provider   string `json:"provider" jsonschema:"github or gitlab"`
+	Host       string `json:"host" jsonschema:"the host the account is for"`
+	DeviceCode string `json:"deviceCode" jsonschema:"git_device_start's deviceCode"`
+}
+
+type gitDevicePollOut struct {
+	Pending bool `json:"pending"`
+	Done    bool `json:"done"`
+}
+
+type gitGhLoginsOut struct {
+	Logins []wakilcore.GhLogin `json:"logins"`
+}
+
+type gitSSHKeysOut struct {
+	Keys []wakilcore.SSHKeyListing `json:"keys"`
+}
+
+type gitKeyOut struct {
+	PublicKey string `json:"publicKey"`
+	Path      string `json:"path"`
+}
+
+type gitTestOut struct {
+	User string `json:"user"`
+}
+
+type gitHostSuggestionsOut struct {
+	Hosts []wakilcore.GitHostSuggestion `json:"hosts"`
+}
+
+type gitAccountArgs struct {
+	ID       string `json:"id" jsonschema:"the organisation's id"`
+	Host     string `json:"host" jsonschema:"the git host, e.g. github.com"`
+	Provider string `json:"provider,omitempty" jsonschema:"github, gitlab, bitbucket or other"`
+	Method   string `json:"method,omitempty" jsonschema:"ssh, token or signin"`
+	User     string `json:"user,omitempty" jsonschema:"the account name the host knows"`
+	KeyPath  string `json:"keyPath,omitempty" jsonschema:"an ssh account's private key"`
+	Username string `json:"username,omitempty" jsonschema:"Bitbucket's username, used with its token"`
+}
+
+// gitOrgArgs is what the account sheet's reads take: the organisation, and Sign in's provider.
+// No host — they run before one is chosen.
+type gitOrgArgs struct {
+	ID       string `json:"id" jsonschema:"the organisation's id"`
+	Provider string `json:"provider,omitempty" jsonschema:"github or gitlab, for git_device_start"`
 }
 
 // setEditorSettingsArgs is the app-wide editor tier's edit (3b-v). Pointers for updateOrgArgs'
@@ -203,7 +272,7 @@ type setLocalProviderArgs struct {
 	ID      string   `json:"id" jsonschema:"the local provider id to create or override"`
 	Label   string   `json:"label,omitempty" jsonschema:"optional human-readable name"`
 	BaseURL string   `json:"baseURL" jsonschema:"the endpoint's http or https URL, e.g. http://127.0.0.1:8012"`
-	Serves  []string `json:"serves,omitempty" jsonschema:"ignored since 3b-ix: a local provider serves every quick task"`
+	Serves  []string `json:"serves,omitempty" jsonschema:"ignored: a local provider serves every quick task"`
 }
 
 // unlinkProviderArgs removes one organisation's binding.
@@ -538,16 +607,20 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "update_org", Description: "Change an organisation's display name, Jira site, default account or speech engine, leaving every other field on disk exactly as it is. Read-modify-write: omit a field to leave it unchanged, or send an empty string to clear it — so an edit made to the file by hand while a pane was open survives a save of a different field. Refuses a Jira site that is not an absolute https Atlassian URL, and a default account that is not already registered in this organisation. Refuses an organisation that does not exist; creating one is create_org."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a updateOrgArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.UpdateOrg(a.ID, wakilcore.OrgPatch{
-				DisplayName:     a.DisplayName,
-				JiraBase:        a.JiraBase,
-				DefaultProvider: a.DefaultProvider,
-				SpeechProvider:  a.SpeechProvider,
-				QuickProvider:   a.QuickProvider,
-				GitName:         a.GitName,
-				GitEmail:        a.GitEmail,
-				GhostText:       a.GhostText,
-				FastPath:        a.FastPath,
-				CommitDrafts:    a.CommitDrafts,
+				DisplayName:           a.DisplayName,
+				JiraBase:              a.JiraBase,
+				DefaultProvider:       a.DefaultProvider,
+				SpeechProvider:        a.SpeechProvider,
+				QuickProvider:         a.QuickProvider,
+				GitName:               a.GitName,
+				GitEmail:              a.GitEmail,
+				GhostText:             a.GhostText,
+				FastPath:              a.FastPath,
+				CommitDrafts:          a.CommitDrafts,
+				PullStrategy:          a.PullStrategy,
+				AgentGeneral:          a.AgentGeneral,
+				GitCommitInstructions: a.GitCommitInstructions,
+				GitPRInstructions:     a.GitPRInstructions,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
@@ -749,6 +822,115 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "remove_database", Description: "Drop a database from an environment. Its Keychain entry is KEPT: the same credential may be named by another project, a script, or a colleague's checkout, none of which this file can see, so \"unreferenced\" is not something the registry can claim. Refuses a project filed under another organisation."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a removeDatabaseArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.RemoveDatabase(a.ProjectPath, a.Environment, a.Name); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_account_add", Description: "Record an organisation's git account for one host, replacing the one it has there. method is ssh (keyPath), token or signin; the secret goes through its own tool."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.AddGitAccount(a.ID, wakilcore.GitAccount{
+				Host: a.Host, Provider: a.Provider, Method: a.Method, User: a.User, KeyPath: a.KeyPath, Username: a.Username,
+			}); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_host_suggestions", Description: "The hosts an organisation's project roots push to (each origin, ssh aliases resolved), the most used first, with how many roots use each. Read when an account is being added."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitOrgArgs) (*mcp.CallToolResult, gitHostSuggestionsOut, error) {
+			return nil, gitHostSuggestionsOut{Hosts: wakilcore.GitHostSuggestions(a.ID)}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_ssh_keys", Description: "The key pairs in ~/.ssh, by their public half's comment, and which need a passphrase."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitOrgArgs) (*mcp.CallToolResult, gitSSHKeysOut, error) {
+			return nil, gitSSHKeysOut{Keys: wakilcore.ListSSHKeys()}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_key_generate", Description: "Generate an ed25519 key for an organisation's account on one host, under the organisation's own folder; its passphrase goes to the Keychain. Answers the public key and the private key's path."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitSecretArgs) (*mcp.CallToolResult, gitKeyOut, error) {
+			pub, path, err := wakilcore.GenerateGitKey(a.ID, a.Host, a.Comment)
+			if err != nil {
+				return toolErr(err), gitKeyOut{}, nil
+			}
+			return nil, gitKeyOut{PublicKey: pub, Path: path}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_token_set", Description: "Keep an organisation's token for one host in the Keychain."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitSecretArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetGitToken(a.ID, a.Host, a.Token); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_key_passphrase_set", Description: "Keep the passphrase of a key an organisation picked from ~/.ssh in the Keychain."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitSecretArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetGitKeyPassphrase(a.ID, a.Host, a.Passphrase); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_account_test", Description: "Ask a host who an organisation's account there is: ssh -T with its key, or the provider's user API with its token. Answers the name, or the host's refusal."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitTestOut, error) {
+			user, err := wakilcore.TestGitAccount(ctx, a.ID, a.Host)
+			if err != nil {
+				return toolErr(err), gitTestOut{}, nil
+			}
+			return nil, gitTestOut{User: user}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_device_start", Description: "Begin a provider's Sign in (device flow): answers the code the operator types and the page to type it on."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitOrgArgs) (*mcp.CallToolResult, wakilcore.DeviceCode, error) {
+			code, err := wakilcore.DeviceStart(ctx, a.Provider)
+			if err != nil {
+				return toolErr(err), wakilcore.DeviceCode{}, nil
+			}
+			return nil, code, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_device_poll", Description: "Ask once whether the operator approved a Sign in; on approval the token goes to the Keychain and the account is recorded."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitDevicePollArgs) (*mcp.CallToolResult, gitDevicePollOut, error) {
+			token, pending, err := wakilcore.DevicePoll(ctx, a.Provider, a.DeviceCode)
+			if err != nil {
+				return toolErr(err), gitDevicePollOut{}, nil
+			}
+			if pending {
+				return nil, gitDevicePollOut{Pending: true}, nil
+			}
+			if err := wakilcore.FinishSignIn(a.ID, a.Provider, a.Host, token); err != nil {
+				return toolErr(err), gitDevicePollOut{}, nil
+			}
+			return nil, gitDevicePollOut{Done: true}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_gh_logins", Description: "The logins the GitHub CLI holds (gh auth status); none without gh."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitOrgArgs) (*mcp.CallToolResult, gitGhLoginsOut, error) {
+			return nil, gitGhLoginsOut{Logins: wakilcore.GhLogins()}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_gh_import", Description: "Copy one gh login's token into the organisation's Keychain once and record it as the host's account."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.ImportGhLogin(a.ID, a.Host, a.User); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_project_agent_instructions", Description: "Change one project's agent instructions (general, commits, pull requests), written to its project.json, read-modify-write; omit a field to leave it unchanged, \"\" to clear it."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setProjectAgentArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.UpdateProjectAgentInstructions(a.ProjectPath, wakilcore.ProjectAgentPatch{
+				General: a.General, Commits: a.Commits, PullRequests: a.PullRequests,
+			}); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "git_account_remove", Description: "Forget an organisation's git account for one host: its Keychain secrets go, and a key Wakil generated goes to the Trash."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.RemoveGitAccount(a.ID, a.Host); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

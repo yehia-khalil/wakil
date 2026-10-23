@@ -19,6 +19,9 @@ public final class PlaceAgent {
     public internal(set) var place: Place
     /// The live session's harness, or nil before the first turn.
     var harness: AgentHarness?
+    /// 3a-iii-b: the composed instructions this session last received — at launch, or in a turn
+    /// since. nil until the session's first turn records it.
+    var launchedInstructions: String?
     /// The id the running child was started with; set and cleared with `harness`.
     public internal(set) var sessionId: String?
     /// The socket the live session's shim reaches Wakil on (background agents 3 of 4, Task 4):

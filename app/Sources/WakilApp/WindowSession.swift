@@ -204,7 +204,9 @@ final class WindowSession {
                     configDir: selection.credentials.configDir,
                     oauthToken: selection.credentials.oauthToken,
                     mcpConfigJSON: configJSON,
-                    allowedTools: allowedTools)
+                    allowedTools: allowedTools,
+                    // 3a-iii-b: the operator's instructions for this place, read at each launch.
+                    appendedInstructions: { AgentInstructionsBox.shared.text(org: place.organization, project: place.project) })
             }
         } catch {
             // The window opens without an agent rather than not at all: the

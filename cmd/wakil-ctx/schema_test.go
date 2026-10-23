@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -79,6 +80,10 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		// editor_settings, set_editor_settings and set_project_editor_settings added by 3b-v
 		// part 1 — the editor's two settings tiers (Decision 38).
 		"editor_settings",
+		"git_account_add", "git_account_remove", "git_host_suggestions",
+		"git_ssh_keys", "git_key_generate", "git_token_set", "git_key_passphrase_set", "git_account_test",
+		"git_device_start", "git_device_poll", "git_gh_logins", "git_gh_import",
+		"set_project_agent_instructions",
 		"set_editor_settings",
 		"set_project_editor_settings",
 		// set_local_provider added by 3b-viii — a local endpoint's URL and operations.
@@ -208,5 +213,43 @@ func TestLifecycleToolsRequireTheirParameters(t *testing.T) {
 	}
 	for name := range want {
 		t.Errorf("%s is not advertised", name)
+	}
+}
+
+// TestGitAccountReadsNeedNoHost pins that the sheet's four reads take what the app sends — the
+// organisation's id (and, for Sign in, the provider) — and no host: they asked for one, and every
+// call was refused by its own schema, so "A key from ~/.ssh" listed nothing (3a-iii e2e audit).
+func TestGitAccountReadsNeedNoHost(t *testing.T) {
+	ctx := context.Background()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	ss, err := newServer().Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatalf("server Connect: %v", err)
+	}
+	t.Cleanup(func() { ss.Close() })
+	client := mcp.NewClient(&mcp.Implementation{Name: "schema-client", Version: "0.0.0"}, nil)
+	cs, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatalf("client Connect: %v", err)
+	}
+	t.Cleanup(func() { cs.Close() })
+	for name, args := range map[string]map[string]any{
+		"git_host_suggestions": {"id": "initech"},
+		"git_ssh_keys":         {"id": "initech"},
+		"git_gh_logins":        {"id": "initech"},
+		"git_device_start":     {"id": "initech", "provider": "github"},
+	} {
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+		text := ""
+		if err != nil {
+			text = err.Error()
+		} else if res.IsError && len(res.Content) > 0 {
+			if c, ok := res.Content[0].(*mcp.TextContent); ok {
+				text = c.Text
+			}
+		}
+		if strings.Contains(text, "missing properties") || strings.Contains(text, "validating") {
+			t.Errorf("%s refused by its schema: %s", name, text)
+		}
 	}
 }

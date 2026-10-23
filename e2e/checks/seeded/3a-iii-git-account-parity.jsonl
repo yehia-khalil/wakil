@@ -1,0 +1,50 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N e2epass -C e2e-key -f ~/.ssh/e2ekey && echo made"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"made"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"GIT"}}
+{"do":{"click":"settings.org.git.account.add"}}
+{"expect":{"tree":"contains","text":"Pushes, pulls and clones in e2e-fixture use this account. One account per host."}}
+{"do":{"click":"settings.org.git.account.add.provider.other"}}
+{"do":{"type":{"into":"settings.org.git.account.add.host","text":"e2ehost"}}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"How should Wakil sign in to e2ehost?"}}
+{"do":{"click":"settings.org.git.account.add.method.token"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"The token is kept in the Keychain, never in a file."}}
+{"do":{"type":{"into":"settings.org.git.account.add.token","text":"e2e-token-value"}}}
+{"parity":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"e2ehost","token":"e2e-token-value"},"click":"settings.org.git.account.add.primary","assert":"tree"}}
+{"expect":{"tree":"contains","text":"Wakil cannot test a token on e2ehost; the next fetch will."}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[0].host","equals":"e2ehost"}}
+{"do":{"click":"settings.org.git.account.add"}}
+{"expect":{"tree":"contains","text":"Pushes, pulls and clones in e2e-fixture use this account. One account per host."}}
+{"do":{"click":"settings.org.git.account.add.provider.other"}}
+{"do":{"type":{"into":"settings.org.git.account.add.host","text":"e2eadd"}}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"How should Wakil sign in to e2eadd?"}}
+{"do":{"click":"settings.org.git.account.add.method.token"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"The token is kept in the Keychain, never in a file."}}
+{"do":{"type":{"into":"settings.org.git.account.add.token","text":"e2e-token-value"}}}
+{"parity":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"e2eadd","provider":"other","method":"token"},"click":"settings.org.git.account.add.primary","assert":"tree"}}
+{"expect":{"tree":"contains","text":"Wakil cannot test a token on e2eadd; the next fetch will."}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[1].host","equals":"e2eadd"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[1].method","equals":"token"}}
+{"do":{"click":"settings.org.git.account.add"}}
+{"do":{"click":"settings.org.git.account.add.provider.other"}}
+{"do":{"type":{"into":"settings.org.git.account.add.host","text":"e2essh"}}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"expect":{"tree":"contains","text":"How should Wakil sign in to e2essh?"}}
+{"do":{"click":"settings.org.git.account.add.method.ssh"}}
+{"do":{"click":"settings.org.git.account.add.primary"}}
+{"do":{"click":"settings.org.git.account.add.keySource.existing"}}
+{"do":{"click":"settings.org.git.account.add.key.e2ekey"}}
+{"do":{"type":{"into":"settings.org.git.account.add.passphrase","text":"e2epass"}}}
+{"parity":{"action":"ctx_git_key_passphrase_set","params":{"id":"e2e-fixture","host":"e2essh","passphrase":"e2epass"},"click":"settings.org.git.account.add.primary","assert":"tree"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[2].host","equals":"e2essh"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.org.gitAccounts[2].keyPath","contains":"/home/.ssh/e2ekey"}}

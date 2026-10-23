@@ -808,3 +808,38 @@ func TestOnlyALaunchWithTheAgentSeedsTheSpareAccount(t *testing.T) {
 		t.Fatalf("a launch with the agent seeds %q", got)
 	}
 }
+
+// With CloneFolder, the organisation's last clone folder is e2e-clones/ under the fixture root, and
+// it exists; without it, the organisation records none.
+func TestSeedRecordsTheCloneFolderOnlyWhenAsked(t *testing.T) {
+	plain, _ := seedInto(t, DefaultSeed())
+	if org := loadSeededOrg(t, plain, DefaultSeed().Org); org.LastCloneFolder != "" {
+		t.Errorf("the default seed recorded a clone folder %q; only the clone check's launch gets one", org.LastCloneFolder)
+	}
+	spec := DefaultSeed()
+	spec.CloneFolder = true
+	fixture, _ := seedInto(t, spec)
+	org := loadSeededOrg(t, fixture, spec.Org)
+	want := filepath.Join(fixture.Root, CloneFolderName)
+	if org.LastCloneFolder != want {
+		t.Errorf("lastCloneFolder = %q, want %q", org.LastCloneFolder, want)
+	}
+	if info, err := os.Stat(want); err != nil || !info.IsDir() {
+		t.Errorf("the clone folder is not a directory: %v", err)
+	}
+	if !WantsCloneFolder([]Check{{Name: "3a-iii-add-project-clone.jsonl"}}) || WantsCloneFolder([]Check{{Name: "3a-ii-commit.jsonl"}}) {
+		t.Error("WantsCloneFolder must be true for 3a-iii-add-project-clone.jsonl only")
+	}
+}
+
+// loadSeededOrg reads one seeded organisation back through production's reader.
+func loadSeededOrg(t *testing.T, fixture Fixture, org string) wakilcore.Org {
+	t.Helper()
+	t.Setenv("HOME", fixture.Home)
+	t.Setenv("WAKIL_ORG", org)
+	o, err := wakilcore.LoadOrgFor(org)
+	if err != nil {
+		t.Fatalf("LoadOrgFor(%q): %v", org, err)
+	}
+	return *o
+}

@@ -24,6 +24,9 @@ public actor GitWriteFlights {
 
 /// Registers the seven `editor_changes_*` git writes (3a-ii). Each is a mutation priced allow in every
 /// environment: a stage, an unstage and a commit stay on this Mac and undo; a discard goes to the Trash.
+/// How long a remote git operation may take before the call gives up: a large push or a slow host.
+let gitRemoteReplyTimeout: TimeInterval = 600
+
 func registerEditorChangesWrites(
     into registry: ActionRegistry, gitStatus: GitStatus?, panes: PaneStore, layout: LayoutStore?,
     writes: GitWriteFlights
@@ -338,6 +341,55 @@ func registerEditorChangesWrites(
             },
             price: price))
     }
+    // 3a-iii-a: the remote operations, with the organisation's account for the remote's host, priced
+    // allow for every channel (Decision 44). They take the root's one write lock (R1), so a commit and
+    // a push never overlap, and the status is read again after, ahead and behind with it.
+    for (name, tool, what) in [
+        ("editor_changes_fetch", "git_fetch", "Fetch one root's remote (git fetch --prune) with the organisation's account."),
+        ("editor_changes_pull", "git_pull", "Pull one root's upstream by the organisation's pull strategy; a conflict aborts and names the paths."),
+        ("editor_changes_push", "git_push", "Push one root's branch to its upstream with the organisation's account. Never forces."),
+        ("editor_changes_sync", "git_sync", "Pull one root's upstream, then push, stopping at the first failure."),
+        ("editor_changes_publish", "git_publish", "Push one root's branch to origin and set it as the upstream."),
+    ] {
+        await registry.register(Action(
+            name: name, description: what + " root (absolute). Allowed everywhere.",
+            kind: .mutate, audience: .agentReachable,
+            schema: rootSchema(),
+            handler: { params in
+                let root = try requireString(params, "root", action: name)
+                return try await write(root, action: name) { git in
+                    try await call(git, tool, ["root": .string(root)], action: name, timeout: gitRemoteReplyTimeout)
+                }
+            },
+            price: price))
+    }
+
+    // 3a-iii-a: clone from a link. The operator's clone may go anywhere and becomes a project in
+    // WindowModel.cloneProject; the agent's goes only into the folder the operator last cloned into,
+    // and registers nothing — adding a project is the operator's (Decision 30, call 6).
+    await registry.register(Action(
+        name: "editor_clone",
+        description: "Clone a repository from a link (https://…, git@host:…) into the folder the operator last cloned into, "
+            + "with the organisation's account for its host: url; folder only as the operator's. Answers path. It does not add a "
+            + "project; ask the operator to add it. Allowed everywhere.",
+        kind: .mutate, audience: .agentReachable,
+        schema: .object(["type": .string("object"),
+                         "properties": .object(["url": .object(["type": .string("string")]),
+                                                "folder": .object(["type": .string("string")])]),
+                         "required": .array([.string("url")])]),
+        handler: { params in
+            let url = try requireString(params, "url", action: "editor_clone")
+            guard let git = gitStatus?.git else { throw StandardActionError.missingClient(action: "editor_clone", role: "git") }
+            let byOperator = ActionRegistry.dispatchOrigin == .ui
+            var args: [String: JSONValue] = ["url": .string(url), "operator": .bool(byOperator)]
+            if let folder = optionalString(params, "folder") { args["folder"] = .string(folder) }
+            let reply = fields(try await call(git, "git_clone", args, action: "editor_clone", timeout: gitRemoteReplyTimeout))
+            guard !byOperator, case .object(var o) = reply, case .string(let path)? = o["path"] else { return reply }
+            o["message"] = .string("Cloned to \(path) — Add as project in Settings → + Add a project")
+            return .object(o)
+        },
+        price: price))
+
     await rangeWrite(
         "editor_changes_stage_ranges", group: .changed,
         description: "Stage the selected lines of one changed file: path (absolute), ranges ([{start, end}], 1-based "

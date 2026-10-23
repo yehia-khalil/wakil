@@ -57,8 +57,8 @@ func TestFilesConfineRefusesDotDotOutOfTheRoot(t *testing.T) {
 	a, _, outside := filesRoots(t)
 	write(t, filepath.Join(outside, "s.txt"), "secret")
 	_, _, err := ConfineFilePath(filepath.Join(a, "..", "out", "s.txt"), []string{a}, true)
-	if err == nil || !strings.Contains(err.Error(), "Invariant 6") || !strings.Contains(err.Error(), "Decision 36") {
-		t.Fatalf("want a refusal naming Invariant 6 and Decision 36, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "is outside the active project's roots") {
+		t.Fatalf("want the outside-the-roots refusal, got %v", err)
 	}
 }
 
@@ -285,11 +285,11 @@ func TestFilesConfineRefusesADanglingLinkOutOfTheRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range []string{filepath.Join(a, "d1", "f.txt"), filepath.Join(a, "f.txt")} {
-		if _, _, err := ConfineFilePath(p, []string{a}, false); err == nil || !strings.Contains(err.Error(), "Invariant 6") {
-			t.Fatalf("%s: want a refusal naming Invariant 6, got %v", p, err)
+		if _, _, err := ConfineFilePath(p, []string{a}, false); err == nil || !strings.Contains(err.Error(), "is outside the active project's roots") {
+			t.Fatalf("%s: want the outside-the-roots refusal, got %v", p, err)
 		}
-		if _, err := WriteFile(p, "x", true, []string{a}); err == nil || !strings.Contains(err.Error(), "Invariant 6") {
-			t.Fatalf("%s: write want a refusal naming Invariant 6, got %v", p, err)
+		if _, err := WriteFile(p, "x", true, []string{a}); err == nil || !strings.Contains(err.Error(), "is outside the active project's roots") {
+			t.Fatalf("%s: write want the outside-the-roots refusal, got %v", p, err)
 		}
 	}
 	for _, n := range []string{"newdir", "new.txt"} {
@@ -529,7 +529,7 @@ func TestFilesListDirRefusesAFolderOutsideTheRoot(t *testing.T) {
 	}
 	for _, dir := range []string{"../out", "link"} {
 		_, err := ListDir(a, dir, []string{a})
-		if err == nil || !strings.Contains(err.Error(), "Invariant 6") || !strings.Contains(err.Error(), "Decision 36") {
+		if err == nil || !strings.Contains(err.Error(), "is outside the active project's roots") {
 			t.Fatalf("%s: got %v", dir, err)
 		}
 	}
@@ -663,7 +663,7 @@ func TestFilesSearchPreviewIsTrimmedAroundTheMatch(t *testing.T) {
 func TestFilesSearchRefusesARootThatIsNotTheProjects(t *testing.T) {
 	a, b := searchFixture(t)
 	_, err := SearchFiles(context.Background(), []string{a}, testHeavy, []string{b}, SearchQuery{Query: "x"})
-	if err == nil || !strings.Contains(err.Error(), "Invariant 6") {
+	if err == nil || !strings.Contains(err.Error(), "is outside the active project's roots") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -1014,7 +1014,7 @@ func TestFilesReplaceIsConfinedToTheRoots(t *testing.T) {
 	}
 	for _, o := range []ReplaceOptions{{Only: filepath.Join(a, "link.txt")}, {Roots: []string{outside}}} {
 		if _, err := ReplaceFiles(context.Background(), []string{a}, HeavyNames(nil), q, "pin", o); err == nil ||
-			!strings.Contains(err.Error(), "Invariant 6") {
+			!strings.Contains(err.Error(), "is outside the active project's roots") {
 			t.Fatalf("%+v: got %v", o, err)
 		}
 	}

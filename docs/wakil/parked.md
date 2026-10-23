@@ -17,7 +17,8 @@ the record.
 
 ## Track — a future feature with no phase-map row (8)
 
-Its design was opened as a map and never settled; §8 has no row for it. When Track
+Its design was opened as a map and never settled. **Since 2026-10-22 it has a §8 row, *Track***
+(two sessions in one place), after *New conversation*; these eight are its design's agenda. When Track
 earns a slot it gets a spec of its own, and these questions are that spec's agenda.
 
 - **#78** — Track — two tickets in one window, without a second window *(the map)*

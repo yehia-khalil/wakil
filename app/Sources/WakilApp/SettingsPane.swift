@@ -64,17 +64,24 @@ struct SettingsPane: View {
     /// **One field per call**, which is the read-modify-write rule made
     /// operational: sending all three would flush this pane's idea of the
     /// record over a hand edit made while it was open.
-    let saveOrganisationField: (WindowModel.OrganisationField, String) async -> String?
+    /// The organisation is the one the page was drawn for, not the window's at the moment of saving:
+    /// a field left as an org switch redraws the page saves into the organisation it was typed for.
+    let saveOrganisationField: (WindowModel.OrganisationField, String, String) async -> String?
     /// Saves app-wide editor fields (3b-v) and answers the refusal's sentence, or nil.
     var saveEditorSettings: ([String: JSONValue]) async -> String? = { _ in nil }
     /// Saves one project's editor fields: the project file's path, then the fields.
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
+    /// 3a-iii-b: saves one of a project's agent boxes — the project file's path, then general, commits
+    /// or pull requests, exactly one given. Answers the refusal or nil.
+    var saveProjectAgentInstructions: (String, String?, String?, String?) async -> String? = { _, _, _, _ in nil }
     /// Saves a local model: id, label, URL (3b-viii). Answers the refusal or nil.
     var saveLocalProvider: (String, String, String) async -> String? = { _, _, _ in nil }
     /// Saves the org's ghost-text or fast-path switch (3b-ix). Answers the refusal or nil.
     var saveOrganisationSwitch: (WindowModel.OrganisationSwitch, Bool) async -> String? = { _, _ in nil }
     /// Removes a local model by id (3b-viii). Answers the refusal or nil.
     var removeLocalProvider: (String) async -> String? = { _ in nil }
+    /// 3a-iii: the organisation's git accounts.
+    var git = GitAccountActions()
     /// Each quick-task provider's last error whole and which have answered, by id; the provider
     /// code completion goes to; and why the configuration could not be read.
     var quickTaskStatus: () async -> QuickTaskStatus = { QuickTaskStatus() }
@@ -138,6 +145,8 @@ struct SettingsPane: View {
 
     /// Adds a project from the folder chosen (2e-ii): its name, or the refusal whole.
     var createProject: (String) async -> (name: String?, error: String?) = { _ in (nil, nil) }
+    /// 3a-iii: clone a link into a folder, then add it as a project.
+    var cloneProject: (String, String) async -> (name: String?, error: String?) = { _, _ in (nil, nil) }
     /// Renames a project: old, new. Answers the refusal or nil.
     var renameProject: (String, String) async -> String? = { _, _ in nil }
     /// Removes a project from this organisation. Answers the refusal or nil.
@@ -157,6 +166,8 @@ struct SettingsPane: View {
     @State private var lifecycleBusy: Set<String> = []
     /// A failed add or remove, whole, beside the control that caused it (Rule 8).
     @State private var lifecycleRefusals: [String: String] = [:]
+    /// 3a-iii: + Add a project's sheet — Choose a folder… or Clone from a link….
+    @State private var addingProject = false
     /// The removal awaiting its pane-local confirmation, by its key. Only a
     /// removal that passes a `confirmation` asks (Rule 1: the operator
     /// counts removing a project or an environment as destroying).
@@ -238,6 +249,8 @@ struct SettingsPane: View {
     }
     /// The organisation field holding the keyboard: Git name and email save when it leaves (3a-ii, Rule 2).
     @FocusState private var focusedOrgField: WindowModel.OrganisationField?
+    /// The Author fields save a second after typing stops, as well as when left.
+    @State private var autosave = EditorDebounce(delay: .seconds(1))
 
     /// Where the operator is standing in the tree. Window state, not
     /// configuration: it survives a re-read, and a re-read that dropped it
@@ -301,6 +314,20 @@ struct SettingsPane: View {
         // container's frame as the union of its children — the overflow it is meant to catch.
         .background(Color.clear.accessibilityElement().accessibilityIdentifier("settings.pane"))
         .task(id: tree) { quickStatus = await quickTaskStatus() }
+        .sheet(isPresented: $addingProject) {
+            AddProjectSheet(
+                lastFolder: tree?.org.lastCloneFolder ?? "",
+                chooseFolder: {
+                    addingProject = false
+                    Task { await addProject() }
+                },
+                clone: cloneProject,
+                finished: { name in
+                    addingProject = false
+                    land(on: node(for: SettingsLanding.afterCreatingProject(name)), focusName: true)
+                },
+                close: { addingProject = false })
+        }
     }
 
     // MARK: - The tree
@@ -380,7 +407,7 @@ struct SettingsPane: View {
                         "+ Add a project", depth: 1, key: "addProject",
                         identifier: "settings.tree.addProject"
                     ) {
-                        await addProject()
+                        addingProject = true
                     }
                 }
             }
@@ -831,9 +858,6 @@ struct SettingsPane: View {
                     .font(.system(size: Scale.body))
                     .accessibilityIdentifier("settings.reload")
                     .foregroundStyle(coolWhite.opacity(0.45))
-                Text("read from disk on open and on every read — nothing here is cached")
-                    .font(.system(size: Scale.meta))
-                    .foregroundStyle(coolWhite.opacity(0.26))
             }
         }
     }
@@ -868,15 +892,27 @@ struct SettingsPane: View {
             }
             // 3a-ii: who commits from the Changes view.
             SettingsSection("Git") {
-                organisationEditor(.gitName, label: "Name", in: tree)
-                organisationEditor(.gitEmail, label: "Email", in: tree)
-                FormHint("Used for every commit from Wakil; empty uses git config.")
+                // Who commits are by (3a-ii) — not who may push, which the accounts below are.
+                authorRow(in: tree)
+                FormHint("Who Wakil's commits are by; empty uses your git config.")
                     .underRowValue()
-                    .padding(.top, 6)
+                    .padding(.top, 2)
+                    .padding(.bottom, 6)
+                // 3a-iii: the accounts pushes and pulls use, and how Pull and Sync integrate.
+                SettingsRow("Accounts", wraps: true) { GitAccountsBlock(org: tree.org, git: git) }
+                SettingsRow("Pull strategy") { pullStrategyChoice(tree) }
             }
-            readOnlyNote(
-                "Saved one field at a time, read-modify-write from disk — so an edit you make "
-                    + "to org.json by hand while this pane is open survives a save here.")
+            // 3a-iii-b: the agent follows these after Wakil's own rules; ✨ drafts with Commits.
+            SettingsSection("Agent instructions") {
+                FormHint("The agent follows these after Wakil's own rules, from its next turn. ✨ uses Commits.")
+                    .padding(.bottom, 6)
+                organisationBox(.agentGeneral, placeholder: Self.generalPlaceholder,
+                                identifier: "settings.org.agent.general", in: tree)
+                organisationBox(.gitCommitInstructions, placeholder: Self.commitsPlaceholder,
+                                identifier: "settings.org.git.commits", in: tree)
+                organisationBox(.gitPRInstructions, placeholder: Self.pullRequestsPlaceholder,
+                                identifier: "settings.org.git.pullRequests", in: tree)
+            }
 
         case .providers:
             // Three headed sections (2026-10-21): the accounts, the local models, and the choice
@@ -929,6 +965,24 @@ struct SettingsPane: View {
                     .id("name.\(project.path)")
                     fields([("File", project.path, true)])
                 }
+                // 3a-iii-b: this project's own instructions, after the organisation's.
+                SettingsSection("Agent instructions") {
+                    FormHint("This project's own, after the organisation's. The agent has them from its next turn.")
+                        .padding(.bottom, 6)
+                    projectBox("General", stored: project.agent.general, placeholder: Self.generalPlaceholder,
+                               identifier: "settings.project.agent.general", project: project) { path, text in
+                        await saveProjectAgentInstructions(path, text, nil, nil)
+                    }
+                    projectBox("Commits", stored: project.agent.commits, placeholder: Self.commitsPlaceholder,
+                               identifier: "settings.project.agent.commits", project: project) { path, text in
+                        await saveProjectAgentInstructions(path, nil, text, nil)
+                    }
+                    projectBox("Pull requests", stored: project.agent.pullRequests,
+                               placeholder: Self.pullRequestsPlaceholder,
+                               identifier: "settings.project.agent.pullRequests", project: project) { path, text in
+                        await saveProjectAgentInstructions(path, nil, nil, text)
+                    }
+                }
                 if !project.roots.isEmpty {
                     SettingsSection("Roots") {
                         // A root's role is its label, its path the value; a root with no role
@@ -976,9 +1030,6 @@ struct SettingsPane: View {
                     // entries are read below.
                     ("API", "\(environment.api.count)", true),
                 ])
-                readOnlyNote(
-                    "An environment holds the databases and the API — which is why this tree "
-                        + "is four levels deep and not three.")
                 if let project = tree.projects.first(where: { $0.name == projectName }) {
                     removeSection(
                         key: "remove.environment.\(projectName).\(environmentName)",
@@ -1067,12 +1118,74 @@ struct SettingsPane: View {
                 // in a branch, exactly as the note predicted, and the cost
                 // was a list where a value had been — not a form to
                 // rewrite.
-                readOnlyNote(
-                    "The API entries are read-only, and stay so: this shape changed once "
-                        + "already while this pane was being built, and a form built on "
-                        + "today's is one rebuilt on someone else's schedule.")
+                readOnlyNote("API entries are edited in the project's project.json.")
             } else {
                 gone(environmentName)
+            }
+        }
+    }
+
+    /// An organisation field edited where it stands: empty, it reads its prompt; the field is there
+    /// all along, so a click edits it in place.
+    private func organisationField(
+        _ field: WindowModel.OrganisationField, prompt: String, width: CGFloat, in tree: SettingsTree
+    ) -> some View {
+        let stored = storedValue(field, in: tree)
+        let draft = drafts[field]
+        return TextField(
+            "",
+            text: Binding(
+                get: { draft ?? stored },
+                // Equal to what is stored is no draft (a field writes its text back as editing ends).
+                set: { drafts[field] = $0 == stored ? nil : $0 }),
+            prompt: Text(prompt).foregroundStyle(coolWhite.opacity(0.30)))
+            .textFieldStyle(.plain)
+            .font(.system(size: Scale.body))
+            .foregroundStyle(coolWhite.opacity(0.88))
+            .frame(maxWidth: width)
+            .inPlaceField(focused: focusedOrgField == field)
+            .onSubmit { save(field, tree: tree) }
+            .focused($focusedOrgField, equals: field)
+            // 3a-ii, Rule 2: Git name and email save when the field is left, through Save's
+            // path. A Return that saved already cleared the draft (or is still saving), so
+            // leaving after it writes nothing twice. The other fields keep Return / Save.
+            .onChange(of: focusedOrgField) { old, _ in
+                guard old == field else { return }
+                autosave.cancel()
+                leave(field, tree: tree)
+            }
+            .onChange(of: drafts[field]) { _, draft in
+                guard field.savesOnLeave, draft != nil else { return }
+                autosave.schedule { leave(field, tree: tree) }
+            }
+            // Leaving the page by the tree is leaving the field too, and the focus change
+            // above is never reported once the page is gone (2e-ii) — so going is a leave.
+            .onAppear { if field.savesOnLeave { gitFieldsShown.fields.insert(field) } }
+            .onDisappear {
+                gitFieldsShown.fields.remove(field)
+                leave(field, tree: tree)
+            }
+            .accessibilityIdentifier("settings.org.\(field.identifierFragment)")
+    }
+
+    /// Who Wakil's commits are by: the name and the email on one row, each saved when left (Rule 2).
+    private func authorRow(in tree: SettingsTree) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            SettingsRow("Author") {
+                HStack(spacing: 10) {
+                    organisationField(.gitName, prompt: "Name", width: 170, in: tree)
+                    organisationField(.gitEmail, prompt: "email@example.com", width: 240, in: tree)
+                }
+            }
+            ForEach([WindowModel.OrganisationField.gitName, .gitEmail], id: \.self) { field in
+                if let refusal = refusals[field] {
+                    Text(refusal)
+                        .font(.system(size: Scale.body))
+                        .foregroundStyle(caution)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .underRowValue()
+                        .padding(.vertical, 4)
+                }
             }
         }
     }
@@ -1093,36 +1206,7 @@ struct SettingsPane: View {
         VStack(alignment: .leading, spacing: 2) {
             SettingsRow(label) {
                 HStack(spacing: 8) {
-                    // Empty, it reads `—` until it is typed in; the field is there all along, so a
-                    // click edits it where it stands.
-                    TextField(
-                        "",
-                        text: Binding(
-                            get: { draft ?? stored },
-                            set: { drafts[field] = $0 }),
-                        prompt: Text("—").foregroundStyle(coolWhite.opacity(0.30)))
-                        .textFieldStyle(.plain)
-                        .font(.system(size: Scale.body))
-                        .foregroundStyle(coolWhite.opacity(0.88))
-                        .frame(maxWidth: 320)
-                        .inPlaceField(focused: focusedOrgField == field)
-                        .onSubmit { save(field, tree: tree) }
-                        .focused($focusedOrgField, equals: field)
-                        // 3a-ii, Rule 2: Git name and email save when the field is left, through Save's
-                        // path. A Return that saved already cleared the draft (or is still saving), so
-                        // leaving after it writes nothing twice. The other fields keep Return / Save.
-                        .onChange(of: focusedOrgField) { old, _ in
-                            guard old == field else { return }
-                            leave(field, tree: tree)
-                        }
-                        // Leaving the page by the tree is leaving the field too, and the focus change
-                        // above is never reported once the page is gone (2e-ii) — so going is a leave.
-                        .onAppear { if field.savesOnLeave { gitFieldsShown.fields.insert(field) } }
-                        .onDisappear {
-                            gitFieldsShown.fields.remove(field)
-                            leave(field, tree: tree)
-                        }
-                        .accessibilityIdentifier("settings.org.\(field.identifierFragment)")
+                    organisationField(field, prompt: "—", width: 320, in: tree)
                     if draft != nil, draft != stored {
                         Button(saving == field ? "Saving…" : "Save") { save(field, tree: tree) }
                             .buttonStyle(.plain)
@@ -1151,6 +1235,33 @@ struct SettingsPane: View {
                     .padding(.vertical, 4)
             }
         }
+    }
+
+    // 3a-iii-b: examples of what a box holds, read as its placeholder.
+    private static let generalPlaceholder = "Tell the agent how to work here — e.g. ask before running migrations"
+    private static let commitsPlaceholder = "Tell the agent how to write commits — e.g. imperative subject under 72 characters"
+    private static let pullRequestsPlaceholder = "Tell the agent how to write pull requests — e.g. what changed and why, then how to test"
+
+    /// An organisation's agent box, saved through the organisation's one-field write. Keyed to the
+    /// organisation so a draft does not carry from one organisation's page to another's.
+    private func organisationBox(
+        _ field: WindowModel.OrganisationField, placeholder: String, identifier: String, in tree: SettingsTree
+    ) -> some View {
+        AgentInstructionBox(
+            label: field.label, stored: storedValue(field, in: tree), placeholder: placeholder,
+            identifier: identifier, save: { await saveOrganisationField(field, $0, tree.org.id) }, unseen: showUnseenRefusal)
+            .id("\(identifier).\(tree.org.id)")
+    }
+
+    /// A project's agent box, keyed to the project for the same reason.
+    private func projectBox(
+        _ label: String, stored: String, placeholder: String, identifier: String,
+        project: SettingsProject, save: @escaping (String, String) async -> String?
+    ) -> some View {
+        AgentInstructionBox(
+            label: label, stored: stored, placeholder: placeholder, identifier: identifier,
+            save: { await save(project.path, $0) }, unseen: showUnseenRefusal)
+            .id("\(identifier).\(project.path)")
     }
 
     /// 2d-ii: the organisation's speech engine (Invariant 11). One segment
@@ -1363,6 +1474,23 @@ struct SettingsPane: View {
         }
     }
 
+    /// Merge · Rebase · Fast-forward only, saved on click (Rule 2), Rebase by default (Rule 9).
+    private func pullStrategyChoice(_ tree: SettingsTree) -> some View {
+        let labels = ["rebase": "Rebase", "merge": "Merge", "ff-only": "Fast-forward only"]
+        return SegmentedChoice(
+            options: ["Rebase", "Merge", "Fast-forward only"],
+            selection: Binding(
+                get: { labels[tree.org.pullStrategy] ?? "Rebase" },
+                set: { label in
+                    guard let value = labels.first(where: { $0.value == label })?.key, value != tree.org.pullStrategy else { return }
+                    Task { _ = await saveOrganisationField(.pullStrategy, value, tree.org.id) }
+                }),
+            identifier: { label in
+                let value = labels.first(where: { $0.value == label })?.key ?? label
+                return "settings.org.git.pullStrategy.\(value)"
+            })
+    }
+
     private func storedValue(
         _ field: WindowModel.OrganisationField, in tree: SettingsTree
     ) -> String {
@@ -1375,6 +1503,11 @@ struct SettingsPane: View {
         // Drawn under GIT, not in the generic list (3a-ii).
         case .gitName: return tree.org.gitName
         case .gitEmail: return tree.org.gitEmail
+        case .pullStrategy: return tree.org.pullStrategy
+        // Drawn as multi-line boxes under AGENT and GIT (3a-iii-b).
+        case .agentGeneral: return tree.org.agentGeneral
+        case .gitCommitInstructions: return tree.org.gitCommitInstructions
+        case .gitPRInstructions: return tree.org.gitPRInstructions
         }
     }
 
@@ -1392,18 +1525,21 @@ struct SettingsPane: View {
         refusals[field] = nil
         let shown = gitFieldsShown
         Task {
-            let refusal = await saveOrganisationField(field, value)
+            let refusal = await saveOrganisationField(field, value, tree.org.id)
             // The draft is cleared only on success, so a refused value
             // stays in front of the operator to be corrected rather than
             // vanishing along with the explanation of why it was refused.
             // Cleared WITH `saving`, before the await below: a leave in
             // between would otherwise see a draft and no write in flight,
             // and send the same value again.
-            if refusal == nil { drafts[field] = nil }
+            // Not when more was typed while it saved: that stays, to be the next save.
+            if refusal == nil, drafts[field] == value { drafts[field] = nil }
             refusedDrafts[field] = refusal == nil ? nil : value
             saving = nil
             refusals[field] = refusal
             if let refusal, field.savesOnLeave, !shown.fields.contains(field) { showUnseenRefusal(refusal) }
+            // Typed on while it saved: that is the next save.
+            if refusal == nil, field.savesOnLeave, drafts[field] != nil { autosave.schedule { leave(field, tree: tree) } }
             quickStatus = await quickTaskStatus()
         }
     }

@@ -1,3 +1,5 @@
+import Foundation
+
 /// What Wakil tells the agent about the surface it is driving.
 ///
 /// **It lives here, in `WakilKit`, as a `let` on no type at all rather than
@@ -61,3 +63,61 @@ yourself and reported. Wakil enforces only the last of these: \
 `term_run` refuses you outright. Which shell you reach for is not \
 blocked at all, which is exactly why it is yours to get right.
 """
+
+// MARK: - The operator's instructions (3a-iii-b, Decision 45)
+
+/// One level's agent instructions: General, Commits and Pull requests.
+public struct AgentTexts: Sendable, Equatable {
+    public var general: String
+    public var commits: String
+    public var pullRequests: String
+
+    public init(general: String = "", commits: String = "", pullRequests: String = "") {
+        self.general = general
+        self.commits = commits
+        self.pullRequests = pullRequests
+    }
+}
+
+/// What the agent's prompt gains after Wakil's own rules: the organisation's three texts, then the
+/// project's, each under its heading (`## Organisation initech — commits`). An empty text adds
+/// nothing, its heading included. The project's come last, so they are the ones read most recently.
+public func agentInstructions(org: String, orgTexts: AgentTexts, project: String?, projectTexts: AgentTexts?) -> String {
+    func blocks(_ level: String, _ t: AgentTexts) -> [String] {
+        [("general", t.general), ("commits", t.commits), ("pull requests", t.pullRequests)].compactMap { name, text in
+            let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return body.isEmpty ? nil : "## \(level) — \(name)\n\(body)"
+        }
+    }
+    var out = blocks("Organisation \(org)", orgTexts)
+    if let project, let projectTexts { out += blocks("Project \(project)", projectTexts) }
+    return out.joined(separator: "\n\n")
+}
+
+/// Under a box past 2,000 words: what its length costs, since every turn carries it. Nothing is
+/// refused — the operator decides what is worth the tokens.
+public func agentInstructionsSizeHint(_ text: String) -> String? {
+    text.split(whereSeparator: \.isWhitespace).count > 2_000
+        ? "Long instructions ride on every turn the agent takes" : nil
+}
+
+/// The composed instructions per organisation and project, filled by every window from its Settings
+/// reads and read by the agent's launch, which runs off the main actor (ruling R3). A project with no
+/// entry of its own gets its organisation's.
+public final class AgentInstructionsBox: @unchecked Sendable {
+    public static let shared = AgentInstructionsBox()
+    private let lock = NSLock()
+    private var texts: [String: String] = [:]
+
+    public init() {}
+
+    private static func key(_ org: String, _ project: String?) -> String { org + "\u{0}" + (project ?? "") }
+
+    public func set(org: String, project: String?, text: String) {
+        lock.withLock { texts[Self.key(org, project)] = text }
+    }
+
+    public func text(org: String, project: String?) -> String {
+        lock.withLock { texts[Self.key(org, project)] ?? texts[Self.key(org, nil)] ?? "" }
+    }
+}

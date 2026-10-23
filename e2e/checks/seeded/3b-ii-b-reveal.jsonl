@@ -18,5 +18,5 @@
 {"do":{"click":"editor.tree.row:e2e-api/deep/er/x.txt"}}
 {"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-api/deep/er/x.txt"}}
 {"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
-{"dispatch":{"action":"editor_tree_reveal","params":{"pane":"editor-1","path":"/etc/hosts"},"refuses":"Invariant 6"}}
+{"dispatch":{"action":"editor_tree_reveal","params":{"pane":"editor-1","path":"/etc/hosts"},"refuses":"is outside the active project's roots"}}
 {"expect":{"journal":{"contains":"\"action\":\"editor_tree_reveal\""}}}

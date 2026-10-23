@@ -31,9 +31,11 @@ public struct GitRootState: Sendable, Equatable {
     public var files: [GitFileRow]    // already in group, then path order
     public var error: String?         // whole text; "not a git repository" for a non-repo
     public var loading: Bool
+    /// 3a-iii: the branch's upstream (`origin/main`), "" when it has none — Publish's case.
+    public var upstream: String
 
     public init(root: String, name: String, branch: String, detached: String, ahead: Int,
-                behind: Int, files: [GitFileRow], error: String?, loading: Bool) {
+                behind: Int, files: [GitFileRow], error: String?, loading: Bool, upstream: String = "") {
         self.root = root
         self.name = name
         self.branch = branch
@@ -43,6 +45,7 @@ public struct GitRootState: Sendable, Equatable {
         self.files = files
         self.error = error
         self.loading = loading
+        self.upstream = upstream
     }
 }
 
@@ -120,7 +123,7 @@ func gitRootState(root: String, result: Result<JSONValue, Error>) -> GitRootStat
     }
     return GitRootState(root: root, name: name, branch: gitString(s, "branch"), detached: gitString(s, "detached"),
                         ahead: s["ahead"]?.intValue ?? 0, behind: s["behind"]?.intValue ?? 0,
-                        files: files, error: nil, loading: false)
+                        files: files, error: nil, loading: false, upstream: gitString(s, "upstream"))
 }
 
 
