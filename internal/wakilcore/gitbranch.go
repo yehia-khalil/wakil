@@ -1,0 +1,278 @@
+package wakilcore
+
+import (
+	"context"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// GitBranch is one local branch (3a-iv): its upstream and how far it is from it, and how many of its
+// commits the current branch lacks (what deleting it would lose).
+type GitBranch struct {
+	Name     string    `json:"name"`
+	Upstream string    `json:"upstream,omitempty"`
+	Ahead    int       `json:"ahead"`
+	Behind   int       `json:"behind"`
+	Unmerged int       `json:"unmerged"`
+	Current  bool      `json:"current"`
+	Date     time.Time `json:"date"`
+}
+
+// GitBranches is a root's branches: local ones most recently committed first, remote ones no local
+// tracks, and the current branch — or, on a detached HEAD, its short SHA.
+type GitBranches struct {
+	Local    []GitBranch `json:"local"`
+	Remote   []string    `json:"remote"`
+	Current  string      `json:"current"`
+	Detached string      `json:"detached,omitempty"`
+}
+
+// ReadBranches lists the root's branches through the read runner (no repository program runs).
+func ReadBranches(ctx context.Context, g *GitRunner) (GitBranches, error) {
+	var b GitBranches
+	if head, err := g.Run(ctx, "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
+		if h := strings.TrimSpace(string(head)); h != "HEAD" {
+			b.Current = h
+		} else if sha, err := g.Run(ctx, "rev-parse", "--short", "HEAD"); err == nil {
+			b.Detached = strings.TrimSpace(string(sha))
+		}
+	}
+	out, err := g.Run(ctx, "for-each-ref", "--sort=-committerdate",
+		"--format=%(refname:short)%00%(upstream:short)%00%(upstream:track)%00%(committerdate:iso-strict)", "refs/heads")
+	if err != nil {
+		return b, err
+	}
+	tracked := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		f := strings.Split(line, "\x00")
+		if len(f) != 4 {
+			continue
+		}
+		br := GitBranch{Name: f[0], Upstream: f[1], Current: f[0] == b.Current}
+		br.Ahead, br.Behind = parseTrack(f[2])
+		br.Date, _ = time.Parse(time.RFC3339, f[3])
+		if f[1] != "" {
+			tracked[f[1]] = true
+		}
+		if !br.Current {
+			if n, err := g.Run(ctx, "rev-list", "--count", "HEAD.."+br.Name); err == nil {
+				br.Unmerged, _ = strconv.Atoi(strings.TrimSpace(string(n)))
+			}
+		}
+		b.Local = append(b.Local, br)
+	}
+	remotes, err := g.Run(ctx, "for-each-ref", "--format=%(refname:short)%00%(symref)", "refs/remotes")
+	if err != nil {
+		return b, err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(remotes)), "\n") {
+		f := strings.Split(line, "\x00")
+		// A symbolic ref (origin/HEAD, shown as "origin") is not a branch.
+		if len(f) != 2 || f[0] == "" || f[1] != "" || tracked[f[0]] {
+			continue
+		}
+		b.Remote = append(b.Remote, f[0])
+	}
+	return b, nil
+}
+
+// parseTrack reads for-each-ref's %(upstream:track): "[ahead 1, behind 2]", "[gone]" or "".
+func parseTrack(s string) (ahead, behind int) {
+	for _, part := range strings.Split(strings.Trim(s, "[]"), ", ") {
+		if n, ok := strings.CutPrefix(part, "ahead "); ok {
+			ahead, _ = strconv.Atoi(n)
+		}
+		if n, ok := strings.CutPrefix(part, "behind "); ok {
+			behind, _ = strconv.Atoi(n)
+		}
+	}
+	return ahead, behind
+}
+
+// SwitchOptions: Create makes the branch (From its base, or tracking the remote branch Track); Carry
+// says what to do with local changes a plain switch would overwrite — "refuse" (the default) lists
+// them, "stash" stashes them and switches, "bring" stashes, switches and pops (VS Code's Migrate).
+type SwitchOptions struct {
+	Create bool   `json:"create,omitempty"`
+	From   string `json:"from,omitempty"`
+	Track  string `json:"track,omitempty"`
+	Carry  string `json:"carry,omitempty"`
+}
+
+// SwitchResult: Blocked lists the paths a refused switch would overwrite; Stash is the id of the
+// stash the switch left changes in; Note is a sentence for the operator.
+type SwitchResult struct {
+	Switched bool     `json:"switched"`
+	Blocked  []string `json:"blocked,omitempty"`
+	Stash    string   `json:"stash,omitempty"`
+	Note     string   `json:"note,omitempty"`
+}
+
+// NormaliseBranchName trims a typed name and turns each run of spaces into one "-" (VS Code's default).
+func NormaliseBranchName(s string) string {
+	return strings.Join(strings.Fields(s), "-")
+}
+
+// inProgress names a merge or rebase stopped part-way in the root, or "".
+func (w *GitWriter) inProgress(ctx context.Context) string {
+	gitDir, err := w.runner().Run(ctx, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return ""
+	}
+	dir := strings.TrimSpace(string(gitDir))
+	if fileExists(filepath.Join(dir, "rebase-merge")) || fileExists(filepath.Join(dir, "rebase-apply")) {
+		return "A rebase"
+	}
+	if fileExists(filepath.Join(dir, "MERGE_HEAD")) {
+		return "A merge"
+	}
+	return ""
+}
+
+func (w *GitWriter) validName(ctx context.Context, name string) error {
+	if _, err := w.git(ctx, nil, "check-ref-format", "--branch", name); err != nil {
+		return UserError(strconv.Quote(name) + " is not a valid branch name")
+	}
+	return nil
+}
+
+func (w *GitWriter) localBranchExists(ctx context.Context, name string) bool {
+	_, err := w.runner().Run(ctx, "rev-parse", "--verify", "refs/heads/"+name)
+	return err == nil
+}
+
+// Switch moves the root to branch. Never --force or --discard-changes: changes in the way are listed,
+// stashed, or brought along, as o.Carry says. A cancel stops it only before git begins the checkout or
+// between its steps, never mid-checkout.
+func (w *GitWriter) Switch(ctx context.Context, branch string, o SwitchOptions) (SwitchResult, error) {
+	if what := w.inProgress(ctx); what != "" {
+		return SwitchResult{}, UserError(what + " is in progress in " + w.Root + "; finish or abort it first")
+	}
+	args := []string{branch}
+	if o.Create {
+		branch = NormaliseBranchName(branch)
+		if err := w.validName(ctx, branch); err != nil {
+			return SwitchResult{}, err
+		}
+		switch {
+		case w.localBranchExists(ctx, branch): // Rule 7: an existing name is switched to
+			args = []string{branch}
+		case o.Track != "":
+			args = []string{"-c", branch, "--track", o.Track}
+		case o.From != "":
+			args = []string{"-c", branch, o.From}
+		default:
+			args = []string{"-c", branch}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return SwitchResult{}, err
+	}
+	// From here no cancel cuts a step short: each runs whole, and a cancel is honoured between them.
+	steady := context.WithoutCancel(ctx)
+	var stash string
+	if o.Carry == "stash" || o.Carry == "bring" {
+		out, err := w.git(steady, nil, "stash", "push", "--include-untracked", "-m", "wakil: switch to "+branch)
+		if err != nil {
+			return SwitchResult{}, err
+		}
+		if !strings.Contains(string(out), "No local changes to save") {
+			id, _ := w.runner().Run(steady, "rev-parse", "--verify", "refs/stash")
+			stash = strings.TrimSpace(string(id))
+		}
+	}
+	if _, err := w.git(steady, nil, "switch", args...); err != nil {
+		if paths := overwrittenPaths(err.Error()); len(paths) > 0 && stash == "" {
+			return SwitchResult{Blocked: paths}, nil
+		}
+		if stash != "" { // put the changes back where they were
+			w.git(steady, nil, "stash", "pop", "--index")
+		}
+		return SwitchResult{}, err
+	}
+	r := SwitchResult{Switched: true, Stash: stash}
+	if o.Carry != "bring" || stash == "" {
+		return r, nil
+	}
+	if ctx.Err() != nil {
+		r.Note = "Your changes are in git stash (stash@{0})"
+		return r, nil
+	}
+	if _, err := w.git(steady, nil, "stash", "pop"); err != nil {
+		// git keeps the stash on a clash; the tree goes back to the branch's, so nothing is left
+		// half-merged — the stash holds every change (it was taken with the untracked files).
+		w.git(steady, nil, "reset", "--hard", "-q")
+		w.git(steady, nil, "clean", "-fdq")
+		r.Note = "Switched to " + branch + "; your changes clash with it and are kept in git stash"
+		return r, nil
+	}
+	r.Stash = ""
+	return r, nil
+}
+
+// overwrittenPaths reads the paths from git's "would be overwritten by checkout" refusal.
+func overwrittenPaths(text string) []string {
+	if !strings.Contains(text, "would be overwritten by checkout") {
+		return nil
+	}
+	var paths []string
+	listing := false
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case strings.Contains(line, "would be overwritten by checkout"):
+			listing = true
+		case listing && strings.HasPrefix(line, "\t"):
+			paths = append(paths, strings.TrimSpace(line))
+		default:
+			listing = false
+		}
+	}
+	return paths
+}
+
+// RenameBranch renames the current branch (as VS Code does). A name that exists is refused in git's
+// words: forcing it would destroy the other branch.
+func (w *GitWriter) RenameBranch(ctx context.Context, to string) error {
+	b, err := ReadBranches(ctx, w.runner())
+	if err != nil {
+		return err
+	}
+	if b.Current == "" {
+		return UserError("HEAD is detached: there is no branch to rename")
+	}
+	to = NormaliseBranchName(to)
+	if err := w.validName(ctx, to); err != nil {
+		return err
+	}
+	_, err = w.git(ctx, nil, "branch", "-m", to)
+	return err
+}
+
+// DeleteBranch deletes a local branch. Unmerged, it refuses unless force, saying how many commits
+// would be lost; git's own refusal (the current branch, one checked out in another worktree) is whole.
+func (w *GitWriter) DeleteBranch(ctx context.Context, name string, force bool) error {
+	if !force {
+		if n, err := w.runner().Run(ctx, "rev-list", "--count", "HEAD.."+name); err == nil {
+			if c, _ := strconv.Atoi(strings.TrimSpace(string(n))); c > 0 {
+				cur, _ := ReadBranches(ctx, w.runner())
+				on := cur.Current
+				if on == "" {
+					on = "HEAD"
+				}
+				noun := "commits"
+				if c == 1 {
+					noun = "commit"
+				}
+				return UserError(name + " has " + strconv.Itoa(c) + " " + noun + " not on " + on + "; deleting it loses them")
+			}
+		}
+	}
+	flag := "-d"
+	if force {
+		flag = "-D"
+	}
+	_, err := w.git(ctx, nil, "branch", flag, "--", name)
+	return err
+}
