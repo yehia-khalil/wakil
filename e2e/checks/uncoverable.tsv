@@ -91,6 +91,8 @@ settings.org.git.account.add.openTokens	Create a token on <provider> (3a-iii): p
 settings.org.git.account.add.openDevice	Open <host> in Sign in (3a-iii): drawn only while a device code is shown, and Sign in has no control in this build (ctx_git_device_poll's case); its effect would leave the window besides.
 settings.org.git.account.add.gh.<…>	the GitHub CLI login choice (3a-iii): drawn only when `gh auth status` on this Mac holds a login, which a fixture could hold only with the operator's real token (ctx_git_gh_import's case).
 
+ctx_git_device_start	its parity (3a-iii): Sign in has no control in this build — it is hidden until Wakil's OAuth apps have client ids (operator-todo.md), and a device flow needs a provider on the network either way, so no UI half exists. The dispatch is covered by 3a-iii-git-account-actions.jsonl, refused without a client id (`Sign in is not set up for github in this build; use an SSH key or a token`), which reaches no network; Sign in is walk-only.
+
 # ---- 2. Blocked on #254, the browser leg -------------------------------------
 #
 # Every one of these needs a real browser trip and a real one-year credential at
@@ -200,6 +202,8 @@ settings.org.git.account.add.deviceCode	a Text (3a-iii): Sign in's code, drawn o
 settings.projects.clone.error	a Text (3a-iii, Rule 8): the clone sheet's refusal. Read, not pressed — 3a-iii-add-project-clone.jsonl asserts "No git account for e2ehost in e2e-fixture — add one in Settings → Organisation → Git" and its absence once the sheet closes.
 settings.projects.clone.folder	a Text (3a-iii): the folder a clone goes into. Read, not pressed — 3a-iii-add-project-clone.jsonl asserts the seeded `/e2e-clones` in it.
 
+settings.org.git.account.<…>.note	a Text (3a-iii, Rule 8): an account card's Test result or Remove refusal. Read, not pressed — 3a-iii-git-accounts.jsonl asserts "Wakil cannot test a token on e2ehost; it is used on the next fetch" after the card's Test.
+
 # ---- 5. A control that exists only while a write is in flight ----------------
 #
 # Settings' login Cancel is the precedent (section 2), for a different reason:
@@ -220,3 +224,4 @@ settings.section.<…>	a settings page section's hairline (2026-10-21): a Rectan
 settings.receipt	a Text (2e-ii): what a removal said, drawn on the page it landed on until the operator moves. Display text with no press action. Read, not pressed — 2e-ii-project-lifecycle.jsonl asserts "Removed e2e-renamed from this organisation" and 2e-ii-environment-lifecycle.jsonl "a copy of project.json is in the Trash".
 editor_changes_stage_ranges	its parity (3a-ii-b): the click stages the selected lines, and the same dispatch after it finds them already staged and is refused (`the selection holds no change`), so the two halves cannot read back the same state — editor_changes_commit's case. Both channels ARE covered by 3a-ii-b-ranges.jsonl: the dispatch stages line 3 of app.txt and the header button (editor.diff.stageRanges) stages README.md's changed line, each asserted with `git diff --cached --numstat` in a terminal, and the no-change refusal; what no check can express is the comparison.
 editor_changes_unstage_ranges	its parity (3a-ii-b): the click unstages the selected lines, and the same dispatch after it finds nothing staged there and is refused (`the selection holds no change`), so the two halves cannot read back the same state — editor_changes_commit's case. Both channels ARE covered by 3a-ii-b-ranges.jsonl: the header button (editor.diff.unstageRanges) unstages README.md's line and the dispatch unstages app.txt's added line while keeping its changed one staged, each asserted with `git diff` in a terminal; what no check can express is the comparison.
+settings.org.git.account.<…>.test.cancel	the card's Cancel while a Test runs (3a-iii, Rule 4): a control that exists only while a Test is in flight, and every Test the fixture can make ends at once — a token on a host Wakil cannot test is refused before any network, and an ssh account's host does not resolve. Holding a Test open would need an ssh host that accepts and never answers, which the fixture does not serve. The Test itself is 3a-iii-git-accounts.jsonl's; a slow Test against a real host is walk-only.
