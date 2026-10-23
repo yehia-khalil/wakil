@@ -73,6 +73,12 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		// the database half of the pane.
 		"set_database_dsn",
 		"remove_database",
+		// set_api_entry, update_api_entry, remove_api_entry and update_database added by
+		// 2e-iii — an environment's API entries and a database's rename and revoke-write.
+		"set_api_entry",
+		"update_api_entry",
+		"remove_api_entry",
+		"update_database",
 		// record_capacity and capacity added by provider capacity — the
 		// write of one account's reading and the read every surface uses.
 		"record_capacity",

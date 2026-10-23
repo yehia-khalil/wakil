@@ -30,7 +30,10 @@ once, with no confirmation. API entries are the bigger gap.
    fields are. The card is for a new entry; nobody retypes an entry to fix one field.
 3. **The token goes to the Keychain, never to the file.** What lands in `project.json` is
    `authRef`, a Keychain entry name. The ref is derived, never typed:
-   `api:<project>:<environment>:<name>`, as `DatabaseRef` derives `db:…`. The token field is
+   `api:<project>:<environment>:<name>`, as `DatabaseRef` derives `db:…`, with `:2`, `:3`, …
+   appended when another entry or database of the project already names it — a renamed one
+   keeps its old name's ref (Call 8), and a new one under that name must not overwrite it
+   (final review). The token field is
    masked, and holds the header's whole value (`Bearer abc…`), because that is what is sent today.
 4. **Storing a token asks first**, in the pane, with **Store it** / **Cancel**, worded as the
    database card's: "Store a token for orders-api in staging? It goes to your Keychain, not to the
@@ -64,10 +67,11 @@ once, with no confirmation. API entries are the bigger gap.
 ## What the operator gets
 
 1. On an environment's **API** page:
-   - Each entry is a section headed by its name, with editable **Name**, **Base URL** and **Auth
-     header** (`Authorization` shown as the prompt when empty), a **Token** row reading
-     `in Keychain (api:shop:staging:orders-api)` or `none`, **Replace token**, **Clear token**
-     and **Remove**.
+   - Each entry is a section opened by its editable **Name**, with **Remove** at that row's
+     right edge — the name is not drawn a second time as a heading (operator, on the final
+     review). Then editable **Base URL** and **Auth header** (`Authorization` shown as the prompt
+     when empty), and a **Token** row reading `in Keychain (api:shop:staging:orders-api)` or
+     `none`, with **Replace token** and **Clear token**.
    - The **ADD OR REPLACE AN API ENTRY** card below. **Save** is dimmed until NAME and BASE URL
      are filled. On success the card clears; on a refusal it keeps what was typed (Rule 8).
    - The read-only note goes.

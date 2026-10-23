@@ -119,6 +119,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
 
     #expect(
         operatorOnly == [
+            // 2e-iii. An API token travels in `api_set_entry`'s parameters; the rest edit beside it.
+            "api_remove_entry", "api_set_entry", "api_update_entry",
             // Provider capacity: the agent may not forge a reading.
             "capacity_record",
             "ctx_add_provider", "ctx_adopt_provider", "ctx_create_environment", "ctx_create_org",
@@ -150,6 +152,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // objects to what the agent could REACH, and these two object
             // to what it would CARRY.
             "db_remove_database", "db_set_dsn",
+            // 2e-iii. `db_update_database` edits beside them.
+            "db_update_database",
             "session_set_provider",
             // 2e (#198). The eighth, and the weakest on its own merits:
             // opening a pane damages nothing. It is here because every

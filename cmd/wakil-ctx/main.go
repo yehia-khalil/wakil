@@ -309,6 +309,40 @@ type removeDatabaseArgs struct {
 	Name        string `json:"name" jsonschema:"the database's name"`
 }
 
+// setApiEntryArgs: Token is secret-bearing; the Swift action redacts it, so the journal records `[redacted]`.
+type setApiEntryArgs struct {
+	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	Environment string `json:"environment" jsonschema:"the environment the API entry belongs to"`
+	Name        string `json:"name" jsonschema:"the API entry's name"`
+	BaseURL     string `json:"baseUrl" jsonschema:"the API's base URL"`
+	AuthHeader  string `json:"authHeader,omitempty" jsonschema:"the header the token is sent in"`
+	Token       string `json:"token,omitempty" jsonschema:"the API token; stored in the Keychain and never written to the project file"`
+}
+
+type updateApiEntryArgs struct {
+	ProjectPath string  `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	Environment string  `json:"environment" jsonschema:"the environment the API entry belongs to"`
+	Name        string  `json:"name" jsonschema:"the API entry's current name"`
+	NewName     *string `json:"newName,omitempty" jsonschema:"rename the entry; absent leaves it unchanged"`
+	BaseURL     *string `json:"baseUrl,omitempty" jsonschema:"new base URL; absent leaves it unchanged"`
+	AuthHeader  *string `json:"authHeader,omitempty" jsonschema:"new auth header; absent leaves it unchanged"`
+	ClearToken  bool    `json:"clearToken,omitempty" jsonschema:"drop the entry's token reference; the Keychain item is kept"`
+}
+
+type removeApiEntryArgs struct {
+	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	Environment string `json:"environment" jsonschema:"the environment the API entry belongs to"`
+	Name        string `json:"name" jsonschema:"the API entry's name"`
+}
+
+type updateDatabaseArgs struct {
+	ProjectPath string  `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	Environment string  `json:"environment" jsonschema:"the environment the database belongs to"`
+	Name        string  `json:"name" jsonschema:"the database's current name"`
+	NewName     *string `json:"newName,omitempty" jsonschema:"rename the database; absent leaves it unchanged"`
+	RevokeWrite bool    `json:"revokeWrite,omitempty" jsonschema:"make the database read-only again; the write Keychain item is kept"`
+}
+
 type createProjectArgs struct {
 	Folder string `json:"folder" jsonschema:"absolute path of the folder the project lives in"`
 	Name   string `json:"name" jsonschema:"the new project's name"`
@@ -822,6 +856,48 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "remove_database", Description: "Drop a database from an environment. Its Keychain entry is KEPT: the same credential may be named by another project, a script, or a colleague's checkout, none of which this file can see, so \"unreferenced\" is not something the registry can claim. Refuses a project filed under another organisation."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a removeDatabaseArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.RemoveDatabase(a.ProjectPath, a.Environment, a.Name); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_api_entry", Description: "Add an API entry to an environment, or replace the one of that name. The token, if given, goes to the Keychain and never to project.json; the project file keeps only the entry's name, base URL, auth header and the Keychain entry NAME. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setApiEntryArgs) (*mcp.CallToolResult, empty, error) {
+			err := wakilcore.SetApiEntry(wakilcore.ApiEntryRequest{
+				ProjectPath: a.ProjectPath, Environment: a.Environment, Name: a.Name,
+				BaseURL: a.BaseURL, AuthHeader: a.AuthHeader, Token: a.Token,
+			})
+			if err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "update_api_entry", Description: "Edit an API entry: rename it, change its base URL or auth header, or clear its token reference. An argument left out means unchanged. Clearing the token KEEPS its Keychain item, which another project or script may name. A token is never read back or echoed. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a updateApiEntryArgs) (*mcp.CallToolResult, empty, error) {
+			err := wakilcore.UpdateApiEntry(a.ProjectPath, a.Environment, a.Name, wakilcore.ApiEntryEdit{
+				NewName: a.NewName, BaseURL: a.BaseURL, AuthHeader: a.AuthHeader, ClearToken: a.ClearToken,
+			})
+			if err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "remove_api_entry", Description: "Drop an API entry from an environment. Its Keychain item is KEPT: another project, a script or a colleague's checkout may name the same credential. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a removeApiEntryArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.RemoveApiEntry(a.ProjectPath, a.Environment, a.Name); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "update_database", Description: "Edit a database without re-entering its connection string: rename it (its Keychain references are kept) or revoke write access so it is read-only again. An argument left out means unchanged. Revoking write KEEPS the write Keychain item. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a updateDatabaseArgs) (*mcp.CallToolResult, empty, error) {
+			err := wakilcore.UpdateDatabase(a.ProjectPath, a.Environment, a.Name, wakilcore.DatabaseEdit{
+				NewName: a.NewName, RevokeWrite: a.RevokeWrite,
+			})
+			if err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

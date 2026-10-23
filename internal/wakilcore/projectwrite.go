@@ -111,10 +111,18 @@ func SetDatabaseDSN(request DatabaseDSNRequest) error {
 			"not the read credential with a flag set")
 	}
 
-	ref := DatabaseRef(project.Name, request.Environment, request.Name)
+	// **A derived ref another row already names is not this row's to
+	// overwrite.** A rename keeps its refs (`UpdateDatabase`), so after
+	// `core` → `reports` a new `core` would derive `reports`'s ref and
+	// silently replace the credential `reports` sends to its server. The
+	// row's own refs do not count as taken; anyone else's do, anywhere in
+	// the project.
+	taken := refsNamedByOthers(project, request.Environment, "database", request.Name)
+	ref := freshRef(DatabaseRef(project.Name, request.Environment, request.Name), taken)
 	writeRef := ""
 	if request.GrantWrite {
-		writeRef = ref + ":rw"
+		taken[ref] = true
+		writeRef = freshRef(ref+":rw", taken)
 	}
 
 	// **The Keychain first.** A record naming a ref with nothing behind it
@@ -188,6 +196,49 @@ func DatabaseRef(project, environment, name string) string {
 	return "db:" + project + ":" + environment + ":" + name
 }
 
+// refsNamedByOthers is every Keychain ref the project's API entries and
+// databases name — in every environment — except the row being written,
+// which is the `kind` ("api" or "database") called `name` in `environment`.
+func refsNamedByOthers(project *Project, environment, kind, name string) map[string]bool {
+	taken := map[string]bool{}
+	for envName, env := range project.Environments {
+		for _, entry := range env.API {
+			if kind == "api" && envName == environment && entry.Name == name {
+				continue
+			}
+			if entry.AuthRef != "" {
+				taken[entry.AuthRef] = true
+			}
+		}
+		for _, database := range env.Databases {
+			if kind == "database" && envName == environment && database.Name == name {
+				continue
+			}
+			if database.Ref != "" {
+				taken[database.Ref] = true
+			}
+			if database.WriteRef != "" {
+				taken[database.WriteRef] = true
+			}
+		}
+	}
+	return taken
+}
+
+// freshRef is `derived`, or — when another row already names it — the
+// first of `derived:2`, `derived:3`, … that none does.
+func freshRef(derived string, taken map[string]bool) string {
+	if !taken[derived] {
+		return derived
+	}
+	for n := 2; ; n++ {
+		candidate := derived + ":" + strconv.Itoa(n)
+		if !taken[candidate] {
+			return candidate
+		}
+	}
+}
+
 // RemoveDatabase drops a database from an environment **and keeps its
 // Keychain entry**.
 //
@@ -229,6 +280,59 @@ func RemoveDatabase(projectPath, environment, name string) error {
 			strconv.Quote(environment))
 	}
 	env.Databases = kept
+	project.Environments[environment] = env
+	return SaveProject(projectPath, *project)
+}
+
+// DatabaseEdit is what an edit changes; a nil NewName leaves the name as it
+// is. RevokeWrite drops the `writeRef` and nothing else.
+type DatabaseEdit struct {
+	NewName     *string
+	RevokeWrite bool
+}
+
+// UpdateDatabase renames a database or revokes its write access in place.
+//
+// **Both edits keep the Keychain.** A rename leaves `ref` and `writeRef`
+// alone — they are entry names, not labels — and a revoke forgets the
+// `writeRef` without deleting the credential, for the reason `RemoveDatabase`
+// keeps a removed database's. A rename onto another database's name is
+// refused naming it.
+func UpdateDatabase(projectPath, environment, name string, edit DatabaseEdit) error {
+	newName := name
+	if edit.NewName != nil {
+		valid, err := ValidName(*edit.NewName)
+		if err != nil {
+			return err
+		}
+		newName = valid
+	}
+	project, err := loadOwnProject(projectPath)
+	if err != nil {
+		return err
+	}
+	env, ok := project.Environments[environment]
+	if !ok {
+		return UserError("no environment " + strconv.Quote(environment) +
+			" in project " + strconv.Quote(project.Name))
+	}
+	index := -1
+	for i, database := range env.Databases {
+		if database.Name == name {
+			index = i
+		} else if database.Name == newName {
+			return UserError("environment " + strconv.Quote(environment) +
+				" already has a database named " + strconv.Quote(newName))
+		}
+	}
+	if index < 0 {
+		return UserError("no database " + strconv.Quote(name) + " in environment " +
+			strconv.Quote(environment))
+	}
+	env.Databases[index].Name = newName
+	if edit.RevokeWrite {
+		env.Databases[index].WriteRef = ""
+	}
 	project.Environments[environment] = env
 	return SaveProject(projectPath, *project)
 }

@@ -1,0 +1,181 @@
+{"do":{"hotkey":"cmd+,"}}
+
+{"do":{"click":"settings.tree.api.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"ADD OR REPLACE AN API ENTRY"}}
+
+{"do":{"type":{"into":"settings.api.name","text":"orders-api"}}}
+
+{"do":{"type":{"into":"settings.api.baseUrl","text":"https://orders.e2e-fixture.invalid"}}}
+
+{"do":{"click":"settings.api.save"}}
+
+{"expect":{"tree":"contains","text":"Value: orders-api"}}
+
+{"expect":{"tree":"contains","text":"Value: https://orders.e2e-fixture.invalid"}}
+
+{"expect":{"tree":"absent","text":"Store a token for orders-api"}}
+
+{"expect":{"journal":{"contains":"api_set_entry"}}}
+
+{"do":{"focus":"settings.api.orders-api.baseUrl"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"https://orders-two.e2e-fixture.invalid"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"do":{"click":"settings.tree.api.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"Value: https://orders-two.e2e-fixture.invalid"}}
+
+{"expect":{"tree":"absent","text":"Value: https://orders.e2e-fixture.invalid"}}
+
+{"expect":{"journal":{"contains":"api_update_entry"}}}
+
+{"do":{"focus":"settings.api.orders-api.baseUrl"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"http://insecure.example"}}
+
+{"do":{"press":"Return"}}
+
+{"expect":{"tree":"contains","text":"must be an absolute https URL"}}
+
+{"expect":{"tree":"contains","text":"Value: http://insecure.example"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"do":{"click":"settings.tree.api.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"Value: https://orders-two.e2e-fixture.invalid"}}
+
+{"do":{"focus":"settings.api.orders-api.authHeader"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"Host"}}
+
+{"do":{"press":"Return"}}
+
+{"expect":{"tree":"contains","text":"authHeader Host cannot carry a credential"}}
+
+{"expect":{"tree":"contains","text":"Value: Host"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"do":{"click":"settings.tree.api.e2e-project.staging"}}
+
+{"expect":{"tree":"absent","text":"Value: Host"}}
+
+{"do":{"focus":"settings.api.orders-api.name"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"orders-v2"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"do":{"click":"settings.tree.api.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"Value: orders-v2"}}
+
+{"expect":{"tree":"absent","text":"Value: orders-api"}}
+
+{"do":{"click":"settings.api.orders-v2.replaceToken"}}
+
+{"do":{"type":{"into":"settings.api.orders-v2.token","text":"Bearer walk-token-123"}}}
+
+{"expect":{"tree":"contains","text":"Store a token for orders-v2 in staging? It goes to your Keychain, not to the project file."}}
+
+{"do":{"click":"settings.apiToken.cancel"}}
+
+{"expect":{"tree":"absent","text":"Store a token for orders-v2 in staging?"}}
+
+{"do":{"click":"settings.api.orders-v2.replaceToken"}}
+
+{"do":{"type":{"into":"settings.api.orders-v2.token","text":"Bearer e2e-secret-777"}}}
+
+{"expect":{"tree":"contains","text":"Store a token for orders-v2 in staging?"}}
+
+{"do":{"click":"settings.apiToken.confirm"}}
+
+{"expect":{"tree":"contains","text":"in Keychain (api:e2e-project:staging:orders-v2)"}}
+
+{"expect":{"tree":"absent","text":"e2e-secret-777"}}
+
+{"expect":{"journal":{"contains":"[redacted]"}}}
+
+{"do":{"click":"settings.api.orders-v2.clearToken"}}
+
+{"expect":{"tree":"contains","text":"none"}}
+
+{"expect":{"tree":"absent","text":"in Keychain (api:e2e-project:staging:orders-v2)"}}
+
+{"do":{"click":"settings.api.orders-v2.remove"}}
+
+{"expect":{"tree":"contains","text":"Remove orders-v2 from staging? Its Keychain item is kept."}}
+
+{"do":{"click":"settings.api.orders-v2.remove.keep"}}
+
+{"expect":{"tree":"absent","text":"Remove orders-v2 from staging?"}}
+
+{"expect":{"tree":"contains","text":"Value: orders-v2"}}
+
+{"do":{"click":"settings.api.orders-v2.remove"}}
+
+{"do":{"click":"settings.api.orders-v2.remove.confirm"}}
+
+{"expect":{"tree":"absent","text":"Value: orders-v2"}}
+
+{"expect":{"journal":{"contains":"api_remove_entry"}}}
+
+{"dispatch":{"action":"api_set_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"disp-api","baseUrl":"https://disp.e2e-fixture.invalid"}}}
+
+{"expect":{"tree":"contains","text":"Value: disp-api"}}
+
+{"dispatch":{"action":"api_set_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"bad-api","baseUrl":"http://insecure.example"},"refuses":"must be an absolute https URL"}}
+
+{"expect":{"tree":"absent","text":"Value: bad-api"}}
+
+{"dispatch":{"action":"api_update_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"disp-api","newName":"disp-two","baseUrl":"https://disp-two.e2e-fixture.invalid"}}}
+
+{"expect":{"tree":"contains","text":"Value: disp-two"}}
+
+{"expect":{"tree":"absent","text":"Value: disp-api"}}
+
+{"dispatch":{"action":"api_update_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"disp-two","authHeader":"Host"},"refuses":"authHeader Host cannot carry a credential"}}
+
+{"dispatch":{"action":"api_remove_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"disp-two"}}}
+
+{"expect":{"tree":"absent","text":"Value: disp-two"}}
+
+{"do":{"type":{"into":"settings.api.name","text":"token-api"}}}
+
+{"do":{"type":{"into":"settings.api.baseUrl","text":"https://token.e2e-fixture.invalid"}}}
+
+{"do":{"type":{"into":"settings.api.authHeader","text":"X-Api-Key"}}}
+
+{"do":{"type":{"into":"settings.api.token","text":"Bearer e2e-secret-888"}}}
+
+{"do":{"click":"settings.api.save"}}
+
+{"expect":{"tree":"contains","text":"Store a token for token-api in staging? It goes to your Keychain, not to the project file."}}
+
+{"do":{"click":"settings.apiToken.confirm"}}
+
+{"expect":{"tree":"contains","text":"in Keychain (api:e2e-project:staging:token-api)"}}
+
+{"expect":{"tree":"contains","text":"Value: X-Api-Key"}}
+
+{"expect":{"tree":"absent","text":"e2e-secret-888"}}
+
+{"do":{"type":{"into":"settings.api.name","text":"card-api"}}}
+
+{"do":{"type":{"into":"settings.api.baseUrl","text":"https://card.e2e-fixture.invalid"}}}
+
+{"parity":{"action":"api_set_entry","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"card-api","baseUrl":"https://card.e2e-fixture.invalid"},"click":"settings.api.save","assert":"tree"}}
+
+{"expect":{"tree":"contains","text":"Value: card-api"}}

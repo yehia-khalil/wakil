@@ -481,11 +481,14 @@ public struct SettingsAPI: Sendable, Equatable, Decodable {
     public var name: String
     public var baseUrl: String
     public var authRef: String
+    /// The header the credential travels in; empty when none is set (2e-iii).
+    public var authHeader: String
 
-    public init(name: String = "", baseUrl: String, authRef: String = "") {
+    public init(name: String = "", baseUrl: String, authRef: String = "", authHeader: String = "") {
         self.name = name
         self.baseUrl = baseUrl
         self.authRef = authRef
+        self.authHeader = authHeader
     }
 
     public init(from decoder: Decoder) throws {
@@ -493,9 +496,10 @@ public struct SettingsAPI: Sendable, Equatable, Decodable {
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         baseUrl = try container.decodeIfPresent(String.self, forKey: .baseUrl) ?? ""
         authRef = try container.decodeIfPresent(String.self, forKey: .authRef) ?? ""
+        authHeader = try container.decodeIfPresent(String.self, forKey: .authHeader) ?? ""
     }
 
-    private enum CodingKeys: String, CodingKey { case name, baseUrl, authRef }
+    private enum CodingKeys: String, CodingKey { case name, baseUrl, authRef, authHeader }
 }
 
 public struct SettingsMisfiledProject: Sendable, Equatable, Decodable {

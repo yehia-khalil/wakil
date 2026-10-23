@@ -301,6 +301,33 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
     #expect(params["grantWrite"] == .bool(true))
 }
 
+/// 2e-iii. An API entry's token is a secret in the action's own parameters.
+@Test func theApiEntryTokenIsRedactedAndTheFourActionsAreOperatorOnly() async throws {
+    let registry = ActionRegistry(journalDirectory: scratchJournal(), sessionId: "api-token")
+    await registerStandardActions(
+        into: registry, context: nil, panes: PaneStore(), db: nil,
+        resumes: ResumeBroker(), providerSwitches: ProviderSwitchBroker())
+
+    _ = try? await registry.dispatch(
+        name: "api_set_entry",
+        params: .object([
+            "projectPath": .string("/src/orders/project.json"),
+            "environment": .string("staging"), "name": .string("orders"),
+            "baseUrl": .string("https://orders.example"), "token": .string("hunter2"),
+        ]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+
+    let entries = try await registry.journalEntries()
+    guard let entry = entries.first(where: { $0.action == "api_set_entry" }),
+          case .object(let params) = entry.params
+    else { Issue.record("no entry"); return }
+    #expect(params["token"] == .string("[redacted]"))
+    #expect(params["baseUrl"] == .string("https://orders.example"))
+    for name in ["api_set_entry", "api_update_entry", "api_remove_entry", "db_update_database"] {
+        #expect(operatorOnlyActions.contains(name))
+    }
+}
+
 /// **The reason new to the operator-only set.** Every other member objects
 /// to what the agent could REACH; this one objects to what it would
 /// CARRY — and the denial sentence says so rather than borrowing another

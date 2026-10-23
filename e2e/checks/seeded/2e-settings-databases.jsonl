@@ -37,5 +37,7 @@
 {"expect":{"journal":{"contains":"db_set_dsn"}}}
 {"expect":{"journal":{"contains":"[redacted]"}}}
 {"do":{"click":"settings.db.ledger.remove"}}
+{"expect":{"tree":"contains","text":"Remove ledger from staging? Its Keychain entries are kept."}}
+{"do":{"click":"settings.db.ledger.remove.confirm"}}
 {"expect":{"tree":"contains","text":"no databases in this environment"}}
 {"expect":{"journal":{"contains":"db_remove_database"}}}

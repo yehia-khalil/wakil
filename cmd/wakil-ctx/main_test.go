@@ -1297,3 +1297,53 @@ func TestRenameEnvironmentRefusalReachesTheWireVerbatim(t *testing.T) {
 		t.Fatalf("refusal text %q", got)
 	}
 }
+
+func TestApiEntryToolsRoundTrip(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+
+	callOK(t, ctx, cs, "set_api_entry", map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "billing", "baseUrl": "https://api.staging.test",
+	})
+	p, err := wakilcore.LoadProject(pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := p.Environments["staging"].API
+	if len(api) != 1 || api[0].Name != "billing" || api[0].BaseURL != "https://api.staging.test" {
+		t.Fatalf("after set: %+v", api)
+	}
+
+	callOK(t, ctx, cs, "update_api_entry", map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "billing", "newName": "payments",
+	})
+	p, _ = wakilcore.LoadProject(pp)
+	api = p.Environments["staging"].API
+	if len(api) != 1 || api[0].Name != "payments" || api[0].BaseURL != "https://api.staging.test" {
+		t.Fatalf("after rename (base URL must be unchanged): %+v", api)
+	}
+
+	callOK(t, ctx, cs, "remove_api_entry", map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "payments",
+	})
+	p, _ = wakilcore.LoadProject(pp)
+	if len(p.Environments["staging"].API) != 0 {
+		t.Fatalf("entry remains: %+v", p.Environments["staging"].API)
+	}
+}
+
+func TestUpdateDatabaseToolRenames(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[{"name":"core","driver":"mysql","ref":"db:proj:staging:core"}]}`)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+
+	callOK(t, ctx, cs, "update_database", map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "core", "newName": "reports",
+	})
+	p, _ := wakilcore.LoadProject(pp)
+	dbs := p.Environments["staging"].Databases
+	if len(dbs) != 1 || dbs[0].Name != "reports" || dbs[0].Ref != "db:proj:staging:core" {
+		t.Fatalf("after rename: %+v", dbs)
+	}
+}

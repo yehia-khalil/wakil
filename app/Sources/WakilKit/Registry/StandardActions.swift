@@ -939,6 +939,69 @@ public func registerStandardActions(
         }
     ))
 
+    // 2e-iii. The API entries of an environment, and a database's rename and write revocation.
+    // Each forwards its parameters as given to the `wakil-ctx` tool of the same shape; an absent
+    // key means unchanged. Operator-only; `api_set_entry`'s token is the one secret.
+    func str() -> JSONValue { .object(["type": .string("string")]) }
+    func ctxForward(
+        _ action: String, _ tool: String, description: String,
+        required: [String], optional: [String], bools: [String] = [],
+        secret: Set<String> = []
+    ) async {
+        var props: [String: JSONValue] = [:]
+        for key in required + optional { props[key] = str() }
+        for key in bools { props[key] = .object(["type": .string("boolean")]) }
+        await registry.register(Action(
+            name: action, description: description, kind: .control, audience: .operatorOnly,
+            schema: .object([
+                "type": .string("object"), "properties": .object(props),
+                "required": .array(required.map { .string($0) }),
+            ]),
+            handler: { params in
+                guard let context else {
+                    throw StandardActionError.missingClient(action: action, role: "context")
+                }
+                var arguments: [String: JSONValue] = [:]
+                for key in required {
+                    arguments[key] = .string(try requireStringParam(params, key, action: action))
+                }
+                if case .object(let obj) = params {
+                    for key in optional {
+                        if case .string(let v)? = obj[key] { arguments[key] = .string(v) }
+                    }
+                    for key in bools {
+                        if case .bool(let v)? = obj[key] { arguments[key] = .bool(v) }
+                    }
+                }
+                return try await callChecked(
+                    context, tool: tool, arguments: .object(arguments),
+                    action: action, timeout: MCPClient.readReplyTimeout)
+            },
+            secretParams: secret))
+    }
+    await ctxForward(
+        "api_set_entry", "set_api_entry",
+        description: "Add or replace an API entry in an environment. The token goes to the "
+            + "Keychain; the project file gets its entry NAME. Operator-only: the token is a secret.",
+        required: ["projectPath", "environment", "name", "baseUrl"],
+        optional: ["authHeader", "token"], secret: ["token"])
+    await ctxForward(
+        "api_update_entry", "update_api_entry",
+        description: "Rename an API entry or change its base URL or auth header, or clear its "
+            + "token. An absent key is unchanged. Operator-only.",
+        required: ["projectPath", "environment", "name"],
+        optional: ["newName", "baseUrl", "authHeader"], bools: ["clearToken"])
+    await ctxForward(
+        "api_remove_entry", "remove_api_entry",
+        description: "Drop an API entry from an environment. Operator-only.",
+        required: ["projectPath", "environment", "name"], optional: [])
+    await ctxForward(
+        "db_update_database", "update_database",
+        description: "Rename a database in an environment, or revoke its write access. "
+            + "An absent key is unchanged. Operator-only.",
+        required: ["projectPath", "environment", "name"],
+        optional: ["newName"], bools: ["revokeWrite"])
+
     // 2e-ii. Add, rename and remove a project and an environment from Settings: six
     // `.control`, `.operatorOnly` actions over `wakil-ctx`'s six writers, each a plain
     // forward like `db_remove_database` above. Operator-only because the agent's place is

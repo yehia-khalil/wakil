@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/2e-iii-api-entries.jsonl",
+  "baseCommit": "dd65cbf2bbacdf39358e36f7e0797eb1bd593313",
+  "provedAt": "2026-10-22T20:53:20.749129Z",
+  "checkBlob": "c02c5565aa4a7442c7cd385f8394e7a74ad1afa2"
+}

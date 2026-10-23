@@ -262,6 +262,22 @@ extension PaneStore {
         return changed
     }
 
+    /// An API entry was renamed: every api pane of the active scope whose draft targets `old`
+    /// now targets `new` (2e-iii). Stashed scopes re-resolve on return.
+    /// Answers the panes it re-pointed, for the caller to retitle (W8).
+    @discardableResult
+    func renameApiEntry(from old: String, to new: String) -> [String] {
+        var touched: [String] = []
+        for paneId in Array(paneKeys) where holds(ApiPaneKind.self, paneId) {
+            var contents = api(paneId)
+            guard contents.draft.entry == old else { continue }
+            contents.draft.entry = new
+            setApi(paneId, contents)
+            touched.append(paneId)
+        }
+        return touched
+    }
+
     // MARK: - A send in flight (W14)
 
     /// The id of every api pane whose send STARTS or ENDS (preflight F1).

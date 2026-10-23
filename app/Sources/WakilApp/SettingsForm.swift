@@ -47,6 +47,11 @@ enum SettingsScale {
     static let labelWidth: CGFloat = 120
     /// The rhythm between a page's sections, and from a section's hairline to its header.
     static let sectionGap: CGFloat = 12
+    /// What opens under a row — a confirmation, **Replace token**'s field, a refusal — sits this
+    /// far from the next row (2e-iii).
+    static let openGap: CGFloat = 8
+    /// Between a card's fields, across and down: `FormCard`'s own spacing.
+    static let fieldGap: CGFloat = 12
 }
 
 /// §5's colours, as the settings pane uses them. Text is cool white stepped
@@ -87,6 +92,20 @@ struct FormCard<Content: View>: View {
     }
 }
 
+/// A card's row of fields: side by side when the card is wide enough, one under another when it
+/// is not — so a card never draws wider than its pane (§14). The fields keep their widths; it is
+/// the row that gives way, as the account table's verbs do.
+struct FormRow<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .bottom, spacing: SettingsScale.fieldGap) { content }
+            VStack(alignment: .leading, spacing: SettingsScale.fieldGap) { content }
+        }
+    }
+}
+
 /// A `.micro` label above a control: the forms' one labelling idiom.
 struct FormLabelled<Content: View>: View {
     let label: String
@@ -113,6 +132,13 @@ struct LabelledField: View {
     let width: CGFloat
     let identifier: String
     var secure: Bool = false
+    /// `width` is the most it takes rather than what it always takes: it narrows with the card,
+    /// so a long field (a base URL, a token, a host) never runs past the pane (§14).
+    var narrows: Bool = false
+    /// A focus the caller moves into this field, as `focusKey` (Rule 3): **Replace connection**
+    /// puts the keyboard in the first empty credential field.
+    var focus: FocusState<String?>.Binding? = nil
+    var focusKey: String = ""
 
     var body: some View {
         FormLabelled(label: label) {
@@ -128,7 +154,34 @@ struct LabelledField: View {
             .textFieldStyle(.plain)
             .font(.system(size: SettingsScale.identifier, design: .monospaced))
             .foregroundStyle(SettingsPalette.coolWhite.opacity(0.90))
-            .fieldBox(width: width)
+            .modifier(FieldBoxWidth(width: width, narrows: narrows))
+            .modifier(MovableFocus(focus: focus, key: focusKey))
+        }
+    }
+}
+
+private struct MovableFocus: ViewModifier {
+    let focus: FocusState<String?>.Binding?
+    let key: String
+
+    func body(content: Content) -> some View {
+        if let focus {
+            content.focused(focus, equals: key)
+        } else {
+            content
+        }
+    }
+}
+
+private struct FieldBoxWidth: ViewModifier {
+    let width: CGFloat
+    let narrows: Bool
+
+    func body(content: Content) -> some View {
+        if narrows {
+            content.fieldBox(maxWidth: width)
+        } else {
+            content.fieldBox(width: width)
         }
     }
 }
@@ -137,15 +190,26 @@ extension View {
     /// The boxed `.field`: its own background and a hairline, so a value a person types is never
     /// mistaken for a label. `LabelledField` draws it; so does any field that sits in a list.
     func fieldBox(width: CGFloat) -> some View {
-        padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .frame(width: width, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(SettingsPalette.coolWhite.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .stroke(SettingsPalette.coolWhite.opacity(0.14), lineWidth: 0.5)))
+        fieldPadding().frame(width: width, alignment: .leading).fieldSurface()
+    }
+
+    /// The same `.field` at most `maxWidth` wide, narrowing with its column, so a form never draws
+    /// wider than its pane (§14): a card's long fields, and **Replace token**'s field.
+    func fieldBox(maxWidth: CGFloat) -> some View {
+        fieldPadding().frame(maxWidth: maxWidth, alignment: .leading).fieldSurface()
+    }
+
+    private func fieldPadding() -> some View {
+        padding(.horizontal, 9).padding(.vertical, 6)
+    }
+
+    private func fieldSurface() -> some View {
+        background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(SettingsPalette.coolWhite.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(SettingsPalette.coolWhite.opacity(0.14), lineWidth: 0.5)))
     }
 }
 
@@ -278,11 +342,16 @@ struct FormButton: View {
 /// style, which every section now shares; `accessory` sits beside it (QUICK TASKS' ⓘ).
 struct SettingsSection<Accessory: View, Content: View>: View {
     let title: String
+    /// False for a section whose first row already says its name (an API entry's editable Name,
+    /// 2e-iii): the hairline and its identifier stay, the heading is not drawn twice.
+    var drawsTitle: Bool = true
     let accessory: Accessory
     let content: Content
 
-    init(_ title: String, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
+    init(_ title: String, drawsTitle: Bool = true,
+         @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.drawsTitle = drawsTitle
         self.accessory = accessory()
         self.content = content()
     }
@@ -296,15 +365,21 @@ struct SettingsSection<Accessory: View, Content: View>: View {
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.10)).frame(height: 0.5)
                 .accessibilityElement()
                 .accessibilityIdentifier("settings.section.\(fragment)")
-            HStack(alignment: .center, spacing: 6) {
-                Text(title.uppercased())
-                    .font(.system(size: SettingsScale.micro, weight: .medium))
-                    .tracking(SettingsScale.microTracking)
-                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.32))
-                accessory
+                // Untitled, the rule is all that parts one section from the next, so it takes the
+                // air a title would have had above it — and the row before it draws no hairline of
+                // its own (`SettingsRow(rule: false)`), or the two read as one doubled line.
+                .padding(.top, drawsTitle ? 0 : SettingsScale.sectionGap)
+            if drawsTitle {
+                HStack(alignment: .center, spacing: 6) {
+                    Text(title.uppercased())
+                        .font(.system(size: SettingsScale.micro, weight: .medium))
+                        .tracking(SettingsScale.microTracking)
+                        .foregroundStyle(SettingsPalette.coolWhite.opacity(0.32))
+                    accessory
+                }
+                .padding(.top, SettingsScale.sectionGap)
+                .padding(.bottom, 4)
             }
-            .padding(.top, SettingsScale.sectionGap)
-            .padding(.bottom, 4)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -335,11 +410,14 @@ extension SettingsSection where Accessory == EmptyView {
 struct SettingsRow<Value: View>: View {
     let label: String
     var wraps: Bool = false
+    /// False for the last row of an untitled section: the next section's rule is its separator.
+    var rule: Bool = true
     let value: Value
 
-    init(_ label: String, wraps: Bool = false, @ViewBuilder value: () -> Value) {
+    init(_ label: String, wraps: Bool = false, rule: Bool = true, @ViewBuilder value: () -> Value) {
         self.label = label
         self.wraps = wraps
+        self.rule = rule
         self.value = value()
     }
 
@@ -361,7 +439,9 @@ struct SettingsRow<Value: View>: View {
         }
         .frame(minHeight: SettingsScale.rowHeight, alignment: .leading)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(SettingsPalette.coolWhite.opacity(0.06)).frame(height: 0.5)
+            if rule {
+                Rectangle().fill(SettingsPalette.coolWhite.opacity(0.06)).frame(height: 0.5)
+            }
         }
     }
 
