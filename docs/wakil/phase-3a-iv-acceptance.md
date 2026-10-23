@@ -8,7 +8,7 @@ stashes, applies, pops and drops stashes, from the context line's Branch segment
 view, as VS Code does; changes in the way are stashed or brought along, never lost; the agent and
 voice reach the same actions, and delete and drop ask the operator when they ask.
 
-Nothing here is walked yet: the Walked column is empty until the operator ticks it.
+Walked by the operator on 2026-10-23, on this Mac: all ten steps pass, after the walk's fixes — the picker opening on the current branch, and the Branch menu drawing again right after a switch.
 
 ## 0. Setup
 
@@ -55,16 +55,16 @@ this Mac. Do them in order: each starts where the one before left off.
 
 | # | Where | Do | Expect | Walked |
 |---|---|---|---|---|
-| 1 | Wakil | Hover the context line, click **Branch** (it reads `main`) | A picker opens with the filter focused: **Create branch from…**, `feature/search`, `main` ✓ and highlighted, `origin/other` marked remote, **Fetch**. ↑↓ move the highlight; Escape closes it | |
-| 2 | Wakil | Click **Branch**, pick `feature/search` | The picker closes. The segment and the Changes header read `feature/search`; the Files tree shows `s.txt`. Click **Branch** again: it opens at once, `feature/search` ✓ | |
-| 3 | Wakil | Click **Branch**, type `fix the login`, press Return | The first row read **Create branch "fix-the-login"**; the segment now reads `fix-the-login` | |
-| 4 | Wakil | Changes header **▾** → Branch → **Rename Branch…**, replace the name with `fix-login`, press Return | The field took the keyboard with the old name in it; the segment and header read `fix-login` | |
-| 5 | Terminal | `printf 'one\nMINE\nthree\n' > "$TMPDIR/walk-3a-iv/work/a.txt"` | The Changes view lists `a.txt` as modified | |
-| 6 | Wakil | Click **Branch**, pick `origin/other`, then press **Bring Them Along** | First, in the picker: `Your changes to a.txt would be overwritten by other.` with **Stash and Switch**, **Bring Them Along**, **Cancel**. After: the segment reads `other`; the note says `Switched to other; your changes clash with it and are kept in git stash`; Changes is clean; a **Stashes 1** group appears | |
-| 7 | Wakil | Open **Stashes**, open the stash `wakil: switch to other`, click `a.txt` (the row reads `wakil: switch to other · on fix-login`) | A read-only tab `a.txt (Stash)`: `two` on the left, `MINE` on the right | |
-| 8 | Terminal, then Wakil | `echo x >> "$TMPDIR/walk-3a-iv/work/a.txt"`, then **▾** → Stash → **Stash**, type `wip`, click elsewhere, then click back in the field and press Return | Clicking elsewhere left the field open with `wip` in it. Return stashed: Changes is clean and Stashes lists `wip · on other` above the first stash | |
-| 9 | Wakil | Hover `wip` → **Pop**. Then hover the other stash → **Drop**, then **Drop** again | Pop: `a.txt` is modified again and `wip` is gone. Drop first asked in place: `Drop "wakil: switch to other"? It cannot be applied again.` with **Keep it** / **Drop**; after it the Stashes group is gone | |
-| 10 | Wakil | **▾** → Branch → **Delete Branch…**, pick `fix-login`, press **Delete**. Then in the composer at the bottom type `delete branch feature/search in work`, Return, and approve the plane | Delete asked in place: `Delete fix-login? Its 1 commit not on other is kept only in git's reflog.`; after it `fix-login` is gone from the picker. The agent's delete raised the permission plane naming `feature/search`; after approval it is gone from the picker | |
+| 1 | Wakil | Hover the context line, click **Branch** (it reads `main`) | A picker opens with the filter focused: **Create branch from…**, `feature/search`, `main` ✓ and highlighted, `origin/other` marked remote, **Fetch**. ↑↓ move the highlight; Escape closes it | ✓ 2026-10-23 |
+| 2 | Wakil | Click **Branch**, pick `feature/search` | The picker closes. The segment and the Changes header read `feature/search`; the Files tree shows `s.txt`. Click **Branch** again: it opens at once, `feature/search` ✓ | ✓ 2026-10-23 |
+| 3 | Wakil | Click **Branch**, type `fix the login`, press Return | The first row read **Create branch "fix-the-login"**; the segment now reads `fix-the-login` | ✓ 2026-10-23 |
+| 4 | Wakil | Changes header **▾** → Branch → **Rename Branch…**, replace the name with `fix-login`, press Return | The field took the keyboard with the old name in it; the segment and header read `fix-login` | ✓ 2026-10-23 |
+| 5 | Terminal | `printf 'one\nMINE\nthree\n' > "$TMPDIR/walk-3a-iv/work/a.txt"` | The Changes view lists `a.txt` as modified | ✓ 2026-10-23 |
+| 6 | Wakil | Click **Branch**, pick `origin/other`, then press **Bring Them Along** | First, in the picker: `Your changes to a.txt would be overwritten by other.` with **Stash and Switch**, **Bring Them Along**, **Cancel**. After: the segment reads `other`; the note says `Switched to other; your changes clash with it and are kept in git stash`; Changes is clean; a **Stashes 1** group appears | ✓ 2026-10-23 |
+| 7 | Wakil | Open **Stashes**, open the stash `wakil: switch to other`, click `a.txt` (the row reads `wakil: switch to other · on fix-login`) | A read-only tab `a.txt (Stash)`: `two` on the left, `MINE` on the right | ✓ 2026-10-23 |
+| 8 | Terminal, then Wakil | `echo x >> "$TMPDIR/walk-3a-iv/work/a.txt"`, then **▾** → Stash → **Stash**, type `wip`, click elsewhere, then click back in the field and press Return | Clicking elsewhere left the field open with `wip` in it. Return stashed: Changes is clean and Stashes lists `wip · on other` above the first stash | ✓ 2026-10-23 |
+| 9 | Wakil | Hover `wip` → **Pop**. Then hover the other stash → **Drop**, then **Drop** again | Pop: `a.txt` is modified again and `wip` is gone. Drop first asked in place: `Drop "wakil: switch to other"? It cannot be applied again.` with **Keep it** / **Drop**; after it the Stashes group is gone | ✓ 2026-10-23 |
+| 10 | Wakil | **▾** → Branch → **Delete Branch…**, pick `fix-login`, press **Delete**. Then in the composer at the bottom type `delete branch feature/search in work`, Return, and approve the plane | Delete asked in place: `Delete fix-login? Its 1 commit not on other is kept only in git's reflog.`; after it `fix-login` is gone from the picker. The agent's delete raised the permission plane naming `feature/search`; after approval it is gone from the picker | ✓ 2026-10-23 |
 
 ## 2. Known and not fixed
 
