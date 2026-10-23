@@ -3555,10 +3555,11 @@ public final class WindowModel {
     /// Moves each conversation of the renamed place that has no live session to the new name
     /// (`PlaceAgent.place`, `screenConversations`), so its conversation — what the canvas on screen
     /// is filed under — and its thread come along rather than vanishing with the old key. The id a
-    /// place reserved for its next conversation (`reservedConversations`) and the socket opened for
-    /// it (`ShownSocket.place`) move with it, so `openShownSocket` still finds that socket and opens
-    /// no second one. A live one cannot be here: the rename is refused while an agent runs in the
-    /// place (Invariant 5). One whose new place already has a conversation is left where it is.
+    /// place reserved for its next conversation (`reservedConversations`) moves with it, and the
+    /// socket opened for it is stopped and opened again answering for the new place, under the same
+    /// id (`ShownSocket`), so `openShownSocket` finds it there and the place's first session takes
+    /// it. A live one cannot be here: the rename is refused while an agent runs in the place
+    /// (Invariant 5). One whose new place already has a conversation is left where it is.
     private func carryAgents(project: String, environment: String?, renamed: (Place) -> Place) {
         let places = Set(screenConversations.keys).union(reservedConversations.keys)
             .union(shownSockets.values.map(\.place))
@@ -3579,7 +3580,17 @@ public final class WindowModel {
                 moved = id
             }
             if let moved, let shown = shownSockets[moved], shown.place == from {
-                shownSockets[moved] = ShownSocket(sessionId: shown.sessionId, place: to, opening: shown.opening)
+                // Its caller is fixed when it opens (`openSocket`), so relabelling it would leave
+                // every call on it answering for the place that no longer exists (Invariant 4).
+                // Stopped, then opened again for the new place under the same id — in that
+                // order, so the path is free before the new one binds it.
+                let factory = agentSocketFactory
+                let sessionId = shown.sessionId
+                let reopening = Task { () -> OpenedSocket in
+                    await shown.opening.value.socket?.stop()
+                    return await Self.openSocket(factory, in: to, sessionId: sessionId, conversation: moved)
+                }
+                shownSockets[moved] = ShownSocket(sessionId: sessionId, place: to, opening: reopening)
             }
         }
     }
@@ -7297,7 +7308,8 @@ public final class WindowModel {
             // `voice_turn` line, and no suspension sits before the
             // org-switch generation guard in `textWithIdentifierNote`.
             if source == .voice {
-                try? await registry.journalVoiceTurn(caller: DispatchCaller(place: agent.place, session: nil))
+                try? await registry.journalVoiceTurn(
+                    caller: DispatchCaller(place: agent.place, session: nil, conversation: agent.id))
             }
             // A session running without its socket says so after each turn, not only once.
             status = agent.socketFailure ?? ""
@@ -7444,16 +7456,17 @@ public final class WindowModel {
             return
         }
         // A running agent forks under its own account; a place with none takes the window's —
-        // only while it is the window's place: one the screen has left keeps the account it was
-        // given in its own organisation (Invariant 4).
-        let providerId = agent.harness == nil && agent.place == self.place ? self.providerId : agent.providerId
+        // only while it is the conversation on screen: one the screen has left keeps the account
+        // it was given in its own organisation (Invariant 4).
+        let providerId = agent.harness == nil && agent === currentAgent ? self.providerId : agent.providerId
         // **As the agent** (Invariant 4): its session store is its own place's, which only the
         // client pinned to that place answers for once the screen is elsewhere. A caller is
         // pinned only with a session id (`pinnedPlace(of:)`), and an agent with no session yet
         // has none (`PlaceAgent.caller`), so this one carries the id `markSessionStarted` minted
         // above: the reads and the fork's `session_record_parent` go to this place's client, not
         // the window's.
-        let caller = DispatchCaller(place: agent.place, session: agent.sessionId ?? agent.assignedSessionId)
+        let caller = DispatchCaller(
+            place: agent.place, session: agent.sessionId ?? agent.assignedSessionId, conversation: agent.id)
         let thread: SessionThreadSnapshot
         do {
             thread = try await readThread(parent, as: caller)
@@ -7755,7 +7768,9 @@ public final class WindowModel {
         guard let credentials = await resolveCredentials(
             forProvider: id, in: startPlace, statusPrefix: "set provider \(id)")
         else { return }
-        let agent = agent(for: startPlace)
+        // The conversation the slot checks above were made for, not whatever the place shows
+        // after those awaits — as `send` resolves its own.
+        let agent = startConversation.flatMap(conversation(id:)) ?? agent(for: startPlace)
         // Minted before the harness: it names the new session's own socket, started first.
         let fresh = UUID().uuidString
         guard let started = await makeSession(
@@ -8642,7 +8657,7 @@ public final class WindowModel {
         agent.appendRow(label: "resolved", detail: TurnNote.row(resolutions))
         try? await registry.journalIdentifierEvent(
             action: "identifiers_resolved", params: .object(["note": .string(note)]),
-            caller: DispatchCaller(place: agent.place, session: nil), outcome: "ok")
+            caller: DispatchCaller(place: agent.place, session: nil, conversation: agent.id), outcome: "ok")
         return text + "\n\n" + note
     }
 

@@ -82,7 +82,7 @@ private func snapshot(_ layout: LayoutStore, in scope: LayoutScope) async -> Lay
     await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }
 }
 
-private func agentProposal(in place: Place, conversation: String?) -> PendingMutation {
+private func agentProposal(in place: Place, conversation: String) -> PendingMutation {
     PendingMutation(
         action: "db_run_mutation", params: .object([:]), database: nil, statement: "DELETE FROM t",
         affectsEveryRow: true, origin: .agent, place: place, conversation: conversation)
@@ -285,7 +285,7 @@ struct ConversationKeyTests {
         #expect(model.liveConversations(in: renamed).map(\.id) == [id])
     }
 
-    @Test func aRenamedPlacesReservedIdAndShownSocketFollowItAndNoSecondSocketOpens() async throws {
+    @Test func aRenamedPlacesReservedIdFollowsItAndItsShownSocketReopensAnsweringForTheNewPlace() async throws {
         let sessions = Sessions()
         let window = try await renameWindow(sessions)
         let model = window.model
@@ -302,13 +302,20 @@ struct ConversationKeyTests {
         let renamed = Place(organization: oldPlace.organization, project: "p", environment: "local")
         #expect(model.shownSocketSessionIdForTesting(renamed) == reserved, "found under the new place")
         #expect(model.shownSocketSessionIdForTesting(oldPlace) == nil)
-        #expect(sessions.issuedSockets.count == 1, "no second socket opened")
+        let sockets = sessions.issuedSockets
+        #expect(sockets.count == 2, "the old place's socket replaced by one for the new place")
+        #expect(sockets.first?.stopped == true, "the socket answering for the old place is stopped")
+        let live = try #require(sockets.last)
+        #expect(!live.stopped && live.path == agentSocketPath(agentSessionId: reserved))
+        let caller = await live.caller()
+        #expect(caller.place == renamed, "a call on the shown socket answers for the renamed place")
+        #expect(caller.conversation == reserved && caller.session == reserved)
         model.markSessionStarted()
         #expect(model.agents[renamed]?.id == reserved, "the new place's first conversation takes the reserved id")
         await model.shutdown()
     }
 
-    @Test func shutdownStopsEveryConversationAndEveryReservedSocketOnce() async throws {
+    @Test func shutdownStopsEveryConversationAndEveryReservedSocket() async throws {
         let sessions = Sessions()
         let model = try await resumableWindow(sessions)
         show(placeA, in: model)

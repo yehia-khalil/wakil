@@ -12,7 +12,7 @@ public struct ProposalSlot: Hashable, Sendable {
     }
 }
 
-/// Holds at most one refused mutation per place while a human decides about it.
+/// Holds at most one refused mutation per slot (`ProposalSlot`) while a human decides about it.
 ///
 /// This is the whole of the answer to a problem
 /// `phase-2b-i-acceptance.md` recorded on 2026-09-08 and left open:
@@ -32,11 +32,13 @@ public struct ProposalSlot: Hashable, Sendable {
 /// `ActionRegistry.dispatch` knows nothing about any of this and is
 /// unchanged. Parking happens strictly above it.
 ///
-/// **Single-flight per place.** Each place (one agent, background agents 3 of 4) holds one
-/// proposal at a time; a second in the same place is refused `.busy`. Two places' agents wait
-/// side by side, and the plane draws only the screen's. A queue within a place would need an
-/// ordering rule and an answer for two confirmations that contradict each other — none of it
-/// worth building.
+/// **Single-flight per slot.** A slot is a place and, for an agent's proposal, the conversation
+/// that made it (`ProposalSlot`, `PendingMutation.slot`); the operator's own proposals take the
+/// place's slot, with no conversation. Each slot holds one proposal at a time; a second in the
+/// same slot is refused `.busy`. Other slots — another conversation's, another place's, the
+/// operator's beside an agent's — wait side by side, and the plane draws only the screen's. A
+/// queue within a slot would need an ordering rule and an answer for two confirmations that
+/// contradict each other — none of it worth building.
 ///
 /// **Only the operator's proposals expire (R1).** An agent's waits until the operator approves
 /// or cancels it — Rule 4: Cancel is how a wait ends, and an agent in a place the operator is

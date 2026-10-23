@@ -27,7 +27,7 @@ public struct PendingMutation: Sendable, Equatable, Identifiable {
     /// different things to be reading at 6pm.
     public let origin: ActionOrigin
     /// Where it waits: the agent's own place, or the screen's for the operator's. The broker
-    /// holds one proposal per place, and the plane draws only the screen's.
+    /// holds one proposal per slot (`slot`), and the plane draws only the screen's.
     public let place: Place
     /// The conversation within `place` that proposed it; nil when none is named.
     public let conversation: String?
@@ -35,7 +35,8 @@ public struct PendingMutation: Sendable, Equatable, Identifiable {
     /// Where the broker parks it: an agent's proposal in its conversation's slot, the
     /// operator's in the place's own slot (conversation nil), whatever conversation is named.
     public var slot: ProposalSlot {
-        ProposalSlot(place: place, conversation: origin == .agent ? conversation : nil)
+        assert(origin != .agent || conversation != nil, "an agent's proposal names its conversation")
+        return ProposalSlot(place: place, conversation: origin == .agent ? conversation : nil)
     }
 
     public init(

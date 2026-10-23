@@ -8,7 +8,7 @@ private let placeB = Place(organization: "org", project: "billing", environment:
 
 private func proposal(
     _ id: String = "p1", statement: String = "DELETE FROM t WHERE id=1",
-    place: Place = placeA, origin: ActionOrigin = .agent, conversation: String? = nil
+    place: Place = placeA, origin: ActionOrigin = .agent, conversation: String? = "conv"
 ) -> PendingMutation {
     PendingMutation(
         id: id, action: "db_run_mutation",
@@ -116,8 +116,9 @@ private func proposal(
             thoughts: 0, project: place.project, environment: place.environment)
     }
     show(placeA)
-    let a = proposal("a", place: placeA)
-    let b = proposal("b", place: placeB)
+    // The operator's, so each takes its place's own slot: no conversation is on screen here.
+    let a = proposal("a", place: placeA, origin: .ui)
+    let b = proposal("b", place: placeB, origin: .ui)
     let aTask = Task { await broker.request(a) }
     let bTask = Task { await broker.request(b) }
     while model.waitingPlaces != [placeA, placeB] { await Task.yield() }

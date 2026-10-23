@@ -48,7 +48,7 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
     public let conversation: String
     public var id: Place { place }
 
-    init(place: Place, state: State, productionEnvironment: Bool, conversation: String = "") {
+    init(place: Place, state: State, productionEnvironment: Bool, conversation: String) {
         self.place = place
         self.conversation = conversation
         self.state = state

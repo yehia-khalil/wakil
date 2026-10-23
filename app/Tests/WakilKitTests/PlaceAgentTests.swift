@@ -630,7 +630,7 @@ private final class ProviderLog: @unchecked Sendable {
 
 /// An agent's proposal parked in `place`, as `MCPServer.parkForConfirmation` parks one.
 /// `conversation`: the one that parks it, as a socket caller names its own.
-private func agentProposal(in place: Place, conversation: String? = nil) -> PendingMutation {
+private func agentProposal(in place: Place, conversation: String) -> PendingMutation {
     PendingMutation(
         action: "db_run_mutation", params: .object([:]), database: nil, statement: "DELETE FROM t",
         affectsEveryRow: true, origin: .agent, place: place, conversation: conversation)
@@ -685,7 +685,7 @@ struct PlaceApprovalTests {
         #expect(await model.send("hello B"))
         show(placeA, in: model)
         #expect(await model.send("hello A"))
-        let other = agentProposal(in: placeB)
+        let other = agentProposal(in: placeB, conversation: try #require(model.agents[placeB]?.id))
         let parked = Task { await broker.request(other) }
         #expect(await waitUntil { await broker.current(for: placeB)?.id == other.id })
 
@@ -703,7 +703,7 @@ struct PlaceApprovalTests {
         let model = twoPlaceWindow(harnesses, confirmations: broker)
         show(placeA, in: model)
         #expect(await model.send("hello A"))
-        let proposal = agentProposal(in: placeA)
+        let proposal = agentProposal(in: placeA, conversation: try #require(model.agents[placeA]?.id))
         let parked = Task { await broker.request(proposal) }
         #expect(await waitUntil { await broker.current(for: placeA)?.id == proposal.id })
 

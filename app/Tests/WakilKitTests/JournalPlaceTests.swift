@@ -52,10 +52,10 @@ private func registryWithRead() async -> ActionRegistry {
 
 extension DispatchCaller {
     /// A caller in a fixed test place, for tests that only care which environment is judged.
-    static func test(_ environment: String, session: String? = nil) -> DispatchCaller {
+    static func test(_ environment: String, session: String? = nil, conversation: String? = nil) -> DispatchCaller {
         DispatchCaller(
             place: Place(organization: "org", project: "proj", environment: environment),
-            session: session)
+            session: session, conversation: conversation)
     }
 }
 
