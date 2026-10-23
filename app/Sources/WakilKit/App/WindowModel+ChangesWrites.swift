@@ -175,7 +175,7 @@ extension WindowModel {
 
     /// One write: the root is in flight for its length, an error is kept whole (the action's own prefix
     /// included), and a result that lands after an org switch is dropped. Nil on failure or a dropped result.
-    private func changesWrite(_ root: String, _ name: String, _ params: [String: JSONValue]) async -> JSONValue? {
+    func changesWrite(_ root: String, _ name: String, _ params: [String: JSONValue]) async -> JSONValue? {
         // One write per root: the controls are disabled while it runs, and a second one must not
         // touch the first's spinner, task or error.
         guard !changesInFlight.contains(root) else { return nil }

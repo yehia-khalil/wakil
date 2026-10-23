@@ -364,6 +364,83 @@ func registerEditorChangesWrites(
             price: price))
     }
 
+    // 3a-iv: branches and stash (Decision 46). Every write goes through `write`, one per root at a time;
+    // none forces. Delete and drop carry an agent price of gate: the operator's click confirms in place,
+    // the agent's ask raises the plane.
+    @Sendable func intParam(_ params: JSONValue, _ key: String, action: String) throws -> Int {
+        guard case .object(let o) = params, let v = o[key]?.intValue else {
+            throw StandardActionError.missingParam(action: action, param: key)
+        }
+        return v
+    }
+    @Sendable func forward(_ params: JSONValue, _ keys: [String]) -> [String: JSONValue] {
+        guard case .object(let o) = params else { return [:] }
+        return o.filter { keys.contains($0.key) }
+    }
+    let string: JSONValue = .object(["type": .string("string")])
+    let integer: JSONValue = .object(["type": .string("integer")])
+    let boolean: JSONValue = .object(["type": .string("boolean")])
+    for (name, tool, what) in [
+        ("editor_changes_branches", "git_branches", "Read one root's branches: local ones most recently committed first, remote ones no local tracks, and the current branch."),
+        ("editor_changes_stashes", "git_stashes", "Read one root's stashes, newest first, with the files each holds; act on one by its index and id."),
+    ] {
+        await registry.register(Action(
+            name: name, description: what + " root (absolute).", kind: .read, audience: .agentReachable,
+            schema: rootSchema(),
+            handler: { params in
+                let root = try requireString(params, "root", action: name)
+                guard let git = gitStatus?.git else { throw StandardActionError.missingClient(action: name, role: "git") }
+                return fields(try await call(git, tool, ["root": .string(root)], action: name, timeout: MCPClient.readReplyTimeout))
+            }))
+    }
+    for (name, tool, keys, required, what, agentPrice) in [
+        ("editor_changes_switch", "git_switch", ["branch", "carry", "track"], ["root", "branch"],
+         "Switch one root to a branch (track: a remote branch to create it from). Changes in the way come back as blocked unless carry is stash or bring (stash, switch, pop). Never forces.", GateDecision?.none),
+        ("editor_changes_branch_create", "git_switch", ["name", "from"], ["root", "name"],
+         "Create a branch in one root and switch to it, from the current commit or from; an existing name is switched to.", nil),
+        ("editor_changes_branch_rename", "git_branch_rename", ["to"], ["root", "to"],
+         "Rename one root's current branch; a name that exists is refused.", nil),
+        ("editor_changes_branch_delete", "git_branch_delete", ["branch", "force"], ["root", "branch"],
+         "Delete one root's local branch; with commits no other branch has it is refused unless force. Asks the operator when you ask.", .gate),
+        ("editor_changes_stash", "git_stash", ["message", "mode"], ["root"],
+         "Stash one root's changes: mode default, untracked or staged, with an optional message.", nil),
+        ("editor_changes_stash_apply", "git_stash_apply", ["index", "id"], ["root", "index", "id"],
+         "Apply one stash by index and id, keeping it. A clash puts back the files it touched and keeps the stash.", nil),
+        ("editor_changes_stash_pop", "git_stash_pop", ["index", "id"], ["root", "index", "id"],
+         "Apply one stash by index and id and drop it. A clash puts back the files it touched and keeps the stash.", nil),
+        ("editor_changes_stash_drop", "git_stash_drop", ["index", "id"], ["root", "index", "id"],
+         "Drop one stash by index and id; it cannot be applied again. Asks the operator when you ask.", .gate),
+        ("editor_changes_stash_drop_all", "git_stash_drop_all", [], ["root"],
+         "Drop every stash in one root; none can be applied again. Asks the operator when you ask.", .gate),
+    ] as [(String, String, [String], [String], String, GateDecision?)] {
+        var props: [String: JSONValue] = [:]
+        for k in keys { props[k] = ["index"].contains(k) ? integer : ["force"].contains(k) ? boolean : string }
+        await registry.register(Action(
+            name: name, description: what + " root (absolute).", kind: .mutate, audience: .agentReachable,
+            schema: rootSchema(props, required: required),
+            handler: { params in
+                let root = try requireString(params, "root", action: name)
+                for k in required where k != "root" {
+                    if k == "index" { _ = try intParam(params, k, action: name) } else { _ = try requireString(params, k, action: name) }
+                }
+                var args = forward(params, keys)
+                args["root"] = .string(root)
+                if name == "editor_changes_branch_create", let n = args.removeValue(forKey: "name") {
+                    args["branch"] = n
+                    args["create"] = .bool(true)
+                }
+                if name == "editor_changes_switch", let track = args["track"] {
+                    args["create"] = .bool(true)   // a remote branch is checked out as a new local tracking it
+                    args["track"] = track
+                }
+                let callArgs = args
+                return try await write(root, action: name) { git in
+                    try await call(git, tool, callArgs, action: name, timeout: gitRemoteReplyTimeout)
+                }
+            },
+            price: price, agentPrice: agentPrice))
+    }
+
     // 3a-iii-a: clone from a link. The operator's clone may go anywhere and becomes a project in
     // WindowModel.cloneProject; the agent's goes only into the folder the operator last cloned into,
     // and registers nothing — adding a project is the operator's (Decision 30, call 6).

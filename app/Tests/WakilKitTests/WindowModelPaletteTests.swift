@@ -935,7 +935,7 @@ private let registeredBeforeThePalette: Set<String> = [
     // 3a-ii review I2: a group collapses as a root does.
     "editor_changes_group_collapse", "editor_changes_group_expand",
     // 3a-ii: the seven git writes, agent-reachable mutations.
-    "editor_changes_stage", "editor_changes_unstage", "editor_changes_discard", "editor_changes_commit", "editor_changes_amend", "editor_changes_undo_commit", "editor_changes_stage_hunk",
+    "editor_changes_stage", "editor_changes_unstage", "editor_changes_discard", "editor_changes_commit", "editor_changes_branch_create", "editor_changes_branch_delete", "editor_changes_branch_rename", "editor_changes_branches", "editor_changes_stash", "editor_changes_stash_apply", "editor_changes_stash_drop", "editor_changes_stash_drop_all", "editor_changes_stash_pop", "editor_changes_stashes", "editor_changes_switch", "editor_changes_amend", "editor_changes_undo_commit", "editor_changes_stage_hunk",
     // 3a-ii-b: range staging, agent-reachable mutations.
     "editor_changes_stage_ranges", "editor_changes_unstage_ranges",
     // 3a-ii-b: the ✨ draft, a control action (it fills Wakil's own box).
@@ -985,6 +985,8 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__editor_tree", "mcp__wakil__editor_tree_expand", "mcp__wakil__editor_tree_collapse",
     "mcp__wakil__editor_move_tab", "mcp__wakil__editor_tree_reveal",
     "mcp__wakil__editor_changes_select", "mcp__wakil__editor_changes_step",
+    // 3a-iv: the branch and stash lists; their writes are mutations, reached through the gate.
+    "mcp__wakil__editor_changes_branches", "mcp__wakil__editor_changes_stashes",
     "mcp__wakil__editor_changes_collapse", "mcp__wakil__editor_changes_expand",
     "mcp__wakil__editor_changes_group_collapse", "mcp__wakil__editor_changes_group_expand",
     // 3a-ii-b: the ✨ draft, .control, so published.
