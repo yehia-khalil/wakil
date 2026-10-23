@@ -103,6 +103,7 @@ Rules no phase may break.
    | File create, move, Move to Trash — inside the roots | wakil-files | 2026-10-17 |
    | Stage, unstage, discard, commit — local git inside the project's roots | wakil-git | 2026-10-21 |
    | Fetch, pull, push, sync, clone — remote git, with the organisation's account | wakil-git | 2026-10-22 |
+   | Switch, create, rename, delete branches; stash, apply, pop, drop — local git inside the roots | wakil-git | 2026-10-23 |
 
    **Still refused:** schema mutation (every DDL verb, `TRUNCATE` explicitly), Mongo
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`
