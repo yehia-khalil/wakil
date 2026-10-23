@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-iv-stash-rows.jsonl",
+  "baseCommit": "164af87a096b085b1c4022f95206ec8eec83dc64",
+  "provedAt": "2026-10-23T13:19:55.139518Z",
+  "checkBlob": "e5e4821af66a78137b2503d9b3c133deeb4fccd6"
+}
