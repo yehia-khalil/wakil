@@ -1523,6 +1523,25 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* the agent is found following an earlier text after an update, or a resumed session
     starts honouring a new appended prompt — then a save restarts the session instead.
 
+46. **Branches and stash from the context line and the Changes view, VS Code's flow; the first
+    write priced by who asks.**
+    *(2026-10-23, operator, during the 3a-iv design —
+    `docs/superpowers/specs/2026-10-23-3a-iv-branches-and-stash-design.md`.)*
+    The context line gains a **Branch** segment, the active root's, whose picker is VS Code's Quick
+    Pick: a filter, Create branch, Create branch from…, the local branches, the remote ones, Fetch.
+    The Changes view's root header opens the same picker; ▾ gains Branch and Stash submenus, and each
+    root a **Stashes** group with Apply, Pop and Drop. A switch git refuses for changes in the way
+    offers **Stash and Switch**, **Bring Them Along** (stash, switch, pop) or **Cancel** — never force,
+    never discard. A clash keeps the stash and puts the touched files back, so nothing is left
+    half-merged. Switch, create, rename, stash, apply and pop are priced *allow* for every channel, as
+    Decision 43's writes are. **Delete Branch, Drop and Drop All carry an agent price of *gate*:** the
+    operator's click confirms once, in place (Rule 1), and the agent's ask — voice reaches these only
+    through the agent — raises the permission plane. `Action.agentPrice` is that one rule, not a
+    general per-channel pricing scheme. A stash is named by its id as well as its position, so a list
+    the terminal or another worktree changed is refused rather than another stash touched.
+    *Reverse if:* an agent's delete the operator did not mean is approved by habit at the plane — then
+    delete and drop become operator-only.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,
@@ -1695,3 +1714,14 @@ Mac. It is priced *allow* for every channel at the operator's ruling, is never f
 journalled with its caller; a mistaken push is undone by a following commit. Reads still run no
 program a repository chooses; a remote operation lets only Wakil's own ssh and credential helper run,
 and refuses a repository's `remote.<name>.uploadpack` or `receivepack`.
+
+### 2026-10-23 — branches and stash, inside the project's roots
+
+Local git, through `GitWriter`, on a root of the active project. Switch, create, rename, stash,
+apply and pop stay on this Mac and undo — priced *allow* everywhere, voice included. **Branch delete
+and stash drop are the first git writes Wakil cannot undo** (git's reflog and `git fsck` can, outside
+Wakil), so the agent's ask for one raises the plane while the operator's own click confirms in place:
+Decision 46's agent price. No `--force`, no `--discard-changes`, no `branch -M`. Reads gain
+`for-each-ref`, `rev-list` and `log -g` for the lists, with any format that would verify a signature
+refused. Still refused: merge, rebase and conflict resolution (3a-v), tags, and a remote branch's
+deletion.
