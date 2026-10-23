@@ -3326,32 +3326,6 @@ The operator walked it on this Mac, under `personal`, and **all ten steps pass**
   4 runs on 2026-10-16); `3b-i-editor-unsaved-save.jsonl` lost its app once with no crash report.
 - North-star §8 has no Phase 3b rows, so 3b-iii's `Met` is recorded here and in the runbook.
 
-## 2026-10-22 — 3a-ii walked: stage, unstage, discard and commit from the Changes view
-
-**3a-ii is the fourth write** (Invariant 6, Decision 43). The Changes view gets VS Code's Source Control:
-a message box per root, ⌘⏎ to commit, Commit All with nothing staged, Amend and Undo Last Commit,
-+ / − / ↺ on rows and group headers, and Stage Change in the gutter peek. Discard sends the current copy
-to the Trash first, so nothing asks. Writes go through `GitWriter` in `wakil-git`, which lets hooks and
-signing run while reads still run none, and every commit carries the organisation's name and email from
-Settings → Organisation → Git. Design in `docs/superpowers/specs/2026-10-21-3a-ii-git-writes-design.md`;
-walk in `phase-3a-ii-acceptance.md`. Shipped as #40 and #41.
-
-The operator walked it on this Mac and **all twenty steps pass**, after the three walk fixes below.
-
-### What the walk found that no unit test could
-
-| Found at | Defect | Fixed in |
-|---|---|---|
-| walk | only the message box's first line took a click | #41 |
-| walk | a second ⌥ hold hid the text already typed, so it was said again and went in twice | #41 |
-| walk | + − ↺ gave no sign of the pointer | #41 |
-
-### What the walk left unestablished
-
-- The runbook's §2 (known and not fixed) and §3 (signing, the Trash's names, the peek's HTML button,
-  the Commit / Commit All label) stand as written there.
-- `make e2e-full` was not run on #41's head; its runbook records which checks ran on that build.
-
 ## 2026-10-22 — 3a-ii-b walked: stage and unstage selected ranges, and a drafted commit message
 
 **3a-ii-b finishes 3a-ii's write path.** A Changes diff tab stages only the selected lines (a
