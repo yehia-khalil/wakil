@@ -614,14 +614,18 @@ public struct ChoiceReaders: Sendable {
     public var projects: PaletteItemsReader
     public var providers: PaletteItemsReader
     public var paneKinds: Set<String>
+    /// 3a-iv: the active root's local branches, the current one marked.
+    public var branches: PaletteItemsReader
 
     public init(
         environments: @escaping @Sendable () async -> (listings: [EnvironmentListing], note: String?)
             = { ([], nil) },
         projects: @escaping PaletteItemsReader = { ([], nil) },
         providers: @escaping PaletteItemsReader = { ([], nil) },
-        paneKinds: Set<String> = Pane.kinds
+        paneKinds: Set<String> = Pane.kinds,
+        branches: @escaping PaletteItemsReader = { ([], nil) }
     ) {
+        self.branches = branches
         self.environments = environments
         self.projects = projects
         self.providers = providers
@@ -660,5 +664,6 @@ public func choiceEntries(_ source: ChoiceSource, readers: ChoiceReaders) async 
         return offeredKinds(readers.paneKinds).map { row($0, paneKindTitle(kind: $0), "", "pane") }
     case .languages:
         return editorLanguageChoices.map { row($0, $0, "", "language") }
+    case .branches: return await items(readers.branches, "branch")
     }
 }

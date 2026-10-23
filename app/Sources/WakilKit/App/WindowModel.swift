@@ -5702,7 +5702,7 @@ public final class WindowModel {
             dbPageHasPrevious: table.map { $0.pageable && $0.offset > 0 } ?? false,
             hasEnvironments: hasEnvironments, projectCount: projectCount, providerCount: providerCount,
             editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project,
-            editorActiveDiff: editorActiveDiff)
+            editorActiveDiff: editorActiveDiff, activeGitRoot: activeBranchRoot?.root)
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.
@@ -5893,7 +5893,8 @@ public final class WindowModel {
         return await choiceEntries(source, readers: ChoiceReaders(
             environments: { [weak self] in await self?.paletteEnvironments() ?? ([], nil) },
             projects: { [weak self] in await self?.currentOrganisationProjects() ?? ([], nil) },
-            providers: { [weak self] in await self?.providerPaletteItems() ?? ([], nil) }))
+            providers: { [weak self] in await self?.providerPaletteItems() ?? ([], nil) },
+            branches: { [weak self] in await self?.branchPaletteItems() ?? ([], nil) }))
     }
 
     /// Runs one effect. Answers the **whole** error text when it failed (rule 8), `nil` when it

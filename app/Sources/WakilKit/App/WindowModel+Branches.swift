@@ -28,6 +28,16 @@ extension WindowModel {
         decoded(await read("editor_changes_branches", root: root))
     }
 
+    /// ⌘K Switch branch…'s choices: the active root's local branches, the current one marked.
+    func branchPaletteItems() async -> (items: [PaletteItem], note: String?) {
+        guard let root = activeBranchRoot?.root else { return ([], nil) }
+        guard let b = await changesBranches(root: root) else { return ([], "the branches could not be read") }
+        return (b.local.map {
+            PaletteItem(id: "branch:\($0.name)", kind: .action, title: $0.name,
+                        subtitle: $0.current ? "current" : $0.upstream, payload: $0.name)
+        }, nil)
+    }
+
     public func changesStashes(root: String) async -> [GitStashInfo] {
         guard case .object(let o)? = await read("editor_changes_stashes", root: root) else { return [] }
         return decoded(o["stashes"]) ?? []

@@ -43,14 +43,17 @@ public struct PaletteContext: Sendable, Equatable {
     /// on another.
     public var organisation: String
     public var project: String
+    /// 3a-iv: the root the Branch segment is about (`WindowModel.activeBranchRoot`); nil with no git root.
+    public var activeGitRoot: String?
 
     public init(
         focusedPane: FocusedPane? = nil, apiSendInFlight: Bool = false,
         dbPageHasNext: Bool = false, dbPageHasPrevious: Bool = false,
         hasEnvironments: Bool = false, projectCount: Int = 0, providerCount: Int = 0,
         editorActiveIsFile: Bool = false, organisation: String = "", project: String = "",
-        editorActiveDiff: EditorActiveDiff? = nil
+        editorActiveDiff: EditorActiveDiff? = nil, activeGitRoot: String? = nil
     ) {
+        self.activeGitRoot = activeGitRoot
         self.focusedPane = focusedPane
         self.apiSendInFlight = apiSendInFlight
         self.editorActiveIsFile = editorActiveIsFile
@@ -71,6 +74,8 @@ public enum ChoiceSource: String, Sendable {
     case environments, projects, providers, paneKinds
     /// Monaco's languages the editor offers (`editorLanguageChoices`).
     case languages
+    /// 3a-iv: the active root's local branches.
+    case branches
 }
 
 /// The languages *Set language…* offers (⌘K), Monaco ids, plaintext first.
@@ -172,6 +177,12 @@ public enum CommandCatalog {
                .projects, "Project", available: { $0.projectCount > 1 }),
         choice("global.provider", "Switch provider…", "ctx_set_provider",
                .providers, "Provider", available: { $0.providerCount > 1 }),
+        // 3a-iv (spec call 1): the active root's branches, as the Branch segment's picker lists them.
+        CatalogCommand(
+            id: "global.branch", label: "Switch branch…", scope: .global, action: "editor_changes_switch",
+            input: .choice(.branches, placeholder: "Branch"),
+            params: { c, value in .object(["root": .string(c.activeGitRoot ?? ""), "branch": .string(value ?? "")]) },
+            available: { $0.activeGitRoot != nil }),
         CatalogCommand(
             id: "global.settings", label: "Open settings", scope: .global,
             action: "settings_open", input: nil,
