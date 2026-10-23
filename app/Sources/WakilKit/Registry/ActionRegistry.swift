@@ -252,6 +252,7 @@ public actor ActionRegistry {
             origin: origin,
             targetEnvironment: targetEnvironment(of: action, in: params),
             price: action.price,
+            agentPrice: action.agentPrice,
             production: production)
         {
         case .block:

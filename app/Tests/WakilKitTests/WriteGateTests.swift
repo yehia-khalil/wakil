@@ -259,3 +259,30 @@ import Testing
     #expect(writeGate(environment: "production", kind: .control, origin: .ui,
                       targetEnvironment: nil, price: hostile, production: .undeclared) == .allow)
 }
+
+// 3a-iv (Decision 46): a write can carry its own price for the agent's channel — branch delete and
+// stash drop ask the operator when the agent asks, and run when the operator's own click asks.
+@Test func anAgentPriceGatesOnlyTheAgent() {
+    let price: (production: GateDecision, otherwise: GateDecision) = (.allow, .allow)
+    for env in ["staging", "local"] {
+        #expect(writeGate(environment: env, kind: .mutate, origin: .agent, targetEnvironment: nil,
+                          price: price, agentPrice: .gate, production: .undeclared) == .gate)
+        for origin in [ActionOrigin.ui, .debug] {
+            #expect(writeGate(environment: env, kind: .mutate, origin: origin, targetEnvironment: nil,
+                              price: price, agentPrice: .gate, production: .undeclared) == .allow)
+        }
+    }
+}
+
+@Test func noAgentPriceChangesNothing() {
+    #expect(writeGate(environment: "staging", kind: .mutate, origin: .agent, targetEnvironment: nil,
+                      price: (.allow, .allow), production: .undeclared) == .allow)
+}
+
+@Test func productionBlockStillBlocks() {
+    let prod = EnvironmentProduction(declarations: ["prod": true])
+    for origin in [ActionOrigin.ui, .agent, .debug] {
+        #expect(writeGate(environment: "prod", kind: .mutate, origin: origin, targetEnvironment: nil,
+                          price: (.block, .allow), agentPrice: .gate, production: prod) == .block)
+    }
+}
