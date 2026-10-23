@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3a-v-a-inline-blame-setting.jsonl",
   "baseCommit": "c31d96c4ac7bdf42c6607b17cc764f562181299e",
-  "provedAt": "2026-10-23T20:06:16.694559Z",
+  "provedAt": "2026-10-23T20:14:59.142661Z",
   "checkBlob": "be1c778b62159394c1ae39f6f0618b80f9c3e0b9"
 }
