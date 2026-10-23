@@ -60,6 +60,9 @@ public final class WindowModel {
     /// seed, and the #264 hook ends the Landing only for a pane not among these. The first
     /// conversation created there (`agent(for:)`) clears it.
     private var landingBaselines: [Place: Set<String>] = [:]
+    /// The places whose Landing `newConversation` is still bringing in: the #264 hook waits for
+    /// the baseline rather than reading the seed's panes as work.
+    @ObservationIgnored private var landingsLoading: Set<Place> = []
     /// The conversation each place shows, by place (background agents, 3 of 4): what every
     /// place-level reader reads, one per place.
     public var agents: [Place: PlaceAgent] {
@@ -1263,7 +1266,7 @@ public final class WindowModel {
                 // Landing draws over the reserved conversation's canvas, read from the seed,
                 // which almost always has panes.
                 let baseline = self.landingBaselines[self.place] ?? []
-                if canvasIsThePlaces, !self.sessionStarted,
+                if canvasIsThePlaces, !self.sessionStarted, !self.landingsLoading.contains(self.place),
                    self.layoutSnapshot.panes.contains(where: { !baseline.contains($0.id) }) {
                     self.showTheWorkAlreadyOnTheCanvas()
                 }
@@ -1740,6 +1743,11 @@ public final class WindowModel {
     /// it (`openShownSocket`).
     func shownSocketSessionIdForTesting(_ place: Place) -> String? {
         shownSockets.values.first { $0.place == place }?.sessionId
+    }
+
+    /// TEST-ONLY: the pane ids `place`'s Landing ignores after `newConversation`, if any.
+    func landingBaselineForTesting(_ place: Place) -> Set<String>? {
+        landingBaselines[place]
     }
 
     /// TEST-ONLY: waits for every shown socket's start.
@@ -4988,7 +4996,14 @@ public final class WindowModel {
             await activateLayout(carrying: overlay, adoptingCanvas: adoptingCanvas)
             return
         }
-        guard let scope = agent.layoutScope, let persistence, !scope.organization.isEmpty,
+        guard let scope = agent.layoutScope else { return }
+        await loadOffScreen(scope)
+    }
+
+    /// Reads `scope`'s arrangement into memory off screen, once, as `activateLayout` would; its
+    /// contents are restored when the operator comes to it (`followConversation`).
+    private func loadOffScreen(_ scope: LayoutScope) async {
+        guard let persistence, !scope.organization.isEmpty,
               !loadedLayoutScopes.contains(scope) else { return }
         let saved = persistence.load(for: scope)
         // Unreadable: a note and no arrangement. Left unread for the return to read and report.
@@ -8098,23 +8113,32 @@ public final class WindowModel {
         let target = conversation.map { self.conversation(id: $0) } ?? currentAgent
         guard let target, screenConversations[target.place] == target.id else { return }
         let place = target.place
-        let onScreen = place == self.place
-        // What the canvas held, so the #264 hook does not take the seed's own panes for work.
-        let baseline: Set<String>
-        if onScreen {
-            baseline = Set(layoutSnapshot.panes.map(\.id))
-        } else if let scope = target.layoutScope {
-            baseline = await Set(ScopeRouting.$home.withValue(scope) { await layout.snapshot() }.panes.map(\.id))
-        } else {
-            baseline = []
-        }
-        // Re-checked: the read above may have suspended.
-        guard screenConversations[place] == target.id else { return }
         screenConversations[place] = nil
-        if reservedConversations[place] == nil { reservedConversations[place] = UUID().uuidString }
-        landingBaselines[place] = baseline
+        let reserved = reservedConversations[place] ?? UUID().uuidString
+        reservedConversations[place] = reserved
+        // The baseline is the canvas the Landing draws over — the seed as loaded for the reserved
+        // conversation — never the one left: a seed pane closed there comes back with the seed,
+        // and is not work begun. Empty, and loading (the #264 hook waits), until it is in.
+        landingBaselines[place] = []
+        landingsLoading.insert(place)
+        defer { landingsLoading.remove(place) }
+        if place == self.place {
+            await activateLayout()
+        } else {
+            await loadOffScreen(LayoutScope(
+                organization: place.organization, project: place.project, environment: place.environment,
+                lineageRoot: reserved))
+        }
+        // Whatever came first meanwhile — work begun there, a switch back — wins.
+        guard landingBaselines[place] != nil, screenConversations[place] == nil else { return }
+        let scope = LayoutScope(
+            organization: place.organization, project: place.project, environment: place.environment,
+            lineageRoot: reserved)
+        let shown = place == self.place
+            ? layoutSnapshot.panes
+            : await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }.panes
+        if landingBaselines[place] != nil { landingBaselines[place] = Set(shown.map(\.id)) }
         guard place == self.place else { return }
-        await activateLayout()
         screenDidChange(from: target.id, to: nil, focusComposer: true)
     }
 
@@ -8151,6 +8175,8 @@ public final class WindowModel {
                 return
             }
         }
+        // A conversation is on screen in its place: the place's Landing, and its baseline, are over.
+        landingBaselines[target.place] = nil
         await activateLayout()
         markSeen(target)
         if previous != target.id { screenDidChange(from: previous, to: target.id, focusComposer: false) }
@@ -8339,6 +8365,7 @@ public final class WindowModel {
         // this id (`landingRoot(in:)`), so the conversation is rooted there from its first moment
         // and the scope never moves out from under it — whichever entrance created it.
         if landingBaselines.removeValue(forKey: place) != nil { created.lineageRoot = id }
+        landingsLoading.remove(place)
         conversationsMade += 1
         conversations[id] = created
         conversationOrder.append(id)

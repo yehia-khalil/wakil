@@ -150,6 +150,57 @@ struct ConversationSwitchTests {
         await model.shutdown()
     }
 
+    // Fix round 1, item 1: the baseline is the seed as loaded for the Landing, not the canvas
+    // left — a seed pane closed in the conversation comes back with the seed and is not work.
+    @Test func theLandingSurvivesASeedPaneTheLeftConversationHadClosed() async throws {
+        let sessions = Sessions()
+        let directory = testScratchRoot.appendingPathComponent("conversation-switch-seed-\(UUID().uuidString)")
+        let persistence = LayoutPersistence(directory: directory)
+        let seed = LayoutSnapshot(panes: [
+            Pane(id: "db-1", kind: "db", title: "the seed's pane", frame: PaneFrame(x: 0, y: 0, width: 4, height: 4))
+        ])
+        try persistence.save(seed, for: LayoutScope(
+            organization: org, project: placeA.project, environment: placeA.environment))
+        let w = try await wiredWindow(sessions, persistence: persistence)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let operatorCaller = DispatchCaller(place: model.place, session: nil)
+        _ = try await w.registry.dispatch(
+            name: "pane_close", params: .object(["id": .string("db-1")]), origin: .ui,
+            caller: operatorCaller, confirmation: nil)
+        #expect(await waitUntil { model.layoutSnapshot.panes.isEmpty })
+
+        await model.newConversation()
+        #expect(model.layoutSnapshot.panes.map(\.id) == ["db-1"], "the Landing draws over the seed")
+        _ = try await w.registry.dispatch(
+            name: "pane_focus", params: .object(["id": .string("db-1")]), origin: .ui,
+            caller: operatorCaller, confirmation: nil)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        #expect(!model.sessionStarted, "the seed's pane is not work begun, nothing was asked")
+        #expect(model.currentAgent == nil)
+        await model.shutdown()
+    }
+
+    // Fix round 1, item 2: a conversation put on screen ends the place's Landing, and its
+    // baseline with it, so no later Landing inherits it.
+    @Test func switchingBackClearsThePlacesLandingBaseline() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let first = try #require(model.currentAgent)
+        await model.newConversation()
+        #expect(model.landingBaselineForTesting(placeA) != nil)
+
+        await model.switchToConversation(first.id)
+
+        #expect(model.currentAgent === first)
+        #expect(model.landingBaselineForTesting(placeA) == nil)
+        await model.shutdown()
+    }
+
     @Test func aNewPaneOnTheLandingAfterNewConversationIsWorkBegunThere() async throws {
         let sessions = Sessions()
         let w = try await wiredWindow(sessions)

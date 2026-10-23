@@ -130,7 +130,7 @@ private let keptPerPlace: Set<String> = [
     "conversations", "conversationOrder", "conversationsMade", "screenConversations", "reservedConversations",
     // Conversations 2 of 3: keyed by place, like `reservedConversations` — what each place's
     // canvas held when its conversation went to the background.
-    "landingBaselines",
+    "landingBaselines", "landingsLoading",
     // The socket each shown place opened before a session took it, by its conversation, pinned
     // to that place.
     "shownSockets",
