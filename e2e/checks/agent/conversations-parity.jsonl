@@ -1,0 +1,36 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"contains","text":"RUNNING"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn two"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"second reply in the thread"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"absent","text":"second reply in the thread"}}
+{"parity":{"action":"session_switch","params":{"conversation":"thread turn one"},"click":"landing.row.running:1","assert":"tree"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"expect":{"tree":"absent","text":"second reply in the thread"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"new conversation"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"parity":{"action":"session_new","click":"palette.row.global.newConversation","assert":"tree"}}
+{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"absent","text":"first reply in the thread"}}
+{"do":{"click":"landing.row.running:0"}}
+{"expect":{"tree":"contains","text":"second reply in the thread"}}
+{"do":{"hotkey":"cmd+shift+w"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"expect":{"tree":"absent","text":"second reply in the thread"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"close conversation"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"parity":{"action":"session_close","click":"palette.row.global.closeConversation","assert":"tree"}}
+{"expect":{"tree":"contains","text":"NEWEST FIRST"}}
+{"expect":{"tree":"absent","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"thread turn one"}}
+{"expect":{"tree":"contains","text":"thread turn two"}}
