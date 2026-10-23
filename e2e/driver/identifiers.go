@@ -35,6 +35,12 @@ var Surfaces = []string{
 	// precedent: a pane KIND with its own vocabulary namespaces itself,
 	// where `pane` is the chrome every kind shares.
 	"api",
+	// The branch picker's own namespace (3a-iv): `branch.picker.filter`, its rows
+	// `branch.picker.row.<name>`, the blocked-switch and delete choices. One picker
+	// opens from the context line and from a Changes header, so it is neither
+	// `window` nor `editor`. Added by the Cover rung, on `editor`'s precedent: without
+	// it no check can name a picker control and the gate cannot count them.
+	"branch",
 	// The data surface's own namespace, added in the change that first names
 	// one of its controls — the row grip, `db.row.<i>.grip` (2c-iv, #308). A
 	// grid row is the db pane's vocabulary, not chrome every kind shares, so
@@ -96,6 +102,12 @@ var AuditedSources = []string{
 	// Changes rows and root headers were named since 3b-ii, but the file sat
 	// outside the gate, so a new tap target there could arrive unnamed.
 	"EditorColumn.swift",
+	// 3a-iv joins its two new files here, in the Cover rung that named the `branch` surface: the
+	// picker (one view, opened from the context line and from a Changes header) and the Changes
+	// view's in-place name field and Stashes group. Both were born named; listed so a control added
+	// to either later cannot arrive unnamed.
+	"BranchPicker.swift",
+	"ChangesStashes.swift",
 	"Landing.swift",
 	"OrgPlane.swift",
 	"Palettes.swift",
