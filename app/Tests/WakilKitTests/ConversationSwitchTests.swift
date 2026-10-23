@@ -775,7 +775,8 @@ struct ConversationSwitchTests {
         #expect(!xHarness.log.contains { $0.contains("landing message") },
                 "\(sessions.harnesses.issued.map { ($0 === xHarness ? "X" : "other", $0.log) })")
         #expect(model.liveConversations(in: placeA).map(\.id) == [x.id], "no conversation was made")
-        #expect(model.status.contains("not sent"), "\(model.status)")
+        #expect(model.status == "not sent: the Landing this was typed on shows another conversation now — "
+                + "the message is back in that Landing's composer", "\(model.status)")
         #expect(composer.draft.isEmpty, "the Landing's words are not staged on X")
 
         await model.newConversation()
@@ -845,10 +846,46 @@ struct ConversationSwitchTests {
         await model.switchToConversation(x.id)
         await model.resume(sessionId: request.sessionId, in: request.place, conversation: request.conversation)
 
-        #expect(model.status.hasPrefix("resume past-1:") && model.status.contains("nothing was resumed"),
-                "\(model.status)")
+        #expect(model.status == "resume past-1: the Landing it was asked on shows another conversation now — "
+                + "nothing was resumed", "\(model.status)")
         #expect(model.liveConversations(in: placeA).map(\.id) == [x.id])
         #expect(sessions.harnesses.in(placeA).count == 1, "X was not forked")
+        await model.shutdown()
+    }
+
+    // Rule 8, true: a gesture pinned to a conversation that is neither live nor a Landing's
+    // reserved id (one closed since, say) is refused as that, not as a Landing that moved on.
+    @Test func aMessagePinnedToAConversationNoLongerLiveIsRefusedAsThat() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let x = try #require(model.currentAgent)
+        var scope = model.turnScope
+        scope.conversation = "no-longer-live"
+
+        #expect(!(await model.send("lost words", scope: scope)))
+
+        #expect(model.status == "not sent: the conversation this was typed in is no longer live — "
+                + "the message went to no other conversation", "\(model.status)")
+        #expect(model.liveConversations(in: placeA).map(\.id) == [x.id], "none made for it")
+        #expect(!(sessions.harnesses.in(placeA).first?.log ?? []).contains { $0.contains("lost words") })
+        await model.shutdown()
+    }
+
+    @Test func aResumePinnedToAConversationNoLongerLiveIsRefusedAsThat() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let x = try #require(model.currentAgent)
+
+        await model.resume(sessionId: "past-1", in: placeA, conversation: "no-longer-live")
+
+        #expect(model.status == "resume past-1: the conversation it was asked in is no longer live — "
+                + "nothing was resumed", "\(model.status)")
+        #expect(model.liveConversations(in: placeA).map(\.id) == [x.id])
+        #expect(sessions.harnesses.in(placeA).count == 1, "nothing was forked")
         await model.shutdown()
     }
 

@@ -255,13 +255,24 @@ public final class WindowModel {
     /// shows its Landing — the conversation that Landing's first message starts, created now
     /// under `id`. Nil `id` (a Landing that had reserved none) is `place`'s Landing, while it
     /// still shows one. Nil when the screen the gesture was made on has gone — its Landing
-    /// shows another conversation now, or its id went to another — so the caller refuses rather
-    /// than act on a conversation the operator did not gesture at (Invariant 4).
+    /// shows another conversation now, or the conversation `id` names is no longer live
+    /// (`whyGone(pinned:)` says which) — so the caller refuses rather than act on a conversation
+    /// the operator did not gesture at (Invariant 4).
     private func conversation(pinned id: String?, landingIn place: Place) -> PlaceAgent? {
         if let id, let live = conversations[id] { return live }
         let landing = id.map { id in reservedConversations.first { $0.value == id }?.key } ?? place
         guard let landing, screenConversations[landing] == nil else { return nil }
         return agent(for: landing)
+    }
+
+    /// Why `conversation(pinned:landingIn:)` found none for `id`, so the refusal says what is
+    /// true (Rule 8): a Landing's — none reserved, or the id it reserves — whose place shows
+    /// another conversation now, or an id that is neither live nor reserved (a conversation
+    /// closed since, say).
+    private enum PinnedConversationGone { case landingShowsAnother, noLongerLive }
+    private func whyGone(pinned id: String?) -> PinnedConversationGone {
+        guard let id, !reservedConversations.values.contains(id) else { return .landingShowsAnother }
+        return .noLongerLive
     }
     /// True from the moment `setOrganization`'s OTHER guards pass until
     /// its whole sequence (success or failure) finishes. Org-independent:
@@ -7304,8 +7315,14 @@ public final class WindowModel {
         guard let agent = conversation(pinned: typedIn.conversation, landingIn: typedIn.place) else {
             // Rule 8, whole; Rule 2: the composer gives the words back to the screen they were
             // typed on.
-            status = "not sent: the Landing this was typed on shows another conversation now — "
-                + "the message is back in that Landing's composer"
+            switch whyGone(pinned: typedIn.conversation) {
+            case .landingShowsAnother:
+                status = "not sent: the Landing this was typed on shows another conversation now — "
+                    + "the message is back in that Landing's composer"
+            case .noLongerLive:
+                status = "not sent: the conversation this was typed in is no longer live — "
+                    + "the message went to no other conversation"
+            }
             return false
         }
         let (startRoot, startProvider) = (typedIn.rootPath, typedIn.providerId)
@@ -7581,15 +7598,21 @@ public final class WindowModel {
     /// place on screen. `conversation`: the one whose session is replaced — an agent's own, or
     /// the operator's screen's as it was when they asked (`ResumeRequest.conversation`), its
     /// Landing's creating it; refused in `status` when that Landing shows another conversation
-    /// now. Nil is the place's agent.
+    /// now, or the conversation is no longer live. Nil is the place's agent.
     public func resume(sessionId parent: String, in place: Place? = nil, conversation: String? = nil) async {
         let agent: PlaceAgent
         if let conversation {
             // Pinned when it was asked for (`screenPinnedActions`): that conversation, or its
             // Landing's, or none.
             guard let pinned = self.conversation(pinned: conversation, landingIn: place ?? self.place) else {
-                status = "resume \(parent): the Landing it was asked on shows another conversation now — "
-                    + "nothing was resumed"
+                switch whyGone(pinned: conversation) {
+                case .landingShowsAnother:
+                    status = "resume \(parent): the Landing it was asked on shows another conversation now — "
+                        + "nothing was resumed"
+                case .noLongerLive:
+                    status = "resume \(parent): the conversation it was asked in is no longer live — "
+                        + "nothing was resumed"
+                }
                 return
             }
             agent = pinned
