@@ -70,6 +70,11 @@ public final class PlaceAgent {
     /// The agent's own `Bash` calls, for backfilling a terminal pane opened after them.
     let mirror: TerminalMirrorFeed
     var eventPump: Task<Void, Never>?
+    /// The live session's event stream ended under a pump nothing replaced or cancelled: its
+    /// process went away (conversations 3 of 3, Errors and edges). The conversation stays live,
+    /// its failure shown in its thread, and its next turn first resumes it as a fork
+    /// (`WindowModel.send`). Cleared when a pump starts for a new harness.
+    public internal(set) var sessionEnded = false
     /// Bumped before a harness is stopped, so the pump drops what the old stream still buffers.
     var eventPumpGeneration = 0
     /// The conversation this place is in: what its arrangement is filed under.

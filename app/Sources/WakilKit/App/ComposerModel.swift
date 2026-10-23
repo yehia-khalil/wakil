@@ -51,7 +51,11 @@ public final class ComposerModel {
         window.onScreenChange = { [weak self] from, to, focusComposer in
             self?.screenChanged(from: from, to: to, focusComposer: focusComposer)
         }
+        window.onConversationClosed = { [weak self] id in self?.drafts[id] = nil }
     }
+
+    /// TEST-ONLY: the screens a draft is kept for, by `WindowModel.screenKey`.
+    var draftKeysForTesting: Set<String> { Set(drafts.keys) }
 
     /// The screen moved from `from` to `to` (`WindowModel.onScreenChange`): dictation stops
     /// (`resigned`), the draft and caret are kept under `from`, and `to`'s come back — empty for

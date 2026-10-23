@@ -2416,7 +2416,7 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
              "db_cancel", "db_classify_statement", "db_describe_table",
              "db_list_databases", "db_list_tables", "db_page", "db_read_table", "db_refetch",
              "db_remove_database",
-             "db_render_update", "db_run_mutation", "db_run_query", "db_set_connection", "db_set_dsn", "db_update_database", "pane_sort", "session_get",
+             "db_render_update", "db_run_mutation", "db_run_query", "db_set_connection", "db_set_dsn", "db_update_database", "pane_sort", "session_close", "session_get",
              "session_list", "session_new", "session_read", "session_record_parent", "session_resume",
              "session_set_provider", "session_switch"])
 }
@@ -2786,8 +2786,9 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         // both clients `nil` it succeeds rather than throwing.
         "session_set_provider",
         // Conversations 2 of 3: both park into `conversationRequests` and return, as
-        // `session_set_provider` does; neither touches a client.
-        "session_new", "session_switch",
+        // `session_set_provider` does; neither touches a client. Conversations 3 of 3:
+        // `session_close` parks there too.
+        "session_close", "session_new", "session_switch",
         // Checks no client before touching `panes`/`layout`. With no
         // `layout` wired (this test's `registerStandardActions` call
         // passes none, so it defaults to `nil`), `requireOpenPane`

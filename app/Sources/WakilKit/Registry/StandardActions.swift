@@ -2421,6 +2421,25 @@ public func registerStandardActions(
         }
     ))
 
+    // Conversations 3 of 3: `session_close`, beside them on the same terms — `.control` (the
+    // conversation is Wakil's own state), operator-only (an agent must not end the operator's
+    // conversation), parked on `conversationRequests`, pinned to the conversation it is
+    // dispatched in. The window asks first only with work in flight (`closeConversation`).
+    await registry.register(Action(
+        name: "session_close",
+        description: "End the conversation on screen: its agent stops, its panes close as on quit, "
+            + "and it moves to Continue. The operator is asked first when its turn is running or it "
+            + "has a write waiting. Does nothing on a Landing. Operator use only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            let conversation = ActionRegistry.dispatchCaller?.conversation
+            await conversationRequests.request(.close(conversation: conversation))
+            return .object(["closing": conversation.map(JSONValue.string) ?? .null])
+        }
+    ))
+
     // Conversations 2 of 3. **`.control`**: which conversation a place shows is Wakil's own
     // state, and nothing outside Wakil changes. **Operator-only** (`operatorOnlyActions`): an
     // agent must not push aside the operator's conversation. Both park on `conversationRequests`

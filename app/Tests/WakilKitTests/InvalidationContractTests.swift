@@ -131,6 +131,9 @@ private let keptPerPlace: Set<String> = [
     // Conversations 2 of 3: keyed by place, like `reservedConversations` — what each place's
     // canvas held when its conversation went to the background.
     "landingBaselines", "landingsLoading",
+    // Conversations 3 of 3: the Close question names a conversation by its id, and the ones
+    // being closed — both survive an org switch, as the conversations they name do.
+    "closeQuestion", "closing",
     // The socket each shown place opened before a session took it, by its conversation, pinned
     // to that place.
     "shownSockets",
@@ -196,6 +199,9 @@ private let orgIndependent: Set<String> = [
     // Conversations 2 of 3: the composer's hook for a change of the conversation on screen,
     // set once by `ComposerModel.init`; it carries no organisation's state.
     "onScreenChange",
+    // Conversations 3 of 3: the composer's hook for a conversation closed, set once by
+    // `ComposerModel.init`, for `onScreenChange`'s reason.
+    "onConversationClosed",
     // Fix round 1: the screen it was last told about, and New Conversation's focus flag — what
     // is on screen, which an org switch changes and `activateLayout` then tells.
     "toldScreenKey", "composerFocusForced",

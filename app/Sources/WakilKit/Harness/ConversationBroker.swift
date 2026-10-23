@@ -9,9 +9,13 @@ public enum ConversationRequest: Sendable, Equatable {
     /// Bring back the live conversation `conversation` names, by id or by title; a title is
     /// looked up in `place` — nil, the screen's.
     case switchTo(conversation: String, place: Place?)
+    /// End `conversation` — the operator's screen's when they asked, or nil, the screen's when
+    /// this drains (conversations 3 of 3): `WindowModel.closeConversation`, which asks first only
+    /// with work in flight. A Landing's reserved id, or one no longer live, is nothing to do.
+    case close(conversation: String?)
 }
 
-/// Where a `session_new` or `session_switch` request waits for the window to act on it — the
+/// Where a `session_new`, `session_switch` or `session_close` request waits for the window to act on it — the
 /// structural counterpart of `ProviderSwitchBroker`, for the same reason: `registerStandardActions`
 /// runs inside `WakilWiring.build`, before any `WindowModel` exists, so the handlers it registers
 /// cannot close over a model. They park here, and the window's `conversationPump` drains it.
