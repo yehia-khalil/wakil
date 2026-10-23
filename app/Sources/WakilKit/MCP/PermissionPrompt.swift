@@ -190,7 +190,7 @@ public let operatorOnlyActions: Set<String> = [
     // database's configuration is the same control surface, and an agent
     // that could drop a row could make a database unreachable without
     // touching a credential.
-    "db_set_dsn", "db_remove_database",
+    "db_set_dsn", "db_remove_database", "db_set_connection",
     // 2e-iii. An API entry's token travels in `api_set_entry`'s own parameters, as a DSN does,
     // and the three edits beside it are the same control surface.
     "api_set_entry", "api_update_entry", "api_remove_entry", "db_update_database",
@@ -289,6 +289,13 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "the name every request records — both the operator's to decide. You may READ what is configured: "
             + "ctx_config_tree reports each database's name, driver and Keychain entry name. "
             + "Ask the operator to do it in the settings pane (\u{2318},)."
+    case "db_set_connection":
+        return "\(toolName): only the operator configures a database. Its password is a secret "
+            + "the operator types, and calling this would put it in your own tool parameters — "
+            + "which is the one thing Wakil's design for credentials exists to avoid. You may "
+            + "READ what is configured: ctx_config_tree reports each database's name, driver, "
+            + "host, port, database and user, and never a password. Ask the operator to set it "
+            + "in the settings pane (\u{2318},)."
     case "db_set_dsn", "db_remove_database":
         return "\(toolName): only the operator configures a database. A connection string is a "
             + "secret the operator types, and calling this would put it in your own tool "

@@ -454,8 +454,15 @@ public struct SettingsDatabase: Sendable, Equatable, Decodable {
     /// Derived on the Go side from `writeRef` rather than stored, so the
     /// two cannot disagree — the class of lie issue #14 was.
     public var writable: Bool
+    /// Where the database lives, when it was saved as parts (2e-iv); nil for a legacy record.
+    /// Never a password — the Go type has none.
+    public var connection: SettingsDatabaseConnection?
 
-    public init(name: String, driver: String = "", ref: String = "", writeRef: String = "", writable: Bool = false) {
+    public init(
+        name: String, driver: String = "", ref: String = "", writeRef: String = "", writable: Bool = false,
+        connection: SettingsDatabaseConnection? = nil
+    ) {
+        self.connection = connection
         self.name = name
         self.driver = driver
         self.ref = ref
@@ -470,9 +477,40 @@ public struct SettingsDatabase: Sendable, Equatable, Decodable {
         ref = try container.decodeIfPresent(String.self, forKey: .ref) ?? ""
         writeRef = try container.decodeIfPresent(String.self, forKey: .writeRef) ?? ""
         writable = try container.decodeIfPresent(Bool.self, forKey: .writable) ?? false
+        connection = try container.decodeIfPresent(SettingsDatabaseConnection.self, forKey: .connection)
     }
 
-    private enum CodingKeys: String, CodingKey { case name, driver, ref, writeRef, writable }
+    private enum CodingKeys: String, CodingKey { case name, driver, ref, writeRef, writable, connection }
+}
+
+/// A database's non-secret parts, as `ctx_config_tree` reports them (2e-iv).
+public struct SettingsDatabaseConnection: Sendable, Equatable, Decodable {
+    public var host: String
+    public var port: String
+    public var database: String
+    public var user: String
+    public var path: String
+    public var writeUser: String
+
+    public init(
+        host: String = "", port: String = "", database: String = "", user: String = "",
+        path: String = "", writeUser: String = ""
+    ) {
+        self.host = host; self.port = port; self.database = database
+        self.user = user; self.path = path; self.writeUser = writeUser
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? ""
+        port = try c.decodeIfPresent(String.self, forKey: .port) ?? ""
+        database = try c.decodeIfPresent(String.self, forKey: .database) ?? ""
+        user = try c.decodeIfPresent(String.self, forKey: .user) ?? ""
+        path = try c.decodeIfPresent(String.self, forKey: .path) ?? ""
+        writeUser = try c.decodeIfPresent(String.self, forKey: .writeUser) ?? ""
+    }
+
+    private enum CodingKeys: String, CodingKey { case host, port, database, user, path, writeUser }
 }
 
 public struct SettingsAPI: Sendable, Equatable, Decodable {

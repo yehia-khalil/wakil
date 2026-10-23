@@ -969,7 +969,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_set_project_agent_instructions",
     "db_cancel", "db_classify_statement", "db_describe_table", "db_list_databases", "db_list_tables", "db_page",
     "db_read_table", "db_refetch", "db_remove_database", "db_update_database", "db_render_update", "db_run_mutation",
-    "db_run_query", "db_set_dsn",
+    "db_run_query", "db_set_connection", "db_set_dsn",
     "pane_close", "pane_focus", "pane_maximize", "pane_move", "pane_open", "pane_resize", "pane_restore",
     "pane_scroll_clear", "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
     "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",

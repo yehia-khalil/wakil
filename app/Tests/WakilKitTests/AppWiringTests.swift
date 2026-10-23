@@ -251,7 +251,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "db_describe_table",
              "db_list_databases", "db_list_tables", "db_page", "db_read_table", "db_refetch",
              "db_remove_database",
-             "db_render_update", "db_run_mutation", "db_run_query", "db_set_dsn", "db_update_database",
+             "db_render_update", "db_run_mutation", "db_run_query", "db_set_connection", "db_set_dsn", "db_update_database",
              "editor_changes_amend", "editor_changes_collapse", "editor_changes_commit", "editor_changes_discard", "editor_changes_draft_message",
              "editor_changes_expand", "editor_changes_fetch", "editor_changes_group_collapse", "editor_changes_group_expand",
              "editor_changes_publish", "editor_changes_pull", "editor_changes_push",

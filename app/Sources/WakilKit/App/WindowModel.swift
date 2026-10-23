@@ -1138,7 +1138,8 @@ public final class WindowModel {
                 // A database added or removed changes the environment's list, which was read only
                 // on a context change: the query line's chooser and the fast path's scope missed
                 // a database added since (3b-ix e2e).
-                if name == "db_set_dsn" || name == "db_remove_database" || name == "db_update_database" {
+                if name == "db_set_dsn" || name == "db_remove_database" || name == "db_update_database"
+                    || name == "db_set_connection" {
                     await self.refreshDatabases()
                 }
                 // **An agent's settings write, and the pane it lands under.**
@@ -2687,7 +2688,7 @@ public final class WindowModel {
     /// is why they are named: every other `db_*` write is a customer's.
     func writesSettings(_ name: String) async -> Bool {
         guard name.hasPrefix("ctx_") || name == "db_set_dsn" || name == "db_remove_database"
-                || name == "db_update_database" || name.hasPrefix("api_") && name.hasSuffix("_entry")
+                || name == "db_update_database" || name == "db_set_connection" || name.hasPrefix("api_") && name.hasSuffix("_entry")
         else { return false }
         guard let action = await registry.all().first(where: { $0.name == name }) else { return false }
         return action.kind != .read
@@ -3240,6 +3241,42 @@ public final class WindowModel {
         } catch {
             await refreshSettings()
             return statusDescribingFailure("db_set_dsn", error)
+        }
+    }
+
+    /// Saves a database as its parts (2e-iv). Only the passwords are secrets, and an empty one is
+    /// not sent at all — "keep the stored one" — so a blank field cannot overwrite a credential.
+    ///
+    /// Returns the refusal's own sentence, or `nil` on success. Settings are re-read either way.
+    public func setDatabaseConnection(
+        projectPath: String, environment: String, name: String, driver: String,
+        connection: SettingsDatabaseConnection, password: String = "",
+        grantWrite: Bool = false, writePassword: String = ""
+    ) async -> String? {
+        var params: [String: JSONValue] = [
+            "projectPath": .string(projectPath), "environment": .string(environment),
+            "name": .string(name), "driver": .string(driver),
+        ]
+        let parts: [(String, String)] = [
+            ("host", connection.host), ("port", connection.port), ("database", connection.database),
+            ("user", connection.user), ("path", connection.path),
+        ]
+        for (key, value) in parts where !value.isEmpty { params[key] = .string(value) }
+        if !password.isEmpty { params["password"] = .string(password) }
+        if grantWrite {
+            params["grantWrite"] = .bool(true)
+            if !connection.writeUser.isEmpty { params["writeUser"] = .string(connection.writeUser) }
+            if !writePassword.isEmpty { params["writePassword"] = .string(writePassword) }
+        }
+        do {
+            _ = try await registry.dispatch(
+                name: "db_set_connection", params: .object(params), origin: .ui,
+                caller: DispatchCaller(place: self.place, session: nil), confirmation: nil)
+            await refreshSettings()
+            return nil
+        } catch {
+            await refreshSettings()
+            return statusDescribingFailure("db_set_connection", error)
         }
     }
 
