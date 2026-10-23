@@ -77,6 +77,15 @@ func GitDiff(ctx context.Context, g *GitRunner, path, side string) (GitDiffResul
 // GitShow returns the content of a file at a given revision (HEAD, index, or worktree).
 var stashID = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
+// parents reads a commit's parent ids; none for a root commit, and none when it cannot be read.
+func (g *GitRunner) parents(ctx context.Context, id string) []string {
+	out, err := g.Run(ctx, "log", "--max-count=1", "--format=%P", id)
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(out))
+}
+
 func GitShow(ctx context.Context, g *GitRunner, path, rev string) (GitShowResult, error) {
 	rel, err := g.ResolvePath(path)
 	if err != nil {
@@ -99,12 +108,26 @@ func GitShow(ctx context.Context, g *GitRunner, path, rev string) (GitShowResult
 	default:
 		// 3a-iv: a stash's sides — the stash itself, its base (first parent) and its untracked files
 		// (third parent) — named by the stash's commit id, never a free revision.
+		// 3a-v-a: a commit's sides — the file after it, and before it (its first parent), under the name
+		// it had there when a rename is named after a second colon.
 		kind, id, _ := strings.Cut(rev, ":")
-		suffix, ok := map[string]string{"stash": "", "stash-base": "^1", "stash-untracked": "^3"}[kind]
-		if !ok || !stashID.MatchString(id) {
-			return GitShowResult{}, UserError("rev must be HEAD, index, worktree or a stash side, got " + rev)
+		at := filepath.ToSlash(rel)
+		if kind == "commit-parent" {
+			if i := strings.IndexByte(id, ':'); i >= 0 {
+				if at, err = g.ResolvePath(id[i+1:]); err != nil {
+					return GitShowResult{}, err
+				}
+				at, id = filepath.ToSlash(at), id[:i]
+			}
 		}
-		data, err = g.Run(ctx, "show", id+suffix+":"+filepath.ToSlash(rel))
+		suffix, ok := map[string]string{"stash": "", "stash-base": "^1", "stash-untracked": "^3", "commit": "", "commit-parent": "^1"}[kind]
+		if !ok || !stashID.MatchString(id) {
+			return GitShowResult{}, UserError("rev must be HEAD, index, worktree, a stash side or a commit side, got " + rev)
+		}
+		if kind == "commit-parent" && len(g.parents(ctx, id)) == 0 {
+			return GitShowResult{Absent: true}, nil // the root commit: nothing came before it
+		}
+		data, err = g.Run(ctx, "show", id+suffix+":"+at)
 	}
 	if err != nil {
 		// A file absent at HEAD (added) or in the index (untracked) has an empty original side.

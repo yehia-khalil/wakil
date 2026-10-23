@@ -57,7 +57,7 @@ var gitAllowedFlags = map[string][]string{
 	"rev-parse":    {"--show-toplevel", "--abbrev-ref", "--verify", "--short", "--absolute-git-dir", "--"},
 	"for-each-ref": {"--sort=", "--format="},
 	"rev-list":     {"--count"},
-	"log":          {"-g", "--format=", "-z", "--"},
+	"log":          {"-g", "--format=", "-z", "--follow", "--max-count=", "--skip=", "--name-status", "--"},
 }
 
 // checkGitFlags refuses the first flag of args that sub does not allow.
@@ -105,7 +105,7 @@ func NewGitRunner(root string, allowedRoots []string) (*GitRunner, error) {
 
 func (g *GitRunner) Run(ctx context.Context, sub string, args ...string) ([]byte, error) {
 	if !gitReadSubcommands[sub] {
-		return nil, UserError("wakil-git runs only status, diff, show and rev-parse; refused: " + sub)
+		return nil, UserError("wakil-git reads only with status, diff, show, rev-parse, for-each-ref, rev-list, log and blame; refused: " + sub)
 	}
 	if err := checkGitFlags(sub, args); err != nil {
 		return nil, err
