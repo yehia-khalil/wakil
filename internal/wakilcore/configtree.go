@@ -85,6 +85,9 @@ type ConfigTreeDatabase struct {
 	Ref      string `json:"ref"`
 	WriteRef string `json:"writeRef,omitempty"`
 	Writable bool   `json:"writable"`
+	// Connection is where the database lives, when it was saved as parts (2e-iv).
+	// It has no password field to leak; a legacy record has none and omits it.
+	Connection *DatabaseConnection `json:"connection,omitempty"`
 }
 
 // ConfigTreeEnvironment is the level that actually holds things, and the
@@ -301,7 +304,7 @@ func configTreeProject(name, path string, project *Project) ConfigTreeProject {
 		for _, d := range environment.Databases {
 			databases = append(databases, ConfigTreeDatabase{
 				Name: d.Name, Driver: d.Driver, Ref: d.Ref,
-				WriteRef: d.WriteRef, Writable: d.WriteRef != "",
+				WriteRef: d.WriteRef, Writable: d.WriteRef != "", Connection: d.Connection,
 			})
 		}
 		api := environment.API
