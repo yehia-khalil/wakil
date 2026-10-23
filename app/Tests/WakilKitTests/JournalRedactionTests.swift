@@ -301,6 +301,86 @@ private func secretBearing(_ name: String, secretParams: Set<String>) -> Action 
     #expect(params["grantWrite"] == .bool(true))
 }
 
+/// 2e-iii. An API entry's token is a secret in the action's own parameters.
+@Test func theApiEntryTokenIsRedactedAndTheFourActionsAreOperatorOnly() async throws {
+    let registry = ActionRegistry(journalDirectory: scratchJournal(), sessionId: "api-token")
+    await registerStandardActions(
+        into: registry, context: nil, panes: PaneStore(), db: nil,
+        resumes: ResumeBroker(), providerSwitches: ProviderSwitchBroker())
+
+    _ = try? await registry.dispatch(
+        name: "api_set_entry",
+        params: .object([
+            "projectPath": .string("/src/orders/project.json"),
+            "environment": .string("staging"), "name": .string("orders"),
+            "baseUrl": .string("https://orders.example"), "token": .string("hunter2"),
+        ]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+
+    let entries = try await registry.journalEntries()
+    guard let entry = entries.first(where: { $0.action == "api_set_entry" }),
+          case .object(let params) = entry.params
+    else { Issue.record("no entry"); return }
+    #expect(params["token"] == .string("[redacted]"))
+    #expect(params["baseUrl"] == .string("https://orders.example"))
+    for name in ["api_set_entry", "api_update_entry", "api_remove_entry", "db_update_database"] {
+        #expect(operatorOnlyActions.contains(name))
+    }
+}
+
+/// 2e-iv. Both passwords of a database saved as parts are secret-bearing, whatever else the
+/// dispatch carries, and the parts beside them stay legible.
+@Test func bothPasswordsOfADatabaseConnectionAreRedactedInTheJournal() async throws {
+    let registry = ActionRegistry(journalDirectory: scratchJournal(), sessionId: "s1")
+    await registry.register(secretBearing("db_set_connection", secretParams: ["password", "writePassword"]))
+    _ = try await registry.dispatch(
+        name: "db_set_connection",
+        params: .object([
+            "name": .string("core"), "host": .string("db.internal"), "user": .string("reader"),
+            "password": .string("hunter2"), "writePassword": .string("hunter3"),
+        ]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    let entries = try await registry.journalEntries()
+    guard entries.count == 1, case .object(let params) = entries[0].params else {
+        Issue.record("expected one entry with object params, got \(entries)"); return
+    }
+    #expect(params["password"] == .string("[redacted]"))
+    #expect(params["writePassword"] == .string("[redacted]"))
+    #expect(params["host"] == .string("db.internal"))
+    #expect(params["user"] == .string("reader"))
+}
+
+/// The REGISTERED action carries the mark: a refused dispatch (no context client) is journalled
+/// with both passwords redacted, and the action is operator-only with a denial of its own.
+@Test func dbSetConnectionIsOperatorOnlyAndTheRealActionRedactsBothPasswords() async throws {
+    let registry = ActionRegistry(journalDirectory: scratchJournal(), sessionId: "s1")
+    await registerStandardActions(into: registry, context: nil, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    let action = try #require(await registry.all().first { $0.name == "db_set_connection" })
+    #expect(action.audience == .operatorOnly)
+    _ = try? await registry.dispatch(
+        name: "db_set_connection",
+        params: .object([
+            "projectPath": .string("/p.json"), "environment": .string("staging"),
+            "name": .string("core"), "driver": .string("mysql"), "host": .string("db.internal"),
+            "password": .string("hunter2"), "writePassword": .string("hunter3"),
+        ]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    let entries = try await registry.journalEntries()
+    guard let entry = entries.first(where: { $0.action == "db_set_connection" }),
+          case .object(let params) = entry.params
+    else { Issue.record("no journal entry: \(entries)"); return }
+    #expect(params["password"] == .string("[redacted]"))
+    #expect(params["writePassword"] == .string("[redacted]"))
+    #expect(params["host"] == .string("db.internal"))
+    #expect(operatorOnlyActions.contains("db_set_connection"))
+    guard case .deny(let reason) = permissionDecision(
+        toolName: "mcp__wakil__db_set_connection", knownActions: ["db_set_connection"])
+    else { Issue.record("db_set_connection must be denied"); return }
+    #expect(reason.contains("password"))
+    #expect(reason.contains("ctx_config_tree"))
+    #expect(reason.contains("\u{2318},"))
+}
+
 /// **The reason new to the operator-only set.** Every other member objects
 /// to what the agent could REACH; this one objects to what it would
 /// CARRY — and the denial sentence says so rather than borrowing another

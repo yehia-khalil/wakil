@@ -1297,3 +1297,123 @@ func TestRenameEnvironmentRefusalReachesTheWireVerbatim(t *testing.T) {
 		t.Fatalf("refusal text %q", got)
 	}
 }
+
+func TestApiEntryToolsRoundTrip(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+
+	callOK(t, ctx, cs, "set_api_entry", map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "billing", "baseUrl": "https://api.staging.test",
+	})
+	p, err := wakilcore.LoadProject(pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := p.Environments["staging"].API
+	if len(api) != 1 || api[0].Name != "billing" || api[0].BaseURL != "https://api.staging.test" {
+		t.Fatalf("after set: %+v", api)
+	}
+
+	callOK(t, ctx, cs, "update_api_entry", map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "billing", "newName": "payments",
+	})
+	p, _ = wakilcore.LoadProject(pp)
+	api = p.Environments["staging"].API
+	if len(api) != 1 || api[0].Name != "payments" || api[0].BaseURL != "https://api.staging.test" {
+		t.Fatalf("after rename (base URL must be unchanged): %+v", api)
+	}
+
+	callOK(t, ctx, cs, "remove_api_entry", map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "payments",
+	})
+	p, _ = wakilcore.LoadProject(pp)
+	if len(p.Environments["staging"].API) != 0 {
+		t.Fatalf("entry remains: %+v", p.Environments["staging"].API)
+	}
+}
+
+func TestUpdateDatabaseToolRenames(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[{"name":"core","driver":"mysql","ref":"db:proj:staging:core"}]}`)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+
+	callOK(t, ctx, cs, "update_database", map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "core", "newName": "reports",
+	})
+	p, _ := wakilcore.LoadProject(pp)
+	dbs := p.Environments["staging"].Databases
+	if len(dbs) != 1 || dbs[0].Name != "reports" || dbs[0].Ref != "db:proj:staging:core" {
+		t.Fatalf("after rename: %+v", dbs)
+	}
+}
+
+// fakeSecurity points the Keychain tool at a script that accepts every write and
+// finds nothing, so the tool under test never reaches the operator's login keychain.
+func fakeSecurity(t *testing.T) {
+	t.Helper()
+	script := filepath.Join(t.TempDir(), "security")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ncase \"$1\" in add-generic-password) exit 0;; esac\nexit 44\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WAKIL_SECURITY_BINARY", script)
+}
+
+func TestSetDatabaseConnectionToolSavesPartsAndTheTreeShowsThem(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[{"name":"legacy","driver":"mysql","ref":"db:proj:staging:legacy"}]}`)
+	fakeSecurity(t)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+
+	callOK(t, ctx, cs, "set_database_connection", map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "core", "driver": "mysql",
+		"host": "db.internal", "port": "3307", "database": "orders", "user": "reader",
+		"password": "s3cret-pw",
+	})
+
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "config_tree", Arguments: map[string]any{}})
+	if err != nil || res.IsError {
+		t.Fatalf("config_tree: %v %v", err, res)
+	}
+	raw, _ := json.Marshal(res.StructuredContent)
+	var tree wakilcore.ConfigTree
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "s3cret-pw") {
+		t.Fatalf("the tree carries the password: %s", raw)
+	}
+	var core, legacy *wakilcore.ConfigTreeDatabase
+	for _, p := range tree.Projects {
+		for _, e := range p.Environments {
+			for i := range e.Databases {
+				switch e.Databases[i].Name {
+				case "core":
+					core = &e.Databases[i]
+				case "legacy":
+					legacy = &e.Databases[i]
+				}
+			}
+		}
+	}
+	if core == nil || core.Connection == nil || core.Connection.Host != "db.internal" ||
+		core.Connection.Port != "3307" || core.Connection.Database != "orders" || core.Connection.User != "reader" {
+		t.Fatalf("core after save: %+v", core)
+	}
+	if legacy == nil || legacy.Connection != nil {
+		t.Fatalf("a legacy record must carry no connection: %+v", legacy)
+	}
+}
+
+func TestSetDatabaseConnectionToolRefusalReachesTheWire(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	fakeSecurity(t)
+	ctx, cs := lifecycleClient(t)
+	pp := filepath.Join(os.Getenv("HOME"), "proj", ".wakil", "project.json")
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "set_database_connection", Arguments: map[string]any{
+		"projectPath": pp, "environment": "staging", "name": "core", "driver": "mysql",
+	}})
+	if err != nil || !res.IsError {
+		t.Fatalf("a connection with no host must be refused: %v %v", err, res)
+	}
+}

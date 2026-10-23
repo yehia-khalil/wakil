@@ -556,6 +556,28 @@ Each entry: the call, why, and what would change our mind.
     organisation's list and leaves its folder alone. **A project or environment an agent is
     running in cannot be renamed or removed** (Invariant 5), and these actions are
     operator-only like the rest of Settings (Decision 30), so voice cannot reach them.)*
+    *(Amended 2026-10-22 by sub-phase 2e-iii, `docs/superpowers/specs/2026-10-22-2e-iii-api-entries-design.md`.*
+    **An environment's API entries are now editable in the pane**, superseding the code comment
+    that held the API page "read-only, and stay so": add, rename, change the base URL or auth
+    header, and remove, each as the operator's own act. **A token goes to the Keychain behind
+    one confirmation and never to the project file**, the journal or the tree; clearing it
+    forgets the ref and keeps the Keychain item, so it asks nothing. **A database can be
+    renamed in place and its write access removed**, and **removing a database now asks**
+    (it destroys nothing, but a thing gone from the page is a removal to confirm, as a
+    project's and an environment's are); removing an API entry asks the same, and both say the
+    Keychain item is kept. All four actions are operator-only, like the rest of Settings
+    (Decision 30), so neither an agent nor voice can reach them.)*
+    *(Amended 2026-10-23 by sub-phase 2e-iv, `docs/superpowers/specs/2026-10-23-2e-iv-database-edit-design.md`.*
+    **A database's connection is now editable in the pane, and its non-secret parts live in
+    `project.json`.** Host, port, database name and user (a path for SQLite) are written to the
+    file, where they can be shown, edited and read by hand; **only the passwords go to the
+    Keychain**, behind the same one confirmation, and the confirmation also says when a save
+    makes the database writable. An empty password keeps the stored one for the same user, and
+    a changed user must bring its own. **Edit replaces Replace connection**: it fills the card
+    with everything known but the passwords. A record saved before this keeps its Keychain
+    item as one whole string and is shown as such; typing it once makes it editable. The one
+    shared Go builder makes the connection string at connect time, so the shell, the agent's
+    tools and the card agree. The action stays operator-only (Decision 30).)*
 
 22. **A Claude account is shared across orgs; an org's credentials are not.**
     *(2026-09-14, `docs/superpowers/specs/2026-09-14-shared-accounts-across-orgs-design.md`.)*

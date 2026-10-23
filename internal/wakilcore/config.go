@@ -94,6 +94,12 @@ type Database struct {
 	// write, so the read/write distinction there IS the credential's
 	// grants and cannot be anything else.
 	WriteRef string `json:"writeRef,omitempty"`
+	// Connection holds the non-secret parts of a database saved as parts
+	// (2e-iv). When set, the Keychain items at Ref and WriteRef hold only
+	// PASSWORDS and the connection string is built at connect time. Nil is
+	// a legacy record: its Keychain item is the whole connection string,
+	// read exactly as before.
+	Connection *DatabaseConnection `json:"connection,omitempty"`
 }
 
 // DatabaseInfo is what an agent is told about a database, and it is a

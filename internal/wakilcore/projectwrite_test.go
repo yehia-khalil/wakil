@@ -457,3 +457,719 @@ func TestARefusedGrantStoresNothing(t *testing.T) {
 		t.Error("a refused write still recorded the database")
 	}
 }
+
+func dbEditSetup(t *testing.T) string {
+	t.Helper()
+	fakeKeychain(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "acme")
+	if err := CreateOrg("acme", Org{}); err != nil {
+		t.Fatal(err)
+	}
+	return projectFixture(t, "acme", `{"name":"shop","org":"acme","environments":{"staging":{"databases":[
+	  {"name":"core","driver":"mysql","ref":"db:shop:staging:core","writeRef":"db:shop:staging:core:rw"},
+	  {"name":"orders","driver":"mysql","ref":"db:shop:staging:orders"}]}}}`)
+}
+
+func TestUpdateDatabaseRenameKeepsItsRefs(t *testing.T) {
+	path := dbEditSetup(t)
+	name := "reports"
+	if err := UpdateDatabase(path, "staging", "core", DatabaseEdit{NewName: &name}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := LoadProject(path)
+	d := p.Environments["staging"].Databases[0]
+	if d.Name != "reports" || d.Ref != "db:shop:staging:core" || d.WriteRef != "db:shop:staging:core:rw" {
+		t.Errorf("database = %+v", d)
+	}
+
+	clash := "orders"
+	if err := UpdateDatabase(path, "staging", "reports", DatabaseEdit{NewName: &clash}); err == nil ||
+		!strings.Contains(err.Error(), "orders") {
+		t.Errorf("clash = %v", err)
+	}
+	same := "reports"
+	if err := UpdateDatabase(path, "staging", "reports", DatabaseEdit{NewName: &same}); err != nil {
+		t.Errorf("rename to its own name: %v", err)
+	}
+	for _, bad := range []string{"", "a/b"} {
+		if err := UpdateDatabase(path, "staging", "reports", DatabaseEdit{NewName: &bad}); err == nil {
+			t.Errorf("name %q accepted", bad)
+		}
+	}
+	if err := UpdateDatabase(path, "staging", "nope", DatabaseEdit{}); err == nil ||
+		!strings.Contains(err.Error(), `no database "nope" in environment "staging"`) {
+		t.Errorf("missing database = %v", err)
+	}
+	if err := UpdateDatabase(path, "prod", "reports", DatabaseEdit{}); err == nil {
+		t.Error("a missing environment was accepted")
+	}
+}
+
+func TestRevokeWriteKeepsTheKeychainEntry(t *testing.T) {
+	path := dbEditSetup(t)
+	if err := SecretSetFor("acme", "db:shop:staging:core:rw", "mysql://rw"); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateDatabase(path, "staging", "core", DatabaseEdit{RevokeWrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := LoadProject(path)
+	d := p.Environments["staging"].Databases[0]
+	if d.WriteRef != "" || d.Ref != "db:shop:staging:core" || d.Name != "core" {
+		t.Errorf("database = %+v", d)
+	}
+	if got, err := SecretGetFor("acme", "db:shop:staging:core:rw"); err != nil || got != "mysql://rw" {
+		t.Errorf("the write credential did not survive: %q, %v", got, err)
+	}
+}
+
+func TestUpdateDatabaseRefusesAnotherOrganisationsProject(t *testing.T) {
+	dbEditSetup(t)
+	if err := CreateOrg("other", Org{}); err != nil {
+		t.Fatal(err)
+	}
+	path := projectFixture(t, "other",
+		`{"name":"elsewhere","org":"other","environments":{"staging":{"databases":[{"name":"core","driver":"mysql","ref":"r"}]}}}`)
+	err := UpdateDatabase(path, "staging", "core", DatabaseEdit{RevokeWrite: true})
+	if err == nil || !strings.Contains(err.Error(), "read-only here") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// TestANewDatabaseUnderARenamedDatabasesOldNameGetsItsOwnRefs — the same
+// finding for databases: a rename keeps `ref` and `writeRef`, so a new
+// database under the old name must derive refs nothing else names.
+func TestANewDatabaseUnderARenamedDatabasesOldNameGetsItsOwnRefs(t *testing.T) {
+	path := dbEditSetup(t)
+	for _, ref := range []string{"db:shop:staging:core", "db:shop:staging:core:rw"} {
+		if err := SecretSetFor("acme", ref, "old "+ref); err != nil {
+			t.Fatal(err)
+		}
+	}
+	renamed := "reports"
+	if err := UpdateDatabase(path, "staging", "core", DatabaseEdit{NewName: &renamed}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "mysql://ro@new/core", GrantWrite: true, WriteDSN: "mysql://rw@new/core",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := LoadProject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbs := p.Environments["staging"].Databases
+	if len(dbs) != 3 || dbs[0].Name != "reports" || dbs[2].Name != "core" {
+		t.Fatalf("databases = %+v", dbs)
+	}
+	if dbs[0].Ref != "db:shop:staging:core" || dbs[0].WriteRef != "db:shop:staging:core:rw" {
+		t.Errorf("the renamed database's refs moved: %+v", dbs[0])
+	}
+	if dbs[2].Ref != "db:shop:staging:core:2" || dbs[2].WriteRef != "db:shop:staging:core:2:rw" {
+		t.Errorf("the new database's refs = %q / %q; want distinct :2 refs", dbs[2].Ref, dbs[2].WriteRef)
+	}
+	for ref, want := range map[string]string{
+		"db:shop:staging:core":      "old db:shop:staging:core",
+		"db:shop:staging:core:rw":   "old db:shop:staging:core:rw",
+		"db:shop:staging:core:2":    "mysql://ro@new/core",
+		"db:shop:staging:core:2:rw": "mysql://rw@new/core",
+	} {
+		if got, _ := SecretGetFor("acme", ref); got != want {
+			t.Errorf("%s = %q; want %q", ref, got, want)
+		}
+	}
+}
+
+// --- SetDatabaseConnection (2e-iv) ---
+
+// loggedKeychain wraps the fake `security` that fakeKeychain installed in a
+// script that appends each subcommand to a log file first. The fake has no
+// call log of its own, so this is how "no Keychain write" is asserted: the
+// number of add-generic-password calls, not just the stored value.
+func loggedKeychain(t *testing.T) (keychainWrites func() int) {
+	t.Helper()
+	fakeKeychain(t)
+	inner := string(securityBinary)
+	log := filepath.Join(t.TempDir(), "calls.log")
+	wrapper := filepath.Join(t.TempDir(), "security")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$1\" >> '" + log + "'\nexec '" + inner + "' \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	securityBinary = keychainTool(wrapper) // fakeKeychain's cleanup restores the original
+	return func() int {
+		raw, err := os.ReadFile(log)
+		if os.IsNotExist(err) {
+			return 0
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Count(string(raw), "add-generic-password")
+	}
+}
+
+func connectionFixture(t *testing.T) (path string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "acme")
+	if err := CreateOrg("acme", Org{}); err != nil {
+		t.Fatal(err)
+	}
+	return projectFixture(t, "acme",
+		`{"name":"orders","org":"acme","environments":{"staging":{"databases":[]}}}`)
+}
+
+func mysqlRequest(path string) DatabaseConnectionRequest {
+	return DatabaseConnectionRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		Connection: DatabaseConnection{Host: "db.internal", Port: "3306", Database: "ledger", User: "e2e"},
+		Password:   "hunter2",
+	}
+}
+
+func storedDatabase(t *testing.T, path, name string) Database {
+	t.Helper()
+	p, err := LoadProject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range p.Environments["staging"].Databases {
+		if d.Name == name {
+			return d
+		}
+	}
+	t.Fatalf("no database %q stored", name)
+	return Database{}
+}
+
+func TestTheSplitRecordKeepsOnlyThePasswordInTheKeychain(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	if err := SetDatabaseConnection(mysqlRequest(path)); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	if strings.Contains(string(raw), "hunter2") {
+		t.Fatalf("the project file holds the password:\n%s", raw)
+	}
+	d := storedDatabase(t, path, "core")
+	if d.Connection == nil || d.Connection.Host != "db.internal" || d.Connection.User != "e2e" ||
+		d.Connection.Database != "ledger" {
+		t.Fatalf("parts not in the file: %+v", d.Connection)
+	}
+	if got, err := SecretGet(d.Ref); err != nil || got != "hunter2" {
+		t.Fatalf("keychain item = %q, %v; want just the password", got, err)
+	}
+	if d.WriteRef != "" {
+		t.Fatalf("a writeRef appeared without a grant: %q", d.WriteRef)
+	}
+}
+
+func TestAnEmptyPasswordKeepsTheStoredOne(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := connectionFixture(t)
+	if err := SetDatabaseConnection(mysqlRequest(path)); err != nil {
+		t.Fatal(err)
+	}
+	before := storedDatabase(t, path, "core")
+	n := writes()
+
+	r := mysqlRequest(path)
+	r.Password = ""
+	r.Connection.Port = "3307"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	after := storedDatabase(t, path, "core")
+	if after.Connection.Port != "3307" {
+		t.Fatalf("port not saved: %+v", after.Connection)
+	}
+	if writes() != n {
+		t.Fatalf("the Keychain was written %d time(s) by a save with no password", writes()-n)
+	}
+	if after.Ref != before.Ref {
+		t.Fatalf("ref moved from %q to %q", before.Ref, after.Ref)
+	}
+	if got, _ := SecretGet(after.Ref); got != "hunter2" {
+		t.Fatalf("stored password = %q", got)
+	}
+}
+
+func TestAChangedUserNeedsItsPassword(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := connectionFixture(t)
+	if err := SetDatabaseConnection(mysqlRequest(path)); err != nil {
+		t.Fatal(err)
+	}
+	n := writes()
+	rawBefore, _ := os.ReadFile(path)
+
+	r := mysqlRequest(path)
+	r.Password = ""
+	r.Connection.User = "other"
+	err := SetDatabaseConnection(r)
+	msg, ok := IsUserError(err)
+	if !ok || msg != "a new user needs its password — the stored one belongs to e2e" {
+		t.Fatalf("got %v", err)
+	}
+	rawAfter, _ := os.ReadFile(path)
+	if string(rawBefore) != string(rawAfter) || writes() != n {
+		t.Fatal("a refused save wrote something")
+	}
+
+	// With the password it goes through.
+	r.Password = "newpw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := SecretGet(storedDatabase(t, path, "core").Ref); got != "newpw" {
+		t.Fatalf("stored password = %q", got)
+	}
+}
+
+func TestAChangedWriteUserNeedsItsPasswordToo(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.GrantWrite, r.Connection.WriteUser, r.WritePassword = true, "writer", "writepw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if d.WriteRef == "" || d.Connection.WriteUser != "writer" {
+		t.Fatalf("write grant not recorded: %+v", d)
+	}
+	if got, _ := SecretGet(d.WriteRef); got != "writepw" {
+		t.Fatalf("write item = %q", got)
+	}
+	n := writes()
+
+	// Same write user, no password: kept, no write.
+	keep := mysqlRequest(path)
+	keep.Password = ""
+	keep.GrantWrite, keep.Connection.WriteUser = true, "writer"
+	keep.Connection.Port = "3307"
+	if err := SetDatabaseConnection(keep); err != nil {
+		t.Fatal(err)
+	}
+	if writes() != n {
+		t.Fatal("keeping both passwords still wrote the Keychain")
+	}
+
+	// Changed write user, no write password: refused.
+	keep.Connection.WriteUser = "writer2"
+	msg, ok := IsUserError(SetDatabaseConnection(keep))
+	if !ok || msg != "a new user needs its password — the stored one belongs to writer" {
+		t.Fatalf("got %q", msg)
+	}
+
+	// A save that does not grant keeps the writeRef and the write user.
+	r2 := mysqlRequest(path)
+	r2.Password = ""
+	if err := SetDatabaseConnection(r2); err != nil {
+		t.Fatal(err)
+	}
+	d = storedDatabase(t, path, "core")
+	if d.WriteRef == "" || d.Connection.WriteUser != "writer" {
+		t.Fatalf("a save without a grant dropped the write access: %+v %+v", d, d.Connection)
+	}
+}
+
+func TestAGrantWithNoWriteUserIsRefusedAndWritesNothing(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.GrantWrite, r.WritePassword = true, "writepw"
+	msg, ok := IsUserError(SetDatabaseConnection(r))
+	if !ok || !strings.HasPrefix(msg, "allowing writes needs the write login's user") {
+		t.Fatalf("got %q", msg)
+	}
+	if writes() != 0 {
+		t.Fatal("a refusal wrote the Keychain")
+	}
+}
+
+func TestANewRecordNeedsItsPassword(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.Password = ""
+	if _, ok := IsUserError(SetDatabaseConnection(r)); !ok {
+		t.Fatal("a new server record was saved with no password")
+	}
+	if writes() != 0 {
+		t.Fatal("a refusal wrote the Keychain")
+	}
+}
+
+func TestALegacyRecordBecomesSplitWhenEdited(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	if err := SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "e2e:old@tcp(legacy:3306)/ledger",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	legacy := storedDatabase(t, path, "core")
+	if legacy.Connection != nil {
+		t.Fatal("a DSN record has parts")
+	}
+
+	// The legacy item is the whole string, not a password: it is not kept.
+	r := mysqlRequest(path)
+	r.Password = ""
+	if _, ok := IsUserError(SetDatabaseConnection(r)); !ok {
+		t.Fatal("a legacy record was converted with no password")
+	}
+	if got, _ := SecretGet(legacy.Ref); got != "e2e:old@tcp(legacy:3306)/ledger" {
+		t.Fatalf("the refused edit touched the legacy item: %q", got)
+	}
+
+	if err := SetDatabaseConnection(mysqlRequest(path)); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if d.Connection == nil || d.Connection.Host != "db.internal" {
+		t.Fatalf("not split: %+v", d)
+	}
+	if got, _ := SecretGet(d.Ref); got != "hunter2" {
+		t.Fatalf("item = %q, want the password alone", got)
+	}
+}
+
+func TestALegacyWritableRecordCannotSilentlyKeepAWholeStringWriteItem(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	if err := SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "ro:x@tcp(h:3306)/ledger", GrantWrite: true, WriteDSN: "rw:y@tcp(h:3306)/ledger",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	if _, ok := IsUserError(SetDatabaseConnection(mysqlRequest(path))); !ok {
+		t.Fatal("converting kept a whole-string write item that the resolver could no longer read")
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("a refused edit changed the file")
+	}
+}
+
+func TestARefusedConnectionWritesNothing(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := connectionFixture(t)
+	if err := SetDatabaseConnection(mysqlRequest(path)); err != nil {
+		t.Fatal(err)
+	}
+	rawBefore, _ := os.ReadFile(path)
+	n := writes()
+
+	r := mysqlRequest(path)
+	r.Connection.Port = "0"
+	r.Password = "brandnew"
+	msg, ok := IsUserError(SetDatabaseConnection(r))
+	if !ok || msg != "the port must be a number from 1 to 65535" {
+		t.Fatalf("got %v", msg)
+	}
+	rawAfter, _ := os.ReadFile(path)
+	if string(rawBefore) != string(rawAfter) {
+		t.Fatal("the file changed")
+	}
+	if writes() != n {
+		t.Fatal("the Keychain was written")
+	}
+	if got, _ := SecretGet(storedDatabase(t, path, "core").Ref); got != "hunter2" {
+		t.Fatalf("stored password = %q", got)
+	}
+
+	// A bad write login refuses with its prefix, also before any write.
+	r = mysqlRequest(path)
+	r.GrantWrite, r.WritePassword = true, "w"
+	r.Connection.WriteUser = "a:b"
+	msg, ok = IsUserError(SetDatabaseConnection(r))
+	if !ok || !strings.HasPrefix(msg, "the write login: a MySQL user cannot contain") {
+		t.Fatalf("got %q", msg)
+	}
+	if writes() != n {
+		t.Fatal("the Keychain was written")
+	}
+}
+
+func TestASQLitePathIsInTheFileAndTheKeychain(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	r := DatabaseConnectionRequest{
+		ProjectPath: path, Environment: "staging", Name: "lite", Driver: "sqlite",
+		Connection: DatabaseConnection{Path: "/data/orders.db"}, GrantWrite: true,
+	}
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "lite")
+	if d.Connection == nil || d.Connection.Path != "/data/orders.db" {
+		t.Fatalf("path not in the file: %+v", d.Connection)
+	}
+	if got, _ := SecretGet(d.Ref); got != "/data/orders.db" {
+		t.Fatalf("read item = %q", got)
+	}
+	if got, _ := SecretGet(d.WriteRef); got != "/data/orders.db" {
+		t.Fatalf("write item = %q", got)
+	}
+
+	// No path: refused with the ported sentence.
+	r.Connection.Path = ""
+	msg, ok := IsUserError(SetDatabaseConnection(r))
+	if !ok || msg != "a SQLite database needs the path to its file" {
+		t.Fatalf("got %q", msg)
+	}
+}
+
+func TestAConnectionForANewDatabaseAfterARenameGetsAFreshRef(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	if err := SetDatabaseConnection(mysqlRequest(path)); err != nil {
+		t.Fatal(err)
+	}
+	renamed := "reports"
+	if err := UpdateDatabase(path, "staging", "core", DatabaseEdit{NewName: &renamed}); err != nil {
+		t.Fatal(err)
+	}
+	reportsRef := storedDatabase(t, path, "reports").Ref
+
+	r := mysqlRequest(path)
+	r.Password = "other-server-pw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	fresh := storedDatabase(t, path, "core")
+	if fresh.Ref == reportsRef {
+		t.Fatalf("the new core took reports's ref %q", reportsRef)
+	}
+	if got, _ := SecretGet(reportsRef); got != "hunter2" {
+		t.Fatalf("reports's password was overwritten: %q", got)
+	}
+}
+
+func TestADriverIsRequired(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.Driver = "postgres"
+	if _, ok := IsUserError(SetDatabaseConnection(r)); !ok {
+		t.Fatal("an unknown driver was saved")
+	}
+	r = mysqlRequest(path)
+	r.Environment = "nope"
+	if _, ok := IsUserError(SetDatabaseConnection(r)); !ok {
+		t.Fatal("an unknown environment was accepted")
+	}
+}
+
+func TestADSNOverASplitRecordMakesItLegacy(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	if err := SetDatabaseConnection(mysqlRequest(path)); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "e2e:pw@tcp(other:3306)/ledger",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if d.Connection != nil {
+		t.Fatalf("a record holding a whole string kept its parts: %+v", d.Connection)
+	}
+	if got, _ := SecretGet(d.Ref); got != "e2e:pw@tcp(other:3306)/ledger" {
+		t.Fatalf("item = %q", got)
+	}
+}
+
+func TestADSNCannotKeepAWriteLoginSavedInParts(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.GrantWrite, r.Connection.WriteUser, r.WritePassword = true, "writer", "writepw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	n := writes()
+	msg, ok := IsUserError(SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "e2e:pw@tcp(other:3306)/ledger",
+	}))
+	if !ok || !strings.HasPrefix(msg, "this database writes through a login saved in parts") {
+		t.Fatalf("got %q", msg)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) || writes() != n {
+		t.Fatal("a refused DSN wrote something")
+	}
+
+	// Granting with its own write string goes through, as legacy.
+	if err := SetDatabaseDSN(DatabaseDSNRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "mysql",
+		DSN: "e2e:pw@tcp(other:3306)/ledger", GrantWrite: true, WriteDSN: "w:pw@tcp(other:3306)/ledger",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if d := storedDatabase(t, path, "core"); d.Connection != nil {
+		t.Fatalf("still in parts: %+v", d.Connection)
+	}
+}
+
+// sharedRefFixture is two environments whose `core` rows were hand-written
+// to name the same Keychain items.
+func sharedRefFixture(t *testing.T) string {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "acme")
+	if err := CreateOrg("acme", Org{}); err != nil {
+		t.Fatal(err)
+	}
+	conn := `"connection":{"host":"db.internal","port":"3306","database":"ledger","user":"e2e","writeUser":"writer"}`
+	row := `{"name":"core","driver":"mysql","ref":"db:shared","writeRef":"db:shared:rw",` + conn + `}`
+	path := projectFixture(t, "acme", `{"name":"orders","org":"acme","environments":{`+
+		`"staging":{"databases":[`+row+`]},"production":{"databases":[`+row+`]}}}`)
+	for ref, value := range map[string]string{"db:shared": "sharedpw", "db:shared:rw": "sharedwpw"} {
+		if err := SecretSetFor("acme", ref, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return path
+}
+
+func TestEditingARowThatSharesARefWritesItsPasswordElsewhere(t *testing.T) {
+	writes := loggedKeychain(t)
+	path := sharedRefFixture(t)
+	n := writes()
+
+	// Keeping both stored passwords writes nothing, so the shared refs stay.
+	keep := mysqlRequest(path)
+	keep.Password = ""
+	keep.GrantWrite, keep.Connection.WriteUser = true, "writer"
+	keep.Connection.Port = "3311"
+	if err := SetDatabaseConnection(keep); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if d.Ref != "db:shared" || d.WriteRef != "db:shared:rw" || writes() != n {
+		t.Fatalf("keeping the passwords moved the refs or wrote: %+v", d)
+	}
+
+	// A typed password goes to a ref of this row's own.
+	r := mysqlRequest(path)
+	r.Password = "newpw"
+	r.GrantWrite, r.Connection.WriteUser, r.WritePassword = true, "writer", "newwpw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	d = storedDatabase(t, path, "core")
+	if d.Ref == "db:shared" || d.WriteRef == "db:shared:rw" || d.Ref == d.WriteRef {
+		t.Fatalf("wrote into a ref another row names: %+v", d)
+	}
+	if got, _ := SecretGet(d.Ref); got != "newpw" {
+		t.Fatalf("read item = %q", got)
+	}
+	if got, _ := SecretGet(d.WriteRef); got != "newwpw" {
+		t.Fatalf("write item = %q", got)
+	}
+	if got, _ := SecretGet("db:shared"); got != "sharedpw" {
+		t.Fatalf("the other row's password was overwritten: %q", got)
+	}
+	if got, _ := SecretGet("db:shared:rw"); got != "sharedwpw" {
+		t.Fatalf("the other row's write password was overwritten: %q", got)
+	}
+}
+
+func TestASQLiteFileCannotMoveUnderAKeptWriteItem(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	lite := DatabaseConnectionRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "sqlite",
+		Connection: DatabaseConnection{Path: "/data/a.db"}, GrantWrite: true,
+	}
+	if err := SetDatabaseConnection(lite); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+
+	moved := lite
+	moved.GrantWrite = false
+	moved.Connection.Path = "/data/b.db"
+	msg, ok := IsUserError(SetDatabaseConnection(moved))
+	if !ok || !strings.HasPrefix(msg, "this database writes to a file saved another way") {
+		t.Fatalf("got %q", msg)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("a refused move changed the file")
+	}
+
+	// The same path without a grant keeps the write item: allowed.
+	same := lite
+	same.GrantWrite = false
+	if err := SetDatabaseConnection(same); err != nil {
+		t.Fatal(err)
+	}
+	// Moving with the grant moves both items.
+	moved.GrantWrite = true
+	if err := SetDatabaseConnection(moved); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if got, _ := SecretGet(d.WriteRef); got != "/data/b.db" {
+		t.Fatalf("write item = %q", got)
+	}
+}
+
+func TestSwitchingAWritableServerRecordToSQLiteNeedsTheGrant(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.GrantWrite, r.Connection.WriteUser, r.WritePassword = true, "writer", "writepw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	msg, ok := IsUserError(SetDatabaseConnection(DatabaseConnectionRequest{
+		ProjectPath: path, Environment: "staging", Name: "core", Driver: "sqlite",
+		Connection: DatabaseConnection{Path: "/data/a.db"},
+	}))
+	if !ok || !strings.HasPrefix(msg, "this database writes to a file saved another way") {
+		t.Fatalf("got %q", msg)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("a refused switch changed the file")
+	}
+}
+
+func TestRevokingWritesForgetsTheWriteUser(t *testing.T) {
+	loggedKeychain(t)
+	path := connectionFixture(t)
+	r := mysqlRequest(path)
+	r.GrantWrite, r.Connection.WriteUser, r.WritePassword = true, "writer", "writepw"
+	if err := SetDatabaseConnection(r); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateDatabase(path, "staging", "core", DatabaseEdit{RevokeWrite: true}); err != nil {
+		t.Fatal(err)
+	}
+	d := storedDatabase(t, path, "core")
+	if d.WriteRef != "" || d.Connection == nil || d.Connection.WriteUser != "" {
+		t.Fatalf("revoke left the write login: %+v %+v", d, d.Connection)
+	}
+	if d.Connection.User != "e2e" {
+		t.Fatalf("revoke touched the read login: %+v", d.Connection)
+	}
+}

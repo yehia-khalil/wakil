@@ -45,7 +45,7 @@ func OpenDatabase(ctx context.Context, d Database) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	url, err := SecretGet(d.Ref)
+	url, err := resolveDatabaseURL(d, d.Ref, readUser(d))
 	if err != nil {
 		return nil, err
 	}
@@ -81,11 +81,43 @@ func OpenDatabaseWritable(ctx context.Context, d Database) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	url, err := SecretGet(d.WriteRef)
+	url, err := resolveDatabaseURL(d, d.WriteRef, writeUser(d))
 	if err != nil {
 		return nil, err
 	}
 	return drv.ConnectWritable(ctx, Connection{
 		Ref: d.WriteRef, URL: url, ReadOnly: false, Writable: true,
 	})
+}
+
+func readUser(d Database) string {
+	if d.Connection == nil {
+		return ""
+	}
+	return d.Connection.User
+}
+
+func writeUser(d Database) string {
+	if d.Connection == nil {
+		return ""
+	}
+	return d.Connection.WriteUser
+}
+
+// resolveDatabaseURL reads the Keychain item at ref and returns what the
+// driver connects with.
+//
+// A legacy record (no Connection) or a SQLite one: the item IS the
+// connection string, exactly as before. A split server record: the item
+// is only the password, and the string is built here from the file's
+// parts and `user`.
+func resolveDatabaseURL(d Database, ref, user string) (string, error) {
+	secret, err := SecretGet(ref)
+	if err != nil {
+		return "", err
+	}
+	if d.Connection == nil || !isServerDriver(d.Driver) {
+		return secret, nil
+	}
+	return BuildConnectionString(d.Driver, *d.Connection, user, secret)
 }

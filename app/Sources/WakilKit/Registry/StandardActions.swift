@@ -901,6 +901,65 @@ public func registerStandardActions(
         secretParams: ["dsn", "writeDsn"]
     ))
 
+    // 2e-iv. A database saved as its PARTS: host, port, database, user (or a path, for sqlite) go
+    // to project.json, and only the password(s) go to the Keychain, in Go. **Both passwords are
+    // secret-bearing**, for `db_set_dsn`'s reason. An empty password means "keep the stored one",
+    // so an absent or empty key is simply not forwarded.
+    await registry.register(Action(
+        name: "db_set_connection",
+        description: "Save a database as its parts (host, port, database, user, or a path for "
+            + "sqlite) and record it in an environment. Only the password goes to the Keychain; "
+            + "passwords are never returned. An empty password keeps the stored one. Granting "
+            + "write access takes its own login (writeUser, writePassword). Operator-only: the "
+            + "passwords are secrets the operator types.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "projectPath": .object(["type": .string("string")]),
+                "environment": .object(["type": .string("string")]),
+                "name": .object(["type": .string("string")]),
+                "driver": .object(["type": .string("string")]),
+                "host": .object(["type": .string("string")]),
+                "port": .object(["type": .string("string")]),
+                "database": .object(["type": .string("string")]),
+                "user": .object(["type": .string("string")]),
+                "path": .object(["type": .string("string")]),
+                "password": .object(["type": .string("string")]),
+                "grantWrite": .object(["type": .string("boolean")]),
+                "writeUser": .object(["type": .string("string")]),
+                "writePassword": .object(["type": .string("string")]),
+            ]),
+            "required": .array([
+                .string("projectPath"), .string("environment"), .string("name"), .string("driver"),
+            ]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "db_set_connection", role: "context")
+            }
+            var arguments: [String: JSONValue] = [:]
+            for key in ["projectPath", "environment", "name", "driver"] {
+                arguments[key] = .string(try requireStringParam(params, key, action: "db_set_connection"))
+            }
+            if case .object(let obj) = params {
+                for key in ["host", "port", "database", "user", "path", "password", "writeUser", "writePassword"] {
+                    if case .string(let value)? = obj[key], !value.isEmpty {
+                        arguments[key] = .string(value)
+                    }
+                }
+                if case .bool(true)? = obj["grantWrite"] {
+                    arguments["grantWrite"] = .bool(true)
+                }
+            }
+            return try await callChecked(
+                context, tool: "set_database_connection", arguments: .object(arguments),
+                action: "db_set_connection", timeout: MCPClient.readReplyTimeout)
+        },
+        secretParams: ["password", "writePassword"]
+    ))
+
     // 2e (#207). **Removing a database keeps its Keychain entry** —
     // *unreferenced* is a claim the registry has no standing to make, so
     // this is NOT on the pane-local confirmation list: nothing is
@@ -938,6 +997,69 @@ public func registerStandardActions(
                 action: "db_remove_database", timeout: MCPClient.readReplyTimeout)
         }
     ))
+
+    // 2e-iii. The API entries of an environment, and a database's rename and write revocation.
+    // Each forwards its parameters as given to the `wakil-ctx` tool of the same shape; an absent
+    // key means unchanged. Operator-only; `api_set_entry`'s token is the one secret.
+    func str() -> JSONValue { .object(["type": .string("string")]) }
+    func ctxForward(
+        _ action: String, _ tool: String, description: String,
+        required: [String], optional: [String], bools: [String] = [],
+        secret: Set<String> = []
+    ) async {
+        var props: [String: JSONValue] = [:]
+        for key in required + optional { props[key] = str() }
+        for key in bools { props[key] = .object(["type": .string("boolean")]) }
+        await registry.register(Action(
+            name: action, description: description, kind: .control, audience: .operatorOnly,
+            schema: .object([
+                "type": .string("object"), "properties": .object(props),
+                "required": .array(required.map { .string($0) }),
+            ]),
+            handler: { params in
+                guard let context else {
+                    throw StandardActionError.missingClient(action: action, role: "context")
+                }
+                var arguments: [String: JSONValue] = [:]
+                for key in required {
+                    arguments[key] = .string(try requireStringParam(params, key, action: action))
+                }
+                if case .object(let obj) = params {
+                    for key in optional {
+                        if case .string(let v)? = obj[key] { arguments[key] = .string(v) }
+                    }
+                    for key in bools {
+                        if case .bool(let v)? = obj[key] { arguments[key] = .bool(v) }
+                    }
+                }
+                return try await callChecked(
+                    context, tool: tool, arguments: .object(arguments),
+                    action: action, timeout: MCPClient.readReplyTimeout)
+            },
+            secretParams: secret))
+    }
+    await ctxForward(
+        "api_set_entry", "set_api_entry",
+        description: "Add or replace an API entry in an environment. The token goes to the "
+            + "Keychain; the project file gets its entry NAME. Operator-only: the token is a secret.",
+        required: ["projectPath", "environment", "name", "baseUrl"],
+        optional: ["authHeader", "token"], secret: ["token"])
+    await ctxForward(
+        "api_update_entry", "update_api_entry",
+        description: "Rename an API entry or change its base URL or auth header, or clear its "
+            + "token. An absent key is unchanged. Operator-only.",
+        required: ["projectPath", "environment", "name"],
+        optional: ["newName", "baseUrl", "authHeader"], bools: ["clearToken"])
+    await ctxForward(
+        "api_remove_entry", "remove_api_entry",
+        description: "Drop an API entry from an environment. Operator-only.",
+        required: ["projectPath", "environment", "name"], optional: [])
+    await ctxForward(
+        "db_update_database", "update_database",
+        description: "Rename a database in an environment, or revoke its write access. "
+            + "An absent key is unchanged. Operator-only.",
+        required: ["projectPath", "environment", "name"],
+        optional: ["newName"], bools: ["revokeWrite"])
 
     // 2e-ii. Add, rename and remove a project and an environment from Settings: six
     // `.control`, `.operatorOnly` actions over `wakil-ctx`'s six writers, each a plain

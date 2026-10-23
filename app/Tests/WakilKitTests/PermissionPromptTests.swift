@@ -421,6 +421,34 @@ private func bridgeReply(toolName: String, input: JSONValue) async throws -> [St
     }
 }
 
+// MARK: - API entries and database edits are the operator's (2e-iii)
+
+/// The three API entry actions and `db_update_database` each get a sentence of their own. Must
+/// fail if any falls back to the org family's `default:` — where the final review found the API
+/// three — or if `db_update_database` is told it carries a connection string, which it does not.
+@Test func theAgentIsToldApiEntriesAndDatabaseEditsAreTheOperators() {
+    for name in ["api_set_entry", "api_update_entry", "api_remove_entry"] {
+        let decision = permissionDecision(
+            toolName: "mcp__\(wakilShimServerName)__\(name)", knownActions: [name])
+        guard case .deny(let reason) = decision else {
+            Issue.record("\(name) must be operator-only, got \(decision)")
+            continue
+        }
+        #expect(reason.contains("only the operator configures an API entry"), "\(name): got: \(reason)")
+        #expect(reason.contains("list_apis") && reason.contains("ctx_config_tree"), "\(name): got: \(reason)")
+        #expect(!reason.contains("creating an organisation"), "\(name) reused the org family: \(reason)")
+    }
+    let decision = permissionDecision(
+        toolName: "mcp__\(wakilShimServerName)__db_update_database", knownActions: ["db_update_database"])
+    guard case .deny(let reason) = decision else {
+        Issue.record("db_update_database must be operator-only, got \(decision)")
+        return
+    }
+    #expect(reason.contains("renames a database"), "got: \(reason)")
+    #expect(!reason.contains("connection string"), "db_update_database carries no connection string: \(reason)")
+    #expect(!reason.contains("creating an organisation"), "reused the org family: \(reason)")
+}
+
 // MARK: - The agent's place is fixed (background agents, Invariant 5)
 
 /// An agent's place (organisation, project, environment) is fixed when its
