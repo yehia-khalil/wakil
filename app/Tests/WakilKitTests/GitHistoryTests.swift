@@ -70,4 +70,47 @@ import Testing
         let t = try #require(await f.snapshot().tabs.first)
         #expect(t.diffState?.error == nil && t.diffState?.original == "" && t.diffState?.modified == "after\n")
     }
+
+    @Test func inlineBlameDecodesAndDefaultsOn() throws {
+        let off = try JSONDecoder().decode(SettingsEditor.self, from: Data(#"{"fontSize":12,"inlineBlame":false}"#.utf8))
+        let absent = try JSONDecoder().decode(SettingsEditor.self, from: Data(#"{"fontSize":12}"#.utf8))
+        #expect(!off.inlineBlame && absent.inlineBlame && SettingsEditor.defaults.inlineBlame)
+    }
+
+    private func blame(_ n: Int, _ who: String) -> GitBlameInfo {
+        GitBlameInfo(line: n, id: String(repeating: "a", count: 40), author: who, date: "2026-10-20T12:00:00Z", subject: "s")
+    }
+
+    @Test func aBlameLandsForItsTab() {
+        var c = EditorBlameCache()
+        let g = c.begin(key: "file:/p/a.txt")
+        let landed = c.land(key: "file:/p/a.txt", gen: g, lines: [blame(1, "Ada")])
+        #expect(landed)
+        #expect(c.line(key: "file:/p/a.txt", 1)?.author == "Ada")
+        #expect(c.line(key: "file:/p/a.txt", 2) == nil)
+    }
+
+    // Review Focus 5: a reply that lands after a newer fetch began for its tab writes nothing.
+    @Test func aLateBlameForAnotherTabIsDropped() {
+        var c = EditorBlameCache()
+        let old = c.begin(key: "file:/p/a.txt")
+        _ = c.begin(key: "file:/p/b.txt")
+        let newer = c.begin(key: "file:/p/a.txt")
+        let stale = c.land(key: "file:/p/a.txt", gen: old, lines: [blame(1, "Old")])
+        #expect(!stale)
+        #expect(c.line(key: "file:/p/a.txt", 1) == nil)
+        let fresh = c.land(key: "file:/p/a.txt", gen: newer, lines: [blame(1, "New")])
+        #expect(fresh)
+        #expect(c.line(key: "file:/p/a.txt", 1)?.author == "New")
+    }
+
+    @Test func theBlameHoverNamesTheCommitAndItsActions() {
+        let b = GitBlameInfo(line: 2, id: "abc1234" + String(repeating: "0", count: 33), author: "Ada Lovelace",
+                             date: ago(3 * 86_400), subject: "Fix [search] *now*")
+        let h = editorBlameHover(b, now: now) ?? ""
+        #expect(h.hasPrefix("**Fix \\[search\\] \\*now\\***"))
+        #expect(h.contains("Ada Lovelace · 3 days ago · `abc1234`"))
+        #expect(h.contains("[Open Changes](command:wakil.blame.open)") && h.contains("[Copy Commit ID](command:wakil.blame.copy)"))
+        #expect(editorBlameHover(GitBlameInfo(line: 1, id: String(repeating: "0", count: 40), author: "", date: "", subject: "")) == nil)
+    }
 }

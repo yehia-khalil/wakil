@@ -72,6 +72,11 @@ struct EditorPane: View {
     /// suggestion for a request built in that generation (nil: nothing to draw), and the release
     /// of the pending one.
     let ghostTextEnabled: Bool
+    /// 3a-v-a: inline blame on, the blame of (root, relative path, unsaved text or nil), and a
+    /// commit's change opened for (root, relative path, commit id).
+    var inlineBlame: Bool = false
+    var blameFor: (String, String, String?) async -> [GitBlameInfo]? = { _, _, _ in nil }
+    var openCommitDiff: (String, String, String) -> Void = { _, _, _ in }
     let ghostSchema: () async -> GhostScope
     let ghostSuggest: (InfillRequest, Int) async -> String?
     let ghostCancel: () -> Void
@@ -156,6 +161,9 @@ struct EditorPane: View {
         .onChange(of: ghostTextEnabled, initial: true) { _, on in
             host.setGhostEnabled(on)
         }
+        .onChange(of: inlineBlame, initial: true) { _, on in
+            host.setBlameEnabled(on)
+        }
         // The keys the page takes follow the pane's state (R13): the peek's, or Compare's Esc.
         .onChange(of: editorCapturedKeys(comparing: comparing != nil, peek: comparing == nil && activeTab.flatMap(editorPeekView) != nil), initial: true) { _, keys in
             host.renderer?.captureKeys(keys)
@@ -188,6 +196,8 @@ struct EditorPane: View {
                         scope.generation)
             }
             host.ghostSuggest = ghostSuggest
+            host.blameFor = blameFor
+            host.blameOpen = openCommitDiff
             host.ghostCancel = ghostCancel
             host.keyboardHeld = keyboardHeld
             // Handed in first, so `start` applies the newest snapshot, never this one if a newer
@@ -834,6 +844,16 @@ final class EditorHost {
     /// 3a-ii-b: the diff's right-click Stage / Unstage Selected Ranges: ("stage" | "unstage", selections).
     @ObservationIgnored var rangesPressed: ((String, [EditorRange]) -> Void)?
     @ObservationIgnored var markClicked: ((EditorTabSubject, Int) -> Void)?
+    /// 3a-v-a inline blame: the fetch for (root, relative path, unsaved text or nil), and the hover's
+    /// Open Changes for (root, relative path, commit id). Fetched per tab text, never per cursor move (R1).
+    @ObservationIgnored var blameFor: ((String, String, String?) async -> [GitBlameInfo]?)?
+    @ObservationIgnored var blameOpen: ((String, String, String) -> Void)?
+    @ObservationIgnored private var blameOn = false
+    @ObservationIgnored private var blames = EditorBlameCache()
+    @ObservationIgnored private var blameTask: Task<Void, Never>?
+    /// The text each key's blame was fetched for, and what was last drawn per key ("line|text").
+    @ObservationIgnored private var blameText: [String: String] = [:]
+    @ObservationIgnored private var blameShown: [String: String] = [:]
     /// A Revert is on its way to the store: another press is dropped until it lands.
     @ObservationIgnored var reverting = false
     /// Compare is on screen: snapshots are kept (`latest`) but not rendered, or the next one — a
@@ -890,6 +910,7 @@ final class EditorHost {
             guard let self, let subject = self.subjects[key] else { return }
             self.rendered[key]?.cursor = cursor
             self.rendered[key]?.selection = selection
+            self.showBlame(key: key, line: cursor.line)
             self.viewsInFlight += 1
             let send = self.viewReported
             Task { @MainActor in
@@ -900,6 +921,15 @@ final class EditorHost {
         made.onKey = { [weak self] key in self?.onKey?(key) }
         made.onPeek = { [weak self] _, op in self?.peekPressed?(op) }
         made.onRanges = { [weak self] _, op, selections in self?.rangesPressed?(op, selections) }
+        made.onBlame = { [weak self] key, op, id in
+            guard let self, case .file(let path, let root)? = self.subjects[key], path.hasPrefix(root + "/") else { return }
+            if op == "copy" {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(id, forType: .string)
+            } else {
+                self.blameOpen?(root, String(path.dropFirst(root.count + 1)), id)
+            }
+        }
         made.onMark = { [weak self] key, line in
             guard let self, let s = self.subjects[key] else { return }
             self.markClicked?(s, line)
@@ -994,6 +1024,53 @@ final class EditorHost {
             renderer.setBasis(key: key, serial: serial)
         }
         scheduleMarks(shown)
+        scheduleBlame(shown)
+    }
+
+    /// 3a-v-a: turns inline blame on or off; off clears every annotation drawn.
+    func setBlameEnabled(_ on: Bool) {
+        guard blameOn != on else { return }
+        blameOn = on
+        blameTask?.cancel()
+        if !on, let renderer {
+            for key in blameShown.keys { renderer.setBlame(key: key, line: 0, text: "", hover: nil, id: "") }
+        }
+        blameShown = [:]
+        blameText = [:]
+        if on, let latest { scheduleBlame(latest) }
+    }
+
+    /// The active tab's blame, fetched at once for a tab not yet blamed and 500 ms after its text last
+    /// changed otherwise (R1). Only a writable file tab under a root: never diff, read-only or scratch tabs.
+    private func scheduleBlame(_ snapshot: EditorSnapshot) {
+        guard blameOn, let i = snapshot.active, i < snapshot.tabs.count else { return }
+        let t = snapshot.tabs[i], key = editorTabKey(t)
+        guard t.diffState == nil, !t.readOnly, case .file(let path, let root) = t.subject, path.hasPrefix(root + "/"),
+              blameText[key] != t.text else { return }
+        let rel = String(path.dropFirst(root.count + 1)), text = t.text, unsaved = t.dirty ? t.text : nil
+        let first = blameText[key] == nil
+        blameTask?.cancel()
+        blameTask = Task { @MainActor [weak self] in
+            if !first { try? await Task.sleep(for: .milliseconds(500)) }
+            guard !Task.isCancelled, let self, let fetch = self.blameFor else { return }
+            let gen = self.blames.begin(key: key)
+            let lines = await fetch(root, rel, unsaved) ?? []
+            guard !Task.isCancelled, self.blames.land(key: key, gen: gen, lines: lines) else { return }
+            self.blameText[key] = text
+            self.blameShown[key] = nil
+            if let line = self.rendered[key]?.cursor.line { self.showBlame(key: key, line: line) }
+        }
+    }
+
+    /// Draws `key`'s blame for `line`, or clears it when there is none; unchanged, nothing is sent.
+    private func showBlame(key: String, line: Int) {
+        guard blameOn, let renderer else { return }
+        let b = blames.line(key: key, line)
+        let text = b.map { editorBlameText($0) } ?? ""
+        let mark = "\(line)|\(text)"
+        guard blameShown[key] != mark else { return }
+        blameShown[key] = mark
+        renderer.setBlame(key: key, line: line, text: text, hover: b.flatMap { editorBlameHover($0) }, id: b?.id ?? "")
     }
 
     /// The active file tab's marks, 150 ms after its text or baseline last changed. No baseline, no marks.

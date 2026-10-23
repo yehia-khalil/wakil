@@ -114,17 +114,21 @@ public struct SettingsEditor: Sendable, Equatable, Decodable {
     public var showIgnored: Bool
     /// Off asks no model for a suggestion in any editor or query line (3b-viii). On by default.
     public var ghostText: Bool
+    /// Off hides who last changed the cursor's line at its end (3a-v-a). On by default.
+    public var inlineBlame: Bool
 
     public static let defaults = SettingsEditor(fontSize: 12, wordWrap: false, autosave: .off)
 
     public init(
-        fontSize: Int, wordWrap: Bool, autosave: EditorAutosaveMode, showIgnored: Bool = true, ghostText: Bool = true
+        fontSize: Int, wordWrap: Bool, autosave: EditorAutosaveMode, showIgnored: Bool = true, ghostText: Bool = true,
+        inlineBlame: Bool = true
     ) {
         self.fontSize = fontSize
         self.wordWrap = wordWrap
         self.autosave = autosave
         self.showIgnored = showIgnored
         self.ghostText = ghostText
+        self.inlineBlame = inlineBlame
     }
 
     public init(from decoder: Decoder) throws {
@@ -134,9 +138,10 @@ public struct SettingsEditor: Sendable, Equatable, Decodable {
         autosave = (try c.decodeIfPresent(String.self, forKey: .autosave)).flatMap(EditorAutosaveMode.init(rawValue:)) ?? .off
         showIgnored = try c.decodeIfPresent(Bool.self, forKey: .showIgnored) ?? Self.defaults.showIgnored
         ghostText = try c.decodeIfPresent(Bool.self, forKey: .ghostText) ?? Self.defaults.ghostText
+        inlineBlame = try c.decodeIfPresent(Bool.self, forKey: .inlineBlame) ?? Self.defaults.inlineBlame
     }
 
-    private enum CodingKeys: String, CodingKey { case fontSize, wordWrap, autosave, showIgnored, ghostText }
+    private enum CodingKeys: String, CodingKey { case fontSize, wordWrap, autosave, showIgnored, ghostText, inlineBlame }
 }
 
 /// One project's editor tier (`project.json`'s `editor`), defaults filled by Go.

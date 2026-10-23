@@ -485,6 +485,12 @@ extension WakilWindow {
                     resolveUnsaved: { choice in Task { await model.resolveUnsaved(choice) } },
                     // 3b-viii: ghost-text on the window's quick tasks, one session per pane.
                     ghostTextEnabled: model.ghostTextEnabled,
+                    // 3a-v-a: inline blame, the app-tier setting.
+                    inlineBlame: model.editorSettings.app.inlineBlame,
+                    blameFor: { root, path, text in await model.editorBlame(root: root, path: path, text: text) },
+                    openCommitDiff: { root, path, id in
+                        Task { await model.editorOpenCommitDiff(root: root, path: path, commit: id, parentPath: nil) }
+                    },
                     ghostSchema: { await model.ghostSchema() },
                     ghostSuggest: { request, generation in
                         await model.ghostSuggestion(pane: pane.id, request: request, generation: generation)

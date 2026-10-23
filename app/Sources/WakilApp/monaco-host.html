@@ -18,6 +18,8 @@
 .ghost-pending{position:relative}
 .ghost-pending::after{content:'';position:absolute;left:1px;top:45%;width:2px;height:2px;border-radius:50%;background:rgba(232,236,246,0.34);animation:ghost-pulse 1s ease-in-out infinite}
 @keyframes ghost-pulse{0%,100%{opacity:.25}50%{opacity:1}}
+/* 3a-v-a: inline blame, dim, after the cursor line's text. */
+.wakil-blame{color:rgba(232,236,246,.32)!important;font-style:normal;cursor:default}
 </style></head>
 <body><div id="d"></div>
 <script>
@@ -434,6 +436,28 @@
                  options: { isWholeLine: true, linesDecorationsClassName: 'wakil-mark-' + x.kind } };
       }));
     };
+    // 3a-v-a: inline blame. Swift fetches and picks the line; the page draws one annotation per model,
+    // after the line's text, and its hover's two links post back which commit was asked about.
+    const blames = {};  // key -> { ids, id }
+    window.wakilSetBlame = function (key, line, text, hover, id) {
+      const m = models[key]; if (!m) return;
+      const list = [];
+      if (line > 0 && line <= m.getLineCount() && text) {
+        const end = m.getLineMaxColumn(line);
+        list.push({ range: new monaco.Range(line, end, line, end), options: {
+          showIfCollapsed: true,
+          after: { content: '\u2003\u2003' + text, inlineClassName: 'wakil-blame',
+                   cursorStops: monaco.editor.InjectedTextCursorStops.None },
+          hoverMessage: hover ? { value: hover, isTrusted: true } : undefined } });
+      }
+      blames[key] = { ids: m.deltaDecorations((blames[key] || {}).ids || [], list), id: id || '' };
+    };
+    ['open', 'copy'].forEach(function (op) {
+      monaco.editor.registerCommand('wakil.blame.' + op, function () {
+        const b = current && blames[current];
+        if (b && b.id) post({ type: 'blame', key: current, op: op, id: b.id });
+      });
+    });
     // 3b-viii: ghost-text. Swift owns the debounce, the model and the clean-up; the page asks
     // and draws. A resolve for an id that is no longer pending is ignored, so a stale reply never
     // lands over newer typing. Tab accepts, ⌘→ a word, Esc dismisses — Monaco's own keys; an
@@ -494,10 +518,10 @@
       if (!current || !e.target || e.target.type !== monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS) return;
       post({ type: 'mark', key: current, line: e.target.position.lineNumber });
     });
-    window.wakilDispose = function (key) { if (models[key]) { models[key].dispose(); delete models[key]; } delete basis[key]; delete marks[key]; if (current === key) current = null; };
+    window.wakilDispose = function (key) { if (models[key]) { models[key].dispose(); delete models[key]; } delete basis[key]; delete marks[key]; delete blames[key]; if (current === key) current = null; };
     // A renamed tab (3b-iv R2): its model, undo history and marks move to the new key.
     window.wakilRekey = function (from, to) {
-      [models, basis, marks].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
+      [models, basis, marks, blames].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
       if (current === from) current = to;
     };
     window.wakilFocus = function () { if (diffKey) dme.focus(); else ed.focus(); };

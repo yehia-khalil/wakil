@@ -165,6 +165,15 @@ struct EditorAppSettingsForm: View {
                         let mode = EditorAutosaveMode.allCases.first { $0.label == label } ?? .off
                         return await save(["autosave": .string(mode.rawValue)])
                     })
+                ChoiceSettingRow(
+                    label: "Inline blame", options: ["Off", "On"], selected: editor.inlineBlame ? "On" : "Off",
+                    identifier: { option in
+                        let key = option.lowercased()
+                        return "settings.editor.inlineBlame.\(key)"
+                    },
+                    refusalIdentifier: "settings.editor.inlineBlame.refusal",
+                    hint: "Who last changed the line the cursor is on, when, and why — dimmed at its end.",
+                    save: { option in await save(["inlineBlame": .bool(option == "On")]) })
             }
             SettingsSection("Files") {
                 ChoiceSettingRow(

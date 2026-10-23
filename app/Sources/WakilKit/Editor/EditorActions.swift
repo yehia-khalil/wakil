@@ -1565,14 +1565,16 @@ public func registerEditorActions(
         name: "editor_blame",
         description: "Read who last changed each line of one file (or only line): commit id, author, date, subject; an "
             + "all-zero id is a line not yet committed. root (absolute) and path (relative to it), or the editor pane's "
-            + "active tab, whose unsaved text is blamed as it stands.",
+            + "active tab, whose unsaved text is blamed as it stands; text: blame this text in place of the file.",
         kind: .read, audience: .agentReachable,
-        schema: schema(pathSchema.merging(["line": .object(["type": .string("integer")])]) { a, _ in a }, required: []),
+        schema: schema(pathSchema.merging(["line": .object(["type": .string("integer")]),
+                                           "text": .object(["type": .string("string")])]) { a, _ in a }, required: []),
         handler: { params in
             guard let git = gitStatus?.git else { throw StandardActionError.missingClient(action: "editor_blame", role: "git") }
             guard let sub = try await historySubject(params, action: "editor_blame") else { return .object(["lines": .array([])]) }
             var args: [String: JSONValue] = ["root": .string(sub.root), "path": .string(sub.path)]
-            if let t = sub.tab, case .file = t.subject, t.dirty { args["text"] = .string(t.text) }
+            if let text = optionalString(params, "text") { args["text"] = .string(text) }
+            else if let t = sub.tab, case .file = t.subject, t.dirty { args["text"] = .string(t.text) }
             switch try await filesTool(git, "git_blame", args) {
             case .failed(let text): throw EditorFilesError(description: text)
             case .ok(let o):

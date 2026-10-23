@@ -117,3 +117,44 @@ public func editorDiffSource(_ d: [String: JSONValue]) -> EditorDiffSource? {
     }
     return nil
 }
+
+/// One editor pane's blame, by tab key (3a-v-a R1): fetched per tab text, read per cursor line. Each
+/// fetch takes a generation; a reply that lands after a newer fetch for its tab began writes nothing.
+public struct EditorBlameCache: Sendable {
+    private var gens: [String: Int] = [:]
+    private var lines: [String: [Int: GitBlameInfo]] = [:]
+
+    public init() {}
+
+    public mutating func begin(key: String) -> Int {
+        let g = (gens[key] ?? 0) + 1
+        gens[key] = g
+        return g
+    }
+
+    @discardableResult
+    public mutating func land(key: String, gen: Int, lines new: [GitBlameInfo]) -> Bool {
+        guard gens[key] == gen else { return false }
+        lines[key] = Dictionary(new.map { ($0.line, $0) }, uniquingKeysWith: { a, _ in a })
+        return true
+    }
+
+    public func line(key: String, _ n: Int) -> GitBlameInfo? { lines[key]?[n] }
+
+    /// A tab closed, or blame switched off: what it held goes.
+    public mutating func forget(key: String) { lines[key] = nil }
+}
+
+/// The blame annotation's hover, as Monaco markdown: the subject, who and when, the short id, and the
+/// two actions (the page's `wakil.blame.open` and `wakil.blame.copy` commands). Nil for a line not yet
+/// committed: there is no commit to show.
+public func editorBlameHover(_ b: GitBlameInfo, now: Date = Date()) -> String? {
+    guard !b.uncommitted else { return nil }
+    func escaped(_ s: String) -> String {
+        var out = ""
+        for c in s { if "\\`*_{}[]()<>#+-.!|".contains(c) { out.append("\\") }; out.append(c) }
+        return out
+    }
+    return "**\(escaped(b.subject))**\n\n\(escaped(b.author)) · \(editorRelativeAge(b.date, now: now)) · `\(b.id.prefix(7))`"
+        + "\n\n[Open Changes](command:wakil.blame.open) · [Copy Commit ID](command:wakil.blame.copy)"
+}

@@ -318,3 +318,21 @@ func TestGhostTextDefaultsOnAndIsWrittenAndRead(t *testing.T) {
 		t.Error("ghostText stayed on after writing off")
 	}
 }
+
+// 3a-v-a: inline blame defaults on, and is written and read like Show ignored files.
+func TestInlineBlameDefaultsOnAndPatches(t *testing.T) {
+	if !(EditorAppSettings{}).Resolved().InlineBlame {
+		t.Error("InlineBlame defaults off; want on")
+	}
+	t.Setenv("HOME", t.TempDir())
+	if err := UpdateEditorAppSettings(EditorAppPatch{InlineBlame: boolp(false)}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadAppSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Editor.Resolved().InlineBlame || LoadEditorSettings().InlineBlame {
+		t.Error("InlineBlame stayed on after writing off")
+	}
+}

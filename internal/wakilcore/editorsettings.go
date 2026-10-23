@@ -60,6 +60,7 @@ type EditorAppSettings struct {
 	Autosave    string `json:"autosave,omitempty"`
 	ShowIgnored *bool  `json:"showIgnored,omitempty"` // nil is the default, on
 	GhostText   *bool  `json:"ghostText,omitempty"`   // nil is the default, on
+	InlineBlame *bool  `json:"inlineBlame,omitempty"` // nil is the default, on (3a-v-a)
 }
 
 // EditorProjectSettings is the per-project tier as stored. InsertSpaces is a pointer because
@@ -78,6 +79,7 @@ type EditorAppValues struct {
 	Autosave    string `json:"autosave"`
 	ShowIgnored bool   `json:"showIgnored"`
 	GhostText   bool   `json:"ghostText"`
+	InlineBlame bool   `json:"inlineBlame"`
 }
 
 // EditorProjectValues is one project's tier with every default filled in.
@@ -97,6 +99,7 @@ type EditorSettings struct {
 	Autosave     string   `json:"autosave"`
 	ShowIgnored  bool     `json:"showIgnored"`
 	GhostText    bool     `json:"ghostText"`
+	InlineBlame  bool     `json:"inlineBlame"`
 	TabSize      int      `json:"tabSize"`
 	InsertSpaces bool     `json:"insertSpaces"`
 	HeavyFolders []string `json:"heavyFolders"`
@@ -106,7 +109,7 @@ type EditorSettings struct {
 // Resolved fills the defaults. A stored value outside its range — only a hand edit can put one
 // there — reads as the default rather than reaching the editor.
 func (s EditorAppSettings) Resolved() EditorAppValues {
-	v := EditorAppValues{FontSize: DefaultEditorFontSize, WordWrap: s.WordWrap, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true}
+	v := EditorAppValues{FontSize: DefaultEditorFontSize, WordWrap: s.WordWrap, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true, InlineBlame: true}
 	if s.FontSize >= MinEditorFontSize && s.FontSize <= MaxEditorFontSize {
 		v.FontSize = s.FontSize
 	}
@@ -118,6 +121,9 @@ func (s EditorAppSettings) Resolved() EditorAppValues {
 	}
 	if s.GhostText != nil {
 		v.GhostText = *s.GhostText
+	}
+	if s.InlineBlame != nil {
+		v.InlineBlame = *s.InlineBlame
 	}
 	return v
 }
@@ -218,13 +224,14 @@ type EditorAppPatch struct {
 	Autosave    *string
 	ShowIgnored *bool
 	GhostText   *bool
+	InlineBlame *bool
 }
 
 // UpdateEditorAppSettings applies p to settings.json, read from disk now. A file that does not
 // parse is refused rather than overwritten: the operator wrote it by hand, and a write would
 // discard what it holds.
 func UpdateEditorAppSettings(p EditorAppPatch) error {
-	if p.FontSize == nil && p.WordWrap == nil && p.Autosave == nil && p.ShowIgnored == nil && p.GhostText == nil {
+	if p.FontSize == nil && p.WordWrap == nil && p.Autosave == nil && p.ShowIgnored == nil && p.GhostText == nil && p.InlineBlame == nil {
 		return nil
 	}
 	current, err := LoadAppSettings()
@@ -254,6 +261,10 @@ func UpdateEditorAppSettings(p EditorAppPatch) error {
 	if p.GhostText != nil {
 		v := *p.GhostText
 		current.Editor.GhostText = &v
+	}
+	if p.InlineBlame != nil {
+		v := *p.InlineBlame
+		current.Editor.InlineBlame = &v
 	}
 	path, err := appSettingsPath()
 	if err != nil {
@@ -332,7 +343,7 @@ func LoadEditorSettings() EditorSettings {
 	}
 	a := app.Editor.Resolved()
 	out.FontSize, out.WordWrap, out.Autosave, out.ShowIgnored = a.FontSize, a.WordWrap, a.Autosave, a.ShowIgnored
-	out.GhostText = a.GhostText
+	out.GhostText, out.InlineBlame = a.GhostText, a.InlineBlame
 	var project *EditorProjectSettings
 	if r, err := Resolve(); err == nil && r.Project != nil {
 		project = r.Project.Editor
