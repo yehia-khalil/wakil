@@ -50,18 +50,21 @@ active with ⌘P, open an editor pane and press ⌘⇧G. Terminal commands run f
 
 ## 1. The walk
 
-| # | Do | Expect | Walked |
-|---|---|---|---|
-| 1 | Hover the context line | A **Branch** segment after Environment reads `main`; at rest `main` sits beside the environment chip | |
-| 2 | Click **Branch** | The picker opens with the filter focused: **Create branch from…**, `feature/search` and `main` (✓), `origin/other` marked remote, **Fetch**. ↑↓ move, Escape closes | |
-| 3 | Pick `feature/search` | The picker closes; the segment, the Changes header and the Files tree show `feature/search` and `s.txt` | |
-| 4 | Click Branch, type `fix the login`, Return | **Create branch "fix-the-login"** was the first row; the root is now on `fix-the-login` | |
-| 5 | Terminal: `printf 'one\nMINE\nthree\n' > "$TMPDIR/walk-3a-iv/work/a.txt"`. Pick `origin/other` | `Your changes to a.txt would be overwritten by other.` with **Stash and Switch**, **Bring Them Along**, **Cancel**. Press **Bring Them Along** | |
-| 6 | (after row 5) | On `other`; under the box: `Switched to other; your changes clash with it and are kept in git stash`; the Changes view is clean; a **Stashes** group shows one stash | |
-| 7 | Open **Stashes**, open the stash, click `a.txt` | A read-only diff tab `a.txt (Stash)`: `two` on the left (the stash's base), `MINE` on the right | |
-| 8 | ▾ → Stash → **Stash** with a change made first (`echo x >> "$TMPDIR/walk-3a-iv/work/a.txt"`), type `wip`, Return | The field took the keyboard; leaving it without Return kept it open; Return stashed; Stashes lists `wip · on other` | |
-| 9 | Hover `wip` → **Drop** | `Drop "wip"? It cannot be applied again.` with **Keep it** / **Drop**; Drop removes it. ▾ → Branch → **Delete Branch…** → `fix-the-login` asks in place, naming what is lost | |
-| 10 | Composer: `delete branch feature/search in work` | The agent's call raises the permission plane; approve it; `feature/search` is gone. `switch work to main` runs with no plane | |
+Each row is one thing to do. **Wakil** rows happen in the app; **Terminal** rows run in any folder on
+this Mac. Do them in order: each starts where the one before left off.
+
+| # | Where | Do | Expect | Walked |
+|---|---|---|---|---|
+| 1 | Wakil | Hover the context line, click **Branch** (it reads `main`) | A picker opens with the filter focused: **Create branch from…**, `feature/search`, `main` ✓ and highlighted, `origin/other` marked remote, **Fetch**. ↑↓ move the highlight; Escape closes it | |
+| 2 | Wakil | Click **Branch**, pick `feature/search` | The picker closes. The segment and the Changes header read `feature/search`; the Files tree shows `s.txt`. Click **Branch** again: it opens at once, `feature/search` ✓ | |
+| 3 | Wakil | Click **Branch**, type `fix the login`, press Return | The first row read **Create branch "fix-the-login"**; the segment now reads `fix-the-login` | |
+| 4 | Wakil | Changes header **▾** → Branch → **Rename Branch…**, replace the name with `fix-login`, press Return | The field took the keyboard with the old name in it; the segment and header read `fix-login` | |
+| 5 | Terminal | `printf 'one\nMINE\nthree\n' > "$TMPDIR/walk-3a-iv/work/a.txt"` | The Changes view lists `a.txt` as modified | |
+| 6 | Wakil | Click **Branch**, pick `origin/other`, then press **Bring Them Along** | First, in the picker: `Your changes to a.txt would be overwritten by other.` with **Stash and Switch**, **Bring Them Along**, **Cancel**. After: the segment reads `other`; the note says `Switched to other; your changes clash with it and are kept in git stash`; Changes is clean; a **Stashes 1** group appears | |
+| 7 | Wakil | Open **Stashes**, open the stash `wakil: switch to other`, click `a.txt` (the row reads `wakil: switch to other · on fix-login`) | A read-only tab `a.txt (Stash)`: `two` on the left, `MINE` on the right | |
+| 8 | Terminal, then Wakil | `echo x >> "$TMPDIR/walk-3a-iv/work/a.txt"`, then **▾** → Stash → **Stash**, type `wip`, click elsewhere, then click back in the field and press Return | Clicking elsewhere left the field open with `wip` in it. Return stashed: Changes is clean and Stashes lists `wip · on other` above the first stash | |
+| 9 | Wakil | Hover `wip` → **Pop**. Then hover the other stash → **Drop**, then **Drop** again | Pop: `a.txt` is modified again and `wip` is gone. Drop first asked in place: `Drop "wakil: switch to other"? It cannot be applied again.` with **Keep it** / **Drop**; after it the Stashes group is gone | |
+| 10 | Wakil | **▾** → Branch → **Delete Branch…**, pick `fix-login`, press **Delete**. Then in the composer at the bottom type `delete branch feature/search in work`, Return, and approve the plane | Delete asked in place: `Delete fix-login? Its 1 commit not on other is kept only in git's reflog.`; after it `fix-login` is gone from the picker. The agent's delete raised the permission plane naming `feature/search`; after approval it is gone from the picker | |
 
 ## 2. Known and not fixed
 
