@@ -80,7 +80,9 @@ struct BranchPicker: View {
                         ForEach(Array(rows.enumerated()), id: \.offset) { i, row in rowView(row, index: i) }
                     }
                 }
-                .frame(maxHeight: 320)
+                // A definite height: in a popover a ScrollView has no ideal height of its own, and the
+                // rows drew nothing (3a-iv e2e audit).
+                .frame(height: min(CGFloat(max(rows.count, 1)) * 27, 320))
             }
             if let message {
                 Text(message)

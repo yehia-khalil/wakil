@@ -105,15 +105,15 @@ struct ChangesStashesGroup: View {
     @State private var confirming: String?   // a stash id, or "all"
 
     var body: some View {
-        Group {
+        // A VStack, not a Group: a Group hands its modifiers to its children, and with no stash there is
+        // none, so the list was never read (3a-iv e2e audit). The stack is there, empty, to read it.
+        VStack(alignment: .leading, spacing: 0) {
             if !stashes.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    header
-                    if open { ForEach(stashes) { row($0) } }
-                }
-                .padding(.top, EditorColumn.ChangesSpace.s)
+                header
+                if open { ForEach(stashes) { row($0) } }
             }
         }
+        .padding(.top, stashes.isEmpty ? 0 : EditorColumn.ChangesSpace.s)
         .task(id: refreshKey) { stashes = await controls.stashes(root.root) }
     }
 
@@ -160,14 +160,25 @@ struct ChangesStashesGroup: View {
                 Button { if expanded.contains(s.id) { expanded.remove(s.id) } else { expanded.insert(s.id) } } label: {
                     HStack(spacing: 4) {
                         Image(systemName: expanded.contains(s.id) ? "chevron.down" : "chevron.right").font(.system(size: 7, weight: .semibold))
-                        Text(([s.message, s.branch.isEmpty ? "" : "on \(s.branch)", age(s.date)].filter { !$0.isEmpty }).joined(separator: " · "))
+                        Text(([s.message, s.branch.isEmpty ? "" : "on \(s.branch)"].filter { !$0.isEmpty }).joined(separator: " · "))
                             .font(.system(size: 11, design: .monospaced))
                             .lineLimit(1).truncationMode(.middle)
+                        // The age apart and dimmer: it changes while the rest names the stash.
+                        Text(age(s.date))
+                            .font(.system(size: 10))
+                            .foregroundStyle(EditorPaneStyle.text.opacity(0.45))
                     }
                     .foregroundStyle(EditorPaneStyle.text.opacity(0.82))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // Read as the line it is, `wip · on main`, as the root header is: a button's label never
+                // reached the tree. Pressing it still opens the stash.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(([s.message, s.branch.isEmpty ? "" : "on \(s.branch)"].filter { !$0.isEmpty }).joined(separator: " · "))
+                .accessibilityRemoveTraits(.isButton)
+                .accessibilityAddTraits(.isStaticText)
+                .accessibilityAction { if expanded.contains(s.id) { expanded.remove(s.id) } else { expanded.insert(s.id) } }
                 .accessibilityIdentifier("editor.changes.\(root.name).stash.\(id7)")
                 Spacer(minLength: 0)
                 // Always there, so VoiceOver and the checks reach them; quiet until the row is hovered.

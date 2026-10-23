@@ -1042,6 +1042,8 @@ struct EditorColumn: View {
     private func changesKey(_ press: KeyPress) -> KeyPress.Result {
         // The message box's keys are its own: ↑ moves its caret, Return breaks its line (3a-ii).
         guard !isChord(press), messageFocused == nil else { return .ignored }
+        // An open branch picker's keys are its own: ↑↓ move its rows, Return picks (3a-iv e2e audit).
+        guard branchPickerRoot == nil, nameField == nil else { return .ignored }
         switch press.key {
         case .upArrow: Task { await dispatch("editor_changes_step", ["delta": .integer(-1)]) }
         case .downArrow: Task { await dispatch("editor_changes_step", ["delta": .integer(1)]) }
