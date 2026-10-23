@@ -85,6 +85,19 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         #expect(arguments == ["fontSize": .integer(14)])
     }
 
+    // 3a-v-a e2e audit: Inline blame's Off never reached Go.
+    @Test func theAppWriteForwardsInlineBlame() async throws {
+        let (registry, caller) = try await registryWithRecordingContext()
+        _ = try await registry.dispatch(
+            name: "ctx_set_editor_settings", params: .object(["inlineBlame": .bool(false)]),
+            origin: .ui, caller: .test("staging"), confirmation: nil)
+        let calls = await caller.recorded()
+        guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
+            Issue.record("expected one call, got \(calls)"); return
+        }
+        #expect(arguments == ["inlineBlame": .bool(false)])
+    }
+
     @Test func theProjectWriteNeedsAProjectPath() async throws {
         let (registry, caller) = try await registryWithRecordingContext()
         await #expect(throws: (any Error).self) {

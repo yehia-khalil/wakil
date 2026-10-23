@@ -36,6 +36,9 @@ struct EditorTimelineSection: View {
             header
             if open { list }
         }
+        // A container, so the header and rows keep their own identifiers (3a-v-a e2e audit: on the bare
+        // stack, "editor.timeline" replaced the toggle's).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("editor.timeline")
         // A new file cancels the old load (Rules 4, 5); a status change reloads the same file.
         .task(id: subjectKey + "#" + refreshKey) { await reload() }
