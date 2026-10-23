@@ -5981,7 +5981,7 @@ public final class WindowModel {
             dbPageHasPrevious: table.map { $0.pageable && $0.offset > 0 } ?? false,
             hasEnvironments: hasEnvironments, projectCount: projectCount, providerCount: providerCount,
             editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project,
-            editorActiveDiff: editorActiveDiff)
+            editorActiveDiff: editorActiveDiff, conversationOnScreen: conversationOnScreen)
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.
@@ -8092,14 +8092,18 @@ public final class WindowModel {
         await rebuildQuickTasks()
     }
 
-    /// One chip per conversation not on screen that has something to show, ordered by
-    /// organisation, project and environment (background agents 4 of 4). Empty when no agent
-    /// works elsewhere, so the window's resting state is unchanged.
+    /// One chip per conversation not on screen that has something to show — in another place,
+    /// or backgrounded in this one — ordered by organisation, project and environment, then by
+    /// creation within a place (background agents 4 of 4; conversations 2 of 3). Each names its
+    /// conversation (`title`) and its rank among its place's live ones (`ordinal`, ruling 2).
+    /// Empty when no agent works elsewhere, so the window's resting state is unchanged.
     public var chips: [AgentChip] {
         let waiting = waitingConversations
         let shown = currentAgent
-        return conversations.values
+        var ordinals: [Place: Int] = [:]
+        return liveConversations()
             .compactMap { agent -> AgentChip? in
+                ordinals[agent.place, default: 0] += 1
                 let waits = waiting.contains(agent.id)
                 guard agent !== shown, let state = AgentChip.state(
                     waiting: waits, failed: agent.unseenFailure,
@@ -8107,11 +8111,11 @@ public final class WindowModel {
                 else { return nil }
                 return AgentChip(
                     place: agent.place, state: state, productionEnvironment: agent.productionEnvironment,
-                    conversation: agent.id)
+                    conversation: agent.id, title: agent.title, ordinal: ordinals[agent.place, default: 1])
             }
             .sorted {
-                ($0.place.organization, $0.place.project, $0.place.environment)
-                    < ($1.place.organization, $1.place.project, $1.place.environment)
+                ($0.place.organization, $0.place.project, $0.place.environment, $0.ordinal)
+                    < ($1.place.organization, $1.place.project, $1.place.environment, $1.ordinal)
             }
     }
 
@@ -8188,7 +8192,7 @@ public final class WindowModel {
             : await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }.panes
         if landingBaselines[place] != nil { landingBaselines[place] = Set(shown.map(\.id)) }
         guard place == self.place else { return }
-        screenDidChange(from: target.id, to: nil, focusComposer: true)
+        screenDidChange(from: target.id, to: screenKey, focusComposer: true)
     }
 
     /// Brings back the live conversation `idOrTitle` names — its id, or its title when that names
@@ -8197,6 +8201,8 @@ public final class WindowModel {
     /// untouched. Goes to its place first (`goTo`) when it is elsewhere. A title naming none, or
     /// more than one, is refused in `status` (Rule 7: an ambiguity forces it).
     public func switchToConversation(_ idOrTitle: String, in place: Place? = nil) async {
+        // What the screen was before anything moved: the draft typed there is kept under it.
+        let left = screenKey
         let target: PlaceAgent
         if let byId = conversation(id: idOrTitle) {
             target = byId
@@ -8228,14 +8234,39 @@ public final class WindowModel {
         landingBaselines[target.place] = nil
         await activateLayout()
         markSeen(target)
-        if previous != target.id { screenDidChange(from: previous, to: target.id, focusComposer: false) }
+        guard left != target.id else { return }
+        // Ruling 7: the focus it had is what its canvas recorded — its focused pane, else the composer.
+        let paneFocused = layoutSnapshot.focusedId != nil
+        screenDidChange(from: left, to: target.id, focusComposer: !paneFocused)
+        if paneFocused { returnKeyboardToFocusedPane() }
     }
 
+    /// What the screen shows, as the composer keys its drafts (`ComposerModel.screenChanged`):
+    /// the conversation on screen's id, else `"landing:"` and the id the place reserves for its
+    /// next conversation — the one its Landing's first message will start.
+    public var screenKey: String {
+        currentAgent?.id ?? "landing:" + (reservedConversations[place] ?? "")
+    }
+
+    /// Told when `newConversation` or `switchToConversation` changes what the screen shows: the
+    /// `screenKey` left, the one arrived at, and whether the composer takes the keyboard — after
+    /// a new conversation always, after a switch when its canvas has no focused pane (ruling 7).
+    /// `ComposerModel` registers itself here in its `init`.
+    @ObservationIgnored
+    public var onScreenChange: (@MainActor (_ from: String, _ to: String, _ focusComposer: Bool) -> Void)?
+
     /// The one place a change of the conversation on screen is told about: `newConversation`
-    /// and `switchToConversation` call it once the canvas is in. `nil` is the place's Landing.
-    /// Task 4 fills it: the composer's draft per conversation, and focus — the Landing's composer
-    /// after a new conversation (`focusComposer`), the conversation's own after a switch.
-    private func screenDidChange(from old: String?, to new: String?, focusComposer: Bool) {}
+    /// and `switchToConversation` call it once the canvas is in.
+    private func screenDidChange(from old: String, to new: String, focusComposer: Bool) {
+        guard old != new else { return }
+        onScreenChange?(old, new, focusComposer)
+    }
+
+    /// File ▸ New Conversation (⌘N): `session_new` through the registry, origin `ui`, as ⌘K's
+    /// row runs it. On a Landing it does nothing visible (ruling 5).
+    public func dispatchSessionNew() async {
+        await dispatchLayout("session_new", .object([:]))
+    }
 
     /// Goes to `target` the way the operator would by hand — the organisation, then the
     /// project, then the environment, each only when it differs — so a chip's click asks nothing

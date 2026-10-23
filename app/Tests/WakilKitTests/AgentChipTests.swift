@@ -67,7 +67,7 @@ struct AgentChipTests {
         #expect(model.chips.count == 1)
         #expect(chip.place == placeA)
         #expect(chip.state == .working)
-        #expect(chip.label == "initech · api · staging")
+        #expect(chip.label == "initech · api · staging — hello api")
         #expect(!chip.productionEnvironment)
     }
 
@@ -184,7 +184,7 @@ struct AgentChipTests {
 
         #expect(model.chips.map(\.place) == [production, placeB], "ordered by org, project, environment")
         #expect(model.chips.map(\.productionEnvironment) == [true, false])
-        #expect(model.chips.first?.label == "initech · api · production")
+        #expect(model.chips.first?.label == "initech · api · production — hello api")
     }
 
     @Test func goToReachesAPlaceInAnotherOrg() async throws {
@@ -413,6 +413,20 @@ struct AgentChipProductionTests {
         #expect(await waitUntil { await pinned.asked > 0 })
         try await Task.sleep(nanoseconds: 50_000_000)
         #expect(model.chips.first?.productionEnvironment == true, "unread, the name says production")
+    }
+
+    @Test func aChipIsNamedByItsConversationAndOrdinal() {
+        let first = AgentChip(place: placeA, state: .working, productionEnvironment: false, conversation: "c1")
+        #expect(first.title == "New conversation" && first.ordinal == 1)
+        #expect(first.label == "initech · api · staging — New conversation")
+        #expect(first.identifier == "window.agentChip.initech/api/staging")
+        #expect(first.id == "c1")
+        let third = AgentChip(
+            place: placeA, state: .done, productionEnvironment: false, conversation: "c3",
+            title: "fix the flaky login test", ordinal: 3)
+        #expect(third.label == "initech · api · staging — fix the flaky login test")
+        #expect(third.identifier == "window.agentChip.initech/api/staging#3")
+        #expect(third.id != first.id, "two chips in one place are two rows")
     }
 
     @Test func aTrayOfTwoOrFewerShowsThemAll() {

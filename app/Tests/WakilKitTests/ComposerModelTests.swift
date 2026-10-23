@@ -425,3 +425,46 @@ private final class HarnessesByPlace: @unchecked Sendable {
     await settle(until: { composer.machine.phase == .idle })
     #expect(composer.draft == "open the book open the book")
 }
+
+@MainActor
+@Test func eachScreenKeepsItsOwnDraftAndASwitchStopsDictation() {
+    let (composer, _, _) = model(steps: [], clock: Clock())
+    let before = composer.focusToken
+    composer.edited(draft: "half a thought", caret: 14)
+    composer.screenChanged(from: "conv-a", to: "landing:r", focusComposer: true)
+    #expect(composer.draft.isEmpty && composer.caret == 0 && composer.focusToken == before + 1)
+    composer.screenChanged(from: "landing:r", to: "conv-a", focusComposer: false)
+    #expect(composer.draft == "half a thought" && composer.caret == 14)
+    #expect(composer.focusToken == before + 1, "not asked to focus")
+}
+
+@MainActor
+@Test func aSwitchMidHoldStopsListeningAndLandsTheWordsInTheDraftTheyWereSpokenInto() async {
+    let clock = Clock()
+    let (composer, window, _) = model(steps: [
+        .init(after: 0, event: .started(device: "Test Mic")),
+        .init(after: 0, event: .partial(settled: "show", volatile: "tables")),
+    ], clock: clock)
+    composer.edited(draft: "please ", caret: 7)
+    composer.optionDown()
+    clock.t = 0.2; composer.tick()
+    await settle(until: { !composer.machine.settled.isEmpty })
+
+    clock.t = 1; composer.screenChanged(from: "conv-a", to: "conv-b", focusComposer: false)
+    await settle(until: { composer.machine.phase == .idle })
+
+    #expect(window.coreState == .idle, "dictation stopped")
+    #expect(composer.draft.isEmpty, "nothing lands in the screen switched to")
+    composer.screenChanged(from: "conv-b", to: "conv-a", focusComposer: false)
+    #expect(composer.draft == "please show tables", "\(composer.draft)")
+}
+
+@MainActor
+@Test func theComposerFollowsTheWindowsScreenChanges() {
+    let (composer, window, _) = model(steps: [], clock: Clock())
+    composer.edited(draft: "kept", caret: 4)
+    window.onScreenChange?("conv-a", "landing:r", true)
+    #expect(composer.draft.isEmpty)
+    window.onScreenChange?("landing:r", "conv-a", false)
+    #expect(composer.draft == "kept")
+}

@@ -172,9 +172,6 @@ public actor ConfirmationBroker {
     /// Everything parked, by place (the place projection; see `current(for:)`).
     public func all() -> [Place: PendingMutation] { Self.project(pending) }
 
-    /// Everything parked, by slot.
-    public func allSlots() -> [ProposalSlot: PendingMutation] { pending }
-
     /// `updates()`, by slot.
     public func slotUpdates() -> AsyncStream<[ProposalSlot: PendingMutation]> {
         AsyncStream { continuation in

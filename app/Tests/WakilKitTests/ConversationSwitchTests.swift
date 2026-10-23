@@ -39,7 +39,9 @@ private struct Wired {
 /// A window with the standard and layout actions registered, driving `sessions`' harnesses and
 /// sockets, with `persistence` when a test needs the project seed on disk.
 @MainActor
-private func wiredWindow(_ sessions: Sessions, persistence: LayoutPersistence? = nil) async throws -> Wired {
+private func wiredWindow(
+    _ sessions: Sessions, persistence: LayoutPersistence? = nil, confirmations: ConfirmationBroker = ConfirmationBroker()
+) async throws -> Wired {
     let dir = testScratchRoot.appendingPathComponent("conversation-switch-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "conversation-switch")
@@ -56,6 +58,7 @@ private func wiredWindow(_ sessions: Sessions, persistence: LayoutPersistence? =
         harnessFactory: { place, _, socketPath in sessions.harness(place, socketPath) },
         resumes: resumes, rootPath: "/tmp", providerId: "test-provider",
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForTesting() },
+        confirmations: confirmations,
         conversationRequests: conversations,
         agentSocketFactory: sessions.socketFactory, environment: "staging")
     model.setOrganizationForTesting(org)
@@ -498,6 +501,122 @@ struct ConversationSwitchTests {
         let journal = try await w.registry.journalEntries()
         #expect(journal.contains { $0.action == "session_switch" && $0.origin == .ui })
         #expect(sessions.harnesses.in(placeA).count == 1, "no fork")
+        await model.shutdown()
+    }
+
+    // MARK: Task 4: chips name their conversation; drafts and focus per conversation
+
+    @Test func aBackgroundConversationInThePlaceOnScreenHasAChipNamingIt() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("fix the flaky login test"))
+        let first = try #require(model.currentAgent)
+        await model.newConversation()
+
+        let chip = try #require(model.chips.first)
+        #expect(chip.label == "initech · api · staging — fix the flaky login test")
+        #expect(chip.identifier == "window.agentChip.initech/api/staging" && chip.state == .working)
+        #expect(chip.id == first.id && chip.ordinal == 1)
+        await model.shutdown()
+    }
+
+    @Test func aPlacesSecondConversationsChipIsOrdinal() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        await model.newConversation()
+        #expect(await model.send("second job"))
+        await model.newConversation()
+
+        #expect(model.chips.map(\.identifier) == [
+            "window.agentChip.initech/api/staging", "window.agentChip.initech/api/staging#2"])
+        #expect(model.chips.map(\.title) == ["first job", "second job"])
+        #expect(Set(model.chips.map(\.id)).count == 2, "two chips in one place never share an id")
+        await model.shutdown()
+    }
+
+    @Test func aBackgroundConversationsProposalWaitsOnItsChipAndIsApprovedThere() async throws {
+        let sessions = Sessions()
+        let broker = ConfirmationBroker(timeout: .seconds(60))
+        let model = try await wiredWindow(sessions, confirmations: broker).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let a = try #require(model.currentAgent).id
+        await model.newConversation()
+        let proposal = PendingMutation(
+            action: "db_run_mutation", params: .object([:]), database: nil, statement: "DELETE FROM t",
+            affectsEveryRow: true, origin: .agent, place: placeA, conversation: a)
+        let parked = Task { await broker.request(proposal) }
+
+        #expect(await waitUntil { model.chips.first?.state == .waiting } && model.pending == nil)
+        await model.switchToConversation(a)
+        #expect(model.pending?.conversation == a)
+        await model.confirmPending(typed: "confirm")   // the plane's own typed confirmation (Invariant 7)
+        #expect(await parked.value == .approved)
+        await model.shutdown()
+    }
+
+    @Test func newConversationTellsTheScreenItLeftAndFocusesTheComposer() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let first = try #require(model.currentAgent)
+        var changes: [(String, String, Bool)] = []
+        model.onScreenChange = { changes.append(($0, $1, $2)) }
+
+        await model.newConversation()
+
+        #expect(model.screenKey.hasPrefix("landing:") && model.screenKey != "landing:")
+        #expect(changes.count == 1)
+        #expect(changes.first?.0 == first.id && changes.first?.1 == model.screenKey && changes.first?.2 == true)
+
+        await model.switchToConversation(first.id)
+
+        #expect(model.screenKey == first.id)
+        #expect(changes.count == 2)
+        #expect(changes.last?.1 == first.id && changes.last?.2 == true, "no focused pane: the composer")
+        await model.shutdown()
+    }
+
+    @Test func aSwitchBackToACanvasWithAFocusedPaneHandsThePaneTheKeyboard() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let first = try #require(model.currentAgent)
+        _ = try await w.registry.dispatch(
+            name: "pane_open", params: .object(["kind": .string("db")]), origin: .ui,
+            caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        #expect(await waitUntil { model.layoutSnapshot.focusedId != nil })
+        await model.newConversation()
+        var changes: [(String, String, Bool)] = []
+        model.onScreenChange = { changes.append(($0, $1, $2)) }
+        let returns = model.keyboardReturns
+
+        await model.switchToConversation(first.id)
+
+        #expect(changes.count == 1 && changes.first?.2 == false, "its focused pane, not the composer")
+        #expect(model.keyboardReturns == returns + 1)
+        await model.shutdown()
+    }
+
+    @Test func fileNewConversationDispatchesSessionNewAsTheOperator() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+
+        await model.dispatchSessionNew()
+
+        #expect(await waitUntil { !model.conversationOnScreen })
+        let journal = try await w.registry.journalEntries()
+        #expect(journal.contains { $0.action == "session_new" && $0.origin == .ui })
+        #expect(await model.paletteContext().conversationOnScreen == false)
         await model.shutdown()
     }
 

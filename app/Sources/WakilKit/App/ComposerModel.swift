@@ -30,6 +30,13 @@ public final class ComposerModel {
     /// Which hold an engine belongs to, so a late engine from an earlier
     /// hold is cancelled instead of adopted.
     private var hold = 0
+    /// The draft and caret of every screen not shown, by `WindowModel.screenKey` (conversations
+    /// 2 of 3): text only — a landed-unsent mark does not travel.
+    private var drafts: [String: (draft: String, caret: Int)] = [:]
+    /// The screen the draft on show belongs to, and the one the hold in progress was begun on:
+    /// words heard before a switch land in the draft they were spoken into, not the one switched to.
+    private var screen: String
+    private var holdScreen: String?
 
     public init(
         window: WindowModel, speech: SpeechRegistry,
@@ -40,6 +47,26 @@ public final class ComposerModel {
         self.fastPathRunner = fastPathRunner ?? { [window] line, scope in await window.runFastPath(line, scope: scope) }
         self.speech = speech
         self.now = now
+        self.screen = window.screenKey
+        window.onScreenChange = { [weak self] from, to, focusComposer in
+            self?.screenChanged(from: from, to: to, focusComposer: focusComposer)
+        }
+    }
+
+    /// The screen moved from `from` to `to` (`WindowModel.onScreenChange`): dictation stops
+    /// (`resigned`), the draft and caret are kept under `from`, and `to`'s come back — empty for
+    /// a screen never typed on. `focusComposer` hands the field the keyboard (ruling 7).
+    public func screenChanged(from: String, to: String, focusComposer: Bool) {
+        resigned()
+        drafts[from] = (draft, caret)
+        let next = drafts.removeValue(forKey: to)
+        draft = next?.draft ?? ""
+        caret = next?.caret ?? 0
+        landedUnsent = false
+        // A hold begun on the screen on show was spoken into the draft just kept under `from`.
+        if holdScreen == screen { holdScreen = from }
+        screen = to
+        if focusComposer { focusToken += 1 }
     }
 
     public var bar: ComposerBarContent {
@@ -126,6 +153,7 @@ public final class ComposerModel {
             switch effect {
             case .startEngine:
                 hold += 1
+                holdScreen = screen
                 start(hold: hold)
             case .stopEngine:
                 let current = provider
@@ -137,6 +165,13 @@ public final class ComposerModel {
                 pump = nil
                 Task { await current?.cancel() }
             case .land(let text):
+                if let spokenIn = holdScreen, spokenIn != screen {
+                    // Spoken into a screen since left: it lands there, waiting, unfocused.
+                    let left = drafts[spokenIn] ?? ("", 0)
+                    let landed = ComposerText.insert(text, into: left.draft, at: left.caret)
+                    drafts[spokenIn] = (landed.draft, landed.caret)
+                    continue
+                }
                 let landed = ComposerText.insert(text, into: draft, at: caret)
                 draft = landed.draft
                 caret = landed.caret
@@ -152,6 +187,7 @@ public final class ComposerModel {
         if machine.phase == .idle {
             provider = nil
             pump = nil
+            holdScreen = nil
         }
         window.setListening(machine.isListening)
     }

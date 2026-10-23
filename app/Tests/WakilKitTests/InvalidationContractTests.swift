@@ -193,6 +193,9 @@ private let orgIndependent: Set<String> = [
     // Plan 4 final review I1: `goTosInFlight` counts chip clicks between switches, raised and
     // lowered by the `goTo` that runs each, whichever org it ends in — the shape of `switching`.
     "goTosInFlight",
+    // Conversations 2 of 3: the composer's hook for a change of the conversation on screen,
+    // set once by `ComposerModel.init`; it carries no organisation's state.
+    "onScreenChange",
     "registry", "persistence", "context",
     "harnessFactory", "lookupFactory", "resumes", "confirmations",
     // 3b-viii: takes the organisation per call, like `harnessFactory`; the generation only orders

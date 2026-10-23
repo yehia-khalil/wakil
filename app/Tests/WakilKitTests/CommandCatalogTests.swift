@@ -171,3 +171,11 @@ private func paneKind(_ c: CatalogCommand) -> String? {
     c.editorActiveDiff = EditorActiveDiff(path: "/p/n.go", group: .untracked)
     #expect(!titles().contains("Stage Selected Ranges") && !titles().contains("Unstage Selected Ranges"))
 }
+
+@Test func newConversationIsOfferedOnlyWithAConversationOnScreen() {
+    #expect(CommandCatalog.entries(for: PaletteContext(conversationOnScreen: true)).contains { $0.id == "global.newConversation" })
+    #expect(!CommandCatalog.entries(for: PaletteContext()).contains { $0.id == "global.newConversation" })
+    let entry = CommandCatalog.entries(for: PaletteContext(conversationOnScreen: true)).first { $0.id == "global.newConversation" }
+    #expect(entry?.title == "New conversation")
+    #expect(entry?.action == .dispatch(action: "session_new", params: .object([:])))
+}

@@ -1,8 +1,9 @@
 import Foundation
 
-/// One agent in another place, as the chips in the window's top right draw it (background
-/// agents, 4 of 4). `WindowModel.chips` derives one per agent whose place is not the screen's;
-/// an agent that is idle and seen has none. A click on it goes there (`WindowModel.goTo(_:)`).
+/// One live conversation not on screen, as the chips in the window's top right draw it
+/// (background agents 4 of 4; conversations 2 of 3). `WindowModel.chips` derives one per
+/// conversation that is not the screen's — in another place or backgrounded in this one; one
+/// that is idle and seen has none. A click switches to it (`session_switch`).
 public struct AgentChip: Identifiable, Equatable, Sendable {
     /// What the agent is doing. When more than one is true, `waiting` beats `failed`, which
     /// beats `working`, which beats `done`.
@@ -39,21 +40,40 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
 
     public let place: Place
     public let state: State
-    /// `<org> · <project> · <environment>`, empty members left out.
+    /// The conversation's title (`PlaceAgent.title`): its first message, cut, or
+    /// "New conversation" before one.
+    public let title: String
+    /// 1-based, the conversation's place among its place's live ones by creation (ruling 2).
+    public let ordinal: Int
+    /// `<org> · <project> · <environment> — <title>`, empty members left out (ruling 9).
     public let label: String
     /// Whether the place's environment is production, so its segment is drawn in production red
     /// (Invariant 8) whatever the state's hue.
     public let productionEnvironment: Bool
     /// The conversation the chip stands for, by its id: the one its click returns to.
     public let conversation: String
-    public var id: Place { place }
+    /// The conversation: several chips can stand for one place.
+    public var id: String { conversation }
 
-    init(place: Place, state: State, productionEnvironment: Bool, conversation: String) {
+    /// What a check presses (ruling 2): `window.agentChip.<org>/<project>/<env>` for the place's
+    /// first live conversation, so every check written before conversations stays green, and
+    /// `…#<ordinal>` for a later one. A check cannot know a conversation's id.
+    public var identifier: String {
+        let base = "window.agentChip.\(place.organization)/\(place.project)/\(place.environment)"
+        return ordinal == 1 ? base : base + "#\(ordinal)"
+    }
+
+    init(
+        place: Place, state: State, productionEnvironment: Bool, conversation: String,
+        title: String = newConversationTitle, ordinal: Int = 1
+    ) {
         self.place = place
         self.conversation = conversation
         self.state = state
+        self.title = title
+        self.ordinal = ordinal
         self.label = [place.organization, place.project, place.environment]
-            .filter { !$0.isEmpty }.joined(separator: " · ")
+            .filter { !$0.isEmpty }.joined(separator: " · ") + " — " + title
         self.productionEnvironment = productionEnvironment
     }
 
