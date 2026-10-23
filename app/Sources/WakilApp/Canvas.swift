@@ -527,7 +527,16 @@ extension WakilWindow {
                                 await model.changesSwitch(root: root, branch: branch, carry: carry, track: track)
                             },
                             create: { root, name, from in await model.changesBranchCreate(root: root, name: name, from: from) },
-                            fetch: { await model.changesFetch(root: $0) })),
+                            fetch: { await model.changesFetch(root: $0) },
+                            delete: { root, branch, force in await model.changesBranchDelete(root: root, branch: branch, force: force) }),
+                        branchStash: BranchStashControls(
+                            stashes: { await model.changesStashes(root: $0) },
+                            stash: { root, message, mode in await model.changesStash(root: root, message: message, mode: mode) },
+                            apply: { root, stash, pop in await model.changesStashApply(root: root, stash: stash, pop: pop) },
+                            drop: { root, stash in await model.changesStashDrop(root: root, stash: stash) },
+                            dropAll: { await model.changesStashDropAll(root: $0) },
+                            rename: { root, to in await model.changesBranchRename(root: root, to: to) },
+                            create: { root, name in await model.changesBranchCreate(root: root, name: name) })),
                     stageHunk: { await model.changesStageHunk() },
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
                     unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) })

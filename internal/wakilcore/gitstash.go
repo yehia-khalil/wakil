@@ -20,6 +20,8 @@ type GitStash struct {
 	Branch  string    `json:"branch"`
 	Date    time.Time `json:"date"`
 	Files   []string  `json:"files"`
+	// Untracked is the part of Files the stash took untracked (its diff has no base side).
+	Untracked []string `json:"untracked"`
 }
 
 // stashSubject reads a stash's reflog subject: "On main: msg" or "WIP on main: abc1234 msg".
@@ -46,6 +48,7 @@ func ReadStashes(ctx context.Context, g *GitRunner) ([]GitStash, error) {
 		}
 		s.Date, _ = time.Parse(time.RFC3339, f[2])
 		s.Files = stashFiles(ctx, g, s.ID)
+		s.Untracked = stashUntracked(ctx, g, s.ID)
 		stashes = append(stashes, s)
 	}
 	return stashes, nil
@@ -61,6 +64,15 @@ func stashFiles(ctx context.Context, g *GitRunner, id string) []string {
 		files = append(files, strings.Fields(string(out))...)
 	}
 	return files
+}
+
+// stashUntracked is the files a stash took untracked (its third parent).
+func stashUntracked(ctx context.Context, g *GitRunner, id string) []string {
+	out, err := g.Run(ctx, "show", "--name-only", "--format=", id+"^3", "--")
+	if err != nil {
+		return []string{}
+	}
+	return strings.Fields(string(out))
 }
 
 // Stash sets the root's changes aside: mode "default" (tracked changes), "untracked" (with untracked

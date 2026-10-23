@@ -7,7 +7,13 @@ struct BranchPickerActions {
     var switchTo: (_ root: String, _ branch: String, _ carry: String?, _ track: String?) async -> ChangesSwitchOutcome = { _, _, _, _ in .refused("") }
     var create: (_ root: String, _ name: String, _ from: String?) async -> ChangesSwitchOutcome = { _, _, _ in .refused("") }
     var fetch: (String) async -> Void = { _ in }
+    /// Delete Branch…: the root, the branch, and force (it has commits no other branch has).
+    var delete: (_ root: String, _ branch: String, _ force: Bool) async -> String? = { _, _, _ in nil }
 }
+
+/// What the picker is for: switching (the default), choosing the base of a new branch (▾ Create
+/// Branch From…), or choosing the branch to delete (▾ Delete Branch…).
+enum BranchPickerMode { case switchBranch, createFrom, delete }
 
 /// The branch picker — VS Code's Quick Pick (spec, calls 1–2, 5): a filter field that takes the
 /// keyboard, the roots as tabs when there are several, **Create branch "…"**, **Create branch from…**,
@@ -17,6 +23,7 @@ struct BranchPicker: View {
     let roots: [GitRootState]
     let startRoot: String
     let actions: BranchPickerActions
+    var mode: BranchPickerMode = .switchBranch
     let close: () -> Void
 
     @State private var root = ""
@@ -31,11 +38,17 @@ struct BranchPicker: View {
     @State private var choosingBase = false
     /// The branch a switch in flight is for, and the remote branch it tracks: a refusal names it.
     @State private var target: (branch: String, track: String?)?
+    /// Delete Branch…: the branch picked, asking in place before it goes (Rule 1).
+    @State private var deleting: GitBranchInfo?
     @State private var base: String?
     @FocusState private var filterFocused: Bool
 
     private var rows: [BranchPickerRow] {
         guard let branches else { return [] }
+        if mode == .delete {
+            return branches.local.filter { !$0.current && (filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter)) }
+                .map(BranchPickerRow.local)
+        }
         if choosingBase { return branches.local.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }.map(BranchPickerRow.local) }
         if base != nil { return normaliseBranchName(filter).isEmpty ? [] : [.create(normaliseBranchName(filter))] }
         return branchPickerRows(branches, filter: filter)
@@ -54,11 +67,13 @@ struct BranchPicker: View {
                 .onKeyPress(.upArrow) { move(-1); return .handled }
                 .onExitCommand { close() }
                 .onChange(of: filter) { _, _ in selected = 0 }
-                .disabled(working != nil || blocked != nil)
+                .disabled(working != nil || blocked != nil || deleting != nil)
                 .accessibilityIdentifier("branch.picker.filter")
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.08)).frame(height: 0.5)
             if let blocked {
                 blockedChoice(blocked)
+            } else if let deleting {
+                deleteChoice(deleting)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
@@ -80,6 +95,7 @@ struct BranchPicker: View {
         .frame(width: 340)
         .task {
             if root.isEmpty { root = startRoot }
+            if mode == .createFrom { choosingBase = true }
             branches = await actions.load(root)
             // A beat after appearing: focus set as the field appears is dropped (3a-iii's sheet fix).
             try? await Task.sleep(for: .milliseconds(150))
@@ -89,6 +105,7 @@ struct BranchPicker: View {
     }
 
     private var prompt: String {
+        if mode == .delete { return "Choose the branch to delete" }
         if choosingBase { return "Choose the branch to start from" }
         if let base { return "Name the new branch (from \(base))" }
         return "Switch to a branch, or type a new name"
@@ -178,6 +195,8 @@ struct BranchPicker: View {
         case .createFrom:
             choosingBase = true
             filter = ""
+        case .local(let b) where mode == .delete:
+            deleting = b
         case .local(let b) where choosingBase:
             choosingBase = false
             base = b.name
@@ -220,6 +239,31 @@ struct BranchPicker: View {
         case .blocked(let paths):
             if let target { blocked = (target.branch, target.track, paths) }
         }
+    }
+
+    private func deleteChoice(_ b: GitBranchInfo) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(deleteBranchConfirmation(b, current: branches?.current ?? "HEAD"))
+                .font(.system(size: 12))
+                .foregroundStyle(SettingsPalette.caution)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("branch.picker.delete.confirmation")
+            HStack(spacing: 6) {
+                FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, identifier: "branch.picker.delete.keep") {
+                    deleting = nil
+                }
+                FormButton(title: "Delete", tone: SettingsPalette.caution, filled: true, identifier: "branch.picker.delete.confirm") {
+                    let force = b.unmerged > 0
+                    deleting = nil
+                    working = Task {
+                        let refusal = await actions.delete(root, b.name, force)
+                        working = nil
+                        if let refusal, !refusal.isEmpty { message = refusal } else { close() }
+                    }
+                }
+            }
+        }
+        .padding(12)
     }
 
     private func blockedChoice(_ b: (branch: String, track: String?, paths: [String])) -> some View {

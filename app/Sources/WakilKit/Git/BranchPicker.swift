@@ -59,9 +59,11 @@ public struct GitStashInfo: Sendable, Equatable, Hashable, Decodable, Identifiab
     /// ISO 8601, as git reports it.
     public var date: String
     public var files: [String]
+    /// The part of `files` the stash took untracked.
+    public var untracked: [String]
 
-    public init(index: Int, id: String, message: String, branch: String, date: String, files: [String]) {
-        (self.index, self.id, self.message, self.branch, self.date, self.files) = (index, id, message, branch, date, files)
+    public init(index: Int, id: String, message: String, branch: String, date: String, files: [String], untracked: [String] = []) {
+        (self.index, self.id, self.message, self.branch, self.date, self.files, self.untracked) = (index, id, message, branch, date, files, untracked)
     }
 
     public init(from decoder: Decoder) throws {
@@ -72,9 +74,10 @@ public struct GitStashInfo: Sendable, Equatable, Hashable, Decodable, Identifiab
         branch = try c.decodeIfPresent(String.self, forKey: .branch) ?? ""
         date = try c.decodeIfPresent(String.self, forKey: .date) ?? ""
         files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
+        untracked = try c.decodeIfPresent([String].self, forKey: .untracked) ?? []
     }
 
-    private enum CodingKeys: String, CodingKey { case index, id, message, branch, date, files }
+    private enum CodingKeys: String, CodingKey { case index, id, message, branch, date, files, untracked }
 }
 
 /// A row of the branch picker, in VS Code's Quick Pick order.

@@ -60,7 +60,7 @@ func TestReadStashesListsFilesWithUntracked(t *testing.T) {
 	if s[0].Index != 0 || s[0].ID != git("rev-parse", "stash@{0}") || s[0].Message != "wip search" || s[0].Branch != "main" {
 		t.Fatalf("stash = %+v", s[0])
 	}
-	if strings.Join(s[0].Files, ",") != "a.txt,u.txt" || s[0].Date.IsZero() {
+	if strings.Join(s[0].Files, ",") != "a.txt,u.txt" || strings.Join(s[0].Untracked, ",") != "u.txt" || s[0].Date.IsZero() {
 		t.Fatalf("files = %v date %v", s[0].Files, s[0].Date)
 	}
 }
