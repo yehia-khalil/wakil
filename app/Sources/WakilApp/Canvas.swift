@@ -491,6 +491,11 @@ extension WakilWindow {
                     openCommitDiff: { root, path, id in
                         Task { await model.editorOpenCommitDiff(root: root, path: path, commit: id, parentPath: nil) }
                     },
+                    timeline: EditorTimelineControls(
+                        load: { root, path, skip in await model.editorTimeline(root: root, path: path, skip: skip) },
+                        openCommit: { root, ref in
+                            Task { await model.editorOpenCommitDiff(root: root, path: ref.path, commit: ref.id, parentPath: ref.parentPath) }
+                        }),
                     ghostSchema: { await model.ghostSchema() },
                     ghostSuggest: { request, generation in
                         await model.ghostSuggestion(pane: pane.id, request: request, generation: generation)

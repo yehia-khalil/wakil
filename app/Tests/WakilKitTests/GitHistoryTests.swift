@@ -113,4 +113,49 @@ import Testing
         #expect(h.contains("[Open Changes](command:wakil.blame.open)") && h.contains("[Copy Commit ID](command:wakil.blame.copy)"))
         #expect(editorBlameHover(GitBlameInfo(line: 1, id: String(repeating: "0", count: 40), author: "", date: "", subject: "")) == nil)
     }
+
+    @Test func timelineFollowsFileAndDiffTabs() {
+        let id = String(repeating: "c", count: 40)
+        let file = EditorTab.file(path: "/p/api/src/a.txt", root: "/p/api", text: "x", mtime: 0, language: "plaintext")
+        #expect(editorTimelineSubject(file).map { [$0.root, $0.path] } == ["/p/api", "src/a.txt"])
+        for source: EditorDiffSource? in [nil, .stash(id), .commit(GitCommitRef(id: id, path: "src/a.txt"))] {
+            let d = EditorTab.diff(root: "/p/api", path: "src/a.txt", group: .changed, source: source)
+            #expect(editorTimelineSubject(d).map { [$0.root, $0.path] } == ["/p/api", "src/a.txt"])
+        }
+        #expect(editorTimelineSubject(EditorTab.scratch(number: 1, language: "plaintext")) == nil)
+        #expect(editorTimelineSubject(nil) == nil)
+    }
+
+    private func commit(_ n: Int) -> GitCommitInfo {
+        GitCommitInfo(id: String(repeating: "\(n)", count: 40), author: "Ada", date: ago(Double(n) * 60), subject: "c\(n)", path: "a.txt")
+    }
+
+    @Test func timelineRowsPutUncommittedFirstAndMoreLast() {
+        let rows = editorTimelineRows([commit(1), commit(2)], uncommitted: true, more: true)
+        #expect(rows == [.uncommitted, .commit(commit(1)), .commit(commit(2)), .more])
+        #expect(editorTimelineRows([commit(1)], uncommitted: false, more: false) == [.commit(commit(1))])
+    }
+
+    @Test func fiftyMeansThereMayBeMore() {
+        #expect(editorTimelineHasMore(pageCount: 50))
+        #expect(!editorTimelineHasMore(pageCount: 49))
+    }
+
+    // Review Focus 1: a row older than a rename opens under its own name, with the name before it.
+    @Test func aRowBeforeARenameNamesBothPaths() {
+        var newer = commit(1); newer.path = "new.txt"
+        var older = commit(2); older.path = "old name.txt"
+        #expect(editorTimelineCommitRef(newer, older: older) == GitCommitRef(id: newer.id, path: "new.txt", parentPath: "old name.txt"))
+        #expect(editorTimelineCommitRef(older, older: nil) == GitCommitRef(id: older.id, path: "old name.txt"))
+    }
+
+    @Test func theUncommittedRowOpensTheFilesChanges() {
+        let rows = [GitFileRow(path: "a.txt", origPath: nil, group: .staged, status: "M"),
+                    GitFileRow(path: "b.txt", origPath: nil, group: .staged, status: "M"),
+                    GitFileRow(path: "b.txt", origPath: nil, group: .changed, status: "M")]
+        #expect(editorTimelineUncommittedGroup(rows, path: "a.txt", dirty: false) == .staged)
+        #expect(editorTimelineUncommittedGroup(rows, path: "b.txt", dirty: false) == .changed)
+        #expect(editorTimelineUncommittedGroup(rows, path: "c.txt", dirty: true) == .changed)
+        #expect(editorTimelineUncommittedGroup(rows, path: "c.txt", dirty: false) == nil)
+    }
 }

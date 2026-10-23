@@ -77,6 +77,7 @@ struct EditorPane: View {
     var inlineBlame: Bool = false
     var blameFor: (String, String, String?) async -> [GitBlameInfo]? = { _, _, _ in nil }
     var openCommitDiff: (String, String, String) -> Void = { _, _, _ in }
+    var timeline = EditorTimelineControls()
     let ghostSchema: () async -> GhostScope
     let ghostSuggest: (InfillRequest, Int) async -> String?
     let ghostCancel: () -> Void
@@ -150,7 +151,7 @@ struct EditorPane: View {
                                  selected: $treeSelected, selectedResult: $resultSelected,
                                  focusWanted: $columnFocusWanted, hasKeyboard: $columnHasKeyboard,
                                  pendingReveal: $pendingReveal, browsed: $treeBrowsed,
-                                 changes: changes)
+                                 changes: changes, timeline: timeline, timelineTab: activeTab)
                 }
                 editorStack
             }

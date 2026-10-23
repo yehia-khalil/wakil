@@ -39,6 +39,9 @@ struct EditorColumn: View {
     @Binding var browsed: String?
     /// 3a-ii. The Changes view's commit box and write buttons, every root's, from the window.
     let changes: EditorChangesControls
+    /// 3a-v-a: the Timeline's reads and opens, and the tab it follows (the pane's active one, R2).
+    var timeline = EditorTimelineControls()
+    var timelineTab: EditorTab?
 
     @State private var dragWidth: Double?
     /// 3a-iv: the root whose branch picker is open from its header.
@@ -93,6 +96,18 @@ struct EditorColumn: View {
     /// The name a row's root goes by in identifiers: `editor.tree.row:<root name>/<relative>`.
     private func rootName(_ row: EditorTreeRow) -> String { (row.root as NSString).lastPathComponent }
 
+    private var timelineSection: some View {
+        let subject = editorTimelineSubject(timelineTab)
+        let root = subject.flatMap { s in gitRoots.first { $0.root == s.root } }
+        return EditorTimelineSection(
+            subject: subject,
+            uncommitted: subject.flatMap { s in
+                editorTimelineUncommittedGroup(root?.files ?? [], path: s.path, dirty: timelineTab?.dirty ?? false)
+            },
+            refreshKey: root.map { "\($0.branch)|\($0.detached)|\($0.files.count)|\($0.ahead)" } ?? "",
+            controls: timeline, dispatch: dispatch)
+    }
+
     private func rowPath(_ row: EditorTreeRow) -> String {
         "\(rootName(row))\(row.relative.isEmpty ? "" : "/" + row.relative)"
     }
@@ -102,7 +117,11 @@ struct EditorColumn: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
                 switch column.view {
-                case .files: tree
+                case .files:
+                    VStack(spacing: 0) {
+                        tree
+                        timelineSection
+                    }
                 case .search: searchView
                 case .changes: changesView
                 }
