@@ -44,6 +44,15 @@ public final class PlaceAgent {
     /// and then goes to that session (Rule 5), as a turn typed during a turn goes to the
     /// running harness.
     var startWaiters: [CheckedContinuation<Void, Never>]?
+    /// Resumes and provider switches building this conversation's next session, from
+    /// `makeSession` to `install` (plan 1's parked race): with `startWaiters`, what makes a session
+    /// start in flight count as a running agent (`runsOrStarts`).
+    var sessionStartsInFlight = 0
+    /// Whether this conversation's agent runs, or a session start for it is in flight — a first
+    /// turn's (`startWaiters`) or a resume's or provider switch's (`sessionStartsInFlight`): what
+    /// Invariant 5 refuses a rename or removal for. A start counts because it takes the shown
+    /// socket, answering for the place as it was, before its harness is installed.
+    var runsOrStarts: Bool { harness != nil || startWaiters != nil || sessionStartsInFlight > 0 }
     public internal(set) var thoughts: [ThoughtRow] = []
     /// Monotonic row ids (`WindowModel.thoughts`), per thread.
     var nextThoughtId = 0

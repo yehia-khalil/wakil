@@ -47,6 +47,9 @@ private actor LifecycleContext: ToolCaller {
             envs[arg("name")] = nil
             if project == arg("name") { project = envs.keys.sorted().first ?? ""; environment = envs[project]?.first ?? "" }
             return ok([:])
+        case "set_environment":
+            environment = arg("name")
+            return ok([:])
         case "create_environment":
             envs[project, default: []].append("env-2")
             return ok(["name": .string("env-2")])
@@ -74,7 +77,7 @@ private func scope(_ project: String, _ environment: String) -> LayoutScope {
 }
 
 @MainActor
-private func lifecycleWindow(saved: [(String, String, String)] = [])
+private func lifecycleWindow(saved: [(String, String, String)] = [], harnesses: Harnesses? = nil)
     async throws -> (WindowModel, LifecycleContext, LayoutPersistence)
 {
     let ctx = LifecycleContext()
@@ -84,12 +87,21 @@ private func lifecycleWindow(saved: [(String, String, String)] = [])
         try persistence.save(snapshot(title), for: scope(project, environment))
     }
     let window = WindowModel.forTesting(
-        scratchRoot: testScratchRoot, context: ContextStore(client: ctx), persistence: persistence)
+        scratchRoot: testScratchRoot,
+        harnessFactory: { place, _ in harnesses?.make(place) },
+        lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForTesting() },
+        context: ContextStore(client: ctx), persistence: persistence)
+    // Invariant 5's pin check asks this window's agents, as `WakilWiring.useActiveContext` wires it.
+    let agents = ActiveAgentLookup()
     // The window's own pane store: `registerStandardActions` installs the registry's screen scope
     // from the store it is given, and a shell opens under that scope.
     await registerStandardActions(
         into: window.registryForTesting, context: ctx, panes: window.panesForTesting,
-        db: nil, resumes: ResumeBroker())
+        db: nil, resumes: ResumeBroker(),
+        agentIn: { project, environment in await agents.agent(in: project, environment: environment) })
+    agents.use { [weak window] project, environment in
+        await window?.runningAgent(in: project, environment: environment)
+    }
     await window.refreshContext()
     return (window, ctx, persistence)
 }
@@ -281,6 +293,96 @@ private func lifecycleWindow(saved: [(String, String, String)] = [])
 
         #expect(error?.contains("b.go") == true)
         #expect(await ctx.count("remove_project") == 0)
+    }
+
+    // MARK: Conversations 3 of 3, Task 2: rename carries every idle conversation, removal closes them
+
+    /// A conversation with no live agent, begun in the place on screen (a pane, or a session that
+    /// ended, mints one), then put in the background by New Conversation.
+    private func idleConversation(_ window: WindowModel) async throws -> String {
+        window.markSessionStarted()
+        let id = try #require(window.currentAgent?.id)
+        await window.newConversation()
+        return id
+    }
+
+    @Test func renameCarriesEveryIdleConversationOfThePlace() async throws {
+        let (window, _, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        let a = try await idleConversation(window)
+        let b = try await idleConversation(window)
+        let renamedA = Place(organization: "test-org", project: "p", environment: "local")
+
+        #expect(await window.renameEnvironment(project: "p", projectPath: "/p", "dev", to: "local") == nil)
+
+        #expect(window.liveConversationRows(in: renamedA).map(\.id).sorted() == [a, b].sorted())
+        #expect(window.liveConversationRows(in: Place(organization: "test-org", project: "p", environment: "dev")).isEmpty)
+        await window.shutdown()
+    }
+
+    @Test func removingAnEnvironmentClosesItsIdleConversationsAndTheirShells() async throws {
+        let (window, _, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        let dev = Place(organization: "test-org", project: "p", environment: "dev")
+        window.markSessionStarted()
+        let id = try #require(window.currentAgent?.id)
+        let pane = await window.openTerminalForTesting(path: NSTemporaryDirectory())
+        let pid = try #require(await window.terminals.pidForTesting(paneId: pane))
+        #expect(await window.setEnvironment("stage"))
+        #expect(window.liveConversationRows(in: dev).map(\.id) == [id], "idle, in the background")
+
+        #expect(await window.removeEnvironment(project: "p", projectPath: "/p", "dev").error == nil)
+
+        #expect(window.liveConversationRows(in: dev).isEmpty && window.chips.isEmpty)
+        #expect(window.conversation(id: id) == nil)
+        #expect(kill(pid, 0) == -1, "its shell was reaped")
+        #expect(window.environment == "stage")
+        await window.shutdown()
+    }
+
+    @Test func removingTheEnvironmentOnScreenClosesItsConversation() async throws {
+        let (window, _, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        let id = try await idleConversation(window)
+        window.markSessionStarted()
+        let shown = try #require(window.currentAgent?.id)
+
+        #expect(await window.removeEnvironment(project: "p", projectPath: "/p", "dev").error == nil)
+
+        #expect(window.conversation(id: id) == nil && window.conversation(id: shown) == nil)
+        #expect(window.liveConversations().isEmpty)
+        #expect(window.environment == "stage")
+        await window.shutdown()
+    }
+
+    @Test func removingAProjectClosesTheIdleConversationsOfEveryEnvironment() async throws {
+        let (window, ctx, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        let dev = try await idleConversation(window)
+        #expect(await window.setEnvironment("stage"))
+        let stage = try await idleConversation(window)
+        await ctx.fail(with: nil)
+
+        #expect(await window.removeProject("p") == nil)
+
+        #expect(window.conversation(id: dev) == nil && window.conversation(id: stage) == nil)
+        await window.shutdown()
+    }
+
+    @Test func removalIsStillRefusedWhileAnyConversationThereRuns() async throws {
+        let harnesses = Harnesses()
+        let (window, ctx, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")], harnesses: harnesses)
+        let idle = try await idleConversation(window)
+        #expect(await window.send("long job"))
+        let running = try #require(window.currentAgent?.id)
+
+        let result = await window.removeEnvironment(project: "p", projectPath: "/p", "dev")
+        let rename = await window.renameEnvironment(project: "p", projectPath: "/p", "dev", to: "local")
+
+        let expectedTodaysSentence = "ctx_remove_environment: agent (p1) is running in p / dev — an agent keeps its own place; stop it first"
+        #expect(result.error == expectedTodaysSentence)
+        #expect(rename == "ctx_rename_environment: agent (p1) is running in p / dev — an agent keeps its own place; stop it first")
+        #expect(await ctx.count("remove_environment") == 0)
+        #expect(await ctx.count("rename_environment") == 0)
+        #expect(window.conversation(id: idle) != nil && window.conversation(id: running) != nil, "nothing was closed")
+        #expect(harnesses.issued.allSatisfy { !$0.stopped })
+        await window.shutdown()
     }
 
     /// Minor 3: a Name field left by moving to another page is gone when its refusal lands, so

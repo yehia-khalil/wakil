@@ -172,6 +172,14 @@ private func paneKind(_ c: CatalogCommand) -> String? {
     #expect(!titles().contains("Stage Selected Ranges") && !titles().contains("Unstage Selected Ranges"))
 }
 
+@Test func closeConversationIsOfferedOnlyWithAConversationOnScreen() {
+    #expect(CommandCatalog.entries(for: PaletteContext(conversationOnScreen: true)).contains { $0.id == "global.closeConversation" })
+    #expect(!CommandCatalog.entries(for: PaletteContext()).contains { $0.id == "global.closeConversation" })
+    let entry = CommandCatalog.entries(for: PaletteContext(conversationOnScreen: true)).first { $0.id == "global.closeConversation" }
+    #expect(entry?.title == "Close conversation")
+    #expect(entry?.action == .dispatch(action: "session_close", params: .object([:])))
+}
+
 @Test func newConversationIsOfferedOnlyWithAConversationOnScreen() {
     #expect(CommandCatalog.entries(for: PaletteContext(conversationOnScreen: true)).contains { $0.id == "global.newConversation" })
     #expect(!CommandCatalog.entries(for: PaletteContext()).contains { $0.id == "global.newConversation" })

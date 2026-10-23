@@ -31,12 +31,15 @@ private struct Wired {
     let model: WindowModel
     let registry: ActionRegistry
     let layout: LayoutStore
+    /// The broker the window drains; a test given its own parks the registry's requests there.
+    let conversations: ConversationBroker
 }
 
 /// A window with the standard actions registered, driving `sessions`' harnesses and sockets.
 @MainActor
 private func wiredWindow(
-    _ sessions: Sessions, confirmations: ConfirmationBroker = ConfirmationBroker()
+    _ sessions: Sessions, confirmations: ConfirmationBroker = ConfirmationBroker(),
+    socketFactory: AgentSocketFactory? = nil, parkedConversations: ConversationBroker? = nil
 ) async throws -> Wired {
     let dir = testScratchRoot.appendingPathComponent("conversation-close-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -47,7 +50,7 @@ private func wiredWindow(
     let conversations = ConversationBroker()
     await registerStandardActions(
         into: registry, context: nil, panes: panes, db: nil, resumes: resumes, layout: layout,
-        conversationRequests: conversations)
+        conversationRequests: parkedConversations ?? conversations)
     await registerLayoutActions(into: registry, layout: layout, panes: panes)
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: nil, context: nil,
@@ -56,9 +59,9 @@ private func wiredWindow(
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForTesting() },
         confirmations: confirmations,
         conversationRequests: conversations,
-        agentSocketFactory: sessions.socketFactory, environment: "staging")
+        agentSocketFactory: socketFactory ?? sessions.socketFactory, environment: "staging")
     model.setOrganizationForTesting(org)
-    return Wired(model: model, registry: registry, layout: layout)
+    return Wired(model: model, registry: registry, layout: layout, conversations: conversations)
 }
 
 /// A `session_list` listing `ids`, newest first, and a `session_read` answering an empty
@@ -460,4 +463,129 @@ struct ConversationCloseTests {
         #expect(await sockets(of: closed.id, sessions).allSatisfy { $0.stopped })
         await model.shutdown()
     }
+
+    // MARK: Task 2: ⌘⇧W and ⌘K, quit
+
+    /// Review of Task 1: File ▸ Close Conversation goes through the window's real dispatch — the
+    /// registry, origin `ui` — pinned to the conversation on screen at the press, so a screen that
+    /// moves before the request drains leaves the conversation switched to alone.
+    @Test func fileCloseConversationDispatchesSessionClosePinnedAtThePress() async throws {
+        let sessions = Sessions()
+        let parked = ConversationBroker()
+        let w = try await wiredWindow(sessions, parkedConversations: parked)
+        let model = w.model
+        show(placeA, in: model)
+        let first = try await idleConversation(model, sessions, "first job")
+        await model.newConversation()
+        let second = try await idleConversation(model, sessions, "second job")
+        await model.switchToConversation(first.id)
+
+        await model.dispatchSessionClose()
+        var requests = await parked.requests().makeAsyncIterator()
+        let request = try #require(await requests.next())
+        #expect(request == .close(conversation: first.id), "pinned to the screen's conversation when pressed")
+        let journal = try await w.registry.journalEntries()
+        #expect(journal.contains { $0.action == "session_close" && $0.origin == .ui })
+
+        await model.switchToConversation(second.id)
+        await w.conversations.request(request)
+
+        #expect(await waitUntil { model.conversation(id: first.id) == nil })
+        #expect(model.currentAgent === second, "the conversation switched to is untouched")
+        #expect(sessions.harnesses.in(placeA)[0].stopped && !sessions.harnesses.in(placeA)[1].stopped)
+        await model.shutdown()
+    }
+
+    /// ⌘K's row runs the same dispatch, pinned the same way.
+    @Test func thePaletteRowClosesTheConversationOnScreenAtThePress() async throws {
+        let sessions = Sessions()
+        let parked = ConversationBroker()
+        let w = try await wiredWindow(sessions, parkedConversations: parked)
+        let model = w.model
+        show(placeA, in: model)
+        let first = try await idleConversation(model, sessions, "first job")
+        await model.newConversation()
+        let second = try await idleConversation(model, sessions, "second job")
+        let context = await model.paletteContext()
+        #expect(context.conversationOnScreen)
+
+        let refusal = await model.performPalette(.runCommand(commandId: "global.closeConversation", value: ""))
+        try #require(refusal == nil)
+        var requests = await parked.requests().makeAsyncIterator()
+        let request = try #require(await requests.next())
+        #expect(request == .close(conversation: second.id))
+
+        await model.switchToConversation(first.id)
+        await w.conversations.request(request)
+
+        #expect(await waitUntil { model.conversation(id: second.id) == nil })
+        #expect(model.currentAgent === first)
+        await model.shutdown()
+    }
+
+    @Test func quitStopsEveryConversationAndCancelsTheirWrites() async throws {
+        let sessions = Sessions()
+        let broker = ConfirmationBroker(timeout: .seconds(60))
+        let model = try await wiredWindow(sessions, confirmations: broker).model
+        show(placeA, in: model)
+        let first = try await idleConversation(model, sessions, "first job")
+        await model.newConversation()
+        #expect(await model.send("second job"))
+        let proposal = PendingMutation(
+            action: "db_run_mutation", params: .object([:]), database: nil, statement: "DELETE FROM t",
+            affectsEveryRow: true, origin: .agent, place: placeA, conversation: first.id)
+        let parked = Task { await broker.request(proposal) }
+        #expect(await waitUntil { model.parkedSlots[ProposalSlot(place: placeA, conversation: first.id)] != nil })
+
+        await model.shutdown()
+
+        #expect(sessions.harnesses.issued.count == 2)
+        let outcome = await parked.value
+        #expect(sessions.harnesses.issued.allSatisfy { $0.stopped } && outcome == .cancelled)
+        #expect(sessions.issuedSockets.allSatisfy { $0.stopped })
+    }
+
+    // MARK: Carried from plan 1
+
+    /// A session start in flight is a running agent for Invariant 5: a rename or removal landing
+    /// while `makeSession` holds the place's shown socket, before `install`, is refused rather
+    /// than leaving the session on a socket that answers for the old place.
+    @Test func aSessionStartInFlightCountsAsRunningForRenameAndRemoval() async throws {
+        let sessions = Sessions()
+        let gate = HoldGate()
+        let reached = Flag()
+        let base = sessions.socketFactory
+        let model = try await wiredWindow(sessions, socketFactory: { path, caller in
+            if gate.isArmed {
+                reached.set()
+                await gate.wait()
+            }
+            return try await base(path, caller)
+        }).model
+        show(placeA, in: model)
+        gate.arm()
+        await model.activateLayoutForTesting()
+        #expect(await waitUntil { reached.value }, "the shown socket's start is held")
+        #expect(model.runningAgent(in: "api", environment: "staging") == nil, "nothing starts yet")
+
+        let sending = Task { await model.send("first job") }
+        // `makeSession` took the shown socket and waits on its start.
+        #expect(await waitUntil { model.shownSocketSessionIdForTesting(placeA) == nil })
+
+        #expect(model.runningAgent(in: "api", environment: "staging") == "agent (test-provider)")
+        #expect(model.runningAgent(in: "api", environment: nil) == "agent (test-provider)")
+
+        gate.release()
+        #expect(await sending.value)
+        #expect(model.runningAgent(in: "api", environment: "staging") == "agent (test-provider)")
+        await model.shutdown()
+    }
+}
+
+/// A flag a test double raises from any executor.
+private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var raised = false
+    var value: Bool { lock.withLock { raised } }
+    func set() { lock.withLock { raised = true } }
 }

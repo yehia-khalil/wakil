@@ -78,10 +78,12 @@ public final class WindowModel {
     }
     /// The name of an agent whose session is live in `project` (and, when given, in that
     /// `environment` of it) of the window's current organisation, or nil: what renaming or
-    /// removing the place checks first (Invariant 5). Live is a harness, as in `agentPlaces`.
+    /// removing the place checks first (Invariant 5). Live is a harness, as in `agentPlaces`, or a
+    /// session start in flight (`PlaceAgent.runsOrStarts`), which already holds a socket
+    /// answering for the place as it is.
     public func runningAgent(in project: String, environment: String?) -> String? {
         runningAgentName(
-            among: conversations.values.map { (place: $0.place, live: $0.harness != nil, providerId: $0.providerId) },
+            among: conversations.values.map { (place: $0.place, live: $0.runsOrStarts, providerId: $0.providerId) },
             organization: place.organization, project: project, environment: environment)
     }
 
@@ -3750,6 +3752,19 @@ public final class WindowModel {
         return "\(name) has unsaved changes in \(titles.joined(separator: ", ")) — save or close them first."
     }
 
+    /// Closes every conversation of a removed place (plan 3, ruling 5), without asking: each is
+    /// idle — the removal was refused while any of them ran (Invariant 5) — so nothing in flight is
+    /// lost. Each ends as Close Conversation ends one (`endConversation`), its session in its
+    /// place's Continue, except that nothing is shown after it and nothing is written back: the
+    /// place is gone.
+    private func closeConversations(project: String, environment: String?) async {
+        let organization = organization
+        for agent in liveConversations() where agent.place.organization == organization
+            && agent.place.project == project && (environment == nil || agent.place.environment == environment) {
+            await endConversation(agent, placeRemoved: true)
+        }
+    }
+
     /// Kills the shells of every canvas of a removed place: nothing can reach them any more.
     private func closeShells(project: String, environment: String?) async {
         for scope in await scopesInMemory(project: project, environment: environment) {
@@ -3824,6 +3839,7 @@ public final class WindowModel {
         }
         let reply = await projectLifecycle("ctx_remove_project", ["name": .string(name)])
         if let error = reply.error { return error }
+        await closeConversations(project: name, environment: nil)
         await closeShells(project: name, environment: nil)
         releaseLayouts(project: name, environment: nil)
         await followDisk()
@@ -3884,6 +3900,7 @@ public final class WindowModel {
             "ctx_remove_environment",
             ["project": .string(project), "projectPath": .string(projectPath), "name": .string(name)])
         if let error = reply.error { return (nil, error) }
+        await closeConversations(project: project, environment: name)
         await closeShells(project: project, environment: name)
         releaseLayouts(project: project, environment: name)
         await followDisk()
@@ -7168,6 +7185,9 @@ public final class WindowModel {
         let sessionId: String
         let place: Place
         let opening: Task<OpenedSocket, Never>
+        /// This entry's own identity: a failed open forgets its own entry only, never the one a
+        /// rename put under the same conversation and session id meanwhile (`carryAgents`).
+        var token = UUID()
     }
 
     /// One socket's start: the socket, or why it would not start.
@@ -7230,16 +7250,18 @@ public final class WindowModel {
             sessionId = conversation
         }
         let factory = agentSocketFactory
-        // One that would not start is forgotten, so the place's next showing tries again.
+        // One that would not start is forgotten, so the place's next showing tries again — this
+        // entry only: a rename that replaced it meanwhile keeps its reopened one (plan 1's race).
+        let token = UUID()
         let opening = Task { [weak self] () -> OpenedSocket in
             let opened = await Self.openSocket(
                 factory, in: place, sessionId: sessionId, conversation: conversation)
-            if opened.socket == nil, let self, self.shownSockets[conversation]?.sessionId == sessionId {
+            if opened.socket == nil, let self, self.shownSockets[conversation]?.token == token {
                 self.shownSockets[conversation] = nil
             }
             return opened
         }
-        shownSockets[conversation] = ShownSocket(sessionId: sessionId, place: place, opening: opening)
+        shownSockets[conversation] = ShownSocket(sessionId: sessionId, place: place, opening: opening, token: token)
     }
 
     /// A new session's socket, then its harness, told that socket's path (background agents 3
@@ -7716,6 +7738,9 @@ public final class WindowModel {
         }
         // Minted before the harness: it names the fork's own socket, started first.
         let child = UUID().uuidString
+        // From here to `install`, a session start is in flight (`runsOrStarts`).
+        agent.sessionStartsInFlight += 1
+        defer { agent.sessionStartsInFlight -= 1 }
         guard let started = await makeSession(
             in: agent.place, ProviderSelection(id: providerId, credentials: credentials), sessionId: child,
             conversation: agent.id)
@@ -7996,6 +8021,9 @@ public final class WindowModel {
         let agent = startConversation.flatMap(conversation(id:)) ?? agent(for: startPlace)
         // Minted before the harness: it names the new session's own socket, started first.
         let fresh = UUID().uuidString
+        // From here to `install`, a session start is in flight (`runsOrStarts`).
+        agent.sessionStartsInFlight += 1
+        defer { agent.sessionStartsInFlight -= 1 }
         guard let started = await makeSession(
             in: agent.place, ProviderSelection(id: id, credentials: credentials), sessionId: fresh,
             conversation: agent.id)
@@ -8434,7 +8462,11 @@ public final class WindowModel {
     /// flush of the canvas it leaves, on screen — its shells are killed and its scope is let go
     /// of in memory (`releaseCanvas`). Nothing is deleted on disk, so Continue lists it and a
     /// resume reads its canvas back.
-    private func endConversation(_ agent: PlaceAgent) async {
+    ///
+    /// `placeRemoved`: the place itself was removed (`closeConversations`), so its arrangement is
+    /// not written back under a name that is gone, and the place shows nothing after it — neither
+    /// its next conversation, which closes too, nor its Landing.
+    private func endConversation(_ agent: PlaceAgent, placeRemoved: Bool = false) async {
         guard conversations[agent.id] === agent, closing.insert(agent.id).inserted else { return }
         defer { closing.remove(agent.id) }
         if closeQuestion?.conversation == agent.id { closeQuestion = nil }
@@ -8447,13 +8479,16 @@ public final class WindowModel {
         let scope = agent.layoutScope
         let shown = screenConversations[place] == agent.id
         // Off screen, its arrangement as its agent last left it reaches its file now.
-        if !(shown && place == self.place), let scope, scope != layoutScope, loadedLayoutScopes.contains(scope) {
+        if !placeRemoved, !(shown && place == self.place), let scope, scope != layoutScope,
+           loadedLayoutScopes.contains(scope) {
             let snapshot = await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }
             await persistLayout(snapshot, for: scope)
         }
         conversations[agent.id] = nil
         conversationOrder.removeAll { $0 == agent.id }
-        if shown {
+        if shown, placeRemoved {
+            screenConversations[place] = nil
+        } else if shown {
             screenConversations[place] = nil
             if let next = liveConversationRows(in: place).first {
                 if place == self.place {
@@ -8577,6 +8612,13 @@ public final class WindowModel {
     /// row runs it. On a Landing it does nothing visible (ruling 5).
     public func dispatchSessionNew() async {
         await dispatchLayout("session_new", .object([:]))
+    }
+
+    /// File ▸ Close Conversation (⌘⇧W): `session_close` through the registry, origin `ui`, as ⌘K's
+    /// row runs it — pinned to the conversation on screen at the press (`screenPinnedActions`). On
+    /// a Landing it does nothing (plan 3, ruling 6).
+    public func dispatchSessionClose() async {
+        await dispatchLayout("session_close", .object([:]))
     }
 
     /// Goes to `target` the way the operator would by hand — the organisation, then the

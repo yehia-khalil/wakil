@@ -189,6 +189,11 @@ public enum CommandCatalog {
             id: "global.newConversation", label: "New conversation", scope: .global,
             action: "session_new", input: nil,
             params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen }),
+        // Conversations 3 of 3: File ▸ Close Conversation's row (⌘⇧W), hidden on a Landing (ruling 6).
+        CatalogCommand(
+            id: "global.closeConversation", label: "Close conversation", scope: .global,
+            action: "session_close", input: nil,
+            params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen }),
     ]
 
     /// Focused pane's commands first (catalog order), then global; unavailable ones dropped.

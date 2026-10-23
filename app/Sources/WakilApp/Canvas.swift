@@ -117,7 +117,10 @@ extension WakilWindow {
                         // read from the same model, so the two cannot
                         // disagree about which plane the operator is
                         // looking at.
-                        ownsEscape: !(model.showOrgPlane || model.organization.isEmpty))
+                        // Close Conversation's question draws above this plane and takes Esc
+                        // while it is up (`CloseConversationPrompt`).
+                        ownsEscape: !(model.showOrgPlane || model.organization.isEmpty
+                            || model.closeQuestion != nil))
                 }
                 // 3b-i Task 9: a pane, an organisation switch or a quit about to drop unsaved
                 // editor tabs. A single tab's prompt is the editor pane's own, over its strip.
@@ -228,7 +231,7 @@ extension WakilWindow {
     /// confirmation, a window-wide unsaved prompt): the click is that plane's. The panes are
     /// hit where they are DRAWN, a live drag or resize included, top-most first (`paneAt`).
     func canvasMouseDown(_ model: WindowModel, at point: CGPoint, landsOnInput: Bool, overLanding: CGSize? = nil) {
-        let windowPrompt = model.unsavedPrompt.map { !$0.isCloseTab } ?? false
+        let windowPrompt = (model.unsavedPrompt.map { !$0.isCloseTab } ?? false) || model.closeQuestion != nil
         guard !(model.showOrgPlane || model.paletteShowing || model.pending != nil || windowPrompt) else { return }
         // The canvas and the Landing overlap only while one fades for the other; the live one answers.
         guard model.sessionStarted == (overLanding == nil) else { return }
@@ -394,7 +397,7 @@ extension WakilWindow {
                     // canvas" here.
                     isKeyboardOwner: !(
                         model.showOrgPlane || model.organization.isEmpty || model.pending != nil
-                        || model.paletteShowing || model.unsavedPrompt != nil),
+                        || model.paletteShowing || model.unsavedPrompt != nil || model.closeQuestion != nil),
                     isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
                     keyboardFocusRequests: model.keyboardFocusRequests,
                     keyboardReturns: model.keyboardReturns)
@@ -477,7 +480,7 @@ extension WakilWindow {
                     isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
                     isKeyboardOwner: !(
                         model.showOrgPlane || model.organization.isEmpty || model.pending != nil
-                        || model.paletteShowing || model.unsavedPrompt != nil),
+                        || model.paletteShowing || model.unsavedPrompt != nil || model.closeQuestion != nil),
                     keyboardHeld: { model.composerHoldsKeyboard },
                     unsavedPrompt: model.unsavedPrompt.flatMap { prompt in
                         if case .closeTab(pane.id, _) = prompt.intent { prompt } else { nil }

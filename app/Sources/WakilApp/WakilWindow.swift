@@ -421,6 +421,7 @@ struct WakilWindow: View {
                     // clickable.
                     let planeUp = session.model.showOrgPlane || session.model.paletteShowing
                         || session.model.pending != nil || session.model.unsavedPrompt != nil
+                        || session.model.closeQuestion != nil
                     AgentChips(model: session.model)
                         .opacity(planeUp ? 0.22 : 1)
                         .blur(radius: planeUp ? 0.6 : 0)
@@ -428,6 +429,23 @@ struct WakilWindow: View {
                         .padding(.top, 16)
                         .padding(.trailing, 16)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+
+                    // Conversations 3 of 3: Close Conversation's question, over the canvas and its
+                    // planes — a waiting write's confirmation among them, which the question is
+                    // about — and over a Landing too: the screen can have moved there between the
+                    // press and the question (the close is pinned to the conversation pressed on).
+                    // Below the palette and the org plane, as the chips are.
+                    if session.model.closeQuestion != nil {
+                        let model = session.model
+                        Color.black.opacity(0.35)
+                            .ignoresSafeArea()
+                        CloseConversationPrompt(
+                            close: { Task { await model.answerCloseQuestion(close: true) } },
+                            keep: { Task { await model.answerCloseQuestion(close: false) } },
+                            ownsEscape: !(model.showOrgPlane || model.organization.isEmpty))
+                            .frame(maxWidth: 520)
+                            .padding(16)
+                    }
                 }
                 // ⌘P / ⌘K: the palette's plane, over everything but the org plane
                 // (which closes it — see the `onChange`s below).
