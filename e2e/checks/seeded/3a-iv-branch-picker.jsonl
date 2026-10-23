@@ -30,6 +30,12 @@
 {"expect":{"tree":"absent","text":"Switch to a branch, or type a new name"}}
 {"do":{"click":"editor.changes.e2e-portal.branch"}}
 {"expect":{"focus":"branch.picker.filter"}}
+{"do":{"click":"branch.picker.createFrom"}}
+{"expect":{"tree":"contains","text":"Choose the branch to start from"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"Choose the branch to start from"}}
+{"do":{"click":"editor.changes.e2e-portal.branch"}}
+{"expect":{"focus":"branch.picker.filter"}}
 {"parity":{"action":"editor_changes_switch","params":{"root":"{fixtureRoot}/e2e-portal","branch":"topic"},"click":"branch.picker.row.topic","assert":"tree"}}
 {"expect":{"tree":"absent","text":"Switch to a branch, or type a new name"}}
 {"expect":{"tree":"contains","text":"e2e-portal · topic"}}
