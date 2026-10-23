@@ -54,6 +54,9 @@ public struct JournalEntry: Codable, Sendable, Equatable {
     /// Optional for the same reason `environment` is: lines written before it existed omit it,
     /// and synthesized Codable omits a nil one rather than writing `null`.
     public var via: String?
+    /// The conversation within the place that asked (agent dispatches only). Optional and
+    /// omitted when nil, as `via` is.
+    public var conversation: String?
 
     public init(
         id: String,
@@ -68,7 +71,8 @@ public struct JournalEntry: Codable, Sendable, Equatable {
         session: String? = nil,
         outcome: String,
         reason: String? = nil,
-        via: String? = nil
+        via: String? = nil,
+        conversation: String? = nil
     ) {
         self.id = id
         self.ts = ts
@@ -83,5 +87,6 @@ public struct JournalEntry: Codable, Sendable, Equatable {
         self.outcome = outcome
         self.reason = reason
         self.via = via
+        self.conversation = conversation
     }
 }

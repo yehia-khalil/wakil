@@ -628,7 +628,8 @@ public actor ActionRegistry {
             session: caller.session?.nilIfEmpty,
             outcome: outcome,
             reason: reason,
-            via: caller.via
+            via: caller.via,
+            conversation: caller.conversation
         )
         var line = try encoder.encode(entry)
         line.append(UInt8(ascii: "\n"))

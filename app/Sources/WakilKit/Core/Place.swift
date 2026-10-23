@@ -24,11 +24,15 @@ public struct DispatchCaller: Sendable {
     public let place: Place
     public let session: String?
     public let via: String?
+    /// The conversation within the place that made the dispatch; nil for the operator's own
+    /// dispatches and for any caller that names none. The journal records it, and nil is not written.
+    public let conversation: String?
 
-    public init(place: Place, session: String?, via: String? = nil) {
+    public init(place: Place, session: String?, via: String? = nil, conversation: String? = nil) {
         self.place = place
         self.session = session
         self.via = via
+        self.conversation = conversation
     }
 }
 

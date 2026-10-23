@@ -1,5 +1,17 @@
 import Foundation
 
+/// Where a proposal waits: a place and, for an agent's, the conversation that proposed it.
+/// The operator's own proposals take the place slot (`conversation` nil).
+public struct ProposalSlot: Hashable, Sendable {
+    public let place: Place
+    public let conversation: String?
+
+    public init(place: Place, conversation: String?) {
+        self.place = place
+        self.conversation = conversation
+    }
+}
+
 /// Holds at most one refused mutation per place while a human decides about it.
 ///
 /// This is the whole of the answer to a problem
@@ -31,10 +43,11 @@ import Foundation
 /// not looking at would otherwise be told "nobody answered" while nobody could. A `.ui`
 /// proposal keeps `timeout`.
 public actor ConfirmationBroker {
-    private var pending: [Place: PendingMutation] = [:]
-    private var waiters: [Place: CheckedContinuation<ConfirmationDecision, Never>] = [:]
-    private var timeoutTasks: [Place: Task<Void, Never>] = [:]
+    private var pending: [ProposalSlot: PendingMutation] = [:]
+    private var waiters: [ProposalSlot: CheckedContinuation<ConfirmationDecision, Never>] = [:]
+    private var timeoutTasks: [ProposalSlot: Task<Void, Never>] = [:]
     private var subscribers: [UUID: AsyncStream<[Place: PendingMutation]>.Continuation] = [:]
+    private var slotSubscribers: [UUID: AsyncStream<[ProposalSlot: PendingMutation]>.Continuation] = [:]
     private let timeout: Duration
 
     /// 120 seconds, for the operator's own proposals. Long enough to read a statement and
@@ -50,9 +63,9 @@ public actor ConfirmationBroker {
     /// proposal only — the timeout expires. Returns `.busy` immediately, without parking, if
     /// that place already holds one.
     public func request(_ proposal: PendingMutation) async -> ConfirmationDecision {
-        let place = proposal.place
-        if pending[place] != nil { return .busy }
-        pending[place] = proposal
+        let slot = proposal.slot
+        if pending[slot] != nil { return .busy }
+        pending[slot] = proposal
         publish()
 
         // Nothing between here and the continuation suspends, so the waiter
@@ -61,13 +74,13 @@ public actor ConfirmationBroker {
         // and creating a Task is not one.
         if proposal.origin != .agent {
             let id = proposal.id
-            timeoutTasks[place] = Task { [weak self, timeout] in
+            timeoutTasks[slot] = Task { [weak self, timeout] in
                 try? await Task.sleep(for: timeout)
                 await self?.resolve(id: id, with: .expired)
             }
         }
         return await withCheckedContinuation { continuation in
-            waiters[place] = continuation
+            waiters[slot] = continuation
         }
     }
 
@@ -80,8 +93,16 @@ public actor ConfirmationBroker {
     /// would be `.busy`. The request returns `.cancelled` to the MCP call that is waiting on it.
     /// The operator's own proposal in that place is theirs, not the session's, and stays.
     public func cancelAgentProposal(in place: Place) {
-        guard let parked = pending[place], parked.origin == .agent else { return }
-        resolve(id: parked.id, with: .cancelled)
+        for (slot, parked) in pending where slot.place == place && parked.origin == .agent {
+            resolve(id: parked.id, with: .cancelled)
+        }
+    }
+
+    /// Cancels the agent proposal parked for conversation `id`, in whichever place holds it.
+    public func cancelAgentProposal(inConversation id: String) {
+        for (slot, parked) in pending where slot.conversation == id && parked.origin == .agent {
+            resolve(id: parked.id, with: .cancelled)
+        }
     }
 
     /// Cancels everything parked, in every place: the window is closing, and every request
@@ -91,12 +112,45 @@ public actor ConfirmationBroker {
     }
 
     /// What is parked in `place`, for the plane to render when that place is on screen.
+    ///
+    /// A place's projection: the operator's proposal (the place slot) if one is parked, else the
+    /// place's agent proposal with the lowest conversation id.
     public func current(for place: Place) async -> PendingMutation? {
+        await holdIfTesting()
+        return Self.project(pending)[place]
+    }
+
+    /// What is parked in exactly `slot`.
+    public func current(in slot: ProposalSlot) async -> PendingMutation? {
+        await holdIfTesting()
+        return pending[slot]
+    }
+
+    private func holdIfTesting() async {
         if holdNextCurrent {
             holdNextCurrent = false
             await withCheckedContinuation { heldCurrent = $0 }
         }
-        return pending[place]
+    }
+
+    /// One proposal per place: the place slot's, else the lowest conversation id's.
+    private static func project(_ slots: [ProposalSlot: PendingMutation]) -> [Place: PendingMutation] {
+        var out: [Place: PendingMutation] = [:]
+        var best: [Place: ProposalSlot] = [:]
+        for (slot, parked) in slots {
+            if let held = best[slot.place] {
+                let wins: Bool
+                switch (slot.conversation, held.conversation) {
+                case (nil, _): wins = true
+                case (_, nil): wins = false
+                case let (new?, old?): wins = new < old
+                }
+                if !wins { continue }
+            }
+            out[slot.place] = parked
+            best[slot.place] = slot
+        }
+        return out
     }
 
     // MARK: Test hold
@@ -113,8 +167,25 @@ public actor ConfirmationBroker {
         heldCurrent = nil
     }
 
-    /// Everything parked, by place.
-    public func all() -> [Place: PendingMutation] { pending }
+    /// Everything parked, by place (the place projection; see `current(for:)`).
+    public func all() -> [Place: PendingMutation] { Self.project(pending) }
+
+    /// Everything parked, by slot.
+    public func allSlots() -> [ProposalSlot: PendingMutation] { pending }
+
+    /// `updates()`, by slot.
+    public func slotUpdates() -> AsyncStream<[ProposalSlot: PendingMutation]> {
+        AsyncStream { continuation in
+            let key = UUID()
+            slotSubscribers[key] = continuation
+            if !pending.isEmpty { continuation.yield(pending) }
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.unsubscribeSlots(key) }
+            }
+        }
+    }
+
+    private func unsubscribeSlots(_ key: UUID) { slotSubscribers[key] = nil }
 
     /// A stream of everything parked, by place, after every park and release.
     ///
@@ -129,7 +200,7 @@ public actor ConfirmationBroker {
         AsyncStream { continuation in
             let key = UUID()
             subscribers[key] = continuation
-            if !pending.isEmpty { continuation.yield(pending) }
+            if !pending.isEmpty { continuation.yield(Self.project(pending)) }
             continuation.onTermination = { [weak self] _ in
                 Task { await self?.unsubscribe(key) }
             }
@@ -145,15 +216,17 @@ public actor ConfirmationBroker {
     /// after an approval, names a proposal that is no longer parked and is
     /// ignored — rather than approving whatever happens to be parked next.
     private func resolve(id: String, with decision: ConfirmationDecision) {
-        guard let place = pending.first(where: { $0.value.id == id })?.key else { return }
-        pending[place] = nil
-        timeoutTasks.removeValue(forKey: place)?.cancel()
-        let continuation = waiters.removeValue(forKey: place)
+        guard let slot = pending.first(where: { $0.value.id == id })?.key else { return }
+        pending[slot] = nil
+        timeoutTasks.removeValue(forKey: slot)?.cancel()
+        let continuation = waiters.removeValue(forKey: slot)
         publish()
         continuation?.resume(returning: decision)
     }
 
     private func publish() {
-        for continuation in subscribers.values { continuation.yield(pending) }
+        let byPlace = Self.project(pending)
+        for continuation in subscribers.values { continuation.yield(byPlace) }
+        for continuation in slotSubscribers.values { continuation.yield(pending) }
     }
 }
