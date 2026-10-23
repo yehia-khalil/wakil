@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-iv-branch-blocked.jsonl",
+  "baseCommit": "164af87a096b085b1c4022f95206ec8eec83dc64",
+  "provedAt": "2026-10-23T12:06:21.021718Z",
+  "checkBlob": "027fd1e217c2f8dd4c146e7980e59e9bd9da9582"
+}
