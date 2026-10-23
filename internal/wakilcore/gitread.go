@@ -60,8 +60,8 @@ var gitAllowedFlags = map[string][]string{
 	"for-each-ref": {"--sort=", "--format="},
 	"rev-list":     {"--count"},
 	// --contents=- only: any other value is a file path, read from anywhere on the disk.
-	"blame":        {"--porcelain", "--contents=-", "--"},
-	"log":          {"-g", "--format=", "-z", "--follow", "--max-count=", "--skip=", "--name-status", "--"},
+	"blame": {"--porcelain", "--contents=-", "--"},
+	"log":   {"-g", "--format=", "-z", "--follow", "--max-count=", "--skip=", "--name-status", "--"},
 }
 
 // checkGitFlags refuses the first flag of args that sub does not allow.
