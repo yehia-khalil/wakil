@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-iii-settings-maximized.jsonl",
+  "baseCommit": "dd65cbf2bbacdf39358e36f7e0797eb1bd593313",
+  "provedAt": "2026-10-22T21:28:20.857454Z",
+  "checkBlob": "5c27a79835d07be6f9dc946bc95865941efbae11"
+}

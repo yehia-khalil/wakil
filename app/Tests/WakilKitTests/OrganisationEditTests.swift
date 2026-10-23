@@ -213,7 +213,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
                 "\(field.rawValue) is not a parameter of ctx_update_org")
         #expect(!field.label.isEmpty)
     }
-    #expect(WindowModel.OrganisationField.allCases.count == 7)
+    #expect(WindowModel.OrganisationField.allCases.count == 11)  // 3a-iii: pullStrategy and the three agent texts
 }
 
 /// 2d-ii: the Speech row saves through the same action, one key at a time.
@@ -295,4 +295,15 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
     }
     #expect(arguments["gitName"] == .string("N"))
     #expect(arguments["gitEmail"] == .string(""))
+}
+
+/// The sheet's three lists are reads (3a-iii e2e audit): they change nothing, so they are not
+/// counted as writes and do not refresh Settings.
+@Test func theAccountSheetsListsAreReads() async throws {
+    let (registry, _) = try await registryWithRecordingContext()
+    let all = await registry.all()
+    for name in ["ctx_git_host_suggestions", "ctx_git_ssh_keys", "ctx_git_gh_logins"] {
+        #expect(all.first { $0.name == name }?.kind == .read, "\(name)")
+    }
+    #expect(all.first { $0.name == "ctx_git_key_generate" }?.kind == .control)
 }

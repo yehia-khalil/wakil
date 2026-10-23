@@ -1,0 +1,50 @@
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git clone -q --bare ../e2e-portal ../e2e-shared.git && printf %s \"$(cd .. && pwd)/e2e-shared.git\" | pbcopy && echo copied"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"copied"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.addProject"}}
+{"expect":{"tree":"contains","text":"Open a folder on this Mac, or clone a repository from a link."}}
+{"do":{"click":"settings.projects.add.close"}}
+{"expect":{"tree":"absent","text":"Open a folder on this Mac, or clone a repository from a link."}}
+{"expect":{"tree":"contains","text":"IDENTITY"}}
+{"do":{"click":"settings.tree.addProject"}}
+{"do":{"click":"settings.projects.add.clone"}}
+{"expect":{"tree":"contains","text":"It is cloned with this organisation's git account for the link's host, then added as a project."}}
+{"expect":{"focus":"settings.projects.clone.link"}}
+{"expect":{"tree":"contains","text":"/e2e-clones"}}
+{"do":{"click":"settings.projects.clone.back"}}
+{"expect":{"tree":"contains","text":"Open a folder on this Mac, or clone a repository from a link."}}
+{"do":{"click":"settings.projects.add.clone"}}
+{"do":{"type":{"into":"settings.projects.clone.link","text":"git@e2ehost:e2e/repo.git"}}}
+{"do":{"click":"settings.projects.clone.go"}}
+{"expect":{"tree":"contains","text":"No git account for e2ehost in e2e-fixture — add one in Settings → Organisation → Git"}}
+{"do":{"click":"settings.projects.add.close"}}
+{"expect":{"tree":"absent","text":"No git account for e2ehost in e2e-fixture — add one in Settings → Organisation → Git"}}
+{"expect":{"tree":"contains","text":"IDENTITY"}}
+{"do":{"click":"settings.tree.addProject"}}
+{"do":{"click":"settings.projects.add.clone"}}
+{"do":{"focus":"settings.projects.clone.link"}}
+{"do":{"hotkey":"cmd+v"}}
+{"expect":{"tree":"contains","text":"e2e-shared.git"}}
+{"do":{"click":"settings.projects.clone.go"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.projects","contains":"e2e-shared"}}
+{"expect":{"tree":"absent","text":"It is cloned with this organisation's git account for the link's host, then added as a project."}}
+{"expect":{"tree":"contains","text":"e2e-clones/e2e-shared/.wakil/project.json"}}
+{"expect":{"focus":"settings.project.name"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"git -C ../e2e-clones/e2e-shared --no-pager log -1 --format=%s"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"seed"}}
+{"dispatch":{"action":"editor_clone","params":{"url":"{fixtureRoot}/e2e-portal","folder":"{fixtureRoot}"},"refuses":"the agent clones only into"}}
+{"dispatch":{"action":"editor_clone","params":{"url":"{fixtureRoot}/e2e-shared.git"},"refuses":"the destination already exists"}}
+{"dispatch":{"action":"editor_clone","params":{"url":"e2e-not-a-link"},"refuses":"not a git remote: e2e-not-a-link"}}
+{"dispatch":{"action":"editor_clone","params":{"url":"{fixtureRoot}/e2e-portal"}}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"git -C ../e2e-clones/e2e-portal --no-pager log -1 --format=%s"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"seed"}}
+{"do":{"click":"settings.reload"}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.projects[4]","present":false}}
+{"expect":{"pane":"settings-2","field":"configuration.structuredContent.projects[3].name","equals":"e2e-shared"}}

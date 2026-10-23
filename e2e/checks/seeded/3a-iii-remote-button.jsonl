@@ -1,0 +1,49 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main"}}
+{"do":{"click":"editor.changes.e2e-portal.remote"}}
+{"expect":{"tree":"contains","text":"this repository has no remote to publish to"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git init -q --bare -b main ../e2e-remote.git && git -C ../e2e-portal remote add origin \"$(cd .. && pwd)/e2e-remote.git\""}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"parity":{"action":"editor_changes_publish","params":{"root":"{fixtureRoot}/e2e-portal"},"click":"editor.changes.e2e-portal.remote","assert":"tree"}}
+{"expect":{"tree":"absent","text":"this repository has no remote to publish to"}}
+{"dispatch":{"action":"editor_changes_commit","params":{"root":"{fixtureRoot}/e2e-portal","message":"e2e to push"}}}
+{"expect":{"tree":"contains","text":"e2e-portal · main ↑1 · clean"}}
+{"parity":{"action":"editor_changes_push","params":{"root":"{fixtureRoot}/e2e-portal"},"click":"editor.changes.e2e-portal.remote","assert":"tree"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git clone -q ../e2e-remote.git ../e2e-mate && echo theirs > ../e2e-mate/b.txt && git -C ../e2e-mate add b.txt && git -C ../e2e-mate -c user.name=Mate -c user.email=mate@e2e.invalid commit -qm theirs && git -C ../e2e-mate push -q"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"dispatch":{"action":"editor_changes_fetch","params":{"root":"{fixtureRoot}/e2e-portal"}}}
+{"expect":{"tree":"contains","text":"e2e-portal · main ↓1 · clean"}}
+{"parity":{"action":"editor_changes_pull","params":{"root":"{fixtureRoot}/e2e-portal"},"click":"editor.changes.e2e-portal.remote","assert":"tree"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git clone -q ../e2e-remote.git ../e2e-mate2 && echo theirs > ../e2e-mate2/index.txt && git -C ../e2e-mate2 -c user.name=Mate -c user.email=mate@e2e.invalid commit -qam theirs && git -C ../e2e-mate2 push -q"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"dispatch":{"action":"editor_create","params":{"path":"{fixtureRoot}/e2e-portal/mine","kind":"file"}}}
+{"dispatch":{"action":"editor_changes_stage","params":{"root":"{fixtureRoot}/e2e-portal","paths":["mine"]}}}
+{"dispatch":{"action":"editor_changes_commit","params":{"root":"{fixtureRoot}/e2e-portal","message":"e2e mine"}}}
+{"dispatch":{"action":"editor_changes_fetch","params":{"root":"{fixtureRoot}/e2e-portal"}}}
+{"expect":{"tree":"contains","text":"e2e-portal · main ↑1 ↓1 · clean"}}
+{"parity":{"action":"editor_changes_sync","params":{"root":"{fixtureRoot}/e2e-portal"},"click":"editor.changes.e2e-portal.remote","assert":"tree"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}

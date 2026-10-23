@@ -77,8 +77,10 @@ public final class LeaveSavedField {
         saving = false
         self.refusal = refusal
         refusedValue = refusal == nil ? nil : sending
+        // Saved: the draft goes back to showing what is stored — unless more was typed while the
+        // write was in flight, which stays to be the next save (autosave, 3a-iii walk).
+        if refusal == nil, draft == sending { draft = nil }
         sending = nil
-        if refusal == nil { draft = nil }
         return onScreen ? nil : refusal
     }
 }

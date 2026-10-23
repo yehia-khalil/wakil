@@ -722,6 +722,9 @@ public struct WakilWiring: Sendable {
         // Forwarded for the same reason as WAKIL_KEYCHAIN: fixed for the
         // life of the process and set by the launcher. Only tests and e2e
         // set it, to keep the capacity probe off the real API.
+        // 3a-iii: file remotes (a bare repository on this Mac) are refused unless the launcher
+        // allows them — tests, e2e and the walk do. Fixed for the process, so forwarded; only `1`.
+        if environment["WAKIL_GIT_ALLOW_FILE"] == "1" { childEnvironment["WAKIL_GIT_ALLOW_FILE"] = "1" }
         if let base = environment["WAKIL_ANTHROPIC_BASE_URL"], !base.isEmpty {
             childEnvironment["WAKIL_ANTHROPIC_BASE_URL"] = base
         }
@@ -819,6 +822,8 @@ public struct WakilWiring: Sendable {
     /// How long `switchOrg` waits for a running git write before it stops `wakil-git` anyway. The
     /// ruling is that an org switch lets a commit finish (its result is dropped, by generation, in
     /// `WindowModel`); a hook that runs past this is cut off, as any client's call is on a switch.
+    /// Remote work and clones still running are cancelled by the stop: wakil-git takes SIGTERM as a
+    /// cancel, so a pull aborts what it started and a clone removes its folder before it exits (3a-iii).
     static let orgSwitchGitWriteDrainLimit: TimeInterval = 60
 
     public func switchOrg(to org: String) async -> [String] {

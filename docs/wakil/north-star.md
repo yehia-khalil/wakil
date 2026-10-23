@@ -90,7 +90,7 @@ Rules no phase may break.
 5. **Exactly one place on screen; each agent keeps its own.** Implicit scope is the
    product; an explicit project argument would forfeit it. History: Decision 41.
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
-   deliberate justification, never by default. Six have earned in. The justification
+   deliberate justification, never by default. Seven have earned in. The justification
    for each, and what each leaves refused, is in `decisions.md` under *"Invariant 6 — the
    writes that have earned in"*.
 
@@ -102,6 +102,7 @@ Rules no phase may break.
    | File write — local files inside the project's roots | wakil-files | 2026-10-11 |
    | File create, move, Move to Trash — inside the roots | wakil-files | 2026-10-17 |
    | Stage, unstage, discard, commit — local git inside the project's roots | wakil-git | 2026-10-21 |
+   | Fetch, pull, push, sync, clone — remote git, with the organisation's account | wakil-git | 2026-10-22 |
 
    **Still refused:** schema mutation (every DDL verb, `TRUNCATE` explicitly), Mongo
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`
@@ -260,13 +261,15 @@ live app; *accepted* means it was marked met without one.
 | **2e** | The settings pane — an account added from Wakil with no credential in the operator's hands; unlink; the DSN write; the residue named | **2026-09-30**, walked | the rest of 2c; **built before 2d** |
 | **Phase 3** | Breadth — editor, API client UI, chat and inbox adapters | — | — |
 | **3a-i** | Git pane, read-only: changes by root, the spine, the Monaco diff host | **2026-10-09**, walked | — |
-| **3a-ii** | Stage, unstage, commit — the fourth write | **2026-10-22**, walked | 3a-i |
+| **3a-ii** | Stage, unstage, commit — the fourth write | — | 3a-i |
 | **3a-ii-b** | Stage and Unstage Selected Ranges in the diff tab; ✨ drafts the commit message with the quick model, the operator commits | **2026-10-22**, walked | 3a-ii |
 | **2e-ii** | Add, rename and remove a project and an environment from Settings | — | 3a-ii |
 | **2e-iii** | Add, edit and remove an environment's API entries from Settings, the token to the Keychain; databases edited in place, removal confirmed | — | 2e-ii |
-| **3a-iii** | A git account per organisation — sign in, the credential in the Keychain; push, pull, fetch, sync | — | 3a-ii |
+| **3a-iii** | A git account per organisation — sign in, token or SSH key in the Keychain; push, pull, fetch, sync, clone; agent instructions | — | 3a-ii |
 | **3a-iv** | Branches and stash — the branch picker in the context line, stash, pop, apply | — | 3a-iii |
 | **3a-v** | Conflicts, history and blame — accept current or incoming, the Timeline, inline blame | — | 3a-ii |
+| **New conversation** | `session_new`: end this place's conversation, back to its Landing | — | — |
+| **Track** | Two sessions in one place, each its own thread — revisits Decision 41; agenda #78–#86 (`parked.md`) | — | New conversation |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
 ## 9. Glossary

@@ -1014,6 +1014,64 @@ public func registerStandardActions(
     // the tool's own schema has no such param, so it is not forwarded. Creates are never
     // pinned: nothing an agent holds yet exists.
 
+    // 3a-iii-a: an organisation's git accounts. Operator-only, like every Settings write
+    // (Decision 30); the secrets travel through their own tools, never these.
+    for (name, tool, keys, required, secrets) in [
+        ("ctx_git_account_add", "git_account_add",
+         ["id", "host", "provider", "method", "user", "keyPath", "username"], ["id", "host", "provider", "method"], [String]()),
+        ("ctx_git_account_remove", "git_account_remove", ["id", "host"], ["id", "host"], []),
+        ("ctx_git_host_suggestions", "git_host_suggestions", ["id"], ["id"], []),
+        ("ctx_git_ssh_keys", "git_ssh_keys", ["id"], ["id"], []),
+        ("ctx_git_key_generate", "git_key_generate", ["id", "host", "comment"], ["id", "host", "comment"], []),
+        ("ctx_git_token_set", "git_token_set", ["id", "host", "token"], ["id", "host", "token"], ["token"]),
+        ("ctx_git_key_passphrase_set", "git_key_passphrase_set", ["id", "host", "passphrase"], ["id", "host", "passphrase"], ["passphrase"]),
+        ("ctx_git_account_test", "git_account_test", ["id", "host"], ["id", "host"], []),
+        ("ctx_git_device_start", "git_device_start", ["id", "provider"], ["id", "provider"], []),
+        ("ctx_git_device_poll", "git_device_poll", ["id", "provider", "host", "deviceCode"], ["id", "provider", "host", "deviceCode"], []),
+        ("ctx_git_gh_logins", "git_gh_logins", ["id"], ["id"], []),
+        ("ctx_git_gh_import", "git_gh_import", ["id", "host", "user"], ["id", "host", "user"], []),
+        ("ctx_set_project_agent_instructions", "set_project_agent_instructions",
+         ["projectPath", "general", "commits", "pullRequests"], ["projectPath"], []),
+    ] {
+        await registry.register(Action(
+            name: name,
+            description: [
+                "ctx_git_account_add": "Record an organisation's git account for one host (ssh, token or signin). Operator-only.",
+                "ctx_git_account_remove": "Forget an organisation's git account for one host, with its secrets. Operator-only.",
+                "ctx_git_host_suggestions": "The hosts an organisation's projects push to, most used first. Operator-only.",
+                "ctx_git_ssh_keys": "The key pairs in ~/.ssh, by comment, and which need a passphrase. Operator-only.",
+                "ctx_git_key_generate": "Generate an organisation's ssh key for one host; answers the public key. Operator-only.",
+                "ctx_git_token_set": "Keep an organisation's token for one host in the Keychain. Operator-only.",
+                "ctx_git_key_passphrase_set": "Keep the passphrase of an organisation's picked key in the Keychain. Operator-only.",
+                "ctx_git_account_test": "Ask a host who an organisation's account there is. Operator-only.",
+                "ctx_git_device_start": "Begin Sign in with a provider (device flow). Operator-only.",
+                "ctx_git_device_poll": "Ask once whether a Sign in was approved. Operator-only.",
+                "ctx_git_gh_logins": "The GitHub CLI's logins. Operator-only.",
+                "ctx_git_gh_import": "Use one of the GitHub CLI's logins as the organisation's account. Operator-only.",
+                "ctx_set_project_agent_instructions": "Change one project's agent instructions. Operator-only.",
+            ][name] ?? name,
+            // The sheet's lists change nothing; the rest write the organisation or the Keychain.
+            kind: ["ctx_git_host_suggestions", "ctx_git_ssh_keys", "ctx_git_gh_logins"].contains(name) ? .read : .control,
+            audience: .operatorOnly,
+            schema: .object([
+                "type": .string("object"),
+                "properties": .object(Dictionary(uniqueKeysWithValues: keys.map { ($0, JSONValue.object(["type": .string("string")])) })),
+                "required": .array(required.map { .string($0) }),
+            ]),
+            handler: { params in
+                guard let context else { throw StandardActionError.missingClient(action: name, role: "context") }
+                var arguments: [String: JSONValue] = [:]
+                for key in required { arguments[key] = .string(try requireStringParam(params, key, action: name)) }
+                for key in keys where arguments[key] == nil {
+                    if case .object(let o) = params, case .string(let v)? = o[key] { arguments[key] = .string(v) }
+                }
+                return try await callChecked(
+                    context, tool: tool, arguments: .object(arguments), action: name,
+                    timeout: MCPClient.readReplyTimeout)
+            },
+            secretParams: Set(secrets)))
+    }
+
     await registry.register(Action(
         name: "ctx_create_project",
         description: "Add a project: create its file under a folder and register it. Operator-only.",
@@ -1045,7 +1103,7 @@ public func registerStandardActions(
 
     await registry.register(Action(
         name: "ctx_rename_project",
-        description: "Rename a registered project. Refused while an agent is running in it (Invariant 5). Operator-only.",
+        description: "Rename a registered project. Refused while an agent is running in it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1077,7 +1135,7 @@ public func registerStandardActions(
 
     await registry.register(Action(
         name: "ctx_remove_project",
-        description: "Remove a project from the registry. Its folder is left alone. Refused while an agent is running in it (Invariant 5). Operator-only.",
+        description: "Remove a project from the registry. Its folder is left alone. Refused while an agent is running in it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1136,7 +1194,7 @@ public func registerStandardActions(
 
     await registry.register(Action(
         name: "ctx_rename_environment",
-        description: "Rename an environment of a project. `project` is the registry name, used only to check that no agent is running there (Invariant 5). Operator-only.",
+        description: "Rename an environment of a project. `project` is the registry name, used only to check that no agent is running there. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1171,7 +1229,7 @@ public func registerStandardActions(
 
     await registry.register(Action(
         name: "ctx_remove_environment",
-        description: "Remove an environment of a project; its files are moved to the Trash. `project` is the registry name, used only to check that no agent is running there (Invariant 5). Operator-only.",
+        description: "Remove an environment of a project; its files are moved to the Trash. `project` is the registry name, used only to check that no agent is running there. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
         schema: .object([
@@ -1260,6 +1318,10 @@ public func registerStandardActions(
                 "ghostText": .object(["type": .string("boolean")]),
                 "fastPath": .object(["type": .string("boolean")]),
                 "commitDrafts": .object(["type": .string("boolean")]),
+                "pullStrategy": .object(["type": .string("string")]),
+                "agentGeneral": .object(["type": .string("string")]),
+                "gitCommitInstructions": .object(["type": .string("string")]),
+                "gitPRInstructions": .object(["type": .string("string")]),
             ]),
             "required": .array([.string("id")]),
         ]),
@@ -1277,7 +1339,8 @@ public func registerStandardActions(
                 throw StandardActionError.missingParam(action: "ctx_update_org", param: "id")
             }
             var arguments: [String: JSONValue] = ["id": .string(id)]
-            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail"] {
+            for key in ["displayName", "jiraBase", "defaultProvider", "speechProvider", "quickProvider", "gitName", "gitEmail", "pullStrategy",
+                        "agentGeneral", "gitCommitInstructions", "gitPRInstructions"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
             for key in ["ghostText", "fastPath", "commitDrafts"] {
@@ -1297,8 +1360,8 @@ public func registerStandardActions(
     await registry.register(Action(
         name: "ctx_set_local_provider",
         description: "Create or change a local model endpoint for the active organisation: id, optional "
-            + "label and baseURL (http or https); it serves every quick task. serves is ignored since "
-            + "3b-ix. Wakil installs and starts nothing. Refuses a bad URL and an id already used by "
+            + "label and baseURL (http or https); it serves every quick task. serves is ignored. "
+            + "Wakil installs and starts nothing. Refuses a bad URL and an id already used by "
             + "another kind of account. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
@@ -1310,7 +1373,7 @@ public func registerStandardActions(
                 "baseURL": .object(["type": .string("string")]),
                 "serves": .object([
                     "type": .string("array"), "items": .object(["type": .string("string")]),
-                    "description": .string("ignored since 3b-ix"),
+                    "description": .string("ignored"),
                 ]),
             ]),
             "required": .array([.string("id")]),
@@ -3138,7 +3201,7 @@ private func refuseIfAgentRuns(
     let place = environment.map { "\(project) / \($0)" } ?? project
     throw StandardActionError.serverError(
         action: action,
-        message: "\(agent) is running in \(place) — an agent keeps its own place (Invariant 5); stop it first")
+        message: "\(agent) is running in \(place) — an agent keeps its own place; stop it first")
 }
 
 private func callChecked(

@@ -118,7 +118,7 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
             guard case .deny(let reason) = decision else {
                 Issue.record("\(name) must be denied, got \(decision)"); return
             }
-            #expect(reason.contains("Decision 30"))
+            #expect(reason.contains("only the operator changes editor settings"))
             #expect(reason.contains("ctx_editor_settings"))
         }
     }
@@ -240,4 +240,76 @@ private actor GhostRecordingCaller: ToolCaller {
         name: "ctx_update_org", params: .object(["id": .string("o"), "commitDrafts": .string("off")]),
         origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await caller.arguments == [.object(["id": .string("o"), "commitDrafts": .bool(false)]), .object(["id": .string("o")])])
+}
+
+/// 3a-iii-a: the pull strategy reaches `update_org` as a string, and the account tools forward their
+/// fields (the 3a-ii-b lesson: a key not forwarded is dropped silently).
+@Test func thePullStrategyAndTheAccountToolsAreForwarded() async throws {
+    let caller = GhostRecordingCaller()
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "git-accounts")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    _ = try await registry.dispatch(
+        name: "ctx_update_org", params: .object(["id": .string("o"), "pullStrategy": .string("merge")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_git_account_add",
+        params: .object(["id": .string("o"), "host": .string("github.com"), "provider": .string("github"),
+                         "method": .string("ssh"), "keyPath": .string("/k")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_git_account_remove", params: .object(["id": .string("o"), "host": .string("github.com")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    #expect(await caller.arguments == [
+        .object(["id": .string("o"), "pullStrategy": .string("merge")]),
+        .object(["id": .string("o"), "host": .string("github.com"), "provider": .string("github"),
+                 "method": .string("ssh"), "keyPath": .string("/k")]),
+        .object(["id": .string("o"), "host": .string("github.com")]),
+    ])
+    let d = try #require(await registry.descriptor(named: "ctx_git_account_add"))
+    #expect(d.audience == .operatorOnly)
+}
+
+/// 3a-iii-a: a token and a passphrase reach their tools but never the journal.
+@Test func gitSecretsNeverReachTheJournal() async throws {
+    let caller = GhostRecordingCaller()
+    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "git-secrets")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    _ = try await registry.dispatch(
+        name: "ctx_git_token_set", params: .object(["id": .string("o"), "host": .string("github.com"), "token": .string("tok-SECRET-1")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_git_key_passphrase_set",
+        params: .object(["id": .string("o"), "host": .string("github.com"), "passphrase": .string("pass-SECRET-2")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    #expect(await caller.arguments.count == 2)
+    let journal = try String(contentsOf: try #require(FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?
+        .compactMap { $0 as? URL }.first { $0.pathExtension == "jsonl" }), encoding: .utf8)
+    #expect(!journal.contains("tok-SECRET-1"))
+    #expect(!journal.contains("pass-SECRET-2"))
+}
+
+/// 3a-iii-b: the organisation's three agent texts reach `update_org`, and the tree reads both levels.
+@Test func theAgentTextsAreForwardedAndRead() async throws {
+    let caller = GhostRecordingCaller()
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "agent-texts")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    _ = try await registry.dispatch(
+        name: "ctx_update_org", params: .object(["id": .string("o"), "gitCommitInstructions": .string("Imperative subject")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    _ = try await registry.dispatch(
+        name: "ctx_set_project_agent_instructions",
+        params: .object(["projectPath": .string("/p/project.json"), "general": .string("Ask first")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    #expect(await caller.arguments == [
+        .object(["id": .string("o"), "gitCommitInstructions": .string("Imperative subject")]),
+        .object(["projectPath": .string("/p/project.json"), "general": .string("Ask first")]),
+    ])
+    let json = #"{"id":"o","agentGeneral":"G","gitCommitInstructions":"C","gitPRInstructions":"P"}"#
+    let org = try JSONDecoder().decode(SettingsOrg.self, from: Data(json.utf8))
+    #expect(org.agentGeneral == "G" && org.gitCommitInstructions == "C" && org.gitPRInstructions == "P")
+    let project = try JSONDecoder().decode(SettingsProject.self, from: Data(#"{"name":"api","agent":{"commits":"K"}}"#.utf8))
+    #expect(project.agent == SettingsAgentTexts(general: "", commits: "K", pullRequests: ""))
 }

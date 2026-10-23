@@ -1494,6 +1494,46 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* a commit or discard from Wakil is found to have lost work that the Trash or Undo
     Last Commit could not bring back — then the price becomes *gate*.
 
+44. **An organisation's git account per provider; remote git priced allow; Wakil never touches the
+    Mac's own SSH or git config.**
+    *(2026-10-22, operator, during the 3a-iii design —
+    `docs/superpowers/specs/2026-10-22-3a-iii-git-accounts-and-remotes-design.md`.)*
+    Settings → Organisation → Git holds one account per host: **Sign in** (device flow; GitHub and
+    GitLab.com, offered once Wakil's OAuth client ids are set, and *Use a gh login* for GitHub), **a
+    pasted token** (Bitbucket, self-hosted, any host) or **an SSH key** (picked from `~/.ssh` or
+    generated under the organisation's folder, its passphrase in the Keychain). Wakil runs git itself
+    and hands each command the account for the remote's host: `ssh -F /dev/null` with that key alone
+    on the route `ssh -G` reads, or its own credential helper — so an alias or an https clone can no
+    longer push as another organisation's account, and nothing in `~/.ssh` or any git config is
+    written. **Fetch, pull, push, sync, publish and clone are priced *allow* for every channel**,
+    voice included (Invariant 7's allow exception): a push asked for in words must happen. **Force is
+    never available**, so a mistaken push is undone by a following commit. Pull's strategy (rebase,
+    merge, fast-forward only) is the organisation's setting, rebase by default; uncommitted changes are
+    set aside and put back (`--autostash`, the operator's ruling during the walk), and kept in git's
+    stash when they clash; a conflicting pull is aborted and named, for 3a-v to resolve. **Pull sets uncommitted changes aside and puts them back**
+    (`--autostash`, the operator's ruling during the walk, as JetBrains does); changes that clash with
+    what came in stay in git's stash, and Pull says so. The agent may clone, but only into the folder the
+    operator last cloned into, and only the operator adds a clone as a project (Decision 30).
+    *Reverse if:* injecting the account per command cannot reach a host the Mac's own setup reaches —
+    or an agent push the operator did not ask for is found on a remote, and then push becomes *gate*
+    for the agent.
+
+45. **Agent instructions are the operator's, appended after Wakil's own rules, and reach a live agent
+    in its next turn.**
+    *(2026-10-22, operator, during the 3a-iii design; delivery amended by the probe in
+    `docs/wakil/3a-iii-instructions-probe.md`.)*
+    Settings holds three boxes per organisation — **General** under Agent, **Commits** and **Pull
+    requests** under Git — and the same three on each project's page. The agent's launch appends them
+    to `--append-system-prompt` **after** Wakil's own prompt, under one heading per box (organisation
+    first, then the project), so they add to Wakil's rules and never replace them; an empty box and its
+    heading are left out. ✨ drafts a commit message with the Commits texts. The CLI ignores a changed
+    appended prompt on `--resume`, so **a saved edit rides in the agent's next turn**, as a block
+    before the operator's words that says it replaces the earlier text, with a thread line saying so;
+    a turn in flight is never interrupted. Each box saves when it is left (Rule 2); past 2,000 words
+    it says long instructions ride on every turn, and nothing is refused.
+    *Reverse if:* the agent is found following an earlier text after an update, or a resumed session
+    starts honouring a new appended prompt — then a save restarts the session instead.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,
@@ -1660,3 +1700,9 @@ discard's old copy is in the Trash. A commit runs the repository's hooks and sig
 more than the agent's shell can already run in that repository — while every read still runs
 none. Still refused: push, pull, fetch and every remote (3a-iii), branches and stash (3a-iv),
 rebase, and any flag off a tool's list. The reasoning is Decision 43.
+
+**Fetch, pull, push, sync, clone (2026-10-22, 3a-iii, Decision 44).** A push publishes beyond this
+Mac. It is priced *allow* for every channel at the operator's ruling, is never forced, and is
+journalled with its caller; a mistaken push is undone by a following commit. Reads still run no
+program a repository chooses; a remote operation lets only Wakil's own ssh and credential helper run,
+and refuses a repository's `remote.<name>.uploadpack` or `receivepack`.

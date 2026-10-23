@@ -7,6 +7,6 @@
 {"expect":{"tree":"contains","text":"e2e-git"}}
 {"dispatch":{"action":"editor_new_scratch","params":{}}}
 {"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
-{"dispatch":{"action":"editor_tree_expand","params":{"pane":"editor-1","path":"/etc"},"refuses":"Invariant 6"}}
-{"dispatch":{"action":"editor_tree_collapse","params":{"pane":"editor-1","path":"/etc"},"refuses":"Invariant 6"}}
-{"expect":{"journal":{"contains":"(Invariant 6, Decision 36)"}}}
+{"dispatch":{"action":"editor_tree_expand","params":{"pane":"editor-1","path":"/etc"},"refuses":"is outside the active project's roots"}}
+{"dispatch":{"action":"editor_tree_collapse","params":{"pane":"editor-1","path":"/etc"},"refuses":"is outside the active project's roots"}}
+{"expect":{"journal":{"contains":"is outside the active project's roots"}}}

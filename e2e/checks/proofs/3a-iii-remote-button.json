@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-iii-remote-button.jsonl",
+  "baseCommit": "dd65cbf2bbacdf39358e36f7e0797eb1bd593313",
+  "provedAt": "2026-10-23T07:50:58.522727Z",
+  "checkBlob": "6356fa077f7cdcf7fea3200b554959d916eea1db"
+}

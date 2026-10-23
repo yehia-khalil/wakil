@@ -239,11 +239,13 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
              "capacity_record", "ctx_add_provider", "ctx_adopt_provider", "ctx_capacity",
              "ctx_config_tree", "ctx_create_environment", "ctx_create_org", "ctx_create_project",
-             "ctx_editor_settings", "ctx_list_accounts",
+             "ctx_editor_settings", "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
+             "ctx_git_device_start", "ctx_git_gh_import", "ctx_git_gh_logins", "ctx_git_host_suggestions",
+             "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set", "ctx_list_accounts",
              "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs",
              "ctx_list_projects", "ctx_list_providers", "ctx_provider_login", "ctx_remove_environment",
              "ctx_remove_project", "ctx_rename_environment", "ctx_rename_project",
-             "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_local_provider", "ctx_set_project",
+             "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
              "ctx_set_project_editor_settings", "ctx_set_provider",
              "ctx_unlink_provider", "ctx_update_org", "db_cancel", "db_classify_statement",
              "db_describe_table",
@@ -251,10 +253,11 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "db_remove_database",
              "db_render_update", "db_run_mutation", "db_run_query", "db_set_dsn", "db_update_database",
              "editor_changes_amend", "editor_changes_collapse", "editor_changes_commit", "editor_changes_discard", "editor_changes_draft_message",
-             "editor_changes_expand", "editor_changes_group_collapse", "editor_changes_group_expand",
+             "editor_changes_expand", "editor_changes_fetch", "editor_changes_group_collapse", "editor_changes_group_expand",
+             "editor_changes_publish", "editor_changes_pull", "editor_changes_push",
              "editor_changes_select", "editor_changes_stage", "editor_changes_stage_hunk", "editor_changes_stage_ranges",
-             "editor_changes_step", "editor_changes_undo_commit", "editor_changes_unstage", "editor_changes_unstage_ranges",
-             "editor_close", "editor_create", "editor_find", "editor_focus_tab", "editor_goto", "editor_move_tab", "editor_new_scratch", "editor_open", "editor_open_file",
+             "editor_changes_step", "editor_changes_sync", "editor_changes_undo_commit", "editor_changes_unstage", "editor_changes_unstage_ranges",
+             "editor_clone", "editor_close", "editor_create", "editor_find", "editor_focus_tab", "editor_goto", "editor_move_tab", "editor_new_scratch", "editor_open", "editor_open_file",
              "editor_peek", "editor_peek_close", "editor_peek_step", "editor_refresh", "editor_reload", "editor_rename", "editor_replace", "editor_replace_range", "editor_replace_undo", "editor_restore", "editor_save",
              "editor_search", "editor_select", "editor_set_language", "editor_trash", "editor_tree", "editor_tree_collapse",
              "editor_tree_expand", "editor_tree_reveal", "files_search",
@@ -843,6 +846,16 @@ private struct FailingLookupForWiringTests: ProviderCredentialsLookup {
     func credentials(forProvider id: String) async throws -> ProviderCredentials {
         throw ProviderCredentialsLookupError.refused("wiring test")
     }
+}
+
+/// 3a-iii walk row 1: the launcher's switch for file remotes reaches wakil-git; only `1` is forwarded.
+@Test func childEnvironmentForwardsTheFileRemoteSwitch() {
+    let env = WakilWiring.childProcessEnvironment(
+        from: ["HOME": "/h", "PATH": "/p", "WAKIL_GIT_ALLOW_FILE": "1"], org: "initech", provider: "main")
+    #expect(env["WAKIL_GIT_ALLOW_FILE"] == "1")
+    let other = WakilWiring.childProcessEnvironment(
+        from: ["HOME": "/h", "PATH": "/p", "WAKIL_GIT_ALLOW_FILE": "yes"], org: "initech", provider: "main")
+    #expect(other["WAKIL_GIT_ALLOW_FILE"] == nil)
 }
 
 @Test func childEnvironmentForwardsTheAnthropicBaseURL() {

@@ -416,7 +416,7 @@ private func bridgeReply(toolName: String, input: JSONValue) async throws -> [St
             continue
         }
         #expect(reason.contains("adds, renames and removes projects and environments"), "\(name): got: \(reason)")
-        #expect(reason.contains("Invariant 5") && reason.contains("ctx_config_tree"), "\(name): got: \(reason)")
+        #expect(reason.contains("fixed when its session starts") && reason.contains("ctx_config_tree"), "\(name): got: \(reason)")
         #expect(!reason.contains("creating an organisation"), "\(name) reused the org family: \(reason)")
     }
 }

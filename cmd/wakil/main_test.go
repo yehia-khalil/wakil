@@ -1505,3 +1505,79 @@ func TestRunSecretsSetRefusesAnUnusableOrgBeforePrompting(t *testing.T) {
 		})
 	}
 }
+
+// 3a-iii-a: the credential helper and askpass git calls back into. They answer from the
+// organisation's Keychain items for the host, and print nothing else.
+func TestGitCredentialAnswersFromTheKeychain(t *testing.T) {
+	read := func(ref string) (string, error) {
+		if ref == "git-github.com-token" {
+			return "tok-1", nil
+		}
+		return "", nil
+	}
+	var out, errb bytes.Buffer
+	code := runGitCredential([]string{"--host", "github.com", "get"}, strings.NewReader("protocol=https\nhost=github.com\n\n"), &out, &errb, read,
+		func(host string) (wakilcore.GitAccount, bool) {
+			return wakilcore.GitAccount{Host: host, Provider: "github", Method: "token"}, true
+		})
+	if code != 0 || out.String() != "username=x-access-token\npassword=tok-1\n" {
+		t.Fatalf("code %d out %q err %q", code, out.String(), errb.String())
+	}
+	out.Reset()
+	if code := runGitCredential([]string{"--host", "github.com", "store"}, strings.NewReader(""), &out, &errb, read, nil); code != 0 || out.Len() != 0 {
+		t.Fatalf("store must do nothing: %d %q", code, out.String())
+	}
+}
+
+func TestGitAskpassPrintsThePassphrase(t *testing.T) {
+	read := func(ref string) (string, error) {
+		if ref == "git-github.com-ssh-passphrase" {
+			return "pp-1", nil
+		}
+		return "", nil
+	}
+	var out, errb bytes.Buffer
+	if code := runGitAskpass([]string{"--host", "github.com", "Enter passphrase for key:"}, &out, &errb, read); code != 0 || out.String() != "pp-1\n" {
+		t.Fatalf("code %d out %q", code, out.String())
+	}
+}
+
+// Review C1: ssh calls the askpass as `<wakil> <prompt>` — one program path, the prompt its only
+// argument — so the host comes from WAKIL_ASKPASS_HOST.
+func TestAskpassAsSSHCallsIt(t *testing.T) {
+	t.Setenv("WAKIL_ASKPASS_HOST", "github.com")
+	read := func(ref string) (string, error) {
+		if ref == "git-github.com-ssh-passphrase" {
+			return "pp-1", nil
+		}
+		return "", nil
+	}
+	var out, errb bytes.Buffer
+	if code := run([]string{"Enter passphrase for key '/k/id': "}, strings.NewReader(""), &out, &errb, nil, read); code != 0 || out.String() != "pp-1\n" {
+		t.Fatalf("code %d out %q err %q", code, out.String(), errb.String())
+	}
+	// A real subcommand under the same environment still runs as itself.
+	out.Reset()
+	if code := run([]string{"git-credential", "--host", "github.com", "store"}, strings.NewReader(""), &out, &errb, nil, read); code != 0 || out.Len() != 0 {
+		t.Fatalf("subcommand hijacked: %d %q", code, out.String())
+	}
+}
+
+// Review C2: the helper's -c reaches every git process the command starts — a submodule on another
+// host, a push URL elsewhere — so it answers only a request for https on its own host.
+func TestGitCredentialAnswersOnlyItsOwnHost(t *testing.T) {
+	read := func(string) (string, error) { return "tok-1", nil }
+	account := func(host string) (wakilcore.GitAccount, bool) {
+		return wakilcore.GitAccount{Host: host, Provider: "github", Method: "token"}, true
+	}
+	for _, req := range []string{
+		"protocol=https\nhost=git.corp.example\n\n",
+		"protocol=http\nhost=github.com\n\n",
+		"protocol=https\n\n",
+	} {
+		var out, errb bytes.Buffer
+		if code := runGitCredential([]string{"--host", "github.com", "get"}, strings.NewReader(req), &out, &errb, read, account); code != 0 || out.Len() != 0 {
+			t.Errorf("request %q: code %d out %q", req, code, out.String())
+		}
+	}
+}

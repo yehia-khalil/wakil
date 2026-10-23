@@ -116,6 +116,10 @@
     {
       "match": "where is build launch defined",
       "reply": "build launch arrived with no note"
+    },
+    {
+      "match": "say the instructions marker",
+      "reply": "the instructions marker turn answered"
     }
   ]
 }

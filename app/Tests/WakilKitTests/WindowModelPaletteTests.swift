@@ -940,6 +940,9 @@ private let registeredBeforeThePalette: Set<String> = [
     "editor_changes_stage_ranges", "editor_changes_unstage_ranges",
     // 3a-ii-b: the ✨ draft, a control action (it fills Wakil's own box).
     "editor_changes_draft_message",
+    // 3a-iii-a: the remote operations, agent-reachable mutations priced allow.
+    "editor_changes_fetch", "editor_changes_pull", "editor_changes_push", "editor_changes_sync", "editor_changes_publish",
+    "editor_clone",
     "editor_peek", "editor_peek_step", "editor_peek_close",
     "editor_find", "editor_search", "files_search",
     // 3b-iv: file operations in the tree, all agent-reachable mutations.
@@ -959,6 +962,11 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs", "ctx_list_projects",
     "ctx_list_providers", "ctx_provider_login", "ctx_set_environment", "ctx_set_project",
     "ctx_set_provider", "ctx_unlink_provider", "ctx_update_org",
+    // 3a-iii-a: the git account tools, operator-only.
+    "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
+    "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set", "ctx_git_account_test",
+    "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
+    "ctx_set_project_agent_instructions",
     "db_cancel", "db_classify_statement", "db_describe_table", "db_list_databases", "db_list_tables", "db_page",
     "db_read_table", "db_refetch", "db_remove_database", "db_update_database", "db_render_update", "db_run_mutation",
     "db_run_query", "db_set_dsn",

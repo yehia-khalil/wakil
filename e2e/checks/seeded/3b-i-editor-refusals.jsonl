@@ -1,10 +1,10 @@
-{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/bookings.db"},"refuses":"is outside the active project's roots; editor reads and writes are confined to them (Invariant 6, Decision 36)"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/bookings.db"},"refuses":"is outside the active project's roots; editor reads and writes are confined to them"}}
 {"dispatch":{"action":"editor_new_scratch","params":{}}}
 {"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
 {"dispatch":{"action":"editor_save","params":{"pane":"editor-1"},"refuses":"a scratch tab needs a path to save as"}}
-{"dispatch":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/outside.txt"},"refuses":"(Invariant 6, Decision 36)"}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/outside.txt"},"refuses":"is outside the active project's roots"}}
 {"dispatch":{"action":"editor_save","params":{"pane":"editor-1","as":"{fixtureRoot}/e2e-project/../escaped.txt"},"refuses":"/escaped.txt is outside the active project's roots"}}
-{"expect":{"journal":{"contains":"(Invariant 6, Decision 36)"}}}
+{"expect":{"journal":{"contains":"is outside the active project's roots"}}}
 {"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
 {"expect":{"pane":"editor-1","field":"tabs[0].saving","equals":"false"}}
 {"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-1","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"must not be dropped"}}}

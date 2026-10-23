@@ -88,6 +88,14 @@ private func draftWindow(rows: [(String, String, String)] = [("a.go", "staged", 
     return (window, git, model)
 }
 
+/// Waits (up to 5 s) until the window's draft is in flight: a fixed sleep raced it under load.
+@MainActor
+private func waitUntilDrafting(_ window: WindowModel) async {
+    for _ in 0..<500 where !window.changesDrafting.contains("/p") {
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+}
+
 @Suite @MainActor struct WindowModelCommitDraftTests {
     @Test func aDraftFillsAnEmptyBox() async {
         let (window, git, model) = await draftWindow()
@@ -107,9 +115,9 @@ private func draftWindow(rows: [(String, String, String)] = [("a.go", "staged", 
     }
 
     @Test func typingWhileDraftingKeepsTheTypedText() async {
-        let (window, _, _) = await draftWindow(model: DraftModel(reply: #"{"message":"Fix login"}"#, delay: .milliseconds(300)))
+        let (window, _, _) = await draftWindow(model: DraftModel(reply: #"{"message":"Fix login"}"#, delay: .seconds(3)))
         let draft = Task { await window.changesDraft(root: "/p") }
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitUntilDrafting(window)
         #expect(window.changesDrafting.contains("/p"))
         window.changesMessageEdited(root: "/p", text: "mine")
         #expect(await draft.value == nil)
@@ -118,9 +126,9 @@ private func draftWindow(rows: [(String, String, String)] = [("a.go", "staged", 
     }
 
     @Test func aCancelledDraftLeavesTheBox() async {
-        let (window, _, _) = await draftWindow(model: DraftModel(reply: #"{"message":"Fix login"}"#, delay: .milliseconds(300)))
+        let (window, _, _) = await draftWindow(model: DraftModel(reply: #"{"message":"Fix login"}"#, delay: .seconds(3)))
         let draft = Task { await window.changesDraft(root: "/p") }
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitUntilDrafting(window)
         window.changesCancelDraft(root: "/p")
         #expect(await draft.value == nil)
         #expect(window.changesMessages["/p"] == nil)
@@ -128,9 +136,9 @@ private func draftWindow(rows: [(String, String, String)] = [("a.go", "staged", 
     }
 
     @Test func aDraftAfterAnOrgSwitchIsDropped() async {
-        let (window, _, _) = await draftWindow(model: DraftModel(reply: #"{"message":"Fix login"}"#, delay: .milliseconds(300)))
+        let (window, _, _) = await draftWindow(model: DraftModel(reply: #"{"message":"Fix login"}"#, delay: .seconds(3)))
         let draft = Task { await window.changesDraft(root: "/p") }
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitUntilDrafting(window)
         await window.rebuildQuickTasks()          // a new generation, as an org switch makes
         #expect(await draft.value == nil)
         #expect(window.changesMessages["/p"] == nil)

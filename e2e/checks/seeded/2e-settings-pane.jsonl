@@ -12,7 +12,7 @@
 {"do":{"click":"settings.tree.organisation"}}
 {"expect":{"tree":"contains","text":"Display name"}}
 {"do":{"click":"settings.reload"}}
-{"expect":{"tree":"contains","text":"nothing here is cached"}}
+{"expect":{"tree":"contains","text":"Author"}}
 {"dispatch":{"action":"ctx_config_tree","params":{}}}
 {"expect":{"tree":"contains","text":"e2e-project"}}
 {"dispatch":{"action":"settings_open","params":{}}}
