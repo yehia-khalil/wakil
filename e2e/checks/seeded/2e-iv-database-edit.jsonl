@@ -1,0 +1,157 @@
+{"do":{"hotkey":"cmd+,"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"no databases in this environment"}}
+
+{"do":{"type":{"into":"settings.db.name","text":"ledger"}}}
+
+{"do":{"type":{"into":"settings.db.host","text":"db.internal"}}}
+
+{"do":{"type":{"into":"settings.db.port","text":"3306"}}}
+
+{"do":{"type":{"into":"settings.db.database","text":"ledger"}}}
+
+{"do":{"type":{"into":"settings.db.user","text":"e2e"}}}
+
+{"do":{"type":{"into":"settings.db.password","text":"secret"}}}
+
+{"do":{"click":"settings.db.save"}}
+
+{"expect":{"tree":"contains","text":"Store a connection for ledger in staging? The password goes to your Keychain, not to the project file."}}
+
+{"expect":{"tree":"absent","text":"this database becomes writable"}}
+
+{"do":{"click":"settings.dsn.confirm"}}
+
+{"expect":{"tree":"contains","text":"e2e@db.internal:3306/ledger"}}
+
+{"expect":{"tree":"absent","text":"Store a connection for ledger in staging?"}}
+
+{"expect":{"journal":{"contains":"db_set_connection"}}}
+
+{"expect":{"journal":{"contains":"[redacted]"}}}
+
+{"do":{"click":"settings.db.ledger.edit"}}
+
+{"expect":{"tree":"contains","text":"EDIT ledger"}}
+
+{"expect":{"tree":"contains","text":"Value: db.internal"}}
+
+{"expect":{"tree":"contains","text":"Value: 3306"}}
+
+{"do":{"focus":"settings.db.port"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"3307"}}
+
+{"expect":{"tree":"contains","text":"Value: 3307"}}
+
+{"do":{"click":"settings.db.save"}}
+
+{"expect":{"tree":"contains","text":"e2e@db.internal:3307/ledger"}}
+
+{"expect":{"tree":"absent","text":"e2e@db.internal:3306/ledger"}}
+
+{"expect":{"tree":"absent","text":"Store a connection for ledger in staging?"}}
+
+{"expect":{"tree":"contains","text":"ADD OR REPLACE A DATABASE"}}
+
+{"expect":{"tree":"absent","text":"EDIT ledger"}}
+
+{"do":{"click":"settings.db.ledger.edit"}}
+
+{"expect":{"tree":"contains","text":"EDIT ledger"}}
+
+{"do":{"type":{"into":"settings.db.password","text":"newsecret"}}}
+
+{"do":{"click":"settings.db.save"}}
+
+{"expect":{"tree":"contains","text":"Store a connection for ledger in staging? The password goes to your Keychain, not to the project file."}}
+
+{"expect":{"tree":"absent","text":"newsecret"}}
+
+{"do":{"click":"settings.dsn.confirm"}}
+
+{"expect":{"tree":"contains","text":"ADD OR REPLACE A DATABASE"}}
+
+{"expect":{"tree":"contains","text":"e2e@db.internal:3307/ledger"}}
+
+{"expect":{"tree":"absent","text":"newsecret"}}
+
+{"do":{"click":"settings.db.ledger.edit"}}
+
+{"expect":{"tree":"contains","text":"EDIT ledger"}}
+
+{"do":{"focus":"settings.db.user"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"other"}}
+
+{"expect":{"tree":"contains","text":"Value: other"}}
+
+{"do":{"click":"settings.db.save"}}
+
+{"expect":{"tree":"contains","text":"a new user needs its password"}}
+
+{"expect":{"tree":"contains","text":"Value: other"}}
+
+{"expect":{"tree":"contains","text":"e2e@db.internal:3307/ledger"}}
+
+{"do":{"focus":"settings.db.name"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"books"}}
+
+{"expect":{"tree":"contains","text":"Value: books"}}
+
+{"expect":{"tree":"contains","text":"ADD OR REPLACE A DATABASE"}}
+
+{"expect":{"tree":"absent","text":"EDIT ledger"}}
+
+{"do":{"focus":"settings.db.name"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"ledger"}}
+
+{"expect":{"tree":"contains","text":"EDIT ledger"}}
+
+{"do":{"click":"settings.db.cancelEdit"}}
+
+{"expect":{"tree":"contains","text":"ADD OR REPLACE A DATABASE"}}
+
+{"expect":{"tree":"absent","text":"EDIT ledger"}}
+
+{"expect":{"tree":"absent","text":"Value: books"}}
+
+{"expect":{"tree":"absent","text":"a new user needs its password"}}
+
+{"expect":{"tree":"absent","text":"Value: other"}}
+
+{"expect":{"tree":"contains","text":"e2e@db.internal:3307/ledger"}}
+
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"orders","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/orders"}}}
+
+{"expect":{"tree":"contains","text":"saved as one string"}}
+
+{"do":{"click":"settings.db.orders.edit"}}
+
+{"expect":{"tree":"contains","text":"EDIT orders"}}
+
+{"expect":{"tree":"contains","text":"so it can't be shown"}}
+
+{"do":{"click":"settings.db.cancelEdit"}}
+
+{"expect":{"tree":"contains","text":"ADD OR REPLACE A DATABASE"}}
+
+{"expect":{"tree":"absent","text":"EDIT orders"}}
+
+{"expect":{"tree":"absent","text":"so it can't be shown"}}
+
+{"dispatch":{"action":"db_set_connection","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"fresh","driver":"mysql","host":"db.internal","database":"fresh","user":"e2e"},"refuses":"a password is needed"}}
+
+{"dispatch":{"action":"db_set_connection","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"fresh","driver":"mysql","host":"","database":"fresh","user":"e2e","password":"secret"},"refuses":"a host is needed"}}

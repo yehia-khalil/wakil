@@ -124,7 +124,7 @@ question 16, blocking nothing).
 
 **Settings** can add, rename and remove a project and an environment (Decision 21, amended 2026-10-22), each as the operator's own act with no dialog; a project's other fields and the machine block stay in the file.
 
-Settings also edits an environment's API entries (its token goes to the Keychain behind one confirmation) and renames a database or removes its write access; removing an entry or a database asks first (Decision 21, amended 2026-10-22).
+Settings also edits an environment's API entries (its token goes to the Keychain behind one confirmation) and renames a database, removes its write access, or edits its connection (host, port, database and user in the project file, only the password in the Keychain); removing an entry or a database asks first (Decision 21, amended 2026-10-23).
 
 **Explicitly undecided, and not to be invented:**
 
