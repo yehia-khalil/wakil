@@ -65,8 +65,11 @@ struct BranchPicker: View {
                 .onSubmit { pick(selected) }
                 .onKeyPress(.downArrow) { move(1); return .handled }
                 .onKeyPress(.upArrow) { move(-1); return .handled }
-                .onExitCommand { close() }
-                .onChange(of: filter) { _, _ in selected = 0 }
+                // Escape steps back out of Create branch from… before it closes the picker.
+                .onExitCommand {
+                    if mode == .switchBranch, choosingBase || base != nil { reset(); selected = defaultSelection } else { close() }
+                }
+                .onChange(of: filter) { _, _ in selected = defaultSelection }
                 .disabled(working != nil || blocked != nil || deleting != nil)
                 .accessibilityIdentifier("branch.picker.filter")
             Rectangle().fill(SettingsPalette.coolWhite.opacity(0.08)).frame(height: 0.5)
@@ -78,6 +81,13 @@ struct BranchPicker: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(rows.enumerated()), id: \.offset) { i, row in rowView(row, index: i) }
+                        // A base chosen and no name yet: say so rather than show an empty list.
+                        if let base, rows.isEmpty {
+                            Text("Type the new branch's name; it starts from \(base). Escape cancels.")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.5))
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                        }
                     }
                 }
                 // A definite height: in a popover a ScrollView has no ideal height of its own, and the
@@ -99,11 +109,18 @@ struct BranchPicker: View {
             if root.isEmpty { root = startRoot }
             if mode == .createFrom { choosingBase = true }
             branches = await actions.load(root)
+            selected = defaultSelection
             // A beat after appearing: focus set as the field appears is dropped (3a-iii's sheet fix).
             try? await Task.sleep(for: .milliseconds(150))
             filterFocused = true
         }
         .onDisappear { working?.cancel() }
+    }
+
+    /// The current branch with nothing typed (Return then closes); the first row once typing.
+    private var defaultSelection: Int {
+        guard mode == .switchBranch, !choosingBase, base == nil else { return 0 }
+        return branchPickerDefaultSelection(rows, filter: filter)
     }
 
     private var prompt: String {

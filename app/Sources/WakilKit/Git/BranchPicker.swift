@@ -154,3 +154,13 @@ public func dropAllStashesConfirmation(_ count: Int) -> String {
 public func editorStashDiffRevs(stash: String, untracked: Bool) -> (original: String?, modified: String?) {
     untracked ? (nil, "stash-untracked:\(stash)") : ("stash-base:\(stash)", "stash:\(stash)")
 }
+
+/// Which row the picker highlights: with nothing typed, the current branch (else the first branch),
+/// so Return on opening closes it rather than starting Create branch from…; typed, the first row —
+/// Create, or the first match.
+public func branchPickerDefaultSelection(_ rows: [BranchPickerRow], filter: String) -> Int {
+    guard filter.trimmingCharacters(in: .whitespaces).isEmpty else { return 0 }
+    if let i = rows.firstIndex(where: { if case .local(let b) = $0 { b.current } else { false } }) { return i }
+    if let i = rows.firstIndex(where: { if case .local = $0 { true } else { false } }) { return i }
+    return 0
+}

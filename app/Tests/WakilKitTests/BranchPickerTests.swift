@@ -76,5 +76,15 @@ import Testing
         #expect(activeGitRoot(focusedPath: "/p/docs/readme.md", roots: [plain, api])?.name == "api")
         #expect(activeGitRoot(focusedPath: nil, roots: [plain]) == nil)
     }
+
+    // 3a-iv walk: with nothing typed the highlight is the current branch, so Return on opening does
+    // not start Create branch from…; typed, it is the first row (Create, or the first match).
+    @Test func theHighlightStartsOnTheCurrentBranch() {
+        #expect(branchPickerDefaultSelection(branchPickerRows(branches, filter: ""), filter: "") == 2)   // main ✓
+        let none = GitBranchesInfo(local: [GitBranchInfo(name: "a", upstream: "", ahead: 0, behind: 0, unmerged: 0, current: false)],
+                                   remote: [], current: "", detached: "3f2a1c9")
+        #expect(branchPickerDefaultSelection(branchPickerRows(none, filter: ""), filter: "") == 1)      // the first branch
+        #expect(branchPickerDefaultSelection(branchPickerRows(branches, filter: "fix"), filter: "fix") == 0)
+    }
 }
 
