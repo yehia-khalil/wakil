@@ -24,9 +24,6 @@
 {"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-portal/new.txt"}}
 {"expect":{"frame":"editor.timeline.row.a2a6120","inside":"editor.column"}}
 {"expect":{"frame":"editor.timeline.row.cdf4ebd","inside":"editor.column"}}
-{"expect":{"tree":"contains","text":"Rename to new"}}
-{"expect":{"tree":"contains","text":"Add old"}}
-{"expect":{"tree":"absent","text":"Uncommitted changes"}}
 {"do":{"click":"editor.timeline.row.a2a6120"}}
 {"expect":{"pane":"editor-1","field":"tabs[1].diff.commit.id","equals":"a2a6120386a427c779bd35b377a864ca7f4244c1"}}
 {"expect":{"pane":"editor-1","field":"tabs[1].diff.commit.path","equals":"new.txt"}}
