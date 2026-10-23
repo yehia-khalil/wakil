@@ -128,6 +128,9 @@ private let keptPerPlace: Set<String> = [
     // the order they were created in, which one each place shows, and the id each place's next
     // one takes (conversations 1 of 3). `agents` is their projection by place.
     "conversations", "conversationOrder", "conversationsMade", "screenConversations", "reservedConversations",
+    // Conversations 2 of 3: keyed by place, like `reservedConversations` — what each place's
+    // canvas held when its conversation went to the background.
+    "landingBaselines",
     // The socket each shown place opened before a session took it, by its conversation, pinned
     // to that place.
     "shownSockets",
@@ -201,6 +204,9 @@ private let orgIndependent: Set<String> = [
     // Set by `shutdown`: no organisation's state, the window's end.
     "socketsClosed",
     "providerSwitches", "providerSwitchPump", "resumePump",
+    // Conversations 2 of 3: the broker and pump of `session_new`/`session_switch`, the shape of
+    // `providerSwitches` — capabilities, no organisation's state.
+    "conversationRequests", "conversationPump",
     "status",
     "dragCandidate", "confirmationPump", "observationPump",
     "pendingSave", "debugEventSink", "debugEventsEnabledOverride",

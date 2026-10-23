@@ -272,7 +272,11 @@ public func registerStandardActions(
     // environment of it), or nil. `ctx_rename_project`, `ctx_remove_project`,
     // `ctx_rename_environment` and `ctx_remove_environment` ask it before touching a place an
     // agent is pinned to (Invariant 5). The one production call site passes the window's.
-    agentIn: (@Sendable (_ project: String, _ environment: String?) async -> String?)? = nil
+    agentIn: (@Sendable (_ project: String, _ environment: String?) async -> String?)? = nil,
+    // Conversations 2 of 3. Defaulted for `providerSwitches`' reason: no existing call site
+    // starts or switches a conversation. The one production call site (`WakilWiring.build`)
+    // passes the broker the window drains.
+    conversationRequests: ConversationBroker = ConversationBroker()
 ) async {
     // Every dispatch is homed in the canvas on screen when it began, unless its caller has one of
     // its own (`ActionRegistry.setScreenScope`): a db read, a git status or a page whose reply
@@ -2405,6 +2409,48 @@ public func registerStandardActions(
                 "resuming": .string(id),
                 "note": .string("this session ends as the fork starts"),
             ])
+        }
+    ))
+
+    // Conversations 2 of 3. **`.control`**: which conversation a place shows is Wakil's own
+    // state, and nothing outside Wakil changes. **Operator-only** (`operatorOnlyActions`): an
+    // agent must not push aside the operator's conversation. Both park on `conversationRequests`
+    // and return, as `session_set_provider` parks: no `WindowModel` exists when this runs.
+    // **Pinned to the conversation they are dispatched in** — a session's own socket names it
+    // (`pinnedPlace(of:)`); the operator's dispatch names none, which is the screen's.
+    await registry.register(Action(
+        name: "session_new",
+        description: "Put the conversation on screen into the background, untouched — its turn "
+            + "carries on — and show the place's Landing, where the next turn starts a new "
+            + "conversation. Does nothing on a Landing. Operator use only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            let caller = ActionRegistry.dispatchCaller
+            let conversation = pinnedPlace(of: caller) == nil ? nil : caller?.conversation
+            await conversationRequests.request(.new(conversation: conversation))
+            return .object(["backgrounded": conversation.map(JSONValue.string) ?? .null])
+        }
+    ))
+
+    await registry.register(Action(
+        name: "session_switch",
+        description: "Bring a live conversation back on screen — the same session, thread and "
+            + "canvas, no fork — going to its place first. `conversation` is its id, or its "
+            + "title when that names one live conversation in this place. Operator use only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object(["conversation": .object(["type": .string("string")])]),
+            "required": .array([.string("conversation")]),
+        ]),
+        handler: { params in
+            let conversation = try requireStringParam(params, "conversation", action: "session_switch")
+            await conversationRequests.request(.switchTo(
+                conversation: conversation, place: pinnedPlace(of: ActionRegistry.dispatchCaller)))
+            return .object(["switching": .string(conversation)])
         }
     ))
 

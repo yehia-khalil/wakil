@@ -154,7 +154,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "db_remove_database", "db_set_connection", "db_set_dsn",
             // 2e-iii. `db_update_database` edits beside them.
             "db_update_database",
-            "session_set_provider",
+            // Conversations 2 of 3: an agent must not push aside the operator's conversation.
+            "session_new", "session_set_provider", "session_switch",
             // 2e (#198). The eighth, and the weakest on its own merits:
             // opening a pane damages nothing. It is here because every
             // OTHER settings action is operator-only on a reason that

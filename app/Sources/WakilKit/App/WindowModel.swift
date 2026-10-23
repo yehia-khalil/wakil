@@ -54,6 +54,12 @@ public final class WindowModel {
     /// The id each place's next conversation takes: reserved by the socket the place opened when
     /// it was shown (`openShownSocket`), and taken when the conversation is created (`agent(for:)`).
     private var reservedConversations: [Place: String] = [:]
+    /// The pane ids each place's canvas held when `newConversation` put its conversation into the
+    /// background (conversations 2 of 3, ruling 1). While set, the place's Landing draws over the
+    /// canvas of its reserved conversation (`landingRoot(in:)`), read off disk from the project
+    /// seed, and the #264 hook ends the Landing only for a pane not among these. The first
+    /// conversation created there (`agent(for:)`) clears it.
+    private var landingBaselines: [Place: Set<String>] = [:]
     /// The conversation each place shows, by place (background agents, 3 of 4): what every
     /// place-level reader reads, one per place.
     public var agents: [Place: PlaceAgent] {
@@ -618,6 +624,10 @@ public final class WindowModel {
     /// close over `self`. See `ProviderSwitchBroker`'s own doc comment.
     private let providerSwitches: ProviderSwitchBroker
     private var providerSwitchPump: Task<Void, Never>?
+    /// Where `session_new` and `session_switch` park (conversations 2 of 3) — the
+    /// `providerSwitches` shape, for its reason. Drained by `conversationPump`.
+    private let conversationRequests: ConversationBroker
+    private var conversationPump: Task<Void, Never>?
     private var capacityProbe: Task<Void, Never>?
     /// Journals `term_run` for every command a terminal pane's shell
     /// finishes, from `terminals.completedRuns()`. Subscribed in `init`,
@@ -795,7 +805,14 @@ public final class WindowModel {
     private var currentLayoutScope: LayoutScope {
         LayoutScope(
             organization: organization, project: projectKey, environment: environment,
-            lineageRoot: lineageRoot)
+            lineageRoot: lineageRoot ?? landingRoot(in: place))
+    }
+    /// The conversation whose canvas `place`'s Landing draws over after `newConversation`: the id
+    /// it reserves for its next conversation, while `landingBaselines` holds the place and it
+    /// shows none. Nil otherwise — the Landing at launch draws over the place's own canvas.
+    private func landingRoot(in place: Place) -> String? {
+        guard screenConversations[place] == nil, landingBaselines[place] != nil else { return nil }
+        return reservedConversations[place]
     }
     /// Every scope whose saved layout has already been read this session.
     /// Separate from `layoutScope` because they answer different
@@ -931,6 +948,9 @@ public final class WindowModel {
         // (`WindowSession.start`) always passes `wiring.providerSwitches`
         // explicitly, the same way it already does for `resumes`.
         providerSwitches: ProviderSwitchBroker = ProviderSwitchBroker(),
+        // Conversations 2 of 3. Defaulted for `providerSwitches`' reason; production passes
+        // `wiring.conversationRequests`.
+        conversationRequests: ConversationBroker = ConversationBroker(),
         // Defaulted so every pre-2b-viii call site — real and test —
         // keeps compiling unchanged; a switch that never fires is exactly
         // as capable as none of them exercising a live org switch was
@@ -1009,6 +1029,7 @@ public final class WindowModel {
         self.harnessFactory = harnessFactory
         self.resumes = resumes
         self.providerSwitches = providerSwitches
+        self.conversationRequests = conversationRequests
         self.orgSwitcher = orgSwitcher
         self.providerLoginFactory = providerLoginFactory
         self.claude = ClaudeLocator(locator: claudeLocator, injected: providerLoginBinary)
@@ -1238,7 +1259,12 @@ public final class WindowModel {
                 let shownScope = await self.panes.screenScope
                 let canvasIsThePlaces = !self.layoutSwapInFlight
                     && shownScope == (self.projectKey.isEmpty ? self.bareScope : self.currentLayoutScope)
-                if canvasIsThePlaces, !self.sessionStarted, !self.layoutSnapshot.panes.isEmpty {
+                // **After `newConversation`, only a pane the seed did not bring** (ruling 1): the
+                // Landing draws over the reserved conversation's canvas, read from the seed,
+                // which almost always has panes.
+                let baseline = self.landingBaselines[self.place] ?? []
+                if canvasIsThePlaces, !self.sessionStarted,
+                   self.layoutSnapshot.panes.contains(where: { !baseline.contains($0.id) }) {
                     self.showTheWorkAlreadyOnTheCanvas()
                 }
             }
@@ -1268,6 +1294,20 @@ public final class WindowModel {
             for await request in await providerSwitches.requests() {
                 guard let self else { return }
                 await self.setProvider(request.providerId)
+            }
+        }
+
+        // Subscribed in `init` for `resumePump`'s reason: `session_new` and `session_switch`
+        // can be dispatched from ⌘K or `--dispatch` before this window has sent anything.
+        conversationPump = Task { [weak self, conversationRequests] in
+            for await request in await conversationRequests.requests() {
+                guard let self else { return }
+                switch request {
+                case .new(let conversation):
+                    await self.newConversation(conversation)
+                case .switchTo(let conversation, let place):
+                    await self.switchToConversation(conversation, in: place)
+                }
             }
         }
 
@@ -1324,7 +1364,9 @@ public final class WindowModel {
     private func agentScope(for caller: DispatchCaller) -> LayoutScope {
         let place = caller.place
         return (caller.conversation.flatMap(conversation(id:)) ?? agents[place])?.layoutScope
-            ?? LayoutScope(organization: place.organization, project: place.project, environment: place.environment)
+            ?? LayoutScope(
+                organization: place.organization, project: place.project, environment: place.environment,
+                lineageRoot: landingRoot(in: place))
     }
 
     /// Adapts the pre-2b-viii (org-oblivious) initialiser shape onto the
@@ -1422,6 +1464,9 @@ public final class WindowModel {
         lookupFactory: @escaping @Sendable (String) -> ProviderCredentialsLookup,
         confirmations: ConfirmationBroker = ConfirmationBroker(),
         providerSwitches: ProviderSwitchBroker = ProviderSwitchBroker(),
+        // Conversations 2 of 3. Production (`WindowSession.start`) passes
+        // `wiring.conversationRequests`.
+        conversationRequests: ConversationBroker = ConversationBroker(),
         // Defaulted for the same reason `confirmations`/`providerSwitches`
         // above are: it keeps every call site that predates Task 10
         // compiling unchanged. `WindowSession.start` (Task 10) is the one
@@ -1491,6 +1536,7 @@ public final class WindowModel {
             resumes: resumes, rootPath: rootPath, providerId: providerId,
             lookupFactory: lookupFactory, confirmations: confirmations,
             terminals: terminals, providerSwitches: providerSwitches,
+            conversationRequests: conversationRequests,
             orgSwitcher: orgSwitcher,
             providerMintFactory: providerMintFactory,
             claudeLocator: claudeLocator,
@@ -3555,45 +3601,60 @@ public final class WindowModel {
     }
 
     /// Moves each conversation of the renamed place that has no live session to the new name
-    /// (`PlaceAgent.place`, `screenConversations`), so its conversation — what the canvas on screen
-    /// is filed under — and its thread come along rather than vanishing with the old key. The id a
-    /// place reserved for its next conversation (`reservedConversations`) moves with it, and the
-    /// socket opened for it is stopped and opened again answering for the new place, under the same
-    /// id (`ShownSocket`), so `openShownSocket` finds it there and the place's first session takes
-    /// it. A live one cannot be here: the rename is refused while an agent runs in the place
-    /// (Invariant 5). One whose new place already has a conversation is left where it is.
+    /// (`PlaceAgent.place`), so its conversation — what its canvas is filed under — and its thread
+    /// come along rather than vanishing with the old key: every one of them, the place's
+    /// background conversations as well as the one on screen (conversations 2 of 3). The screen's
+    /// entry (`screenConversations`), the id reserved for the place's next conversation
+    /// (`reservedConversations`) and the Landing's baseline (`landingBaselines`) move each on its
+    /// own, and every socket opened for a carried id is stopped and opened again answering for the
+    /// new place, under the same id (`ShownSocket`), so `openShownSocket` finds it there and the
+    /// session that takes it answers for the place that exists. A live one cannot be here: the
+    /// rename is refused while an agent runs in the place (Invariant 5). A reservation or baseline
+    /// whose new place already holds one is left where it is; a screen conversation whose new
+    /// place already shows one joins it in the background.
     private func carryAgents(project: String, environment: String?, renamed: (Place) -> Place) {
-        let places = Set(screenConversations.keys).union(reservedConversations.keys)
-            .union(shownSockets.values.map(\.place))
-            .filter { $0.organization == organization && $0.project == project
-                && (environment == nil || $0.environment == environment) }
-        for from in places {
+        func isRenamed(_ p: Place) -> Bool {
+            p.organization == organization && p.project == project
+                && (environment == nil || p.environment == environment)
+        }
+        var moved: [String: (from: Place, to: Place)] = [:]
+        for agent in conversations.values where agent.harness == nil && isRenamed(agent.place) {
+            let from = agent.place
+            agent.place = renamed(from)
+            moved[agent.id] = (from, agent.place)
+        }
+        for from in Set(screenConversations.keys).union(reservedConversations.keys)
+            .union(landingBaselines.keys).filter(isRenamed) {
             let to = renamed(from)
-            var moved: String?
-            if let id = screenConversations[from], let agent = conversations[id], agent.harness == nil,
-               screenConversations[to] == nil {
+            // Its conversation is `to`'s now; it is that place's screen unless `to` has one.
+            if let id = screenConversations[from], moved[id] != nil {
                 screenConversations[from] = nil
-                agent.place = to
-                screenConversations[to] = id
-                moved = id
-            } else if let id = reservedConversations[from], reservedConversations[to] == nil {
+                if screenConversations[to] == nil { screenConversations[to] = id }
+            }
+            if let id = reservedConversations[from], reservedConversations[to] == nil {
                 reservedConversations[from] = nil
                 reservedConversations[to] = id
-                moved = id
+                moved[id] = (from, to)
             }
-            if let moved, let shown = shownSockets[moved], shown.place == from {
-                // Its caller is fixed when it opens (`openSocket`), so relabelling it would leave
-                // every call on it answering for the place that no longer exists (Invariant 4).
-                // Stopped, then opened again for the new place under the same id — in that
-                // order, so the path is free before the new one binds it.
-                let factory = agentSocketFactory
-                let sessionId = shown.sessionId
-                let reopening = Task { () -> OpenedSocket in
-                    await shown.opening.value.socket?.stop()
-                    return await Self.openSocket(factory, in: to, sessionId: sessionId, conversation: moved)
-                }
-                shownSockets[moved] = ShownSocket(sessionId: sessionId, place: to, opening: reopening)
+            if let baseline = landingBaselines[from], landingBaselines[to] == nil {
+                landingBaselines[from] = nil
+                landingBaselines[to] = baseline
             }
+        }
+        for (id, move) in moved {
+            guard let shown = shownSockets[id], shown.place == move.from else { continue }
+            // Its caller is fixed when it opens (`openSocket`), so relabelling it would leave
+            // every call on it answering for the place that no longer exists (Invariant 4).
+            // Stopped, then opened again for the new place under the same id — in that
+            // order, so the path is free before the new one binds it.
+            let factory = agentSocketFactory
+            let sessionId = shown.sessionId
+            let to = move.to
+            let reopening = Task { () -> OpenedSocket in
+                await shown.opening.value.socket?.stop()
+                return await Self.openSocket(factory, in: to, sessionId: sessionId, conversation: id)
+            }
+            shownSockets[id] = ShownSocket(sessionId: sessionId, place: to, opening: reopening)
         }
     }
 
@@ -7045,17 +7106,17 @@ public final class WindowModel {
     /// which `agent(for:)` gives the conversation it creates there.
     private func openShownSocket() {
         let place = self.place
-        guard !socketsClosed, !switching, !shownSockets.values.contains(where: { $0.place == place })
-        else { return }
+        guard !socketsClosed, !switching else { return }
         let screen = currentAgent
         if let screen, screen.harness != nil || screen.socket != nil { return }
-        let conversation: String
+        // Once per conversation (conversations 2 of 3): a place whose conversation went to the
+        // background without a session keeps that one's socket, and its Landing opens its own.
+        let conversation = screen?.id ?? reservedConversations[place] ?? UUID().uuidString
+        guard shownSockets[conversation] == nil else { return }
         let sessionId: String
         if let screen {
-            conversation = screen.id
             sessionId = screen.assignedSessionId ?? screen.id
         } else {
-            conversation = reservedConversations[place] ?? UUID().uuidString
             reservedConversations[place] = conversation
             sessionId = conversation
         }
@@ -8022,6 +8083,85 @@ public final class WindowModel {
             }
     }
 
+    // MARK: - Conversations 2 of 3: new and switch
+
+    /// Whether the place on screen shows a conversation rather than its Landing.
+    public var conversationOnScreen: Bool { currentAgent != nil }
+
+    /// Puts `conversation` — nil, the one on screen — into the background, untouched: its
+    /// harness, session, thread, canvas and any turn in flight carry on, and its chip says what
+    /// it does. Its place shows its Landing, over the canvas of the id the place reserves for its
+    /// next conversation, which `activateLayout` reads off disk — the project seed, as at launch
+    /// (ruling 1). Nothing is asked (Rule 1). Does nothing when the conversation is not the one
+    /// its place shows, or the place shows none.
+    public func newConversation(_ conversation: String? = nil) async {
+        let target = conversation.map { self.conversation(id: $0) } ?? currentAgent
+        guard let target, screenConversations[target.place] == target.id else { return }
+        let place = target.place
+        let onScreen = place == self.place
+        // What the canvas held, so the #264 hook does not take the seed's own panes for work.
+        let baseline: Set<String>
+        if onScreen {
+            baseline = Set(layoutSnapshot.panes.map(\.id))
+        } else if let scope = target.layoutScope {
+            baseline = await Set(ScopeRouting.$home.withValue(scope) { await layout.snapshot() }.panes.map(\.id))
+        } else {
+            baseline = []
+        }
+        // Re-checked: the read above may have suspended.
+        guard screenConversations[place] == target.id else { return }
+        screenConversations[place] = nil
+        if reservedConversations[place] == nil { reservedConversations[place] = UUID().uuidString }
+        landingBaselines[place] = baseline
+        guard place == self.place else { return }
+        await activateLayout()
+        screenDidChange(from: target.id, to: nil, focusComposer: true)
+    }
+
+    /// Brings back the live conversation `idOrTitle` names — its id, or its title when that names
+    /// one live conversation in `place` (nil, the screen's; ruling 3) — exactly as it was left:
+    /// the same session, thread and canvas, no fork and no fresh process, a turn in flight
+    /// untouched. Goes to its place first (`goTo`) when it is elsewhere. A title naming none, or
+    /// more than one, is refused in `status` (Rule 7: an ambiguity forces it).
+    public func switchToConversation(_ idOrTitle: String, in place: Place? = nil) async {
+        let target: PlaceAgent
+        if let byId = conversation(id: idOrTitle) {
+            target = byId
+        } else {
+            let named = liveConversations(in: place ?? self.place).filter { $0.title == idOrTitle }
+            guard let only = named.first else {
+                status = "switch to \(idOrTitle): no live conversation is called that"
+                return
+            }
+            guard named.count == 1 else {
+                status = "switch to \(idOrTitle): two conversations here are called that — "
+                    + named.map(\.id).joined(separator: ", ")
+                return
+            }
+            target = only
+        }
+        let previous = screenConversations[target.place]
+        // Named before `goTo`, so the place is landed on showing it, and only it is seen; put
+        // back if `goTo` stops short and nothing has replaced it meanwhile.
+        screenConversations[target.place] = target.id
+        if target.place != self.place {
+            await goTo(target.place)
+            guard self.place == target.place else {
+                if screenConversations[target.place] == target.id { screenConversations[target.place] = previous }
+                return
+            }
+        }
+        await activateLayout()
+        markSeen(target)
+        if previous != target.id { screenDidChange(from: previous, to: target.id, focusComposer: false) }
+    }
+
+    /// The one place a change of the conversation on screen is told about: `newConversation`
+    /// and `switchToConversation` call it once the canvas is in. `nil` is the place's Landing.
+    /// Task 4 fills it: the composer's draft per conversation, and focus — the Landing's composer
+    /// after a new conversation (`focusComposer`), the conversation's own after a switch.
+    private func screenDidChange(from old: String?, to new: String?, focusComposer: Bool) {}
+
     /// Goes to `target` the way the operator would by hand — the organisation, then the
     /// project, then the environment, each only when it differs — so a chip's click asks nothing
     /// (Rule 1) and is the one thing that moves the operator (Rule 6). It stops at the first
@@ -8195,6 +8335,10 @@ public final class WindowModel {
         let created = PlaceAgent(
             id: id, place: place, providerId: providerId,
             mirror: TerminalMirrorFeed(panes: panes, layout: layout), ordinal: conversationsMade)
+        // Created over the Landing `newConversation` showed: that canvas is already filed under
+        // this id (`landingRoot(in:)`), so the conversation is rooted there from its first moment
+        // and the scope never moves out from under it — whichever entrance created it.
+        if landingBaselines.removeValue(forKey: place) != nil { created.lineageRoot = id }
         conversationsMade += 1
         conversations[id] = created
         conversationOrder.append(id)
@@ -9171,6 +9315,7 @@ public final class WindowModel {
         editorFilesPump?.cancel()
         resumePump?.cancel()
         providerSwitchPump?.cancel()
+        conversationPump?.cancel()
         terminalRunPump?.cancel()
         // Every place's agent, and the socket each reached Wakil on: one left running would
         // outlive the window.

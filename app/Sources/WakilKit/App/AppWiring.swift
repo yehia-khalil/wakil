@@ -151,6 +151,9 @@ public struct WakilWiring: Sendable {
     /// same action-set-shared-by-`--dispatch`-and-the-window reason — see
     /// `ProviderSwitchBroker`'s own doc comment.
     public let providerSwitches: ProviderSwitchBroker
+    /// Where a `session_new` or `session_switch` request parks for the window to act on
+    /// (conversations 2 of 3). Same reasoning and lifecycle contract as `providerSwitches`.
+    public let conversationRequests: ConversationBroker
     /// Human-readable notes about anything that did not come up: a binary
     /// that was not found at any candidate path, or one that failed the
     /// MCP handshake. Empty on a fully successful build. A caller prints
@@ -388,13 +391,15 @@ public struct WakilWiring: Sendable {
         let registry = ActionRegistry(journalDirectory: journalDirectory, sessionId: sessionId)
         let resumes = ResumeBroker()
         let providerSwitches = ProviderSwitchBroker()
+        let conversationRequests = ConversationBroker()
         let agentLookup = ActiveAgentLookup()
         let terminals = TerminalStore(panes: panes)
         await registerStandardActions(
             into: registry, context: routed(.context, contextClient), panes: panes,
             db: routed(.database, databaseClient), resumes: resumes,
             providerSwitches: providerSwitches, layout: layout,
-            agentIn: { project, environment in await agentLookup.agent(in: project, environment: environment) })
+            agentIn: { project, environment in await agentLookup.agent(in: project, environment: environment) },
+            conversationRequests: conversationRequests)
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
             unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
@@ -500,6 +505,7 @@ public struct WakilWiring: Sendable {
             confirmations: ConfirmationBroker(),
             resumes: resumes,
             providerSwitches: providerSwitches,
+            conversationRequests: conversationRequests,
             diagnostics: diagnostics,
             apiResolver: apiResolver,
             vocabulary: vocabulary,

@@ -325,6 +325,10 @@ final class WindowSession {
             // before a call gets anywhere near this broker — but the
             // broker itself does not know that, and does not need to.
             providerSwitches: wiring.providerSwitches,
+            // Conversations 2 of 3: `session_new` and `session_switch` park here and this
+            // window's `conversationPump` drains it — the same instance, or nothing would ever
+            // switch.
+            conversationRequests: wiring.conversationRequests,
             // The model cannot reach `wiring` itself — it lives in
             // WakilKit and WakilWiring's clients are handed to it
             // individually — so the switch is injected as a closure here,
