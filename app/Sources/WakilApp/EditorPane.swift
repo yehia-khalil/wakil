@@ -507,7 +507,7 @@ struct EditorPane: View {
             lineText(banner).accessibilityIdentifier("editor.diff.banner")
         }
         if d.noLongerChanged { lineText("No longer changed").accessibilityIdentifier("editor.diff.gone") }
-        if case .diff(let root, _, let group) = tab.subject, group != .untracked, !d.loading, d.error == nil,
+        if case .diff(let root, _, let group, nil) = tab.subject, group != .untracked, !d.loading, d.error == nil,
            gitDiffBanner(d) == nil {
             rangesLine(tab, d, root: root, group: group)
         }

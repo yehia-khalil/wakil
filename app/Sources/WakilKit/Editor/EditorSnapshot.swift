@@ -5,7 +5,9 @@ public enum EditorTabSubject: Sendable, Equatable, Hashable {
     case file(path: String, root: String)
     case scratch(number: Int)
     /// A Changes diff (3b-iii): `path` relative to `root`, in one group. Read-only, never saved.
-    case diff(root: String, path: String, group: GitGroup)
+    /// 3a-iv: with `stash` (a stash's commit id), the file as that stash holds it against its base —
+    /// group `.untracked` for a file the stash took untracked. Status changes never touch it.
+    case diff(root: String, path: String, group: GitGroup, stash: String? = nil)
 }
 
 public enum EditorDiskState: String, Sendable, Equatable { case inSync, changedOnDisk, deleted }
@@ -142,9 +144,9 @@ extension EditorTab {
     }
 
     /// A diff tab, its two sides loading. Read-only and never dirty: its text is not a buffer.
-    public static func diff(root: String, path: String, group: GitGroup) -> EditorTab {
+    public static func diff(root: String, path: String, group: GitGroup, stash: String? = nil) -> EditorTab {
         let language = editorLanguage(forPath: path)
-        return EditorTab(subject: .diff(root: root, path: path, group: group), text: "", savedText: "",
+        return EditorTab(subject: .diff(root: root, path: path, group: group, stash: stash), text: "", savedText: "",
                          language: language, diskState: .inSync, mtime: 0, cursor: EditorPosition(line: 1, column: 1),
                          selection: nil, visibleRange: nil, scrollTop: 0, notice: nil, readOnly: true, saving: false,
                          edits: 0, lastAgentEdit: nil, diffState: .loading(language))

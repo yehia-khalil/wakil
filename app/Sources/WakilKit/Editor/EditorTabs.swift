@@ -24,8 +24,8 @@ public func editorTabTitles(_ tabs: [EditorTab]) -> [String] {
             guard counts[name, default: 0] > 1 else { return name }
             let parent = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
             return "\(parent)/\(name)"
-        case .diff(_, let path, let group):
-            return "\((path as NSString).lastPathComponent) (\(editorDiffGroupTitle(group)))"
+        case .diff(_, let path, let group, let stash):
+            return "\((path as NSString).lastPathComponent) (\(stash == nil ? editorDiffGroupTitle(group) : "Stash"))"
         }
     }
 }
@@ -96,7 +96,7 @@ public func editorFileGlyph(forPath path: String) -> Character {
 /// A tab's glyph: a file's or a diff's by its path; a scratch tab's is the plain page.
 public func editorTabGlyph(_ tab: EditorTab) -> Character {
     switch tab.subject {
-    case .file(let path, _), .diff(_, let path, _): editorFileGlyph(forPath: path)
+    case .file(let path, _), .diff(_, let path, _, _): editorFileGlyph(forPath: path)
     case .scratch: "\u{E023}"
     }
 }
@@ -196,8 +196,9 @@ public func editorTabParams(_ subject: EditorTabSubject) -> [String: JSONValue] 
     switch subject {
     case .file(let path, _): ["path": .string(path)]
     case .scratch(let n): ["scratch": .integer(Int64(n))]
-    case .diff(let root, let path, let group):
-        ["diff": .object(["root": .string(root), "path": .string(path), "group": .string(group.rawValue)])]
+    case .diff(let root, let path, let group, let stash):
+        ["diff": .object(["root": .string(root), "path": .string(path), "group": .string(group.rawValue)]
+                         .merging(stash.map { ["stash": .string($0)] } ?? [:]) { a, _ in a })]
     }
 }
 
@@ -216,7 +217,7 @@ public func editorRepointTabs(_ tabs: [EditorTab], from: String, to: String, roo
             n.subject = .file(path: moved, root: root)
             if t.language == editorLanguage(forPath: path) { n.language = editorLanguage(forPath: moved) }
             return n
-        case .diff(let r, let p, _) where editorAtOrUnder(r + "/" + p, from):
+        case .diff(let r, let p, _, _) where editorAtOrUnder(r + "/" + p, from):
             return nil
         default:
             return t
@@ -234,7 +235,7 @@ public func editorTabsAfterTrash(_ tabs: [EditorTab], path: String) -> [EditorTa
             var n = t
             n.diskState = .deleted
             return n
-        case .diff(let r, let p, _) where editorAtOrUnder(r + "/" + p, path):
+        case .diff(let r, let p, _, _) where editorAtOrUnder(r + "/" + p, path):
             return nil
         default:
             return t

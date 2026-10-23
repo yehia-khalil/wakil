@@ -5679,7 +5679,7 @@ public final class WindowModel {
         }()
         let editorActiveDiff: EditorActiveDiff? = {
             guard let f = focused, f.kind == "editor", let s = editor(f.id), let i = s.active, i < s.tabs.count,
-                  case .diff(let root, let path, let group) = s.tabs[i].subject else { return nil }
+                  case .diff(let root, let path, let group, nil) = s.tabs[i].subject else { return nil }
             return EditorActiveDiff(path: root + "/" + path, group: group)
         }()
         return PaletteContext(

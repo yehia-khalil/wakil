@@ -282,7 +282,7 @@ func registerEditorChangesWrites(
                         // A refreshing tab (loading) keeps the texts on screen, which the selection is of
                         // (final review I2); a first load's empty texts hold no change and are refused.
                         if let t = await panes.editorSnapshot(paneId: pane.id).tabs.first(where: {
-                            if case .diff(root, rel, group) = $0.subject { $0.diffState != nil } else { false }
+                            if case .diff(root, rel, group, nil) = $0.subject { $0.diffState != nil } else { false }
                         }) { tab = t; break }
                     }
                 }

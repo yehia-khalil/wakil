@@ -22,6 +22,26 @@ private func select(_ f: EditorFixture, _ root: String, _ path: String, _ group:
         #expect(editorTabTitles(s.tabs) == ["b.go (Changes)"])
     }
 
+    // 3a-iv: a file in a stash opens read-only, its base on the left and the stash on the right; an
+    // untracked one has nothing on the left.
+    @Test func aStashFileOpensAReadOnlyDiffTab() async throws {
+        let f = try await changesFixture()
+        let id = String(repeating: "d", count: 40)
+        await f.git.set(show: "/p/api|b.go|stash-base:\(id)", "base\n")
+        await f.git.set(show: "/p/api|b.go|stash:\(id)", "stashed\n")
+        await f.git.set(show: "/p/api|u.go|stash-untracked:\(id)", "untracked\n")
+        try await f.dispatch("editor_open_stash_diff", ["root": .string("/p/api"), "path": .string("b.go"), "stash": .string(id)])
+        var s = await f.snapshot()
+        let t = try #require(s.tabs.first)
+        #expect(t.subject == .diff(root: "/p/api", path: "b.go", group: .changed, stash: id))
+        #expect(t.readOnly && t.diffState?.original == "base\n" && t.diffState?.modified == "stashed\n")
+        #expect(editorTabTitles(s.tabs) == ["b.go (Stash)"])
+        try await f.dispatch("editor_open_stash_diff", ["root": .string("/p/api"), "path": .string("u.go"), "stash": .string(id), "untracked": .bool(true)])
+        s = await f.snapshot()
+        let u = try #require(s.tabs.first { $0.subject == .diff(root: "/p/api", path: "u.go", group: .untracked, stash: id) })
+        #expect(u.diffState?.original == "" && u.diffState?.modified == "untracked\n")
+    }
+
     // Final review 4: a diff tab has no buffer, so a find there would answer a false "0 matches".
     @Test func findOnADiffTabIsRefused() async throws {
         let f = try await changesFixture()

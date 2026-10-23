@@ -103,7 +103,7 @@ extension WindowModel {
 
     private func changesRanges(_ name: String, _ pane: String, _ ranges: [EditorLineSpan]) async {
         guard let s = editor(pane), let i = s.active, i < s.tabs.count,
-              case .diff(let root, let path, _) = s.tabs[i].subject else { return }
+              case .diff(let root, let path, _, nil) = s.tabs[i].subject else { return }
         let spans: JSONValue = .array(ranges.map { .object(["start": .integer(Int64($0.start)), "end": .integer(Int64($0.end))]) })
         _ = await changesWrite(root, name, ["path": .string(root + "/" + path), "pane": .string(pane), "ranges": spans])
     }

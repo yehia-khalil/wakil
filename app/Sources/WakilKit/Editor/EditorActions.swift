@@ -392,6 +392,7 @@ public func registerEditorActions(
         guard case .object(let d)? = jsonObject(params)?["diff"], case .string(let r)? = d["root"],
               case .string(let p)? = d["path"], case .string(let g)? = d["group"], let group = GitGroup(rawValue: g)
         else { return nil }
+        if case .string(let stash)? = d["stash"] { return .diff(root: r, path: p, group: group, stash: stash) }
         return .diff(root: r, path: p, group: group)
     }
 
@@ -405,9 +406,9 @@ public func registerEditorActions(
     /// `updateEditor` turn that wrote the tab (see `EditorDiffFlights`). A reply that lands after its
     /// tab is gone, or after a newer fetch for it began, writes nothing.
     @Sendable func fetchDiff(_ pane: String, _ subject: EditorTabSubject, status: String?) -> Task<Void, Never>? {
-        guard case .diff(let root, let path, let group) = subject else { return nil }
+        guard case .diff(let root, let path, let group, let stash) = subject else { return nil }
         let language = editorLanguage(forPath: path)
-        let key = "diff:\(group.rawValue):\(root)/\(path)"
+        let key = editorTabKey(subject)
         guard let git = gitStatus?.git else {
             // No git client: Loading must still resolve (Rules 4, 8), into the error that names what is missing.
             let text = StandardActionError.missingClient(action: "git_show", role: "git").description
@@ -421,7 +422,8 @@ public func registerEditorActions(
                 }
             }
         }
-        let revs = editorDiffRevs(group, status: status)
+        let revs = stash.map { editorStashDiffRevs(stash: $0, untracked: group == .untracked) }
+            ?? editorDiffRevs(group, status: status)
         @Sendable func side(_ rev: String?) async throws -> FilesOutcome {
             guard let rev else { return .ok([:]) }
             return try await filesTool(git, "git_show", ["root": .string(root), "path": .string(path), "rev": .string(rev)])
@@ -539,6 +541,24 @@ public func registerEditorActions(
     /// pinned by `pin`) and not fetched again (Rule 5); otherwise a preview takes the pane's clean
     /// preview slot, cancelling the fetch of what it held, and a pinned one is added. A row no longer
     /// in its group opens reading "No longer changed" (Rule 7), fetching nothing.
+    /// 3a-iv: a file as a stash holds it, in a pinned read-only diff tab (its base on the left; nothing
+    /// for a file the stash took untracked). The same file of the same stash is one tab.
+    @Sendable func openStashDiff(_ pane: String, root: String, path: String, stash: String, untracked: Bool) async {
+        let group: GitGroup = untracked ? .untracked : .changed
+        let subject = EditorTabSubject.diff(root: root, path: path, group: group, stash: stash)
+        let flight: Task<Void, Never>? = await panes.updateEditor(paneId: pane, create: true) { s in
+            if let i = s.tabs.firstIndex(where: { $0.subject == subject }) {
+                s.active = i
+                return nil
+            }
+            s.tabs.append(EditorTab.diff(root: root, path: path, group: group, stash: stash))
+            s.active = s.tabs.count - 1
+            return fetchDiff(pane, subject, status: nil)
+        }
+        await persist(pane)
+        await flight?.value
+    }
+
     @Sendable func openDiff(_ pane: String, _ row: EditorChangesRow, pin: Bool) async {
         let group = GitGroup(rawValue: row.group)!
         let subject = EditorTabSubject.diff(root: row.root, path: row.path, group: group)
@@ -583,7 +603,7 @@ public func registerEditorActions(
         let flights: [Task<Void, Never>] = await panes.updateEditor(paneId: pane) { s in
             var started: [Task<Void, Never>] = []
             for i in s.tabs.indices {
-                guard case .diff(let r, let p, let g) = s.tabs[i].subject, root == nil || r == root,
+                guard case .diff(let r, let p, let g, nil) = s.tabs[i].subject, root == nil || r == root,
                       status.contains(where: { $0.root == r && editorRootIsKnown($0) }) else { continue }
                 let row = EditorChangesRow(root: r, path: p, group: g.rawValue)
                 guard let file = editorChangesFile(row, in: status) else {
@@ -662,7 +682,7 @@ public func registerEditorActions(
             let pane = try await editorPane(params, action: "editor_open_file")
             let snap = await panes.editorSnapshot(paneId: pane)
             guard let i = editorTabIndex(snap, path: nil) else { throw EditorActionError.noTab(action: "editor_open_file") }
-            guard case .diff(let root, let path, let group) = snap.tabs[i].subject else {
+            guard case .diff(let root, let path, let group, _) = snap.tabs[i].subject else {
                 throw EditorActionError.notADiff(action: "editor_open_file")
             }
             let full = root + "/" + path
@@ -1483,6 +1503,25 @@ public func registerEditorActions(
 
     let groupSchema: JSONValue = .object(["type": .string("string"),
                                           "enum": .array(GitGroup.allCases.map { .string($0.rawValue) })])
+
+    await registry.register(Action(
+        name: "editor_open_stash_diff",
+        description: "Open one file as a stash holds it, read-only, against the stash's base (an untracked file "
+            + "has nothing on the left). root (absolute), path relative to it, stash: the stash's id from "
+            + "editor_changes_stashes, untracked: true for a file the stash took untracked. Allowed everywhere.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["root": .object(["type": .string("string")]), "path": .object(["type": .string("string")]),
+                        "stash": .object(["type": .string("string")]), "untracked": .object(["type": .string("boolean")])],
+                       required: ["root", "path", "stash"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_open_stash_diff")
+            guard let root = optionalString(params, "root"), let path = optionalString(params, "path"),
+                  let stash = optionalString(params, "stash") else {
+                throw StandardActionError.missingParam(action: "editor_open_stash_diff", param: "root, path and stash")
+            }
+            await openStashDiff(pane, root: root, path: path, stash: stash, untracked: flag(params, "untracked"))
+            return .object([:])
+        }))
 
     await registry.register(Action(
         name: "editor_changes_select",

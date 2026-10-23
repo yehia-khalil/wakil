@@ -257,7 +257,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "editor_changes_select", "editor_changes_stage", "editor_changes_stage_hunk", "editor_changes_stage_ranges",
              "editor_changes_stash", "editor_changes_stash_apply", "editor_changes_stash_drop", "editor_changes_stash_drop_all", "editor_changes_stash_pop", "editor_changes_stashes", "editor_changes_step", "editor_changes_switch", "editor_changes_sync", "editor_changes_undo_commit", "editor_changes_unstage", "editor_changes_unstage_ranges",
              "editor_clone", "editor_close", "editor_create", "editor_find", "editor_focus_tab", "editor_goto", "editor_move_tab", "editor_new_scratch", "editor_open", "editor_open_file",
-             "editor_peek", "editor_peek_close", "editor_peek_step", "editor_refresh", "editor_reload", "editor_rename", "editor_replace", "editor_replace_range", "editor_replace_undo", "editor_restore", "editor_save",
+             "editor_open_stash_diff", "editor_peek", "editor_peek_close", "editor_peek_step", "editor_refresh", "editor_reload", "editor_rename", "editor_replace", "editor_replace_range", "editor_replace_undo", "editor_restore", "editor_save",
              "editor_search", "editor_select", "editor_set_language", "editor_trash", "editor_tree", "editor_tree_collapse",
              "editor_tree_expand", "editor_tree_reveal", "files_search",
              "pane_close", "pane_focus", "pane_maximize", "pane_move",
