@@ -31,6 +31,10 @@ The operator asked for VS Code's flow. What it does, and what this design keeps:
 ## Decisions the operator took
 
 - **VS Code's flow is the reference** (2026-10-23), mapped onto Wakil's own surfaces below.
+- **Delete Branch, Drop and Drop All ask the operator when the agent or voice asks for them**
+  (2026-10-23, option A). From the pane, the operator's click and its in-place confirmation are the
+  only ask (Rule 1) — never a second prompt on top. Everything else in this phase runs for every
+  channel, as push does (3a-iii).
 
 ## Calls made for the operator (flagged for review)
 
@@ -70,11 +74,13 @@ The operator asked for VS Code's flow. What it does, and what this design keeps:
    git's reflog.` with **Delete** and **Keep it**; a fully merged branch says so and asks the same way.
    The current branch has no Delete (git cannot). Drop and Drop All ask the same way:
    `Drop "wip search"? It cannot be applied again.`
-9. **Prices.** Switch, create, rename, stash, apply and pop stay on this Mac and undo — allow for every
-   channel, voice and the agent included, as 3a-ii's writes are (Decision 43). **Delete Branch, Drop
-   and Drop All are priced *gate* for the agent and voice** — the operator's confirmation in the
-   permission plane, since they cannot be undone from Wakil; from the pane, their in-place confirmation
-   is the operator's own (Rule 1).
+9. **Prices, by who asks** (the operator's decision above). Switch, create, rename, stash, apply and
+   pop are priced allow for every channel (Decision 43's reasoning: they stay on this Mac and undo).
+   Delete Branch, Drop and Drop All carry **a separate price for the agent's and voice's channels:
+   gate** — the permission plane asks, naming what is lost (`Delete feature/x and its 3 commits not on
+   main?`, `Drop "wip search"?`). From the pane and from a `--dispatch` script they are allow, the pane
+   having confirmed in place. This is the first write priced by channel; Decision 46 records it, and the
+   write gate gains the one rule it needs (a price per channel on an action), not a general mechanism.
 10. **Remote branches** are listed from the last fetch; the picker has a **Fetch** row at the end, so a
     teammate's new branch is one row away. Deleting a remote branch is not in this phase.
 
@@ -142,8 +148,9 @@ terminal's would; no pager, no fsmonitor):
 ### Actions — WakilKit (Invariant 2)
 `editor_changes_switch`, `editor_changes_branch_create`, `_branch_rename`, `_branch_delete`,
 `editor_changes_stash`, `_stash_apply`, `_stash_pop`, `_stash_drop`, `_stash_drop_all`, and the reads
-`editor_changes_branches`, `editor_changes_stashes`. Agent-reachable; delete and drop gated for the
-agent's and voice's channels (call 9). One write per root at a time, as 3a-ii's `GitWriteFlights`.
+`editor_changes_branches`, `editor_changes_stashes`. Agent-reachable; delete and drop carry the agent-and-voice price
+*gate*, everywhere else allow (call 9). The gate reads the caller's channel, which every dispatch already
+carries (`origin`). One write per root at a time, as 3a-ii's `GitWriteFlights`.
 
 ### WakilApp
 - `ContextLine`: the Branch segment and its dropdown (the picker view is shared with the root header).
@@ -177,7 +184,8 @@ shown whole. 9 — no default branch is forced; the picker suggests, the operato
 
 ## Charter changes this sub-phase makes
 - **Decision 46:** branches and stash from the Changes view and the context line; local branch and
-  stash writes priced allow; no force, no discard.
+  stash writes priced allow; no force, no discard; branch delete and stash drop priced *gate* for the
+  agent and voice only — the first price set by channel, and why.
 - **Invariant 6, an eighth row:** branch delete and stash drop, the first git writes Wakil cannot undo
   (the reflog and `git fsck` can, outside Wakil) — with the reasoning for how they are priced.
 - North-star §8: 3a-iv's row stays as written.
