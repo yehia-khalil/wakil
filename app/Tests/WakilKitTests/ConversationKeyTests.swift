@@ -264,4 +264,106 @@ struct ConversationKeyTests {
         #expect(await parked.value == .cancelled)
         await model.shutdown()
     }
+
+    // MARK: Task 4: place-level paths walk conversations
+
+    @Test func aRenamedPlacesIdleConversationKeepsItsIdUnderTheNewPlace() async throws {
+        let sessions = Sessions()
+        let window = try await renameWindow(sessions)
+        let model = window.model
+        let oldPlace = model.place
+        model.markSessionStarted()
+        let id = try #require(model.currentAgent?.id)
+
+        #expect(await model.renameEnvironment(project: "p", projectPath: "/p", "dev", to: "local") == nil)
+
+        let renamed = Place(organization: oldPlace.organization, project: "p", environment: "local")
+        #expect(model.place == renamed)
+        #expect(model.agents[renamed]?.id == id)
+        #expect(model.conversation(id: id)?.place == renamed)
+        #expect(model.agents[oldPlace] == nil)
+        #expect(model.liveConversations(in: renamed).map(\.id) == [id])
+    }
+
+    @Test func aRenamedPlacesReservedIdAndShownSocketFollowItAndNoSecondSocketOpens() async throws {
+        let sessions = Sessions()
+        let window = try await renameWindow(sessions)
+        let model = window.model
+        let oldPlace = model.place
+        await model.activateLayoutForTesting()
+        await model.settleShownSocketsForTesting()
+        let reserved = try #require(model.shownSocketSessionIdForTesting(oldPlace))
+        #expect(sessions.issuedSockets.count == 1)
+
+        #expect(await model.renameEnvironment(project: "p", projectPath: "/p", "dev", to: "local") == nil)
+        await model.activateLayoutForTesting()
+        await model.settleShownSocketsForTesting()
+
+        let renamed = Place(organization: oldPlace.organization, project: "p", environment: "local")
+        #expect(model.shownSocketSessionIdForTesting(renamed) == reserved, "found under the new place")
+        #expect(model.shownSocketSessionIdForTesting(oldPlace) == nil)
+        #expect(sessions.issuedSockets.count == 1, "no second socket opened")
+        model.markSessionStarted()
+        #expect(model.agents[renamed]?.id == reserved, "the new place's first conversation takes the reserved id")
+        await model.shutdown()
+    }
+
+    @Test func shutdownStopsEveryConversationAndEveryReservedSocketOnce() async throws {
+        let sessions = Sessions()
+        let model = try await resumableWindow(sessions)
+        show(placeA, in: model)
+        #expect(await model.send("hello A"))
+        show(placeB, in: model)
+        await model.activateLayoutForTesting()
+        await model.settleShownSocketsForTesting()
+        #expect(sessions.issuedSockets.count == 2, "A's socket, and B's reserved and not taken")
+
+        await model.shutdown()
+
+        #expect(sessions.issuedSockets.allSatisfy { $0.stopped })
+        #expect(sessions.harnesses.issued.allSatisfy { $0.stopped })
+    }
+}
+
+/// A wakil-ctx that renames one environment of `p` and answers as the Go tools do: the active
+/// place keeps its place.
+private actor RenameContext: ToolCaller {
+    var environment = "dev"
+
+    private func ok(_ o: [String: JSONValue]) -> JSONValue { .object(["structuredContent": .object(o)]) }
+
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        func arg(_ key: String) -> String {
+            guard case .object(let o) = arguments, case .string(let s)? = o[key] else { return "" }
+            return s
+        }
+        switch name {
+        case "get_context":
+            return ok([
+                "Org": .string("test-org"), "Environment": .string(environment),
+                "ProjectKey": .string("p"), "Project": .object(["name": .string("p")]),
+                "RootPaths": .array([]), "ActiveProvider": .string("test-provider"),
+            ])
+        case "config_tree": return ok(["projects": .array([])])
+        case "rename_environment":
+            if environment == arg("name") { environment = arg("newName") }
+            return ok([:])
+        default: return ok([:])
+        }
+    }
+}
+
+@MainActor
+private func renameWindow(_ sessions: Sessions) async throws -> Wired {
+    let ctx = RenameContext()
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot, context: ContextStore(client: ctx),
+        agentSocketFactory: sessions.socketFactory)
+    await registerStandardActions(
+        into: model.registryForTesting, context: ctx, panes: model.panesForTesting,
+        db: nil, resumes: ResumeBroker())
+    await model.refreshContext()
+    return Wired(
+        model: model, registry: model.registryForTesting, layout: LayoutStore(), resumes: ResumeBroker(),
+        confirmations: ConfirmationBroker())
 }

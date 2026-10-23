@@ -78,7 +78,8 @@ struct AgentChipTests {
         await startTurn(in: placeA, thenShow: placeB, model)
         let proposal = PendingMutation(
             action: "db_run_mutation", params: .object([:]), database: nil, statement: "DELETE FROM t",
-            affectsEveryRow: true, origin: .agent, place: placeA)
+            affectsEveryRow: true, origin: .agent, place: placeA,
+            conversation: try #require(model.agents[placeA]?.id))
         let parked = Task { await broker.request(proposal) }
 
         #expect(await waitUntil { model.chips.first?.state == .waiting }, "\(model.chips)")

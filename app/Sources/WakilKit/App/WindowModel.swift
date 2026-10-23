@@ -70,12 +70,12 @@ public final class WindowModel {
     /// removing the place checks first (Invariant 5). Live is a harness, as in `agentPlaces`.
     public func runningAgent(in project: String, environment: String?) -> String? {
         runningAgentName(
-            among: agents.map { (place: $0.key, live: $0.value.harness != nil, providerId: $0.value.providerId) },
+            among: conversations.values.map { (place: $0.place, live: $0.harness != nil, providerId: $0.providerId) },
             organization: place.organization, project: project, environment: environment)
     }
 
     /// The places whose agent has a live harness: what the pool keeps clients for.
-    public var agentPlaces: Set<Place> { Set(agents.compactMap { $0.value.harness == nil ? nil : $0.key }) }
+    public var agentPlaces: Set<Place> { Set(conversations.values.compactMap { $0.harness == nil ? nil : $0.place }) }
     /// The clients pinned to agent sessions' places (`WakilWiring.placeClients`). Told the places
     /// still in use after every harness change, so a client for a place no session holds any
     /// more is stopped. Nil in tests that route no call; production passes the wiring's.
@@ -3552,20 +3552,35 @@ public final class WindowModel {
         await refreshPanes()
     }
 
-    /// Moves each agent of the renamed place that has no live session to the new name
-    /// (`PlaceAgent.place`), so its conversation — what the canvas on screen is filed under — and
-    /// its thread come along rather than vanishing with the old key. A live one cannot be here: the
-    /// rename is refused while an agent runs in the place (Invariant 5). One whose new place already
-    /// has an agent is left where it is.
+    /// Moves each conversation of the renamed place that has no live session to the new name
+    /// (`PlaceAgent.place`, `screenConversations`), so its conversation — what the canvas on screen
+    /// is filed under — and its thread come along rather than vanishing with the old key. The id a
+    /// place reserved for its next conversation (`reservedConversations`) and the socket opened for
+    /// it (`ShownSocket.place`) move with it, so `openShownSocket` still finds that socket and opens
+    /// no second one. A live one cannot be here: the rename is refused while an agent runs in the
+    /// place (Invariant 5). One whose new place already has a conversation is left where it is.
     private func carryAgents(project: String, environment: String?, renamed: (Place) -> Place) {
-        for (from, agent) in agents where agent.harness == nil && from.organization == organization
-            && from.project == project && (environment == nil || from.environment == environment)
-        {
+        let places = Set(screenConversations.keys).union(reservedConversations.keys)
+            .union(shownSockets.values.map(\.place))
+            .filter { $0.organization == organization && $0.project == project
+                && (environment == nil || $0.environment == environment) }
+        for from in places {
             let to = renamed(from)
-            guard screenConversations[to] == nil else { continue }
-            screenConversations[from] = nil
-            agent.place = to
-            screenConversations[to] = agent.id
+            var moved: String?
+            if let id = screenConversations[from], let agent = conversations[id], agent.harness == nil,
+               screenConversations[to] == nil {
+                screenConversations[from] = nil
+                agent.place = to
+                screenConversations[to] = id
+                moved = id
+            } else if let id = reservedConversations[from], reservedConversations[to] == nil {
+                reservedConversations[from] = nil
+                reservedConversations[to] = id
+                moved = id
+            }
+            if let moved, let shown = shownSockets[moved], shown.place == from {
+                shownSockets[moved] = ShownSocket(sessionId: shown.sessionId, place: to, opening: shown.opening)
+            }
         }
     }
 
@@ -7968,16 +7983,12 @@ public final class WindowModel {
     public var chips: [AgentChip] {
         // A conversation waits only on its own proposal; the operator's, parked in the same
         // place, is not the agent asking for anything (final review, minor 1), nor is another
-        // conversation's. An agent's that names none, in its place's own slot, is the place's
-        // conversation's, as `pending` reads it.
-        let agentSlots = parkedSlots.filter { $0.value.origin == .agent }.keys
-        let waiting = Set(agentSlots.compactMap(\.conversation))
-        let unnamed = Set(agentSlots.filter { $0.conversation == nil }.map(\.place))
+        // conversation's.
+        let waiting = Set(parkedSlots.filter { $0.value.origin == .agent }.keys.compactMap(\.conversation))
         let shown = currentAgent
         return conversations.values
             .compactMap { agent -> AgentChip? in
                 let waits = waiting.contains(agent.id)
-                    || (unnamed.contains(agent.place) && screenConversations[agent.place] == agent.id)
                 guard agent !== shown, let state = AgentChip.state(
                     waiting: waits, failed: agent.unseenFailure,
                     working: agent.turnInFlight, done: agent.unseenResult)
@@ -9131,7 +9142,7 @@ public final class WindowModel {
     public func shutdown() async {
         socketsClosed = true
         stopBackgroundFetch()
-        for agent in agents.values { agent.eventPump?.cancel() }
+        for agent in conversations.values { agent.eventPump?.cancel() }
         confirmationPump?.cancel()
         observationPump?.cancel()
         flightPump?.cancel()
@@ -9142,7 +9153,7 @@ public final class WindowModel {
         terminalRunPump?.cancel()
         // Every place's agent, and the socket each reached Wakil on: one left running would
         // outlive the window.
-        for agent in agents.values { await stopSession(of: agent) }
+        for agent in Array(conversations.values) { await stopSession(of: agent) }
         // And every place's socket no session took.
         let shown = shownSockets.values
         shownSockets = [:]
