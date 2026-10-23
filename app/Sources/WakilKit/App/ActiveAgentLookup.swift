@@ -34,3 +34,34 @@ public final class ActiveAgentLookup: @unchecked Sendable {
         return source
     }
 }
+
+/// The window's live conversations, asked live (conversations 2 of 3): what `session_list`
+/// lists beside the past sessions Go finds. Captured by `registerStandardActions` for
+/// `ActiveAgentLookup`'s reason — no window exists yet — and pointed at the window by
+/// `WakilWiring.useActiveContext(of:)`. Unwired, it answers none.
+public final class LiveConversationLookup: @unchecked Sendable {
+    public typealias Source = @Sendable (_ place: Place?) async -> [LiveConversation]
+
+    private let lock = NSLock()
+    private var source: Source?
+
+    public init() {}
+
+    public func use(_ source: @escaping Source) {
+        lock.lock()
+        self.source = source
+        lock.unlock()
+    }
+
+    /// Every live conversation, or `place`'s, newest activity first.
+    public func live(in place: Place?) async -> [LiveConversation] {
+        guard let source = installedSource() else { return [] }
+        return await source(place)
+    }
+
+    private func installedSource() -> Source? {
+        lock.lock()
+        defer { lock.unlock() }
+        return source
+    }
+}

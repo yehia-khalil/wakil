@@ -201,14 +201,14 @@ public struct MCPSurface: Sendable {
 /// property afresh at re-dispatch — the spec's "one confirmation mechanism,
 /// not two" has to mean the two agree about the one input the gate reads.
 ///
-/// **`screen` is the place the window shows**, read only by `initialize`, which reports it beside
-/// the caller's own place under `_meta` (`initializeMeta`). Nil where nothing has a screen — a
-/// test's server — and the reply says `null`.
+/// **`screen` is what the window shows** — its place and conversation — read only by
+/// `initialize`, which reports it beside the caller's own under `_meta` (`initializeMeta`). Nil
+/// where nothing has a screen — a test's server — and the reply says `null`.
 public func handle(
     _ message: JSONRPCMessage,
     surface: MCPSurface,
     caller: @Sendable () async -> DispatchCaller,
-    screen: (@Sendable () async -> Place?)? = nil
+    screen: (@Sendable () async -> ScreenShown?)? = nil
 ) async -> JSONRPCMessage? {
     guard let id = message.id else {
         return nil
@@ -220,6 +220,8 @@ public func handle(
 
     switch method {
     case "initialize":
+        let own = await caller()
+        let shown = await screen?()
         return JSONRPCMessage(id: id, result: .object([
             // Deliberately not bumped in 2a. Note that `structuredContent`,
             // which `readPane` below returns, postdates this revision — see
@@ -231,7 +233,9 @@ public func handle(
                 "name": .string("wakil"),
                 "version": .string("2a"),
             ]),
-            "_meta": initializeMeta(place: await caller().place, screen: await screen?()),
+            "_meta": initializeMeta(
+                place: own.place, screen: shown?.place,
+                conversation: own.conversation, screenConversation: shown?.conversation),
         ]))
 
     case "tools/list":
@@ -252,16 +256,34 @@ public func handle(
     }
 }
 
+/// What a window shows, for a socket's `initialize`: the place, and the conversation in it — the
+/// one on screen, or the one its Landing reserves (`WindowModel.screenConversation`), nil when
+/// there is none yet.
+public struct ScreenShown: Sendable, Equatable {
+    public let place: Place
+    public let conversation: String?
+
+    public init(place: Place, conversation: String?) {
+        self.place = place
+        self.conversation = conversation
+    }
+}
+
 /// What `initialize` says about this socket beyond the protocol: `wakil/place`, the place every
 /// call on it is made for — an agent session's socket is pinned to its own place for life — and
-/// `wakil/screen`, the place the window shows as it answers, or null when unknown. MCP's `_meta`
-/// is the result's room for exactly this, and a client that does not read it ignores it.
+/// `wakil/screen`, the place the window shows as it answers, or null when unknown; and
+/// `wakil/conversation` and `wakil/screenConversation`, the same two for the conversation
+/// (conversations 2 of 3), each null when unknown. MCP's `_meta` is the result's room for
+/// exactly this, and a client that does not read it ignores it.
 ///
 /// **What the e2e harness picks its channel by** (`e2e/driver/socket.go`): a window holds one
-/// socket per place it has shown, and the one to drive is the one whose place is the screen's.
-/// Both answers come from the window that knows them. `project` is the registry key, the one
-/// `WAKIL_PROJECT` pins by.
-func initializeMeta(place: Place, screen: Place?) -> JSONValue {
+/// socket per conversation it has shown, and the one to drive is the one whose place — and
+/// conversation — is the screen's: after ⌘N a place holds the backgrounded conversation's
+/// socket and its Landing's, and only the second is the screen's. All four answers come from
+/// the window that knows them. `project` is the registry key, the one `WAKIL_PROJECT` pins by.
+func initializeMeta(
+    place: Place, screen: Place?, conversation: String?, screenConversation: String?
+) -> JSONValue {
     func object(_ place: Place) -> JSONValue {
         .object([
             "organization": .string(place.organization),
@@ -272,6 +294,8 @@ func initializeMeta(place: Place, screen: Place?) -> JSONValue {
     return .object([
         "wakil/place": object(place),
         "wakil/screen": screen.map(object) ?? .null,
+        "wakil/conversation": conversation.map(JSONValue.string) ?? .null,
+        "wakil/screenConversation": screenConversation.map(JSONValue.string) ?? .null,
     ])
 }
 
@@ -1099,8 +1123,8 @@ public actor MCPSocketServer {
     private let surface: MCPSurface
     private let socketPath: String
     private let caller: @Sendable () async -> DispatchCaller
-    /// The place the window shows, for `initialize`'s `_meta` (`initializeMeta`).
-    private let screen: (@Sendable () async -> Place?)?
+    /// What the window shows, for `initialize`'s `_meta` (`initializeMeta`).
+    private let screen: (@Sendable () async -> ScreenShown?)?
 
     private var listenFD: Int32 = -1
     private var acceptThread: Thread?
@@ -1119,7 +1143,7 @@ public actor MCPSocketServer {
         surface: MCPSurface,
         socketPath: String,
         caller: @escaping @Sendable () async -> DispatchCaller,
-        screen: (@Sendable () async -> Place?)? = nil
+        screen: (@Sendable () async -> ScreenShown?)? = nil
     ) {
         self.surface = surface
         self.socketPath = socketPath
@@ -1283,13 +1307,13 @@ private actor Connection {
     private let fh: FileHandle
     private let surface: MCPSurface
     private let caller: @Sendable () async -> DispatchCaller
-    private let screen: (@Sendable () async -> Place?)?
+    private let screen: (@Sendable () async -> ScreenShown?)?
     private var reader = FrameReader()
     private var poisoned = false
 
     init(
         fd: Int32, surface: MCPSurface, caller: @escaping @Sendable () async -> DispatchCaller,
-        screen: (@Sendable () async -> Place?)?
+        screen: (@Sendable () async -> ScreenShown?)?
     ) {
         self.fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         self.surface = surface

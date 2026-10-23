@@ -40,7 +40,8 @@ private struct Wired {
 /// sockets, with `persistence` when a test needs the project seed on disk.
 @MainActor
 private func wiredWindow(
-    _ sessions: Sessions, persistence: LayoutPersistence? = nil, confirmations: ConfirmationBroker = ConfirmationBroker()
+    _ sessions: Sessions, persistence: LayoutPersistence? = nil, confirmations: ConfirmationBroker = ConfirmationBroker(),
+    context: (any ToolCaller)? = nil
 ) async throws -> Wired {
     let dir = testScratchRoot.appendingPathComponent("conversation-switch-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -49,9 +50,11 @@ private func wiredWindow(
     let layout = LayoutStore()
     let resumes = ResumeBroker()
     let conversations = ConversationBroker()
+    // Pointed at the window below, as `WakilWiring.useActiveContext(of:)` points it.
+    let live = LiveConversationLookup()
     await registerStandardActions(
-        into: registry, context: nil, panes: panes, db: nil, resumes: resumes, layout: layout,
-        conversationRequests: conversations)
+        into: registry, context: context, panes: panes, db: nil, resumes: resumes, layout: layout,
+        conversationRequests: conversations, liveConversations: { await live.live(in: $0) })
     await registerLayoutActions(into: registry, layout: layout, panes: panes)
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: persistence, context: nil,
@@ -62,6 +65,7 @@ private func wiredWindow(
         conversationRequests: conversations,
         agentSocketFactory: sessions.socketFactory, environment: "staging")
     model.setOrganizationForTesting(org)
+    live.use { [weak model] place in await model?.liveConversationRows(in: place) ?? [] }
     return Wired(model: model, registry: registry, panes: panes, layout: layout, conversations: conversations)
 }
 
@@ -645,6 +649,64 @@ struct ConversationSwitchTests {
         #expect(sessions.harnesses.in(placeA).count == 1)
         await model.shutdown()
     }
+
+    // MARK: Task 5: `session_list` carries the live conversations
+
+    @Test func sessionListCarriesTheLiveConversationsNarrowedByPlace() async throws {
+        let sessions = Sessions()
+        let registry = try await wiredWindow(sessions, context: PastSessionsContext())
+        let model = registry.model
+        show(placeB, in: model)
+        #expect(await model.send("other place"))
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        try #require(sessions.harnesses.in(placeA).first).emit(.result(isError: false, text: "done"))
+        #expect(await waitUntil { model.liveConversationRows(in: placeA).first?.state == .idle })
+        await model.newConversation()
+        #expect(await model.send("second job"))
+
+        let out = try await registry.registry.dispatch(
+            name: "session_list", params: .object(["project": .string("api")]), origin: .ui,
+            caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        #expect(liveTitles(out) == ["second job", "first job"])
+        #expect(liveStates(out) == ["working", "idle"])
+        #expect(pastIds(out) == ["s-past"], "Go's answer is kept as it was")
+
+        let everywhere = try await registry.registry.dispatch(
+            name: "session_list", params: .object([:]), origin: .ui,
+            caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        #expect(Set(liveTitles(everywhere)) == ["other place", "second job", "first job"])
+        let narrowed = try await registry.registry.dispatch(
+            name: "session_list", params: .object(["project": .string("api"), "environment": .string("qa")]),
+            origin: .ui,
+            caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        #expect(liveTitles(narrowed).isEmpty)
+        let elsewhere = try await registry.registry.dispatch(
+            name: "session_list", params: .object(["project": .string("api")]), origin: .ui,
+            caller: DispatchCaller(place: Place(organization: "globex", project: "api", environment: "staging"), session: nil),
+            confirmation: nil)
+        #expect(liveTitles(elsewhere).isEmpty, "the filter is the caller's organisation")
+        await model.shutdown()
+    }
+
+    // Review Focus 5: after ⌘N the screen's conversation is the one the Landing reserved, and its
+    // socket is open — so the e2e channel, which picks by it, acts there, not in the backgrounded one.
+    @Test func afterNewConversationTheScreensConversationIsTheReservedOnesSocket() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let first = try #require(model.currentAgent)
+        #expect(model.screenConversation == first.id)
+        await model.newConversation()
+
+        let reserved = try #require(model.screenConversation)
+        #expect(reserved != first.id)
+        #expect(model.screenKey == "landing:" + reserved)
+        #expect(await waitUntil { await caller(of: reserved, sessions) != nil }, "the Landing's own socket")
+        #expect(await caller(of: first.id, sessions) != nil, "the backgrounded one keeps its own")
+        await model.shutdown()
+    }
 }
 
 /// A `session_list` listing `ids`, newest first, and a `session_read` answering an empty
@@ -768,5 +830,37 @@ private actor TwoOrgContext: ToolCaller {
 
     private func refusal(_ text: String) -> JSONValue {
         .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(text)])])])
+    }
+}
+
+/// A wakil-ctx whose `list_sessions` answers one past session, as Go's shape does.
+private struct PastSessionsContext: ToolCaller {
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        .object(["structuredContent": .object(["sessions": .array([
+            .object(["id": .string("s-past"), "provider": .string("test-provider")]),
+        ])])])
+    }
+}
+
+private func liveRows(_ out: JSONValue) -> [[String: JSONValue]] {
+    guard case .object(let o) = out, case .object(let s)? = o["structuredContent"],
+          case .array(let rows)? = s["live"] else { return [] }
+    return rows.compactMap { if case .object(let r) = $0 { return r }; return nil }
+}
+
+private func liveTitles(_ out: JSONValue) -> [String] {
+    liveRows(out).compactMap { if case .string(let t)? = $0["title"] { return t }; return nil }
+}
+
+private func liveStates(_ out: JSONValue) -> [String] {
+    liveRows(out).compactMap { if case .string(let t)? = $0["state"] { return t }; return nil }
+}
+
+private func pastIds(_ out: JSONValue) -> [String] {
+    guard case .object(let o) = out, case .object(let s)? = o["structuredContent"],
+          case .array(let rows)? = s["sessions"] else { return [] }
+    return rows.compactMap { row in
+        if case .object(let r) = row, case .string(let id)? = r["id"] { return id }
+        return nil
     }
 }

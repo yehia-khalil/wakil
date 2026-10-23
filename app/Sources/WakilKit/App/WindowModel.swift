@@ -8253,6 +8253,14 @@ public final class WindowModel {
         return Self.unreservedLandingKey(place)
     }
 
+    /// The conversation the screen shows, for a socket's `initialize` (`initializeMeta`): the
+    /// one on screen, else the one its Landing reserves — `screenKey` without `"landing:"`. Nil
+    /// on a Landing that has reserved none, which no socket answers for yet.
+    public var screenConversation: String? {
+        if let id = currentAgent?.id { return id }
+        return reservedConversations[place]
+    }
+
     /// `place`'s Landing before it has reserved its next conversation.
     nonisolated static func unreservedLandingKey(_ place: Place) -> String {
         "landing:@\(place.organization)/\(place.project)/\(place.environment)"

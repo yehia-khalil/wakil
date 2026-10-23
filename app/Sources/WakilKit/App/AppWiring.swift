@@ -45,6 +45,9 @@ public struct WakilWiring: Sendable {
     /// 2e-ii. Which agent runs in a project or environment, for the rename and remove actions'
     /// pin check; pointed at the window by `useActiveContext(of:)` once there is one.
     public let agentLookup: ActiveAgentLookup
+    /// Conversations 2 of 3. The window's live conversations, for `session_list`; pointed at
+    /// the window by `useActiveContext(of:)` once there is one.
+    public let liveLookup: LiveConversationLookup
     public let contextClient: MCPClient?
     public let databaseClient: MCPClient?
     /// `wakil-http`, in the window (#185).
@@ -250,6 +253,10 @@ public struct WakilWiring: Sendable {
         agentLookup.use { [weak model] project, environment in
             await model?.runningAgent(in: project, environment: environment)
         }
+        // Conversations 2 of 3: `session_list`'s live conversations are the window's, live.
+        liveLookup.use { [weak model] place in
+            await model?.liveConversationRows(in: place) ?? []
+        }
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -393,13 +400,15 @@ public struct WakilWiring: Sendable {
         let providerSwitches = ProviderSwitchBroker()
         let conversationRequests = ConversationBroker()
         let agentLookup = ActiveAgentLookup()
+        let liveLookup = LiveConversationLookup()
         let terminals = TerminalStore(panes: panes)
         await registerStandardActions(
             into: registry, context: routed(.context, contextClient), panes: panes,
             db: routed(.database, databaseClient), resumes: resumes,
             providerSwitches: providerSwitches, layout: layout,
             agentIn: { project, environment in await agentLookup.agent(in: project, environment: environment) },
-            conversationRequests: conversationRequests)
+            conversationRequests: conversationRequests,
+            liveConversations: { await liveLookup.live(in: $0) })
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
             unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
@@ -489,6 +498,7 @@ public struct WakilWiring: Sendable {
             terminals: terminals,
             shellContext: shellContext,
             agentLookup: agentLookup,
+            liveLookup: liveLookup,
             contextClient: contextClient,
             databaseClient: databaseClient,
             httpClient: httpClient,

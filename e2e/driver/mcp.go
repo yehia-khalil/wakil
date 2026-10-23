@@ -141,6 +141,12 @@ type initializeReply struct {
 	Meta struct {
 		Place  *Place `json:"wakil/place"`
 		Screen *Place `json:"wakil/screen"`
+		// Conversation is the conversation every call on the socket is made
+		// for, and ScreenConversation the one the window shows; either is
+		// absent (or null) from a build before conversations, or when the
+		// window does not know.
+		Conversation       *string `json:"wakil/conversation"`
+		ScreenConversation *string `json:"wakil/screenConversation"`
 	} `json:"_meta"`
 }
 
@@ -169,20 +175,29 @@ func (m *MCP) Initialize() (string, error) {
 	return payload.ServerInfo.Name, err
 }
 
-// Places asks the socket, through its own `initialize`, which place every
-// call on it is made for and which place the window shows as it answers
-// (`initializeMeta` in MCPServer.swift). screen is nil when the window did not
-// say. The server keeps no handshake state, so this can be asked again on a
-// connection already in use.
-func (m *MCP) Places() (place Place, screen *Place, err error) {
+// Probe asks the socket, through its own `initialize`, which place and
+// conversation every call on it is made for and which the window shows as it
+// answers (`initializeMeta` in MCPServer.swift). Screen is nil when the window
+// did not say, Conversation empty and ScreenConversation nil likewise. Path is
+// left for the caller. The server keeps no handshake state, so this can be
+// asked again on a connection already in use.
+func (m *MCP) Probe() (SocketPlace, error) {
 	payload, err := m.initialize()
 	if err != nil {
-		return Place{}, nil, err
+		return SocketPlace{}, err
 	}
 	if payload.Meta.Place == nil {
-		return Place{}, nil, ErrNoPlaceMeta
+		return SocketPlace{}, ErrNoPlaceMeta
 	}
-	return *payload.Meta.Place, payload.Meta.Screen, nil
+	probe := SocketPlace{
+		Place:              *payload.Meta.Place,
+		Screen:             payload.Meta.Screen,
+		ScreenConversation: payload.Meta.ScreenConversation,
+	}
+	if payload.Meta.Conversation != nil {
+		probe.Conversation = *payload.Meta.Conversation
+	}
+	return probe, nil
 }
 
 // ErrNoPlaceMeta is what Places answers for a socket whose `initialize`

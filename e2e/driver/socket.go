@@ -103,10 +103,18 @@ func (p Place) String() string {
 // SocketPlace is what one socket said about itself when asked: the place
 // every call on it is made for, and the place the window showed as it
 // answered. Screen is nil when the window did not say.
+//
+// **A place holds a socket per conversation** (conversations 2 of 3): after
+// ⌘N its backgrounded conversation keeps its socket and its Landing opens one
+// for the conversation it reserves. Conversation names the socket's, and
+// ScreenConversation the one the window shows; a build before conversations
+// says neither — Conversation empty, ScreenConversation nil.
 type SocketPlace struct {
-	Path   string
-	Place  Place
-	Screen *Place
+	Path               string
+	Place              Place
+	Screen             *Place
+	Conversation       string
+	ScreenConversation *string
 	// Unplaced marks a socket that says nothing about places at all
 	// (ErrNoPlaceMeta): the window-wide socket of a Wakil built before the
 	// shown-place sockets, which `make e2e-new` drives as the merge-base.
@@ -151,7 +159,16 @@ func SelectScreenSocket(pid int, probes []SocketPlace) (string, error) {
 			pid, unplaced, len(probes), describeProbes(probes))
 	}
 	var screen *Place
+	var screenConversation *string
 	for _, probe := range probes {
+		if probe.ScreenConversation != nil {
+			if screenConversation != nil && *screenConversation != *probe.ScreenConversation {
+				return "", fmt.Errorf(
+					"pid %d: its sockets disagree about the conversation on screen, so a switch "+
+						"landed between their answers (%s)", pid, describeProbes(probes))
+			}
+			screenConversation = probe.ScreenConversation
+		}
 		if probe.Screen == nil {
 			return "", fmt.Errorf(
 				"pid %d: %s does not say which place the window shows, so no socket can be "+
@@ -167,7 +184,7 @@ func SelectScreenSocket(pid int, probes []SocketPlace) (string, error) {
 	}
 	var matches []string
 	for _, probe := range probes {
-		if probe.Place == *screen {
+		if probe.Place == *screen && conversationMatches(probe.Conversation, screenConversation) {
 			matches = append(matches, probe.Path)
 		}
 	}
@@ -188,12 +205,34 @@ func SelectScreenSocket(pid int, probes []SocketPlace) (string, error) {
 	}
 }
 
+// isScreens says whether this socket, by its own answer, is the screen's: its
+// place is the one shown, and so is its conversation when both name one.
+func (p SocketPlace) isScreens() bool {
+	return p.Screen != nil && p.Place == *p.Screen && conversationMatches(p.Conversation, p.ScreenConversation)
+}
+
+// conversationMatches compares a socket's conversation with the screen's only
+// when both are known: a socket or a window from before conversations is
+// chosen by its place alone, as it was.
+func conversationMatches(socket string, screen *string) bool {
+	return socket == "" || screen == nil || socket == *screen
+}
+
 func describeProbes(probes []SocketPlace) string {
 	parts := make([]string, 0, len(probes))
 	for _, probe := range probes {
 		screen := "unknown"
 		if probe.Screen != nil {
 			screen = probe.Screen.String()
+		}
+		if probe.Conversation != "" {
+			screenConversation := "unknown"
+			if probe.ScreenConversation != nil {
+				screenConversation = fmt.Sprintf("%q", *probe.ScreenConversation)
+			}
+			parts = append(parts, fmt.Sprintf("%s: pinned to %s conversation %q, screen %s conversation %s",
+				probe.Path, probe.Place, probe.Conversation, screen, screenConversation))
+			continue
 		}
 		parts = append(parts, fmt.Sprintf("%s: pinned to %s, screen %s", probe.Path, probe.Place, screen))
 	}

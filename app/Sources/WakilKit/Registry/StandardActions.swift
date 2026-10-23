@@ -276,7 +276,11 @@ public func registerStandardActions(
     // Conversations 2 of 3. Defaulted for `providerSwitches`' reason: no existing call site
     // starts or switches a conversation. The one production call site (`WakilWiring.build`)
     // passes the broker the window drains.
-    conversationRequests: ConversationBroker = ConversationBroker()
+    conversationRequests: ConversationBroker = ConversationBroker(),
+    // Conversations 2 of 3, defaulted for the same reason: the window's live conversations,
+    // every place's (nil) or one place's, which `session_list` lists beside Go's past sessions.
+    // The one production call site passes `LiveConversationLookup`'s read.
+    liveConversations: (@Sendable (Place?) async -> [LiveConversation])? = nil
 ) async {
     // Every dispatch is homed in the canvas on screen when it began, unless its caller has one of
     // its own (`ActionRegistry.setScreenScope`): a db read, a git status or a page whose reply
@@ -2553,17 +2557,37 @@ public func registerStandardActions(
             "List Claude Code sessions for the active project's roots across every provider the "
             + "active org holds, newest first. Reports how many transcript stores could not be "
             + "read, so an empty list with a non-zero skipped count means \"could not look\", not "
-            + "\"none exist\".",
+            + "\"none exist\". `live` lists the conversations running in this window now — every "
+            + "place's, or, given `project` (and `environment`), that place's in this organization "
+            + "— newest activity first, each with its title and state (working, waiting, done, "
+            + "failed, idle). Only the operator brings one on screen, with ⌘P.",
         kind: .read,
         audience: .agentReachable,
-        schema: .object(["type": .string("object"), "properties": .object([:])]),
-        handler: { _ in
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "project": .object(["type": .string("string")]),
+                "environment": .object(["type": .string("string")]),
+            ]),
+        ]),
+        handler: { params in
             guard let context else {
                 throw StandardActionError.missingClient(action: "session_list", role: "context")
             }
-            return try await callChecked(
+            let past = try await callChecked(
                 context, tool: "list_sessions", arguments: .object([:]),
                 action: "session_list", timeout: MCPClient.readReplyTimeout)
+            guard let liveConversations else { return past }
+            let project = optionalStringParam(params, "project")
+            let environment = optionalStringParam(params, "environment")
+            let organization = ActionRegistry.dispatchCaller?.place.organization
+            let live = await liveConversations(nil).filter { row in
+                guard project != nil || environment != nil else { return true }
+                return (organization == nil || row.place.organization == organization)
+                    && (project == nil || row.place.project == project)
+                    && (environment == nil || row.place.environment == environment)
+            }
+            return withStructured(past, "live", .array(live.map(\.json)))
         }
     ))
 
@@ -3175,6 +3199,26 @@ private func requireStringParam(_ params: JSONValue, _ key: String, action: Stri
         throw StandardActionError.missingParam(action: action, param: key)
     }
     return value
+}
+
+/// An optional string param `key`, or nil when it is absent, not a string, or empty.
+private func optionalStringParam(_ params: JSONValue, _ key: String) -> String? {
+    guard case .object(let obj) = params, case .string(let value)? = obj[key], !value.isEmpty else {
+        return nil
+    }
+    return value
+}
+
+/// `result` with `structuredContent[key] = value`, everything else as it came: a Go tool's
+/// answer, carrying one more thing Swift alone knows. A result with no `structuredContent`
+/// gains one; one that is not an object is returned as it was.
+private func withStructured(_ result: JSONValue, _ key: String, _ value: JSONValue) -> JSONValue {
+    guard case .object(var object) = result else { return result }
+    var structured: [String: JSONValue] = [:]
+    if case .object(let existing)? = object["structuredContent"] { structured = existing }
+    structured[key] = value
+    object["structuredContent"] = .object(structured)
+    return .object(object)
 }
 
 /// Calls `tool` on `client` and translates the MCP tool-error convention
