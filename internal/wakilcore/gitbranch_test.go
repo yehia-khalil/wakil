@@ -280,3 +280,32 @@ func TestCancelBetweenStashAndPopSaysWhere(t *testing.T) {
 		t.Fatal("the switch was cut short or the stash is gone")
 	}
 }
+
+// Review C2: a "branch" that is a flag (-Cfeat force-resets feat) is refused, and so are from and
+// track; a plain switch names a branch that exists.
+func TestSwitchRefusesAFlagForABranch(t *testing.T) {
+	_, w, git := branchFixture(t)
+	git("branch", "feat")
+	feat := git("rev-parse", "feat")
+	ctx := context.Background()
+	for _, o := range []struct {
+		branch string
+		opts   SwitchOptions
+	}{
+		{"-Cfeat", SwitchOptions{}},
+		{"--orphan=x", SwitchOptions{}},
+		{"--detach", SwitchOptions{}},
+		{"ok", SwitchOptions{Create: true, From: "-x"}},
+		{"ok", SwitchOptions{Create: true, Track: "--no-track"}},
+	} {
+		if _, err := w.Switch(ctx, o.branch, o.opts); err == nil {
+			t.Errorf("%q %+v: want refusal", o.branch, o.opts)
+		}
+	}
+	if git("rev-parse", "feat") != feat || current(t, w) != "main" {
+		t.Fatal("a refused switch moved something")
+	}
+	if _, err := w.Switch(ctx, "nope", SwitchOptions{}); err == nil || err.Error() != "There is no branch nope" {
+		t.Fatalf("err = %v", err)
+	}
+}

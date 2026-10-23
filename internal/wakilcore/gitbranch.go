@@ -138,6 +138,20 @@ func (w *GitWriter) validName(ctx context.Context, name string) error {
 	return nil
 }
 
+// remoteBranchExists: some remote has name, which `git switch name` checks out as a tracking branch.
+func (w *GitWriter) remoteBranchExists(ctx context.Context, name string) bool {
+	out, err := w.runner().Run(ctx, "for-each-ref", "--format=%(refname:short)", "refs/remotes")
+	if err != nil {
+		return false
+	}
+	for _, ref := range strings.Fields(string(out)) {
+		if _, rest, ok := strings.Cut(ref, "/"); ok && rest == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (w *GitWriter) localBranchExists(ctx context.Context, name string) bool {
 	_, err := w.runner().Run(ctx, "rev-parse", "--verify", "refs/heads/"+name)
 	return err == nil
@@ -149,6 +163,16 @@ func (w *GitWriter) localBranchExists(ctx context.Context, name string) bool {
 func (w *GitWriter) Switch(ctx context.Context, branch string, o SwitchOptions) (SwitchResult, error) {
 	if what := w.inProgress(ctx); what != "" {
 		return SwitchResult{}, UserError(what + " is in progress in " + w.Root + "; finish or abort it first")
+	}
+	// Each is handed to git as a word: one that starts with "-" would be a flag (-C force-resets a
+	// branch, --orphan empties the tree), so it is refused, never passed.
+	for _, v := range []string{branch, o.From, o.Track} {
+		if strings.HasPrefix(v, "-") {
+			return SwitchResult{}, UserError(strconv.Quote(v) + " is not a branch")
+		}
+	}
+	if !o.Create && !w.localBranchExists(ctx, branch) && !w.remoteBranchExists(ctx, branch) {
+		return SwitchResult{}, UserError("There is no branch " + branch)
 	}
 	args := []string{branch}
 	if o.Create {
