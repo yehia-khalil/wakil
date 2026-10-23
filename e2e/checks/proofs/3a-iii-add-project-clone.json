@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3a-iii-add-project-clone.jsonl",
   "baseCommit": "dd65cbf2bbacdf39358e36f7e0797eb1bd593313",
-  "provedAt": "2026-10-22T21:28:20.857454Z",
-  "checkBlob": "819eff0ea872bea5b3d738e1f66d9cf44ccb3c7f"
+  "provedAt": "2026-10-23T07:50:58.522727Z",
+  "checkBlob": "f0081c21e200039c2200f547f266abb76e31c049"
 }

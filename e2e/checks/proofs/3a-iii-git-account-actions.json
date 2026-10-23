@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3a-iii-git-account-actions.jsonl",
   "baseCommit": "dd65cbf2bbacdf39358e36f7e0797eb1bd593313",
-  "provedAt": "2026-10-22T21:28:20.857454Z",
-  "checkBlob": "c2845266ac12d6e46fafbcd6c15a125a39d76166"
+  "provedAt": "2026-10-23T07:50:58.522727Z",
+  "checkBlob": "b07fcd207d14962033fae4ccf32e99ad69bd9b9a"
 }
