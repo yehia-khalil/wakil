@@ -121,13 +121,15 @@ public func branchSegmentText(_ active: GitRootState?, rootCount: Int) -> String
     return rootCount > 1 ? "\(active.name): \(text)" : text
 }
 
-/// The root the operator is in: the one holding the focused tab's file (the innermost), else the first.
+/// The git root the operator is in: the one holding the focused tab's file (the innermost), else the
+/// first git root. A plain folder among the roots has no branch, so it is never the answer.
 public func activeGitRoot(focusedPath: String?, roots: [GitRootState]) -> GitRootState? {
+    let git = roots.filter { $0.error == nil && !($0.branch.isEmpty && $0.detached.isEmpty) }
     if let path = focusedPath,
-       let hit = roots.filter({ path == $0.root || path.hasPrefix($0.root + "/") }).max(by: { $0.root.count < $1.root.count }) {
+       let hit = git.filter({ path == $0.root || path.hasPrefix($0.root + "/") }).max(by: { $0.root.count < $1.root.count }) {
         return hit
     }
-    return roots.first
+    return git.first
 }
 
 /// Delete Branch's in-place confirmation (Rule 1): what deleting it loses.

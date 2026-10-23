@@ -65,4 +65,16 @@ import Testing
         #expect(editorStashDiffRevs(stash: id, untracked: false) == ("stash-base:\(id)", "stash:\(id)"))
         #expect(editorStashDiffRevs(stash: id, untracked: true) == (nil, "stash-untracked:\(id)"))
     }
+
+    // 3a-iv e2e audit, defect 2: a project whose first root is a plain folder still has a branch.
+    @Test func theFallbackIsTheFirstGitRoot() {
+        let plain = GitRootState(root: "/p/docs", name: "docs", branch: "", detached: "", ahead: 0, behind: 0,
+                                 files: [], error: "not a git repository", loading: false)
+        let api = GitRootState(root: "/p/api", name: "api", branch: "main", detached: "", ahead: 0, behind: 0,
+                               files: [], error: nil, loading: false)
+        #expect(activeGitRoot(focusedPath: nil, roots: [plain, api])?.name == "api")
+        #expect(activeGitRoot(focusedPath: "/p/docs/readme.md", roots: [plain, api])?.name == "api")
+        #expect(activeGitRoot(focusedPath: nil, roots: [plain]) == nil)
+    }
 }
+
