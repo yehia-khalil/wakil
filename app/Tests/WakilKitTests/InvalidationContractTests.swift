@@ -131,8 +131,8 @@ private let keptPerPlace: Set<String> = [
     // The socket each shown place opened before a session took it, by its conversation, pinned
     // to that place.
     "shownSockets",
-    // Every proposal waiting, by place (OrgSwitchTests.anOrgSwitchWithAParkedApprovalSwitchesAnyway).
-    "parkedProposals",
+    // Every proposal waiting, by slot (OrgSwitchTests.anOrgSwitchWithAParkedApprovalSwitchesAnyway).
+    "parkedSlots",
     // The screen's scope and every scope this window has read or written for an agent: kept so
     // a return reads nothing off disk and re-runs no subject.
     "layoutScope", "loadedLayoutScopes", "scopesAwaitingRestore", "backgroundLayouts",

@@ -209,9 +209,14 @@ public final class WindowModel {
         public let place: Place
         public let rootPath: String
         public let providerId: String
+        /// The on-screen conversation when the scope was read, so the turn goes to that one
+        /// wherever the screen is by then; nil before the place has one.
+        public var conversation: String? = nil
     }
 
-    public var turnScope: TurnScope { TurnScope(place: place, rootPath: rootPath, providerId: providerId) }
+    public var turnScope: TurnScope {
+        TurnScope(place: place, rootPath: rootPath, providerId: providerId, conversation: currentAgent?.id)
+    }
     /// True from the moment `setOrganization`'s OTHER guards pass until
     /// its whole sequence (success or failure) finishes. Org-independent:
     /// it describes the transition itself, not either the outgoing or the
@@ -375,17 +380,23 @@ public final class WindowModel {
     /// cannot outlive its own premise.
     public private(set) var databaseChoices: [String: QueryLineDatabaseChoice] = [:]
 
-    /// Every proposal waiting for this operator, by place. Mirrored from `confirmations`
-    /// by `confirmationPump`, started in `init` — not lazily, unlike
-    /// `eventPump`, because a mutation can park before the operator ever
-    /// sends anything to the agent.
-    public private(set) var parkedProposals: [Place: PendingMutation] = [:]
-    /// The on-screen place's waiting proposal, or `nil`. The confirmation plane renders from
-    /// this; another place's waits, unseen, until the operator goes there.
-    public var pending: PendingMutation? { parkedProposals[place] }
+    /// Every proposal waiting for this operator, by slot: the operator's in its place's own,
+    /// an agent's in its conversation's. Mirrored from `confirmations` by `confirmationPump`,
+    /// started in `init` — not lazily, unlike `eventPump`, because a mutation can park before
+    /// the operator ever sends anything to the agent.
+    public private(set) var parkedSlots: [ProposalSlot: PendingMutation] = [:]
+    /// One waiting proposal per place, as `ConfirmationBroker.all()` projects them.
+    public var parkedProposals: [Place: PendingMutation] { ConfirmationBroker.project(parkedSlots) }
+    /// The on-screen place's waiting proposal, or `nil`: the operator's own, else the on-screen
+    /// conversation's. The confirmation plane renders from this; another place's or another
+    /// conversation's waits, unseen, until the operator goes there.
+    public var pending: PendingMutation? {
+        parkedSlots[ProposalSlot(place: place, conversation: nil)]
+            ?? currentAgent.flatMap { parkedSlots[ProposalSlot(place: place, conversation: $0.id)] }
+    }
     /// The places with a proposal waiting, whoever proposed it. The chips count only the agent's
     /// (`chips`).
-    public var waitingPlaces: Set<Place> { Set(parkedProposals.keys) }
+    public var waitingPlaces: Set<Place> { Set(parkedSlots.keys.map(\.place)) }
 
     /// The arrangement the canvas draws. A cached copy of
     /// `LayoutStore.snapshot()`, refreshed after every dispatch that could
@@ -1042,12 +1053,12 @@ public final class WindowModel {
             // already parked — it does not replay an initial `nil` (Task
             // 8's review finding). So this subscriber clears any stale
             // `pending` itself; otherwise a re-subscribe while holding a
-            // stale `parkedProposals` would never be told to clear it.
+            // stale `parkedSlots` would never be told to clear it.
             // Safe unforced here even though `self` is weak: this task is
             // created from inside `self`'s own `init`, so `self` cannot
             // have deallocated yet.
-            self?.parkedProposals = [:]
-            for await parked in await confirmations.updates() {
+            self?.parkedSlots = [:]
+            for await parked in await confirmations.slotUpdates() {
                 // Re-checked on every iteration, like `eventPump` below —
                 // `updates()` never terminates on its own, so hoisting a
                 // `guard let self` above this loop (checked once) would
@@ -1055,8 +1066,11 @@ public final class WindowModel {
                 // the model → task → model cycle would break only by hand,
                 // in `shutdown()`.
                 guard let self else { return }
-                self.parkedProposals = parked
-                for place in parked.keys { if let agent = self.agents[place] { self.refreshChipProduction(of: agent) } }
+                self.parkedSlots = parked
+                for slot in parked.keys {
+                    let agent = slot.conversation.flatMap(self.conversation(id:)) ?? self.agents[slot.place]
+                    if let agent { self.refreshChipProduction(of: agent) }
+                }
             }
         }
 
@@ -1235,7 +1249,8 @@ public final class WindowModel {
         resumePump = Task { [weak self, resumes] in
             for await request in await resumes.requests() {
                 guard let self else { return }
-                await self.resume(sessionId: request.sessionId, in: request.place)
+                await self.resume(
+                    sessionId: request.sessionId, in: request.place, conversation: request.conversation)
             }
         }
 
@@ -1292,19 +1307,21 @@ public final class WindowModel {
         // (`ScopeRouting.home`), wherever the screen is; everything else is homed on the screen
         // it began on.
         registry.setScopeLookup { [weak self] caller in
-            guard let away = pinnedPlace(of: caller) else { return nil }
-            return await self?.agentScope(for: away)
+            guard pinnedPlace(of: caller) != nil else { return nil }
+            return await self?.agentScope(for: caller)
         }
         registry.setScreenScope { [panes] in await panes.activeScope }
     }
 
-    /// The scope an agent session in `place` works in: its agent's conversation, or the place's
-    /// own canvas before it has one. Never nil, so an agent is never homed on the screen's
+    /// The scope an agent session works in: its own conversation's — named by the caller, so a
+    /// late call from a session since replaced still reaches it — else its place's agent's, or
+    /// the place's own canvas before it has one. Never nil, so an agent is never homed on the screen's
     /// canvas by default — a place's pane must not land in another place's. A place with no
     /// project has no conversation's arrangement (`PlaceAgent.layoutScope`), so its agent works
     /// in its organisation's own canvas, with project and environment empty (final review C1).
-    private func agentScope(for place: Place) -> LayoutScope {
-        agents[place]?.layoutScope
+    private func agentScope(for caller: DispatchCaller) -> LayoutScope {
+        let place = caller.place
+        return (caller.conversation.flatMap(conversation(id:)) ?? agents[place])?.layoutScope
             ?? LayoutScope(organization: place.organization, project: place.project, environment: place.environment)
     }
 
@@ -1769,7 +1786,7 @@ public final class WindowModel {
         self.environment = environment
         // On the place just seeded, so the plane draws it. Nil leaves what is parked alone,
         // so a test that moves the screen does not clear other places' proposals.
-        if let pending { parkedProposals[place] = pending }
+        if let pending { parkedSlots[ProposalSlot(place: place, conversation: nil)] = pending }
         // Into the thread of the place just seeded, so the rows are on screen.
         if thoughts > 0 {
             let agent = agent(for: place)
@@ -4878,7 +4895,7 @@ public final class WindowModel {
     private func followConversation(
         of agent: PlaceAgent, carrying overlay: Pane? = nil, adoptingCanvas: Bool = false
     ) async {
-        guard agent.place != place else {
+        guard agent !== currentAgent else {
             await activateLayout(carrying: overlay, adoptingCanvas: adoptingCanvas)
             return
         }
@@ -4899,7 +4916,7 @@ public final class WindowModel {
     /// agent into the screen, each other agent into its place's scope.
     private func backfillTerminals() async {
         for agent in agents.values {
-            if agent.place == place {
+            if agent === currentAgent {
                 await agent.mirror.backfill(into: nil)
             } else if let scope = agent.layoutScope {
                 await agent.mirror.backfill(into: scope)
@@ -4909,7 +4926,7 @@ public final class WindowModel {
 
     /// One harness event into the terminal panes of its agent's own canvas.
     private func pumpMirror(_ event: HarnessEvent, for agent: PlaceAgent) async {
-        if agent.place == place {
+        if agent === currentAgent {
             await agent.mirror.pump(event, into: nil)
         } else if let scope = agent.layoutScope {
             await agent.mirror.pump(event, into: scope)
@@ -4925,7 +4942,7 @@ public final class WindowModel {
         // Mid-move, a scope's arrangement may be empty or already under its new key
         // (`carryScopes`); the next dispatch writes whatever changed.
         guard !layoutSwapInFlight else { return }
-        for agent in agents.values where agent.place != place {
+        for agent in agents.values where agent !== currentAgent {
             guard let scope = agent.layoutScope, scope != layoutScope,
                   loadedLayoutScopes.contains(scope) else { continue }
             let snapshot = await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }
@@ -7080,8 +7097,8 @@ public final class WindowModel {
     }
 
     /// Stops an agent's harness, then the socket its shim reached Wakil on: the `claude` child,
-    /// and the shim with it, are gone before the socket closes. The approval its agent is waiting
-    /// on in that place, if any, is cancelled with it (final review I2): it belongs to the
+    /// and the shim with it, are gone before the socket closes. The approval its conversation is
+    /// waiting on, if any, is cancelled with it (final review I2): it belongs to the
     /// session being stopped — `resume` and `setProvider` replace it, `shutdown` ends it — and,
     /// never expiring (R1), it would otherwise answer the next session's every gated call `.busy`.
     private func stopSession(of agent: PlaceAgent) async {
@@ -7095,13 +7112,9 @@ public final class WindowModel {
         if let shown = shownSockets.removeValue(forKey: agent.id) {
             await shown.opening.value.socket?.stop()
         }
+        // Every agent proposal names its conversation (`MCPServer.parkForConfirmation` parks
+        // under its socket caller's), so this one is the session's and no sibling's.
         await confirmations.cancelAgentProposal(inConversation: agent.id)
-        // And an agent's proposal in its place that names no conversation: no other conversation
-        // can claim it, and left parked it would hold the place's slot for ever (R1).
-        for (slot, parked) in await confirmations.allSlots()
-        where slot.place == agent.place && slot.conversation == nil && parked.origin == .agent {
-            await confirmations.cancel(id: parked.id)
-        }
     }
 
     /// Sends one turn to the agent, starting the session on the first call.
@@ -7122,7 +7135,7 @@ public final class WindowModel {
         // first turn's harness starts after `enterConversation` suspends, and starting it with
         // whatever the screen shows by then would run A's agent in B's root.
         let typedIn = scope ?? turnScope
-        let agent = agent(for: typedIn.place)
+        let agent = typedIn.conversation.flatMap(conversation(id:)) ?? agent(for: typedIn.place)
         let (startRoot, startProvider) = (typedIn.rootPath, typedIn.providerId)
         // The canvas comes with the conversation, for the same reason `openPane` does: a
         // first turn mints the conversation, and the arrangement belongs to the conversation
@@ -7336,7 +7349,7 @@ public final class WindowModel {
     /// Marks a turn's end, or a session's failure, for a chip when `agent`'s place is off screen;
     /// on screen the operator sees it happen. Activating the place clears both.
     private func markUnseen(failed: Bool, for agent: PlaceAgent) {
-        guard agent.place != place else { return }
+        guard agent !== currentAgent else { return }
         if failed { agent.unseenFailure = true } else { agent.unseenResult = true }
         refreshChipProduction(of: agent)
     }
@@ -7391,9 +7404,11 @@ public final class WindowModel {
     ///
     /// `place`: whose session is replaced — an agent's own `session_resume` names its place
     /// (`ResumeRequest.place`), so the fork happens there wherever the screen is. Nil is the
-    /// place on screen, which every operator resume is.
-    public func resume(sessionId parent: String, in place: Place? = nil) async {
-        let agent = agent(for: place ?? self.place)
+    /// place on screen, which every operator resume is. `conversation`: the one whose session is
+    /// replaced, when an agent's own resume names it (`ResumeRequest.conversation`); nil is the
+    /// place's agent.
+    public func resume(sessionId parent: String, in place: Place? = nil, conversation: String? = nil) async {
+        let agent = conversation.flatMap(self.conversation(id:)) ?? agent(for: place ?? self.place)
         markSessionStarted(in: agent)
         // Checked first, before `readThread` even dispatches a read: the
         // live session's own transcript is filed under the project root as
@@ -7708,9 +7723,13 @@ public final class WindowModel {
             status = "set provider \(id): a turn is in flight — wait for it to finish"
             return
         }
-        // Only this place's own waiting proposal refuses it: the session it belongs to is the
-        // one replaced. Another place's waits for its own agent, which keeps its provider.
-        guard await confirmations.current(for: startPlace) == nil else {
+        // Only this place's own waiting proposal refuses it — the operator's, or the on-screen
+        // conversation's, whose session is the one replaced. Another place's or another
+        // conversation's waits for its own agent, which keeps its provider.
+        let startConversation = currentAgent?.id
+        let placeSlot = await confirmations.current(in: ProposalSlot(place: startPlace, conversation: nil))
+        let ownSlot = await confirmations.current(in: ProposalSlot(place: startPlace, conversation: startConversation))
+        guard placeSlot == nil, ownSlot == nil else {
             status = "set provider \(id): a mutation is waiting for confirmation — "
                 + "confirm or cancel it first"
             return
@@ -7943,20 +7962,29 @@ public final class WindowModel {
         await rebuildQuickTasks()
     }
 
-    /// One chip per agent whose place is not the screen's and has something to show, ordered by
+    /// One chip per conversation not on screen that has something to show, ordered by
     /// organisation, project and environment (background agents 4 of 4). Empty when no agent
     /// works elsewhere, so the window's resting state is unchanged.
     public var chips: [AgentChip] {
-        // The agent waits only on its own proposal; the operator's, parked in the same place, is
-        // not the agent asking for anything (final review, minor 1).
-        let waiting = Set(parkedProposals.filter { $0.value.origin == .agent }.keys)
-        return agents.values
+        // A conversation waits only on its own proposal; the operator's, parked in the same
+        // place, is not the agent asking for anything (final review, minor 1), nor is another
+        // conversation's. An agent's that names none, in its place's own slot, is the place's
+        // conversation's, as `pending` reads it.
+        let agentSlots = parkedSlots.filter { $0.value.origin == .agent }.keys
+        let waiting = Set(agentSlots.compactMap(\.conversation))
+        let unnamed = Set(agentSlots.filter { $0.conversation == nil }.map(\.place))
+        let shown = currentAgent
+        return conversations.values
             .compactMap { agent -> AgentChip? in
-                guard agent.place != place, let state = AgentChip.state(
-                    waiting: waiting.contains(agent.place), failed: agent.unseenFailure,
+                let waits = waiting.contains(agent.id)
+                    || (unnamed.contains(agent.place) && screenConversations[agent.place] == agent.id)
+                guard agent !== shown, let state = AgentChip.state(
+                    waiting: waits, failed: agent.unseenFailure,
                     working: agent.turnInFlight, done: agent.unseenResult)
                 else { return nil }
-                return AgentChip(place: agent.place, state: state, productionEnvironment: agent.productionEnvironment)
+                return AgentChip(
+                    place: agent.place, state: state, productionEnvironment: agent.productionEnvironment,
+                    conversation: agent.id)
             }
             .sorted {
                 ($0.place.organization, $0.place.project, $0.place.environment)

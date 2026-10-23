@@ -44,10 +44,13 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
     /// Whether the place's environment is production, so its segment is drawn in production red
     /// (Invariant 8) whatever the state's hue.
     public let productionEnvironment: Bool
+    /// The conversation the chip stands for, by its id: the one its click returns to.
+    public let conversation: String
     public var id: Place { place }
 
-    init(place: Place, state: State, productionEnvironment: Bool) {
+    init(place: Place, state: State, productionEnvironment: Bool, conversation: String = "") {
         self.place = place
+        self.conversation = conversation
         self.state = state
         self.label = [place.organization, place.project, place.environment]
             .filter { !$0.isEmpty }.joined(separator: " · ")

@@ -8,6 +8,7 @@ import Testing
 
 private let org = "initech"
 private let placeA = Place(organization: org, project: "api", environment: "staging")
+private let placeB = Place(organization: org, project: "billing", environment: "staging")
 
 @MainActor
 private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
@@ -31,6 +32,21 @@ private func show(_ place: Place, in model: WindowModel) {
 /// transcript under the window's provider.
 @MainActor
 private func resumableWindow(_ sessions: Sessions) async throws -> WindowModel {
+    try await wiredWindow(sessions).model
+}
+
+/// What a test drives a resumable window through: its registry (with the layout actions), its
+/// layout store, and its resume and confirmation brokers.
+private struct Wired {
+    let model: WindowModel
+    let registry: ActionRegistry
+    let layout: LayoutStore
+    let resumes: ResumeBroker
+    let confirmations: ConfirmationBroker
+}
+
+@MainActor
+private func wiredWindow(_ sessions: Sessions) async throws -> Wired {
     let dir = testScratchRoot.appendingPathComponent("conversation-key-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "conversation-key")
@@ -39,6 +55,8 @@ private func resumableWindow(_ sessions: Sessions) async throws -> WindowModel {
     let broker = ResumeBroker()
     await registerStandardActions(
         into: registry, context: nil, panes: panes, db: nil, resumes: broker, layout: layout)
+    await registerLayoutActions(into: registry, layout: layout, panes: panes)
+    let confirmations = ConfirmationBroker()
     await registry.register(Action(
         name: "session_read", description: "test double", kind: .read,
         schema: .object(["type": .string("object")]),
@@ -53,10 +71,21 @@ private func resumableWindow(_ sessions: Sessions) async throws -> WindowModel {
         harnessFactory: { place, _, socketPath in sessions.harness(place, socketPath) },
         resumes: broker, rootPath: "/tmp", providerId: "test-provider",
         lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForTesting() },
-        confirmations: ConfirmationBroker(),
+        confirmations: confirmations,
         agentSocketFactory: sessions.socketFactory, environment: "staging")
     model.setOrganizationForTesting(org)
-    return model
+    return Wired(model: model, registry: registry, layout: layout, resumes: broker, confirmations: confirmations)
+}
+
+/// `scope`'s arrangement, read as a caller homed there reads it.
+private func snapshot(_ layout: LayoutStore, in scope: LayoutScope) async -> LayoutSnapshot {
+    await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }
+}
+
+private func agentProposal(in place: Place, conversation: String?) -> PendingMutation {
+    PendingMutation(
+        action: "db_run_mutation", params: .object([:]), database: nil, statement: "DELETE FROM t",
+        affectsEveryRow: true, origin: .agent, place: place, conversation: conversation)
 }
 
 @MainActor
@@ -127,6 +156,112 @@ struct ConversationKeyTests {
 
         #expect(model.currentAgent?.id == reserved)
         #expect(model.currentAgent?.assignedSessionId == reserved)
+        await model.shutdown()
+    }
+
+    // MARK: Task 3: calls, proposals, chips and turns resolve to their conversation
+
+    @Test func aCallOnABackgroundConversationsSocketWritesItsOwnCanvas() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("hello A"))
+        show(placeB, in: model)
+        #expect(await model.send("hello B"))
+        let caller = try #require(await sessions.issuedSockets.first?.caller())
+        #expect(caller.conversation == model.agents[placeA]?.id)
+
+        _ = try await w.registry.dispatch(
+            name: "pane_open", params: .object(["kind": .string("db")]),
+            origin: .agent, caller: caller, confirmation: nil)
+
+        #expect(model.layoutSnapshot.panes.isEmpty, "B's canvas is untouched")
+        let scopeA = try #require(model.agents[placeA]?.layoutScope)
+        #expect(await snapshot(w.layout, in: scopeA).panes.count == 1)
+        await model.shutdown()
+    }
+
+    @Test func aResumeRequestNamingAConversationForksThatOne() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("hello A"))
+        let idA = try #require(model.currentAgent?.id)
+        show(placeB, in: model)
+        #expect(await model.send("hello B"))
+
+        await w.resumes.request(ResumeRequest(sessionId: "parent-1", place: placeA, conversation: idA))
+
+        #expect(await waitUntil { sessions.harnesses.in(placeA).count == 2 }, "\(model.status)")
+        #expect(model.agents[placeA]?.id == idA)
+        #expect(sessions.harnesses.in(placeB).count == 1)
+        #expect(model.place == placeB)
+        await model.shutdown()
+    }
+
+    @Test func aLateCallFromAReplacedSessionStillResolvesItsConversation() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("hello A"))
+        let idA = try #require(model.currentAgent?.id)
+        let oldCaller = try #require(await sessions.issuedSockets.first?.caller())
+        await model.resume(sessionId: "parent-1")
+        #expect(model.currentAgent?.sessionId != oldCaller.session, "the session was replaced")
+        show(placeB, in: model)
+        #expect(await model.send("hello B"))
+
+        #expect(oldCaller.conversation == idA)
+        _ = try await w.registry.dispatch(
+            name: "pane_open", params: .object(["kind": .string("db")]),
+            origin: .agent, caller: oldCaller, confirmation: nil)
+
+        #expect(model.layoutSnapshot.panes.isEmpty, "the screen's canvas is B's")
+        let scopeA = try #require(model.conversation(id: idA)?.layoutScope)
+        #expect(await snapshot(w.layout, in: scopeA).panes.count == 1, "A's conversation took it")
+        await model.shutdown()
+    }
+
+    @Test func aChipWaitsOnItsOwnConversationsProposalOnly() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("hello A"))
+        let idA = try #require(model.currentAgent?.id)
+        show(placeB, in: model)
+        #expect(await model.send("hello B"))
+
+        let proposal = agentProposal(in: placeA, conversation: idA)
+        let parked = Task { await w.confirmations.request(proposal) }
+
+        #expect(await waitUntil { model.chips.first?.state == .waiting })
+        #expect(model.chips.first?.conversation == idA)
+        #expect(model.parkedSlots[ProposalSlot(place: placeA, conversation: idA)]?.id == proposal.id)
+        #expect(model.pending == nil, "B's plane shows nothing of A's")
+        await w.confirmations.cancel(id: proposal.id)
+        #expect(await parked.value == .cancelled)
+        await model.shutdown()
+    }
+
+    @Test func theOnScreenConversationsProposalIsTheOnePending() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("hello A"))
+        let idA = try #require(model.currentAgent?.id)
+        #expect(model.turnScope.conversation == idA, "a turn typed here goes to this conversation")
+
+        let proposal = agentProposal(in: placeA, conversation: idA)
+        let parked = Task { await w.confirmations.request(proposal) }
+
+        #expect(await waitUntil { model.pending?.id == proposal.id })
+        await model.cancelPending()
+        #expect(await parked.value == .cancelled)
         await model.shutdown()
     }
 }

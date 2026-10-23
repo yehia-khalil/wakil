@@ -134,7 +134,7 @@ public actor ConfirmationBroker {
     }
 
     /// One proposal per place: the place slot's, else the lowest conversation id's.
-    private static func project(_ slots: [ProposalSlot: PendingMutation]) -> [Place: PendingMutation] {
+    static func project(_ slots: [ProposalSlot: PendingMutation]) -> [Place: PendingMutation] {
         var out: [Place: PendingMutation] = [:]
         var best: [Place: ProposalSlot] = [:]
         for (slot, parked) in slots {
