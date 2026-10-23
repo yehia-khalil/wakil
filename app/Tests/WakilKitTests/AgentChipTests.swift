@@ -610,6 +610,56 @@ struct DraftPerScreenTests {
         #expect(model.place == home && composer.draft == "half a thought")
     }
 
+    // Fix round 2: an org switch reserves the place's next conversation only once the switch is
+    // over, after the activation told the composer; that reservation is told too.
+    @Test func aDraftTypedInAFreshOrgSurvivesItsFirstSend() async throws {
+        let ctx = FakeContext()
+        let model = await goToWindow(ctx, harnesses: Harnesses())
+        await model.refreshContext()
+        let (composer, _) = composer(over: model)
+
+        await model.requestOrganizationSwitch("globex")
+        #expect(model.organization == "globex", "\(model.status)")
+        composer.edited(draft: "and then", caret: 8)
+        #expect(await model.send("first job"))
+
+        #expect(composer.draft == "and then", "the Landing's draft is the conversation's")
+        let globex = model.place
+        await model.goTo(Place(organization: "initech", project: "api", environment: "staging"))
+        #expect(composer.draft.isEmpty)
+        await model.goTo(globex)
+        #expect(composer.draft == "and then", "kept under the conversation it became")
+    }
+
+    @Test func noDraftLeaksBetweenTwoFreshPlacesInDifferentOrgs() async throws {
+        let ctx = FakeContext()
+        let model = await goToWindow(ctx, harnesses: Harnesses())
+        await model.refreshContext()
+        let initech = model.place
+        let (composer, _) = composer(over: model)
+
+        await model.requestOrganizationSwitch("globex")
+        let globex = model.place
+        composer.edited(draft: "globex only", caret: 11)
+        await model.goTo(initech)
+        #expect(composer.draft.isEmpty, "globex's draft is not initech's")
+        composer.edited(draft: "initech only", caret: 12)
+        await model.goTo(globex)
+        #expect(composer.draft == "globex only")
+        await model.goTo(initech)
+        #expect(composer.draft == "initech only")
+    }
+
+    @Test func anUnreservedLandingIsKeyedByItsPlace() {
+        let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: org)
+        show(placeA, in: model)
+        #expect(model.screenKey == "landing:@initech/api/staging")
+        #expect(model.isSameScreenRenamed(from: "landing:@initech/api/staging", to: "landing:r"))
+        #expect(model.isSameScreenRenamed(from: "landing:r", to: "r"))
+        #expect(!model.isSameScreenRenamed(from: "landing:@globex/web/dev", to: "landing:r"), "another place's")
+        #expect(!model.isSameScreenRenamed(from: "landing:q", to: "landing:r"))
+    }
+
     @Test func aLandingsDraftSurvivesItsOwnFirstSendAndStaysWithTheConversation() async throws {
         let ctx = FakeContext()
         let harnesses = Harnesses()

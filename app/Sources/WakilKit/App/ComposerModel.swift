@@ -62,7 +62,7 @@ public final class ComposerModel {
     /// made it a conversation — is not a change: only its key moves, and the draft (what was
     /// typed while that message went out), a hold and the keyboard stay where they are.
     public func screenChanged(from: String, to: String, focusComposer: Bool) {
-        if WindowModel.isSameScreenRenamed(from: from, to: to) {
+        if window.isSameScreenRenamed(from: from, to: to) {
             if holdScreen == screen || holdScreen == from { holdScreen = to }
             screen = to
             return

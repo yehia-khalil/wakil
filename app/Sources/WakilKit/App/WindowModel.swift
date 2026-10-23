@@ -8064,6 +8064,8 @@ public final class WindowModel {
             await activateLayout()
             switching = false
             openShownSocket()
+            // The reservation that just minted renames the Landing told about mid-switch.
+            tellScreenChange()
             // No organisation is open: the old one's quick tasks go, and none are built.
             await rebuildQuickTasks()
             return
@@ -8088,6 +8090,8 @@ public final class WindowModel {
         // The place landed on is shown, and the switch is over: its socket (`openShownSocket`).
         switching = false
         openShownSocket()
+        // The reservation that just minted renames the Landing told about mid-switch.
+        tellScreenChange()
         // **No auto-resume and no seam.** Returning to an org lands where that place was left —
         // its own agent and thread, or the Landing where no work has begun (whose Continue lists
         // what `autoResumeAfterSwitch` would have picked; ruled 2026-09-20). A seam row naming
@@ -8241,9 +8245,17 @@ public final class WindowModel {
 
     /// What the screen shows, as the composer keys its drafts (`ComposerModel.screenChanged`):
     /// the conversation on screen's id, else `"landing:"` and the id the place reserves for its
-    /// next conversation — the one its Landing's first message will start.
+    /// next conversation — the one its Landing's first message will start — else, before the
+    /// place has reserved one, `"landing:@<org>/<project>/<env>"`: never a bucket two places share.
     public var screenKey: String {
-        currentAgent?.id ?? "landing:" + (reservedConversations[place] ?? "")
+        if let id = currentAgent?.id { return id }
+        if let reserved = reservedConversations[place] { return "landing:" + reserved }
+        return Self.unreservedLandingKey(place)
+    }
+
+    /// `place`'s Landing before it has reserved its next conversation.
+    nonisolated static func unreservedLandingKey(_ place: Place) -> String {
+        "landing:@\(place.organization)/\(place.project)/\(place.environment)"
     }
 
     /// Told when what the screen shows changes (`screenKey`), by whatever moved it: the `screenKey`
@@ -8251,19 +8263,24 @@ public final class WindowModel {
     /// conversation always, otherwise when the canvas arrived at has no focused pane (ruling 7).
     /// `ComposerModel` registers itself here in its `init`.
     @ObservationIgnored
-    public var onScreenChange: (@MainActor (_ from: String, _ to: String, _ focusComposer: Bool) -> Void)?
+    public var onScreenChange: (@MainActor (_ from: String, _ to: String, _ focusComposer: Bool) -> Void)? {
+        // Whoever registers starts on the screen as it is now, so the next tell is from it.
+        didSet { toldScreenKey = screenKey }
+    }
 
-    /// The `screenKey` `onScreenChange` was last told about; nil until the first tell, which
-    /// only records it — the composer starts on whatever screen that is.
+    /// The `screenKey` `onScreenChange` was last told about — set when it is registered, so the
+    /// listener and the window agree on where they start; nil only with no one listening.
     @ObservationIgnored private var toldScreenKey: String?
     /// Set by `newConversation` around its activation: the Landing's composer takes the keyboard.
     @ObservationIgnored private var composerFocusForced = false
 
-    /// Whether `from` and `to` are one screen renamed rather than two: a Landing's first message
-    /// makes its reserved id the conversation's (`"landing:R"` becomes `"R"`). The composer
-    /// re-keys its draft for it and leaves it, and the keyboard, where they are.
-    public nonisolated static func isSameScreenRenamed(from: String, to: String) -> Bool {
-        from == "landing:" + to
+    /// Whether `from` and `to` — `to` being the screen now — are one screen renamed rather than
+    /// two: a Landing's first message makes its reserved id the conversation's (`"landing:R"`
+    /// becomes `"R"`), and the place on screen reserving its next conversation — or starting
+    /// one — renames its unreserved Landing (`"landing:@<place>"`). The composer re-keys its
+    /// draft for these and leaves it, and the keyboard, where they are.
+    public func isSameScreenRenamed(from: String, to: String) -> Bool {
+        from == "landing:" + to || from == Self.unreservedLandingKey(place)
     }
 
     /// The one place a change of what the screen shows is told: the end of every
@@ -8271,13 +8288,9 @@ public final class WindowModel {
     /// Landing. Each change is told once; an unchanged `screenKey` tells nothing.
     private func tellScreenChange() {
         let now = screenKey
-        guard let told = toldScreenKey else {
-            toldScreenKey = now
-            return
-        }
-        guard told != now else { return }
+        guard let told = toldScreenKey, told != now else { return }
         toldScreenKey = now
-        if Self.isSameScreenRenamed(from: told, to: now) {
+        if isSameScreenRenamed(from: told, to: now) {
             onScreenChange?(told, now, false)
             return
         }
@@ -8475,8 +8488,9 @@ public final class WindowModel {
         conversations[id] = created
         conversationOrder.append(id)
         screenConversations[place] = id
-        // On screen, its Landing is now this conversation: the same screen, re-keyed.
-        tellScreenChange()
+        // On screen, its Landing is now this conversation: the same screen, re-keyed. Mid-activation
+        // the activation's own tell comes after its canvas is in, and says it.
+        if place == self.place, !layoutActivating { tellScreenChange() }
         return created
     }
 
