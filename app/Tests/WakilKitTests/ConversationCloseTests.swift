@@ -296,6 +296,58 @@ struct ConversationCloseTests {
         await model.shutdown()
     }
 
+    // MARK: Fix round 1
+
+    /// Invariant 4: a late call on a closed conversation's still-open connection names a
+    /// conversation no longer live. It is refused whole (Rule 8) and writes into no canvas — not
+    /// the place's next conversation's, not the Landing's — nor brings the closed one's back.
+    @Test func aLateCallFromAClosedConversationIsRefusedAndTouchesNoCanvas() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions)
+        let model = w.model
+        show(placeA, in: model)
+        let first = try await idleConversation(model, sessions, "first job")
+        await model.newConversation()
+        let second = try await idleConversation(model, sessions, "second job")
+        let oldCaller = second.caller
+        let closedScope = try #require(second.layoutScope)
+        let nextScope = try #require(first.layoutScope)
+        await model.closeConversation()
+        #expect(model.currentAgent === first)
+        let before = await w.layout.scopes
+
+        await #expect(throws: ActionError.callerGone(
+            "pane_open",
+            reason: "pane_open: the conversation this call came from was closed — nothing was done")) {
+            _ = try await w.registry.dispatch(
+                name: "pane_open", params: .object(["kind": .string("db")]),
+                origin: .agent, caller: oldCaller, confirmation: nil)
+        }
+
+        let next = await ScopeRouting.$home.withValue(nextScope) { await w.layout.snapshot() }
+        #expect(next.panes.isEmpty, "the next conversation's canvas is untouched")
+        #expect(model.layoutSnapshot.panes.isEmpty)
+        #expect(await w.layout.scopes == before && !before.contains(closedScope), "nothing re-created")
+        await model.shutdown()
+    }
+
+    @Test func twoClosesAcrossTheUnsavedTabCheckAskOnceAndSayNothingElse() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("long job"))
+        let id = try #require(model.currentAgent).id
+
+        let one = Task { await model.closeConversation() }
+        let two = Task { await model.closeConversation() }
+        await one.value
+        await two.value
+
+        #expect(model.closeQuestion?.conversation == id)
+        #expect(!model.status.contains("another conversation"), "the second is ignored (Rule 5): \(model.status)")
+        await model.shutdown()
+    }
+
     // MARK: The pump and the gesture
 
     @Test func sessionCloseParksOnTheBrokerAndClosesTheScreensConversation() async throws {
@@ -379,7 +431,9 @@ struct ConversationCloseTests {
         let own = await sockets(of: second.id, sessions)
         #expect(own.allSatisfy { $0.stopped }, "no orphan socket")
         await model.settleShownSocketsForTesting()
-        #expect(model.shownSocketSessionIdForTesting(placeA) != second.id)
+        let secondSession = try #require(second.sessionId)
+        #expect(model.shownSocketSessionIdForTesting(placeA) == nil,
+                "the conversation shown has its session, so no shown socket — \(secondSession)'s least of all")
         await model.shutdown()
     }
 

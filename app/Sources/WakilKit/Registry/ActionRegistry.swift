@@ -8,6 +8,10 @@ public enum ActionError: Error, Equatable {
     case unknown(String)
     case needsConfirmation(String)
     case blockedInProduction(String)
+    /// Refused before anything ran because the caller is gone (conversations 3 of 3): a late call
+    /// on a closed conversation's still-open connection (`setCallerRefusal`). `reason` is the
+    /// whole sentence, beginning `"<action>: "`.
+    case callerGone(String, reason: String)
 }
 
 /// **The operator reads these**, so they are sentences rather than the
@@ -47,6 +51,8 @@ extension ActionError: CustomStringConvertible {
             return "\(name): needs confirmation \u{2014} type confirm to run it"
         case .blockedInProduction(let name):
             return "\(name): blocked in production \u{2014} not gated, so no confirmation will run it"
+        case .callerGone(_, let reason):
+            return reason
         }
     }
 }
@@ -142,6 +148,19 @@ public actor ActionRegistry {
         screenScope.set { _ in await screen() }
     }
 
+    /// Why a caller may not dispatch at all, read first on every dispatch (conversations 3 of
+    /// 3): the window refuses a call from a session of a conversation since closed, which has no
+    /// canvas to act on any more (Invariant 4). Nil — or no lookup — lets it through. The
+    /// sentence is the whole refusal (`ActionError.callerGone`).
+    ///
+    /// Installed by `WindowModel`, nonisolated for `setProductionLookup`'s reason.
+    public nonisolated func setCallerRefusal(
+        _ lookup: @escaping @Sendable (_ action: String, _ caller: DispatchCaller) async -> String?
+    ) {
+        callerRefusal.set(lookup)
+    }
+
+    private nonisolated let callerRefusal = CallerRefusalBox()
     private nonisolated let productionLookup = CallerLookupBox<EnvironmentProduction>()
     private nonisolated let scopeLookup = CallerLookupBox<LayoutScope>()
     private nonisolated let screenScope = CallerLookupBox<LayoutScope>()
@@ -239,6 +258,14 @@ public actor ActionRegistry {
                                    caller: caller, outcome: "unknown",
                                    secretParams: nil)
             throw ActionError.unknown(name)
+        }
+
+        // A caller with nothing left to act for is refused before anything reads or writes.
+        if let refusal = await callerRefusal.current()?(name, caller) {
+            try appendJournalEntry(action: name, params: params, origin: origin,
+                                   caller: caller, outcome: "refused",
+                                   secretParams: action.secretParams)
+            throw ActionError.callerGone(name, reason: refusal)
         }
 
         // An agent caller's own place's declarations; the window's otherwise.
@@ -708,6 +735,27 @@ extension ActionRegistry {
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+/// `ActionRegistry.setCallerRefusal`'s slot: `CallerLookupBox`'s, for a lookup that also names
+/// the action.
+final class CallerRefusalBox: @unchecked Sendable {
+    typealias Lookup = @Sendable (String, DispatchCaller) async -> String?
+
+    private let lock = NSLock()
+    private var lookup: Lookup?
+
+    func set(_ lookup: @escaping Lookup) {
+        lock.lock()
+        self.lookup = lookup
+        lock.unlock()
+    }
+
+    func current() -> Lookup? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lookup
+    }
 }
 
 /// `ActionRegistry.setProductionLookup`'s and `setScopeLookup`'s slot: the same lock-and-closure

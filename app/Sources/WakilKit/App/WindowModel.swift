@@ -1399,6 +1399,10 @@ public final class WindowModel {
         // Background agents 3 of 4: an agent's dispatch reads and writes its own place's canvas
         // (`ScopeRouting.home`), wherever the screen is; everything else is homed on the screen
         // it began on.
+        // Conversations 3 of 3: a session of a conversation since closed acts for nothing.
+        registry.setCallerRefusal { [weak self] action, caller in
+            await self?.closedConversationRefusal(action, caller)
+        }
         registry.setScopeLookup { [weak self] caller in
             guard pinnedPlace(of: caller) != nil else { return nil }
             return await self?.agentScope(for: caller)
@@ -1412,9 +1416,15 @@ public final class WindowModel {
     /// canvas by default — a place's pane must not land in another place's. A place with no
     /// project has no conversation's arrangement (`PlaceAgent.layoutScope`), so its agent works
     /// in its organisation's own canvas, with project and environment empty (final review C1).
+    ///
+    /// **A caller that names its conversation gets that one's, or none** (conversations 3 of 3):
+    /// never the place's other conversation's. Only a caller that names none falls back to the
+    /// place's agent. One naming a conversation no longer live is refused before it gets here
+    /// (`closedConversationRefusal`); one naming its Landing's reserved id gets the place's canvas.
     private func agentScope(for caller: DispatchCaller) -> LayoutScope {
         let place = caller.place
-        return (caller.conversation.flatMap(conversation(id:)) ?? agents[place])?.layoutScope
+        let agent = caller.conversation.map { conversations[$0] } ?? agents[place]
+        return agent?.layoutScope
             ?? LayoutScope(
                 organization: place.organization, project: place.project, environment: place.environment,
                 lineageRoot: landingRoot(in: place))
@@ -8382,6 +8392,9 @@ public final class WindowModel {
             status = refusal
             return
         }
+        // A second close of it that came in across that await is ignored (Rule 5), as it is above.
+        guard closeQuestion?.conversation != target.id, !closing.contains(target.id),
+              conversations[target.id] === target else { return }
         guard target.turnInFlight || waitingConversations.contains(target.id) else {
             await endConversation(target)
             return
@@ -8455,6 +8468,17 @@ public final class WindowModel {
         if let scope { await releaseCanvas(scope) }
         retainAgentPlace()
         onConversationClosed?(agent.id)
+    }
+
+    /// The refusal for `caller`, an agent session whose conversation is no longer live — a late
+    /// call on a closed conversation's still-open connection — so it writes into no canvas: not
+    /// the place's next conversation's, not its Landing's, and not the closed one's, let go of
+    /// (Invariant 4). Whole (Rule 8). Nil for anyone else: the operator, a caller that names no
+    /// conversation, and a Landing's reserved id, which its first message's conversation takes.
+    private func closedConversationRefusal(_ action: String, _ caller: DispatchCaller) -> String? {
+        guard pinnedPlace(of: caller) != nil, let id = caller.conversation, conversations[id] == nil,
+              !reservedConversations.values.contains(id) else { return nil }
+        return "\(action): the conversation this call came from was closed — nothing was done"
     }
 
     /// Kills `scope`'s shells and lets go of everything this window and its stores hold for it in
