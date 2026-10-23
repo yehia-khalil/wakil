@@ -69,7 +69,11 @@ struct AddProjectSheet: View {
                 TextField("git@github.com:org/repo.git or https://github.com/org/repo", text: $link)
                     .textFieldStyle(.roundedBorder)
                     .focused($linkFocused)
-                    .onAppear { linkFocused = true }   // Rule 3
+                    // Rule 3. A beat after appearing: in a sheet, focus set as the field appears is dropped.
+                    .task {
+                        try? await Task.sleep(for: .milliseconds(150))
+                        linkFocused = true
+                    }
                     .onSubmit { if ready, task == nil { start() } }
                     .disabled(task != nil)
                     .accessibilityIdentifier("settings.projects.clone.link")

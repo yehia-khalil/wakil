@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WakilKit
 
@@ -23,43 +24,37 @@ struct AgentInstructionBox: View {
         let text = field.draft ?? stored
         VStack(alignment: .leading, spacing: 2) {
             SettingsRow(label, wraps: true) {
-                // A hidden copy of the text sizes the box to it — one line empty, up to twelve — and
-                // the editor lies over it, so there is no scroll bar until the text outgrows that.
-                Text(text.isEmpty ? placeholder : text + "\n")
+                // Text equal to what is stored is no draft: a field writes its text back when editing
+                // ends, and a kept copy would hide a later change to the stored value.
+                TextField("", text: Binding(get: { field.draft ?? stored }, set: { field.draft = $0 == stored ? nil : $0 }),
+                          prompt: Text(placeholder).foregroundStyle(SettingsPalette.coolWhite.opacity(0.30)),
+                          axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...12)
                     .font(.system(size: SettingsScale.body))
-                    .lineLimit(12)
-                    .padding(.horizontal, 5)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .hidden()
-                    .overlay(alignment: .topLeading) {
-                        ZStack(alignment: .topLeading) {
-                            TextEditor(text: Binding(get: { field.draft ?? stored }, set: { field.draft = $0 }))
-                                .font(.system(size: SettingsScale.body))
-                                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.88))
-                                .scrollContentBackground(.hidden)
-                                .scrollIndicators(.never)
-                                .focused($focused)
-                                .onChange(of: focused) { old, new in
-                                    if old, !new { autosave.cancel(); commit(field.leave(stored: stored)) }
-                                }
-                                .onChange(of: field.draft) { _, draft in
-                                    guard draft != nil else { return }
-                                    autosave.schedule { commit(field.leave(stored: stored)) }
-                                }
-                                .accessibilityLabel(label)
-                                .accessibilityIdentifier(identifier)
-                            if text.isEmpty {
-                                // The text view insets its first line by its line-fragment padding.
-                                Text(placeholder)
-                                    .font(.system(size: SettingsScale.body))
-                                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.30))
-                                    .padding(.leading, 5)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: 520)
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.88))
+                    .frame(maxWidth: 520, alignment: .leading)
                     .inPlaceField(focused: focused)
+                    .focused($focused)
+                    .onChange(of: focused) { old, new in
+                        if old, !new { autosave.cancel(); commit(field.leave(stored: stored)) }
+                        // Focus by keyboard selects the whole text, so the next key would replace it:
+                        // the caret goes to the end instead. A click keeps the caret where it landed.
+                        if new { Task { @MainActor in caretToEndIfAllSelected() } }
+                    }
+                    // A box of instructions takes new lines: Return inserts one where the caret is,
+                    // rather than ending the edit as a one-line field would.
+                    .onKeyPress(.return) {
+                        guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return .ignored }
+                        editor.insertNewlineIgnoringFieldEditor(nil)
+                        return .handled
+                    }
+                    .onChange(of: field.draft) { _, draft in
+                        guard draft != nil else { return }
+                        autosave.schedule { commit(field.leave(stored: stored)) }
+                    }
+                    .accessibilityLabel(label)
+                    .accessibilityIdentifier(identifier)
             }
             if field.saving {
                 Text("Saving…")
@@ -86,6 +81,14 @@ struct AgentInstructionBox: View {
         .onDisappear {
             autosave.cancel()
             commit(field.disappeared(stored: stored))
+        }
+    }
+
+    private func caretToEndIfAllSelected() {
+        guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+        let length = (editor.string as NSString).length
+        if length > 0, editor.selectedRange() == NSRange(location: 0, length: length) {
+            editor.setSelectedRange(NSRange(location: length, length: 0))
         }
     }
 

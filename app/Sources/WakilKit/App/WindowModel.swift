@@ -2671,12 +2671,7 @@ public final class WindowModel {
             name: "settings_open", params: .object([:]), origin: .ui,
             caller: DispatchCaller(place: place, session: nil), confirmation: nil)) != nil
         else { return }
-        await refreshLayout()
-        // Settings opens full screen, each time ⌘, opens it or brings it forward (3a-iii walk).
-        if let id = layoutSnapshot.panes.first(where: { $0.kind == Pane.settingsKind })?.id,
-           layoutSnapshot.maximizedId != id {
-            await dispatchLayout("pane_maximize", .object(["id": .string(id)]))
-        }
+        await refreshLayout()   // `settings_open` opened it full screen
         await refreshSettings()
     }
 

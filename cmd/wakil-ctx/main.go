@@ -225,6 +225,13 @@ type gitAccountArgs struct {
 	Username string `json:"username,omitempty" jsonschema:"Bitbucket's username, used with its token"`
 }
 
+// gitOrgArgs is what the account sheet's reads take: the organisation, and Sign in's provider.
+// No host — they run before one is chosen.
+type gitOrgArgs struct {
+	ID       string `json:"id" jsonschema:"the organisation's id"`
+	Provider string `json:"provider,omitempty" jsonschema:"github or gitlab, for git_device_start"`
+}
+
 // setEditorSettingsArgs is the app-wide editor tier's edit (3b-v). Pointers for updateOrgArgs'
 // reason: absent leaves what is on disk.
 type setEditorSettingsArgs struct {
@@ -831,12 +838,12 @@ func newServer() *mcp.Server {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_host_suggestions", Description: "The hosts an organisation's project roots push to (each origin, ssh aliases resolved), the most used first, with how many roots use each. Read when an account is being added."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitHostSuggestionsOut, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitOrgArgs) (*mcp.CallToolResult, gitHostSuggestionsOut, error) {
 			return nil, gitHostSuggestionsOut{Hosts: wakilcore.GitHostSuggestions(a.ID)}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_ssh_keys", Description: "The key pairs in ~/.ssh, by their public half's comment, and which need a passphrase."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitSSHKeysOut, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitOrgArgs) (*mcp.CallToolResult, gitSSHKeysOut, error) {
 			return nil, gitSSHKeysOut{Keys: wakilcore.ListSSHKeys()}, nil
 		})
 
@@ -875,7 +882,7 @@ func newServer() *mcp.Server {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_device_start", Description: "Begin a provider's Sign in (device flow): answers the code the operator types and the page to type it on."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, wakilcore.DeviceCode, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitOrgArgs) (*mcp.CallToolResult, wakilcore.DeviceCode, error) {
 			code, err := wakilcore.DeviceStart(ctx, a.Provider)
 			if err != nil {
 				return toolErr(err), wakilcore.DeviceCode{}, nil
@@ -899,7 +906,7 @@ func newServer() *mcp.Server {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_gh_logins", Description: "The logins the GitHub CLI holds (gh auth status); none without gh."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a gitAccountArgs) (*mcp.CallToolResult, gitGhLoginsOut, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, a gitOrgArgs) (*mcp.CallToolResult, gitGhLoginsOut, error) {
 			return nil, gitGhLoginsOut{Logins: wakilcore.GhLogins()}, nil
 		})
 

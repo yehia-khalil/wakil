@@ -1136,7 +1136,8 @@ struct SettingsPane: View {
             "",
             text: Binding(
                 get: { draft ?? stored },
-                set: { drafts[field] = $0 }),
+                // Equal to what is stored is no draft (a field writes its text back as editing ends).
+                set: { drafts[field] = $0 == stored ? nil : $0 }),
             prompt: Text(prompt).foregroundStyle(coolWhite.opacity(0.30)))
             .textFieldStyle(.plain)
             .font(.system(size: Scale.body))

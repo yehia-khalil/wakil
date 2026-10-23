@@ -72,16 +72,16 @@ struct GitAccountsBlock: View {
                 if testing[account.host] != nil {
                     ProgressView().controlSize(.small)
                     // Rule 4: a Test waits on the network, so it can be stopped.
-                    FormButton(title: "Cancel", tone: SettingsPalette.coolWhite, identifier: id + ".test.cancel") {
+                    FormButton(title: "Cancel", tone: SettingsPalette.coolWhite, identifier: "settings.org.git.account.\(account.host).test.cancel") {
                         testing[account.host]?.cancel()
                         testing[account.host] = nil
                     }
                 } else {
-                    FormButton(title: "Test", tone: SettingsPalette.coolWhite, identifier: id + ".test") { test(account) }
+                    FormButton(title: "Test", tone: SettingsPalette.coolWhite, identifier: "settings.org.git.account.\(account.host).test") { test(account) }
                 }
                 Menu {
                     Button("Remove…", role: .destructive) { confirmingRemove = account.host }
-                        .accessibilityIdentifier(id + ".remove")
+                        .accessibilityIdentifier("settings.org.git.account.\(account.host).remove")
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 12, weight: .medium))
@@ -92,7 +92,7 @@ struct GitAccountsBlock: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .accessibilityLabel("More")
-                .accessibilityIdentifier(id + ".more")
+                .accessibilityIdentifier("settings.org.git.account.\(account.host).more")
             }
             if confirmingRemove == account.host {
                 HStack(spacing: 8) {
@@ -101,10 +101,10 @@ struct GitAccountsBlock: View {
                         .foregroundStyle(SettingsPalette.caution)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, identifier: id + ".remove.keep") {
+                    FormButton(title: "Keep it", tone: SettingsPalette.coolWhite, identifier: "settings.org.git.account.\(account.host).remove.keep") {
                         confirmingRemove = nil
                     }
-                    FormButton(title: "Remove", tone: SettingsPalette.caution, filled: true, identifier: id + ".remove.confirm") {
+                    FormButton(title: "Remove", tone: SettingsPalette.caution, filled: true, identifier: "settings.org.git.account.\(account.host).remove.confirm") {
                         Task {
                             notes[account.host] = await git.remove(account.host)
                             confirmingRemove = nil
@@ -113,7 +113,7 @@ struct GitAccountsBlock: View {
                 }
             }
             if let note = notes[account.host] {
-                SheetMessage(text: note, identifier: id + ".note")
+                SheetMessage(text: note, identifier: "settings.org.git.account.\(account.host).note")
             }
         }
         .padding(12)
@@ -291,8 +291,9 @@ struct GitAccountSheet: View {
     private var methodStep: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(ways, id: \.self) { w in
+                let key = wayKey(w)
                 SheetChoice(title: wayTitle(w), detail: wayDetail(w), note: w == ways.first ? "Recommended" : nil,
-                            selected: way == w, identifier: "settings.org.git.account.add.method.\(wayKey(w))") {
+                            selected: way == w, identifier: "settings.org.git.account.add.method.\(key)") {
                     way = w
                     message = nil
                 }
@@ -408,7 +409,7 @@ struct GitAccountSheet: View {
                                     detail: "~/.ssh/\(name)", note: key.encrypted ? "Passphrase" : nil,
                                     selected: pickedKey == key, identifier: "settings.org.git.account.add.key.\(name)") {
                             pickedKey = key
-                            if key.encrypted { field = .passphrase }
+                            if key.encrypted { Task { try? await Task.sleep(for: .milliseconds(150)); field = .passphrase } }
                         }
                     }
                     if pickedKey?.encrypted == true {
@@ -464,7 +465,11 @@ struct GitAccountSheet: View {
                 .focused($field, equals: .token)
                 .accessibilityIdentifier("settings.org.git.account.add.token")
         }
-        .onAppear { field = provider == .bitbucket ? .username : .token }   // Rule 3
+        // Rule 3. A beat after appearing: in a sheet, focus set as the field appears is dropped.
+        .task {
+            try? await Task.sleep(for: .milliseconds(150))
+            field = provider == .bitbucket ? .username : .token
+        }
     }
 
     private var signInStep: some View {

@@ -462,3 +462,13 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
     await model.openSettings()
     #expect(model.layoutSnapshot.maximizedId == id)
 }
+
+/// `settings_open` itself opens Settings full screen, so a dispatch (the palette, a script) gets
+/// what ⌘, gets (3a-iii e2e audit).
+@Test func settingsOpenMaximizesThePane() async throws {
+    let layout = LayoutStore()
+    let registry = try await registryWithLayoutActions(layout)
+    let reply = try await registry.dispatch(name: "settings_open", params: .object([:]), origin: .ui, caller: .test(""), confirmation: nil)
+    guard case .object(let o) = reply, case .string(let id)? = o["id"] else { Issue.record("no id"); return }
+    #expect(await layout.snapshot().maximizedId == id)
+}

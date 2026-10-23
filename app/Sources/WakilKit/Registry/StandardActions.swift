@@ -987,7 +987,8 @@ public func registerStandardActions(
                 "ctx_git_gh_import": "Use one of the GitHub CLI's logins as the organisation's account. Operator-only.",
                 "ctx_set_project_agent_instructions": "Change one project's agent instructions. Operator-only.",
             ][name] ?? name,
-            kind: .control,
+            // The sheet's lists change nothing; the rest write the organisation or the Keychain.
+            kind: ["ctx_git_host_suggestions", "ctx_git_ssh_keys", "ctx_git_gh_logins"].contains(name) ? .read : .control,
             audience: .operatorOnly,
             schema: .object([
                 "type": .string("object"),

@@ -471,7 +471,6 @@ struct EditorColumn: View {
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: ChangesSpace.m)
-                remoteButton(root)
                 if !root.files.isEmpty {
                     Image(systemName: closed ? "chevron.right" : "chevron.down")
                         .font(.system(size: 9, weight: .semibold))
@@ -492,6 +491,9 @@ struct EditorColumn: View {
             // Text, as a row is: as a button its line never reached the tree (AXDescription only).
             .accessibilityRemoveTraits(.isButton)
             .accessibilityAddTraits(.isStaticText)
+            // Beside the line, not in it: the line is one accessibility element, which would hide the
+            // button from the tree (3a-iii e2e audit).
+            remoteButton(root)
             // A clean root has no box, but its last commit can still be undone from here.
             if clean {
                 cleanRootActions(root)
