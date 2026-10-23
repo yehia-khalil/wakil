@@ -88,10 +88,13 @@ public enum DatabaseWording {
         }
     }
 
-    /// Whether Save asks first (Rule 1): only when a password goes to the Keychain. A save of
-    /// host, port, database, user or path alone is an ordinary edit.
-    public static func asksBeforeSaving(password: String, grantWrite: Bool, writePassword: String) -> Bool {
-        !password.isEmpty || (grantWrite && !writePassword.isEmpty)
+    /// Whether Save asks first (Rule 1): when a password goes to the Keychain, or when the save
+    /// makes the database writable (SQLite included). A save of host, port, database, user or path
+    /// alone is an ordinary edit.
+    public static func asksBeforeSaving(
+        password: String, grantWrite: Bool, writePassword: String, becomesWritable: Bool
+    ) -> Bool {
+        becomesWritable || !password.isEmpty || (grantWrite && !writePassword.isEmpty)
     }
 
     /// Asked before a password is stored. It names no part of the connection. A save that makes

@@ -2619,12 +2619,13 @@ struct SettingsPane: View {
         let path = tree.projects.first { $0.name == projectName }?.path ?? ""
         let listed = environment(projectName, environmentName, in: tree)?.databases ?? []
         let server = databaseDriverHasServer(databaseConnection.driver)
+        let becomesWritable = databaseGrantWrite
+            && !(listed.first { $0.name == databaseName }?.writable ?? false)
         // **Its own card** (#327): the list above is what exists, and this
         // is how to add to it — or, after **Edit** (2e-iv), to change one of
         // them. One card either way, so there is never a second form here.
         FormCard(
-            title: databaseEditing.map { DatabaseWording.editTitle(name: $0.name) }
-                ?? DatabaseWording.cardTitle
+            title: databaseEditing?.title(name: databaseName) ?? DatabaseWording.cardTitle
         ) {
             // A quiet verb in the header, not a third button beside Save: leaving edit mode
             // writes nothing, so it is said as softly as the title it sits beside.
@@ -2670,7 +2671,7 @@ struct SettingsPane: View {
                     // stored one, and the prompt says so while it would.
                     LabelledField(label: "PASSWORD",
                                   prompt: databaseEditing?.passwordPrompt(
-                                      driver: databaseConnection.driver,
+                                      name: databaseName, driver: databaseConnection.driver,
                                       user: databaseConnection.user) ?? "",
                                   text: $databaseConnection.password,
                                   width: 244, identifier: "settings.db.password", secure: true,
@@ -2683,13 +2684,17 @@ struct SettingsPane: View {
                               focus: $databaseCardFocus, focusKey: "path")
             }
 
-            Toggle(isOn: $databaseGrantWrite) {
-                Text("Allow writes — needs a second credential the server granted")
-                    .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.60))
+            // Hidden while editing a writable database: unchecking it would revoke nothing (Go
+            // keeps the write login), and revoking is the row's Remove write access.
+            if databaseEditing?.showsAllowWrites(name: databaseName) ?? true {
+                Toggle(isOn: $databaseGrantWrite) {
+                    Text("Allow writes — needs a second credential the server granted")
+                        .font(.system(size: Scale.body))
+                        .foregroundStyle(coolWhite.opacity(0.60))
+                }
+                .toggleStyle(.checkbox)
+                .accessibilityIdentifier("settings.db.grantWrite")
             }
-            .toggleStyle(.checkbox)
-            .accessibilityIdentifier("settings.db.grantWrite")
             // A file has no logins: its write credential is its own path.
             if databaseGrantWrite, server {
                 FormRow {
@@ -2697,7 +2702,7 @@ struct SettingsPane: View {
                                   width: 200, identifier: "settings.db.writeUser")
                     LabelledField(label: "WRITE PASSWORD",
                                   prompt: databaseEditing?.writePasswordPrompt(
-                                      driver: databaseConnection.driver,
+                                      name: databaseName, driver: databaseConnection.driver,
                                       writeUser: databaseWriteUser) ?? "",
                                   text: $databaseWritePassword,
                                   width: 244, identifier: "settings.db.writePassword", secure: true)
@@ -2708,8 +2713,6 @@ struct SettingsPane: View {
                 // **Renders NO part of the connection.** It names the
                 // database, the environment and what will happen — and the
                 // operator already knows what they typed.
-                let becomesWritable = databaseGrantWrite
-                    && !(listed.first { $0.name == databaseName }?.writable ?? false)
                 Text(DatabaseWording.connectionConfirmation(
                     name: databaseName, environment: environmentName, becomesWritable: becomesWritable))
                     .font(.system(size: Scale.body))
@@ -2742,7 +2745,7 @@ struct SettingsPane: View {
                         databaseRefusal = missing
                     } else if DatabaseWording.asksBeforeSaving(
                         password: databaseConnection.password, grantWrite: databaseGrantWrite,
-                        writePassword: databaseWritePassword) {
+                        writePassword: databaseWritePassword, becomesWritable: becomesWritable) {
                         databaseRefusal = nil
                         confirmingDSN = true
                     } else {
@@ -2761,6 +2764,13 @@ struct SettingsPane: View {
             }
         }
         .padding(.top, 14)
+        // The database being edited was renamed or removed from its row: nothing is left to edit,
+        // so the card goes back to adding, emptied.
+        .onChange(of: listed.map(\.name)) { _, names in
+            if let databaseEditing, !databaseEditing.isListed(in: names) {
+                clearDatabaseCard(driver: "mysql")
+            }
+        }
     }
 
     /// Empties the database card and leaves edit mode: Cancel, a save that landed, a new page.
@@ -3090,6 +3100,7 @@ extension SettingsPane {
             // The card below is where a connection is typed; this fills it with everything known
             // about the row — never a password, which is never read back — and brings it into
             // view (2e-iv). A writable record starts with writes allowed, so Save keeps them.
+            // The keyboard goes to HOST (FILE for SQLite), not NAME: see `DatabaseCardEdit.focus`.
             let edit = DatabaseCardEdit(editing: database)
             databaseEditing = edit
             databaseName = edit.name

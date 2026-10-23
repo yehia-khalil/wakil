@@ -70,6 +70,7 @@ public struct DatabaseCardEdit: Equatable, Sendable {
     /// save works.
     public let grantWrite: Bool
     public let writeUser: String
+    private let writable: Bool
     private let originalDriver: String
     private let storedUser: String
     private let storedWriteUser: String
@@ -83,26 +84,47 @@ public struct DatabaseCardEdit: Equatable, Sendable {
             driver: driver, host: connection.host, port: connection.port, user: connection.user,
             database: connection.database, path: connection.path)
         grantWrite = database.writable
+        writable = database.writable
         writeUser = database.writable ? connection.writeUser : ""
         storedUser = connection.user
         storedWriteUser = database.writable ? connection.writeUser : ""
         originalDriver = driver
     }
 
+    /// Whether the card still edits this database: its NAME has not been changed. A different
+    /// name saves as another database, so nothing stored for this one carries over.
+    public func isEditing(name: String) -> Bool { name == self.name }
+
+    /// `EDIT <name>` while the card edits this database; the add title once NAME moves away.
+    public func title(name: String) -> String {
+        isEditing(name: name) ? DatabaseWording.editTitle(name: self.name) : DatabaseWording.cardTitle
+    }
+
     /// `unchanged` while leaving the password empty keeps the stored one: a split server record,
-    /// the same driver, the same user. Otherwise no prompt — the password is needed.
-    public func passwordPrompt(driver: String, user: String) -> String {
-        !legacy && databaseDriverHasServer(driver) && driver == originalDriver
+    /// the same name, the same driver, the same user. Otherwise no prompt — the password is needed.
+    public func passwordPrompt(name: String, driver: String, user: String) -> String {
+        !legacy && isEditing(name: name) && databaseDriverHasServer(driver) && driver == originalDriver
             && !storedUser.isEmpty && user == storedUser
             ? DatabaseWording.unchanged : ""
     }
 
     /// The same for the write login: a split record that already writes through `writeUser`.
-    public func writePasswordPrompt(driver: String, writeUser: String) -> String {
-        !legacy && databaseDriverHasServer(driver) && driver == originalDriver
+    public func writePasswordPrompt(name: String, driver: String, writeUser: String) -> String {
+        !legacy && isEditing(name: name) && databaseDriverHasServer(driver) && driver == originalDriver
             && !storedWriteUser.isEmpty && writeUser == storedWriteUser
             ? DatabaseWording.unchanged : ""
     }
+
+    /// Whether the card offers **Allow writes**. Not while editing a writable database: Go keeps
+    /// its write login when a save does not grant, so unchecking would revoke nothing. Revoking
+    /// is the row's **Remove write access**. Granting from Edit is fine.
+    public func showsAllowWrites(name: String) -> Bool {
+        !(writable && isEditing(name: name))
+    }
+
+    /// Whether the card still has a database to edit: one renamed or removed from its row has left
+    /// the list, and the card goes back to adding.
+    public func isListed(in names: [String]) -> Bool { names.contains(name) }
 
     /// Where Edit puts the keyboard (Rule 3): the first connection field — the host, or the file
     /// for SQLite. Not NAME: a database is renamed on its row, and a name typed here saves as a

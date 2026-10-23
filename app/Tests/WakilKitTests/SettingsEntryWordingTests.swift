@@ -120,33 +120,33 @@ private let sqlite = SettingsDatabase(
     #expect(edit.grantWrite)
     #expect(edit.writeUser == "writer")
     #expect(edit.fields.password == "")
-    #expect(edit.passwordPrompt(driver: "mongo", user: "reader") == "unchanged")
-    #expect(edit.writePasswordPrompt(driver: "mongo", writeUser: "writer") == "unchanged")
+    #expect(edit.passwordPrompt(name: "books", driver: "mongo", user: "reader") == "unchanged")
+    #expect(edit.writePasswordPrompt(name: "books", driver: "mongo", writeUser: "writer") == "unchanged")
 }
 
 /// `unchanged` is a promise Go keeps only for the same driver and the same user. Must fail if a
 /// prompt says it after either moved, which Save would then refuse.
 @Test func unchangedIsSaidOnlyWhileEmptyKeepsTheStoredPassword() {
     let edit = DatabaseCardEdit(editing: splitWritable)
-    #expect(edit.passwordPrompt(driver: "mongo", user: "someone-else") == "")
-    #expect(edit.passwordPrompt(driver: "mysql", user: "reader") == "")
-    #expect(edit.writePasswordPrompt(driver: "mongo", writeUser: "another-writer") == "")
+    #expect(edit.passwordPrompt(name: "books", driver: "mongo", user: "someone-else") == "")
+    #expect(edit.passwordPrompt(name: "books", driver: "mysql", user: "reader") == "")
+    #expect(edit.writePasswordPrompt(name: "books", driver: "mongo", writeUser: "another-writer") == "")
     // A split record that never wrote has no write password to keep.
-    #expect(DatabaseCardEdit(editing: split).writePasswordPrompt(driver: "mysql", writeUser: "writer") == "")
+    #expect(DatabaseCardEdit(editing: split).writePasswordPrompt(name: "ledger", driver: "mysql", writeUser: "writer") == "")
 }
 
 @Test func editOnALegacyRecordFillsNameAndDriverAndAsksForEveryLogin() {
     let edit = DatabaseCardEdit(editing: legacy)
     #expect(edit.legacy)
     #expect(edit.fields == DatabaseConnectionFields(driver: "mysql"))
-    #expect(edit.passwordPrompt(driver: "mysql", user: "") == "")
+    #expect(edit.passwordPrompt(name: "invoices", driver: "mysql", user: "") == "")
     #expect(edit.focus == .host)
     // Writable and legacy: writes start allowed (Go refuses the save without them) and the write
     // login is typed whole.
     let writable = DatabaseCardEdit(editing: legacyWritable)
     #expect(writable.grantWrite)
     #expect(writable.writeUser == "")
-    #expect(writable.writePasswordPrompt(driver: "mysql", writeUser: "") == "")
+    #expect(writable.writePasswordPrompt(name: "orders", driver: "mysql", writeUser: "") == "")
 }
 
 @Test func editOnSQLiteFillsThePathAndFocusesIt() {
@@ -173,9 +173,42 @@ private let sqlite = SettingsDatabase(
 }
 
 @Test func onlyATypedPasswordAsksBeforeSaving() {
-    #expect(!DatabaseWording.asksBeforeSaving(password: "", grantWrite: false, writePassword: ""))
-    #expect(DatabaseWording.asksBeforeSaving(password: "hunter2", grantWrite: false, writePassword: ""))
-    #expect(DatabaseWording.asksBeforeSaving(password: "", grantWrite: true, writePassword: "w"))
+    #expect(!DatabaseWording.asksBeforeSaving(password: "", grantWrite: false, writePassword: "", becomesWritable: false))
+    #expect(DatabaseWording.asksBeforeSaving(password: "hunter2", grantWrite: false, writePassword: "", becomesWritable: false))
+    #expect(DatabaseWording.asksBeforeSaving(password: "", grantWrite: true, writePassword: "w", becomesWritable: false))
     // A write password with writes not allowed is not sent, so nothing is stored to ask about.
-    #expect(!DatabaseWording.asksBeforeSaving(password: "", grantWrite: false, writePassword: "w"))
+    #expect(!DatabaseWording.asksBeforeSaving(password: "", grantWrite: false, writePassword: "w", becomesWritable: false))
+}
+
+/// Ruling 9: making a database writable always asks, SQLite (no password at all) included.
+@Test func aSaveThatMakesTheDatabaseWritableAlwaysAsks() {
+    #expect(DatabaseWording.asksBeforeSaving(password: "", grantWrite: true, writePassword: "", becomesWritable: true))
+}
+
+/// Review round 1: a NAME changed in edit mode saves another database, for which nothing is
+/// stored. Must fail if `unchanged` or the EDIT title outlives the name.
+@Test func unchangedAndTheEditTitleHoldOnlyForTheDatabaseBeingEdited() {
+    let edit = DatabaseCardEdit(editing: split)
+    #expect(edit.passwordPrompt(name: "ledger", driver: "mysql", user: "e2e") == "unchanged")
+    #expect(edit.passwordPrompt(name: "ledger2", driver: "mysql", user: "e2e") == "")
+    let writable = DatabaseCardEdit(editing: splitWritable)
+    #expect(writable.writePasswordPrompt(name: "books2", driver: "mongo", writeUser: "writer") == "")
+    #expect(edit.title(name: "ledger") == "EDIT ledger")
+    #expect(edit.title(name: "ledger2") == "ADD OR REPLACE A DATABASE")
+}
+
+/// Ruling 8: unchecking Allow writes on a writable database revokes nothing, so Edit hides it there.
+@Test func allowWritesIsHiddenOnlyWhileEditingAWritableDatabase() {
+    #expect(!DatabaseCardEdit(editing: splitWritable).showsAllowWrites(name: "books"))
+    #expect(!DatabaseCardEdit(editing: legacyWritable).showsAllowWrites(name: "orders"))
+    #expect(DatabaseCardEdit(editing: split).showsAllowWrites(name: "ledger"))
+    // A new name is another database, which may be granted.
+    #expect(DatabaseCardEdit(editing: splitWritable).showsAllowWrites(name: "books2"))
+}
+
+/// Ruling 10: a database renamed or removed from its row leaves the card with nothing to edit.
+@Test func theEditTargetIsListedOnlyWhileItsNameIs() {
+    let edit = DatabaseCardEdit(editing: split)
+    #expect(edit.isListed(in: ["books", "ledger"]))
+    #expect(!edit.isListed(in: ["books", "ledger-old"]))
 }
