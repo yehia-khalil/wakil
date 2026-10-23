@@ -163,3 +163,37 @@ func TestGitShowReadsAStashFile(t *testing.T) {
 		t.Fatal("a stash side takes a commit id only")
 	}
 }
+
+// Review C1: a clash's recovery never deletes a file the apply did not create, and reads names with
+// spaces or non-ASCII letters whole.
+func TestAClashNeverDeletesTheOperatorsFiles(t *testing.T) {
+	work, w, git := branchFixture(t)
+	ctx := context.Background()
+	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+	writeIn(t, work, "u.txt", "stashed u\n")
+	writeIn(t, work, "my notes.txt", "stashed notes\n")
+	writeIn(t, work, "café.txt", "stashed café\n")
+	if err := w.Stash(ctx, "clashing", "untracked"); err != nil {
+		t.Fatal(err)
+	}
+	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
+	git("commit", "-qam", "moved on")
+	writeIn(t, work, "u.txt", "OPERATOR\n")     // the operator's own, untracked
+	writeIn(t, work, "notes.txt", "unrelated\n") // a name a split on spaces would hit
+	s, _ := ReadStashes(ctx, w.runner())
+	if got := strings.Join(s[0].Files, "|"); got != "a.txt|café.txt|my notes.txt|u.txt" {
+		t.Fatalf("files = %q", got)
+	}
+	note, err := w.StashApply(ctx, 0, s[0].ID, true)
+	if err != nil || note != "Your stash clashes with main; it is kept in git stash" {
+		t.Fatalf("note %q err %v", note, err)
+	}
+	for name, want := range map[string]string{"u.txt": "OPERATOR\n", "notes.txt": "unrelated\n", "a.txt": "one\nCOMMITTED\nthree\n"} {
+		if b, err := os.ReadFile(filepath.Join(work, name)); err != nil || string(b) != want {
+			t.Errorf("%s = %q, %v", name, b, err)
+		}
+	}
+	if git("stash", "list") == "" {
+		t.Fatal("the stash went")
+	}
+}
