@@ -567,6 +567,17 @@ Each entry: the call, why, and what would change our mind.
     project's and an environment's are); removing an API entry asks the same, and both say the
     Keychain item is kept. All four actions are operator-only, like the rest of Settings
     (Decision 30), so neither an agent nor voice can reach them.)*
+    *(Amended 2026-10-23 by sub-phase 2e-iv, `docs/superpowers/specs/2026-10-23-2e-iv-database-edit-design.md`.*
+    **A database's connection is now editable in the pane, and its non-secret parts live in
+    `project.json`.** Host, port, database name and user (a path for SQLite) are written to the
+    file, where they can be shown, edited and read by hand; **only the passwords go to the
+    Keychain**, behind the same one confirmation, and the confirmation also says when a save
+    makes the database writable. An empty password keeps the stored one for the same user, and
+    a changed user must bring its own. **Edit replaces Replace connection**: it fills the card
+    with everything known but the passwords. A record saved before this keeps its Keychain
+    item as one whole string and is shown as such; typing it once makes it editable. The one
+    shared Go builder makes the connection string at connect time, so the shell, the agent's
+    tools and the card agree. The action stays operator-only (Decision 30).)*
 
 22. **A Claude account is shared across orgs; an org's credentials are not.**
     *(2026-09-14, `docs/superpowers/specs/2026-09-14-shared-accounts-across-orgs-design.md`.)*

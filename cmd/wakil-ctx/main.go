@@ -303,6 +303,24 @@ type setDatabaseDSNArgs struct {
 	WriteDSN    string `json:"writeDsn,omitempty" jsonschema:"the write credential, required when grantWrite is set"`
 }
 
+// setDatabaseConnectionArgs: a database saved as parts. Password and WritePassword are
+// secret-bearing (the Swift action redacts them); an empty Password keeps the stored one.
+type setDatabaseConnectionArgs struct {
+	ProjectPath   string `json:"projectPath" jsonschema:"absolute path to the project.json"`
+	Environment   string `json:"environment" jsonschema:"the environment the database belongs to"`
+	Name          string `json:"name" jsonschema:"the database's name"`
+	Driver        string `json:"driver" jsonschema:"the driver: mysql, mongo or sqlite"`
+	Host          string `json:"host,omitempty" jsonschema:"the server's host (not for sqlite)"`
+	Port          string `json:"port,omitempty" jsonschema:"the server's port; empty means the driver's default"`
+	Database      string `json:"database,omitempty" jsonschema:"the database or schema name"`
+	User          string `json:"user,omitempty" jsonschema:"the read login's user"`
+	Path          string `json:"path,omitempty" jsonschema:"the file path (sqlite only)"`
+	Password      string `json:"password,omitempty" jsonschema:"the read login's password; stored in the Keychain, never written to the project file; empty keeps the stored one"`
+	GrantWrite    bool   `json:"grantWrite,omitempty" jsonschema:"grant write access through a second login"`
+	WriteUser     string `json:"writeUser,omitempty" jsonschema:"the write login's user, when grantWrite is set"`
+	WritePassword string `json:"writePassword,omitempty" jsonschema:"the write login's password; stored in the Keychain; empty keeps the stored one"`
+}
+
 type removeDatabaseArgs struct {
 	ProjectPath string `json:"projectPath" jsonschema:"absolute path to the project.json"`
 	Environment string `json:"environment" jsonschema:"the environment the database belongs to"`
@@ -845,6 +863,21 @@ func newServer() *mcp.Server {
 				ProjectPath: a.ProjectPath, Environment: a.Environment, Name: a.Name,
 				Driver: a.Driver, DSN: a.DSN,
 				GrantWrite: a.GrantWrite, WriteDSN: a.WriteDSN,
+			}); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_database_connection", Description: "Save a database as its parts (host, port, database, user, or a path for sqlite) and record it in an environment. Only the password goes to the Keychain; the parts themselves are written to the project file, and passwords are never returned. An empty password keeps the one already stored. Granting write access is a separate parameter with its own login (writeUser, writePassword). Read-modify-write from disk. Refuses a project filed under another organisation."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setDatabaseConnectionArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetDatabaseConnection(wakilcore.DatabaseConnectionRequest{
+				ProjectPath: a.ProjectPath, Environment: a.Environment, Name: a.Name, Driver: a.Driver,
+				Connection: wakilcore.DatabaseConnection{
+					Host: a.Host, Port: a.Port, Database: a.Database, User: a.User, Path: a.Path,
+					WriteUser: a.WriteUser,
+				},
+				Password: a.Password, GrantWrite: a.GrantWrite, WritePassword: a.WritePassword,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}

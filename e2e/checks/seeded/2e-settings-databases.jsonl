@@ -9,7 +9,7 @@
 {"do":{"click":"settings.db.driver.mysql"}}
 {"do":{"click":"settings.db.save"}}
 {"expect":{"tree":"contains","text":"a host is needed"}}
-{"expect":{"tree":"absent","text":"Store a connection string for ledger in staging?"}}
+{"expect":{"tree":"absent","text":"Store a connection for ledger in staging?"}}
 {"do":{"type":{"into":"settings.db.host","text":"localhost"}}}
 {"do":{"type":{"into":"settings.db.port","text":"3306"}}}
 {"do":{"type":{"into":"settings.db.database","text":"ledger"}}}
@@ -20,21 +20,21 @@
 {"do":{"type":{"into":"settings.db.writeUser","text":"e2e-rw"}}}
 {"do":{"type":{"into":"settings.db.writePassword","text":"secret"}}}
 {"do":{"click":"settings.db.save"}}
-{"expect":{"tree":"contains","text":"Store a connection string for ledger in staging?"}}
+{"expect":{"tree":"contains","text":"Store a connection for ledger in staging?"}}
 {"expect":{"tree":"absent","text":"a host is needed"}}
-{"expect":{"tree":"contains","text":"It goes to your Keychain, not to the project file"}}
+{"expect":{"tree":"contains","text":"The password goes to your Keychain, not to the project file"}}
 {"expect":{"tree":"contains","text":"this database becomes writable"}}
 {"do":{"click":"settings.dsn.cancel"}}
-{"expect":{"tree":"absent","text":"Store a connection string for ledger in staging?"}}
+{"expect":{"tree":"absent","text":"Store a connection for ledger in staging?"}}
 {"do":{"click":"settings.db.save"}}
-{"expect":{"tree":"contains","text":"Store a connection string for ledger in staging?"}}
+{"expect":{"tree":"contains","text":"Store a connection for ledger in staging?"}}
 {"do":{"click":"settings.dsn.confirm"}}
-{"expect":{"tree":"absent","text":"Store a connection string for ledger in staging?"}}
+{"expect":{"tree":"absent","text":"Store a connection for ledger in staging?"}}
 {"expect":{"tree":"contains","text":"ADD OR REPLACE A DATABASE"}}
 {"expect":{"tree":"contains","text":"write db:e2e-project:staging:ledger:rw"}}
 {"expect":{"tree":"contains","text":"WRITABLE"}}
 {"expect":{"tree":"absent","text":"no databases in this environment"}}
-{"expect":{"journal":{"contains":"db_set_dsn"}}}
+{"expect":{"journal":{"contains":"db_set_connection"}}}
 {"expect":{"journal":{"contains":"[redacted]"}}}
 {"do":{"click":"settings.db.ledger.remove"}}
 {"expect":{"tree":"contains","text":"Remove ledger from staging? Its Keychain entries are kept."}}

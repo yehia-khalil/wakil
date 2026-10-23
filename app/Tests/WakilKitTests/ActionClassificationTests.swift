@@ -151,7 +151,7 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // 2e (#207). The reason NEW to this set: every other member
             // objects to what the agent could REACH, and these two object
             // to what it would CARRY.
-            "db_remove_database", "db_set_dsn",
+            "db_remove_database", "db_set_connection", "db_set_dsn",
             // 2e-iii. `db_update_database` edits beside them.
             "db_update_database",
             "session_set_provider",

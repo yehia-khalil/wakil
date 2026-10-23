@@ -73,6 +73,8 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		// the database half of the pane.
 		"set_database_dsn",
 		"remove_database",
+		// set_database_connection added by 2e-iv — a database saved as parts, only the password in the Keychain.
+		"set_database_connection",
 		// set_api_entry, update_api_entry, remove_api_entry and update_database added by
 		// 2e-iii — an environment's API entries and a database's rename and revoke-write.
 		"set_api_entry",

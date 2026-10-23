@@ -1581,3 +1581,12 @@ func TestGitCredentialAnswersOnlyItsOwnHost(t *testing.T) {
 		}
 	}
 }
+
+// TestSetDBHelpWarnsOffADatabaseSavedInParts pins the one line that tells
+// the operator `set-db` stores a whole string, which a record saved in
+// parts would read as a password.
+func TestSetDBHelpWarnsOffADatabaseSavedInParts(t *testing.T) {
+	if !strings.Contains(usage, "It stores a whole connection string: do not point it at a database\n      saved in parts") {
+		t.Fatal("the set-db help no longer warns off a database saved in parts")
+	}
+}

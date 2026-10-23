@@ -86,9 +86,9 @@
 
 {"expect":{"tree":"absent","text":"WRITABLE"}}
 
-{"do":{"click":"settings.db.invoices.replaceConnection"}}
+{"do":{"click":"settings.db.invoices.edit"}}
 
-{"expect":{"tree":"contains","text":"Value: invoices"}}
+{"expect":{"tree":"contains","text":"EDIT invoices"}}
 
 {"do":{"type":{"into":"settings.db.host","text":"localhost"}}}
 
@@ -100,10 +100,10 @@
 
 {"do":{"click":"settings.db.save"}}
 
-{"expect":{"tree":"contains","text":"Store a connection string for invoices in staging?"}}
+{"expect":{"tree":"contains","text":"Store a connection for invoices in staging?"}}
 
 {"do":{"click":"settings.dsn.cancel"}}
 
-{"expect":{"tree":"absent","text":"Store a connection string for invoices in staging?"}}
+{"expect":{"tree":"absent","text":"Store a connection for invoices in staging?"}}
 
 {"expect":{"tree":"contains","text":"Value: invoices"}}

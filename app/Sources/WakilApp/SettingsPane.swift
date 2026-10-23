@@ -132,11 +132,12 @@ struct SettingsPane: View {
     /// lookup, live swap and the `ctx_set_provider` write included. The
     /// pane adds a place to press it, not a second way to do it.
     var use: (Account) async -> Void = { _ in }
-    /// Stores a database's connection string (#207). Answers the
-    /// refusal's own sentence, or `nil`.
-    let setDatabaseDSN: (
+    /// Stores a database's connection as parts, its password(s) to the Keychain (2e-iv). An
+    /// empty password keeps the stored one. Answers the refusal's own sentence, or `nil`.
+    let setDatabaseConnection: (
         _ projectPath: String, _ environment: String, _ name: String, _ driver: String,
-        _ dsn: String, _ grantWrite: Bool, _ writeDsn: String
+        _ connection: SettingsDatabaseConnection, _ password: String, _ grantWrite: Bool,
+        _ writePassword: String
     ) async -> String?
     /// Drops a database, keeping its Keychain entry.
     let removeDatabase: (
@@ -202,8 +203,8 @@ struct SettingsPane: View {
     ///
     /// **The passwords live here and nowhere else in this view.** They are
     /// never put into a confirmation string, never logged, and cleared the
-    /// moment the write succeeds. The connection string they become is
-    /// built by `databaseFormCredentials` at Save and never held.
+    /// moment the write succeeds. They go to `db_set_connection` as typed;
+    /// Go builds the connection string at connect time and nothing here does.
     @State private var databaseName: String = ""
     @State private var databaseConnection = DatabaseConnectionFields(driver: "mysql")
     @State private var databaseGrantWrite: Bool = false
@@ -212,6 +213,10 @@ struct SettingsPane: View {
     /// Whether the DSN write is awaiting its pane-local confirmation.
     @State private var confirmingDSN: Bool = false
     @State private var databaseRefusal: String?
+    /// The database **Edit** filled the card from (2e-iv), or nil while the card adds.
+    @State private var databaseEditing: DatabaseCardEdit?
+    /// A save landing: Save cannot be fired twice (Rule 5).
+    @State private var databaseSaving: Bool = false
 
     /// The API card's fields (2e-iii), the database card's twin. The token is the second secret
     /// typed in this pane, kept here only while the card is filled and cleared on success.
@@ -228,10 +233,10 @@ struct SettingsPane: View {
     @State private var replacingToken: String?
     @State private var replacementToken: String = ""
     @FocusState private var replacementTokenFocused: Bool
-    /// A section to bring into view: **Replace connection** scrolls to the database card.
+    /// A section to bring into view: **Edit** scrolls to the database card.
     @State private var scrollRequest: String?
-    /// The database card's field holding the keyboard, by `CredentialField` raw value: **Replace
-    /// connection** puts it in the first empty credential field (Rule 3).
+    /// The database card's field holding the keyboard, by `CredentialField` raw value: **Edit**
+    /// puts it in the first connection field (Rule 3).
     @FocusState private var databaseCardFocus: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// In-place edits of an API entry still landing, by `SettingsRowKey.apiSection`.
@@ -498,6 +503,7 @@ struct SettingsPane: View {
             databaseWritePassword = ""
             confirmingDSN = false
             databaseRefusal = nil
+            databaseEditing = nil
         }
     }
 
@@ -919,7 +925,7 @@ struct SettingsPane: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                // **Replace connection** fills the card and brings it into view (2e-iii): the
+                // **Edit** fills the card and brings it into view (2e-iii, 2e-iv): the
                 // operator asked for the card, so the page goes to it, on the same page (Rule 6).
                 .onChange(of: scrollRequest) { _, target in
                     guard let target else { return }
@@ -929,8 +935,8 @@ struct SettingsPane: View {
                         withAnimation(.easeOut(duration: 0.45)) { proxy.scrollTo(target, anchor: .top) }
                     }
                     scrollRequest = nil
-                    if target == Self.databaseCardAnchor {
-                        databaseCardFocus = databaseConnection.firstEmptyCredentialField?.rawValue
+                    if target == Self.databaseCardAnchor, let databaseEditing {
+                        databaseCardFocus = databaseEditing.focus.rawValue
                     }
                 }
             }
@@ -2611,10 +2617,27 @@ struct SettingsPane: View {
         project projectName: String, environment environmentName: String, in tree: SettingsTree
     ) -> some View {
         let path = tree.projects.first { $0.name == projectName }?.path ?? ""
+        let listed = environment(projectName, environmentName, in: tree)?.databases ?? []
+        let server = databaseDriverHasServer(databaseConnection.driver)
+        let becomesWritable = databaseGrantWrite
+            && !(listed.first { $0.name == databaseName }?.writable ?? false)
         // **Its own card** (#327): the list above is what exists, and this
-        // is how to add to it. Drawn from `SettingsForm.swift`'s vocabulary,
-        // which the API settings form will use too.
-        FormCard(title: "ADD OR REPLACE A DATABASE") {
+        // is how to add to it — or, after **Edit** (2e-iv), to change one of
+        // them. One card either way, so there is never a second form here.
+        FormCard(
+            title: databaseEditing?.title(name: databaseName) ?? DatabaseWording.cardTitle
+        ) {
+            // A quiet verb in the header, not a third button beside Save: leaving edit mode
+            // writes nothing, so it is said as softly as the title it sits beside.
+            if databaseEditing != nil {
+                rowAction("Cancel", tone: coolWhite.opacity(0.52), identifier: "settings.db.cancelEdit") {
+                    clearDatabaseCard(driver: "mysql")
+                }
+            }
+        } content: {
+            if databaseEditing?.legacy == true {
+                FormHint(DatabaseWording.legacyNote)
+            }
             FormRow {
                 LabelledField(label: "NAME", prompt: "orders", text: $databaseName,
                               width: 160, identifier: "settings.db.name")
@@ -2623,7 +2646,7 @@ struct SettingsPane: View {
                                     identifier: { "settings.db.driver.\($0)" })
                 }
             }
-            if databaseDriverHasServer(databaseConnection.driver) {
+            if server {
                 FormRow {
                     LabelledField(label: "HOST", prompt: "db.internal",
                                   text: $databaseConnection.host, width: 200,
@@ -2644,8 +2667,13 @@ struct SettingsPane: View {
                                   identifier: "settings.db.user",
                                   focus: $databaseCardFocus, focusKey: "user")
                     // Masked, so the one secret in this product is not on
-                    // screen while it is typed.
-                    LabelledField(label: "PASSWORD", text: $databaseConnection.password,
+                    // screen while it is typed. On Edit, empty keeps the
+                    // stored one, and the prompt says so while it would.
+                    LabelledField(label: "PASSWORD",
+                                  prompt: databaseEditing?.passwordPrompt(
+                                      name: databaseName, driver: databaseConnection.driver,
+                                      user: databaseConnection.user) ?? "",
+                                  text: $databaseConnection.password,
                                   width: 244, identifier: "settings.db.password", secure: true,
                                   focus: $databaseCardFocus, focusKey: "password")
                 }
@@ -2656,31 +2684,37 @@ struct SettingsPane: View {
                               focus: $databaseCardFocus, focusKey: "path")
             }
 
-            Toggle(isOn: $databaseGrantWrite) {
-                Text("Allow writes — needs a second credential the server granted")
-                    .font(.system(size: Scale.body))
-                    .foregroundStyle(coolWhite.opacity(0.60))
+            // Hidden while editing a writable database: unchecking it would revoke nothing (Go
+            // keeps the write login), and revoking is the row's Remove write access.
+            if databaseEditing?.showsAllowWrites(name: databaseName) ?? true {
+                Toggle(isOn: $databaseGrantWrite) {
+                    Text("Allow writes — needs a second credential the server granted")
+                        .font(.system(size: Scale.body))
+                        .foregroundStyle(coolWhite.opacity(0.60))
+                }
+                .toggleStyle(.checkbox)
+                .accessibilityIdentifier("settings.db.grantWrite")
             }
-            .toggleStyle(.checkbox)
-            .accessibilityIdentifier("settings.db.grantWrite")
             // A file has no logins: its write credential is its own path.
-            if databaseGrantWrite, databaseDriverHasServer(databaseConnection.driver) {
+            if databaseGrantWrite, server {
                 FormRow {
                     LabelledField(label: "WRITE USER", prompt: "writer", text: $databaseWriteUser,
                                   width: 200, identifier: "settings.db.writeUser")
-                    LabelledField(label: "WRITE PASSWORD", text: $databaseWritePassword,
+                    LabelledField(label: "WRITE PASSWORD",
+                                  prompt: databaseEditing?.writePasswordPrompt(
+                                      name: databaseName, driver: databaseConnection.driver,
+                                      writeUser: databaseWriteUser) ?? "",
+                                  text: $databaseWritePassword,
                                   width: 244, identifier: "settings.db.writePassword", secure: true)
                 }
             }
 
             if confirmingDSN {
-                // **Renders NO part of the DSN.** It names the database,
-                // the environment and what will happen — and the operator
-                // already knows what they typed.
-                Text("Store a connection string for \(databaseName) in \(environmentName)? "
-                    + "It goes to your Keychain, not to the project file"
-                    + (databaseGrantWrite
-                        ? ", and this database becomes writable." : "."))
+                // **Renders NO part of the connection.** It names the
+                // database, the environment and what will happen — and the
+                // operator already knows what they typed.
+                Text(DatabaseWording.connectionConfirmation(
+                    name: databaseName, environment: environmentName, becomesWritable: becomesWritable))
                     .font(.system(size: Scale.body))
                     .foregroundStyle(caution)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2700,20 +2734,26 @@ struct SettingsPane: View {
             } else {
                 // **A button that looks like one** (#327): it read as a
                 // stray word under the fields.
+                let blocked = databaseName.isEmpty || path.isEmpty || databaseSaving
                 confirmButton(
-                    "Save", tone: coolWhite.opacity(databaseName.isEmpty || path.isEmpty ? 0.35 : 0.90),
+                    "Save", tone: coolWhite.opacity(blocked ? 0.35 : 0.90),
                     filled: true, identifier: "settings.db.save"
                 ) {
-                    // Refused parts are said here, before the confirmation,
-                    // where they can still be corrected.
-                    if case .refused(let reason) = formCredentials() {
-                        databaseRefusal = reason
-                    } else {
+                    // Only a required part left empty is said here, before
+                    // the question; every other refusal is Go's, whole.
+                    if let missing = DatabaseWording.missingPart(databaseConnection) {
+                        databaseRefusal = missing
+                    } else if DatabaseWording.asksBeforeSaving(
+                        password: databaseConnection.password, grantWrite: databaseGrantWrite,
+                        writePassword: databaseWritePassword, becomesWritable: becomesWritable) {
                         databaseRefusal = nil
                         confirmingDSN = true
+                    } else {
+                        // Parts only, no secret written: an ordinary edit (Rule 1).
+                        commitDatabase(path: path, environment: environmentName)
                     }
                 }
-                .disabled(databaseName.isEmpty || path.isEmpty)
+                .disabled(blocked)
             }
 
             if let databaseRefusal {
@@ -2724,33 +2764,46 @@ struct SettingsPane: View {
             }
         }
         .padding(.top, 14)
+        // The database being edited was renamed or removed from its row: nothing is left to edit,
+        // so the card goes back to adding, emptied.
+        .onChange(of: listed.map(\.name)) { _, names in
+            if let databaseEditing, !databaseEditing.isListed(in: names) {
+                clearDatabaseCard(driver: "mysql")
+            }
+        }
     }
 
-    private func formCredentials() -> DatabaseFormCredentials {
-        databaseFormCredentials(
-            databaseConnection, grantWrite: databaseGrantWrite,
-            writeUser: databaseWriteUser, writePassword: databaseWritePassword)
+    /// Empties the database card and leaves edit mode: Cancel, a save that landed, a new page.
+    private func clearDatabaseCard(driver: String) {
+        databaseName = ""
+        databaseConnection = DatabaseConnectionFields(driver: driver)
+        databaseGrantWrite = false
+        databaseWriteUser = ""
+        databaseWritePassword = ""
+        confirmingDSN = false
+        databaseRefusal = nil
+        databaseEditing = nil
     }
 
     private func commitDatabase(path: String, environment: String) {
-        let name = databaseName, driver = databaseConnection.driver
-        guard case .built(let dsn, let write) = formCredentials() else { return }
+        let name = databaseName, fields = databaseConnection, grantWrite = databaseGrantWrite
+        let connection = SettingsDatabaseConnection(
+            host: fields.host, port: fields.port, database: fields.database, user: fields.user,
+            path: fields.path, writeUser: grantWrite ? databaseWriteUser : "")
+        let writePassword = databaseWritePassword
         databaseRefusal = nil
+        databaseSaving = true
         Task {
-            let refusal = await setDatabaseDSN(
-                path, environment, name, driver, dsn, write != nil, write ?? "")
+            let refusal = await setDatabaseConnection(
+                path, environment, name, fields.driver, connection, fields.password, grantWrite,
+                writePassword)
+            databaseSaving = false
             databaseRefusal = refusal
             // **Cleared on success, and only on success.** A refused
             // value stays so the operator can correct it rather than
             // retype every field — and it never outlives a write that
             // landed.
-            if refusal == nil {
-                databaseName = ""
-                databaseConnection = DatabaseConnectionFields(driver: driver)
-                databaseWriteUser = ""
-                databaseWritePassword = ""
-                databaseGrantWrite = false
-            }
+            if refusal == nil { clearDatabaseCard(driver: fields.driver) }
         }
     }
 
@@ -2956,12 +3009,12 @@ private struct QuickTasksAboutButton: View {
 // MARK: - Databases and API entries, edited where they stand (2e-iii)
 
 extension SettingsPane {
-    /// Where **Replace connection** scrolls to.
+    /// Where **Edit** scrolls to.
     static let databaseCardAnchor = "databaseCard"
 
-    /// One database: its name edited in place, its driver and write chips with the Keychain refs
-    /// it reads under that, and its verbs on one quiet line beneath, left-aligned as the API
-    /// Token row's are.
+    /// One database: its name edited in place, its driver and write chips, where it lives (2e-iv)
+    /// and the Keychain refs it reads under that, and its verbs on one quiet line beneath,
+    /// left-aligned as the API Token row's are.
     ///
     /// **Remove asks now (2e-iii), and that is the operator's ruling on review.** It keeps every
     /// Keychain entry, so nothing is destroyed, which is why it asked nothing before; but the
@@ -2986,10 +3039,13 @@ extension SettingsPane {
                     Chip(text: database.driver, tone: SettingsPalette.coolWhite.opacity(0.62))
                     if database.writable { Chip(text: "writable", tone: SettingsPalette.caution) }
                 }
-                // The reference, never the value: the Keychain entry NAME. The secret it names is
-                // read by the driver at query time and by nothing here. One ref a line, shortened
-                // in the middle when the column is narrow, so a ref never breaks inside its name.
+                // Where it lives, then the reference, never the value: the Keychain entry NAME.
+                // The secret it names is read by the driver at query time and by nothing here.
+                // One line each, shortened in the middle when the column is narrow, so neither
+                // breaks inside a name. The location is the line the operator reads, so it is a
+                // step brighter than the refs.
                 VStack(alignment: .leading, spacing: 2) {
+                    metaLine(DatabaseWording.location(database), opacity: 0.50)
                     keychainRef("read", database.ref)
                     if !database.writeRef.isEmpty { keychainRef("write", database.writeRef) }
                 }
@@ -3020,9 +3076,14 @@ extension SettingsPane {
 
     /// One Keychain ref of a database row, on a line of its own.
     private func keychainRef(_ role: String, _ ref: String) -> some View {
-        Text("\(role) \(ref)")
+        metaLine("\(role) \(ref)", opacity: 0.34)
+    }
+
+    /// A database row's muted monospaced line: one line, shortened in the middle.
+    private func metaLine(_ text: String, opacity: Double) -> some View {
+        Text(text)
             .font(.system(size: SettingsScale.meta, design: .monospaced))
-            .foregroundStyle(SettingsPalette.coolWhite.opacity(0.34))
+            .foregroundStyle(SettingsPalette.coolWhite.opacity(opacity))
             .lineLimit(1)
             .truncationMode(.middle)
             .textSelection(.enabled)
@@ -3034,15 +3095,18 @@ extension SettingsPane {
         _ database: SettingsDatabase, path: String, environment: String,
         removeKey: String, revokeKey: String
     ) -> some View {
-        rowAction("Replace connection", tone: SettingsPalette.coolWhite.opacity(0.62),
-                  identifier: "settings.db.\(database.name).replaceConnection") {
-            // The card below is where a connection is typed; this fills what is known about the
-            // row — never a secret, which is never read back — and brings the card into view.
-            databaseName = database.name
-            databaseConnection = DatabaseConnectionFields(
-                driver: databaseDrivers.contains(database.driver) ? database.driver : "mysql")
-            databaseGrantWrite = false
-            databaseWriteUser = ""
+        rowAction("Edit", tone: SettingsPalette.coolWhite.opacity(0.62),
+                  identifier: "settings.db.\(database.name).edit") {
+            // The card below is where a connection is typed; this fills it with everything known
+            // about the row — never a password, which is never read back — and brings it into
+            // view (2e-iv). A writable record starts with writes allowed, so Save keeps them.
+            // The keyboard goes to HOST (FILE for SQLite), not NAME: see `DatabaseCardEdit.focus`.
+            let edit = DatabaseCardEdit(editing: database)
+            databaseEditing = edit
+            databaseName = edit.name
+            databaseConnection = edit.fields
+            databaseGrantWrite = edit.grantWrite
+            databaseWriteUser = edit.writeUser
             databaseWritePassword = ""
             confirmingDSN = false
             databaseRefusal = nil

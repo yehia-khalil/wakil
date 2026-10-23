@@ -110,6 +110,18 @@ func SetDatabaseDSN(request DatabaseDSNRequest) error {
 			"write authority is a SECOND credential the database server granted, " +
 			"not the read credential with a flag set")
 	}
+	// **A string cannot keep a write login saved in parts.** A record saved
+	// in parts keeps only a password (or a SQLite path) in its write item;
+	// once this call stores a whole string, the record is no longer in
+	// parts and the resolver would read that kept item whole. The reverse
+	// of the refusal in `SetDatabaseConnection`.
+	for _, existing := range environment.Databases {
+		if existing.Name == request.Name && existing.Connection != nil &&
+			existing.WriteRef != "" && !request.GrantWrite {
+			return UserError("this database writes through a login saved in parts — " +
+				"allow writes and give the write connection string, or remove write access first")
+		}
+	}
 
 	// **A derived ref another row already names is not this row's to
 	// overwrite.** A rename keeps its refs (`UpdateDatabase`), so after
@@ -145,6 +157,10 @@ func SetDatabaseDSN(request DatabaseDSNRequest) error {
 		}
 		environment.Databases[i].Driver = request.Driver
 		environment.Databases[i].Ref = ref
+		// The item now holds a whole connection string, so the record is
+		// no longer in parts: parts kept beside it would make the resolver
+		// read that string as a password.
+		environment.Databases[i].Connection = nil
 		// **An existing writeRef is KEPT when this call does not grant
 		// one.** Setting a DSN is not a request to revoke write access,
 		// and silently dropping it would make an edit to the read
@@ -184,6 +200,227 @@ type DatabaseDSNRequest struct {
 	// credential the server itself granted.
 	GrantWrite bool
 	WriteDSN   string
+}
+
+// DatabaseConnectionRequest is a database saved as parts: the non-secret
+// ones go to project.json, the passwords to the Keychain.
+//
+// **The passwords are here and travel no further.** The action marks both
+// secret-bearing so the journal records `[redacted]` (#197).
+type DatabaseConnectionRequest struct {
+	ProjectPath string
+	Environment string
+	Name        string
+	Driver      string
+	// Connection carries host, port, database, user and (for SQLite) path,
+	// and WriteUser when GrantWrite.
+	Connection DatabaseConnection
+	// Password is the read login's. Empty on an existing split record means
+	// "keep the stored one".
+	Password string
+	// GrantWrite makes the database mutable through a SECOND login
+	// (WriteUser + WritePassword) the server granted.
+	GrantWrite    bool
+	WritePassword string
+}
+
+// connectionPlaceholderPassword stands in for a password the operator did
+// not retype, so the whole connection can be validated before any write.
+const connectionPlaceholderPassword = "placeholder"
+
+// SetDatabaseConnection saves a database's connection as parts.
+//
+// # Only passwords reach the Keychain
+//
+// A split server record's Keychain items hold the password and nothing
+// else; host, port, database and users live in project.json, where they
+// can be shown and edited. Go builds the connection string at connect time
+// (`BuildConnectionString`). SQLite has no login, so its items hold the
+// path as before and `connection.path` repeats it for display.
+//
+// # An empty password keeps the stored one
+//
+// Editing a port must not need the password typed again. But a stored
+// password belongs to a user, so a changed user with no new password is
+// refused — sending the old password to a different login would be a
+// guess.
+//
+// # A refused save writes nothing
+//
+// Everything is validated first; then the Keychain, and only for
+// passwords typed; then the file.
+func SetDatabaseConnection(r DatabaseConnectionRequest) error {
+	if r.Environment == "" {
+		return UserError("an environment must be named: a database belongs to one, " +
+			"and a project has no databases of its own")
+	}
+	if r.Name == "" {
+		return UserError("a database must be named")
+	}
+	org, err := CurrentOrg()
+	if err != nil {
+		return err
+	}
+	project, err := loadOwnProject(r.ProjectPath)
+	if err != nil {
+		return err
+	}
+	environment, ok := project.Environments[r.Environment]
+	if !ok {
+		return UserError("no environment " + strconv.Quote(r.Environment) +
+			" in project " + strconv.Quote(project.Name))
+	}
+
+	index := -1
+	for i, existing := range environment.Databases {
+		if existing.Name == r.Name {
+			index = i
+			break
+		}
+	}
+	var existing Database
+	if index >= 0 {
+		existing = environment.Databases[index]
+	}
+	server := isServerDriver(r.Driver)
+
+	// What is stored is a password only for a split record of the same
+	// kind; a legacy record's item is a whole connection string and a
+	// SQLite item is a path, neither of which can stand in for a password.
+	storedSplit := index >= 0 && existing.Connection != nil && server &&
+		existing.Driver == r.Driver
+	canKeepRead := storedSplit && existing.Ref != ""
+	canKeepWrite := storedSplit && existing.WriteRef != "" && existing.Connection.WriteUser != ""
+
+	conn := r.Connection
+	if !server {
+		conn = DatabaseConnection{Path: r.Connection.Path}
+	}
+	// A save that does not grant keeps the write login's user, as it keeps
+	// the writeRef.
+	if !r.GrantWrite {
+		conn.WriteUser = ""
+		if canKeepWrite {
+			conn.WriteUser = existing.Connection.WriteUser
+		}
+	}
+
+	// ---- validate everything before anything is written ----
+	readPassword := r.Password
+	if server && readPassword == "" {
+		if !canKeepRead {
+			return UserError("a password is needed to store this connection")
+		}
+		if conn.User != existing.Connection.User {
+			return UserError("a new user needs its password — the stored one belongs to " +
+				existing.Connection.User)
+		}
+		readPassword = connectionPlaceholderPassword
+	}
+	if _, err := BuildConnectionString(r.Driver, conn, conn.User, readPassword); err != nil {
+		return err
+	}
+
+	writePassword := r.WritePassword
+	if r.GrantWrite && server {
+		if conn.WriteUser == "" {
+			return UserError("allowing writes needs the write login's user — write authority is a " +
+				"second credential the server granted, not the read one with a flag set")
+		}
+		if writePassword == "" {
+			if !canKeepWrite {
+				return UserError("the write login needs its password")
+			}
+			if conn.WriteUser != existing.Connection.WriteUser {
+				return UserError("a new user needs its password — the stored one belongs to " +
+					existing.Connection.WriteUser)
+			}
+			writePassword = connectionPlaceholderPassword
+		}
+		if _, err := BuildConnectionString(r.Driver, conn, conn.WriteUser, writePassword); err != nil {
+			if msg, ok := IsUserError(err); ok {
+				return UserError("the write login: " + msg)
+			}
+			return err
+		}
+	}
+	// A kept write item must still be readable by the resolver: a legacy
+	// record's write item is a whole string, and with the record now split
+	// the resolver would read it as a password.
+	if !r.GrantWrite && index >= 0 && existing.WriteRef != "" && server && !canKeepWrite {
+		return UserError("this database writes through a login saved another way — " +
+			"allow writes and type the write login, or remove write access first")
+	}
+	// A SQLite write item is the file's path: kept while the path moves, it
+	// would send writes to the old file and reads to the new one.
+	if !r.GrantWrite && index >= 0 && existing.WriteRef != "" && !server &&
+		(existing.Driver != r.Driver || existing.Connection == nil ||
+			existing.Connection.Path != conn.Path) {
+		return UserError("this database writes to a file saved another way — " +
+			"allow writes so writes go to this file too, or remove write access first")
+	}
+
+	// ---- refs ----
+	// An existing row keeps its own refs (a rename keeps them too); a new
+	// one derives a ref no other row names (2e-iii's fresh-ref rule). A ref
+	// another row also names is kept only while nothing is written to it:
+	// a password written there would break the other row.
+	taken := refsNamedByOthers(project, r.Environment, "database", r.Name)
+	writesRead := !server || r.Password != ""
+	writesWrite := r.GrantWrite && (!server || r.WritePassword != "")
+	ref := existing.Ref
+	if ref == "" || (writesRead && taken[ref]) {
+		// Not this row's own write ref either, without marking it taken
+		// for the write ref's own check below.
+		ownWriteTaken := taken[existing.WriteRef]
+		if existing.WriteRef != "" {
+			taken[existing.WriteRef] = true
+		}
+		ref = freshRef(DatabaseRef(project.Name, r.Environment, r.Name), taken)
+		taken[existing.WriteRef] = ownWriteTaken
+	}
+	taken[ref] = true
+	writeRef := existing.WriteRef
+	if r.GrantWrite && (writeRef == "" || (writesWrite && taken[writeRef])) {
+		writeRef = freshRef(ref+":rw", taken)
+	}
+
+	// ---- the Keychain, for what was typed ----
+	switch {
+	case !server:
+		if err := SecretSetFor(org, ref, conn.Path); err != nil {
+			return err
+		}
+		if r.GrantWrite {
+			if err := SecretSetFor(org, writeRef, conn.Path); err != nil {
+				return err
+			}
+		}
+	default:
+		if r.Password != "" {
+			if err := SecretSetFor(org, ref, r.Password); err != nil {
+				return err
+			}
+		}
+		if r.GrantWrite && r.WritePassword != "" {
+			if err := SecretSetFor(org, writeRef, r.WritePassword); err != nil {
+				return err
+			}
+		}
+	}
+
+	// ---- the file ----
+	record := Database{Name: r.Name, Driver: r.Driver, Ref: ref, Connection: &conn}
+	if r.GrantWrite || existing.WriteRef != "" {
+		record.WriteRef = writeRef
+	}
+	if index >= 0 {
+		environment.Databases[index] = record
+	} else {
+		environment.Databases = append(environment.Databases, record)
+	}
+	project.Environments[r.Environment] = environment
+	return SaveProject(r.ProjectPath, *project)
 }
 
 // DatabaseRef is the Keychain ref a database's credential lives under.
@@ -332,6 +569,12 @@ func UpdateDatabase(projectPath, environment, name string, edit DatabaseEdit) er
 	env.Databases[index].Name = newName
 	if edit.RevokeWrite {
 		env.Databases[index].WriteRef = ""
+		// The write login goes with the write access it named.
+		if c := env.Databases[index].Connection; c != nil {
+			kept := *c
+			kept.WriteUser = ""
+			env.Databases[index].Connection = &kept
+		}
 	}
 	project.Environments[environment] = env
 	return SaveProject(projectPath, *project)
