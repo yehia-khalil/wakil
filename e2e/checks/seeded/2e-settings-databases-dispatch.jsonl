@@ -15,6 +15,6 @@
 {"do":{"type":{"into":"settings.db.user","text":"e2e"}}}
 {"do":{"type":{"into":"settings.db.password","text":"secret"}}}
 {"do":{"click":"settings.db.save"}}
-{"expect":{"tree":"contains","text":"Store a connection string for ledger in staging?"}}
-{"parity":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"ledger","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/ledger"},"click":"settings.dsn.confirm","assert":"tree"}}
+{"expect":{"tree":"contains","text":"Store a connection for ledger in staging?"}}
+{"parity":{"action":"db_set_connection","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"ledger","driver":"mysql","host":"localhost","database":"ledger","user":"e2e","password":"secret"},"click":"settings.dsn.confirm","assert":"tree"}}
 {"expect":{"tree":"contains","text":"read db:e2e-project:staging:ledger"}}

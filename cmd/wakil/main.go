@@ -77,6 +77,8 @@ const usage = `usage:
   wakil secrets set-db <ref> --driver <mysql|mongo|sqlite> [flags]
       Compose a database DSN and store it under <ref>. The password is
       read from stdin, exactly as above.
+      It stores a whole connection string: do not point it at a database
+      saved in parts (Settings, or set_database_connection).
         mysql, mongo:  --host H --port P --db D --user U
         mongo also:    [--auth-source S]  the database the user is defined
                        in; MongoDB defaults it to --db, which fails for a

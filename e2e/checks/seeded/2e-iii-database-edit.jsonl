@@ -1,0 +1,109 @@
+{"do":{"hotkey":"cmd+,"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"no databases in this environment"}}
+
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"ledger","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/ledger","grantWrite":true,"writeDsn":"e2e-rw:secret@tcp(localhost:3306)/ledger"}}}
+
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"orders","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/orders"}}}
+
+{"expect":{"tree":"contains","text":"Value: ledger"}}
+
+{"expect":{"tree":"contains","text":"WRITABLE"}}
+
+{"do":{"focus":"settings.db.ledger.name"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"books"}}
+
+{"do":{"click":"settings.tree.api.e2e-project.staging"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"Value: books"}}
+
+{"expect":{"tree":"absent","text":"Value: ledger"}}
+
+{"expect":{"tree":"contains","text":"read db:e2e-project:staging:ledger"}}
+
+{"expect":{"journal":{"contains":"db_update_database"}}}
+
+{"do":{"focus":"settings.db.orders.name"}}
+
+{"do":{"hotkey":"cmd+a"}}
+
+{"do":{"keys":"books"}}
+
+{"do":{"press":"Return"}}
+
+{"expect":{"tree":"contains","text":"already has a database named"}}
+
+{"do":{"click":"settings.tree.api.e2e-project.staging"}}
+
+{"do":{"click":"settings.tree.databases.e2e-project.staging"}}
+
+{"expect":{"tree":"contains","text":"Value: orders"}}
+
+{"do":{"click":"settings.db.books.revokeWrite"}}
+
+{"expect":{"tree":"absent","text":"WRITABLE"}}
+
+{"expect":{"tree":"absent","text":"write db:e2e-project:staging:ledger:rw"}}
+
+{"expect":{"tree":"contains","text":"Value: books"}}
+
+{"do":{"click":"settings.db.books.remove"}}
+
+{"expect":{"tree":"contains","text":"Remove books from staging? Its Keychain entries are kept."}}
+
+{"do":{"click":"settings.db.books.remove.keep"}}
+
+{"expect":{"tree":"absent","text":"Remove books from staging?"}}
+
+{"expect":{"tree":"contains","text":"Value: books"}}
+
+{"do":{"click":"settings.db.books.remove"}}
+
+{"do":{"click":"settings.db.books.remove.confirm"}}
+
+{"expect":{"tree":"absent","text":"Value: books"}}
+
+{"dispatch":{"action":"db_update_database","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"orders","newName":"invoices"}}}
+
+{"expect":{"tree":"contains","text":"Value: invoices"}}
+
+{"expect":{"tree":"absent","text":"Value: orders"}}
+
+{"dispatch":{"action":"db_update_database","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"nothing-here","newName":"x"},"refuses":"no database"}}
+
+{"dispatch":{"action":"db_set_dsn","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"ledger","driver":"mysql","dsn":"e2e:secret@tcp(localhost:3306)/ledger","grantWrite":true,"writeDsn":"e2e-rw:secret@tcp(localhost:3306)/ledger"}}}
+
+{"expect":{"tree":"contains","text":"WRITABLE"}}
+
+{"parity":{"action":"db_update_database","params":{"projectPath":"{fixtureRoot}/e2e-project/.wakil/project.json","environment":"staging","name":"ledger","revokeWrite":true},"click":"settings.db.ledger.revokeWrite","assert":"tree"}}
+
+{"expect":{"tree":"absent","text":"WRITABLE"}}
+
+{"do":{"click":"settings.db.invoices.edit"}}
+
+{"expect":{"tree":"contains","text":"EDIT invoices"}}
+
+{"do":{"type":{"into":"settings.db.host","text":"localhost"}}}
+
+{"do":{"type":{"into":"settings.db.database","text":"invoices"}}}
+
+{"do":{"type":{"into":"settings.db.user","text":"e2e"}}}
+
+{"do":{"type":{"into":"settings.db.password","text":"secret"}}}
+
+{"do":{"click":"settings.db.save"}}
+
+{"expect":{"tree":"contains","text":"Store a connection for invoices in staging?"}}
+
+{"do":{"click":"settings.dsn.cancel"}}
+
+{"expect":{"tree":"absent","text":"Store a connection for invoices in staging?"}}
+
+{"expect":{"tree":"contains","text":"Value: invoices"}}

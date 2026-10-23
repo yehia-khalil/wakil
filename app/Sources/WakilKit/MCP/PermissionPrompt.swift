@@ -190,7 +190,10 @@ public let operatorOnlyActions: Set<String> = [
     // database's configuration is the same control surface, and an agent
     // that could drop a row could make a database unreachable without
     // touching a credential.
-    "db_set_dsn", "db_remove_database",
+    "db_set_dsn", "db_remove_database", "db_set_connection",
+    // 2e-iii. An API entry's token travels in `api_set_entry`'s own parameters, as a DSN does,
+    // and the three edits beside it are the same control surface.
+    "api_set_entry", "api_update_entry", "api_remove_entry", "db_update_database",
 ]
 
 /// The message `permissionDecision` gives an agent denied one of
@@ -225,6 +228,8 @@ public let operatorOnlyActions: Set<String> = [
 /// - The six project and environment actions (2e-ii): an agent's place is fixed
 ///   (Invariant 5), and these rewrite the registry and project files it stands
 ///   in. Not the org family's sentence, which is about Invariant 4.
+/// - The API entry actions and `db_update_database` (2e-iii): an API token is a secret
+///   the operator types, and a database edit carries no secret but is still theirs.
 private func operatorOnlyDenialMessage(toolName: String, action: String) -> String {
     switch action {
     case "session_set_provider", "ctx_set_provider":
@@ -272,6 +277,25 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator signs in. This opens a browser on their "
             + "machine and authenticates as them, which is not something you may begin on "
             + "their behalf. Ask them to add the account from the settings pane (\u{2318},)."
+    case "api_set_entry", "api_update_entry", "api_remove_entry":
+        return "\(toolName): only the operator configures an API entry. Its token is a secret "
+            + "the operator types, and an agent never handles it — calling this would put it in "
+            + "your own tool parameters. You may READ entries: list_apis answers the active "
+            + "environment's, and ctx_config_tree every environment's, never a token. Ask the "
+            + "operator to do it in the settings pane (\u{2318},)."
+    case "db_update_database":
+        return "\(toolName): only the operator renames a database or revokes its write access. "
+            + "Revoking write access decides what an agent may change, and a rename changes "
+            + "the name every request records — both the operator's to decide. You may READ what is configured: "
+            + "ctx_config_tree reports each database's name, driver and Keychain entry name. "
+            + "Ask the operator to do it in the settings pane (\u{2318},)."
+    case "db_set_connection":
+        return "\(toolName): only the operator configures a database. Its password is a secret "
+            + "the operator types, and calling this would put it in your own tool parameters — "
+            + "which is the one thing Wakil's design for credentials exists to avoid. You may "
+            + "READ what is configured: ctx_config_tree reports each database's name, driver, "
+            + "host, port, database and user, and never a password. Ask the operator to set it "
+            + "in the settings pane (\u{2318},)."
     case "db_set_dsn", "db_remove_database":
         return "\(toolName): only the operator configures a database. A connection string is a "
             + "secret the operator types, and calling this would put it in your own tool "
