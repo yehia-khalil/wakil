@@ -63,6 +63,10 @@ var gitAllowedFlags = map[string][]string{
 // checkGitFlags refuses the first flag of args that sub does not allow.
 func checkGitFlags(sub string, args []string) error {
 	for _, a := range args {
+		// A format asking for a signature verifies it, which runs the repository's gpg.program.
+		if f, ok := strings.CutPrefix(a, "--format="); ok && (strings.Contains(f, "%(signature") || strings.Contains(f, "%G")) {
+			return UserError("wakil-git does not read signatures: " + a)
+		}
 		if a == "--" {
 			return nil
 		}
