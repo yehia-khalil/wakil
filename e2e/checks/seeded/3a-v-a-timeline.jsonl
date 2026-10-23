@@ -1,0 +1,57 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_tree","params":{"view":"files"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"dispatch":{"action":"editor_new_scratch","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].scratch","equals":"1"}}
+{"expect":{"tree":"contains","text":"No history for this file."}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/index.txt","preview":false}}}
+{"expect":{"pane":"editor-1","field":"tabs[1].path","contains":"/e2e-portal/index.txt"}}
+{"expect":{"tree":"absent","text":"No history for this file."}}
+{"expect":{"frame":"editor.timeline.row.00a19bc","inside":"editor.column"}}
+{"expect":{"frame":"editor.timeline.uncommitted","inside":"editor.column"}}
+{"expect":{"tree":"contains","text":"Uncommitted changes"}}
+{"expect":{"tree":"contains","text":"Wakil E2E · "}}
+{"do":{"click":"editor.timeline.uncommitted"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].diff.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].diff.group","equals":"changed"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].diff.commit","equals":"null"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"expect":{"frame":"editor.timeline.row.00a19bc","inside":"editor.column"}}
+{"parity":{"action":"editor_open_commit_diff","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-portal","path":"index.txt","commit":"00a19bccb3d8d13f559f9ac018712254800d4b54"},"click":"editor.timeline.row.00a19bc","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"tabs[3].diff.commit.id","equals":"00a19bccb3d8d13f559f9ac018712254800d4b54"}}
+{"expect":{"pane":"editor-1","field":"tabs[3].diff.commit.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[3].diff.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[3].diff.stash","equals":"null"}}
+{"expect":{"pane":"editor-1","field":"tabs[3].diff.loading","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[3].diff.error","equals":"null"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"3"}}
+{"expect":{"tree":"contains","text":"index.txt (00a19bc)"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.timeline.row.00a19bc"}}
+{"expect":{"pane":"editor-1","field":"tabs[4]","present":false}}
+{"expect":{"pane":"editor-1","field":"active","equals":"3"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-api/README.md","preview":false}}}
+{"expect":{"pane":"editor-1","field":"tabs[4].path","contains":"/e2e-api/README.md"}}
+{"expect":{"frame":"editor.timeline.row.fc19999","inside":"editor.column"}}
+{"expect":{"tree":"absent","text":"Uncommitted changes"}}
+{"dispatch":{"action":"editor_focus_tab","params":{"pane":"editor-1","index":1}}}
+{"expect":{"frame":"editor.timeline.row.00a19bc","inside":"editor.column"}}
+{"expect":{"tree":"contains","text":"Uncommitted changes"}}
+{"do":{"click":"editor.timeline.toggle"}}
+{"expect":{"tree":"absent","text":"Uncommitted changes"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"1"}}
+{"do":{"click":"editor.timeline.toggle"}}
+{"expect":{"tree":"contains","text":"Uncommitted changes"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"editor.timeline.toggle","inside":"editor.column"}}
+{"expect":{"frame":"editor.timeline.row.00a19bc","inside":"editor.column"}}
+{"expect":{"frame":"editor.timeline.row.00a19bc","maxHeight":40}}
+{"dispatch":{"action":"editor_timeline","params":{"root":"{fixtureRoot}/e2e-portal","path":"../e2e-api/README.md"},"refuses":"path escapes the root"}}
+{"dispatch":{"action":"editor_blame","params":{"root":"{fixtureRoot}/e2e-portal","path":"../e2e-api/README.md"},"refuses":"path escapes the root"}}
+{"dispatch":{"action":"editor_blame","params":{"root":"{fixtureRoot}/e2e-api","path":"notes"},"refuses":"no such path 'notes' in HEAD"}}

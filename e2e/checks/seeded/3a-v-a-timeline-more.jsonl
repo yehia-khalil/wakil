@@ -1,0 +1,31 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_tree","params":{"view":"files"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"for i in $(seq 1 51); do echo $i >> ../e2e-portal/log.txt && git -C ../e2e-portal add log.txt && env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME='Wakil E2E' GIT_AUTHOR_EMAIL=e2e@e2e-fixture.invalid GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_NAME='Wakil E2E' GIT_COMMITTER_EMAIL=e2e@e2e-fixture.invalid GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -C ../e2e-portal commit -qm \"Log $i\" || break; done; git -C ../e2e-portal rev-parse HEAD"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"60f0a76f15d128cec586114665b117648d123829"}}
+{"do":{"click":"rail.editor-1"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/log.txt","preview":false}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-portal/log.txt"}}
+{"expect":{"frame":"editor.timeline.row.60f0a76","inside":"editor.column"}}
+{"expect":{"tree":"contains","text":"Load more"}}
+{"expect":{"frame":"editor.timeline.more","maxHeight":40}}
+{"do":{"click":"editor.timeline.more"}}
+{"expect":{"frame":"editor.timeline.row.d014a06","maxHeight":40}}
+{"expect":{"tree":"absent","text":"Load more"}}
+{"expect":{"frame":"editor.timeline.row.60f0a76","inside":"editor.column"}}
