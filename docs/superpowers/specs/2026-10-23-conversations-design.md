@@ -40,6 +40,13 @@ that needs a second place or a second app.
 3. **The Landing gains a Running column** before Continue: every live conversation in this place,
    newest activity first, with its state. A click switches to it. Continue keeps listing ended
    sessions, as today.
+3a. **Running and past never mix.** *Running* means its agent is alive in this Wakil session;
+   *past* means it ended (closed, or Wakil quit; after a relaunch every conversation is past). A
+   Running row and a ⌘P Running row carry a state dot: violet working, amber waiting, green done
+   unseen, red failed, **grey idle**. A past row carries no dot, only when it last ran, as Continue
+   does today. A conversation is in one list only: a past one resumed moves to Running and leaves
+   Continue (its chain is one row, as 2b-v collapses it); closing a running one moves it to
+   Continue.
 4. **⌘P lists live conversations first** under "Running", across all places; picking one switches
    to it (no fork, no cost). Ended ones follow, as today, and resume as a fork (2b-v).
 5. **Switching to a live conversation brings back exactly what was left**: its thread, its canvas
