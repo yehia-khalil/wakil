@@ -3424,7 +3424,7 @@ Drop and its files as read-only diffs. Changes in a switch's way are stashed or 
 lost; a clash keeps the stash. Delete, Drop and Drop All ask in place, and ask on the permission plane
 only when the agent or voice runs them. Design in
 `docs/superpowers/specs/2026-10-23-3a-iv-branches-and-stash-design.md`; walk in
-`phase-3a-iv-acceptance.md`.
+`phase-3a-iv-acceptance.md`. Shipped as #55 and #56.
 
 The operator walked it on this Mac and **all ten steps pass**, after the fixes below.
 
