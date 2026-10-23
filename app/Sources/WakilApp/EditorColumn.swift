@@ -41,6 +41,11 @@ struct EditorColumn: View {
     let changes: EditorChangesControls
 
     @State private var dragWidth: Double?
+    /// 3a-iv: the root whose branch picker is open from its header.
+    @State private var branchPickerRoot: String?
+    @State private var branchPickerMode: BranchPickerMode = .switchBranch
+    /// 3a-iv: the in-place field open under a root's header — Create, Rename or Stash.
+    @State private var nameField: (root: String, kind: ChangesNameFieldKind)?
     @State private var query = ""
     @State private var debounce = EditorDebounce(delay: .milliseconds(250))
     @State private var typed = ""
@@ -377,7 +382,7 @@ struct EditorColumn: View {
     private var changesHighlight: EditorChangesRow? { editorChangesResolve(column.changesHighlight, roots: gitRoots) }
 
     /// The view's one spacing scale: 4, 8, 12.
-    private enum ChangesSpace {
+    enum ChangesSpace {
         static let s: CGFloat = 4, m: CGFloat = 8, l: CGFloat = 12
         /// Every row and header line, so the list keeps one rhythm.
         static let row: CGFloat = 22
@@ -435,6 +440,11 @@ struct EditorColumn: View {
         let boxed = !closed && root.error == nil && !root.files.isEmpty
         VStack(alignment: .leading, spacing: 0) {
             changesHeader(root, closed: closed, boxed: boxed)
+            if let field = nameField, field.root == root.root {
+                ChangesNameField(root: root, kind: field.kind, busy: changes.inFlight.contains(root.root),
+                                 run: { text in runNameField(root, field.kind, text) }, close: { nameField = nil })
+                    .id("\(root.root)|\(field.kind.action)")
+            }
             if let detail = gitRootErrorDetail(root) {
                 Text(detail)
                     .font(.system(size: 11, design: .monospaced))
@@ -454,6 +464,9 @@ struct EditorColumn: View {
                         ForEach(section.rows, id: \.self) { changesRow($0, root: root) }
                     }
                 }
+                // 3a-iv: read again whenever the root's status moves or a write ends.
+                ChangesStashesGroup(root: root, controls: stashControls, busy: changes.inFlight.contains(root.root),
+                                    refreshKey: "\(root.branch)|\(root.files.count)|\(changes.inFlight.contains(root.root))")
             }
         }
         .padding(.horizontal, ChangesSpace.m)
@@ -492,7 +505,8 @@ struct EditorColumn: View {
             .accessibilityRemoveTraits(.isButton)
             .accessibilityAddTraits(.isStaticText)
             // Beside the line, not in it: the line is one accessibility element, which would hide the
-            // button from the tree (3a-iii e2e audit).
+            // buttons from the tree (3a-iii e2e audit).
+            branchButton(root)
             remoteButton(root)
             // A clean root has no box, but its last commit can still be undone from here.
             if clean {
@@ -500,6 +514,92 @@ struct EditorColumn: View {
             } else if !boxed {
                 // A collapsed root has no commit bar: its write in flight shows here (Rules 4, 5).
                 rootBusyActions(root)
+            }
+        }
+    }
+
+    /// 3a-iv: ▾ → Branch and ▾ → Stash, VS Code's ⋯ items (spec call 4).
+    @ViewBuilder
+    private func branchStashMenus(_ root: GitRootState) -> some View {
+        let key = root.root
+        Menu("Branch") {
+            Button("Create Branch…") { nameField = (key, .create) }
+                .accessibilityIdentifier("editor.changes.\(root.name).branch.create")
+            Button("Create Branch From…") { branchPickerMode = .createFrom; branchPickerRoot = key }
+                .accessibilityIdentifier("editor.changes.\(root.name).branch.createFrom")
+            Button("Rename Branch…") { nameField = (key, .rename(current: root.branch)) }
+                .disabled(root.branch.isEmpty)
+                .accessibilityIdentifier("editor.changes.\(root.name).branch.rename")
+            Button("Delete Branch…") { branchPickerMode = .delete; branchPickerRoot = key }
+                .accessibilityIdentifier("editor.changes.\(root.name).branch.delete")
+        }
+        .accessibilityIdentifier("editor.changes.\(root.name).branchMenu")
+        Menu("Stash") {
+            Button("Stash") { nameField = (key, .stash(mode: "default")) }
+                .accessibilityIdentifier("editor.changes.\(root.name).stash.push")
+            Button("Stash Including Untracked") { nameField = (key, .stash(mode: "untracked")) }
+                .accessibilityIdentifier("editor.changes.\(root.name).stash.pushUntracked")
+            Button("Stash Staged") { nameField = (key, .stash(mode: "staged")) }
+                .accessibilityIdentifier("editor.changes.\(root.name).stash.pushStaged")
+            Divider()
+            Button("Pop Latest Stash") { latestStash(key, pop: true) }
+                .accessibilityIdentifier("editor.changes.\(root.name).stash.popLatest")
+            Button("Apply Latest Stash") { latestStash(key, pop: false) }
+                .accessibilityIdentifier("editor.changes.\(root.name).stash.applyLatest")
+        }
+        .accessibilityIdentifier("editor.changes.\(root.name).stashMenu")
+    }
+
+    private func latestStash(_ root: String, pop: Bool) {
+        Task {
+            guard let s = await changes.branchStash.stashes(root).first else { return }
+            _ = await changes.branchStash.apply(root, s, pop)
+        }
+    }
+
+    /// The stash controls with its file opener bound to this pane's diff tab.
+    private var stashControls: BranchStashControls {
+        var c = changes.branchStash
+        c.openStashFile = { root, path, stash, untracked in
+            await dispatch("editor_open_stash_diff", ["root": .string(root), "path": .string(path),
+                                                      "stash": .string(stash), "untracked": .bool(untracked)])
+        }
+        return c
+    }
+
+    /// Runs the in-place field's write; it closes on success and stays, with the refusal under the
+    /// box, when refused.
+    private func runNameField(_ root: GitRootState, _ kind: ChangesNameFieldKind, _ text: String) {
+        Task {
+            let refused: Bool
+            switch kind {
+            case .create:
+                if case .switched = await changes.branchStash.create(root.root, text) { refused = false } else { refused = true }
+            case .rename:
+                refused = await changes.branchStash.rename(root.root, text) != nil
+            case .stash(let mode):
+                refused = await changes.branchStash.stash(root.root, text, mode) != nil
+            }
+            if !refused { nameField = nil }
+        }
+    }
+
+    /// 3a-iv: the root's branch picker, opened from its header.
+    @ViewBuilder
+    private func branchButton(_ root: GitRootState) -> some View {
+        if root.error == nil, !(root.branch.isEmpty && root.detached.isEmpty) {
+            Button { branchPickerMode = .switchBranch; branchPickerRoot = root.root } label: {
+                Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium))
+                    .frame(width: 18, height: 18).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
+            .help("Switch Branch…")
+            .accessibilityLabel("Switch Branch…")
+            .accessibilityIdentifier("editor.changes.\(root.name).branch")
+            .popover(isPresented: Binding(get: { branchPickerRoot == root.root },
+                                          set: { if !$0 { branchPickerRoot = nil } }), arrowEdge: .bottom) {
+                BranchPicker(roots: [root], startRoot: root.root, actions: changes.branches, mode: branchPickerMode) { branchPickerRoot = nil }
             }
         }
     }
@@ -547,6 +647,8 @@ struct EditorColumn: View {
                 .accessibilityIdentifier("editor.changes.\(root.name).undo")
             Button("Fetch") { Task { await changes.fetch(key) } }
                 .accessibilityIdentifier("editor.changes.\(root.name).fetch")
+            Divider()
+            branchStashMenus(root)
         } label: { Image(systemName: "ellipsis").font(.system(size: 10, weight: .semibold)) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             .foregroundStyle(EditorPaneStyle.text.opacity(0.62))
@@ -841,6 +943,8 @@ struct EditorColumn: View {
                     Divider()
                     Button("Fetch") { Task { await changes.fetch(key) } }
                         .accessibilityIdentifier("editor.changes.\(root.name).fetch")
+                    Divider()
+                    branchStashMenus(root)
                 } label: { Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold)) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
@@ -938,6 +1042,8 @@ struct EditorColumn: View {
     private func changesKey(_ press: KeyPress) -> KeyPress.Result {
         // The message box's keys are its own: ↑ moves its caret, Return breaks its line (3a-ii).
         guard !isChord(press), messageFocused == nil else { return .ignored }
+        // An open branch picker's keys are its own: ↑↓ move its rows, Return picks (3a-iv e2e audit).
+        guard branchPickerRoot == nil, nameField == nil else { return .ignored }
         switch press.key {
         case .upArrow: Task { await dispatch("editor_changes_step", ["delta": .integer(-1)]) }
         case .downArrow: Task { await dispatch("editor_changes_step", ["delta": .integer(1)]) }
@@ -1741,6 +1847,10 @@ struct EditorChangesControls {
     let remote: (String, ChangesRemoteButton) async -> Void
     let fetch: (String) async -> Void
     var notes: [String: String]
+    /// 3a-iv: the branch picker's reads and writes.
+    var branches = BranchPickerActions()
+    /// 3a-iv: the stash list and the stash, rename and create writes.
+    var branchStash = BranchStashControls()
 }
 
 /// The message box's keys (3a-ii), taken ahead of SwiftUI and the menu while a box holds the keyboard:

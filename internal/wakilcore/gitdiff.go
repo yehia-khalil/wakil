@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -74,6 +75,8 @@ func GitDiff(ctx context.Context, g *GitRunner, path, side string) (GitDiffResul
 }
 
 // GitShow returns the content of a file at a given revision (HEAD, index, or worktree).
+var stashID = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
 func GitShow(ctx context.Context, g *GitRunner, path, rev string) (GitShowResult, error) {
 	rel, err := g.ResolvePath(path)
 	if err != nil {
@@ -94,7 +97,14 @@ func GitShow(ctx context.Context, g *GitRunner, path, rev string) (GitShowResult
 			return r, nil
 		}
 	default:
-		return GitShowResult{}, UserError("rev must be HEAD, index or worktree, got " + rev)
+		// 3a-iv: a stash's sides — the stash itself, its base (first parent) and its untracked files
+		// (third parent) — named by the stash's commit id, never a free revision.
+		kind, id, _ := strings.Cut(rev, ":")
+		suffix, ok := map[string]string{"stash": "", "stash-base": "^1", "stash-untracked": "^3"}[kind]
+		if !ok || !stashID.MatchString(id) {
+			return GitShowResult{}, UserError("rev must be HEAD, index, worktree or a stash side, got " + rev)
+		}
+		data, err = g.Run(ctx, "show", id+suffix+":"+filepath.ToSlash(rel))
 	}
 	if err != nil {
 		// A file absent at HEAD (added) or in the index (untracked) has an empty original side.

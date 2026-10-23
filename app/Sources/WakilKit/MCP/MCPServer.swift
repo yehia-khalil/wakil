@@ -808,10 +808,13 @@ private func parkForConfirmation(
     // `describeProposal` still answers for any action `confirmationDescription`
     // doesn't recognise, so nothing not yet named there loses its
     // description.
-    let statement = isMutation
-        ? (stringArgument(arguments, "statement") ?? "")
-        : (confirmationDescription(action: name, params: arguments)
-            ?? describeProposal(action: name, arguments: arguments))
+    // A mutation's own statement (SQL, an HTTP request) when it has one; a git write the agent price
+    // gates (3a-iv) has none, and is described in a sentence instead.
+    let ownStatement = isMutation ? stringArgument(arguments, "statement") : nil
+    let statement = ownStatement
+        ?? (isMutation ? (confirmationDescription(action: name, params: arguments) ?? "")
+            : (confirmationDescription(action: name, params: arguments)
+                ?? describeProposal(action: name, arguments: arguments)))
     guard !statement.isEmpty else {
         return JSONRPCMessage(id: id, error: JSONRPCError(
             code: -32602,
@@ -823,7 +826,7 @@ private func parkForConfirmation(
         params: arguments,
         database: stringArgument(arguments, "database"),
         statement: statement,
-        affectsEveryRow: isMutation && mutationAffectsEveryRow(statement),
+        affectsEveryRow: ownStatement.map(mutationAffectsEveryRow) ?? false,
         origin: .agent,
         // The session's own place, so it waits there beside other places' proposals.
         place: await caller().place)

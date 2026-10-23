@@ -100,6 +100,7 @@ public func writeGate(
     origin: ActionOrigin,
     targetEnvironment: String?,
     price: (production: GateDecision, otherwise: GateDecision) = (.block, .gate),
+    agentPrice: GateDecision? = nil,
     production: EnvironmentProduction
 ) -> GateDecision {
     // Both comparisons read the project's declarations (Decision 26, #182).
@@ -137,7 +138,11 @@ public func writeGate(
         else { return .allow }
         return .gate
     case .mutate:
-        return isProduction(environment) ? price.production : price.otherwise
+        let priced = isProduction(environment) ? price.production : price.otherwise
+        // A production block stands for every channel; otherwise the agent pays its own price.
+        if priced == .block { return .block }
+        if origin == .agent, let agentPrice { return agentPrice }
+        return priced
     }
 }
 

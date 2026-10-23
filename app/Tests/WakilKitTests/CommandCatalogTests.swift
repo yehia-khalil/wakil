@@ -171,3 +171,14 @@ private func paneKind(_ c: CatalogCommand) -> String? {
     c.editorActiveDiff = EditorActiveDiff(path: "/p/n.go", group: .untracked)
     #expect(!titles().contains("Stage Selected Ranges") && !titles().contains("Unstage Selected Ranges"))
 }
+
+// 3a-iv, spec call 1: ⌘K gains Switch branch…, a choice of the active root's branches.
+@Test func switchBranchIsOfferedWithAGitRootAndNamesIt() throws {
+    let c = try #require(CommandCatalog.command(id: "global.branch"))
+    #expect(c.label == "Switch branch…" && c.action == "editor_changes_switch")
+    #expect(c.input == .choice(.branches, placeholder: "Branch"))
+    #expect(!c.available(PaletteContext()))
+    let context = PaletteContext(activeGitRoot: "/p/api")
+    #expect(c.available(context))
+    #expect(c.params(context, "feature/search") == .object(["root": .string("/p/api"), "branch": .string("feature/search")]))
+}

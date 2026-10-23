@@ -47,12 +47,30 @@ func TestRunnerRefusesARootOutsideTheProject(t *testing.T) {
 func TestRunnerRefusesAWriteSubcommand(t *testing.T) {
 	repo := gitTestRepo(t)
 	g, _ := NewGitRunner(repo, []string{repo})
-	// for-each-ref is not a write, but no reader needs it and its --format can verify a
-	// signature, which runs the repository's gpg.program.
-	for _, sub := range []string{"add", "commit", "checkout", "fetch", "push", "config", "-c", "for-each-ref"} {
+	for _, sub := range []string{"add", "commit", "checkout", "fetch", "push", "config", "-c", "stash"} {
 		if _, err := g.Run(context.Background(), sub); err == nil {
 			t.Errorf("%s: want refusal", sub)
 		}
+	}
+}
+
+// 3a-iv lets for-each-ref and log read the branch and stash lists. A --format that asks for a
+// signature would verify it, which runs the repository's gpg.program, so such a format is refused.
+func TestRunnerRefusesAFormatThatVerifiesASignature(t *testing.T) {
+	repo := gitTestRepo(t)
+	g, _ := NewGitRunner(repo, []string{repo})
+	for _, c := range [][]string{
+		{"for-each-ref", "--format=%(signature)"},
+		{"for-each-ref", "--format=%(signature:grade)"},
+		{"log", "--format=%G?"},
+		{"log", "--format=%GS"},
+	} {
+		if _, err := g.Run(context.Background(), c[0], c[1:]...); err == nil {
+			t.Errorf("%v: want refusal", c)
+		}
+	}
+	if _, err := g.Run(context.Background(), "for-each-ref", "--format=%(refname:short)", "refs/heads"); err != nil {
+		t.Fatalf("a plain format: %v", err)
 	}
 }
 

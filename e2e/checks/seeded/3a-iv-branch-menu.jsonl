@@ -1,0 +1,147 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.branchMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Branch"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"editor.changes.e2e-portal.nameField"}}
+{"expect":{"tree":"contains","text":"New branch name"}}
+{"do":{"type":{"into":"editor.changes.e2e-portal.nameField","text":"bad..name"}}}
+{"do":{"click":"editor.changes.e2e-portal.nameField.go"}}
+{"expect":{"tree":"contains","text":"\"bad..name\" is not a valid branch name"}}
+{"expect":{"tree":"contains","text":"bad..name"}}
+{"expect":{"tree":"contains","text":"New branch name"}}
+{"do":{"click":"editor.changes.e2e-portal.nameField.cancel"}}
+{"expect":{"tree":"absent","text":"New branch name"}}
+{"dispatch":{"action":"editor_changes_branch_create","params":{"root":"{fixtureRoot}/e2e-portal","name":"bad..name"},"refuses":"\"bad..name\" is not a valid branch name"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.branchMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Branch"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"editor.changes.e2e-portal.nameField"}}
+{"expect":{"tree":"contains","text":"New branch name"}}
+{"do":{"type":{"into":"editor.changes.e2e-portal.nameField","text":"e2e topic"}}}
+{"parity":{"action":"editor_changes_branch_create","params":{"root":"{fixtureRoot}/e2e-portal","name":"e2e-topic"},"click":"editor.changes.e2e-portal.nameField.go","assert":"tree"}}
+{"expect":{"tree":"contains","text":"e2e-portal · e2e-topic"}}
+{"expect":{"tree":"absent","text":"New branch name"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.branchMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Branch"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"editor.changes.e2e-portal.nameField"}}
+{"expect":{"tree":"contains","text":"New name for the branch"}}
+{"expect":{"tree":"contains","text":"Value: e2e-topic"}}
+{"do":{"type":{"into":"editor.changes.e2e-portal.nameField","text":"e2e-topic-two"}}}
+{"parity":{"action":"editor_changes_branch_rename","params":{"root":"{fixtureRoot}/e2e-portal","to":"e2e-topic-two"},"click":"editor.changes.e2e-portal.nameField.go","assert":"tree"}}
+{"expect":{"tree":"contains","text":"e2e-portal · e2e-topic-two"}}
+{"dispatch":{"action":"editor_changes_branch_rename","params":{"root":"{fixtureRoot}/e2e-portal","to":"main"},"refuses":"already exists"}}
+{"expect":{"tree":"contains","text":"e2e-portal · e2e-topic-two"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.branchMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Branch"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"expect":{"tree":"contains","text":"Choose the branch to start from"}}
+{"do":{"click":"branch.picker.row.main"}}
+{"expect":{"tree":"contains","text":"Name the new branch (from main)"}}
+{"do":{"type":{"into":"branch.picker.filter","text":"from main"}}}
+{"do":{"click":"branch.picker.create"}}
+{"expect":{"tree":"contains","text":"e2e-portal · from-main"}}
+{"expect":{"tree":"absent","text":"Name the new branch"}}
+{"dispatch":{"action":"editor_changes_branch_create","params":{"root":"{fixtureRoot}/e2e-portal","name":"from-topic","from":"e2e-topic-two"}}}
+{"expect":{"tree":"contains","text":"e2e-portal · from-topic"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal --no-pager branch --format='%(refname:short)' | paste -sd' ' -"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"e2e-topic-two from-main from-topic main"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal switch -q from-main && git -C ../e2e-portal -c user.name=Me -c user.email=me@e2e.invalid commit -qam only-here && git -C ../e2e-portal switch -q main"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.editor-1"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.branchMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Branch"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"expect":{"tree":"contains","text":"Choose the branch to delete"}}
+{"do":{"click":"branch.picker.row.from-main"}}
+{"expect":{"tree":"contains","text":"Delete from-main? Its 1 commit not on main is kept only in git's reflog."}}
+{"do":{"click":"branch.picker.delete.keep"}}
+{"expect":{"tree":"absent","text":"Delete from-main?"}}
+{"do":{"click":"branch.picker.row.from-main"}}
+{"expect":{"tree":"contains","text":"Delete from-main? Its 1 commit not on main is kept only in git's reflog."}}
+{"do":{"click":"branch.picker.delete.confirm"}}
+{"expect":{"tree":"absent","text":"Choose the branch to delete"}}
+{"expect":{"journal":{"contains":"\"branch\":\"from-main\""}}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.branchMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Branch"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"do":{"click":"branch.picker.row.from-topic"}}
+{"expect":{"tree":"contains","text":"Delete from-topic? It is merged into main."}}
+{"do":{"click":"branch.picker.delete.confirm"}}
+{"expect":{"tree":"absent","text":"Choose the branch to delete"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal --no-pager branch --format='%(refname:short)' | paste -sd' ' -"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"e2e-topic-two main"}}
