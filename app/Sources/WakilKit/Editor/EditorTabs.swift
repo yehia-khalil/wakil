@@ -24,8 +24,12 @@ public func editorTabTitles(_ tabs: [EditorTab]) -> [String] {
             guard counts[name, default: 0] > 1 else { return name }
             let parent = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
             return "\(parent)/\(name)"
-        case .diff(_, let path, let group, let stash):
-            return "\((path as NSString).lastPathComponent) (\(stash == nil ? editorDiffGroupTitle(group) : "Stash"))"
+        case .diff(_, let path, let group, let source):
+            switch source {
+            case nil: return "\((path as NSString).lastPathComponent) (\(editorDiffGroupTitle(group)))"
+            case .stash: return "\((path as NSString).lastPathComponent) (Stash)"
+            case .commit(let c): return editorCommitTabTitle(path: c.path, id: c.id)
+            }
         }
     }
 }
@@ -196,9 +200,9 @@ public func editorTabParams(_ subject: EditorTabSubject) -> [String: JSONValue] 
     switch subject {
     case .file(let path, _): ["path": .string(path)]
     case .scratch(let n): ["scratch": .integer(Int64(n))]
-    case .diff(let root, let path, let group, let stash):
+    case .diff(let root, let path, let group, let source):
         ["diff": .object(["root": .string(root), "path": .string(path), "group": .string(group.rawValue)]
-                         .merging(stash.map { ["stash": .string($0)] } ?? [:]) { a, _ in a })]
+                         .merging(editorDiffSourceParams(source)) { a, _ in a })]
     }
 }
 
