@@ -2410,9 +2410,10 @@ public func registerStandardActions(
         handler: { params in
             let id = try requireStringParam(params, "id", action: "session_resume")
             let caller = ActionRegistry.dispatchCaller
-            let place = pinnedPlace(of: caller)
+            // An agent's own conversation, or the operator's screen's as it was when they asked
+            // (`WindowModel.screenPinnedActions`); nil — `--dispatch` — the screen's at drain.
             await resumes.request(ResumeRequest(
-                sessionId: id, place: place, conversation: place == nil ? nil : caller?.conversation))
+                sessionId: id, place: pinnedPlace(of: caller), conversation: caller?.conversation))
             return .object([
                 "resuming": .string(id),
                 "note": .string("this session ends as the fork starts"),
@@ -2425,7 +2426,9 @@ public func registerStandardActions(
     // agent must not push aside the operator's conversation. Both park on `conversationRequests`
     // and return, as `session_set_provider` parks: no `WindowModel` exists when this runs.
     // **Pinned to the conversation they are dispatched in** — a session's own socket names it
-    // (`pinnedPlace(of:)`); the operator's dispatch names none, which is the screen's.
+    // (`pinnedPlace(of:)`), and the operator's window names the screen's as it was when the
+    // gesture was made (`WindowModel.screenPinnedActions`); `--dispatch` names none, which is the
+    // screen's when the request drains.
     await registry.register(Action(
         name: "session_new",
         description: "Put the conversation on screen into the background, untouched — its turn "
@@ -2436,7 +2439,7 @@ public func registerStandardActions(
         schema: .object(["type": .string("object"), "properties": .object([:])]),
         handler: { _ in
             let caller = ActionRegistry.dispatchCaller
-            let conversation = pinnedPlace(of: caller) == nil ? nil : caller?.conversation
+            let conversation = caller?.conversation
             await conversationRequests.request(.new(conversation: conversation))
             return .object(["backgrounded": conversation.map(JSONValue.string) ?? .null])
         }

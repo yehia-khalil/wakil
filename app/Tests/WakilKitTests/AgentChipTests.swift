@@ -395,6 +395,21 @@ struct AgentChipProductionTests {
         #expect(model.chips.map(\.place) == [live])
     }
 
+    // Final review, item 2: a conversation that has sent nothing is listed too, and its row is
+    // production red from the moment it exists.
+    @Test func aNeverSentConversationReadsItsPlacesDeclarationFromCreation() async throws {
+        let pinned = GatedContext(place: live, declarations: ["live": true])
+        let model = flagWindow(Harnesses(), pinned: pinned)
+        show(live, in: model)
+
+        _ = await model.openPane(kind: "note")
+
+        let row = try #require(model.liveConversationRows(in: live).first)
+        #expect(row.session == nil, "never sent")
+        #expect(await waitUntil { model.liveConversationRows(in: live).first?.isProduction == true },
+                "\(model.liveConversationRows(in: live))")
+    }
+
     @Test func aDeclarationWinsOverTheNameOnceRead() async throws {
         // Decision 26: an environment named production that declares it is not, is not.
         let pinned = GatedContext(place: namedProduction, declarations: ["production": false])
@@ -654,7 +669,10 @@ struct DraftPerScreenTests {
         let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: org)
         show(placeA, in: model)
         #expect(model.screenKey == "landing:@initech/api/staging")
-        #expect(model.isSameScreenRenamed(from: "landing:@initech/api/staging", to: "landing:r"))
+        // Renamed only into the id the place reserves (final review, item 3).
+        #expect(!model.isSameScreenRenamed(from: "landing:@initech/api/staging", to: "landing:r"))
+        let r = model.pinTurnScope().conversation ?? ""
+        #expect(model.isSameScreenRenamed(from: "landing:@initech/api/staging", to: "landing:" + r))
         #expect(model.isSameScreenRenamed(from: "landing:r", to: "r"))
         #expect(!model.isSameScreenRenamed(from: "landing:@globex/web/dev", to: "landing:r"), "another place's")
         #expect(!model.isSameScreenRenamed(from: "landing:q", to: "landing:r"))

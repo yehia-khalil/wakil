@@ -114,8 +114,11 @@ public final class ComposerModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let source: WindowModel.TurnSource = landedUnsent ? .voice : .typed
-        // Read before the first await: the line belongs to the place it was typed in.
-        let scope = window.turnScope
+        // Read before the first await: the line belongs to the conversation it was typed on —
+        // on a Landing, the one its first message starts (`WindowModel.pinTurnScope`) — and the
+        // screen it was typed on is where it comes back to.
+        let scope = window.pinTurnScope()
+        let typedOn = screen
         draft = ""
         caret = 0
         landedUnsent = false
@@ -132,12 +135,17 @@ public final class ComposerModel {
             break
         }
         let started = await window.send(text, via: source, scope: scope)
-        // No turn started (no harness, a failed send): the
-        // operator's words come back. Not if they have typed since.
-        if !started, draft.isEmpty {
+        // No turn started (no harness, a failed send, a screen gone): the operator's words come
+        // back to the screen they were typed on (Rule 2) — on show, or kept for it when the
+        // screen has moved — not to whichever is shown now. Not if they have typed there since.
+        guard !started else { return }
+        if screen == typedOn || window.isSameScreenRenamed(from: typedOn, to: screen) {
+            guard draft.isEmpty else { return }
             draft = text
             caret = (text as NSString).length
             landedUnsent = source == .voice
+        } else if drafts[typedOn]?.draft.isEmpty ?? true {
+            drafts[typedOn] = (text, (text as NSString).length)
         }
     }
 

@@ -34,6 +34,7 @@ private struct Wired {
     let panes: PaneStore
     let layout: LayoutStore
     let conversations: ConversationBroker
+    let resumes: ResumeBroker
 }
 
 /// A window with the standard and layout actions registered, driving `sessions`' harnesses and
@@ -41,7 +42,8 @@ private struct Wired {
 @MainActor
 private func wiredWindow(
     _ sessions: Sessions, persistence: LayoutPersistence? = nil, confirmations: ConfirmationBroker = ConfirmationBroker(),
-    context: (any ToolCaller)? = nil
+    context: (any ToolCaller)? = nil, parkedConversations: ConversationBroker? = nil,
+    parkedResumes: ResumeBroker? = nil
 ) async throws -> Wired {
     let dir = testScratchRoot.appendingPathComponent("conversation-switch-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -53,8 +55,8 @@ private func wiredWindow(
     // Pointed at the window below, as `WakilWiring.useActiveContext(of:)` points it.
     let live = LiveConversationLookup()
     await registerStandardActions(
-        into: registry, context: context, panes: panes, db: nil, resumes: resumes, layout: layout,
-        conversationRequests: conversations, liveConversations: { await live.live(in: $0) },
+        into: registry, context: context, panes: panes, db: nil, resumes: parkedResumes ?? resumes, layout: layout,
+        conversationRequests: parkedConversations ?? conversations, liveConversations: { await live.live(in: $0) },
         liveOrganization: { await live.organization() })
     await registerLayoutActions(into: registry, layout: layout, panes: panes)
     let model = WindowModel(
@@ -68,7 +70,8 @@ private func wiredWindow(
     model.setOrganizationForTesting(org)
     live.use({ [weak model] place in await model?.liveConversationRows(in: place) ?? [] },
              organization: { [weak model] in await model?.organization })
-    return Wired(model: model, registry: registry, panes: panes, layout: layout, conversations: conversations)
+    return Wired(
+        model: model, registry: registry, panes: panes, layout: layout, conversations: conversations, resumes: resumes)
 }
 
 /// `scope`'s arrangement, read as a caller homed there reads it.
@@ -739,6 +742,128 @@ struct ConversationSwitchTests {
         #expect(model.screenKey == "landing:" + reserved)
         #expect(await waitUntil { await caller(of: reserved, sessions) != nil }, "the Landing's own socket")
         #expect(await caller(of: first.id, sessions) != nil, "the backgrounded one keeps its own")
+        await model.shutdown()
+    }
+
+    // Final review, item 1 (Invariant 4): a gesture acts on the conversation the screen showed
+    // when it was made. A switch drained while a Landing's message waits on the fast path does
+    // not take the message: it is refused, whole, and given back to the Landing it was typed on.
+    @Test func aLandingsMessageIsNotSentIntoAConversationSwitchedToMeanwhile() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let x = try #require(model.currentAgent)
+        await model.newConversation()
+        let landing = model.screenKey
+        let rowsBefore = x.thoughts
+        let composer = ComposerModel(
+            window: model, speech: SpeechRegistry(engines: []),
+            fastPathRunner: { [model] _, _ in
+                await model.switchToConversation(x.id)
+                return .toAgent
+            })
+        composer.edited(draft: "landing message", caret: 15)
+
+        await composer.submit()
+
+        #expect(model.currentAgent === x, "the switch happened")
+        #expect(x.thoughts == rowsBefore, "X's thread is untouched")
+        #expect(!(sessions.harnesses.in(placeA).first?.log ?? []).contains { $0.contains("landing message") },
+                "\(sessions.harnesses.in(placeA).first?.log ?? [])")
+        #expect(model.liveConversations(in: placeA).map(\.id) == [x.id], "no conversation was made")
+        #expect(model.status.contains("not sent"), "\(model.status)")
+        #expect(composer.draft.isEmpty, "the Landing's words are not staged on X")
+
+        await model.newConversation()
+        #expect(model.screenKey == landing)
+        #expect(composer.draft == "landing message", "given back to the Landing it was typed on")
+        await model.shutdown()
+    }
+
+    @Test func aTurnScopeOnALandingNamesTheIdItReserves() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(model.screenConversation == nil, "unreserved")
+
+        let scope = model.pinTurnScope()
+
+        let reserved = try #require(model.screenConversation)
+        #expect(scope.conversation == reserved)
+        #expect(await model.send("hello", scope: scope))
+        #expect(model.currentAgent?.id == reserved, "the Landing's own conversation, under its id")
+        await model.shutdown()
+    }
+
+    @Test func anOperatorSessionNewPinnedToAConversationLeavesTheOneSwitchedToAlone() async throws {
+        let sessions = Sessions()
+        let parked = ConversationBroker()
+        let w = try await wiredWindow(sessions, parkedConversations: parked)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let a = try #require(model.currentAgent)
+        await model.newConversation(a.id)
+        #expect(await model.send("second job"))
+        let b = try #require(model.currentAgent)
+        await model.switchToConversation(a.id)
+
+        await model.dispatchSessionNew()
+        var requests = await parked.requests().makeAsyncIterator()
+        let request = try #require(await requests.next())
+        #expect(request == .new(conversation: a.id), "pinned to the screen's conversation when made")
+
+        await model.switchToConversation(b.id)
+        await w.conversations.request(request)
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(model.currentAgent === b, "B is not backgrounded")
+        #expect(model.conversation(id: a.id) === a)
+        await model.shutdown()
+    }
+
+    @Test func anOperatorResumeIsPinnedAndRefusedWhenItsLandingHasGone() async throws {
+        let sessions = Sessions()
+        let parked = ResumeBroker()
+        let w = try await wiredWindow(sessions, parkedResumes: parked)
+        let model = w.model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let x = try #require(model.currentAgent)
+        await model.newConversation()
+        let reserved = try #require(model.screenConversation)
+
+        await model.continueSession("past-1")
+        var requests = await parked.requests().makeAsyncIterator()
+        let request = try #require(await requests.next())
+        #expect(request.conversation == reserved, "pinned to the Landing's reserved id")
+
+        await model.switchToConversation(x.id)
+        await model.resume(sessionId: request.sessionId, in: request.place, conversation: request.conversation)
+
+        #expect(model.status.hasPrefix("resume past-1:") && model.status.contains("nothing was resumed"),
+                "\(model.status)")
+        #expect(model.liveConversations(in: placeA).map(\.id) == [x.id])
+        #expect(sessions.harnesses.in(placeA).count == 1, "X was not forked")
+        await model.shutdown()
+    }
+
+    // Item 3: an unreserved Landing renamed is its reserved id, never another conversation.
+    @Test func anUnreservedLandingIsNotRenamedIntoAnotherConversation() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("first job"))
+        let other = try #require(model.currentAgent)
+        await model.newConversation()
+        let reserved = try #require(model.screenConversation)
+        let unreserved = WindowModel.unreservedLandingKey(placeA)
+
+        #expect(model.isSameScreenRenamed(from: unreserved, to: "landing:" + reserved))
+        #expect(model.isSameScreenRenamed(from: unreserved, to: reserved))
+        #expect(!model.isSameScreenRenamed(from: unreserved, to: other.id))
+        #expect(!model.isSameScreenRenamed(from: unreserved, to: "landing:" + other.id))
         await model.shutdown()
     }
 }

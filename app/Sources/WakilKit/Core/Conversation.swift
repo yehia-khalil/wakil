@@ -22,13 +22,14 @@ private let conversationTitleLimit = 48
 
 /// A conversation's title: its first message with whitespace collapsed; when longer than 48
 /// characters, the first whole words that fit in 24, " … ", then the last whole words that fit
-/// in 21. When no whole word fits the first budget, the first 47 characters and "…".
+/// in 21. When no whole word fits either budget, the first 47 characters and "…".
 /// "New conversation" when empty.
 public func conversationTitle(_ firstMessage: String) -> String {
     let words = firstMessage.split(whereSeparator: \.isWhitespace).map(String.init)
     let text = words.joined(separator: " ")
     guard !text.isEmpty else { return newConversationTitle }
-    guard text.count > 48 else { return text }
+    guard text.count > conversationTitleLimit else { return text }
+    let cut = String(text.prefix(conversationTitleLimit - 1)) + "…"
     var head: [String] = []
     var used = 0
     for word in words {
@@ -37,7 +38,7 @@ public func conversationTitle(_ firstMessage: String) -> String {
         head.append(word)
         used = next
     }
-    guard !head.isEmpty else { return String(text.prefix(47)) + "…" }
+    guard !head.isEmpty else { return cut }
     var tail: [String] = []
     used = 0
     for word in words.dropFirst(head.count).reversed() {
@@ -46,6 +47,7 @@ public func conversationTitle(_ firstMessage: String) -> String {
         tail.insert(word, at: 0)
         used = next
     }
+    guard !tail.isEmpty else { return cut }
     return head.joined(separator: " ") + " … " + tail.joined(separator: " ")
 }
 

@@ -2,7 +2,9 @@ import Foundation
 
 /// One request to change which conversation a place shows (conversations 2 of 3).
 public enum ConversationRequest: Sendable, Equatable {
-    /// Put `conversation` — nil, the screen's — into the background and show its place's Landing.
+    /// Put `conversation` — the operator's screen's when they asked, or nil, the screen's when
+    /// this drains — into the background and show its place's Landing. One no longer on screen in
+    /// its place, or a Landing's reserved id, is nothing to do.
     case new(conversation: String?)
     /// Bring back the live conversation `conversation` names, by id or by title; a title is
     /// looked up in `place` — nil, the screen's.

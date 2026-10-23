@@ -9,6 +9,9 @@ import Testing
     ("please look at why the staging deploy keeps failing on the migration step",
      "please look at why the … on the migration step"),
     (String(repeating: "x", count: 60), String(repeating: "x", count: 47) + "…"),
+    // No whole word fits the tail: the 47-and-"…" form, never a head and an empty tail.
+    ("fix the flaky login test " + String(repeating: "x", count: 30),
+     "fix the flaky login test " + String(repeating: "x", count: 22) + "…"),
     ("", "New conversation"),
 ])
 func theTitleIsTheFirstMessageCutTo48(_ message: String, _ title: String) {

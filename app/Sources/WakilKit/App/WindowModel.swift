@@ -220,13 +220,48 @@ public final class WindowModel {
         public let place: Place
         public let rootPath: String
         public let providerId: String
-        /// The on-screen conversation when the scope was read, so the turn goes to that one
-        /// wherever the screen is by then; nil before the place has one.
+        /// The screen's conversation when the scope was read — the one on screen, or on a Landing
+        /// the id it reserves for the conversation its first message starts — so the turn goes to
+        /// that one wherever the screen is by then, and to no other (Invariant 4). Nil on a Landing
+        /// that had reserved none (`pinTurnScope` reserves one).
         public var conversation: String? = nil
     }
 
     public var turnScope: TurnScope {
-        TurnScope(place: place, rootPath: rootPath, providerId: providerId, conversation: currentAgent?.id)
+        TurnScope(
+            place: place, rootPath: rootPath, providerId: providerId,
+            conversation: currentAgent?.id ?? reservedConversations[place])
+    }
+
+    /// `turnScope` as a gesture pins it, read the moment the gesture is made: a Landing that has
+    /// reserved no id for its next conversation reserves one now — told as `openShownSocket`'s
+    /// reservation is, the same screen re-keyed — so the gesture names the conversation it
+    /// starts. Mid organisation switch it reserves nothing, as `openShownSocket` does not.
+    public func pinTurnScope() -> TurnScope {
+        if currentAgent == nil, reservedConversations[place] == nil, !switching {
+            reservedConversations[place] = UUID().uuidString
+            if !layoutActivating { tellScreenChange() }
+        }
+        return turnScope
+    }
+
+    /// The operator's dispatches that act on a conversation: each is pinned, when it is made, to
+    /// the screen's (`pinTurnScope`), and the window acts on that one when the request drains —
+    /// or on none (`conversation(pinned:landingIn:)`).
+    static let screenPinnedActions: Set<String> = ["session_new", "session_resume"]
+
+    /// The conversation a gesture pinned to `id` acts on, resolved when it runs: the live one
+    /// `id` names; else — `id` being the one a place's Landing reserves, while that place still
+    /// shows its Landing — the conversation that Landing's first message starts, created now
+    /// under `id`. Nil `id` (a Landing that had reserved none) is `place`'s Landing, while it
+    /// still shows one. Nil when the screen the gesture was made on has gone — its Landing
+    /// shows another conversation now, or its id went to another — so the caller refuses rather
+    /// than act on a conversation the operator did not gesture at (Invariant 4).
+    private func conversation(pinned id: String?, landingIn place: Place) -> PlaceAgent? {
+        if let id, let live = conversations[id] { return live }
+        let landing = id.map { id in reservedConversations.first { $0.value == id }?.key } ?? place
+        guard let landing, screenConversations[landing] == nil else { return nil }
+        return agent(for: landing)
     }
     /// True from the moment `setOrganization`'s OTHER guards pass until
     /// its whole sequence (success or failure) finishes. Org-independent:
@@ -6820,9 +6855,12 @@ public final class WindowModel {
     @discardableResult
     private func dispatch(_ name: String, _ params: JSONValue) async -> JSONValue? {
         do {
+            // The conversation actions name the screen's conversation as it is now, not as it is
+            // when their request drains (Invariant 4).
+            let pinned = Self.screenPinnedActions.contains(name) ? pinTurnScope().conversation : nil
             let result = try await registry.dispatch(
                 name: name, params: params, origin: .ui,
-                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+                caller: DispatchCaller(place: place, session: nil, conversation: pinned), confirmation: nil)
             status = ""
             return result
         } catch ActionError.needsConfirmation {
@@ -7262,8 +7300,14 @@ public final class WindowModel {
         // the time a suspension below returns. Its root and provider are captured with it: a
         // first turn's harness starts after `enterConversation` suspends, and starting it with
         // whatever the screen shows by then would run A's agent in B's root.
-        let typedIn = scope ?? turnScope
-        let agent = typedIn.conversation.flatMap(conversation(id:)) ?? agent(for: typedIn.place)
+        let typedIn = scope ?? pinTurnScope()
+        guard let agent = conversation(pinned: typedIn.conversation, landingIn: typedIn.place) else {
+            // Rule 8, whole; Rule 2: the composer gives the words back to the screen they were
+            // typed on.
+            status = "not sent: the Landing this was typed on shows another conversation now — "
+                + "the message is back in that Landing's composer"
+            return false
+        }
         let (startRoot, startProvider) = (typedIn.rootPath, typedIn.providerId)
         // The canvas comes with the conversation, for the same reason `openPane` does: a
         // first turn mints the conversation, and the arrangement belongs to the conversation
@@ -7534,11 +7578,24 @@ public final class WindowModel {
     ///
     /// `place`: whose session is replaced — an agent's own `session_resume` names its place
     /// (`ResumeRequest.place`), so the fork happens there wherever the screen is. Nil is the
-    /// place on screen, which every operator resume is. `conversation`: the one whose session is
-    /// replaced, when an agent's own resume names it (`ResumeRequest.conversation`); nil is the
-    /// place's agent.
+    /// place on screen. `conversation`: the one whose session is replaced — an agent's own, or
+    /// the operator's screen's as it was when they asked (`ResumeRequest.conversation`), its
+    /// Landing's creating it; refused in `status` when that Landing shows another conversation
+    /// now. Nil is the place's agent.
     public func resume(sessionId parent: String, in place: Place? = nil, conversation: String? = nil) async {
-        let agent = conversation.flatMap(self.conversation(id:)) ?? agent(for: place ?? self.place)
+        let agent: PlaceAgent
+        if let conversation {
+            // Pinned when it was asked for (`screenPinnedActions`): that conversation, or its
+            // Landing's, or none.
+            guard let pinned = self.conversation(pinned: conversation, landingIn: place ?? self.place) else {
+                status = "resume \(parent): the Landing it was asked on shows another conversation now — "
+                    + "nothing was resumed"
+                return
+            }
+            agent = pinned
+        } else {
+            agent = self.agent(for: place ?? self.place)
+        }
         markSessionStarted(in: agent)
         // Checked first, before `readThread` even dispatches a read: the
         // live session's own transcript is filed under the project root as
@@ -8285,11 +8342,21 @@ public final class WindowModel {
     /// Whether `from` and `to` — `to` being the screen now — are one screen renamed rather than
     /// two: a Landing's first message makes its reserved id the conversation's (`"landing:R"`
     /// becomes `"R"`), and the place on screen reserving its next conversation — or starting
-    /// one — renames its unreserved Landing (`"landing:@<place>"`). The composer re-keys its
-    /// draft for these and leaves it, and the keyboard, where they are.
+    /// one — renames its unreserved Landing (`"landing:@<place>"`) into that id alone (`"landing:R"`
+    /// or `"R"`), never into another conversation. The composer re-keys its draft for these and
+    /// leaves it, and the keyboard, where they are.
     public func isSameScreenRenamed(from: String, to: String) -> Bool {
-        from == "landing:" + to || from == Self.unreservedLandingKey(place)
+        if from == "landing:" + to { return true }
+        guard from == Self.unreservedLandingKey(place) else { return false }
+        // Only into the Landing's own id — reserved, or taken by the conversation it is becoming
+        // (`agent(for:)`) — never into another conversation the screen moved to.
+        let own = [reservedConversations[place], landingBecoming].compactMap { $0 }
+        return own.contains { to == $0 || to == "landing:" + $0 }
     }
+
+    /// Set by `agent(for:)` while it tells the screen its Landing became `landingBecoming`: the
+    /// id an unreserved Landing is renamed to (`isSameScreenRenamed`).
+    @ObservationIgnored private var landingBecoming: String?
 
     /// The one place a change of what the screen shows is told: the end of every
     /// `activateLayout`, and a conversation's creation (`agent(for:)`), which re-keys its
@@ -8496,9 +8563,15 @@ public final class WindowModel {
         conversations[id] = created
         conversationOrder.append(id)
         screenConversations[place] = id
+        // Its row is listed from now, sent to or not: production red from its first moment.
+        refreshChipProduction(of: created)
         // On screen, its Landing is now this conversation: the same screen, re-keyed. Mid-activation
         // the activation's own tell comes after its canvas is in, and says it.
-        if place == self.place, !layoutActivating { tellScreenChange() }
+        if place == self.place, !layoutActivating {
+            landingBecoming = id
+            defer { landingBecoming = nil }
+            tellScreenChange()
+        }
         return created
     }
 
