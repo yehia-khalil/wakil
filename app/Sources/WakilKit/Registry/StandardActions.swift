@@ -280,7 +280,11 @@ public func registerStandardActions(
     // Conversations 2 of 3, defaulted for the same reason: the window's live conversations,
     // every place's (nil) or one place's, which `session_list` lists beside Go's past sessions.
     // The one production call site passes `LiveConversationLookup`'s read.
-    liveConversations: (@Sendable (Place?) async -> [LiveConversation])? = nil
+    liveConversations: (@Sendable (Place?) async -> [LiveConversation])? = nil,
+    // The organisation on screen, for an unpinned caller's `live` (the operator, `--dispatch`):
+    // the one Go's past half answers for. Nil, or answering nil, lists no live conversation —
+    // never every organisation's.
+    liveOrganization: (@Sendable () async -> String?)? = nil
 ) async {
     // Every dispatch is homed in the canvas on screen when it began, unless its caller has one of
     // its own (`ActionRegistry.setScreenScope`): a db read, a git status or a page whose reply
@@ -2557,9 +2561,9 @@ public func registerStandardActions(
             "List Claude Code sessions for the active project's roots across every provider the "
             + "active org holds, newest first. Reports how many transcript stores could not be "
             + "read, so an empty list with a non-zero skipped count means \"could not look\", not "
-            + "\"none exist\". `live` lists the conversations running in this window now — every "
-            + "place's, or, given `project` (and `environment`), that place's in this organization "
-            + "— newest activity first, each with its title and state (working, waiting, done, "
+            + "\"none exist\". `live` lists the conversations running in this window now in this "
+            + "organization — every project's, or, given `project` and/or `environment`, those "
+            + "places' — newest activity first, each with its title and state (working, waiting, done, "
             + "failed, idle). Only the operator brings one on screen, with ⌘P.",
         kind: .read,
         audience: .agentReachable,
@@ -2580,10 +2584,18 @@ public func registerStandardActions(
             guard let liveConversations else { return past }
             let project = optionalStringParam(params, "project")
             let environment = optionalStringParam(params, "environment")
-            let organization = ActionRegistry.dispatchCaller?.place.organization
+            // **One organisation, always** (north-star non-goal: no query spans two orgs — the
+            // organisation is the credential boundary): a pinned session's own, else the one on
+            // screen, which is the one Go's past half answered for. None known lists none.
+            let organization: String?
+            if let pinned = pinnedPlace(of: ActionRegistry.dispatchCaller) {
+                organization = pinned.organization
+            } else {
+                organization = await liveOrganization?()
+            }
             let live = await liveConversations(nil).filter { row in
-                guard project != nil || environment != nil else { return true }
-                return (organization == nil || row.place.organization == organization)
+                guard let organization, !organization.isEmpty else { return false }
+                return row.place.organization == organization
                     && (project == nil || row.place.project == project)
                     && (environment == nil || row.place.environment == environment)
             }

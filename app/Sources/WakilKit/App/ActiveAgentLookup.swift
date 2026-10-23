@@ -41,27 +41,38 @@ public final class ActiveAgentLookup: @unchecked Sendable {
 /// `WakilWiring.useActiveContext(of:)`. Unwired, it answers none.
 public final class LiveConversationLookup: @unchecked Sendable {
     public typealias Source = @Sendable (_ place: Place?) async -> [LiveConversation]
+    public typealias Organization = @Sendable () async -> String?
 
     private let lock = NSLock()
     private var source: Source?
+    private var organizationSource: Organization?
 
     public init() {}
 
-    public func use(_ source: @escaping Source) {
+    /// `organization` is the organisation on screen: whose live conversations an unpinned
+    /// caller — the operator, `--dispatch` — is answered with (`session_list`).
+    public func use(_ source: @escaping Source, organization: @escaping Organization) {
         lock.lock()
         self.source = source
+        organizationSource = organization
         lock.unlock()
     }
 
     /// Every live conversation, or `place`'s, newest activity first.
     public func live(in place: Place?) async -> [LiveConversation] {
-        guard let source = installedSource() else { return [] }
+        guard let source = installed().source else { return [] }
         return await source(place)
     }
 
-    private func installedSource() -> Source? {
+    /// The organisation on screen, or nil — unwired, or none chosen yet.
+    public func organization() async -> String? {
+        guard let organizationSource = installed().organization else { return nil }
+        return await organizationSource()
+    }
+
+    private func installed() -> (source: Source?, organization: Organization?) {
         lock.lock()
         defer { lock.unlock() }
-        return source
+        return (source, organizationSource)
     }
 }

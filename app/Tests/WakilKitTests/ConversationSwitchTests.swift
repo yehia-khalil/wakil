@@ -54,7 +54,8 @@ private func wiredWindow(
     let live = LiveConversationLookup()
     await registerStandardActions(
         into: registry, context: context, panes: panes, db: nil, resumes: resumes, layout: layout,
-        conversationRequests: conversations, liveConversations: { await live.live(in: $0) })
+        conversationRequests: conversations, liveConversations: { await live.live(in: $0) },
+        liveOrganization: { await live.organization() })
     await registerLayoutActions(into: registry, layout: layout, panes: panes)
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: persistence, context: nil,
@@ -65,7 +66,8 @@ private func wiredWindow(
         conversationRequests: conversations,
         agentSocketFactory: sessions.socketFactory, environment: "staging")
     model.setOrganizationForTesting(org)
-    live.use { [weak model] place in await model?.liveConversationRows(in: place) ?? [] }
+    live.use({ [weak model] place in await model?.liveConversationRows(in: place) ?? [] },
+             organization: { [weak model] in await model?.organization })
     return Wired(model: model, registry: registry, panes: panes, layout: layout, conversations: conversations)
 }
 
@@ -675,7 +677,8 @@ struct ConversationSwitchTests {
         let everywhere = try await registry.registry.dispatch(
             name: "session_list", params: .object([:]), origin: .ui,
             caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
-        #expect(Set(liveTitles(everywhere)) == ["other place", "second job", "first job"])
+        #expect(Set(liveTitles(everywhere)) == ["other place", "second job", "first job"],
+                "every place of the organisation")
         let narrowed = try await registry.registry.dispatch(
             name: "session_list", params: .object(["project": .string("api"), "environment": .string("qa")]),
             origin: .ui,
@@ -683,9 +686,40 @@ struct ConversationSwitchTests {
         #expect(liveTitles(narrowed).isEmpty)
         let elsewhere = try await registry.registry.dispatch(
             name: "session_list", params: .object(["project": .string("api")]), origin: .ui,
-            caller: DispatchCaller(place: Place(organization: "globex", project: "api", environment: "staging"), session: nil),
+            caller: DispatchCaller(place: Place(organization: "globex", project: "api", environment: "staging"), session: "s-g"),
             confirmation: nil)
-        #expect(liveTitles(elsewhere).isEmpty, "the filter is the caller's organisation")
+        #expect(liveTitles(elsewhere).isEmpty, "the filter is the pinned caller's organisation")
+        await model.shutdown()
+    }
+
+    // Fix round 1: `live` never spans two organisations (north-star non-goal "No query spans two
+    // orgs") — the pinned caller's, else the one on screen, as Go's past half answers.
+    @Test func sessionListsLiveConversationsAreOneOrganisationsOnly() async throws {
+        let sessions = Sessions()
+        let w = try await wiredWindow(sessions, context: PastSessionsContext())
+        let model = w.model
+        let globex = Place(organization: "globex", project: "web", environment: "staging")
+        model.setOrganizationForTesting("globex")
+        show(globex, in: model)
+        #expect(await model.send("globex job"))
+        model.setOrganizationForTesting(org)
+        show(placeA, in: model)
+        #expect(await model.send("initech job"))
+        try #require(model.liveConversationRows().count == 2)
+
+        func live(as caller: DispatchCaller) async throws -> [String] {
+            liveTitles(try await w.registry.dispatch(
+                name: "session_list", params: .object([:]), origin: .ui, caller: caller, confirmation: nil))
+        }
+        #expect(try await live(as: DispatchCaller(place: placeA, session: "s-a")) == ["initech job"],
+                "a session pinned in initech sees none of globex's")
+        #expect(try await live(as: DispatchCaller(place: globex, session: "s-g")) == ["globex job"],
+                "a session pinned in globex sees only globex's, whatever the screen shows")
+        #expect(try await live(as: DispatchCaller(place: model.place, session: nil)) == ["initech job"],
+                "the operator's, unpinned: the organisation on screen")
+        #expect(try await live(as: DispatchCaller(
+            place: Place(organization: "", project: "", environment: ""), session: nil)) == ["initech job"],
+                "no place at all (--dispatch): the organisation on screen, never every one")
         await model.shutdown()
     }
 

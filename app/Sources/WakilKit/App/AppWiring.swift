@@ -254,9 +254,9 @@ public struct WakilWiring: Sendable {
             await model?.runningAgent(in: project, environment: environment)
         }
         // Conversations 2 of 3: `session_list`'s live conversations are the window's, live.
-        liveLookup.use { [weak model] place in
+        liveLookup.use({ [weak model] place in
             await model?.liveConversationRows(in: place) ?? []
-        }
+        }, organization: { [weak model] in await model?.organization })
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -408,7 +408,8 @@ public struct WakilWiring: Sendable {
             providerSwitches: providerSwitches, layout: layout,
             agentIn: { project, environment in await agentLookup.agent(in: project, environment: environment) },
             conversationRequests: conversationRequests,
-            liveConversations: { await liveLookup.live(in: $0) })
+            liveConversations: { await liveLookup.live(in: $0) },
+            liveOrganization: { await liveLookup.organization() })
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
             unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))

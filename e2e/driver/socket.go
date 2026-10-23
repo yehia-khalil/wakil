@@ -213,7 +213,10 @@ func (p SocketPlace) isScreens() bool {
 
 // conversationMatches compares a socket's conversation with the screen's only
 // when both are known: a socket or a window from before conversations is
-// chosen by its place alone, as it was.
+// chosen by its place alone, as it was. A null screenConversation from a
+// current build is safe too: after ⌘N the Landing reserves its id in the same
+// main-actor step that backgrounds the conversation, and a place's first
+// showing has no backgrounded socket to confuse it with.
 func conversationMatches(socket string, screen *string) bool {
 	return socket == "" || screen == nil || socket == *screen
 }
