@@ -87,4 +87,14 @@ private func branchWindow() async -> (WindowModel, BranchGit) {
                                         caller: DispatchCaller(place: window.place, session: nil), confirmation: nil)
         #expect(await git.names().contains("git_stash"))
     }
+
+    @Test func theSegmentReadsTheActiveRootsBranch() async {
+        let (window, _) = await branchWindow()
+        await window.refreshPanes()
+        var spins = 0
+        while window.gitRoots.isEmpty, spins < 200 { await Task.yield(); spins += 1 }
+        #expect(window.activeBranchRoot?.root == "/p")
+        #expect(window.branchSegment == "main")
+    }
 }
+

@@ -520,7 +520,14 @@ extension WakilWindow {
                         cancelDraft: { root in model.changesCancelDraft(root: root) },
                         remote: { root, button in await model.changesRemote(root: root, button) },
                         fetch: { root in await model.changesFetch(root: root) },
-                        notes: model.changesRemoteNotes),
+                        notes: model.changesRemoteNotes,
+                        branches: BranchPickerActions(
+                            load: { await model.changesBranches(root: $0) },
+                            switchTo: { root, branch, carry, track in
+                                await model.changesSwitch(root: root, branch: branch, carry: carry, track: track)
+                            },
+                            create: { root, name, from in await model.changesBranchCreate(root: root, name: name, from: from) },
+                            fetch: { await model.changesFetch(root: $0) })),
                     stageHunk: { await model.changesStageHunk() },
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
                     unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) })

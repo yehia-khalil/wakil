@@ -54,7 +54,7 @@ struct ContextLine: View {
     /// cursor, and a second derivation here would drift from the rail's.
     let parallax: (x: Double, y: Double)
 
-    private enum Segment: Hashable, Sendable { case none, project, environment }
+    private enum Segment: Hashable, Sendable { case none, project, environment, branch }
 
     /// This view's own coordinate space, so a segment's measured frame is
     /// relative to the line rather than to the window — the offsets below
@@ -111,6 +111,8 @@ struct ContextLine: View {
         switch segment {
         case .project: return projects.count > 1
         case .environment: return environments.count > 1
+        // 3a-iv: the picker always has something to offer (create, fetch) when there is a git root.
+        case .branch: return model.branchSegment != nil
         case .none: return false
         }
     }
@@ -244,6 +246,13 @@ struct ContextLine: View {
                 // environment lives inside a project's own map, so there is
                 // nothing here to be unset from.
                 if !model.project.isEmpty { chip }
+                // 3a-iv: the active root's branch, an identifier, so monospace (§6).
+                if let branch = model.branchSegment {
+                    Text(branch)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(coolWhite.opacity(0.50))
+                        .lineLimit(1).truncationMode(.middle)
+                }
             }
         }
     }
@@ -271,6 +280,7 @@ struct ContextLine: View {
             organisation
             project
             environment
+            branch
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 15)
@@ -309,6 +319,23 @@ struct ContextLine: View {
             toggle(.project)
         }
         .background(reporting(.project))
+    }
+
+    /// 3a-iv: the Branch segment, opening the branch picker for the active root.
+    @ViewBuilder
+    private var branch: some View {
+        if let text = model.branchSegment {
+            segment(label: "Branch", chevron: .disclosure(up: open == .branch), isOpen: open == .branch) {
+                Text(text)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(coolWhite.opacity(open == .branch ? 1 : 0.82))
+                    .lineLimit(1).truncationMode(.middle)
+            } action: {
+                toggle(.branch)
+            }
+            .background(reporting(.branch))
+            .accessibilityIdentifier("window.contextLine.branch")
+        }
     }
 
     @ViewBuilder
@@ -424,6 +451,16 @@ struct ContextLine: View {
 
     // MARK: - The menu
 
+    /// The branch picker's writes, through the window's `editor_changes_*` actions (Invariant 2).
+    private var branchActions: BranchPickerActions {
+        let model = model
+        return BranchPickerActions(
+            load: { await model.changesBranches(root: $0) },
+            switchTo: { root, branch, carry, track in await model.changesSwitch(root: root, branch: branch, carry: carry, track: track) },
+            create: { root, name, from in await model.changesBranchCreate(root: root, name: name, from: from) },
+            fetch: { await model.changesFetch(root: $0) })
+    }
+
     @ViewBuilder
     private var menu: some View {
         // §2: a slab — near-opaque, rounded, defined by a drop shadow and a
@@ -476,12 +513,18 @@ struct ContextLine: View {
                         }
                     }
                 }
+            case .branch:
+                if let active = model.activeBranchRoot {
+                    BranchPicker(roots: model.gitRoots, startRoot: active.root, actions: branchActions) {
+                        withAnimation(Self.promote) { open = .none }
+                    }
+                }
             case .none:
                 EmptyView()
             }
         }
         .padding(.vertical, 6)
-        .frame(width: 302, alignment: .leading)
+        .frame(width: open == .branch ? 340 : 302, alignment: .leading)
         // Clear on open, so a row the pointer left while the menu was closed
         // does not come back still lit.
         .onAppear { hoveredRow = nil }
@@ -607,7 +650,7 @@ struct ContextLine: View {
             switch segment {
             case .project: projects = await model.listProjects()
             case .environment: environments = await model.listEnvironments()
-            case .none: break
+            case .branch, .none: break
             }
         }
     }

@@ -41,6 +41,8 @@ struct EditorColumn: View {
     let changes: EditorChangesControls
 
     @State private var dragWidth: Double?
+    /// 3a-iv: the root whose branch picker is open from its header.
+    @State private var branchPickerRoot: String?
     @State private var query = ""
     @State private var debounce = EditorDebounce(delay: .milliseconds(250))
     @State private var typed = ""
@@ -492,7 +494,8 @@ struct EditorColumn: View {
             .accessibilityRemoveTraits(.isButton)
             .accessibilityAddTraits(.isStaticText)
             // Beside the line, not in it: the line is one accessibility element, which would hide the
-            // button from the tree (3a-iii e2e audit).
+            // buttons from the tree (3a-iii e2e audit).
+            branchButton(root)
             remoteButton(root)
             // A clean root has no box, but its last commit can still be undone from here.
             if clean {
@@ -500,6 +503,26 @@ struct EditorColumn: View {
             } else if !boxed {
                 // A collapsed root has no commit bar: its write in flight shows here (Rules 4, 5).
                 rootBusyActions(root)
+            }
+        }
+    }
+
+    /// 3a-iv: the root's branch picker, opened from its header.
+    @ViewBuilder
+    private func branchButton(_ root: GitRootState) -> some View {
+        if root.error == nil, !(root.branch.isEmpty && root.detached.isEmpty) {
+            Button { branchPickerRoot = root.root } label: {
+                Image(systemName: "arrow.triangle.branch").font(.system(size: 10, weight: .medium))
+                    .frame(width: 18, height: 18).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
+            .help("Switch Branch…")
+            .accessibilityLabel("Switch Branch…")
+            .accessibilityIdentifier("editor.changes.\(root.name).branch")
+            .popover(isPresented: Binding(get: { branchPickerRoot == root.root },
+                                          set: { if !$0 { branchPickerRoot = nil } }), arrowEdge: .bottom) {
+                BranchPicker(roots: [root], startRoot: root.root, actions: changes.branches) { branchPickerRoot = nil }
             }
         }
     }
@@ -1741,6 +1764,8 @@ struct EditorChangesControls {
     let remote: (String, ChangesRemoteButton) async -> Void
     let fetch: (String) async -> Void
     var notes: [String: String]
+    /// 3a-iv: the branch picker's reads and writes.
+    var branches = BranchPickerActions()
 }
 
 /// The message box's keys (3a-ii), taken ahead of SwiftUI and the menu while a box holds the keyboard:

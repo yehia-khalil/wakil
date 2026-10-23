@@ -4976,6 +4976,18 @@ public final class WindowModel {
         return id
     }
 
+    /// 3a-iv: the root the Branch segment and its picker are about — the focused editor tab's root,
+    /// else the first git root.
+    public var activeBranchRoot: GitRootState? {
+        var path: String?
+        if let pane = focusedEditor, let e = editor(pane), let i = e.active, e.tabs.indices.contains(i),
+           case .file(let p, _) = e.tabs[i].subject { path = p }
+        return activeGitRoot(focusedPath: path, roots: gitRoots)
+    }
+
+    /// What the context line's Branch segment reads; nil with no git root.
+    public var branchSegment: String? { branchSegmentText(activeBranchRoot, rootCount: gitRoots.count) }
+
     /// The scratch tab ⌘S could not save without a path: the pane whose path field should show.
     public private(set) var editorSaveAsRequest: String?
 
