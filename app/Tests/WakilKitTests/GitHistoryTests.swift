@@ -158,4 +158,37 @@ import Testing
         #expect(editorTimelineUncommittedGroup(rows, path: "c.txt", dirty: true) == .changed)
         #expect(editorTimelineUncommittedGroup(rows, path: "c.txt", dirty: false) == nil)
     }
+
+    // Final review I2: the same commit opened with and without its old name is two subjects, so two keys —
+    // one key for both cancelled the first tab's fetch and left it loading.
+    @Test func aCommitTabsKeyCarriesItsParentPath() {
+        let id = String(repeating: "c", count: 40)
+        let a = EditorTab.diff(root: "/p", path: "new.txt", group: .changed, source: .commit(GitCommitRef(id: id, path: "new.txt", parentPath: "old.txt")))
+        let b = EditorTab.diff(root: "/p", path: "new.txt", group: .changed, source: .commit(GitCommitRef(id: id, path: "new.txt")))
+        #expect(editorTabKey(a) != editorTabKey(b))
+    }
+
+    // Final review I3: a fetch in flight for this text is not restarted by the next snapshot.
+    @Test func aBlameInFlightForTheSameTextIsNotFetchedAgain() {
+        var c = EditorBlameCache()
+        #expect(c.needsFetch(key: "k", text: "a"))
+        let g = c.begin(key: "k", text: "a")
+        #expect(!c.needsFetch(key: "k", text: "a"))
+        #expect(c.needsFetch(key: "k", text: "b"))
+        c.abandon(key: "k", gen: g)
+        #expect(c.needsFetch(key: "k", text: "a"))
+    }
+
+    // Final review I4: a landed blame stands until the root's status moves, then it is fetched again; a
+    // reopened tab is fetched again.
+    @Test func aStatusChangeOrAReopenFetchesAgain() {
+        var c = EditorBlameCache()
+        let g = c.begin(key: "k", text: "a")
+        c.land(key: "k", gen: g, lines: [blame(1, "Ada")])
+        #expect(!c.needsFetch(key: "k", text: "a") && c.fetched(key: "k"))
+        c.invalidate()
+        #expect(c.needsFetch(key: "k", text: "a") && c.line(key: "k", 1)?.author == "Ada")
+        c.forget(key: "k")
+        #expect(c.needsFetch(key: "k", text: "a") && !c.fetched(key: "k") && c.line(key: "k", 1) == nil)
+    }
 }

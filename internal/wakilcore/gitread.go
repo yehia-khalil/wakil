@@ -127,6 +127,10 @@ func (g *GitRunner) RunInput(ctx context.Context, stdin []byte, sub string, args
 	if sub == "diff" || sub == "show" {
 		args = append([]string{"--no-ext-diff", "--no-textconv"}, args...)
 	}
+	// blame converts text through a repository's textconv driver by default (final review C1): off.
+	if sub == "blame" {
+		args = append([]string{"--no-textconv"}, args...)
+	}
 	// A submodule's worktree is never looked into (R11). To tell whether a submodule is
 	// dirty, status and diff start a child git inside it, and that child reads the
 	// submodule's own config — its filter drivers, which the overrides above (read from

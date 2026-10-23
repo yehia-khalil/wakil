@@ -91,7 +91,7 @@ public func editorBlameText(_ b: GitBlameInfo, now: Date = Date()) -> String {
 public func editorDiffSourceKey(_ source: EditorDiffSource?) -> String {
     switch source {
     case .stash(let id)?: "stash@\(id)/"
-    case .commit(let c)?: "commit@\(c.id)/"
+    case .commit(let c)?: "commit@\(c.id)\(c.parentPath.map { ":" + $0 } ?? "")/"
     case nil: ""
     }
 }
@@ -123,26 +123,54 @@ public func editorDiffSource(_ d: [String: JSONValue]) -> EditorDiffSource? {
 public struct EditorBlameCache: Sendable {
     private var gens: [String: Int] = [:]
     private var lines: [String: [Int: GitBlameInfo]] = [:]
+    /// The text each key's landed blame was fetched for, and the text a fetch in flight is for.
+    private var fetchedFor: [String: String] = [:]
+    private var inFlight: [String: (gen: Int, text: String)] = [:]
 
     public init() {}
 
-    public mutating func begin(key: String) -> Int {
+    /// Whether `key` showing `text` needs a fetch: not when one landed for that text (until the status
+    /// moves, `invalidate`) and not while one is in flight for it — a snapshot never restarts it.
+    public func needsFetch(key: String, text: String) -> Bool {
+        fetchedFor[key] != text && inFlight[key]?.text != text
+    }
+
+    /// Whether any blame has landed for `key`: the first fetch is not debounced.
+    public func fetched(key: String) -> Bool { lines[key] != nil }
+
+    public mutating func begin(key: String, text: String = "") -> Int {
         let g = (gens[key] ?? 0) + 1
         gens[key] = g
+        inFlight[key] = (g, text)
         return g
+    }
+
+    /// The fetch `gen` was cancelled before it landed: the next snapshot may start another.
+    public mutating func abandon(key: String, gen: Int) {
+        if inFlight[key]?.gen == gen { inFlight[key] = nil }
     }
 
     @discardableResult
     public mutating func land(key: String, gen: Int, lines new: [GitBlameInfo]) -> Bool {
         guard gens[key] == gen else { return false }
         lines[key] = Dictionary(new.map { ($0.line, $0) }, uniquingKeysWith: { a, _ in a })
+        fetchedFor[key] = inFlight[key]?.text
+        inFlight[key] = nil
         return true
     }
 
     public func line(key: String, _ n: Int) -> GitBlameInfo? { lines[key]?[n] }
 
+    /// The root's status moved (a commit, a checkout): every landed blame is fetched again, and shown
+    /// until the new one lands.
+    public mutating func invalidate() { fetchedFor = [:] }
+
     /// A tab closed, or blame switched off: what it held goes.
-    public mutating func forget(key: String) { lines[key] = nil }
+    public mutating func forget(key: String) {
+        lines[key] = nil
+        fetchedFor[key] = nil
+        inFlight[key] = nil
+    }
 }
 
 /// The blame annotation's hover, as Monaco markdown: the subject, who and when, the short id, and the

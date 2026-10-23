@@ -2,6 +2,8 @@ package wakilcore
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -63,5 +65,41 @@ func TestBlameFlagsStayFenced(t *testing.T) {
 		if _, err := g.RunInput(ctx, []byte("x"), "blame", args...); err == nil {
 			t.Errorf("RunInput blame %v was not refused", args)
 		}
+	}
+}
+
+// Final review C1: blame turns textconv on by default, so a repository's diff driver must never run.
+func TestBlameRunsNoTextconvProgram(t *testing.T) {
+	work, w, git := branchFixture(t)
+	marker := filepath.Join(t.TempDir(), "ran")
+	script := filepath.Join(t.TempDir(), "evil.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch "+marker+"\ncat \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeIn(t, work, ".gitattributes", "*.txt diff=x\n")
+	writeIn(t, work, "f.txt", "one\n")
+	git("add", ".")
+	git("commit", "-qm", "seed f")
+	git("config", "diff.x.textconv", script)
+	text := "zero\none\n"
+	for _, in := range []*string{nil, &text} {
+		if _, err := ReadBlame(context.Background(), w.runner(), "f.txt", in); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(marker); err == nil {
+			t.Fatalf("textconv ran (unsaved text: %v)", in != nil)
+		}
+	}
+}
+
+// Final review 9: a path with a space and a non-ASCII letter is blamed whole.
+func TestBlameReadsANameWithASpaceAndAccent(t *testing.T) {
+	work, w, git := branchFixture(t)
+	writeIn(t, work, "my café.txt", "x\n")
+	git("add", ".")
+	git("commit", "-qm", "accent")
+	b, err := ReadBlame(context.Background(), w.runner(), "my café.txt", nil)
+	if err != nil || len(b) != 1 || b[0].Subject != "accent" {
+		t.Fatalf("blame = %+v err %v", b, err)
 	}
 }

@@ -165,6 +165,9 @@ struct EditorPane: View {
         .onChange(of: inlineBlame, initial: true) { _, on in
             host.setBlameEnabled(on)
         }
+        .onChange(of: gitRoots.map { "\($0.root)|\($0.branch)|\($0.detached)|\($0.ahead)|\($0.files.count)" }) { _, _ in
+            host.refreshBlame()
+        }
         // The keys the page takes follow the pane's state (R13): the peek's, or Compare's Esc.
         .onChange(of: editorCapturedKeys(comparing: comparing != nil, peek: comparing == nil && activeTab.flatMap(editorPeekView) != nil), initial: true) { _, keys in
             host.renderer?.captureKeys(keys)
@@ -852,8 +855,7 @@ final class EditorHost {
     @ObservationIgnored private var blameOn = false
     @ObservationIgnored private var blames = EditorBlameCache()
     @ObservationIgnored private var blameTask: Task<Void, Never>?
-    /// The text each key's blame was fetched for, and what was last drawn per key ("line|text").
-    @ObservationIgnored private var blameText: [String: String] = [:]
+    /// What was last drawn per key ("line|text"); what was fetched, and for which text, is `blames`'.
     @ObservationIgnored private var blameShown: [String: String] = [:]
     /// A Revert is on its way to the store: another press is dropped until it lands.
     @ObservationIgnored var reverting = false
@@ -1014,7 +1016,7 @@ final class EditorHost {
         let found = findShown ?? editorFindShownSeed(shown)
         let steps = editorRenderSteps(rendered: rendered, active: activeKey, snapshot: shown, findShown: found)
         editorApply(steps, to: renderer)
-        for case .dispose(let k) in steps { marksSent[k] = nil }
+        for case .dispose(let k) in steps { marksSent[k] = nil; blames.forget(key: k); blameShown[k] = nil }
         rendered = editorRenderedAfter(steps, rendered: rendered, snapshot: shown)
         findShown = editorFindShownAfter(steps, findShown: found, snapshot: shown)
         active = shown.active.flatMap { $0 < shown.tabs.count ? editorTabKey(shown.tabs[$0]) : nil }
@@ -1037,8 +1039,15 @@ final class EditorHost {
             for key in blameShown.keys { renderer.setBlame(key: key, line: 0, text: "", hover: nil, id: "") }
         }
         blameShown = [:]
-        blameText = [:]
+        blames = EditorBlameCache()
         if on, let latest { scheduleBlame(latest) }
+    }
+
+    /// A root's status moved (a commit, a checkout): the active tab's blame is fetched again; what it
+    /// showed stays until the new one lands (final review I4).
+    func refreshBlame() {
+        blames.invalidate()
+        if let latest { scheduleBlame(latest) }
     }
 
     /// The active tab's blame, fetched at once for a tab not yet blamed and 500 ms after its text last
@@ -1046,18 +1055,20 @@ final class EditorHost {
     private func scheduleBlame(_ snapshot: EditorSnapshot) {
         guard blameOn, let i = snapshot.active, i < snapshot.tabs.count else { return }
         let t = snapshot.tabs[i], key = editorTabKey(t)
+        // A fetch in flight for this text is never restarted by the next snapshot (final review I3).
         guard t.diffState == nil, !t.readOnly, case .file(let path, let root) = t.subject, path.hasPrefix(root + "/"),
-              blameText[key] != t.text else { return }
-        let rel = String(path.dropFirst(root.count + 1)), text = t.text, unsaved = t.dirty ? t.text : nil
-        let first = blameText[key] == nil
+              blames.needsFetch(key: key, text: t.text), let fetch = blameFor else { return }
+        let rel = String(path.dropFirst(root.count + 1)), unsaved = t.dirty ? t.text : nil
+        let first = !blames.fetched(key: key)
         blameTask?.cancel()
+        let gen = blames.begin(key: key, text: t.text)
         blameTask = Task { @MainActor [weak self] in
             if !first { try? await Task.sleep(for: .milliseconds(500)) }
-            guard !Task.isCancelled, let self, let fetch = self.blameFor else { return }
-            let gen = self.blames.begin(key: key)
+            guard !Task.isCancelled else { self?.blames.abandon(key: key, gen: gen); return }
             let lines = await fetch(root, rel, unsaved) ?? []
-            guard !Task.isCancelled, self.blames.land(key: key, gen: gen, lines: lines) else { return }
-            self.blameText[key] = text
+            guard let self else { return }
+            guard !Task.isCancelled else { self.blames.abandon(key: key, gen: gen); return }
+            guard self.blames.land(key: key, gen: gen, lines: lines) else { return }
             self.blameShown[key] = nil
             if let line = self.rendered[key]?.cursor.line { self.showBlame(key: key, line: line) }
         }
