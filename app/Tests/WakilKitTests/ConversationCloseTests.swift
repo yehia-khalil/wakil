@@ -102,6 +102,21 @@ private func idleConversation(_ model: WindowModel, _ sessions: Sessions, _ text
     return agent
 }
 
+/// Puts one editor tab on `a.go` into `scope`'s canvas — unsaved when `dirty` — as the removal
+/// tests do (`WindowModelProjectLifecycleTests.dirtyTab`).
+@MainActor
+private func setTab(_ window: WindowModel, in scope: LayoutScope, dirty: Bool) async {
+    let panes = window.panesForTesting
+    let shown = await panes.screenScope
+    if scope != shown { await panes.switchScope(to: scope) }
+    await panes.updateEditor(paneId: "editor-9", create: true) { s in
+        var t = EditorTab.file(path: "/p/a.go", root: "/p", text: "x", mtime: 1, language: "go")
+        if dirty { t.text = "y" }
+        s.tabs = [t]; s.active = 0
+    }
+    if scope != shown { await panes.switchScope(to: shown) }
+}
+
 @MainActor
 struct ConversationCloseTests {
     @Test func closingAnIdleConversationAsksNothingAndShowsTheLanding() async throws {
@@ -253,6 +268,31 @@ struct ConversationCloseTests {
         #expect(model.currentAgent === dead && model.sessionId != deadSession)
         let live = await sockets(of: dead.id, sessions).filter { !$0.stopped }
         #expect(live.count == 1, "one socket answers for it: the fork's")
+        await model.shutdown()
+    }
+
+    // MARK: Controller addition: an unsaved tab refuses the close
+
+    @Test func anUnsavedTabInItsCanvasRefusesTheCloseUntilItIsSavedOrClosed() async throws {
+        let sessions = Sessions()
+        let model = try await wiredWindow(sessions).model
+        show(placeA, in: model)
+        #expect(await model.send("long job"))
+        let agent = try #require(model.currentAgent)
+        let scope = try #require(agent.layoutScope)
+        await setTab(model, in: scope, dirty: true)
+
+        await model.closeConversation()
+
+        #expect(model.status == "long job has unsaved changes in a.go — save or close them first.")
+        #expect(model.closeQuestion == nil, "refused, not asked, though its turn runs")
+        #expect(model.conversation(id: agent.id) === agent && !sessions.harnesses.in(placeA)[0].stopped)
+
+        await setTab(model, in: scope, dirty: false)
+        await model.closeConversation()
+        #expect(model.closeQuestion?.conversation == agent.id, "with the tab saved, the turn running asks")
+        await model.answerCloseQuestion(close: true)
+        #expect(model.conversation(id: agent.id) == nil && sessions.harnesses.in(placeA)[0].stopped)
         await model.shutdown()
     }
 

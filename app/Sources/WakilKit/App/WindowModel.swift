@@ -3723,10 +3723,19 @@ public final class WindowModel {
     /// leave them where nothing reaches them. The files are named, whole (Rule 8).
     private func unsavedTabsRefusal(removing name: String, project: String, environment: String?) async -> String? {
         let organization = organization
-        let titles = await panes.editorDirtyTabTitles { scope in
+        return await unsavedTabsRefusal(naming: name) { scope in
             scope.organization == organization && scope.project == project
                 && (environment == nil || scope.environment == environment)
         }
+    }
+
+    /// The refusal for losing the unsaved editor tabs of every canvas `include` takes, said as
+    /// `name` holding them: a removal's place (above), or a closed conversation's canvas
+    /// (`closeConversation`). Nil when none is unsaved.
+    private func unsavedTabsRefusal(
+        naming name: String, where include: @escaping @Sendable (LayoutScope) -> Bool
+    ) async -> String? {
+        let titles = await panes.editorDirtyTabTitles(where: include)
         guard !titles.isEmpty else { return nil }
         return "\(name) has unsaved changes in \(titles.joined(separator: ", ")) — save or close them first."
     }
@@ -8367,6 +8376,12 @@ public final class WindowModel {
     public func closeConversation(_ conversation: String? = nil) async {
         let target = conversation.map { self.conversation(id: $0) } ?? currentAgent
         guard let target, closeQuestion?.conversation != target.id, !closing.contains(target.id) else { return }
+        // Rule 1: an unsaved tab is work a close would lose, so it refuses — before any question,
+        // and stopping nothing — as a removal does.
+        if let refusal = await unsavedTabsRefusal(closing: target) {
+            status = refusal
+            return
+        }
         guard target.turnInFlight || waitingConversations.contains(target.id) else {
             await endConversation(target)
             return
@@ -8385,7 +8400,18 @@ public final class WindowModel {
         guard let question = closeQuestion else { return }
         closeQuestion = nil
         guard close, let target = conversation(id: question.conversation) else { return }
+        // A tab left unsaved while it asked is refused as it would have been before.
+        if let refusal = await unsavedTabsRefusal(closing: target) {
+            status = refusal
+            return
+        }
         await endConversation(target)
+    }
+
+    /// `unsavedTabsRefusal` for `agent`'s canvas, naming it by its title. Nil with no canvas.
+    private func unsavedTabsRefusal(closing agent: PlaceAgent) async -> String? {
+        guard let canvas = agent.layoutScope else { return nil }
+        return await unsavedTabsRefusal(naming: agent.title) { $0 == canvas }
     }
 
     /// Ends `agent`'s conversation (plan 3, ruling 4): `stopSession` stops its harness and socket
