@@ -2334,6 +2334,10 @@ public final class WindowModel {
     /// nothing is read off disk — a brand-new conversation has no file of its own, and the seed
     /// is what is already on screen, minus every draft (re-walk finding #4).
     private func activateLayout(carrying overlay: Pane? = nil, adoptingCanvas: Bool = false) async {
+        // Every way the screen changes converges here — a picker, a ⌘P jump, an org switch, a new
+        // conversation, a switch — so this is where the composer is told (`tellScreenChange`),
+        // once, whichever return this takes.
+        defer { tellScreenChange() }
         // The place is on screen: it has a socket from now on, before any turn (`openShownSocket`).
         openShownSocket()
         // The place is the screen's now: what its agent did while away has been seen, and its
@@ -8176,6 +8180,9 @@ public final class WindowModel {
         landingsLoading.insert(place)
         defer { landingsLoading.remove(place) }
         if place == self.place {
+            // After New Conversation the Landing's composer takes the keyboard, whatever its canvas holds.
+            composerFocusForced = true
+            defer { composerFocusForced = false }
             await activateLayout()
         } else {
             await loadOffScreen(LayoutScope(
@@ -8191,8 +8198,6 @@ public final class WindowModel {
             ? layoutSnapshot.panes
             : await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }.panes
         if landingBaselines[place] != nil { landingBaselines[place] = Set(shown.map(\.id)) }
-        guard place == self.place else { return }
-        screenDidChange(from: target.id, to: screenKey, focusComposer: true)
     }
 
     /// Brings back the live conversation `idOrTitle` names — its id, or its title when that names
@@ -8201,8 +8206,6 @@ public final class WindowModel {
     /// untouched. Goes to its place first (`goTo`) when it is elsewhere. A title naming none, or
     /// more than one, is refused in `status` (Rule 7: an ambiguity forces it).
     public func switchToConversation(_ idOrTitle: String, in place: Place? = nil) async {
-        // What the screen was before anything moved: the draft typed there is kept under it.
-        let left = screenKey
         let target: PlaceAgent
         if let byId = conversation(id: idOrTitle) {
             target = byId
@@ -8234,11 +8237,6 @@ public final class WindowModel {
         landingBaselines[target.place] = nil
         await activateLayout()
         markSeen(target)
-        guard left != target.id else { return }
-        // Ruling 7: the focus it had is what its canvas recorded — its focused pane, else the composer.
-        let paneFocused = layoutSnapshot.focusedId != nil
-        screenDidChange(from: left, to: target.id, focusComposer: !paneFocused)
-        if paneFocused { returnKeyboardToFocusedPane() }
     }
 
     /// What the screen shows, as the composer keys its drafts (`ComposerModel.screenChanged`):
@@ -8248,18 +8246,45 @@ public final class WindowModel {
         currentAgent?.id ?? "landing:" + (reservedConversations[place] ?? "")
     }
 
-    /// Told when `newConversation` or `switchToConversation` changes what the screen shows: the
-    /// `screenKey` left, the one arrived at, and whether the composer takes the keyboard — after
-    /// a new conversation always, after a switch when its canvas has no focused pane (ruling 7).
+    /// Told when what the screen shows changes (`screenKey`), by whatever moved it: the `screenKey`
+    /// left, the one arrived at, and whether the composer takes the keyboard — after a new
+    /// conversation always, otherwise when the canvas arrived at has no focused pane (ruling 7).
     /// `ComposerModel` registers itself here in its `init`.
     @ObservationIgnored
     public var onScreenChange: (@MainActor (_ from: String, _ to: String, _ focusComposer: Bool) -> Void)?
 
-    /// The one place a change of the conversation on screen is told about: `newConversation`
-    /// and `switchToConversation` call it once the canvas is in.
-    private func screenDidChange(from old: String, to new: String, focusComposer: Bool) {
-        guard old != new else { return }
-        onScreenChange?(old, new, focusComposer)
+    /// The `screenKey` `onScreenChange` was last told about; nil until the first tell, which
+    /// only records it — the composer starts on whatever screen that is.
+    @ObservationIgnored private var toldScreenKey: String?
+    /// Set by `newConversation` around its activation: the Landing's composer takes the keyboard.
+    @ObservationIgnored private var composerFocusForced = false
+
+    /// Whether `from` and `to` are one screen renamed rather than two: a Landing's first message
+    /// makes its reserved id the conversation's (`"landing:R"` becomes `"R"`). The composer
+    /// re-keys its draft for it and leaves it, and the keyboard, where they are.
+    public nonisolated static func isSameScreenRenamed(from: String, to: String) -> Bool {
+        from == "landing:" + to
+    }
+
+    /// The one place a change of what the screen shows is told: the end of every
+    /// `activateLayout`, and a conversation's creation (`agent(for:)`), which re-keys its
+    /// Landing. Each change is told once; an unchanged `screenKey` tells nothing.
+    private func tellScreenChange() {
+        let now = screenKey
+        guard let told = toldScreenKey else {
+            toldScreenKey = now
+            return
+        }
+        guard told != now else { return }
+        toldScreenKey = now
+        if Self.isSameScreenRenamed(from: told, to: now) {
+            onScreenChange?(told, now, false)
+            return
+        }
+        // Ruling 7: the focus it had is what its canvas recorded — its focused pane, else the composer.
+        let paneFocused = !composerFocusForced && layoutSnapshot.focusedId != nil
+        onScreenChange?(told, now, !paneFocused)
+        if paneFocused { returnKeyboardToFocusedPane() }
     }
 
     /// File ▸ New Conversation (⌘N): `session_new` through the registry, origin `ui`, as ⌘K's
@@ -8450,6 +8475,8 @@ public final class WindowModel {
         conversations[id] = created
         conversationOrder.append(id)
         screenConversations[place] = id
+        // On screen, its Landing is now this conversation: the same screen, re-keyed.
+        tellScreenChange()
         return created
     }
 

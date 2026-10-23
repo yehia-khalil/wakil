@@ -196,6 +196,9 @@ private let orgIndependent: Set<String> = [
     // Conversations 2 of 3: the composer's hook for a change of the conversation on screen,
     // set once by `ComposerModel.init`; it carries no organisation's state.
     "onScreenChange",
+    // Fix round 1: the screen it was last told about, and New Conversation's focus flag — what
+    // is on screen, which an org switch changes and `activateLayout` then tells.
+    "toldScreenKey", "composerFocusForced",
     "registry", "persistence", "context",
     "harnessFactory", "lookupFactory", "resumes", "confirmations",
     // 3b-viii: takes the organisation per call, like `harnessFactory`; the generation only orders

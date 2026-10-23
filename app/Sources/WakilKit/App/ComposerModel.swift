@@ -55,9 +55,20 @@ public final class ComposerModel {
 
     /// The screen moved from `from` to `to` (`WindowModel.onScreenChange`): dictation stops
     /// (`resigned`), the draft and caret are kept under `from`, and `to`'s come back — empty for
-    /// a screen never typed on. `focusComposer` hands the field the keyboard (ruling 7).
+    /// a screen never typed on. `focusComposer` hands the field the keyboard (ruling 7). A
+    /// fast-path receipt answered a line typed on the screen left, and goes.
+    ///
+    /// One screen renamed (`WindowModel.isSameScreenRenamed`) — a Landing whose first message
+    /// made it a conversation — is not a change: only its key moves, and the draft (what was
+    /// typed while that message went out), a hold and the keyboard stay where they are.
     public func screenChanged(from: String, to: String, focusComposer: Bool) {
+        if WindowModel.isSameScreenRenamed(from: from, to: to) {
+            if holdScreen == screen || holdScreen == from { holdScreen = to }
+            screen = to
+            return
+        }
         resigned()
+        receipt = nil
         drafts[from] = (draft, caret)
         let next = drafts.removeValue(forKey: to)
         draft = next?.draft ?? ""

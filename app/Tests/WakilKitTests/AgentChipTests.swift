@@ -561,3 +561,75 @@ private actor FakeContext: ToolCaller {
         .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(text)])])])
     }
 }
+
+// Conversations 2 of 3, Task 4 fix round 1: the composer's draft belongs to the conversation on
+// screen whatever moved it — a picker, a ⌘P jump, an org switch — told once per change from
+// `activateLayout`, where every path converges.
+@MainActor
+struct DraftPerScreenTests {
+    /// The composer over `model`, with every `onScreenChange` counted on the way through.
+    private func composer(over model: WindowModel) -> (ComposerModel, () -> Int) {
+        let composer = ComposerModel(window: model, speech: SpeechRegistry(engines: []))
+        let inner = model.onScreenChange
+        var told = 0
+        model.onScreenChange = { told += 1; inner?($0, $1, $2) }
+        return (composer, { told })
+    }
+
+    @Test func aDraftStaysWithItsEnvironmentAcrossThePicker() async throws {
+        let ctx = FakeContext()
+        let harnesses = Harnesses()
+        let model = await goToWindow(ctx, harnesses: harnesses)
+        await model.refreshContext()
+        #expect(await model.send("first job"))
+        let (composer, told) = composer(over: model)
+        composer.edited(draft: "drop the users table", caret: 20)
+
+        #expect(await model.setEnvironment("production"))
+        #expect(composer.draft.isEmpty, "staging's draft is not staged in production")
+        #expect(told() == 1)
+
+        #expect(await model.setEnvironment("staging"))
+        #expect(composer.draft == "drop the users table" && composer.caret == 20)
+        #expect(told() == 2)
+    }
+
+    @Test func aDraftStaysWithItsPlaceAcrossAJumpToAnotherOrg() async throws {
+        let ctx = FakeContext()
+        let model = await goToWindow(ctx, harnesses: Harnesses())
+        await model.refreshContext()
+        let home = model.place
+        #expect(await model.send("first job"))
+        let (composer, _) = composer(over: model)
+        composer.edited(draft: "half a thought", caret: 14)
+
+        await model.goTo(Place(organization: "globex", project: "shop", environment: "staging"))
+        #expect(composer.draft.isEmpty, "\(model.status)")
+
+        await model.goTo(home)
+        #expect(model.place == home && composer.draft == "half a thought")
+    }
+
+    @Test func aLandingsDraftSurvivesItsOwnFirstSendAndStaysWithTheConversation() async throws {
+        let ctx = FakeContext()
+        let harnesses = Harnesses()
+        let model = await goToWindow(ctx, harnesses: harnesses)
+        await model.refreshContext()
+        let (composer, told) = composer(over: model)
+        let landing = model.screenKey
+        #expect(landing.hasPrefix("landing:") && landing != "landing:")
+        composer.edited(draft: "and then", caret: 8)
+
+        #expect(await model.send("first job"))
+
+        let conversation = try #require(model.currentAgent).id
+        #expect(model.screenKey == conversation && landing == "landing:" + conversation)
+        #expect(composer.draft == "and then", "the same screen, re-keyed: nothing cleared")
+        #expect(told() == 1)
+
+        #expect(await model.setEnvironment("production"))
+        #expect(composer.draft.isEmpty)
+        #expect(await model.setEnvironment("staging"))
+        #expect(composer.draft == "and then", "kept under the conversation's id, not the Landing's")
+    }
+}
