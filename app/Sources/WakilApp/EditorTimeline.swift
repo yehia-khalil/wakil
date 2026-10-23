@@ -89,7 +89,9 @@ struct EditorTimelineSection: View {
                                                                 "group": .string(group.rawValue)]) }
             }
         case .commit(let c):
-            line(title: c.subject, detail: "\(c.author) · \(editorRelativeAge(c.date))", id: "editor.timeline.row.\(c.id.prefix(7))") {
+            // The short id in a `let`: the identifier harvest reads one plain interpolation per name.
+            let short = String(c.id.prefix(7))
+            line(title: c.subject, detail: "\(c.author) · \(editorRelativeAge(c.date))", id: "editor.timeline.row.\(short)") {
                 guard let subject else { return }
                 let older: GitCommitInfo? = { if i + 1 < rows.count, case .commit(let o) = rows[i + 1] { o } else { nil } }()
                 controls.openCommit(subject.root, editorTimelineCommitRef(c, older: older))
