@@ -506,11 +506,11 @@ func registerEditorChangesWrites(
             price: price, agentPrice: agentPrice))
     }
     // Call 13 / R4: Undo Apply sends back the clash this session's own stash apply, pop or Bring Them Along
-    // left in the root; Go refuses it naming a file changed since or one with unstaged edits on a staged
-    // copy, or a stash that is gone.
+    // left in the root; Go refuses it naming a file changed since or one with unstaged edits before the
+    // apply, or a stash that is gone.
     await registry.register(Action(
         name: "editor_changes_stash_undo_apply",
-        description: "Undo the stash apply, pop or Bring Them Along that clashed in one root this session: each file it touched goes back to what was staged before the apply (HEAD where nothing was), the untracked ones it created are removed, and the stash stays in the list. Refused, naming the file, when one changed since the clash or had unstaged edits on a staged copy, or when the stash is gone. Asks the operator when you ask. root (absolute).",
+        description: "Undo the stash apply, pop or Bring Them Along that clashed in one root this session: each file it touched goes back to what was staged before the apply (HEAD where nothing was), the untracked ones it created are removed, and the stash stays in the list. Refused, naming the file, when one changed since the clash or had unstaged edits before the apply, or when the stash is gone. Asks the operator when you ask. root (absolute).",
         kind: .mutate, audience: .agentReachable,
         schema: rootSchema(),
         handler: { params in

@@ -61,7 +61,7 @@ type GitClashIndex struct {
 // GitStashClash records a Wakil stash apply, pop or Bring Them Along that stopped on conflicts, for Undo
 // Apply (call 13): the stash's id, the files it touched (tracked, and the untracked ones it created),
 // the part of those it created, the paths left unmerged, the index entries staged before it, and the
-// part of those whose tree file had unstaged edits on top.
+// tracked ones whose tree file had unstaged edits before it.
 type GitStashClash struct {
 	ID        string          `json:"id"`
 	Files     []GitClashFile  `json:"files"`
@@ -72,15 +72,18 @@ type GitStashClash struct {
 }
 
 // stashStagedBefore is the index entries, before stash id is applied, of the files it touches that
-// differ from HEAD, and the part of those whose tree file differs from that entry. git applies a stash
-// over a staged edit (the edit becomes the upstream side), so putting those files back to HEAD would
-// lose it; and where the staged copy already matches the stash's, git applies without looking at the
-// tree, so an unstaged edit on top survives the apply but not a put-back of the staged copy.
+// differ from HEAD, and the tracked files it touches whose tree differs from the index. git applies a
+// stash over a staged edit (the edit becomes the upstream side), so putting those files back to HEAD
+// would lose it; and where the index (staged or HEAD's) already matches the stash's copy, git applies
+// without looking at the tree, so an unstaged edit survives the apply but not the put-back.
 func (w *GitWriter) stashStagedBefore(ctx context.Context, id string) (staged []GitClashIndex, unstaged []string) {
 	staged, unstaged = []GitClashIndex{}, []string{}
 	files := stashFiles(ctx, w.runner(), id)
 	if len(files) == 0 {
 		return staged, unstaged
+	}
+	if out, err := w.git(ctx, nil, "diff", append([]string{"--name-only", "-z", "--"}, files...)...); err == nil {
+		unstaged = nulFields(out)
 	}
 	out, err := w.git(ctx, nil, "diff", append([]string{"--cached", "--name-only", "-z", "HEAD", "--"}, files...)...)
 	if err != nil {
@@ -89,9 +92,6 @@ func (w *GitWriter) stashStagedBefore(ctx context.Context, id string) (staged []
 	changed := nulFields(out)
 	if len(changed) == 0 {
 		return staged, unstaged
-	}
-	if out, err := w.git(ctx, nil, "diff", append([]string{"--name-only", "-z", "--"}, changed...)...); err == nil {
-		unstaged = nulFields(out)
 	}
 	entries := map[string]GitClashIndex{}
 	if out, err := w.git(ctx, nil, "ls-files", append([]string{"-s", "-z", "--"}, changed...)...); err == nil {
@@ -162,7 +162,7 @@ func clashPaths(c *GitStashClash) string { return strings.Join(c.Conflicts, ", "
 // StashUndoApply puts a stash clash back (call 13, 3a-iv's recovery): the tracked files it touched go
 // back to HEAD, index and tree, or to the entry staged before the apply, and the untracked files it
 // created are removed; the stash stays. It is refused, naming the first, while any file differs from
-// the clash, or had unstaged edits on a staged copy before it: either would be lost.
+// the clash, or had unstaged edits before it: either would be lost.
 func (w *GitWriter) StashUndoApply(ctx context.Context, c GitStashClash) error {
 	paths := make([]string, 0, len(c.Files))
 	for _, f := range c.Files {
@@ -200,10 +200,10 @@ func (w *GitWriter) StashUndoApply(ctx context.Context, c GitStashClash) error {
 			return UserError(ps[i] + " changed since the clash; Undo Apply would lose that — resolve it by hand")
 		}
 	}
-	// The put-back writes the staged copy over the tree; an unstaged edit made on top of it before the
-	// apply is in no stash.
+	// The put-back writes the staged copy, or HEAD's, over the tree; an unstaged edit made before the
+	// apply that git left alone is in no stash.
 	if len(unstaged) > 0 {
-		return UserError(unstaged[0] + " has unstaged edits on top of a staged copy; Undo Apply would lose them — resolve it by hand")
+		return UserError(unstaged[0] + " has unstaged edits; Undo Apply would lose them — resolve it by hand")
 	}
 	created := map[string]bool{}
 	for _, f := range c.Created {

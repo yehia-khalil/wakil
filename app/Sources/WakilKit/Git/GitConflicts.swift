@@ -28,9 +28,9 @@ public struct GitClashIndex: Sendable, Equatable, Hashable, Codable {
 
 /// A Wakil stash apply, pop or Bring Them Along that stopped on conflicts, as `wakil-git` returns it
 /// (`clash`) and `git_stash_undo_apply` takes it back: the stash's id, the files it touched, the
-/// untracked ones it created, the paths left unmerged, the entries staged before it, and the part of
-/// those with unstaged edits on top (Undo Apply refuses those). A list Go sends as `null` or leaves out
-/// reads empty.
+/// untracked ones it created, the paths left unmerged, the entries staged before it, and the tracked ones
+/// with unstaged edits before it (Undo Apply refuses those). A list Go sends as `null` or leaves out reads
+/// empty.
 public struct GitStashClash: Sendable, Equatable, Hashable, Codable {
     public var id: String
     public var files: [GitClashFile]

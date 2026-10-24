@@ -371,7 +371,40 @@ func TestUndoApplyRefusesAnUnstagedEditOnAStagedCopy(t *testing.T) {
 	}
 	before := git("ls-files", "-s", "-u")
 	err = w.StashUndoApply(ctx, *clash)
-	if err == nil || err.Error() != "c.txt has unstaged edits on top of a staged copy; Undo Apply would lose them — resolve it by hand" {
+	if err == nil || err.Error() != "c.txt has unstaged edits; Undo Apply would lose them — resolve it by hand" {
+		t.Errorf("err = %v", err)
+	}
+	if readIn(t, work, "c.txt") != "S\n2\n3\nUNSTAGED EXTRA\n" {
+		t.Fatalf("c.txt = %q", readIn(t, work, "c.txt"))
+	}
+	if git("ls-files", "-s", "-u") != before {
+		t.Fatalf("the index changed: %s", git("ls-files", "-s"))
+	}
+}
+
+// The same with nothing staged: HEAD already holds the stash's copy, so git applies over the file
+// without looking at the tree, and putting it back to HEAD would lose the unstaged edit.
+func TestUndoApplyRefusesAnUnstagedEditOverHEAD(t *testing.T) {
+	work, w, git := branchFixture(t)
+	ctx := context.Background()
+	writeIn(t, work, "c.txt", "1\n2\n3\n")
+	git("add", "c.txt")
+	git("commit", "-qm", "c")
+	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+	writeIn(t, work, "c.txt", "S\n2\n3\n")
+	w.Stash(ctx, "clashing", "default")
+	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
+	writeIn(t, work, "c.txt", "S\n2\n3\n")
+	git("commit", "-qam", "moved on")
+	writeIn(t, work, "c.txt", "S\n2\n3\nUNSTAGED EXTRA\n")
+	s, _ := ReadStashes(ctx, w.runner())
+	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
+	if err != nil || clash == nil || !slices.Equal(clash.Conflicts, []string{"a.txt"}) {
+		t.Fatalf("clash %+v err %v", clash, err)
+	}
+	before := git("ls-files", "-s", "-u")
+	err = w.StashUndoApply(ctx, *clash)
+	if err == nil || err.Error() != "c.txt has unstaged edits; Undo Apply would lose them — resolve it by hand" {
 		t.Errorf("err = %v", err)
 	}
 	if readIn(t, work, "c.txt") != "S\n2\n3\nUNSTAGED EXTRA\n" {
