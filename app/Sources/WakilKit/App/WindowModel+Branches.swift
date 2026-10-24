@@ -137,15 +137,22 @@ extension WindowModel {
         }
     }
 
-    /// A merge-shaped write (`done`, `conflicts`, `summary`): a stop's note is left under the box, as a stash
-    /// clash's is. Nil on success, stopped or not; else the refusal.
+    /// A merge-shaped write (`done`, `conflicts`, `summary`): a stop's note, or a finish's kept-stash or
+    /// rewritten-commits note, is left under the box, as a stash clash's is. Nil on success; else the refusal.
     private func operationWrite(_ root: String, _ name: String, _ params: [String: JSONValue] = [:]) async -> String? {
         var p = params
         p["root"] = .string(root)
         guard case .object(let o)? = await changesWrite(root, name, p) else { return changesErrors[root] ?? "" }
-        if o["done"] == .bool(false), case .string(let note)? = o["summary"], !note.isEmpty { changesErrors[root] = note }
+        guard case .string(let summary)? = o["summary"], !summary.isEmpty else { return nil }
+        // A clean finish's one-line result is not shown; a finish that kept the autostash or rewrote pushed
+        // commits says so, since the operator must know where their changes went.
+        if o["done"] == .bool(false) || Self.changesDoneNotes.contains(where: summary.contains) { changesErrors[root] = summary }
         return nil
     }
+
+    /// The notes Go appends to a finished merge, rebase, continue, skip or abort's summary.
+    static let changesDoneNotes = ["; your uncommitted changes are in git stash",
+                                   "; commits already pushed were rewritten, so Push is refused as behind"]
 
     public func changesMerge(root: String, branch: String) async -> String? {
         await operationWrite(root, "editor_changes_merge", ["branch": .string(branch)])

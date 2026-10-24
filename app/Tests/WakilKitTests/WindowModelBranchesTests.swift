@@ -13,6 +13,9 @@ private actor BranchGit: ToolCaller {
     var clashing = false
     func set(conflicts paths: [String], state: JSONValue? = nil) { conflicts = paths; self.state = state }
     func clash(_ on: Bool) { clashing = on }
+    /// git_continue's reply when set; else it stops as git_merge does.
+    var continueReply: [String: JSONValue]?
+    func set(continueReply r: [String: JSONValue]?) { continueReply = r }
     func args(_ tool: String) -> JSONValue? { calls.last { $0.0 == tool }?.1 }
     func names() -> [String] { calls.map(\.0) }
 
@@ -32,6 +35,8 @@ private actor BranchGit: ToolCaller {
             guard clashing else { return ok(["note": .string("")]) }
             return ok(["note": .string("Your stash clashes with main in a.txt; resolve it below, or Undo Apply"),
                        "clash": clashJSON])
+        case "git_continue" where continueReply != nil:
+            return ok(continueReply!)
         case "git_merge", "git_continue":
             return ok(["done": .bool(false), "conflicts": .array([.string("a.txt")]),
                        "summary": .string("Merge stopped on conflicts in a.txt; resolve them below")])
@@ -241,6 +246,22 @@ private func branchWindow() async -> (WindowModel, BranchGit) {
         window.changesMessageEdited(root: "/p", text: "  ")
         _ = await window.changesContinue(root: "/p")
         #expect(await git.args("git_continue") == .object(["root": .string("/p")]))
+    }
+
+    // Fix round 1: a finish that kept the autostash, or rewrote pushed commits, says so; a clean one says nothing.
+    @Test func aFinishThatKeptTheStashSaysSo() async {
+        let (window, git) = await branchWindow()
+        let kept = "abc1234 Merge side; your uncommitted changes are in git stash"
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string(kept)])
+        #expect(await window.changesContinue(root: "/p") == nil)
+        #expect(window.changesErrors["/p"] == kept)
+        let rewritten = "Successfully rebased; commits already pushed were rewritten, so Push is refused as behind"
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string(rewritten)])
+        _ = await window.changesContinue(root: "/p")
+        #expect(window.changesErrors["/p"] == rewritten)
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string("abc1234 Merge side")])
+        _ = await window.changesContinue(root: "/p")
+        #expect(window.changesErrors["/p"] == nil)
     }
 }
 

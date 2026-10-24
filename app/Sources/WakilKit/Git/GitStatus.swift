@@ -192,6 +192,9 @@ public actor GitStatus {
     /// Apply — the operator's and the agent's alike, so it lives beside the status both read. Forgotten by
     /// Undo Apply, by a read that finds the root's conflicts group empty, by `reset`, or by a relaunch.
     public private(set) var clashes: [String: GitStashClash] = [:]
+    /// The generation each clash was remembered at: only a read begun after it sampled the tree with the
+    /// clash in it, so only such a read may forget it (a read in flight across the apply may not).
+    private var clashGenerations: [String: Int] = [:]
 
     public init(git: (any ToolCaller)?, roots: @escaping @Sendable () async -> [String]) {
         self.git = git
@@ -240,21 +243,32 @@ public actor GitStatus {
                 kept.loading = false
                 return kept
             }
-            if fresh.error == nil, !fresh.files.contains(where: { $0.group == .conflicts }) { clashes[state.root] = nil }
+            if fresh.error == nil, !fresh.files.contains(where: { $0.group == .conflicts }),
+               ticket.generation > clashGenerations[state.root] ?? Int.min {
+                clashes[state.root] = nil
+                clashGenerations[state.root] = nil
+            }
             return fresh
         }
     }
 
     /// Remembers `clash` as `root`'s (R4).
-    func remember(_ clash: GitStashClash, root: String) { clashes[root] = clash }
+    func remember(_ clash: GitStashClash, root: String) {
+        clashes[root] = clash
+        clashGenerations[root] = generation
+    }
     /// Forgets `root`'s clash: Undo Apply put it back.
-    func forgetClash(_ root: String) { clashes[root] = nil }
+    func forgetClash(_ root: String) {
+        clashes[root] = nil
+        clashGenerations[root] = nil
+    }
 
     /// Forgets every root (an org switch, or no pane left that shows git).
     public func reset() {
         roots = []
         latest = [:]
         clashes = [:]
+        clashGenerations = [:]
     }
 }
 

@@ -138,4 +138,19 @@ import Testing
             "branch": .string("main"), "files": .array([])])])))
         #expect(none.state == nil)
     }
+
+    // Fix round 1 (R4): a read begun before a clash was remembered sampled the tree without it, so it may not
+    // forget it; only a read begun after may.
+    @Test func onlyAReadBegunAfterAClashForgetsIt() async {
+        let git = FakeGit()
+        await git.set(status: "/p/api", files: [])
+        let status = GitStatus(git: git, roots: { ["/p/api"] })
+        let clash = GitStashClash(id: "c", files: [], created: [], conflicts: ["a.txt"])
+        let earlier = await status.begin()
+        await status.remember(clash, root: "/p/api")
+        await status.finish(earlier)
+        #expect(await status.clashes["/p/api"] == clash)
+        await status.refresh()
+        #expect(await status.clashes["/p/api"] == nil)
+    }
 }
