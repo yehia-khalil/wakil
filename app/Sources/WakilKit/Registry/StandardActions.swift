@@ -1494,7 +1494,8 @@ public func registerStandardActions(
         name: "ctx_set_editor_settings",
         description: "Change the app-wide editor settings: fontSize (9 to 24), wordWrap, autosave "
             + "(off, pause or focus), showIgnored (false hides gitignored files from the tree and ⌘P), "
-            + "ghostText (false turns AI ghost-text off in every editor and query line). "
+            + "ghostText (false turns AI ghost-text off in every editor and query line), "
+            + "inlineBlame (false hides who last changed the cursor's line at its end). "
             + "Read-modify-write: omit a field to leave it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
@@ -1506,6 +1507,7 @@ public func registerStandardActions(
                 "autosave": .object(["type": .string("string"), "enum": .array([.string("off"), .string("pause"), .string("focus")])]),
                 "showIgnored": .object(["type": .string("boolean")]),
                 "ghostText": .object(["type": .string("boolean")]),
+                "inlineBlame": .object(["type": .string("boolean")]),
             ]),
         ]),
         handler: { params in
@@ -1523,6 +1525,7 @@ public func registerStandardActions(
             if case .string? = fields["autosave"] { arguments["autosave"] = fields["autosave"] }
             if case .bool? = fields["showIgnored"] { arguments["showIgnored"] = fields["showIgnored"] }
             if case .bool? = fields["ghostText"] { arguments["ghostText"] = fields["ghostText"] }
+            if case .bool? = fields["inlineBlame"] { arguments["inlineBlame"] = fields["inlineBlame"] }
             return try await callChecked(
                 context, tool: "set_editor_settings", arguments: .object(arguments),
                 action: "ctx_set_editor_settings", timeout: MCPClient.readReplyTimeout)

@@ -33,12 +33,12 @@ private func select(_ f: EditorFixture, _ root: String, _ path: String, _ group:
         try await f.dispatch("editor_open_stash_diff", ["root": .string("/p/api"), "path": .string("b.go"), "stash": .string(id)])
         var s = await f.snapshot()
         let t = try #require(s.tabs.first)
-        #expect(t.subject == .diff(root: "/p/api", path: "b.go", group: .changed, stash: id))
+        #expect(t.subject == .diff(root: "/p/api", path: "b.go", group: .changed, source: .stash(id)))
         #expect(t.readOnly && t.diffState?.original == "base\n" && t.diffState?.modified == "stashed\n")
         #expect(editorTabTitles(s.tabs) == ["b.go (Stash)"])
         try await f.dispatch("editor_open_stash_diff", ["root": .string("/p/api"), "path": .string("u.go"), "stash": .string(id), "untracked": .bool(true)])
         s = await f.snapshot()
-        let u = try #require(s.tabs.first { $0.subject == .diff(root: "/p/api", path: "u.go", group: .untracked, stash: id) })
+        let u = try #require(s.tabs.first { $0.subject == .diff(root: "/p/api", path: "u.go", group: .untracked, source: .stash(id)) })
         #expect(u.diffState?.original == "" && u.diffState?.modified == "untracked\n")
     }
 

@@ -1,0 +1,9 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.editor"}}
+{"expect":{"tree":"contains","text":"Inline blame"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.inlineBlame","equals":"true"}}
+{"parity":{"action":"ctx_set_editor_settings","params":{"inlineBlame":false},"click":"settings.editor.inlineBlame.off","assert":"tree"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.inlineBlame","equals":"false"}}
+{"expect":{"journal":{"contains":"inlineBlame"}}}
+{"do":{"click":"settings.editor.inlineBlame.on"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.editor.inlineBlame","equals":"true"}}

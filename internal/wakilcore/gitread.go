@@ -23,6 +23,8 @@ var gitReadSubcommands = map[string]bool{
 	"status": true, "diff": true, "show": true, "rev-parse": true,
 	// 3a-iv: the branch and stash lists. Plumbing that runs no program a repository chooses.
 	"for-each-ref": true, "rev-list": true, "log": true,
+	// 3a-v-a: blame, porcelain only, of the committed file or of text handed in on stdin.
+	"blame": true,
 }
 
 // gitSafetyArgs come before the subcommand on every call, so a repository's
@@ -57,7 +59,9 @@ var gitAllowedFlags = map[string][]string{
 	"rev-parse":    {"--show-toplevel", "--abbrev-ref", "--verify", "--short", "--absolute-git-dir", "--"},
 	"for-each-ref": {"--sort=", "--format="},
 	"rev-list":     {"--count"},
-	"log":          {"-g", "--format=", "-z", "--"},
+	// --contents=- only: any other value is a file path, read from anywhere on the disk.
+	"blame": {"--porcelain", "--contents=-", "--"},
+	"log":   {"-g", "--format=", "-z", "--follow", "--max-count=", "--skip=", "--name-status", "--"},
 }
 
 // checkGitFlags refuses the first flag of args that sub does not allow.
@@ -104,8 +108,13 @@ func NewGitRunner(root string, allowedRoots []string) (*GitRunner, error) {
 }
 
 func (g *GitRunner) Run(ctx context.Context, sub string, args ...string) ([]byte, error) {
+	return g.RunInput(ctx, nil, sub, args...)
+}
+
+// RunInput is Run with stdin: blame's --contents=- reads the tab's unsaved text from it.
+func (g *GitRunner) RunInput(ctx context.Context, stdin []byte, sub string, args ...string) ([]byte, error) {
 	if !gitReadSubcommands[sub] {
-		return nil, UserError("wakil-git runs only status, diff, show and rev-parse; refused: " + sub)
+		return nil, UserError("wakil-git reads only with status, diff, show, rev-parse, for-each-ref, rev-list, log and blame; refused: " + sub)
 	}
 	if err := checkGitFlags(sub, args); err != nil {
 		return nil, err
@@ -117,6 +126,10 @@ func (g *GitRunner) Run(ctx context.Context, sub string, args ...string) ([]byte
 	pre := append(append([]string{}, gitSafetyArgs...), filters...)
 	if sub == "diff" || sub == "show" {
 		args = append([]string{"--no-ext-diff", "--no-textconv"}, args...)
+	}
+	// blame converts text through a repository's textconv driver by default (final review C1): off.
+	if sub == "blame" {
+		args = append([]string{"--no-textconv"}, args...)
 	}
 	// A submodule's worktree is never looked into (R11). To tell whether a submodule is
 	// dirty, status and diff start a child git inside it, and that child reads the
@@ -142,7 +155,7 @@ func (g *GitRunner) Run(ctx context.Context, sub string, args ...string) ([]byte
 	if sub == "diff" || sub == "show" {
 		args = append([]string{"--submodule=short"}, args...)
 	}
-	out, errText, err := g.exec(ctx, pre, sub, args)
+	out, errText, err := g.exec(ctx, stdin, pre, sub, args)
 	if err != nil {
 		if strings.Contains(errText, "not a git repository") {
 			if repositoryAbove(g.Root) {
@@ -197,12 +210,15 @@ func repositoryAbove(root string) bool {
 
 // exec runs git with the scrubbed environment: `-C root`, then pre, then sub and args.
 // Every git process wakil-git starts goes through here.
-func (g *GitRunner) exec(ctx context.Context, pre []string, sub string, args []string) ([]byte, string, error) {
+func (g *GitRunner) exec(ctx context.Context, stdin []byte, pre []string, sub string, args []string) ([]byte, string, error) {
 	full := append([]string{"-C", g.Root}, pre...)
 	full = append(full, sub)
 	full = append(full, args...)
 	cmd := exec.CommandContext(ctx, "git", full...)
 	cmd.Env = gitScrubbedEnv(g.Root)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
@@ -213,7 +229,7 @@ func (g *GitRunner) exec(ctx context.Context, pre []string, sub string, args []s
 // here, not a `config` entry in the public allowlist (as repoFilterOverrides does), so a
 // caller cannot reach `config <key> <value>`. An unset key, or any failure, is "".
 func (g *GitRunner) ConfigValue(ctx context.Context, key string) string {
-	out, _, err := g.exec(ctx, gitSafetyArgs, "config", []string{"--get", key})
+	out, _, err := g.exec(ctx, nil, gitSafetyArgs, "config", []string{"--get", key})
 	if err != nil {
 		return ""
 	}
@@ -237,7 +253,7 @@ func (g *GitRunner) ConfigValue(ctx context.Context, key string) string {
 // `required` driver otherwise turns into a refusal to read the file at all. A driver whose
 // name holds `=` cannot be overridden on git's command line; the read is refused instead.
 func (g *GitRunner) repoFilterOverrides(ctx context.Context) ([]string, error) {
-	out, _, err := g.exec(ctx, gitSafetyArgs, "config", []string{"--show-scope", "-z", "--get-regexp", `^filter\.`})
+	out, _, err := g.exec(ctx, nil, gitSafetyArgs, "config", []string{"--show-scope", "-z", "--get-regexp", `^filter\.`})
 	if err != nil {
 		// Exit 1 is "no such key"; anything else (not a repository, unreadable config) is
 		// left for the command proper to report in its own words.

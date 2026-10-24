@@ -24,6 +24,8 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     var onFind: ((EditorFindReport) -> Void)?
     /// A mark clicked in `key`'s gutter, on `line`.
     var onMark: ((String, Int) -> Void)?
+    /// 3a-v-a: the blame hover's links: (key, "open" | "copy", commit id).
+    var onBlame: ((String, String, String) -> Void)?
     /// One line per page diagnostic and per failed `evaluateJavaScript`.
     var onLog: ((String) -> Void)?
     /// A key the page took from Monaco (`captureKeys`): "up", "down" or "escape".
@@ -163,6 +165,12 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
         run("wakilSetMarks(\(Self.jsString(key)),[\(list.joined(separator: ","))])")
     }
 
+    /// 3a-v-a: the annotation after `line` of `key`'s model (an empty `text` clears it), its hover
+    /// markdown, and the commit its links name.
+    func setBlame(key: String, line: Int, text: String, hover: String?, id: String) {
+        run("wakilSetBlame(\(Self.jsString(key)),\(line),\(Self.jsString(text)),\(hover.map(Self.jsString) ?? "null"),\(Self.jsString(id)))")
+    }
+
     /// The settings' options (3b-v). Queued until the page is ready, like every other call.
     func setOptions(_ o: EditorViewOptions) {
         run("wakilSetOptions({fontSize:\(o.fontSize),wordWrap:\(o.wordWrap),tabSize:\(o.tabSize),insertSpaces:\(o.insertSpaces)})")
@@ -247,6 +255,8 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
             onRanges?(key, op, (body["selections"] as? [[String: Any]] ?? []).compactMap(Self.selection))
         case "mark":
             if let key = body["key"] as? String, let line = Self.int(body["line"]) { onMark?(key, line) }
+        case "blame":
+            if let key = body["key"] as? String, let op = body["op"] as? String, let id = body["id"] as? String { onBlame?(key, op, id) }
         case "ghost":
             guard let key = body["key"] as? String, let id = Self.int(body["id"]),
                   let text = body["text"] as? String, let offset = Self.int(body["offset"]) else { return }

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-v-a-timeline-toggle.jsonl",
+  "baseCommit": "c31d96c4ac7bdf42c6607b17cc764f562181299e",
+  "provedAt": "2026-10-23T20:20:50.968708Z",
+  "checkBlob": "f2c1ea3e42fa9741f71fbe999dd58e0431bc575e"
+}

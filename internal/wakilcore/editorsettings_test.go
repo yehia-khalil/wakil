@@ -29,7 +29,7 @@ func TestNoSettingsFileReadsAsDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := s.Editor.Resolved()
-	want := EditorAppValues{FontSize: 12, WordWrap: false, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true}
+	want := EditorAppValues{FontSize: 12, WordWrap: false, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true, InlineBlame: true}
 	if got != want {
 		t.Errorf("Resolved() = %+v, want %+v", got, want)
 	}
@@ -64,7 +64,7 @@ func TestUpdateEditorAppSettingsWritesOnlyWhatItWasGiven(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Editor.Resolved(); got != (EditorAppValues{FontSize: 14, WordWrap: true, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true}) {
+	if got := s.Editor.Resolved(); got != (EditorAppValues{FontSize: 14, WordWrap: true, Autosave: AutosaveOff, ShowIgnored: true, GhostText: true, InlineBlame: true}) {
 		t.Errorf("Resolved() = %+v", got)
 	}
 }
@@ -316,5 +316,23 @@ func TestGhostTextDefaultsOnAndIsWrittenAndRead(t *testing.T) {
 	s, _ = LoadAppSettings()
 	if s.Editor.Resolved().GhostText {
 		t.Error("ghostText stayed on after writing off")
+	}
+}
+
+// 3a-v-a: inline blame defaults on, and is written and read like Show ignored files.
+func TestInlineBlameDefaultsOnAndPatches(t *testing.T) {
+	if !(EditorAppSettings{}).Resolved().InlineBlame {
+		t.Error("InlineBlame defaults off; want on")
+	}
+	t.Setenv("HOME", t.TempDir())
+	if err := UpdateEditorAppSettings(EditorAppPatch{InlineBlame: boolp(false)}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadAppSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Editor.Resolved().InlineBlame || LoadEditorSettings().InlineBlame {
+		t.Error("InlineBlame stayed on after writing off")
 	}
 }

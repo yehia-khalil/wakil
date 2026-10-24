@@ -392,8 +392,7 @@ public func registerEditorActions(
         guard case .object(let d)? = jsonObject(params)?["diff"], case .string(let r)? = d["root"],
               case .string(let p)? = d["path"], case .string(let g)? = d["group"], let group = GitGroup(rawValue: g)
         else { return nil }
-        if case .string(let stash)? = d["stash"] { return .diff(root: r, path: p, group: group, stash: stash) }
-        return .diff(root: r, path: p, group: group)
+        return .diff(root: r, path: p, group: group, source: editorDiffSource(d))
     }
 
     // The diff tabs (3b-iii). Local functions are visible only to what is declared after them, so these
@@ -406,7 +405,7 @@ public func registerEditorActions(
     /// `updateEditor` turn that wrote the tab (see `EditorDiffFlights`). A reply that lands after its
     /// tab is gone, or after a newer fetch for it began, writes nothing.
     @Sendable func fetchDiff(_ pane: String, _ subject: EditorTabSubject, status: String?) -> Task<Void, Never>? {
-        guard case .diff(let root, let path, let group, let stash) = subject else { return nil }
+        guard case .diff(let root, let path, let group, let source) = subject else { return nil }
         let language = editorLanguage(forPath: path)
         let key = editorTabKey(subject)
         guard let git = gitStatus?.git else {
@@ -422,8 +421,12 @@ public func registerEditorActions(
                 }
             }
         }
-        let revs = stash.map { editorStashDiffRevs(stash: $0, untracked: group == .untracked) }
-            ?? editorDiffRevs(group, status: status)
+        let revs: (original: String?, modified: String?)
+        switch source {
+        case .stash(let id)?: revs = editorStashDiffRevs(stash: id, untracked: group == .untracked)
+        case .commit(let c)?: revs = editorCommitDiffRevs(c)
+        case nil: revs = editorDiffRevs(group, status: status)
+        }
         @Sendable func side(_ rev: String?) async throws -> FilesOutcome {
             guard let rev else { return .ok([:]) }
             return try await filesTool(git, "git_show", ["root": .string(root), "path": .string(path), "rev": .string(rev)])
@@ -541,22 +544,28 @@ public func registerEditorActions(
     /// pinned by `pin`) and not fetched again (Rule 5); otherwise a preview takes the pane's clean
     /// preview slot, cancelling the fetch of what it held, and a pinned one is added. A row no longer
     /// in its group opens reading "No longer changed" (Rule 7), fetching nothing.
-    /// 3a-iv: a file as a stash holds it, in a pinned read-only diff tab (its base on the left; nothing
-    /// for a file the stash took untracked). The same file of the same stash is one tab.
-    @Sendable func openStashDiff(_ pane: String, root: String, path: String, stash: String, untracked: Bool) async {
-        let group: GitGroup = untracked ? .untracked : .changed
-        let subject = EditorTabSubject.diff(root: root, path: path, group: group, stash: stash)
+    /// A pinned read-only diff tab of a stash's or (3a-v-a) a commit's change to one file, focused when
+    /// already open — the same file from the same source is one tab.
+    @Sendable func openSourceDiff(_ pane: String, root: String, path: String, group: GitGroup, source: EditorDiffSource) async {
+        let subject = EditorTabSubject.diff(root: root, path: path, group: group, source: source)
         let flight: Task<Void, Never>? = await panes.updateEditor(paneId: pane, create: true) { s in
             if let i = s.tabs.firstIndex(where: { $0.subject == subject }) {
                 s.active = i
                 return nil
             }
-            s.tabs.append(EditorTab.diff(root: root, path: path, group: group, stash: stash))
+            s.tabs.append(EditorTab.diff(root: root, path: path, group: group, source: source))
             s.active = s.tabs.count - 1
             return fetchDiff(pane, subject, status: nil)
         }
         await persist(pane)
         await flight?.value
+    }
+
+    /// 3a-iv: a file as a stash holds it, in a pinned read-only diff tab (its base on the left; nothing
+    /// for a file the stash took untracked). The same file of the same stash is one tab.
+    @Sendable func openStashDiff(_ pane: String, root: String, path: String, stash: String, untracked: Bool) async {
+        let group: GitGroup = untracked ? .untracked : .changed
+        await openSourceDiff(pane, root: root, path: path, group: group, source: .stash(stash))
     }
 
     @Sendable func openDiff(_ pane: String, _ row: EditorChangesRow, pin: Bool) async {
@@ -1520,6 +1529,81 @@ public func registerEditorActions(
                 throw StandardActionError.missingParam(action: "editor_open_stash_diff", param: "root, path and stash")
             }
             await openStashDiff(pane, root: root, path: path, stash: stash, untracked: flag(params, "untracked"))
+            return .object([:])
+        }))
+
+    /// The file a history read is about: `root` and `path` (relative) when both are given, else the
+    /// editor pane's active tab (R2). Nil for a scratch tab or no tab.
+    @Sendable func historySubject(_ params: JSONValue, action: String) async throws -> (root: String, path: String, tab: EditorTab?)? {
+        if let root = optionalString(params, "root"), let path = optionalString(params, "path") { return (root, path, nil) }
+        let pane = try await editorPane(params, action: action)
+        let snap = await panes.editorSnapshot(paneId: pane)
+        guard let i = snap.active, i < snap.tabs.count, let sub = editorTimelineSubject(snap.tabs[i]) else { return nil }
+        return (sub.root, sub.path, snap.tabs[i])
+    }
+    let pathSchema: [String: JSONValue] = ["root": .object(["type": .string("string")]), "path": .object(["type": .string("string")])]
+
+    await registry.register(Action(
+        name: "editor_timeline",
+        description: "Read one file's commits, newest first, following renames: id, author, date, subject, body and the "
+            + "file's path at that commit. root (absolute) and path (relative to it), or the editor pane's active tab. "
+            + "50 a page; skip for the next. Open one with editor_open_commit_diff.",
+        kind: .read, audience: .agentReachable,
+        schema: schema(pathSchema.merging(["skip": .object(["type": .string("integer")])]) { a, _ in a }, required: []),
+        handler: { params in
+            guard let git = gitStatus?.git else { throw StandardActionError.missingClient(action: "editor_timeline", role: "git") }
+            guard let sub = try await historySubject(params, action: "editor_timeline") else { return .object(["commits": .array([])]) }
+            var args: [String: JSONValue] = ["root": .string(sub.root), "path": .string(sub.path)]
+            if let skip = jsonObject(params)?["skip"]?.intValue { args["skip"] = .integer(Int64(skip)) }
+            switch try await filesTool(git, "git_file_history", args) {
+            case .failed(let text): throw EditorFilesError(description: text)
+            case .ok(let o): return .object(["root": .string(sub.root), "path": .string(sub.path), "commits": o["commits"] ?? .array([])])
+            }
+        }))
+
+    await registry.register(Action(
+        name: "editor_blame",
+        description: "Read who last changed each line of one file (or only line): commit id, author, date, subject, and "
+            + "path (the file's name at that commit) and parentPath (its name before, across a rename) for "
+            + "editor_open_commit_diff; an all-zero id is a line not yet committed. root (absolute) and path (relative to it), or the editor pane's "
+            + "active tab, whose unsaved text is blamed as it stands; text: blame this text in place of the file.",
+        kind: .read, audience: .agentReachable,
+        schema: schema(pathSchema.merging(["line": .object(["type": .string("integer")]),
+                                           "text": .object(["type": .string("string")])]) { a, _ in a }, required: []),
+        handler: { params in
+            guard let git = gitStatus?.git else { throw StandardActionError.missingClient(action: "editor_blame", role: "git") }
+            guard let sub = try await historySubject(params, action: "editor_blame") else { return .object(["lines": .array([])]) }
+            var args: [String: JSONValue] = ["root": .string(sub.root), "path": .string(sub.path)]
+            if let text = optionalString(params, "text") { args["text"] = .string(text) }
+            else if let t = sub.tab, case .file = t.subject, t.dirty { args["text"] = .string(t.text) }
+            switch try await filesTool(git, "git_blame", args) {
+            case .failed(let text): throw EditorFilesError(description: text)
+            case .ok(let o):
+                var lines = o["lines"] ?? .array([])
+                if let n = jsonObject(params)?["line"]?.intValue, case .array(let all) = lines {
+                    lines = .array(all.filter { jsonObject($0)?["line"]?.intValue == n })
+                }
+                return .object(["root": .string(sub.root), "path": .string(sub.path), "lines": lines])
+            }
+        }))
+
+    await registry.register(Action(
+        name: "editor_open_commit_diff",
+        description: "Open one commit's change to one file, read-only, the file before it on the left and after it on "
+            + "the right. root (absolute), path relative to it as the file was named at that commit (editor_timeline's path), commit: the commit's id from editor_timeline or "
+            + "editor_blame, parentPath: the file's name in the commit before when it was renamed. Allowed everywhere.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(pathSchema.merging(["commit": .object(["type": .string("string")]),
+                                           "parentPath": .object(["type": .string("string")])]) { a, _ in a },
+                       required: ["root", "path", "commit"]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_open_commit_diff")
+            guard let root = optionalString(params, "root"), let path = optionalString(params, "path"),
+                  let commit = optionalString(params, "commit") else {
+                throw StandardActionError.missingParam(action: "editor_open_commit_diff", param: "root, path and commit")
+            }
+            await openSourceDiff(pane, root: root, path: path, group: .changed,
+                                 source: .commit(GitCommitRef(id: commit, path: path, parentPath: optionalString(params, "parentPath"))))
             return .object([:])
         }))
 

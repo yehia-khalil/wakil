@@ -239,6 +239,7 @@ type setEditorSettingsArgs struct {
 	WordWrap    *bool   `json:"wordWrap,omitempty" jsonschema:"omit to leave unchanged"`
 	Autosave    *string `json:"autosave,omitempty" jsonschema:"off, pause or focus; omit to leave unchanged"`
 	ShowIgnored *bool   `json:"showIgnored,omitempty" jsonschema:"false hides gitignored files from the tree and from ⌘P; omit to leave unchanged"`
+	InlineBlame *bool   `json:"inlineBlame,omitempty" jsonschema:"false hides who last changed the cursor's line at its end; omit to leave unchanged"`
 	GhostText   *bool   `json:"ghostText,omitempty" jsonschema:"false turns AI ghost-text off in every editor and query line; omit to leave unchanged"`
 }
 
@@ -690,7 +691,7 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "set_editor_settings", Description: "Change the app-wide editor settings: font size (9 to 24), word wrap, autosave (off, pause or focus), showIgnored. Read-modify-write: omit a field to leave it unchanged. Refuses an out-of-range value, and refuses to write over a settings.json that does not parse."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setEditorSettingsArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.UpdateEditorAppSettings(wakilcore.EditorAppPatch{
-				FontSize: a.FontSize, WordWrap: a.WordWrap, Autosave: a.Autosave, ShowIgnored: a.ShowIgnored, GhostText: a.GhostText,
+				FontSize: a.FontSize, WordWrap: a.WordWrap, Autosave: a.Autosave, ShowIgnored: a.ShowIgnored, GhostText: a.GhostText, InlineBlame: a.InlineBlame,
 			}); err != nil {
 				return toolErr(err), empty{}, nil
 			}

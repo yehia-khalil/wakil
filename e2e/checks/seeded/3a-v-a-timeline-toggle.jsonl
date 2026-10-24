@@ -1,0 +1,18 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_tree","params":{"view":"files"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/index.txt","preview":false}}}
+{"expect":{"frame":"editor.timeline.row.00a19bc","inside":"editor.column"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"editor.timeline.toggle","inside":"editor.column"}}
+{"expect":{"frame":"editor.timeline.toggle","maxHeight":40}}
+{"do":{"click":"editor.timeline.toggle"}}
+{"do":{"click":"editor.timeline.toggle"}}
+{"expect":{"frame":"editor.timeline.row.00a19bc","inside":"editor.column"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}

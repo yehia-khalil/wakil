@@ -1,0 +1,42 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"editor_tree","params":{"view":"files"}}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"files"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME='Wakil E2E' GIT_AUTHOR_EMAIL=e2e@e2e-fixture.invalid GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_NAME='Wakil E2E' GIT_COMMITTER_EMAIL=e2e@e2e-fixture.invalid GIT_COMMITTER_DATE=2026-01-01T00:00:00Z; cd ../e2e-portal && printf 'a\\nb\\nc\\nd\\n' > old.txt && git add old.txt && git commit -qm 'Add old' && git mv old.txt new.txt && printf 'a\\nB\\nc\\nd\\n' > new.txt && git add new.txt && git commit -qm 'Rename to new' && git rev-parse HEAD"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"a2a6120386a427c779bd35b377a864ca7f4244c1"}}
+{"do":{"click":"rail.editor-1"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/new.txt","preview":false}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"/e2e-portal/new.txt"}}
+{"expect":{"frame":"editor.timeline.row.a2a6120","inside":"editor.column"}}
+{"expect":{"frame":"editor.timeline.row.cdf4ebd","inside":"editor.column"}}
+{"do":{"click":"editor.timeline.row.a2a6120"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].diff.commit.id","equals":"a2a6120386a427c779bd35b377a864ca7f4244c1"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].diff.commit.path","equals":"new.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].diff.commit.parentPath","equals":"old.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].diff.loading","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[1].diff.error","equals":"null"}}
+{"expect":{"tree":"contains","text":"new.txt (a2a6120)"}}
+{"do":{"click":"editor.timeline.row.cdf4ebd"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].diff.commit.id","equals":"cdf4ebd206e1a95038b0157a9aa661c7f44a4ede"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].diff.commit.path","equals":"old.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].diff.path","equals":"old.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].diff.commit.parentPath","present":false}}
+{"expect":{"pane":"editor-1","field":"tabs[2].diff.loading","equals":"false"}}
+{"expect":{"pane":"editor-1","field":"tabs[2].diff.error","equals":"null"}}
+{"expect":{"tree":"contains","text":"old.txt (cdf4ebd)"}}
+{"expect":{"pane":"editor-1","field":"active","equals":"2"}}
