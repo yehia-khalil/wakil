@@ -1,5 +1,9 @@
+{"do":{"resize":{"width":1400,"height":900}}}
 {"do":{"hotkey":"cmd+,"}}
 {"expect":{"tree":"contains","text":"SETTINGS"}}
+{"dispatch":{"action":"pane_restore","params":{}}}
+{"dispatch":{"action":"pane_resize","params":{"id":"settings-1","width":640,"height":600}}}
+{"dispatch":{"action":"pane_move","params":{"id":"settings-1","x":20,"y":60}}}
 {"dispatch":{"action":"editor_new_scratch","params":{}}}
 {"expect":{"pane":"editor-2","field":"tabs[0].scratch","equals":"1"}}
 {"dispatch":{"action":"pane_resize","params":{"id":"editor-2","width":300,"height":200}}}
