@@ -1237,6 +1237,23 @@ private actor EnvironmentBox {
     _ = await reply
 }
 
+// 3a-v-b: the conflict writes the agent price gates park with a sentence too; one with none would be refused.
+@Test func gatedGitWritesHaveSentences() {
+    func says(_ action: String, _ params: [String: JSONValue]) -> String? {
+        confirmationDescription(action: action, params: .object(params.merging(["root": .string("/p/api")]) { a, _ in a }))
+    }
+    #expect(says("editor_changes_abort", [:]) == "abort the merge, rebase, cherry-pick or revert in progress in api; its resolutions are lost")
+    #expect(says("editor_changes_skip", [:]) == "skip the commit the rebase in api stopped on; its changes are left out")
+    #expect(says("editor_changes_take", ["path": .string("a.txt"), "take": .string("current")])
+            == "take HEAD's a.txt whole in api; edits made to it are lost")
+    #expect(says("editor_changes_take", ["path": .string("a.txt"), "take": .string("incoming")])
+            == "take the incoming a.txt whole in api; edits made to it are lost")
+    #expect(says("editor_changes_take", ["path": .string("a.txt"), "take": .string("delete")])
+            == "delete a.txt in api; edits made to it are lost")
+    #expect(says("editor_changes_stash_undo_apply", [:])
+            == "undo the stash apply that clashed in api; the files it touched go back to HEAD")
+}
+
 @Test func theGitDropsHaveSentencesToo() {
     let id = String(repeating: "e", count: 40)
     #expect(confirmationDescription(action: "editor_changes_stash_drop",

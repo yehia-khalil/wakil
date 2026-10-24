@@ -975,6 +975,9 @@ private let registeredBeforeThePalette: Set<String> = [
     "editor_changes_draft_message",
     // 3a-iii-a: the remote operations, agent-reachable mutations priced allow.
     "editor_changes_fetch", "editor_changes_pull", "editor_changes_push", "editor_changes_sync", "editor_changes_publish",
+    // 3a-v-b: merge, rebase and resolving, agent-reachable mutations (abort, skip, take and undo apply gated for the agent).
+    "editor_changes_merge", "editor_changes_rebase", "editor_changes_continue", "editor_changes_skip", "editor_changes_abort",
+    "editor_changes_take", "editor_changes_keep_file", "editor_changes_stash_undo_apply",
     "editor_clone",
     "editor_peek", "editor_peek_step", "editor_peek_close",
     "editor_find", "editor_search", "files_search",

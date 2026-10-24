@@ -88,7 +88,7 @@ private func select(_ f: EditorFixture, _ root: String, _ path: String, _ group:
         #expect(editorDiffRevs(.untracked, status: "?") == (nil, "worktree"))
         #expect(editorDiffRevs(.changed, status: "D") == ("index", nil))
         #expect(editorDiffRevs(.staged, status: "D") == ("HEAD", nil))
-        #expect(editorDiffRevs(.changed, status: "U") == ("HEAD", "worktree"))
+        #expect(editorDiffRevs(.conflicts, status: "U") == ("HEAD", "worktree"))
     }
 
     @Test func aSecondSelectOfTheSameRowDoesNotFetchTwice() async throws {

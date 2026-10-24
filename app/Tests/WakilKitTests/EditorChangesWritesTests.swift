@@ -54,11 +54,24 @@ private actor WriteGit: ToolCaller {
                        "bytes": .integer(Int64(text.utf8.count))])
         case "git_stage_hunk" where stageHunkError != nil:
             return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(stageHunkError!)])])])
+        case "git_merge", "git_rebase", "git_continue", "git_skip", "git_abort":
+            return ok(["done": .bool(false), "conflicts": .array([.string("a.txt")]),
+                       "summary": .string("Merge stopped on conflicts in a.txt; resolve them below")])
+        case "git_stash_apply", "git_stash_pop":
+            return ok(["note": .string("Your stash clashes with main in a.txt; resolve it below, or Undo Apply"),
+                       "clash": testClash])
         case "git_fail": return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string("nope")])])])
         default: return ok([:])
         }
     }
 }
+
+/// A clash as git_stash_apply returns it (3a-v-b).
+private let testClash: JSONValue = .object([
+    "id": .string(String(repeating: "c", count: 40)),
+    "files": .array([.object(["path": .string("a.txt"), "hash": .string("h1")])]),
+    "created": .array([]), "conflicts": .array([.string("a.txt")]),
+])
 
 private struct Fixture {
     let registry: ActionRegistry
@@ -410,7 +423,7 @@ private func args(_ call: WriteGit.Call?, _ key: String) -> JSONValue? {
     }
 
     @Test func refusesAConflictedFile() async throws {
-        let f = try await fixture(rows: ["/p": [("a.go", "changed", "U")], "/q": []])
+        let f = try await fixture(rows: ["/p": [("a.go", "conflicts", "U")], "/q": []])
         await openDiff(f, group: .changed, original: "a\n", modified: "a\nb\n")
         let e = await refusal(f, "editor_changes_stage_ranges", ["path": .string("/p/a.go"), "ranges": spans([(2, 2)])])
         #expect(e.contains("conflict"), "\(e)")
@@ -442,5 +455,82 @@ private func args(_ call: WriteGit.Call?, _ key: String) -> JSONValue? {
         await openDiff(f, group: .changed, original: "a\n", modified: "a\nb\n")
         _ = try await f.dispatch("editor_changes_stage_ranges", ["path": .string("/p/a.go"), "ranges": spans([(2, 2)])])
         #expect(await f.git.count("git_stage_hunk") == 1)
+    }
+
+    // 3a-v-b: merge, rebase, continue and Keep File run for anyone; each sends its tool what it was given.
+    @Test func theConflictWritesCallTheirTools() async throws {
+        let f = try await fixture()
+        let rows: [(String, [String: JSONValue], String, JSONValue)] = [
+            ("editor_changes_merge", ["root": .string("/p"), "branch": .string("feature")],
+             "git_merge", .object(["root": .string("/p"), "branch": .string("feature")])),
+            ("editor_changes_rebase", ["root": .string("/p"), "onto": .string("main")],
+             "git_rebase", .object(["root": .string("/p"), "onto": .string("main")])),
+            ("editor_changes_continue", ["root": .string("/p"), "message": .string("Merge feature")],
+             "git_continue", .object(["root": .string("/p"), "message": .string("Merge feature")])),
+            ("editor_changes_continue", ["root": .string("/p")], "git_continue", .object(["root": .string("/p")])),
+            ("editor_changes_keep_file", ["root": .string("/p"), "path": .string("/p/a.txt")],
+             "git_resolve", .object(["root": .string("/p"), "path": .string("a.txt"), "take": .string("keep")])),
+        ]
+        for (action, params, tool, sent) in rows {
+            let reply = try await f.dispatch(action, params)
+            let last = await f.git.calls.last { $0.name != "git_status" }
+            #expect(last?.name == tool && last?.args == sent, "\(action)")
+            if tool != "git_resolve" { #expect(optionalString(reply, "summary")?.contains("stopped on conflicts") == true) }
+            let d = try #require(await f.registry.descriptor(named: action))
+            #expect(d.kind == .mutate && d.audience == .agentReachable, "\(action)")
+        }
+    }
+
+    // Abort, Skip, a whole-file take and Undo Apply throw work away: the agent's ask is gated.
+    @Test func theThrowingAwayWritesAreGatedForTheAgent() async throws {
+        let f = try await fixture()
+        for (action, params) in [
+            ("editor_changes_abort", ["root": JSONValue.string("/p")]),
+            ("editor_changes_skip", ["root": .string("/p")]),
+            ("editor_changes_take", ["root": .string("/p"), "path": .string("a.txt"), "take": .string("current")]),
+            ("editor_changes_stash_undo_apply", ["root": .string("/p")]),
+        ] {
+            await #expect(throws: ActionError.needsConfirmation(action)) { _ = try await f.dispatch(action, params) }
+            let d = try #require(await f.registry.descriptor(named: action))
+            #expect(d.kind == .mutate && d.audience == .agentReachable, "\(action)")
+        }
+        #expect(await f.git.calls.allSatisfy { $0.name == "git_status" })
+    }
+
+    private func ui(_ f: Fixture, _ action: String, _ params: [String: JSONValue]) async throws -> JSONValue {
+        try await f.registry.dispatch(name: action, params: .object(params), origin: .ui, caller: .test("staging"), confirmation: nil)
+    }
+
+    @Test func aTakeSendsItsSideAndRefusesAnyOther() async throws {
+        let f = try await fixture()
+        for take in ["current", "incoming", "delete"] {
+            _ = try await ui(f, "editor_changes_take", ["root": .string("/p"), "path": .string("/p/b c.txt"), "take": .string(take)])
+            let last = await f.git.calls.last { $0.name != "git_status" }
+            #expect(last?.name == "git_resolve"
+                    && last?.args == .object(["root": .string("/p"), "path": .string("b c.txt"), "take": .string(take)]))
+        }
+        await #expect(throws: (any Error).self) {
+            _ = try await ui(f, "editor_changes_take", ["root": .string("/p"), "path": .string("a.txt"), "take": .string("keep")])
+        }
+        #expect(await f.git.count("git_resolve") == 3)
+    }
+
+    // R4: Undo Apply sends the clash the root's last stash apply returned, once; with none it is refused.
+    @Test func undoApplySendsTheRememberedClashOnce() async throws {
+        let f = try await fixture()
+        do {
+            _ = try await ui(f, "editor_changes_stash_undo_apply", ["root": .string("/p")])
+            Issue.record("no clash, yet Undo Apply ran")
+        } catch {
+            #expect("\(error)".contains("No stash clash to undo"), "\(error)")
+        }
+        let id: JSONValue = .string(String(repeating: "c", count: 40))
+        _ = try await ui(f, "editor_changes_stash_apply", ["root": .string("/p"), "index": .integer(0), "id": id])
+        let kept = await f.status.clashes
+        #expect(kept["/p"] != nil && kept["/q"] == nil)
+        _ = try await ui(f, "editor_changes_stash_undo_apply", ["root": .string("/p")])
+        let last = await f.git.calls.last { $0.name != "git_status" }
+        #expect(last?.name == "git_stash_undo_apply" && last?.args == .object(["root": .string("/p"), "clash": testClash]))
+        #expect(await f.status.clashes["/p"] == nil)
     }
 }

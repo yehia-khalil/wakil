@@ -109,4 +109,33 @@ import Testing
         #expect(done[0].files.map(\.path) == ["new"])
         #expect(done[0].loading == false)
     }
+
+    // 3a-v-b: an unmerged file is its own group, drawn first, with its XY kind; a staged file still holding
+    // a block carries markers; the operation stopped part-way is the root's state.
+    @Test func conflictsComeFirstWithTheirKind() {
+        let reply: JSONValue = .object(["structuredContent": .object([
+            "root": .string("/p/api"), "branch": .string("main"), "detached": .string(""), "upstream": .string(""),
+            "ahead": .integer(0), "behind": .integer(0),
+            "files": .array([
+                .object(["path": .string("a.txt"), "group": .string("staged"), "status": .string("M"), "markers": .bool(true)]),
+                .object(["path": .string("b c.txt"), "group": .string("conflicts"), "status": .string("U"), "kind": .string("UU")]),
+                .object(["path": .string("z.txt"), "group": .string("changed"), "status": .string("M")]),
+                .object(["path": .string("gone.txt"), "group": .string("conflicts"), "status": .string("U"), "kind": .string("UD")]),
+            ]),
+            "state": .object(["kind": .string("merge"), "incoming": .string("feature/search"), "onto": .string(""),
+                              "step": .integer(0), "steps": .integer(0), "head": .string(""), "subject": .string(""),
+                              "message": .string("Merge branch 'feature/search'")]),
+        ])])
+        let r = gitRootState(root: "/p/api", result: .success(reply))
+        #expect(r.files.map(\.path) == ["b c.txt", "gone.txt", "a.txt", "z.txt"])
+        #expect(r.files.map(\.group) == [.conflicts, .conflicts, .staged, .changed])
+        #expect(r.files.map(\.kind) == ["UU", "UD", "", ""])
+        #expect(r.files.map(\.markers) == [false, false, true, false])
+        #expect(r.state == GitOpState(kind: "merge", incoming: "feature/search", onto: "", step: 0, steps: 0, head: "",
+                                      subject: "", message: "Merge branch 'feature/search'"))
+        #expect(GitGroup.allCases.first == .conflicts, "the list draws groups in case order")
+        let none = gitRootState(root: "/p/api", result: .success(.object(["structuredContent": .object([
+            "branch": .string("main"), "files": .array([])])])))
+        #expect(none.state == nil)
+    }
 }

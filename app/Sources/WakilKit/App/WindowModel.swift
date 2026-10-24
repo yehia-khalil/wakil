@@ -783,6 +783,12 @@ public final class WindowModel {
     /// never as an error); the fetch loop, its interval, its sleep (tests replace it), and whether the
     /// app is frontmost.
     public internal(set) var changesRemoteNotes: [String: String] = [:]
+    /// 3a-v-b (R4): each root's Wakil stash clash, for Undo Apply — mirrored from `GitStatus.clashes`, where
+    /// the actions keep it for the operator and the agent alike.
+    public internal(set) var changesClashes: [String: GitStashClash] = [:]
+    /// 3a-v-b (Rule 2): the operation in progress whose prepared message already had its one chance to
+    /// fill the root's box, so an emptied box is not filled again.
+    var changesFilledFrom: [String: String] = [:]
     /// 3a-iii-b: where the composed agent instructions go; the process's own unless a test swaps it.
     var agentInstructionsBox: AgentInstructionsBox = .shared
     public let backgroundFetchInterval: Duration = .seconds(300)
@@ -2316,6 +2322,8 @@ public final class WindowModel {
         changesDrafting = []
         changesLastDraft = nil
         changesRemoteNotes = [:]
+        changesClashes = [:]
+        changesFilledFrom = [:]
         changesMessages = [:]
         changesHistory = [:]
         changesHistoryCursor = [:]
@@ -4512,6 +4520,7 @@ public final class WindowModel {
         tables = next
         editables = nextEditables
         gitRoots = await gitStatus?.roots ?? []
+        await changesFollowStatus()
         // The dictionary itself changes only when a pane opens or closes.
         let open = Set(layoutPanes.map(\.id))
         if Set(paneCells.keys) != open {
@@ -4934,6 +4943,7 @@ public final class WindowModel {
         case .stopped:
             await gitStatus?.reset()
             gitRoots = []
+            changesClashes = [:]
         }
     }
 

@@ -59,7 +59,9 @@ extension WindowModel {
         var params: [String: JSONValue] = ["root": .string(root), "branch": .string(branch)]
         if let carry { params["carry"] = .string(carry) }
         if let track { params["track"] = .string(track) }
-        return switchOutcome(root, await changesWrite(root, "editor_changes_switch", params))
+        let outcome = switchOutcome(root, await changesWrite(root, "editor_changes_switch", params))
+        await mirrorChangesClashes()
+        return outcome
     }
 
     public func changesBranchCreate(root: String, name: String, from: String? = nil) async -> ChangesSwitchOutcome {
@@ -91,6 +93,7 @@ extension WindowModel {
     public func changesStashApply(root: String, stash: GitStashInfo, pop: Bool) async -> String? {
         let reply = await changesWrite(root, pop ? "editor_changes_stash_pop" : "editor_changes_stash_apply",
                                        ["root": .string(root), "index": .integer(Int64(stash.index)), "id": .string(stash.id)])
+        await mirrorChangesClashes()
         guard case .object(let o)? = reply else { return changesErrors[root] ?? "" }
         if case .string(let note)? = o["note"], !note.isEmpty { changesErrors[root] = note }
         return nil
@@ -103,5 +106,85 @@ extension WindowModel {
     /// Drops the stashes the operator was shown, and none pushed since.
     public func changesStashDropAll(root: String, stashes: [GitStashInfo]) async -> String? {
         await plainWrite(root, "editor_changes_stash_drop_all", ["ids": .array(stashes.map { .string($0.id) })])
+    }
+
+    // MARK: 3a-v-b: merge, rebase and resolving
+
+    /// The status's clashes (R4), which the actions keep: set by a stash apply, pop or Bring Them Along that
+    /// clashed, forgotten by Undo Apply or a read that finds the conflicts group empty.
+    func mirrorChangesClashes() async {
+        changesClashes = await gitStatus?.clashes ?? [:]
+    }
+
+    /// After each read of the status: the clashes mirrored, and while a merge, cherry-pick or revert is in
+    /// progress, an empty box filled with git's prepared message — once per operation, so the operator's
+    /// edits, emptying it included, are kept (Rule 2).
+    func changesFollowStatus() async {
+        await mirrorChangesClashes()
+        let roots = Set(gitRoots.map(\.root))
+        changesFilledFrom = changesFilledFrom.filter { roots.contains($0.key) }
+        for r in gitRoots where r.error == nil {
+            guard let s = r.state, ["merge", "cherry-pick", "revert"].contains(s.kind) else {
+                changesFilledFrom[r.root] = nil
+                continue
+            }
+            let key = [s.kind, s.incoming, s.head].joined(separator: "\u{0}")
+            guard changesFilledFrom[r.root] != key else { continue }
+            changesFilledFrom[r.root] = key
+            guard (changesMessages[r.root] ?? "").isEmpty, !s.message.isEmpty else { continue }
+            changesHistoryCursor[r.root] = nil
+            changesMessages[r.root] = s.message
+        }
+    }
+
+    /// A merge-shaped write (`done`, `conflicts`, `summary`): a stop's note is left under the box, as a stash
+    /// clash's is. Nil on success, stopped or not; else the refusal.
+    private func operationWrite(_ root: String, _ name: String, _ params: [String: JSONValue] = [:]) async -> String? {
+        var p = params
+        p["root"] = .string(root)
+        guard case .object(let o)? = await changesWrite(root, name, p) else { return changesErrors[root] ?? "" }
+        if o["done"] == .bool(false), case .string(let note)? = o["summary"], !note.isEmpty { changesErrors[root] = note }
+        return nil
+    }
+
+    public func changesMerge(root: String, branch: String) async -> String? {
+        await operationWrite(root, "editor_changes_merge", ["branch": .string(branch)])
+    }
+
+    public func changesRebase(root: String, onto: String) async -> String? {
+        await operationWrite(root, "editor_changes_rebase", ["onto": .string(onto)])
+    }
+
+    /// Commit Merge / Continue Rebase: the box's message when it holds one, else git's.
+    public func changesContinue(root: String) async -> String? {
+        let draft = changesMessages[root]
+        let message = (draft ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let refused = await operationWrite(root, "editor_changes_continue", message.isEmpty ? [:] : ["message": .string(message)])
+        if refused == nil, !message.isEmpty { changesRemember(root, message, committedDraft: draft) }
+        return refused
+    }
+
+    public func changesSkip(root: String) async -> String? {
+        await operationWrite(root, "editor_changes_skip")
+    }
+
+    public func changesAbort(root: String) async -> String? {
+        await operationWrite(root, "editor_changes_abort")
+    }
+
+    /// Accept All Current / Incoming, or Delete File: `take` is current, incoming or delete.
+    public func changesTake(root: String, path: String, take: String) async -> String? {
+        await plainWrite(root, "editor_changes_take", ["path": .string(path), "take": .string(take)])
+    }
+
+    public func changesKeepFile(root: String, path: String) async -> String? {
+        await plainWrite(root, "editor_changes_keep_file", ["path": .string(path)])
+    }
+
+    /// Undo Apply on the Merge Changes group's header: puts back the root's remembered clash.
+    public func changesStashUndoApply(root: String) async -> String? {
+        let refused = await plainWrite(root, "editor_changes_stash_undo_apply", [:])
+        await mirrorChangesClashes()
+        return refused
     }
 }
