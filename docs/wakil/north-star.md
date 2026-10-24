@@ -90,7 +90,7 @@ Rules no phase may break.
 5. **Exactly one place on screen; each agent keeps its own.** Implicit scope is the
    product; an explicit project argument would forfeit it. History: Decision 41.
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
-   deliberate justification, never by default. Seven have earned in. The justification
+   deliberate justification, never by default. Eight have earned in. The justification
    for each, and what each leaves refused, is in `decisions.md` under *"Invariant 6 — the
    writes that have earned in"*.
 
@@ -267,7 +267,7 @@ live app; *accepted* means it was marked met without one.
 | **2e-iii** | Add, edit and remove an environment's API entries from Settings, the token to the Keychain; databases edited in place, removal confirmed | — | 2e-ii |
 | **2e-iv** | Edit a database's connection in Settings — host, port, database and user in project.json, only the password in the Keychain; Edit replaces Replace connection | — | 2e-iii |
 | **3a-iii** | A git account per organisation — sign in, token or SSH key in the Keychain; push, pull, fetch, sync, clone; agent instructions | **2026-10-22**, walked | 3a-ii |
-| **3a-iv** | Branches and stash — the branch picker in the context line, stash, pop, apply | — | 3a-iii |
+| **3a-iv** | Branches and stash — the branch picker in the context line, stash, pop, apply | **2026-10-23**, walked | 3a-iii |
 | **3a-v** | Conflicts, history and blame — accept current or incoming, the Timeline, inline blame | — | 3a-ii |
 | **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |

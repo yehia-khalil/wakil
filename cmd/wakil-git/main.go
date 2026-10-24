@@ -30,7 +30,7 @@ type diffArg struct {
 type showArg struct {
 	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
 	Path string `json:"path" jsonschema:"file path relative to the root"`
-	Rev  string `json:"rev" jsonschema:"HEAD, index or worktree"`
+	Rev  string `json:"rev" jsonschema:"HEAD, index or worktree; or a stash side: stash:<id>, stash-base:<id>, stash-untracked:<id>"`
 }
 
 // runner confines every call to a root the active project declares.
@@ -69,6 +69,44 @@ type blobArg struct {
 	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
 	Path string `json:"path" jsonschema:"file path relative to the root"`
 }
+type switchArg struct {
+	Root   string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Branch string `json:"branch" jsonschema:"the branch to switch to, or to create"`
+	Create bool   `json:"create,omitempty" jsonschema:"make the branch (an existing name is switched to)"`
+	From   string `json:"from,omitempty" jsonschema:"with create: the commit or branch to start it from"`
+	Track  string `json:"track,omitempty" jsonschema:"with create: the remote branch it tracks, e.g. origin/feature"`
+	Carry  string `json:"carry,omitempty" jsonschema:"changes in the way: refuse (default), stash, or bring (stash, switch, pop)"`
+}
+type renameArg struct {
+	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	To   string `json:"to" jsonschema:"the current branch's new name"`
+}
+type deleteArg struct {
+	Root   string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Branch string `json:"branch" jsonschema:"the local branch to delete"`
+	Force  bool   `json:"force,omitempty" jsonschema:"delete even with commits no other branch has"`
+}
+type stashArg struct {
+	Root    string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Message string `json:"message,omitempty" jsonschema:"what the stash holds"`
+	Mode    string `json:"mode,omitempty" jsonschema:"default (tracked changes), untracked (with untracked files) or staged"`
+}
+type stashRefArg struct {
+	Root  string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Index int    `json:"index" jsonschema:"the stash's position in git_stashes"`
+	ID    string `json:"id" jsonschema:"the stash's commit id from git_stashes; refused if the position no longer holds it"`
+}
+type dropAllArg struct {
+	Root string   `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	IDs  []string `json:"ids" jsonschema:"the ids of the stashes shown (git_stashes); one pushed since is kept"`
+}
+type stashesResult struct {
+	Stashes []wakilcore.GitStash `json:"stashes"`
+}
+type noteResult struct {
+	Note string `json:"note"`
+}
+
 type emptyResult struct{}
 type trashedResult struct {
 	Trashed []string `json:"trashed"`
@@ -198,6 +236,30 @@ func newServer() *mcp.Server {
 			return nil, blobResult{Blob: strings.TrimSpace(string(out))}, nil
 		})
 
+	mcp.AddTool(s, &mcp.Tool{Name: "git_branches", Description: "Read-only. One root's branches: local ones most recently committed first, with upstream, ahead/behind and the commits the current branch lacks; remote ones no local tracks; the current branch or a detached HEAD's SHA."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, wakilcore.GitBranches, error) {
+			g, fail := runner(a.Root)
+			if fail != nil {
+				return fail, wakilcore.GitBranches{}, nil
+			}
+			b, err := wakilcore.ReadBranches(ctx, g)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitBranches{}, nil
+			}
+			return nil, b, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stashes", Description: "Read-only. One root's stashes, newest first: index, id, message, the branch it was made on, date, and the files it holds (untracked ones included)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, stashesResult, error) {
+			g, fail := runner(a.Root)
+			if fail != nil {
+				return fail, stashesResult{}, nil
+			}
+			st, err := wakilcore.ReadStashes(ctx, g)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), stashesResult{}, nil
+			}
+			return nil, stashesResult{Stashes: st}, nil
+		})
 	mcp.AddTool(s, &mcp.Tool{Name: "git_identity", Description: "Read-only. The name and email a commit here would carry. When the organisation sets both, those (from: organisation). Otherwise the repository's git config user.name and user.email. If the organisation sets only one of the two, that one is used and the other comes from git config. from names where the email came from: organisation or git config."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, identityResult, error) {
 			g, fail := runner(a.Root)
@@ -270,6 +332,98 @@ func addWriteTools(s *mcp.Server) {
 				return mcpx.ToolErr("wakil-git", err), cloneOut{}, nil
 			}
 			return nil, cloneOut{Path: path, Summary: r.Summary, Progress: r.Progress}, nil
+		})
+
+	// 3a-iv: branches and stash. Never --force or --discard-changes.
+	mcp.AddTool(s, &mcp.Tool{Name: "git_switch", Description: "Writes. Switches one root to a branch, or creates it (create; from a base, or tracking a remote branch). Changes a switch would overwrite are listed in blocked unless carry is stash or bring."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a switchArg) (*mcp.CallToolResult, wakilcore.SwitchResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, wakilcore.SwitchResult{}, nil
+			}
+			ctx, done := remoteContext(ctx)
+			defer done()
+			r, err := w.Switch(ctx, a.Branch, wakilcore.SwitchOptions{Create: a.Create, From: a.From, Track: a.Track, Carry: a.Carry})
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.SwitchResult{}, nil
+			}
+			return nil, r, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_branch_rename", Description: "Writes. Renames one root's current branch; a name that exists is refused."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a renameArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			if err := w.RenameBranch(ctx, a.To); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_branch_delete", Description: "Writes. Deletes one root's local branch; one with commits no other branch has is refused unless force."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a deleteArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			if err := w.DeleteBranch(ctx, a.Branch, a.Force); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stash", Description: "Writes. Stashes one root's changes: mode default, untracked or staged, with an optional message."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a stashArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			if err := w.Stash(ctx, a.Message, a.Mode); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
+		})
+	for _, op := range []struct {
+		name, desc string
+		pop        bool
+	}{
+		{"git_stash_apply", "Writes. Applies one stash (by index and id) and keeps it. A clash puts back the files it touched and keeps the stash.", false},
+		{"git_stash_pop", "Writes. Applies one stash (by index and id) and drops it. A clash puts back the files it touched and keeps the stash.", true},
+	} {
+		op := op
+		mcp.AddTool(s, &mcp.Tool{Name: op.name, Description: op.desc},
+			func(ctx context.Context, _ *mcp.CallToolRequest, a stashRefArg) (*mcp.CallToolResult, noteResult, error) {
+				w, fail := writer(a.Root)
+				if fail != nil {
+					return fail, noteResult{}, nil
+				}
+				note, err := w.StashApply(ctx, a.Index, a.ID, op.pop)
+				if err != nil {
+					return mcpx.ToolErr("wakil-git", err), noteResult{}, nil
+				}
+				return nil, noteResult{Note: note}, nil
+			})
+	}
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_drop", Description: "Writes. Drops one stash (by index and id); it cannot be applied again."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a stashRefArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			if err := w.StashDrop(ctx, a.Index, a.ID); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_drop_all", Description: "Writes. Drops the listed stashes (by id) of the repository a root is in — the stash list is shared by its worktrees; one pushed since the list was read is kept. None can be applied again."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a dropAllArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			if err := w.StashDropAll(ctx, a.IDs); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "git_stage", Description: "Writes. Runs `git add` on the given paths in one root."},

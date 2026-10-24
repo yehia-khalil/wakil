@@ -171,7 +171,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) string {
 // has the reads alone; a write reaches git only through the registry's editor_changes_* actions.
 func TestWithoutTheWritesFlagTheToolListIsTheReadsAlone(t *testing.T) {
 	t.Setenv(gitWritesEnv, "")
-	if got := toolNames(t, connectedClient(t)); got != "git_blob,git_diff,git_identity,git_show,git_status" {
+	if got := toolNames(t, connectedClient(t)); got != "git_blob,git_branches,git_diff,git_identity,git_show,git_stashes,git_status" {
 		t.Fatalf("tools %s", got)
 	}
 }
@@ -188,9 +188,11 @@ func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"git_amend", "git_blob", "git_clone", "git_commit", "git_diff", "git_discard", "git_fetch",
-		"git_identity", "git_publish", "git_pull", "git_push", "git_show", "git_stage", "git_stage_hunk",
-		"git_status", "git_sync", "git_undo_commit", "git_unstage"}
+	want := []string{"git_amend", "git_blob", "git_branch_delete", "git_branch_rename", "git_branches", "git_clone",
+		"git_commit", "git_diff", "git_discard", "git_fetch", "git_identity", "git_publish", "git_pull", "git_push",
+		"git_show", "git_stage", "git_stage_hunk", "git_stash", "git_stash_apply", "git_stash_drop",
+		"git_stash_drop_all", "git_stash_pop", "git_stashes", "git_status", "git_switch", "git_sync",
+		"git_undo_commit", "git_unstage"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("tools %v", names)
 	}
@@ -407,4 +409,34 @@ func TestShutdownCancelsRemoteWork(t *testing.T) {
 	}
 	done()
 	<-waited
+}
+
+// 3a-iv: a switch git refuses comes back as the paths in the way, not an error, so the picker can
+// offer Stash and Switch or Bring Them Along.
+func TestSwitchToolReportsBlockedPaths(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	g := func(args ...string) {
+		t.Helper()
+		c := exec.Command("git", append([]string{"-C", root, "-c", "user.name=t", "-c", "user.email=t@x"}, args...)...)
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	g("switch", "-q", "-c", "other")
+	os.WriteFile(filepath.Join(root, "seed.txt"), []byte("other\n"), 0o644)
+	g("commit", "-qam", "other")
+	g("switch", "-q", "-")
+	os.WriteFile(filepath.Join(root, "seed.txt"), []byte("mine\n"), 0o644)
+	cs := connectedClient(t)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "git_switch",
+		Arguments: map[string]any{"root": root, "branch": "other"}})
+	if err != nil || res.IsError {
+		t.Fatalf("call: %v %+v", err, res)
+	}
+	raw, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(raw), `"blocked":["seed.txt"]`) || strings.Contains(string(raw), `"switched":true`) {
+		t.Fatalf("result %s", raw)
+	}
 }

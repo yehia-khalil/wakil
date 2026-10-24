@@ -103,7 +103,7 @@ extension WindowModel {
 
     private func changesRanges(_ name: String, _ pane: String, _ ranges: [EditorLineSpan]) async {
         guard let s = editor(pane), let i = s.active, i < s.tabs.count,
-              case .diff(let root, let path, _) = s.tabs[i].subject else { return }
+              case .diff(let root, let path, _, nil) = s.tabs[i].subject else { return }
         let spans: JSONValue = .array(ranges.map { .object(["start": .integer(Int64($0.start)), "end": .integer(Int64($0.end))]) })
         _ = await changesWrite(root, name, ["path": .string(root + "/" + path), "pane": .string(pane), "ranges": spans])
     }
@@ -175,7 +175,7 @@ extension WindowModel {
 
     /// One write: the root is in flight for its length, an error is kept whole (the action's own prefix
     /// included), and a result that lands after an org switch is dropped. Nil on failure or a dropped result.
-    private func changesWrite(_ root: String, _ name: String, _ params: [String: JSONValue]) async -> JSONValue? {
+    func changesWrite(_ root: String, _ name: String, _ params: [String: JSONValue]) async -> JSONValue? {
         // One write per root: the controls are disabled while it runs, and a second one must not
         // touch the first's spinner, task or error.
         guard !changesInFlight.contains(root) else { return nil }

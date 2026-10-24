@@ -31,7 +31,7 @@ import Testing
         // The layout focuses the last pane opened; the press is in the other one.
         let pressed = ids[0] == window.layoutSnapshot.focusedId ? ids[1] : ids[0]
         let file = window.editor(pressed)?.tabs.first.flatMap { tab -> String? in
-            if case .diff(_, let p, _) = tab.subject { p } else { nil }
+            if case .diff(_, let p, _, _) = tab.subject { p } else { nil }
         }
         await window.changesStageRanges(pane: pressed, [EditorLineSpan(start: 2, end: 2)])
         let params = try #require(await asked.last)

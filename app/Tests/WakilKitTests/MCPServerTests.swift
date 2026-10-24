@@ -1210,3 +1210,42 @@ private actor EnvironmentBox {
     // Not a grid with nothing in it — nothing at all.
     #expect(structured["rows"] == nil)
 }
+
+/// 3a-iv e2e audit, defect 3: a git write the agent price gates has no `statement` (only SQL and HTTP
+/// writes do), so it was refused instead of parked. It parks with a plain sentence, never flagged as
+/// touching every row.
+@Test func anAgentBranchDeleteParksWithASentence() async throws {
+    let dir = testScratchRoot.appendingPathComponent("wakil-test-\(UUID().uuidString)")
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
+    let broker = ConfirmationBroker(timeout: .seconds(60))
+    await registry.register(Action(
+        name: "editor_changes_branch_delete", description: "test", kind: .mutate,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in .object(["ok": .bool(true)]) }, price: (.allow, .allow), agentPrice: .gate))
+    let surface = MCPSurface(registry: registry, panes: PaneStore(), layout: LayoutStore(), confirmations: broker)
+    let call = JSONRPCMessage(id: .number(1), method: "tools/call", params: .object([
+        "name": .string("editor_changes_branch_delete"),
+        "arguments": .object(["root": .string("/p/api"), "branch": .string("fix-login")]),
+    ]))
+    async let reply = handle(call, surface: surface, caller: { .test("staging", conversation: "c1") })
+    var spins = 0
+    while await broker.all().isEmpty, spins < 2_000 { await Task.yield(); spins += 1 }
+    let parked = await broker.all().values.first
+    #expect(parked?.statement == "delete branch fix-login in api")
+    #expect(parked?.affectsEveryRow == false)
+    if let parked { await broker.approve(id: parked.id) }
+    _ = await reply
+}
+
+@Test func theGitDropsHaveSentencesToo() {
+    let id = String(repeating: "e", count: 40)
+    #expect(confirmationDescription(action: "editor_changes_stash_drop",
+                                    params: .object(["root": .string("/p/api"), "index": .integer(1), "id": .string(id)]))
+            == "drop stash eeeeeee in api")
+    #expect(confirmationDescription(action: "editor_changes_stash_drop_all",
+                                    params: .object(["root": .string("/p/api"), "ids": .array([.string(id), .string(id)])]))
+            == "drop 2 stashes in api")
+    #expect(confirmationDescription(action: "editor_changes_branch_delete",
+                                    params: .object(["root": .string("/p/api"), "branch": .string("x"), "force": .bool(true)]))
+            == "delete branch x in api, and the commits only it has")
+}

@@ -1,0 +1,88 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal rev-parse HEAD"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"00a19bccb3d8d13f559f9ac018712254800d4b54"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"echo wip > ../e2e-portal/wipnote"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME='Wakil E2E' GIT_AUTHOR_EMAIL=e2e@e2e-fixture.invalid GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_NAME='Wakil E2E' GIT_COMMITTER_EMAIL=e2e@e2e-fixture.invalid GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -C ../e2e-portal stash push -q -u -m e2e-wip && git -C ../e2e-portal rev-parse 'stash@{0}'"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"ec04b4a8147c34302c6a0eae767188e63205d79c"}}
+{"do":{"click":"rail.editor-1"}}
+{"dispatch":{"action":"editor_changes_stashes","params":{"root":"{fixtureRoot}/e2e-portal"}}}
+{"dispatch":{"action":"editor_changes_stashes","params":{},"refuses":"root"}}
+{"expect":{"tree":"absent","text":"M, index.txt"}}
+{"dispatch":{"action":"editor_open_stash_diff","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-portal","path":"wipnote","stash":"ec04b4a8147c34302c6a0eae767188e63205d79c","untracked":true}}}
+{"expect":{"pane":"editor-1","field":"tabs[-1].diff.stash","equals":"ec04b4a8147c34302c6a0eae767188e63205d79c"}}
+{"expect":{"pane":"editor-1","field":"tabs[-1].diff.path","equals":"wipnote"}}
+{"expect":{"pane":"editor-1","field":"tabs[-1].diff.group","equals":"untracked"}}
+{"expect":{"pane":"editor-1","field":"tabs[-1].diff.error","equals":"null"}}
+{"dispatch":{"action":"editor_open_stash_diff","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-portal","path":"index.txt","stash":"ec04b4a8147c34302c6a0eae767188e63205d79c"}}}
+{"expect":{"pane":"editor-1","field":"tabs[-1].diff.path","equals":"index.txt"}}
+{"expect":{"pane":"editor-1","field":"tabs[-1].diff.stash","equals":"ec04b4a8147c34302c6a0eae767188e63205d79c"}}
+{"expect":{"pane":"editor-1","field":"tabs[-1].diff.group","equals":"changed"}}
+{"expect":{"tree":"contains","text":"index.txt (Stash)"}}
+{"dispatch":{"action":"editor_open_stash_diff","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-portal","path":"wipnote","stash":"ec04b4a8147c34302c6a0eae767188e63205d79c","untracked":true}}}
+{"expect":{"pane":"editor-1","field":"tabs[2]","present":false}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}
+{"dispatch":{"action":"editor_changes_stash_apply","params":{"root":"{fixtureRoot}/e2e-portal","index":0,"id":"ec04b4a8147c34302c6a0eae767188e63205d79c"}}}
+{"expect":{"tree":"contains","text":"M, index.txt"}}
+{"expect":{"tree":"contains","text":"?, wipnote"}}
+{"dispatch":{"action":"editor_changes_stash_apply","params":{"root":"{fixtureRoot}/e2e-portal","index":0,"id":"0000000000000000000000000000000000000000"},"refuses":"The stash list changed; look again"}}
+{"dispatch":{"action":"editor_changes_stash_pop","params":{"root":"{fixtureRoot}/e2e-portal","index":3,"id":"ec04b4a8147c34302c6a0eae767188e63205d79c"},"refuses":"The stash list changed; look again"}}
+{"dispatch":{"action":"editor_changes_stash_apply","params":{"root":"{fixtureRoot}/e2e-portal","id":"ec04b4a8147c34302c6a0eae767188e63205d79c"},"refuses":"index"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal stash list | wc -l | tr -d ' '"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal checkout -q -- index.txt && rm ../e2e-portal/wipnote"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"echo more >> ../e2e-portal/index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"dispatch":{"action":"editor_changes_stash","params":{"root":"{fixtureRoot}/e2e-portal","message":"second"}}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"dispatch":{"action":"editor_changes_stash_pop","params":{"root":"{fixtureRoot}/e2e-portal","index":0,"id":"ec04b4a8147c34302c6a0eae767188e63205d79c"},"refuses":"The stash list changed; look again"}}
+{"dispatch":{"action":"editor_changes_stash_pop","params":{"root":"{fixtureRoot}/e2e-portal","index":1,"id":"ec04b4a8147c34302c6a0eae767188e63205d79c"}}}
+{"expect":{"tree":"contains","text":"?, wipnote"}}
+{"expect":{"tree":"contains","text":"M, index.txt"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal stash list | wc -l | tr -d ' '"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal --no-pager stash list --format=%s"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"On main: second"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"cat ../e2e-portal/index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"portal, edited"}}

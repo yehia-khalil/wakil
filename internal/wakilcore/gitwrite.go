@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,6 +80,11 @@ func (w *GitWriter) git(ctx context.Context, stdin []byte, sub string, args ...s
 	mu.Lock()
 	defer mu.Unlock()
 	full := append([]string{"-C", w.Root}, gitWriteSafetyArgs...)
+	// `stash` is handed no paths, and under --literal-pathspecs `stash push --include-untracked`
+	// leaves the untracked files behind (git 2.54, measured 3a-iv), so it runs without it.
+	if sub == "stash" {
+		full = slices.DeleteFunc(full, func(a string) bool { return a == "--literal-pathspecs" })
+	}
 	// author.* and committer.* too: a repository's own author.email would otherwise beat user.email.
 	if w.Identity.Name != "" {
 		for _, k := range []string{"user", "author", "committer"} {

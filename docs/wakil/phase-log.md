@@ -3413,3 +3413,35 @@ The operator walked it on this Mac and **all ten steps pass**, after the fixes b
 - Sign in (device flow) waits on Wakil's OAuth apps (`operator-todo.md`).
 - The runbook's §2 and §3 stand as written there; `make e2e-full` was not run on #49's head.
 
+
+## 2026-10-23 — 3a-iv walked: branches and stash
+
+**3a-iv is the eighth write** (Invariant 6, Decision 46). A **Branch** segment in the context line opens
+VS Code's picker: switch, create from a typed name or another branch, check out a remote branch, Fetch.
+The Changes view's ▾ gains Branch (create, create from, rename, delete) and Stash (stash, with
+untracked, staged only, pop and apply latest), and a **Stashes** group lists each stash with Apply, Pop,
+Drop and its files as read-only diffs. Changes in a switch's way are stashed or brought along, never
+lost; a clash keeps the stash. Delete, Drop and Drop All ask in place, and ask on the permission plane
+only when the agent or voice runs them. Design in
+`docs/superpowers/specs/2026-10-23-3a-iv-branches-and-stash-design.md`; walk in
+`phase-3a-iv-acceptance.md`. Shipped as #55 and #56.
+
+The operator walked it on this Mac and **all ten steps pass**, after the fixes below.
+
+### What review, Cover and the walk found that no unit test could
+
+| Found at | Defect | Fixed in |
+|---|---|---|
+| review | a clash's recovery deleted the operator's untracked files and split names on spaces | #56 |
+| review | a branch named `-C…` reached git as an option and force-reset a branch | #56 |
+| review | Bring Them Along popped `stash@{0}`, which another worktree may have pushed | #56 |
+| review | Drop All cleared stashes pushed after the list was shown | #56 |
+| review | Stash mid-merge threw the merge away; a failing post-checkout hook read as a failed switch | #56 |
+| Cover | the Stashes group never read its list; the segment and ⌘K used a plain folder | #56 |
+| Cover | the agent's delete and drop were refused for having no statement; the picker's arrows moved the Changes list | #56 |
+| walk | the picker opened on Create branch from…, so Return started a create | #56 |
+| walk | the Branch menu drew nothing right after a switch until the line was hovered again | #56 |
+
+### What the walk left unestablished
+
+- The runbook's §2 and §3 stand as written there; `make e2e-full` was not run on the build's head.
