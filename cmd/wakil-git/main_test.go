@@ -191,8 +191,10 @@ func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
 	want := []string{"git_amend", "git_blame", "git_blob", "git_branch_delete", "git_branch_rename", "git_branches", "git_clone",
 		"git_commit", "git_diff", "git_discard", "git_fetch", "git_file_history", "git_identity", "git_publish", "git_pull", "git_push",
 		"git_show", "git_stage", "git_stage_hunk", "git_stash", "git_stash_apply", "git_stash_drop",
-		"git_stash_drop_all", "git_stash_pop", "git_stashes", "git_status", "git_switch", "git_sync",
+		"git_stash_drop_all", "git_stash_pop", "git_stash_undo_apply", "git_stashes", "git_status", "git_switch", "git_sync",
 		"git_undo_commit", "git_unstage"}
+	want = append(want, "git_abort", "git_continue", "git_merge", "git_rebase", "git_resolve", "git_skip")
+	sort.Strings(want)
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("tools %v", names)
 	}
@@ -468,5 +470,116 @@ func TestGitBlameTool(t *testing.T) {
 	b, _ := json.Marshal(res.StructuredContent)
 	if !strings.Contains(string(b), `"author":"t"`) || !strings.Contains(string(b), `"id":"0000000000000000000000000000000000000000"`) {
 		t.Fatalf("%s", b)
+	}
+}
+
+// gitIn runs git in dir, isolated from the machine's config.
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	c := exec.Command("git", args...)
+	c.Dir = dir
+	c.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// conflictedRepo leaves main and other disagreeing about a.txt.
+func conflictedRepo(t *testing.T) string {
+	t.Helper()
+	root := setupProject(t, `"local":{}`, "local")
+	gitInit(t, root)
+	write := func(s string) { os.WriteFile(filepath.Join(root, "a.txt"), []byte(s), 0o644) }
+	write("base\n")
+	gitIn(t, root, "add", "a.txt")
+	gitIn(t, root, "commit", "-m", "base")
+	gitIn(t, root, "switch", "-c", "other")
+	write("theirs\n")
+	gitIn(t, root, "commit", "-am", "other")
+	gitIn(t, root, "switch", "main")
+	write("ours\n")
+	gitIn(t, root, "commit", "-am", "main")
+	return root
+}
+
+func callTool(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any) *mcp.CallToolResult {
+	t.Helper()
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+// A conflict stop is a result the caller reads, not a tool error.
+func TestMergeToolStopsOnConflicts(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := conflictedRepo(t)
+	cs := connectedClient(t)
+	res := callTool(t, cs, "git_merge", map[string]any{"root": root, "branch": "other"})
+	if res.IsError {
+		t.Fatalf("a conflict stop is not an error: %s", toolText(res))
+	}
+	var r wakilcore.GitMergeResult
+	if err := json.Unmarshal([]byte(toolText(res)), &r); err != nil {
+		t.Fatal(err)
+	}
+	if r.Done || len(r.Conflicts) != 1 || r.Conflicts[0] != "a.txt" {
+		t.Fatalf("result %+v", r)
+	}
+
+	// Resolve, continue, and the merge lands.
+	if res := callTool(t, cs, "git_resolve", map[string]any{"root": root, "path": "a.txt", "take": "incoming"}); res.IsError {
+		t.Fatalf("resolve: %s", toolText(res))
+	}
+	res = callTool(t, cs, "git_continue", map[string]any{"root": root})
+	if res.IsError || !strings.Contains(toolText(res), `"done":true`) {
+		t.Fatalf("continue: %s", toolText(res))
+	}
+}
+
+func TestAbortToolReturnsTheResult(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := conflictedRepo(t)
+	cs := connectedClient(t)
+	callTool(t, cs, "git_merge", map[string]any{"root": root, "branch": "other"})
+	res := callTool(t, cs, "git_abort", map[string]any{"root": root})
+	if res.IsError || !strings.Contains(toolText(res), `"done":true`) {
+		t.Fatalf("abort: %s", toolText(res))
+	}
+	st := callTool(t, cs, "git_status", map[string]any{"root": root})
+	if strings.Contains(toolText(st), `"conflicts"`) {
+		t.Fatalf("still conflicted: %s", toolText(st))
+	}
+}
+
+func TestStashApplyToolReturnsTheClash(t *testing.T) {
+	t.Setenv(gitWritesEnv, "1")
+	root := conflictedRepo(t)
+	os.WriteFile(filepath.Join(root, "a.txt"), []byte("stashed\n"), 0o644)
+	gitIn(t, root, "stash", "push", "-m", "mine")
+	os.WriteFile(filepath.Join(root, "a.txt"), []byte("moved on\n"), 0o644)
+	gitIn(t, root, "commit", "-am", "moved on")
+	cs := connectedClient(t)
+	list := callTool(t, cs, "git_stashes", map[string]any{"root": root})
+	var sl struct{ Stashes []wakilcore.GitStash }
+	if err := json.Unmarshal([]byte(toolText(list)), &sl); err != nil || len(sl.Stashes) != 1 {
+		t.Fatalf("%v %s", err, toolText(list))
+	}
+	res := callTool(t, cs, "git_stash_apply", map[string]any{"root": root, "index": 0, "id": sl.Stashes[0].ID})
+	if res.IsError {
+		t.Fatalf("apply: %s", toolText(res))
+	}
+	var out struct {
+		Note  string
+		Clash *wakilcore.GitStashClash
+	}
+	if err := json.Unmarshal([]byte(toolText(res)), &out); err != nil || out.Clash == nil || out.Clash.ID == "" {
+		t.Fatalf("no clash: %v %s", err, toolText(res))
+	}
+	undo := callTool(t, cs, "git_stash_undo_apply", map[string]any{"root": root, "clash": out.Clash})
+	if undo.IsError {
+		t.Fatalf("undo: %s", toolText(undo))
 	}
 }
