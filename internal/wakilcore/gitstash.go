@@ -112,7 +112,8 @@ func (w *GitWriter) stashAt(ctx context.Context, index int, id string) (string, 
 }
 
 // StashApply applies (or, with pop, pops) the stash at index, if it is still id. A clash is left in
-// the tree to resolve, the stash kept (git keeps it), and recorded so Undo Apply can put it back.
+// the tree to resolve and the stash kept (git keeps it); it is recorded so Undo Apply can put it back
+// only when the stash's paths were clean before the apply, else it is resolved by hand.
 func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bool) (string, *GitStashClash, error) {
 	if err := w.inProgress(ctx); err != nil {
 		return "", nil, err
@@ -121,8 +122,7 @@ func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bo
 	if err != nil {
 		return "", nil, err
 	}
-	untracked, existed := w.stashUntrackedBefore(ctx, id)
-	staged, unstaged := w.stashStagedBefore(ctx, id)
+	clean := w.stashCleanBefore(ctx, id)
 	verb := "apply"
 	if pop {
 		verb = "pop"
@@ -131,7 +131,7 @@ func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bo
 	if applyErr == nil {
 		return "", nil, nil
 	}
-	clash := w.stashClash(context.WithoutCancel(ctx), id, untracked, existed, staged, unstaged)
+	clash := w.stashClash(context.WithoutCancel(ctx), id)
 	if clash == nil {
 		return "", nil, applyErr // refused before it changed anything (a file in the way)
 	}
@@ -140,7 +140,11 @@ func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bo
 	if on == "" {
 		on = "HEAD"
 	}
-	return "Your stash clashes with " + on + " in " + clashPaths(clash) + "; resolve it below, or Undo Apply", clash, nil
+	note := "Your stash clashes with " + on + " in " + clashPaths(clash) + "; resolve it below"
+	if !clean {
+		return note, nil, nil
+	}
+	return note + ", or Undo Apply", clash, nil
 }
 
 // StashDrop drops the stash at index, if it is still id.

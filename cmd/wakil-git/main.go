@@ -489,7 +489,7 @@ func addWriteTools(s *mcp.Server) {
 			}
 			return nil, emptyResult{}, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_undo_apply", Description: "Writes. Puts back the files a stash apply or pop clashed in, from the clash that call returned: each goes back to what was staged before the apply (HEAD where nothing was), and files the apply created are removed; the stash stays in the list. Refused, naming the file, when one changed since the clash or had unstaged edits before the apply, or when the stash is gone."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_undo_apply", Description: "Writes. Puts back the files a stash apply or pop clashed in, from the clash that call returned: the tracked ones go back to HEAD and the untracked ones the apply created are removed; the stash stays in the list. Refused, naming the file, when one changed since the clash, or when the stash is gone."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a undoApplyArg) (*mcp.CallToolResult, emptyResult, error) {
 			w, fail := writer(a.Root)
 			if fail != nil {
@@ -504,7 +504,7 @@ func addWriteTools(s *mcp.Server) {
 		})
 
 	// 3a-iv: branches and stash. Never --force or --discard-changes.
-	mcp.AddTool(s, &mcp.Tool{Name: "git_switch", Description: "Writes. Switches one root to a branch, or creates it (create; from a base, or tracking a remote branch). Changes a switch would overwrite are listed in blocked unless carry is stash or bring; with bring, a clash is left in the tree to resolve (the stash kept) and returned as clash, for git_stash_undo_apply."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_switch", Description: "Writes. Switches one root to a branch, or creates it (create; from a base, or tracking a remote branch). Changes a switch would overwrite are listed in blocked unless carry is stash or bring; with bring, a clash is left in the tree to resolve (the stash kept) and, when the stash's files had no changes of your own before the pop, returned as clash, for git_stash_undo_apply."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a switchArg) (*mcp.CallToolResult, wakilcore.SwitchResult, error) {
 			w, fail := writer(a.Root)
 			if fail != nil {
@@ -555,8 +555,8 @@ func addWriteTools(s *mcp.Server) {
 		name, desc string
 		pop        bool
 	}{
-		{"git_stash_apply", "Writes. Applies one stash (by index and id) and keeps it. A clash is left in the tree to resolve and the stash is kept; the result's clash is what git_stash_undo_apply takes to put the files back.", false},
-		{"git_stash_pop", "Writes. Applies one stash (by index and id) and drops it. A clash is left in the tree to resolve and the stash is kept (not dropped); the result's clash is what git_stash_undo_apply takes to put the files back.", true},
+		{"git_stash_apply", "Writes. Applies one stash (by index and id) and keeps it. A clash is left in the tree to resolve and the stash is kept; when the stash's files had no changes of your own before the apply, the result's clash is what git_stash_undo_apply takes to put the files back (otherwise there is none: resolve it by hand).", false},
+		{"git_stash_pop", "Writes. Applies one stash (by index and id) and drops it. A clash is left in the tree to resolve and the stash is kept (not dropped); when the stash's files had no changes of your own before the pop, the result's clash is what git_stash_undo_apply takes to put the files back (otherwise there is none: resolve it by hand).", true},
 	} {
 		op := op
 		mcp.AddTool(s, &mcp.Tool{Name: op.name, Description: op.desc},

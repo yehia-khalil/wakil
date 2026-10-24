@@ -225,8 +225,9 @@ func TestGitShowReadsAStashFile(t *testing.T) {
 	}
 }
 
-// Review C1: Undo Apply never deletes a file the apply did not create, and reads names with spaces or
-// non-ASCII letters whole.
+// Review C1: Undo Apply removes only the files the apply created, and reads names with spaces or
+// non-ASCII letters whole. (An operator's own file at one of the stash's paths means no Undo Apply at
+// all: TestAStashOverTheOperatorsChangesOffersNoUndoApply.)
 func TestUndoApplyNeverDeletesTheOperatorsFiles(t *testing.T) {
 	work, w, git := branchFixture(t)
 	ctx := context.Background()
@@ -239,7 +240,6 @@ func TestUndoApplyNeverDeletesTheOperatorsFiles(t *testing.T) {
 	}
 	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
 	git("commit", "-qam", "moved on")
-	writeIn(t, work, "u.txt", "OPERATOR\n")      // the operator's own, untracked
 	writeIn(t, work, "notes.txt", "unrelated\n") // a name a split on spaces would hit
 	s, _ := ReadStashes(ctx, w.runner())
 	if got := strings.Join(s[0].Files, "|"); got != "a.txt|café.txt|my notes.txt|u.txt" {
@@ -249,23 +249,18 @@ func TestUndoApplyNeverDeletesTheOperatorsFiles(t *testing.T) {
 	if err != nil || clash == nil || note != "Your stash clashes with main in a.txt; resolve it below, or Undo Apply" {
 		t.Fatalf("note %q clash %+v err %v", note, clash, err)
 	}
-	if !slices.Equal(clash.Created, []string{"café.txt", "my notes.txt"}) {
+	if !slices.Equal(clash.Created, []string{"café.txt", "my notes.txt", "u.txt"}) {
 		t.Fatalf("created = %q", clash.Created)
-	}
-	for _, f := range clash.Files {
-		if f.Path == "u.txt" {
-			t.Fatalf("the operator's u.txt is in the clash: %+v", clash.Files)
-		}
 	}
 	if err := w.StashUndoApply(ctx, *clash); err != nil {
 		t.Fatal(err)
 	}
-	for name, want := range map[string]string{"u.txt": "OPERATOR\n", "notes.txt": "unrelated\n", "a.txt": "one\nCOMMITTED\nthree\n"} {
+	for name, want := range map[string]string{"notes.txt": "unrelated\n", "a.txt": "one\nCOMMITTED\nthree\n"} {
 		if b, err := os.ReadFile(filepath.Join(work, name)); err != nil || string(b) != want {
 			t.Errorf("%s = %q, %v", name, b, err)
 		}
 	}
-	for _, name := range []string{"my notes.txt", "café.txt"} {
+	for _, name := range []string{"my notes.txt", "café.txt", "u.txt"} {
 		if _, err := os.Stat(filepath.Join(work, name)); !os.IsNotExist(err) {
 			t.Errorf("%s left behind", name)
 		}
@@ -314,107 +309,6 @@ func TestDropAllDropsOnlyTheListedStashes(t *testing.T) {
 	}
 }
 
-// Final review C1: an edit staged before the apply is in no stash, so Undo Apply puts it back staged
-// and in the tree, for the file that clashed and for one that merged cleanly, rather than to HEAD.
-func TestUndoApplyKeepsAnEditStagedBeforeTheApply(t *testing.T) {
-	work, w, git := branchFixture(t)
-	ctx := context.Background()
-	writeIn(t, work, "c.txt", "1\n2\n3\n4\n5\n")
-	git("add", "c.txt")
-	git("commit", "-qm", "c")
-	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
-	writeIn(t, work, "c.txt", "STASHED\n2\n3\n4\n5\n")
-	w.Stash(ctx, "clashing", "default")
-	writeIn(t, work, "a.txt", "one\nSTAGED\nthree\n")
-	writeIn(t, work, "c.txt", "1\n2\n3\n4\nSTAGED\n")
-	git("add", "a.txt", "c.txt")
-	stagedA, stagedC := git("rev-parse", ":a.txt"), git("rev-parse", ":c.txt")
-	s, _ := ReadStashes(ctx, w.runner())
-	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
-	if err != nil || clash == nil || !slices.Equal(clash.Conflicts, []string{"a.txt"}) {
-		t.Fatalf("clash %+v err %v", clash, err)
-	}
-	if err := w.StashUndoApply(ctx, *clash); err != nil {
-		t.Fatal(err)
-	}
-	if git("rev-parse", ":a.txt") != stagedA || git("rev-parse", ":c.txt") != stagedC {
-		t.Fatalf("the staged edits went: %s", git("ls-files", "-s"))
-	}
-	if readIn(t, work, "a.txt") != "one\nSTAGED\nthree\n" || readIn(t, work, "c.txt") != "1\n2\n3\n4\nSTAGED\n" {
-		t.Fatalf("tree: %q %q", readIn(t, work, "a.txt"), readIn(t, work, "c.txt"))
-	}
-	if st := git("status", "--porcelain"); st != "M  a.txt\nM  c.txt" {
-		t.Fatalf("status = %q", st)
-	}
-}
-
-// A staged copy that already matches the stash's lets git apply over it without looking at the tree,
-// so the file can carry an unstaged edit on top: putting the staged copy back would lose that edit, so
-// Undo Apply refuses, naming the file, and changes nothing.
-func TestUndoApplyRefusesAnUnstagedEditOnAStagedCopy(t *testing.T) {
-	work, w, git := branchFixture(t)
-	ctx := context.Background()
-	writeIn(t, work, "c.txt", "1\n2\n3\n")
-	git("add", "c.txt")
-	git("commit", "-qm", "c")
-	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
-	writeIn(t, work, "c.txt", "S\n2\n3\n")
-	w.Stash(ctx, "clashing", "default")
-	writeIn(t, work, "a.txt", "one\nSTAGED\nthree\n")
-	writeIn(t, work, "c.txt", "S\n2\n3\n")
-	git("add", "a.txt", "c.txt")
-	writeIn(t, work, "c.txt", "S\n2\n3\nUNSTAGED EXTRA\n")
-	s, _ := ReadStashes(ctx, w.runner())
-	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
-	if err != nil || clash == nil || !slices.Equal(clash.Conflicts, []string{"a.txt"}) {
-		t.Fatalf("clash %+v err %v", clash, err)
-	}
-	before := git("ls-files", "-s", "-u")
-	err = w.StashUndoApply(ctx, *clash)
-	if err == nil || err.Error() != "c.txt has unstaged edits; Undo Apply would lose them — resolve it by hand" {
-		t.Errorf("err = %v", err)
-	}
-	if readIn(t, work, "c.txt") != "S\n2\n3\nUNSTAGED EXTRA\n" {
-		t.Fatalf("c.txt = %q", readIn(t, work, "c.txt"))
-	}
-	if git("ls-files", "-s", "-u") != before {
-		t.Fatalf("the index changed: %s", git("ls-files", "-s"))
-	}
-}
-
-// The same with nothing staged: HEAD already holds the stash's copy, so git applies over the file
-// without looking at the tree, and putting it back to HEAD would lose the unstaged edit.
-func TestUndoApplyRefusesAnUnstagedEditOverHEAD(t *testing.T) {
-	work, w, git := branchFixture(t)
-	ctx := context.Background()
-	writeIn(t, work, "c.txt", "1\n2\n3\n")
-	git("add", "c.txt")
-	git("commit", "-qm", "c")
-	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
-	writeIn(t, work, "c.txt", "S\n2\n3\n")
-	w.Stash(ctx, "clashing", "default")
-	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
-	writeIn(t, work, "c.txt", "S\n2\n3\n")
-	git("commit", "-qam", "moved on")
-	writeIn(t, work, "c.txt", "S\n2\n3\nUNSTAGED EXTRA\n")
-	s, _ := ReadStashes(ctx, w.runner())
-	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
-	if err != nil || clash == nil || !slices.Equal(clash.Conflicts, []string{"a.txt"}) {
-		t.Fatalf("clash %+v err %v", clash, err)
-	}
-	before := git("ls-files", "-s", "-u")
-	err = w.StashUndoApply(ctx, *clash)
-	if err == nil || err.Error() != "c.txt has unstaged edits; Undo Apply would lose them — resolve it by hand" {
-		t.Errorf("err = %v", err)
-	}
-	if readIn(t, work, "c.txt") != "S\n2\n3\nUNSTAGED EXTRA\n" {
-		t.Fatalf("c.txt = %q", readIn(t, work, "c.txt"))
-	}
-	if git("ls-files", "-s", "-u") != before {
-		t.Fatalf("the index changed: %s", git("ls-files", "-s"))
-	}
-}
-
 // A stash that renames c.txt to n.txt touches both names: listed with rename detection, only n.txt is
 // recorded, so Undo Apply removed it and left c.txt deleted. Both names go back.
 func TestUndoApplyPutsBackBothNamesOfARename(t *testing.T) {
@@ -439,37 +333,136 @@ func TestUndoApplyPutsBackBothNamesOfARename(t *testing.T) {
 	if st := git("status", "--porcelain"); st != "" || readIn(t, work, "c.txt") != "1\n2\n3\n" {
 		t.Fatalf("status %q", st)
 	}
+	if _, err := os.Stat(filepath.Join(work, "n.txt")); !os.IsNotExist(err) {
+		t.Fatal("n.txt left behind")
+	}
 }
 
-// The same rename over an edit staged to c.txt: git merges the edit into n.txt and stages c.txt
-// deleted. Undo Apply puts the staged edit back on c.txt, never loses it.
-func TestUndoApplyKeepsAnEditStagedOnARenamedFile(t *testing.T) {
-	work, w, git := branchFixture(t)
-	ctx := context.Background()
-	writeIn(t, work, "c.txt", "1\n2\n3\n")
-	git("add", "c.txt")
-	git("commit", "-qm", "c")
-	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
-	git("mv", "c.txt", "n.txt")
-	w.Stash(ctx, "clashing", "default")
-	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
-	git("commit", "-qam", "moved on")
-	writeIn(t, work, "c.txt", "1\n2\n3\nSTAGED MINE\n")
-	git("add", "c.txt")
-	staged := git("rev-parse", ":c.txt")
-	s, _ := ReadStashes(ctx, w.runner())
-	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
-	if err != nil || clash == nil || !slices.Equal(clash.Conflicts, []string{"a.txt"}) {
-		t.Fatalf("clash %+v err %v", clash, err)
+// Undo Apply is offered only over a stash whose files had no changes of the operator's own before the
+// apply: each pre-state the reviews found would have lost them. The apply still runs and the clash is
+// left to resolve, the stash is kept, the note does not offer Undo Apply, no clash is returned, and the
+// operator's content is still there.
+func TestAStashOverTheOperatorsChangesOffersNoUndoApply(t *testing.T) {
+	// Each case commits c.txt, stashes a.txt's STASHED line with its own change, moves main on with
+	// a.txt's COMMITTED line (and its own commit), then makes the operator's change; kept checks it.
+	cases := []struct {
+		name                    string
+		stash, moveOn, operator func(work string, git func(...string) string)
+		kept                    func(work string, git func(...string) string) string
+	}{
+		{"a staged edit on a touched file",
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "STASHED\n2\n3\n4\n5\n") },
+			func(string, func(...string) string) {},
+			func(work string, git func(...string) string) {
+				writeIn(t, work, "c.txt", "1\n2\n3\n4\nSTAGED\n")
+				git("add", "c.txt")
+			},
+			func(work string, git func(...string) string) string {
+				if c := readIn(t, work, "c.txt"); c != "STASHED\n2\n3\n4\nSTAGED\n" {
+					return "c.txt = " + c
+				}
+				return ""
+			}},
+		{"an unstaged edit on a staged copy",
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\n") },
+			func(string, func(...string) string) {},
+			func(work string, git func(...string) string) {
+				writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\n")
+				git("add", "c.txt")
+				writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\nUNSTAGED EXTRA\n")
+			},
+			func(work string, git func(...string) string) string {
+				if c := readIn(t, work, "c.txt"); c != "S\n2\n3\n4\n5\nUNSTAGED EXTRA\n" {
+					return "c.txt = " + c
+				}
+				return ""
+			}},
+		{"an unstaged edit with nothing staged",
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\n") },
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\n") },
+			func(work string, git func(...string) string) {
+				writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\nUNSTAGED EXTRA\n")
+			},
+			func(work string, git func(...string) string) string {
+				if c := readIn(t, work, "c.txt"); c != "S\n2\n3\n4\n5\nUNSTAGED EXTRA\n" {
+					return "c.txt = " + c
+				}
+				return ""
+			}},
+		{"a rename with a staged edit on the old name",
+			func(work string, git func(...string) string) { git("mv", "c.txt", "n.txt") },
+			func(string, func(...string) string) {},
+			func(work string, git func(...string) string) {
+				writeIn(t, work, "c.txt", "1\n2\n3\n4\n5\nSTAGED MINE\n")
+				git("add", "c.txt")
+			},
+			func(work string, git func(...string) string) string {
+				if c := readIn(t, work, "n.txt"); !strings.Contains(c, "STAGED MINE") {
+					return "n.txt = " + c
+				}
+				return ""
+			}},
+		{"an untracked file at a rename's old name",
+			func(work string, git func(...string) string) { git("mv", "c.txt", "n.txt") },
+			func(work string, git func(...string) string) { git("rm", "-q", "c.txt") },
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "OPERATOR\n") },
+			func(work string, git func(...string) string) string {
+				if c := readIn(t, work, "c.txt"); c != "OPERATOR\n" {
+					return "c.txt = " + c
+				}
+				return ""
+			}},
+		{"an untracked file re-created at a path the stash deletes",
+			func(work string, git func(...string) string) { git("rm", "-q", "c.txt") },
+			func(work string, git func(...string) string) { git("rm", "-q", "c.txt") },
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "OPERATOR\n") },
+			func(work string, git func(...string) string) string {
+				if c := readIn(t, work, "c.txt"); c != "OPERATOR\n" {
+					return "c.txt = " + c
+				}
+				return ""
+			}},
+		{"an untracked file at a path the stash carries untracked",
+			func(work string, git func(...string) string) { writeIn(t, work, "u.txt", "stashed u\n") },
+			func(string, func(...string) string) {},
+			func(work string, git func(...string) string) { writeIn(t, work, "u.txt", "OPERATOR\n") },
+			func(work string, git func(...string) string) string {
+				if c := readIn(t, work, "u.txt"); c != "OPERATOR\n" {
+					return "u.txt = " + c
+				}
+				return ""
+			}},
 	}
-	if err := w.StashUndoApply(ctx, *clash); err != nil {
-		t.Fatal(err)
-	}
-	if git("rev-parse", ":c.txt") != staged || readIn(t, work, "c.txt") != "1\n2\n3\nSTAGED MINE\n" {
-		t.Fatalf("the staged edit went: %s", git("status", "--porcelain"))
-	}
-	if st := git("status", "--porcelain"); st != "M  c.txt" {
-		t.Fatalf("status = %q", st)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			work, w, git := branchFixture(t)
+			ctx := context.Background()
+			writeIn(t, work, "c.txt", "1\n2\n3\n4\n5\n")
+			git("add", "c.txt")
+			git("commit", "-qm", "c")
+			writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+			tc.stash(work, git)
+			if err := w.Stash(ctx, "clashing", "untracked"); err != nil {
+				t.Fatal(err)
+			}
+			writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
+			tc.moveOn(work, git)
+			git("commit", "-qam", "moved on")
+			tc.operator(work, git)
+			s, _ := ReadStashes(ctx, w.runner())
+			note, clash, err := w.StashApply(ctx, 0, s[0].ID, true)
+			// The rename onto a main that deleted c.txt also clashes in n.txt.
+			if err != nil || clash != nil || !strings.HasPrefix(note, "Your stash clashes with main in a.txt") ||
+				!strings.HasSuffix(note, "; resolve it below") {
+				t.Fatalf("note %q clash %+v err %v", note, clash, err)
+			}
+			if git("ls-files", "-u", "--", "a.txt") == "" || git("stash", "list") == "" {
+				t.Fatalf("the clash or the stash went: %s", git("status", "--porcelain"))
+			}
+			if why := tc.kept(work, git); why != "" {
+				t.Fatal("the operator's change went: " + why)
+			}
+		})
 	}
 }
 

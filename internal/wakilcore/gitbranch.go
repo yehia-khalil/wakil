@@ -236,14 +236,16 @@ func (w *GitWriter) Switch(ctx context.Context, branch string, o SwitchOptions) 
 		r.Note = "Your changes are in git stash (" + ref + ")"
 		return r, nil
 	}
-	untracked, existed := w.stashUntrackedBefore(steady, stash)
-	staged, unstaged := w.stashStagedBefore(steady, stash)
+	// Everything was stashed with -u, so the stash's paths are clean unless an ignored file sits on one.
+	clean := w.stashCleanBefore(steady, stash)
 	if _, err := w.git(steady, nil, "stash", "pop", ref); err != nil {
 		// git keeps the stash on a clash; the conflicts are left to resolve, as a stash apply's are
 		// (R5), and recorded for Undo Apply.
-		if r.Clash = w.stashClash(steady, stash, untracked, existed, staged, unstaged); r.Clash != nil {
-			r.Note = "Switched to " + branch + "; your changes clash with it in " + clashPaths(r.Clash) +
-				" — resolve them below, or Undo Apply"
+		if c := w.stashClash(steady, stash); c != nil {
+			r.Note = "Switched to " + branch + "; your changes clash with it in " + clashPaths(c) + " — resolve them below"
+			if clean {
+				r.Clash, r.Note = c, r.Note+", or Undo Apply"
+			}
 		} else {
 			r.Note = "Switched to " + branch + "; your changes clash with it and are kept in git stash"
 		}
