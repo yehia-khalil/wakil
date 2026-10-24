@@ -24,9 +24,10 @@ enum EditorPaneKind: PaneKind {
             case .diff: break
             }
             var diff: JSONValue = .null
-            if case .diff(let r, let p, let g) = tab.subject, let d = tab.diffState {
+            if case .diff(let r, let p, let g, let stash) = tab.subject, let d = tab.diffState {
                 diff = .object([
                     "root": .string(r), "path": .string(p), "group": .string(g.rawValue),
+                    "stash": stash.map { .string($0) } ?? .null,
                     "loading": .bool(d.loading), "error": d.error.map { .string($0) } ?? .null,
                     "binary": .bool(d.binary), "bytes": .number(Double(d.bytes)), "lines": .number(Double(d.lines)),
                     "truncated": .bool(d.truncated), "no_longer_changed": .bool(d.noLongerChanged),

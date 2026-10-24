@@ -5317,6 +5317,18 @@ public final class WindowModel {
         return id
     }
 
+    /// 3a-iv: the root the Branch segment and its picker are about — the focused editor tab's root,
+    /// else the first git root.
+    public var activeBranchRoot: GitRootState? {
+        var path: String?
+        if let pane = focusedEditor, let e = editor(pane), let i = e.active, e.tabs.indices.contains(i),
+           case .file(let p, _) = e.tabs[i].subject { path = p }
+        return activeGitRoot(focusedPath: path, roots: gitRoots)
+    }
+
+    /// What the context line's Branch segment reads; nil with no git root.
+    public var branchSegment: String? { branchSegmentText(activeBranchRoot, rootCount: gitRoots.count) }
+
     /// The scratch tab ⌘S could not save without a path: the pane whose path field should show.
     public private(set) var editorSaveAsRequest: String?
 
@@ -6020,7 +6032,7 @@ public final class WindowModel {
         }()
         let editorActiveDiff: EditorActiveDiff? = {
             guard let f = focused, f.kind == "editor", let s = editor(f.id), let i = s.active, i < s.tabs.count,
-                  case .diff(let root, let path, let group) = s.tabs[i].subject else { return nil }
+                  case .diff(let root, let path, let group, nil) = s.tabs[i].subject else { return nil }
             return EditorActiveDiff(path: root + "/" + path, group: group)
         }()
         return PaletteContext(
@@ -6031,7 +6043,8 @@ public final class WindowModel {
             dbPageHasPrevious: table.map { $0.pageable && $0.offset > 0 } ?? false,
             hasEnvironments: hasEnvironments, projectCount: projectCount, providerCount: providerCount,
             editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project,
-            editorActiveDiff: editorActiveDiff, conversationOnScreen: conversationOnScreen)
+            editorActiveDiff: editorActiveDiff, conversationOnScreen: conversationOnScreen,
+            activeGitRoot: activeBranchRoot?.root)
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.
@@ -6222,7 +6235,8 @@ public final class WindowModel {
         return await choiceEntries(source, readers: ChoiceReaders(
             environments: { [weak self] in await self?.paletteEnvironments() ?? ([], nil) },
             projects: { [weak self] in await self?.currentOrganisationProjects() ?? ([], nil) },
-            providers: { [weak self] in await self?.providerPaletteItems() ?? ([], nil) }))
+            providers: { [weak self] in await self?.providerPaletteItems() ?? ([], nil) },
+            branches: { [weak self] in await self?.branchPaletteItems() ?? ([], nil) }))
     }
 
     /// Runs one effect. Answers the **whole** error text when it failed (rule 8), `nil` when it

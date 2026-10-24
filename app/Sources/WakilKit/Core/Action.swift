@@ -178,6 +178,12 @@ public struct Action: Sendable {
     /// exists to prevent.
     public var price: (production: GateDecision, otherwise: GateDecision) = (.block, .gate)
 
+    /// 3a-iv (Decision 46): this write's price when the agent asks, outside production's block.
+    /// Nil prices every channel alike. Branch delete and stash drop carry `.gate` here: the
+    /// operator's own click has already confirmed in place, so only the agent's (and voice's,
+    /// which reaches them through the agent) ask raises the plane.
+    public var agentPrice: GateDecision? = nil
+
     /// The names of this action's parameters whose **values** must never
     /// reach the journal. `ActionRegistry` writes `[redacted]` in place of
     /// each, keeping the parameter's name.
@@ -213,6 +219,7 @@ public struct Action: Sendable {
         handler: @escaping @Sendable (JSONValue) async throws -> JSONValue,
         targetEnvironmentParam: String? = nil,
         price: (production: GateDecision, otherwise: GateDecision) = (.block, .gate),
+        agentPrice: GateDecision? = nil,
         secretParams: Set<String> = []
     ) {
         self.name = name
@@ -223,6 +230,7 @@ public struct Action: Sendable {
         self.handler = handler
         self.targetEnvironmentParam = targetEnvironmentParam
         self.price = price
+        self.agentPrice = agentPrice
         self.secretParams = secretParams
     }
 }

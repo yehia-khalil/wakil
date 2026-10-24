@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-iv-branch-picker.jsonl",
+  "baseCommit": "164af87a096b085b1c4022f95206ec8eec83dc64",
+  "provedAt": "2026-10-23T13:19:55.139518Z",
+  "checkBlob": "44357ea4743ff6a08ae973adcb06cb5fbade57db"
+}

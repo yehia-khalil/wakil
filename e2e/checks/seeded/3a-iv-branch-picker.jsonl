@@ -1,0 +1,63 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal branch topic"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.editor-1"}}
+{"dispatch":{"action":"editor_changes_branches","params":{"root":"{fixtureRoot}/e2e-portal"}}}
+{"dispatch":{"action":"editor_changes_branches","params":{},"refuses":"root"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main"}}
+{"do":{"click":"editor.changes.e2e-portal.branch"}}
+{"expect":{"tree":"contains","text":"Switch to a branch, or type a new name"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"Switch to a branch, or type a new name"}}
+{"do":{"click":"editor.changes.e2e-portal.branch"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"do":{"click":"branch.picker.createFrom"}}
+{"expect":{"tree":"contains","text":"Choose the branch to start from"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"Choose the branch to start from"}}
+{"do":{"click":"editor.changes.e2e-portal.branch"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"parity":{"action":"editor_changes_switch","params":{"root":"{fixtureRoot}/e2e-portal","branch":"topic"},"click":"branch.picker.row.topic","assert":"tree"}}
+{"expect":{"tree":"absent","text":"Switch to a branch, or type a new name"}}
+{"expect":{"tree":"contains","text":"e2e-portal · topic"}}
+{"expect":{"tree":"contains","text":"M, index.txt"}}
+{"do":{"click":"editor.changes.e2e-portal.branch"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"do":{"type":{"into":"branch.picker.filter","text":"fix the login"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"e2e-portal · fix-the-login"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal branch --show-current"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"fix-the-login"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"click":"editor.changes.e2e-portal.branch"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"do":{"type":{"into":"branch.picker.filter","text":"bad..name"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"\"bad..name\" is not a valid branch name"}}
+{"expect":{"tree":"contains","text":"Value: bad..name"}}
+{"expect":{"tree":"contains","text":"e2e-portal · fix-the-login"}}
+{"dispatch":{"action":"editor_changes_switch","params":{"root":"{fixtureRoot}/e2e-portal","branch":"no-such"},"refuses":"There is no branch no-such"}}
+{"dispatch":{"action":"editor_changes_switch","params":{"root":"{fixtureRoot}/e2e-portal","branch":"-C"},"refuses":"is not a branch"}}
+{"expect":{"tree":"contains","text":"e2e-portal · fix-the-login"}}

@@ -21,6 +21,8 @@ var ErrNotARepository = UserError("not a git repository")
 // signature, which runs a signing program.
 var gitReadSubcommands = map[string]bool{
 	"status": true, "diff": true, "show": true, "rev-parse": true,
+	// 3a-iv: the branch and stash lists. Plumbing that runs no program a repository chooses.
+	"for-each-ref": true, "rev-list": true, "log": true,
 }
 
 // gitSafetyArgs come before the subcommand on every call, so a repository's
@@ -49,15 +51,22 @@ var gitSafetyArgs = []string{
 // program back on (--ext-diff, --textconv). Arguments after "--" are pathspecs
 // and are not inspected. A key ending in "=" matches by prefix.
 var gitAllowedFlags = map[string][]string{
-	"status":    {"--porcelain=v2", "-z", "--branch", "--untracked-files=all"},
-	"diff":      {"--cached", "--no-color", "--"},
-	"show":      {"--"},
-	"rev-parse": {"--show-toplevel", "--abbrev-ref", "--verify", "--short", "--"},
+	"status":       {"--porcelain=v2", "-z", "--branch", "--untracked-files=all"},
+	"diff":         {"--cached", "--no-color", "--name-only", "-z", "--"},
+	"show":         {"--name-only", "--format=", "-z", "--"},
+	"rev-parse":    {"--show-toplevel", "--abbrev-ref", "--verify", "--short", "--absolute-git-dir", "--"},
+	"for-each-ref": {"--sort=", "--format="},
+	"rev-list":     {"--count"},
+	"log":          {"-g", "--format=", "-z", "--"},
 }
 
 // checkGitFlags refuses the first flag of args that sub does not allow.
 func checkGitFlags(sub string, args []string) error {
 	for _, a := range args {
+		// A format asking for a signature verifies it, which runs the repository's gpg.program.
+		if f, ok := strings.CutPrefix(a, "--format="); ok && (strings.Contains(f, "%(signature") || strings.Contains(f, "%G")) {
+			return UserError("wakil-git does not read signatures: " + a)
+		}
 		if a == "--" {
 			return nil
 		}

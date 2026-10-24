@@ -90,7 +90,7 @@ public func editorDiffOpensFile(root: String, path: String, group: GitGroup, roo
 /// it is Maximize Pane as everywhere else.
 public func editorCommandReturnOpensFile(_ s: EditorSnapshot?, roots: [GitRootState]) -> Bool {
     guard let s, let i = s.active, i < s.tabs.count,
-          case .diff(let root, let path, let group) = s.tabs[i].subject else { return false }
+          case .diff(let root, let path, let group, nil) = s.tabs[i].subject else { return false }
     return editorDiffOpensFile(root: root, path: path, group: group, roots: roots)
 }
 
