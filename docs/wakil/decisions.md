@@ -1536,6 +1536,11 @@ Each entry: the call, why, and what would change our mind.
     or an agent push the operator did not ask for is found on a remote, and then push becomes *gate*
     for the agent.
 
+    *Amended 2026-10-24 (3a-v-b, Decision 47): a conflicting pull is no longer aborted.* Merge or
+    Rebase strategy, it stops with the conflicts in the tree and says so — `Pull stopped on conflicts
+    in a.txt; resolve them below` — and the operator resolves them in Wakil, or Abort brings back the
+    tree from before the pull. A pull cancelled part-way is still undone.
+
 45. **Agent instructions are the operator's, appended after Wakil's own rules, and reach a live agent
     in its next turn.**
     *(2026-10-22, operator, during the 3a-iii design; delivery amended by the probe in
@@ -1570,6 +1575,37 @@ Each entry: the call, why, and what would change our mind.
     the terminal or another worktree changed is refused rather than another stash touched.
     *Reverse if:* an agent's delete the operator did not mean is approved by habit at the plane — then
     delete and drop become operator-only.
+
+    *Amended 2026-10-24 (3a-v-b, Decision 47): a stash clash is left to resolve.* An apply, a pop or
+    Bring Them Along that clashes no longer puts the touched files back: the conflicts stay in the
+    tree, the stash stays in the list, and the note says so (`Your stash clashes with main in a.txt;
+    resolve it below, or Undo Apply`). Right after Wakil's own clash, **Undo Apply** — asked in place,
+    *gate* for the agent — restores 3a-iv's recovery: the files the stash touched go back to HEAD and
+    the stash is kept.
+
+47. **Conflicts are left in place and resolved in Wakil, VS Code's way; what throws work away asks.**
+    *(2026-10-24, operator, during the 3a-v design —
+    `docs/superpowers/specs/2026-10-23-3a-v-conflicts-history-blame-design.md`.)*
+    A pull, a stash apply or pop and Bring Them Along that clash stop with the conflicts in the tree,
+    as VS Code leaves them, reversing 3a-iii's abort and 3a-iv's put-back (Decisions 44 and 46 are
+    amended). ▾ → Branch gains **Merge Branch…** and **Rebase Branch…** (the 3a-iv picker, with
+    `--autostash`, so Abort really returns the tree from before). The root header names the state in
+    amber (`merging feature/search`, `rebasing 2/5 onto main`); a **Merge Changes** group above Staged
+    lists each conflicted file with its kind; in the editor each block has **Accept Current Change ·
+    Accept Incoming Change · Accept Both Changes** — one undoable edit to the buffer, not a git
+    write — and **Compare Changes**. Staging marks a
+    file resolved, and staging one that still holds markers is allowed and marked in amber (Rule 7).
+    While any conflict remains the commit button, whatever its title, is disabled with the reason, so
+    Commit All cannot commit marker-filled files during a stash clash. **Merge, rebase, continue,
+    resolve-by-staging and Keep File are priced *allow*** for every channel: none destroys anything.
+    **Abort, Skip Commit, Accept All Current / Incoming, Delete File and Undo Apply ask in place**
+    (Rule 1) and carry an agent price of *gate*, as Decision 46's deletes do. Undo Apply is refused,
+    naming the file, once a clashed file changed since, and once the stash is gone. No editor ever
+    opens, nothing is forced, and `reset --hard` runs only inside Abort and Undo Apply.
+    *Why:* an abort that hides the conflict sends the operator to a terminal for the one job the
+    editor exists to finish; leaving it in place, with Abort one press away, loses nothing.
+    *Reverse if:* an operator loses resolutions or uncommitted work to a conflict left in place that
+    Abort or Undo Apply could not bring back — then a clash goes back to being put back by default.
 
 ## Invariant 6 — the writes that have earned in
 
@@ -1754,3 +1790,16 @@ Decision 46's agent price. No `--force`, no `--discard-changes`, no `branch -M`.
 `for-each-ref`, `rev-list` and `log -g` for the lists, with any format that would verify a signature
 refused. Still refused: merge, rebase and conflict resolution (3a-v), tags, and a remote branch's
 deletion.
+
+### 2026-10-24 — merge, rebase and resolving conflicts
+
+Local git, through `GitWriter`, on a root of the active project. Merge and rebase (with
+`--autostash`), continue, and resolving by staging or Keep File are priced *allow* everywhere,
+voice included; an Accept in the editor is a buffer edit, undone by ⌘Z. **Abort, Skip Commit, the
+whole-file takes and Undo Apply lose work**, so the operator's click confirms in place and the
+agent's ask raises the plane: Decision 46's agent price. Every call passes
+`core.editor=true` and `sequence.editor=true`, so no editor opens; no `--force`; `reset --hard` only
+inside `--abort` and Undo Apply's put-back, which is refused while a clashed file has changed. A
+pull, stash apply or pop that clashes leaves the conflicts in place. Still refused: starting a
+cherry-pick or revert (one begun in a terminal is resolved and aborted like a merge), interactive
+rebase, `merge --squash`, a chosen strategy, and tags. The reasoning is Decision 47.
