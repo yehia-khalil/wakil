@@ -301,14 +301,10 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	if err != nil {
 		return GitRemoteResult{}, err
 	}
-	// A merge or rebase already under way is the operator's: refuse, so the abort below only ever
-	// undoes what this pull started.
-	if rebasing, merging := g.inProgress(); rebasing || merging {
-		what := "A merge"
-		if rebasing {
-			what = "A rebase"
-		}
-		return GitRemoteResult{}, UserError(what + " is in progress in " + g.Root + "; finish or abort it first")
+	// A merge, rebase, cherry-pick or revert already under way is the operator's: refuse, so the
+	// abort below only ever undoes what this pull started.
+	if err := g.inProgress().InProgressError(g.Root); err != nil {
+		return GitRemoteResult{}, err
 	}
 	o, _ := LoadOrgFor(g.Org)
 	mode := map[string]string{"rebase": "--rebase", "merge": "--no-rebase", "ff-only": "--ff-only"}[PullStrategyOf(o)]
@@ -328,7 +324,7 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 		g.abortInProgress()
 		return GitRemoteResult{}, ctx.Err()
 	}
-	if rebasing, merging := g.inProgress(); rebasing || merging {
+	if g.inProgress().Kind != "" {
 		paths, _ := g.plain("diff", "--name-only", "--diff-filter=U")
 		conflicts := strings.Fields(paths)
 		g.abortInProgress()
@@ -344,22 +340,18 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	return GitRemoteResult{}, remoteError("pull", stderr, a, host, err)
 }
 
-// inProgress reports a rebase or a merge stopped part-way in the repository.
-func (g *GitRemote) inProgress() (rebasing, merging bool) {
-	gitDir, _ := g.plain("rev-parse", "--git-dir")
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(g.Root, gitDir)
-	}
-	rebasing = fileExists(filepath.Join(gitDir, "rebase-merge")) || fileExists(filepath.Join(gitDir, "rebase-apply"))
-	return rebasing, fileExists(filepath.Join(gitDir, "MERGE_HEAD"))
+// inProgress is the operation stopped part-way in the repository (Kind "" when none is).
+func (g *GitRemote) inProgress() GitOp {
+	op, _ := ReadGitOp(context.Background(), &GitRunner{Root: g.Root})
+	return op
 }
 
 // abortInProgress aborts the rebase or merge this pull started.
 func (g *GitRemote) abortInProgress() {
-	switch rebasing, merging := g.inProgress(); {
-	case rebasing:
+	switch g.inProgress().Kind {
+	case "rebase":
 		g.git(context.Background(), GitInvocation{}, "rebase", "--abort")
-	case merging:
+	case "merge":
 		g.git(context.Background(), GitInvocation{}, "merge", "--abort")
 	}
 }

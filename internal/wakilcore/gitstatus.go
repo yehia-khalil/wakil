@@ -2,6 +2,8 @@ package wakilcore
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -10,12 +12,14 @@ import (
 type GitFile struct {
 	Path     string `json:"path"`
 	OrigPath string `json:"origPath,omitempty"` // a rename's old path
-	Group    string `json:"group"`              // "staged" | "changed" | "untracked"
+	Group    string `json:"group"`              // "conflicts" | "staged" | "changed" | "untracked"
 	Status   string `json:"status"`             // one letter: M A D R C T U ?
+	Kind     string `json:"kind,omitempty"`     // a conflict's XY: UU AA DU UD AU UA DD
+	Markers  bool   `json:"markers,omitempty"`  // a staged file still holding a whole conflict block
 }
 
 // GitStatus describes a git working tree: its branch, commit, relation to upstream,
-// and changed files.
+// changed files, and the operation stopped part-way in it (nil when none is).
 type GitStatus struct {
 	Root     string    `json:"root"`
 	Branch   string    `json:"branch"`   // "" when detached
@@ -24,6 +28,7 @@ type GitStatus struct {
 	Ahead    int       `json:"ahead"`
 	Behind   int       `json:"behind"`
 	Files    []GitFile `json:"files"`
+	State    *GitOp    `json:"state,omitempty"`
 }
 
 // ParseGitStatus reads `git status --porcelain=v2 -z --branch`. Entries are
@@ -62,9 +67,9 @@ func ParseGitStatus(root string, porcelain []byte) GitStatus {
 			switch {
 			case len(parts) != n+1:
 			case e[0] == 'u':
-				// R13: a conflict is one Changes row, U, whatever its XY (UU, AA, DU…):
-				// the pane diffs it HEAD against the working tree, where the markers are.
-				st.Files = append(st.Files, GitFile{Path: parts[n], Group: "changed", Status: "U"})
+				// 3a-v-b: a conflict is one row of its own group, U, keeping its XY (UU, AA, DU…)
+				// so the row can say which sides changed it.
+				st.Files = append(st.Files, GitFile{Path: parts[n], Group: "conflicts", Status: "U", Kind: parts[1]})
 			default:
 				st.Files = append(st.Files, filesFor(parts[1], parts[n], "")...)
 			}
@@ -99,11 +104,64 @@ func filesFor(xy, path, orig string) []GitFile {
 	return out
 }
 
-// ReadGitStatus runs `git status --porcelain=v2 -z --branch` and parses the result.
+// ReadGitStatus runs `git status --porcelain=v2 -z --branch`, parses the result, and adds the
+// operation in progress and each staged file's markers flag.
 func ReadGitStatus(ctx context.Context, g *GitRunner) (GitStatus, error) {
 	out, err := g.Run(ctx, "status", "--porcelain=v2", "-z", "--branch", "--untracked-files=all")
 	if err != nil {
 		return GitStatus{Root: g.Root, Files: []GitFile{}}, err
 	}
-	return ParseGitStatus(g.Root, out), nil
+	st := ParseGitStatus(g.Root, out)
+	op, err := ReadGitOp(ctx, g)
+	if err != nil {
+		return st, err
+	}
+	if op.Kind != "" {
+		st.State = &op
+	}
+	for i, f := range st.Files {
+		if f.Group == "staged" && f.Status != "D" {
+			st.Files[i].Markers = stagedHasMarkers(ctx, g, f.Path)
+		}
+	}
+	return st, nil
+}
+
+// markerScanLimit: a staged file larger than this is not read for markers.
+const markerScanLimit = 1 << 20
+
+// stagedHasMarkers reads the staged copy of path (up to markerScanLimit) for a whole conflict block.
+// The working copy's size is looked at first, so a large file is usually not read at all.
+func stagedHasMarkers(ctx context.Context, g *GitRunner, path string) bool {
+	if fi, err := os.Stat(filepath.Join(g.Root, filepath.FromSlash(path))); err == nil && fi.Size() > markerScanLimit {
+		return false
+	}
+	b, err := g.Run(ctx, "show", ":"+path)
+	if err != nil || len(b) > markerScanLimit {
+		return false
+	}
+	return hasConflictBlock(string(b))
+}
+
+// hasConflictBlock: a `<<<<<<<`, then a `=======`, then a `>>>>>>>` line, in that order, each marker
+// at a line start and followed by a space or the line's end.
+func hasConflictBlock(text string) bool {
+	want := 0
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimSuffix(l, "\r")
+		switch {
+		case isMarker(l, "<<<<<<<"):
+			want = 1
+		case want == 1 && l == "=======":
+			want = 2
+		case want == 2 && isMarker(l, ">>>>>>>"):
+			return true
+		}
+	}
+	return false
+}
+
+func isMarker(line, marker string) bool {
+	rest, ok := strings.CutPrefix(line, marker)
+	return ok && (rest == "" || rest[0] == ' ')
 }

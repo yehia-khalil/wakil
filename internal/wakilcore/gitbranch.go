@@ -2,7 +2,6 @@ package wakilcore
 
 import (
 	"context"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -115,20 +114,11 @@ func NormaliseBranchName(s string) string {
 	return strings.Join(strings.Fields(s), "-")
 }
 
-// inProgress names a merge or rebase stopped part-way in the root, or "".
-func (w *GitWriter) inProgress(ctx context.Context) string {
-	gitDir, err := w.runner().Run(ctx, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return ""
-	}
-	dir := strings.TrimSpace(string(gitDir))
-	if fileExists(filepath.Join(dir, "rebase-merge")) || fileExists(filepath.Join(dir, "rebase-apply")) {
-		return "A rebase"
-	}
-	if fileExists(filepath.Join(dir, "MERGE_HEAD")) {
-		return "A merge"
-	}
-	return ""
+// inProgress refuses a write while a merge, rebase, cherry-pick or revert is stopped part-way in
+// the root, naming it; nil when none is.
+func (w *GitWriter) inProgress(ctx context.Context) error {
+	op, _ := ReadGitOp(ctx, w.runner())
+	return op.InProgressError(w.Root)
 }
 
 func (w *GitWriter) validName(ctx context.Context, name string) error {
@@ -161,8 +151,8 @@ func (w *GitWriter) localBranchExists(ctx context.Context, name string) bool {
 // stashed, or brought along, as o.Carry says. A cancel stops it only before git begins the checkout or
 // between its steps, never mid-checkout.
 func (w *GitWriter) Switch(ctx context.Context, branch string, o SwitchOptions) (SwitchResult, error) {
-	if what := w.inProgress(ctx); what != "" {
-		return SwitchResult{}, UserError(what + " is in progress in " + w.Root + "; finish or abort it first")
+	if err := w.inProgress(ctx); err != nil {
+		return SwitchResult{}, err
 	}
 	// Each is handed to git as a word: one that starts with "-" would be a flag (-C force-resets a
 	// branch, --orphan empties the tree), so it is refused, never passed.

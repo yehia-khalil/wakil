@@ -77,8 +77,8 @@ func stashUntracked(ctx context.Context, g *GitRunner, id string) []string {
 // files) or "staged" (what is staged only).
 func (w *GitWriter) Stash(ctx context.Context, message, mode string) error {
 	// Mid-merge, a stash takes the merge's state with it and the merge is gone.
-	if what := w.inProgress(ctx); what != "" {
-		return UserError(what + " is in progress in " + w.Root + "; finish or abort it first")
+	if err := w.inProgress(ctx); err != nil {
+		return err
 	}
 	args := []string{"push"}
 	switch mode {
@@ -114,8 +114,8 @@ func (w *GitWriter) stashAt(ctx context.Context, index int, id string) (string, 
 // stash and puts back what the apply changed: the tracked files it touched (each clean before, or git
 // would have refused) and the untracked files it created — never a file that was there before it.
 func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bool) (string, error) {
-	if what := w.inProgress(ctx); what != "" {
-		return "", UserError(what + " is in progress in " + w.Root + "; finish or abort it first")
+	if err := w.inProgress(ctx); err != nil {
+		return "", err
 	}
 	ref, err := w.stashAt(ctx, index, id)
 	if err != nil {

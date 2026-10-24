@@ -268,9 +268,11 @@ func (w *GitWriter) UndoCommit(ctx context.Context) (string, error) {
 	return strings.TrimRight(string(msg), "\n"), nil
 }
 
+// merging: a merge, cherry-pick or revert is stopped part-way, so git has a message prepared for its
+// commit. A rebase's commits are made by `rebase --continue`, not here.
 func (w *GitWriter) merging(ctx context.Context) bool {
-	_, err := w.runner().Run(ctx, "rev-parse", "--verify", "MERGE_HEAD")
-	return err == nil
+	op, _ := ReadGitOp(ctx, w.runner())
+	return op.Kind != "" && op.Kind != "rebase"
 }
 
 func (w *GitWriter) head(ctx context.Context) (GitCommitResult, error) {
