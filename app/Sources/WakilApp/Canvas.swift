@@ -518,9 +518,12 @@ extension WakilWindow {
                             return model.changesMessages[root] != before
                         },
                         // 3a-v-b: mid-merge or mid-rebase the commit button (and ⌘⏎) is Commit Merge /
-                        // Continue Rebase, read from the root's state at the press.
+                        // Continue Rebase, read from the root's state at the press; with conflicts left —
+                        // a stash clash's included — it does nothing, as the disabled button says.
                         commit: { root in
-                            if model.gitRoots.first(where: { $0.root == root })?.state != nil {
+                            let state = model.gitRoots.first(where: { $0.root == root })
+                            if let state, changesConflictsReason(state) != nil { return }
+                            if state?.state != nil {
                                 _ = await model.changesContinue(root: root)
                             } else {
                                 await model.changesCommit(root: root)

@@ -518,8 +518,13 @@ struct EditorColumn: View {
             }
         }
         .padding(.horizontal, ChangesSpace.m)
-        // A question about an operation that has ended or moved on (a step of a rebase) is not left open.
+        // A question about an operation that has ended or moved on (a step of a rebase) is not left open,
+        // nor a take's once its file has left Merge Changes (resolved with +, or by the agent).
         .onChange(of: root.state) { _, _ in if asking?.root == root.root { asking = nil } }
+        .onChange(of: root.files) { _, files in
+            guard case .take(let r, let path, _)? = asking, r == root.root else { return }
+            if !files.contains(where: { $0.group == .conflicts && $0.path == path }) { asking = nil }
+        }
     }
 
     @ViewBuilder
@@ -990,11 +995,12 @@ struct EditorColumn: View {
         let busy = changes.inFlight.contains(key)
         // Rule 9: with nothing staged the default is everything, and the button says so; mid-merge or
         // mid-rebase it is Commit Merge / Continue Rebase, which git's own message lets run with the box
-        // empty, disabled with the reason beside it while conflicts remain (3a-v-b).
+        // empty. Whatever its title it is disabled, with the reason beside it, while conflicts remain —
+        // a stash clash's too, which has no operation: Commit All would otherwise stage the markers (3a-v-b).
         let title = changesCommitTitle(root)
         let op = root.state
-        let reason = op == nil ? nil : changesConflictsReason(root)
-        let blocked = op == nil ? empty : reason != nil
+        let reason = changesConflictsReason(root)
+        let blocked = reason != nil || (op == nil && empty)
         let commitId = op?.kind == "rebase" ? "editor.changes.\(root.name).continueRebase"
             : op != nil ? "editor.changes.\(root.name).commitMerge" : "editor.changes.\(root.name).commit"
         let hint = changes.placeholders[key] ?? "Message (⌘⏎ to commit)"

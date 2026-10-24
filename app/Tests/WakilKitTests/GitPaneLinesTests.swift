@@ -140,6 +140,8 @@ private func stated(_ files: [GitFileRow], _ state: GitOpState?) -> GitRootState
     #expect(changesConflictsReason(stated([c1, row("x.txt", .staged, "M")], op("merge"))) == "Resolve 1 conflict first")
     #expect(changesConflictsReason(stated([c1, c2], op("rebase"))) == "Resolve 2 conflicts first")
     #expect(changesConflictsReason(stated([row("x.txt", .staged, "M")], op("merge"))) == nil)
+    // A stash clash has no operation, and Commit still waits for its conflicts.
+    #expect(changesConflictsReason(stated([c1, row("x.txt", .staged, "M")], nil)) == "Resolve 1 conflict first")
 }
 
 @Test func theMergeChangesGroupAndItsKinds() {
