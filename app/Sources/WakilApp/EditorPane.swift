@@ -188,8 +188,9 @@ struct EditorPane: View {
             }
             host.peekPressed = { op in peekOp(op) }
             host.conflictPressed = { block, op in conflictOp(block, op) }
-            // A conflicted file opened at its top lands on its first block (spec), through the store
-            // as any cursor move is.
+            // A conflicted file opened at its top lands on its first block (spec): the page is moved at
+            // once and held there (`conflictLanding`), and the store and the journal learn it as any
+            // cursor move does.
             host.conflictReveal = { line in Task { await dispatch("editor_goto", ["line": .integer(Int64(line))]) } }
             host.rangesPressed = { op, selections in
                 let spans = editorLineSpans(selections)
@@ -897,6 +898,10 @@ final class EditorHost {
     @ObservationIgnored private var conflictsParsed: [String: String] = [:]
     @ObservationIgnored private var conflictsSent: [String: [EditorConflictBlock]] = [:]
     @ObservationIgnored private var conflictsRevealed: Set<String> = []
+    /// A first block being revealed, per key, until the page reports a cursor off 1:1: every snapshot
+    /// renders it, so a 1:1 report the page made before the reveal cannot put the cursor back (3a-v-b
+    /// cover, defect 1).
+    @ObservationIgnored private var conflictLanding: [String: EditorPosition] = [:]
     /// Compare is on screen: snapshots are kept (`latest`) but not rendered, or the next one — a
     /// keystroke's echo, a view report — would put the active tab back over Compare.
     @ObservationIgnored private var comparing = false
@@ -952,6 +957,7 @@ final class EditorHost {
             guard let self, let subject = self.subjects[key] else { return }
             self.rendered[key]?.cursor = cursor
             self.rendered[key]?.selection = selection
+            if cursor != EditorPosition(line: 1, column: 1) { self.conflictLanding[key] = nil }
             self.showBlame(key: key, line: cursor.line)
             self.viewsInFlight += 1
             let send = self.viewReported
@@ -1056,6 +1062,12 @@ final class EditorHost {
         subjects = Dictionary(snapshot.tabs.map { (editorTabKey($0), $0.subject) }, uniquingKeysWith: { a, _ in a })
         guard !comparing, let renderer else { return }
         let activeKey = active
+        var snapshot = snapshot
+        for i in snapshot.tabs.indices {
+            guard let at = conflictLanding[editorTabKey(snapshot.tabs[i])] else { continue }
+            snapshot.tabs[i].cursor = at
+            snapshot.tabs[i].selection = nil
+        }
         guard let shown = editorSnapshotToRender(
             snapshot, rendered: rendered, active: activeKey, typed: activeKey.flatMap { typed[$0] } ?? [],
             typingInFlight: typingInFlight > 0, viewInFlight: viewsInFlight > 0) else { return }
@@ -1064,11 +1076,12 @@ final class EditorHost {
         editorApply(steps, to: renderer)
         for case .dispose(let k) in steps {
             marksSent[k] = nil; blames.forget(key: k); blameShown[k] = nil
-            conflictsParsed[k] = nil; conflictsSent[k] = nil; conflictsRevealed.remove(k)
+            conflictsParsed[k] = nil; conflictsSent[k] = nil; conflictsRevealed.remove(k); conflictLanding[k] = nil
         }
         // The page moves a renamed tab's blocks with its model; a rename is not a first show.
-        for case .rekey(let from, let to) in steps where conflictsRevealed.remove(from) != nil {
-            conflictsRevealed.insert(to)
+        for case .rekey(let from, let to) in steps {
+            if conflictsRevealed.remove(from) != nil { conflictsRevealed.insert(to) }
+            if let at = conflictLanding.removeValue(forKey: from) { conflictLanding[to] = at }
         }
         rendered = editorRenderedAfter(steps, rendered: rendered, snapshot: shown)
         findShown = editorFindShownAfter(steps, findShown: found, snapshot: shown)
@@ -1112,6 +1125,11 @@ final class EditorHost {
         // Once per tab, and only one opened at its top: a tab opened at a search hit stays there (Rule 6).
         if let first = blocks.first, conflictsRevealed.insert(key).inserted,
            r.cursor == EditorPosition(line: 1, column: 1), first.start > 1 {
+            let at = EditorPosition(line: first.start, column: 1)
+            conflictLanding[key] = at
+            rendered[key]?.cursor = at
+            rendered[key]?.selection = nil
+            renderer.reveal(key: key, cursor: at, selection: nil)
             conflictReveal?(first.start)
         }
     }
