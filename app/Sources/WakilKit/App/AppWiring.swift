@@ -410,9 +410,14 @@ public struct WakilWiring: Sendable {
             conversationRequests: conversationRequests,
             liveConversations: { await liveLookup.live(in: $0) },
             liveOrganization: { await liveLookup.organization() })
+        let shellContext = ActiveShellContext()
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
-            unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
+            unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes),
+            openTerminal: terminalActions(
+                terminals: terminals, panes: panes, layout: layout,
+                activeContext: { await shellContext.current() }
+            ).first { $0.name == "term_open" }?.handler)
         await registerPaneContentActions(into: registry, panes: panes, layout: layout)
         // `activeContext:` is this box's own read, not a value: the
         // window does not exist yet, and the context it will report
@@ -421,7 +426,6 @@ public struct WakilWiring: Sendable {
         // then — and in `--dispatch`, which never has one — the box
         // answers empty and `terminalChildEnvironment` leaves the three
         // keys absent rather than exporting them blank.
-        let shellContext = ActiveShellContext()
         await registerTerminalActions(
             into: registry, terminals: terminals, panes: panes, layout: layout,
             activeContext: { await shellContext.current() })

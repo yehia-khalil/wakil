@@ -588,12 +588,17 @@ if let modifier {
             "\(modifier.key) is not a modifier this resolver posts — expected one of "
                 + modifierKeys.keys.sorted().joined(separator: ", "))
     }
-    if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+    // **Frontmost is not enough: the window has to be key** (#2). The composer listens for ⌥
+    // only in its key window, and an app made frontmost has none for a moment after — a hold
+    // posted then is dropped, and the check's next read finds nothing heard.
+    func ready() -> Bool {
+        NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+            && copyAttribute(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute as String) != nil
+    }
+    if !ready() {
         NSRunningApplication(processIdentifier: pid)?.activate()
         let deadline = Date().addingTimeInterval(1)
-        while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid,
-            Date() < deadline
-        {
+        while !ready(), Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
     }

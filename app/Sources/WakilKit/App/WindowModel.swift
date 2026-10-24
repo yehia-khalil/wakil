@@ -1718,7 +1718,11 @@ public final class WindowModel {
                     })
             ] + layoutActions(
                 layout: layout, panes: panes, terminals: terminals,
-                unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
+                unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes),
+                openTerminal: terminalActions(
+                    terminals: terminals, panes: panes, layout: layout,
+                    activeContext: { await shellContext.current() }
+                ).first { $0.name == "term_open" }?.handler)
                 // Wired to the model built below, exactly as
                 // `WakilWiring.build` + `WindowSession.start` wire the
                 // shipped one — so a test that sets a context on the

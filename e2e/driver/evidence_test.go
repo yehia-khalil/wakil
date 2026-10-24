@@ -3,6 +3,7 @@ package driver
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -168,5 +169,34 @@ func TestEvidenceCarriesTheAgentLogWhenThereIsOne(t *testing.T) {
 		if !strings.Contains(string(recorded), want) {
 			t.Fatalf("agent-log.txt lost %q: %q", want, string(recorded))
 		}
+	}
+}
+
+// #15: a fixture that went away mid-check is written down as gone, with what macOS said about
+// it — not left as an app_not_found that reads like the harness losing the pid.
+func TestEvidenceSaysWhenTheFixtureIsGone(t *testing.T) {
+	exe, _ := fakeOrca(t, `{"ok":false,"error":{"code":"app_not_found","message":"app 'pid:1' not found"}}`, 1)
+	gone := exec.Command("/usr/bin/true")
+	if err := gone.Run(); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	evidence := &Evidence{Dir: dir, GoneFixture: func(pid int) string { return "the log for it" }}
+
+	evidence.Capture(Orca{Exe: exe}, gone.Process.Pid, nil, "landing")
+
+	body, err := os.ReadFile(filepath.Join(dir, "landing", "fixture-gone.txt"))
+	if err != nil {
+		t.Fatalf("fixture-gone.txt was not written: %v", err)
+	}
+	if !strings.Contains(string(body), "is no longer running") || !strings.Contains(string(body), "the log for it") {
+		t.Fatalf("fixture-gone.txt = %q", string(body))
+	}
+
+	// A running fixture writes none.
+	alive := &Evidence{Dir: t.TempDir(), GoneFixture: func(int) string { return "" }}
+	alive.Capture(Orca{Exe: exe}, os.Getpid(), nil, "landing")
+	if _, err := os.Stat(filepath.Join(alive.Dir, "landing", "fixture-gone.txt")); err == nil {
+		t.Fatal("fixture-gone.txt was written for a running process")
 	}
 }
