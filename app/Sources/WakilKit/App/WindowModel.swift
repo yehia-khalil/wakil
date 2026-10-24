@@ -6487,11 +6487,22 @@ public final class WindowModel {
     /// else the open pane the params `named`. A param that names no open pane — a closed pane,
     /// a session id — moves nothing. **Nor does a run that outlived its palette**: the operator
     /// closed it and may be anywhere by now, so the keyboard stays where they are (rule 6).
+    ///
+    /// **A pane already focused still asks for the keyboard**, as `paneClicked` does: `pane_open`
+    /// focuses the pane it opens, but `focusedId` is not the keyboard. Without a request the
+    /// palette's close reads the run as moving nothing and hands the keyboard back to what held
+    /// it at open — the composer, on a Landing (ruling 7) — so the line typed next went to the
+    /// agent instead of the new terminal (Conversations 3, the `palette-command-step` e2e).
     private func focusActedOn(since before: Set<String>, named: String?, mark: PaletteRunMark) async -> String? {
         guard paletteCloses == mark.closes else { return nil }
         let opened = layoutSnapshot.panes.map(\.id).filter { !before.contains($0) }
         let target = opened.count == 1 ? opened.first : named.flatMap { paneIds.contains($0) ? $0 : nil }
-        guard let target, layoutSnapshot.focusedId != target else { return nil }
+        guard let target else { return nil }
+        guard layoutSnapshot.focusedId != target else {
+            await layout.noteFocusRequest()
+            await readLayoutSnapshot()
+            return nil
+        }
         return await focusPane(id: target) ? nil : paletteFailure(since: mark)
     }
 
