@@ -237,6 +237,49 @@ private func branchWindow() async -> (WindowModel, BranchGit) {
         #expect(window.changesMessages["/p"] == "Revert \"Seed search\"")
     }
 
+    // Final review M9: a rebase's commits keep their own messages, so Continue Rebase neither sends the box
+    // nor empties it.
+    @Test func continueRebaseLeavesTheBoxAlone() async {
+        let (window, git) = await branchWindow()
+        await git.set(conflicts: [], state: .object(["kind": .string("rebase"), "incoming": .string(""), "onto": .string("main"),
+                                                     "step": .integer(1), "steps": .integer(2), "head": .string(""),
+                                                     "subject": .string(""), "message": .string("")]))
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        window.changesMessageEdited(root: "/p", text: "a draft for later")
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string("Successfully rebased")])
+        #expect(await window.changesContinue(root: "/p") == nil)
+        #expect(await git.args("git_continue") == .object(["root": .string("/p")]))
+        #expect(window.changesMessages["/p"] == "a draft for later")
+        #expect(window.changesHistory["/p"] == nil)
+    }
+
+    // Final review M11: when the operation ends (Abort, here), git's prepared message goes with it unless
+    // the operator edited it (Rule 2), so the next plain commit is not "Merge branch 'side'".
+    @Test func thePreparedMessageGoesWhenTheOperationEnds() async {
+        let (window, git) = await branchWindow()
+        let merging: JSONValue = .object(["kind": .string("merge"), "incoming": .string("side"), "onto": .string(""),
+                                          "step": .integer(0), "steps": .integer(0), "head": .string(""),
+                                          "subject": .string(""), "message": .string("Merge branch 'side'")])
+        await git.set(conflicts: ["a.txt"], state: merging)
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == "Merge branch 'side'")
+        await git.set(conflicts: [], state: nil)
+        _ = await window.changesAbort(root: "/p")
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == nil)
+
+        await git.set(conflicts: ["a.txt"], state: merging)
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        window.changesMessageEdited(root: "/p", text: "Merge side, with the search fix")
+        await git.set(conflicts: [], state: nil)
+        _ = await window.changesAbort(root: "/p")
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == "Merge side, with the search fix")
+    }
+
     // A stop's note is left under the box, as a stash clash's is; Continue sends what the box holds.
     @Test func aStopsNoteIsShownAndContinueSendsTheBox() async {
         let (window, git) = await branchWindow()

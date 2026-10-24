@@ -116,24 +116,37 @@ extension WindowModel {
         changesClashes = await gitStatus?.clashes ?? [:]
     }
 
+    /// The operation (kind, incoming, head) whose prepared message had its one chance to fill a root's box,
+    /// and the message it filled, nil when the box already held a draft.
+    struct ChangesFill: Equatable {
+        var operation: String
+        var message: String?
+    }
+
     /// After each read of the status: the clashes mirrored, and while a merge, cherry-pick or revert is in
     /// progress, an empty box filled with git's prepared message — once per operation, so the operator's
-    /// edits, emptying it included, are kept (Rule 2).
+    /// edits, emptying it included, are kept (Rule 2). When that operation ends (committed, aborted, or
+    /// finished in a terminal), a message still as git filled it goes too; an edited one stays.
     func changesFollowStatus() async {
         await mirrorChangesClashes()
         let roots = Set(gitRoots.map(\.root))
         changesFilledFrom = changesFilledFrom.filter { roots.contains($0.key) }
         for r in gitRoots where r.error == nil {
-            guard let s = r.state, ["merge", "cherry-pick", "revert"].contains(s.kind) else {
+            let s = r.state.flatMap { ["merge", "cherry-pick", "revert"].contains($0.kind) ? $0 : nil }
+            let key = s.map { [$0.kind, $0.incoming, $0.head].joined(separator: "\u{0}") }
+            if let fill = changesFilledFrom[r.root], fill.operation != key {
+                if let filled = fill.message, changesMessages[r.root] == filled {
+                    changesHistoryCursor[r.root] = nil
+                    changesMessages[r.root] = nil
+                }
                 changesFilledFrom[r.root] = nil
-                continue
             }
-            let key = [s.kind, s.incoming, s.head].joined(separator: "\u{0}")
-            guard changesFilledFrom[r.root] != key else { continue }
-            changesFilledFrom[r.root] = key
+            guard let s, let key, changesFilledFrom[r.root] == nil else { continue }
+            changesFilledFrom[r.root] = ChangesFill(operation: key, message: nil)
             guard (changesMessages[r.root] ?? "").isEmpty, !s.message.isEmpty else { continue }
             changesHistoryCursor[r.root] = nil
             changesMessages[r.root] = s.message
+            changesFilledFrom[r.root]?.message = s.message
         }
     }
 
@@ -163,8 +176,12 @@ extension WindowModel {
         await operationWrite(root, "editor_changes_rebase", ["onto": .string(onto)])
     }
 
-    /// Commit Merge / Continue Rebase: the box's message when it holds one, else git's.
+    /// Commit Merge / Continue Rebase: the box's message when it holds one, else git's. A rebase's commits
+    /// keep their own messages, so Continue Rebase sends none and leaves the box as it is.
     public func changesContinue(root: String) async -> String? {
+        if gitRoots.first(where: { $0.root == root })?.state?.kind == "rebase" {
+            return await operationWrite(root, "editor_changes_continue")
+        }
         let draft = changesMessages[root]
         let message = (draft ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let refused = await operationWrite(root, "editor_changes_continue", message.isEmpty ? [:] : ["message": .string(message)])

@@ -787,8 +787,8 @@ public final class WindowModel {
     /// the actions keep it for the operator and the agent alike.
     public internal(set) var changesClashes: [String: GitStashClash] = [:]
     /// 3a-v-b (Rule 2): the operation in progress whose prepared message already had its one chance to
-    /// fill the root's box, so an emptied box is not filled again.
-    var changesFilledFrom: [String: String] = [:]
+    /// fill the root's box, so an emptied box is not filled again, and the message it filled, if it did.
+    var changesFilledFrom: [String: WindowModel.ChangesFill] = [:]
     /// 3a-iii-b: where the composed agent instructions go; the process's own unless a test swaps it.
     var agentInstructionsBox: AgentInstructionsBox = .shared
     public let backgroundFetchInterval: Duration = .seconds(300)
