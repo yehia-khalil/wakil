@@ -509,3 +509,20 @@ func TestPullMidRebaseNamesTheRebase(t *testing.T) {
 		}
 	}
 }
+
+// Final review I3: an autostash that comes back with conflicts leaves them in the tree, and a copy in
+// git stash; popping that would apply them twice, so the note says to resolve them, not to pop.
+func TestPullRebaseWhoseAutostashClashesSaysResolve(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	s := "rebase"
+	UpdateOrg("initech", OrgPatch{PullStrategy: &s})
+	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+	os.WriteFile(filepath.Join(work, "a.txt"), []byte("one\nMINE\nthree\n"), 0o644)
+	r, err := g.Pull(context.Background())
+	if err == nil || err.Error() != "Your uncommitted changes clash in a.txt; resolve them below — a copy is kept in git stash" {
+		t.Fatalf("err = %v", err)
+	}
+	if !slices.Equal(r.Conflicts, []string{"a.txt"}) {
+		t.Fatalf("conflicts = %q", r.Conflicts)
+	}
+}

@@ -150,8 +150,9 @@ extension WindowModel {
         return nil
     }
 
-    /// The notes Go appends to a finished merge, rebase, continue, skip or abort's summary.
+    /// The notes Go puts in a finished merge, rebase, continue, skip or abort's summary.
     static let changesDoneNotes = ["; your uncommitted changes are in git stash",
+                                   "; resolve them below — a copy is kept in git stash",
                                    "; commits already pushed were rewritten, so Push is refused as behind"]
 
     public func changesMerge(root: String, branch: String) async -> String? {

@@ -78,11 +78,7 @@ func (w *GitWriter) Continue(ctx context.Context, message string) (GitMergeResul
 		if err != nil {
 			return GitMergeResult{}, err
 		}
-		r := GitMergeResult{Done: true, Summary: c.Commit + " " + c.Summary}
-		if w.keptAutostash(ctx, stash) {
-			r.Summary += keptStashNote
-		}
-		return r, nil
+		return w.done(ctx, stash, c.Commit+" "+c.Summary, ""), nil
 	}
 	b := w.readRebaseBase(ctx)
 	out, errb, err := w.gitWith(ctx, noEditor, nil, "rebase", "--continue")
@@ -142,11 +138,28 @@ func (w *GitWriter) finish(ctx context.Context, stash, note string, out, errb []
 		}
 		return GitMergeResult{Conflicts: conflicts, Summary: w.stopNote(ctx, conflicts)}, nil
 	}
-	r := GitMergeResult{Done: true, Summary: oneLine(out, errb) + note}
-	if w.keptAutostash(ctx, stash) {
-		r.Summary += keptStashNote
+	return w.done(ctx, stash, oneLine(out, errb), note), nil
+}
+
+// done is a finished operation's result: git's line and the note, then a kept autostash. An autostash
+// that came back with conflicts is in the tree to resolve as well as in git stash, so popping it would
+// apply it twice: the note says to resolve it instead.
+func (w *GitWriter) done(ctx context.Context, stash, line, note string) GitMergeResult {
+	r := GitMergeResult{Done: true, Summary: line + note}
+	if !w.keptAutostash(ctx, stash) {
+		return r
 	}
-	return r, nil
+	if c, _ := w.conflicts(ctx); len(c) > 0 {
+		r.Conflicts, r.Summary = c, autostashClashNote(c)+note
+		return r
+	}
+	r.Summary += keptStashNote
+	return r
+}
+
+// autostashClashNote is the note for set-aside changes that came back with conflicts in paths.
+func autostashClashNote(paths []string) string {
+	return "Your uncommitted changes clash in " + strings.Join(paths, ", ") + "; resolve them below — a copy is kept in git stash"
 }
 
 func (w *GitWriter) stopNote(ctx context.Context, conflicts []string) string {

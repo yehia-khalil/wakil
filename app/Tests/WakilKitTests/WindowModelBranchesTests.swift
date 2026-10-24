@@ -261,6 +261,11 @@ private func branchWindow() async -> (WindowModel, BranchGit) {
         await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string(rewritten)])
         _ = await window.changesContinue(root: "/p")
         #expect(window.changesErrors["/p"] == rewritten)
+        // Final review I3: an autostash that came back with conflicts says to resolve them.
+        let clashed = "Your uncommitted changes clash in a.txt; resolve them below — a copy is kept in git stash"
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([.string("a.txt")]), "summary": .string(clashed)])
+        _ = await window.changesContinue(root: "/p")
+        #expect(window.changesErrors["/p"] == clashed)
         await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string("abc1234 Merge side")])
         _ = await window.changesContinue(root: "/p")
         #expect(window.changesErrors["/p"] == nil)

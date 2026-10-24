@@ -326,8 +326,11 @@ func TestContinueSaysWhereAKeptAutostashIs(t *testing.T) {
 		t.Fatalf("merge = %+v, %v", r, err)
 	}
 	stageA(t, work, git, "one\nBOTH\nthree\n")
+	// Final review I3: the autostash came back with conflicts, so they are in the tree to resolve, not
+	// only in git stash to pop.
 	r, err := w.Continue(ctx, "")
-	if err != nil || !r.Done || !strings.HasSuffix(r.Summary, "; your uncommitted changes are in git stash") {
+	if err != nil || !r.Done || r.Summary != "Your uncommitted changes clash in c.txt; resolve them below — a copy is kept in git stash" ||
+		!slices.Equal(r.Conflicts, []string{"c.txt"}) {
 		t.Fatalf("r = %+v, %v", r, err)
 	}
 	if !strings.Contains(git("stash", "list"), "autostash") {
@@ -362,5 +365,32 @@ func TestMergeRefusedMidRebase(t *testing.T) {
 	}
 	if _, err := w.Rebase(ctx, "main"); err == nil || err.Error() != want {
 		t.Fatalf("rebase = %v", err)
+	}
+}
+
+// Final review I3: a merge or rebase that finishes but whose autostash comes back with conflicts says
+// to resolve them, not that the changes are (only) in git stash.
+func TestAutostashClashAfterAMergeOrRebaseSaysResolve(t *testing.T) {
+	for _, op := range []string{"merge", "rebase"} {
+		t.Run(op, func(t *testing.T) {
+			work, w, git := branchFixture(t)
+			git("switch", "-q", "-c", "side")
+			writeIn(t, work, "a.txt", "one\nSIDE\nthree\n")
+			git("commit", "-qam", "side")
+			git("switch", "-q", "main")
+			writeIn(t, work, "x.txt", "x\n")
+			git("add", "x.txt")
+			git("commit", "-qm", "x")
+			writeIn(t, work, "a.txt", "one\nMINE\nthree\n")
+			run := w.Merge
+			if op == "rebase" {
+				run = w.Rebase
+			}
+			r, err := run(context.Background(), "side")
+			if err != nil || r.Summary != "Your uncommitted changes clash in a.txt; resolve them below — a copy is kept in git stash" ||
+				!slices.Equal(r.Conflicts, []string{"a.txt"}) {
+				t.Fatalf("r = %+v err %v", r, err)
+			}
+		})
 	}
 }

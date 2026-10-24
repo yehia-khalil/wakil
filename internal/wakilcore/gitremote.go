@@ -312,7 +312,13 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	// stop a pull under any strategy (3a-iii walk; JetBrains' default).
 	out, stderr, err := g.git(ctx, inv, "pull", mode, "--autostash", "--progress")
 	if strings.Contains(string(out)+stderr, "autostash resulted in conflicts") {
-		return g.result(out, stderr), UserError("Pulled; your uncommitted changes clash with it and are kept in " +
+		r := g.result(out, stderr)
+		paths, _ := g.plain("ls-files", "-u", "-z")
+		if r.Conflicts = unmergedPaths([]byte(paths)); len(r.Conflicts) > 0 {
+			// In the tree to resolve and in git stash: a pop would apply them twice.
+			return r, UserError(autostashClashNote(r.Conflicts))
+		}
+		return r, UserError("Pulled; your uncommitted changes clash with it and are kept in " +
 			"git stash — run git stash pop to bring them back")
 	}
 	if err == nil {
