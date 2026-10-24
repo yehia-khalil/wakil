@@ -187,23 +187,25 @@ func stagedMarkers(ctx context.Context, g *GitRunner, paths []string) map[string
 	if err != nil {
 		return found
 	}
-	// Each object is "<id> <type> <size>\n", its bytes, then "\n".
-	for len(out) > 0 {
-		head, rest, ok := strings.Cut(string(out), "\n")
+	// Each object is "<id> <type> <size>\n", its bytes, then "\n". The output is converted once and
+	// sliced: converting what remains on every object is quadratic in the number of files.
+	rest := string(out)
+	for len(rest) > 0 {
+		head, body, ok := strings.Cut(rest, "\n")
 		f := strings.Fields(head)
 		if !ok || len(f) != 3 {
 			break
 		}
 		n, err := strconv.Atoi(f[2])
-		if err != nil || n+1 > len(rest) {
+		if err != nil || n+1 > len(body) {
 			break
 		}
-		if hasConflictBlock(rest[:n]) {
+		if hasConflictBlock(body[:n]) {
 			for _, p := range byID[f[0]] {
 				found[p] = true
 			}
 		}
-		out = []byte(rest[n+1:])
+		rest = body[n+1:]
 	}
 	return found
 }
