@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -76,6 +77,24 @@ func TestResolveRefusesAResolvedFile(t *testing.T) {
 	}
 	if err := w.Resolve(ctx, "a.txt", "incoming"); err == nil || err.Error() != "a.txt has no conflict" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A directory is not one conflicted file: it would take or stage every conflict under it.
+func TestResolveRefusesADirectory(t *testing.T) {
+	ctx := context.Background()
+	work, w, git := sidesFixture(t)
+	before := readIn(t, work, "d.txt")
+	for _, p := range []string{".", "./"} {
+		for _, take := range []string{"current", "keep"} {
+			if err := w.Resolve(ctx, p, take); err == nil || err.Error() != ". has no conflict" {
+				t.Fatalf("%s %s: err = %v", p, take, err)
+			}
+		}
+	}
+	if u := git("ls-files", "-u"); strings.Count(u, "\n") != 4 || readIn(t, work, "d.txt") != before ||
+		!strings.Contains(readIn(t, work, "a.txt"), "<<<<<<<") {
+		t.Fatalf("a refusal resolved something:\n%s", u)
 	}
 }
 

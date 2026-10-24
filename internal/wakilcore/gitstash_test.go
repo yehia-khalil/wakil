@@ -176,6 +176,20 @@ func TestUndoApplyRestoresAndKeepsTheStash(t *testing.T) {
 	}
 }
 
+// Once the stash is dropped it holds nothing back: Undo Apply would delete the only copy.
+func TestUndoApplyRefusesWhenTheStashIsGone(t *testing.T) {
+	work, w, git, _, clash := clashFixture(t)
+	before := git("status", "--porcelain")
+	git("stash", "drop", "-q")
+	err := w.StashUndoApply(context.Background(), *clash)
+	if err == nil || err.Error() != "The stash is gone, so Undo Apply would lose its changes; resolve it by hand" {
+		t.Fatalf("err = %v", err)
+	}
+	if git("status", "--porcelain") != before || readIn(t, work, "b.txt") != "stashed b\n" {
+		t.Fatal("the refusal changed the tree")
+	}
+}
+
 // Review Focus 5: an edit made since the clash is never thrown away.
 func TestUndoApplyRefusesAnEditedFile(t *testing.T) {
 	work, w, git, _, clash := clashFixture(t)

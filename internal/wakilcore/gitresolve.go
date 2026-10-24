@@ -3,6 +3,7 @@ package wakilcore
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -23,7 +24,9 @@ func (w *GitWriter) Resolve(ctx context.Context, path, take string) error {
 	if err != nil {
 		return err
 	}
-	if len(unmergedPaths(unmerged)) == 0 {
+	// The listing matches by pathspec, so a directory or "." would list every conflict under it:
+	// only the one path named is resolved.
+	if !slices.Contains(unmergedPaths(unmerged), p) {
 		return UserError(p + " has no conflict")
 	}
 	if take == "delete" {
@@ -114,6 +117,10 @@ func (w *GitWriter) StashUndoApply(ctx context.Context, c GitStashClash) error {
 	ps, err := w.paths(paths)
 	if err != nil {
 		return err
+	}
+	// The stash holds the only copy of what the put-back removes: once it is dropped, nothing is.
+	if _, ok := w.stashRef(ctx, c.ID); !ok || c.ID == "" {
+		return UserError("The stash is gone, so Undo Apply would lose its changes; resolve it by hand")
 	}
 	for i, f := range c.Files {
 		if w.hashOf(ctx, ps[i]) != f.Hash {
