@@ -60,17 +60,18 @@ extension GitStashClash {
         self = clash
     }
 
-    /// The record as `git_stash_undo_apply` takes it.
+    /// The record as `git_stash_undo_apply` takes it, `staged` left out when empty, as Go sends it.
     var json: JSONValue {
-        .object([
+        var o: [String: JSONValue] = [
             "id": .string(id),
             "files": .array(files.map { .object(["path": .string($0.path), "hash": .string($0.hash)]) }),
             "created": .array(created.map { .string($0) }),
             "conflicts": .array(conflicts.map { .string($0) }),
-            "staged": .array(staged.map {
-                .object(["path": .string($0.path), "mode": .string($0.mode), "hash": .string($0.hash)])
-            }),
-        ])
+        ]
+        if !staged.isEmpty {
+            o["staged"] = .array(staged.map { .object(["path": .string($0.path), "mode": .string($0.mode), "hash": .string($0.hash)]) })
+        }
+        return .object(o)
     }
 }
 
