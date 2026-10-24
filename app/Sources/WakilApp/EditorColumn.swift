@@ -915,6 +915,9 @@ struct EditorColumn: View {
             .background {
                 RoundedRectangle(cornerRadius: 4).fill(EditorPaneStyle.lifted)
                     .onTapGesture { focusMessage(key) }
+                    // The mouse's margin around the editor, which is the control the tree names
+                    // (`editor.changes.<root>.message`); a second element for it would be noise.
+                    .accessibilityHidden(true)
             }
             .overlay(RoundedRectangle(cornerRadius: 4)
                 .stroke(messageFocused == key ? EditorPaneStyle.violet : EditorPaneStyle.text.opacity(0.12),

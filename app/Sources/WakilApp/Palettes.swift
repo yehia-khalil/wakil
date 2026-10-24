@@ -321,6 +321,10 @@ struct PalettePlane: View {
         .padding(.top, 22)
         .frame(width: 520)
         .background(.black.opacity(0.86))
+        // **Opaque underneath.** The slab alone let the Landing's rows read through it, between
+        // and behind the palette's own (walk, 2026-10-24); over the dimmer's colour it looks the
+        // same against the void and shows nothing of what is under it.
+        .background(Color(red: 0.012, green: 0.016, blue: 0.031))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(
