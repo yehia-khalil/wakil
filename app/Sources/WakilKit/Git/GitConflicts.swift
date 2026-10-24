@@ -28,17 +28,20 @@ public struct GitClashIndex: Sendable, Equatable, Hashable, Codable {
 
 /// A Wakil stash apply, pop or Bring Them Along that stopped on conflicts, as `wakil-git` returns it
 /// (`clash`) and `git_stash_undo_apply` takes it back: the stash's id, the files it touched, the
-/// untracked ones it created, the paths left unmerged, and the entries staged before it. A list Go
-/// sends as `null` or leaves out reads empty.
+/// untracked ones it created, the paths left unmerged, the entries staged before it, and the part of
+/// those with unstaged edits on top (Undo Apply refuses those). A list Go sends as `null` or leaves out
+/// reads empty.
 public struct GitStashClash: Sendable, Equatable, Hashable, Codable {
     public var id: String
     public var files: [GitClashFile]
     public var created: [String]
     public var conflicts: [String]
     public var staged: [GitClashIndex]
+    public var unstaged: [String]
 
-    public init(id: String, files: [GitClashFile], created: [String], conflicts: [String], staged: [GitClashIndex] = []) {
-        (self.id, self.files, self.created, self.conflicts, self.staged) = (id, files, created, conflicts, staged)
+    public init(id: String, files: [GitClashFile], created: [String], conflicts: [String], staged: [GitClashIndex] = [],
+                unstaged: [String] = []) {
+        (self.id, self.files, self.created, self.conflicts, self.staged, self.unstaged) = (id, files, created, conflicts, staged, unstaged)
     }
 
     public init(from decoder: any Decoder) throws {
@@ -48,6 +51,7 @@ public struct GitStashClash: Sendable, Equatable, Hashable, Codable {
         created = try c.decodeIfPresent([String].self, forKey: .created) ?? []
         conflicts = try c.decodeIfPresent([String].self, forKey: .conflicts) ?? []
         staged = try c.decodeIfPresent([GitClashIndex].self, forKey: .staged) ?? []
+        unstaged = try c.decodeIfPresent([String].self, forKey: .unstaged) ?? []
     }
 }
 
@@ -60,7 +64,8 @@ extension GitStashClash {
         self = clash
     }
 
-    /// The record as `git_stash_undo_apply` takes it, `staged` left out when empty, as Go sends it.
+    /// The record as `git_stash_undo_apply` takes it, `staged` and `unstaged` left out when empty, as Go
+    /// sends it.
     var json: JSONValue {
         var o: [String: JSONValue] = [
             "id": .string(id),
@@ -70,6 +75,9 @@ extension GitStashClash {
         ]
         if !staged.isEmpty {
             o["staged"] = .array(staged.map { .object(["path": .string($0.path), "mode": .string($0.mode), "hash": .string($0.hash)]) })
+        }
+        if !unstaged.isEmpty {
+            o["unstaged"] = .array(unstaged.map { .string($0) })
         }
         return .object(o)
     }

@@ -348,6 +348,40 @@ func TestUndoApplyKeepsAnEditStagedBeforeTheApply(t *testing.T) {
 	}
 }
 
+// A staged copy that already matches the stash's lets git apply over it without looking at the tree,
+// so the file can carry an unstaged edit on top: putting the staged copy back would lose that edit, so
+// Undo Apply refuses, naming the file, and changes nothing.
+func TestUndoApplyRefusesAnUnstagedEditOnAStagedCopy(t *testing.T) {
+	work, w, git := branchFixture(t)
+	ctx := context.Background()
+	writeIn(t, work, "c.txt", "1\n2\n3\n")
+	git("add", "c.txt")
+	git("commit", "-qm", "c")
+	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+	writeIn(t, work, "c.txt", "S\n2\n3\n")
+	w.Stash(ctx, "clashing", "default")
+	writeIn(t, work, "a.txt", "one\nSTAGED\nthree\n")
+	writeIn(t, work, "c.txt", "S\n2\n3\n")
+	git("add", "a.txt", "c.txt")
+	writeIn(t, work, "c.txt", "S\n2\n3\nUNSTAGED EXTRA\n")
+	s, _ := ReadStashes(ctx, w.runner())
+	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
+	if err != nil || clash == nil || !slices.Equal(clash.Conflicts, []string{"a.txt"}) {
+		t.Fatalf("clash %+v err %v", clash, err)
+	}
+	before := git("ls-files", "-s", "-u")
+	err = w.StashUndoApply(ctx, *clash)
+	if err == nil || err.Error() != "c.txt has unstaged edits on top of a staged copy; Undo Apply would lose them — resolve it by hand" {
+		t.Errorf("err = %v", err)
+	}
+	if readIn(t, work, "c.txt") != "S\n2\n3\nUNSTAGED EXTRA\n" {
+		t.Fatalf("c.txt = %q", readIn(t, work, "c.txt"))
+	}
+	if git("ls-files", "-s", "-u") != before {
+		t.Fatalf("the index changed: %s", git("ls-files", "-s"))
+	}
+}
+
 // Bring Them Along stashes the index too, so its clash has nothing staged to keep: Undo Apply puts
 // the files back to the new branch's HEAD, the stash kept.
 func TestUndoApplyAfterABringAlongClash(t *testing.T) {
