@@ -446,14 +446,9 @@ struct SettingsRow<Value: View>: View {
     var body: some View {
         Group {
             if wraps {
-                ViewThatFits(in: .horizontal) {
-                    oneLine
-                    VStack(alignment: .leading, spacing: 6) {
-                        labelText
-                        value
-                    }
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                WrappingRowLayout {
+                    labelText
+                    HStack(spacing: 0) { value }
                 }
             } else {
                 oneLine
@@ -480,6 +475,55 @@ struct SettingsRow<Value: View>: View {
             value
             Spacer(minLength: 0)
         }
+    }
+}
+
+/// `SettingsRow`'s `wraps`: the label and value on one line when the value's ideal width fits
+/// beside the label, else the value under the label.
+///
+/// **One layout, not `ViewThatFits`.** `ViewThatFits` builds each arrangement as its own view, so
+/// the value existed twice with two sets of `@State`, and a value holding state — the git accounts'
+/// sheet and Test result, an instruction box's focus — lost it whenever the row changed
+/// arrangement (#57). Here the value is one view whichever arrangement is drawn.
+private struct WrappingRowLayout: Layout {
+    private static let stackedSpacing: CGFloat = 6
+    private static let stackedPadding: CGFloat = 10
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal.width, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, arrange(bounds.width, subviews).frames) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                          proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arrange(_ proposed: CGFloat?, _ subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
+        guard subviews.count == 2 else { return (.zero, []) }
+        let label = subviews[0], value = subviews[1]
+        let lead = SettingsScale.labelWidth + SettingsScale.columnGap
+        let ideal = value.sizeThatFits(.unspecified)
+        let width = proposed.flatMap { $0.isFinite ? $0 : nil } ?? lead + ideal.width
+        if lead + ideal.width <= width {
+            let labelSize = label.sizeThatFits(ProposedViewSize(width: SettingsScale.labelWidth, height: nil))
+            let valueSize = value.sizeThatFits(ProposedViewSize(width: width - lead, height: nil))
+            let height = max(labelSize.height, valueSize.height)
+            return (CGSize(width: width, height: height), [
+                CGRect(x: 0, y: (height - labelSize.height) / 2,
+                       width: SettingsScale.labelWidth, height: labelSize.height),
+                CGRect(x: lead, y: (height - valueSize.height) / 2,
+                       width: valueSize.width, height: valueSize.height),
+            ])
+        }
+        let labelSize = label.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let valueSize = value.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let valueY = Self.stackedPadding + labelSize.height + Self.stackedSpacing
+        return (CGSize(width: width, height: valueY + valueSize.height + Self.stackedPadding), [
+            CGRect(x: 0, y: Self.stackedPadding, width: labelSize.width, height: labelSize.height),
+            CGRect(x: 0, y: valueY, width: valueSize.width, height: valueSize.height),
+        ])
     }
 }
 
