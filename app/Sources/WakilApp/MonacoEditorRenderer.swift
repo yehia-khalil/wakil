@@ -26,6 +26,9 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     var onMark: ((String, Int) -> Void)?
     /// 3a-v-a: the blame hover's links: (key, "open" | "copy", commit id).
     var onBlame: ((String, String, String) -> Void)?
+    /// 3a-v-b: an actions-row press in `key`: (key, the block's `<<<<<<<` line, "current" | "incoming"
+    /// | "both" | "compare").
+    var onConflict: ((String, Int, String) -> Void)?
     /// One line per page diagnostic and per failed `evaluateJavaScript`.
     var onLog: ((String) -> Void)?
     /// A key the page took from Monaco (`captureKeys`): "up", "down" or "escape".
@@ -171,6 +174,12 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
         run("wakilSetBlame(\(Self.jsString(key)),\(line),\(Self.jsString(text)),\(hover.map(Self.jsString) ?? "null"),\(Self.jsString(id)))")
     }
 
+    /// 3a-v-b: `key`'s conflict blocks, tinted with the actions row above each; an empty list clears them.
+    func setConflicts(key: String, blocks: [EditorConflictBlock]) {
+        let list = blocks.map { "{start:\($0.start),separator:\($0.separator),end:\($0.end)}" }
+        run("wakilSetConflicts(\(Self.jsString(key)),[\(list.joined(separator: ","))])")
+    }
+
     /// The settings' options (3b-v). Queued until the page is ready, like every other call.
     func setOptions(_ o: EditorViewOptions) {
         run("wakilSetOptions({fontSize:\(o.fontSize),wordWrap:\(o.wordWrap),tabSize:\(o.tabSize),insertSpaces:\(o.insertSpaces)})")
@@ -257,6 +266,10 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
             if let key = body["key"] as? String, let line = Self.int(body["line"]) { onMark?(key, line) }
         case "blame":
             if let key = body["key"] as? String, let op = body["op"] as? String, let id = body["id"] as? String { onBlame?(key, op, id) }
+        case "conflict":
+            guard let key = body["key"] as? String, let block = Self.int(body["block"]),
+                  let op = body["op"] as? String else { return }
+            onConflict?(key, block, op)
         case "ghost":
             guard let key = body["key"] as? String, let id = Self.int(body["id"]),
                   let text = body["text"] as? String, let offset = Self.int(body["offset"]) else { return }
