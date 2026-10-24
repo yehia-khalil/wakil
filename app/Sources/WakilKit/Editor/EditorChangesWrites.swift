@@ -395,7 +395,7 @@ func registerEditorChangesWrites(
     }
     for (name, tool, keys, required, what, agentPrice) in [
         ("editor_changes_switch", "git_switch", ["branch", "carry", "track"], ["root", "branch"],
-         "Switch one root to a branch (track: a remote branch to create it from). Changes in the way come back as blocked unless carry is stash or bring (stash, switch, pop); bring's clash is left in the tree to resolve, the stash kept, and editor_changes_stash_undo_apply puts it back. Never forces.", GateDecision?.none),
+         "Switch one root to a branch (track: a remote branch to create it from). Changes in the way come back as blocked unless carry is stash or bring (stash, switch, pop); bring's clash is left in the tree to resolve, the stash kept, and editor_changes_stash_undo_apply puts it back when the stash's files had no changes of the operator's own before the pop. Never forces.", GateDecision?.none),
         ("editor_changes_branch_create", "git_switch", ["name", "from"], ["root", "name"],
          "Create a branch in one root and switch to it, from the current commit or from; an existing name is switched to.", nil),
         ("editor_changes_branch_rename", "git_branch_rename", ["to"], ["root", "to"],
@@ -405,9 +405,9 @@ func registerEditorChangesWrites(
         ("editor_changes_stash", "git_stash", ["message", "mode"], ["root"],
          "Stash one root's changes: mode default, untracked or staged, with an optional message.", nil),
         ("editor_changes_stash_apply", "git_stash_apply", ["index", "id"], ["root", "index", "id"],
-         "Apply one stash by index and id, keeping it. A clash is left in the tree to resolve; editor_changes_stash_undo_apply puts back the files it touched.", nil),
+         "Apply one stash by index and id, keeping it. A clash is left in the tree to resolve; when the stash's files had no changes of the operator's own before the apply, editor_changes_stash_undo_apply puts back the files it touched (otherwise it is resolved by hand).", nil),
         ("editor_changes_stash_pop", "git_stash_pop", ["index", "id"], ["root", "index", "id"],
-         "Apply one stash by index and id and drop it. A clash is left in the tree to resolve and the stash kept; editor_changes_stash_undo_apply puts back the files it touched.", nil),
+         "Apply one stash by index and id and drop it. A clash is left in the tree to resolve and the stash kept; when the stash's files had no changes of the operator's own before the pop, editor_changes_stash_undo_apply puts back the files it touched (otherwise it is resolved by hand).", nil),
         ("editor_changes_stash_drop", "git_stash_drop", ["index", "id"], ["root", "index", "id"],
          "Drop one stash by index and id; it cannot be applied again. Asks the operator when you ask.", .gate),
         ("editor_changes_stash_drop_all", "git_stash_drop_all", ["ids"], ["root"],
@@ -506,11 +506,11 @@ func registerEditorChangesWrites(
             price: price, agentPrice: agentPrice))
     }
     // Call 13 / R4: Undo Apply sends back the clash this session's own stash apply, pop or Bring Them Along
-    // left in the root; Go refuses it naming a file changed since or one with unstaged edits before the
-    // apply, or a stash that is gone.
+    // left in the root (Go records one only when the stash's files were clean before the apply); Go
+    // refuses it naming any file changed since, or a stash that is gone.
     await registry.register(Action(
         name: "editor_changes_stash_undo_apply",
-        description: "Undo the stash apply, pop or Bring Them Along that clashed in one root this session: each file it touched goes back to what was staged before the apply (HEAD where nothing was), the untracked ones it created are removed, and the stash stays in the list. Refused, naming the file, when one changed since the clash or had unstaged edits before the apply, or when the stash is gone. Asks the operator when you ask. root (absolute).",
+        description: "Undo the stash apply, pop or Bring Them Along that clashed in one root this session: the files it touched go back to HEAD, the untracked ones it created are removed, and the stash stays in the list. Refused, naming the file, when one changed since the clash, or when the stash is gone. Asks the operator when you ask. root (absolute).",
         kind: .mutate, audience: .agentReachable,
         schema: rootSchema(),
         handler: { params in

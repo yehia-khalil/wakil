@@ -14,34 +14,17 @@ public struct GitClashFile: Sendable, Equatable, Hashable, Codable {
     }
 }
 
-/// A file the stash touched whose index entry was staged before the apply (mode and hash empty for a
-/// staged deletion): Undo Apply puts that entry back, not HEAD's.
-public struct GitClashIndex: Sendable, Equatable, Hashable, Codable {
-    public var path: String
-    public var mode: String
-    public var hash: String
-
-    public init(path: String, mode: String, hash: String) {
-        (self.path, self.mode, self.hash) = (path, mode, hash)
-    }
-}
-
 /// A Wakil stash apply, pop or Bring Them Along that stopped on conflicts, as `wakil-git` returns it
 /// (`clash`) and `git_stash_undo_apply` takes it back: the stash's id, the files it touched, the
-/// untracked ones it created, the paths left unmerged, the entries staged before it, and the tracked ones
-/// with unstaged edits before it (Undo Apply refuses those). A list Go sends as `null` or leaves out reads
-/// empty.
+/// untracked ones it created, and the paths left unmerged. A list Go sends as `null` reads empty.
 public struct GitStashClash: Sendable, Equatable, Hashable, Codable {
     public var id: String
     public var files: [GitClashFile]
     public var created: [String]
     public var conflicts: [String]
-    public var staged: [GitClashIndex]
-    public var unstaged: [String]
 
-    public init(id: String, files: [GitClashFile], created: [String], conflicts: [String], staged: [GitClashIndex] = [],
-                unstaged: [String] = []) {
-        (self.id, self.files, self.created, self.conflicts, self.staged, self.unstaged) = (id, files, created, conflicts, staged, unstaged)
+    public init(id: String, files: [GitClashFile], created: [String], conflicts: [String]) {
+        (self.id, self.files, self.created, self.conflicts) = (id, files, created, conflicts)
     }
 
     public init(from decoder: any Decoder) throws {
@@ -50,8 +33,6 @@ public struct GitStashClash: Sendable, Equatable, Hashable, Codable {
         files = try c.decodeIfPresent([GitClashFile].self, forKey: .files) ?? []
         created = try c.decodeIfPresent([String].self, forKey: .created) ?? []
         conflicts = try c.decodeIfPresent([String].self, forKey: .conflicts) ?? []
-        staged = try c.decodeIfPresent([GitClashIndex].self, forKey: .staged) ?? []
-        unstaged = try c.decodeIfPresent([String].self, forKey: .unstaged) ?? []
     }
 }
 
@@ -64,22 +45,14 @@ extension GitStashClash {
         self = clash
     }
 
-    /// The record as `git_stash_undo_apply` takes it, `staged` and `unstaged` left out when empty, as Go
-    /// sends it.
+    /// The record as `git_stash_undo_apply` takes it.
     var json: JSONValue {
-        var o: [String: JSONValue] = [
+        .object([
             "id": .string(id),
             "files": .array(files.map { .object(["path": .string($0.path), "hash": .string($0.hash)]) }),
             "created": .array(created.map { .string($0) }),
             "conflicts": .array(conflicts.map { .string($0) }),
-        ]
-        if !staged.isEmpty {
-            o["staged"] = .array(staged.map { .object(["path": .string($0.path), "mode": .string($0.mode), "hash": .string($0.hash)]) })
-        }
-        if !unstaged.isEmpty {
-            o["unstaged"] = .array(unstaged.map { .string($0) })
-        }
-        return .object(o)
+        ])
     }
 }
 
