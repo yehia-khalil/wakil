@@ -78,7 +78,8 @@ struct AgentChipTests {
         await startTurn(in: placeA, thenShow: placeB, model)
         let proposal = PendingMutation(
             action: "db_run_mutation", params: .object([:]), database: nil, statement: "DELETE FROM t",
-            affectsEveryRow: true, origin: .agent, place: placeA)
+            affectsEveryRow: true, origin: .agent, place: placeA,
+            conversation: try #require(model.agents[placeA]?.id))
         let parked = Task { await broker.request(proposal) }
 
         #expect(await waitUntil { model.chips.first?.state == .waiting }, "\(model.chips)")
@@ -415,8 +416,8 @@ struct AgentChipProductionTests {
     }
 
     @Test func aTrayOfTwoOrFewerShowsThemAll() {
-        let two = [AgentChip(place: placeA, state: .working, productionEnvironment: false),
-                   AgentChip(place: placeB, state: .done, productionEnvironment: false)]
+        let two = [AgentChip(place: placeA, state: .working, productionEnvironment: false, conversation: "conv-placeA"),
+                   AgentChip(place: placeB, state: .done, productionEnvironment: false, conversation: "conv-placeB")]
         let tray = AgentChipTray(two)
         #expect(tray.shown == two)
         #expect(tray.hidden.isEmpty)
@@ -426,10 +427,10 @@ struct AgentChipProductionTests {
 
     @Test func aTrayOfMoreThanTwoCollapsesTheRestUnderTheirStrongestState() {
         let placeD = Place(organization: org, project: "docs", environment: "staging")
-        let chips = [AgentChip(place: placeA, state: .working, productionEnvironment: false),
-                     AgentChip(place: placeB, state: .done, productionEnvironment: false),
-                     AgentChip(place: placeC, state: .done, productionEnvironment: false),
-                     AgentChip(place: placeD, state: .failed, productionEnvironment: false)]
+        let chips = [AgentChip(place: placeA, state: .working, productionEnvironment: false, conversation: "conv-placeA"),
+                     AgentChip(place: placeB, state: .done, productionEnvironment: false, conversation: "conv-placeB"),
+                     AgentChip(place: placeC, state: .done, productionEnvironment: false, conversation: "conv-placeC"),
+                     AgentChip(place: placeD, state: .failed, productionEnvironment: false, conversation: "conv-placeD")]
         let tray = AgentChipTray(chips)
         #expect(tray.shown == Array(chips.prefix(2)))
         #expect(tray.hidden == Array(chips.suffix(2)))
@@ -437,8 +438,8 @@ struct AgentChipProductionTests {
         #expect(tray.moreLabel == "+2 more")
 
         let waitingHidden = AgentChipTray(Array(chips.prefix(2)) + [
-            AgentChip(place: placeC, state: .working, productionEnvironment: false),
-            AgentChip(place: placeD, state: .waiting, productionEnvironment: false)])
+            AgentChip(place: placeC, state: .working, productionEnvironment: false, conversation: "conv-placeC"),
+            AgentChip(place: placeD, state: .waiting, productionEnvironment: false, conversation: "conv-placeD")])
         #expect(waitingHidden.hiddenState == .waiting)
         #expect(AgentChipTray(Array(chips.prefix(3))).hiddenState == .done)
     }

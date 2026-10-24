@@ -58,7 +58,7 @@ approves and the action is dispatched again with `confirmation: "confirm"`.
 5. **`handleToolsCall`**: `read_pane`, `read_layout` and `approve_tool_use` are answered in the
    window. Anything else is dispatched.
 6. **`registry.dispatch(..., origin: .agent, caller:, confirmation:)`**, where the caller is
-   `caller`, the one the session's own socket was started with (its place and session); the gate reads its environment, and its place pins its clients and its canvas (`ScopeRouting.home`), wherever the screen is. Steps 4 to 10 of flow 1 apply. For
+   `caller`, the one the session's own socket was started with (its place, session and conversation: the call and any proposal it parks name the conversation they belong to); the gate reads its environment, and its place pins its clients and its canvas (`ScopeRouting.home`), wherever the screen is. Steps 4 to 10 of flow 1 apply. For
    `.control` the gate differs by origin. The agent cannot switch project or environment at all:
    `ctx_set_project` and `ctx_set_environment` are operator-only, because an agent's place is fixed
    when its session starts.

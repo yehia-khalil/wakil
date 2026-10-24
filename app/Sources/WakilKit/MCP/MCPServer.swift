@@ -821,6 +821,7 @@ private func parkForConfirmation(
             message: "\(name): no statement to confirm — nothing was parked and nothing ran. "
                 + "Send a non-empty \"statement\" argument."))
     }
+    let parker = await caller()
     let proposal = PendingMutation(
         action: name,
         params: arguments,
@@ -829,7 +830,8 @@ private func parkForConfirmation(
         affectsEveryRow: ownStatement.map(mutationAffectsEveryRow) ?? false,
         origin: .agent,
         // The session's own place, so it waits there beside other places' proposals.
-        place: await caller().place)
+        place: parker.place,
+        conversation: parker.conversation)
 
     switch await surface.confirmations.request(proposal) {
     case .approved:

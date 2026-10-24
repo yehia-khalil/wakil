@@ -629,10 +629,11 @@ private final class ProviderLog: @unchecked Sendable {
 }
 
 /// An agent's proposal parked in `place`, as `MCPServer.parkForConfirmation` parks one.
-private func agentProposal(in place: Place) -> PendingMutation {
+/// `conversation`: the one that parks it, as a socket caller names its own.
+private func agentProposal(in place: Place, conversation: String) -> PendingMutation {
     PendingMutation(
         action: "db_run_mutation", params: .object([:]), database: nil, statement: "DELETE FROM t",
-        affectsEveryRow: true, origin: .agent, place: place)
+        affectsEveryRow: true, origin: .agent, place: place, conversation: conversation)
 }
 
 /// Waits for `request` to answer, cancelling `proposal` first when it is still parked after
@@ -659,7 +660,8 @@ struct PlaceApprovalTests {
         let (model, _) = try await resumableWindow(sessions, confirmations: broker)
         show(placeA, in: model)
         #expect(await model.send("hello A"))
-        let old = agentProposal(in: placeA)
+        let conversationA = try #require(model.agents[placeA]?.id)
+        let old = agentProposal(in: placeA, conversation: conversationA)
         let parked = Task { await broker.request(old) }
         #expect(await waitUntil { await broker.current(for: placeA)?.id == old.id })
 
@@ -667,7 +669,7 @@ struct PlaceApprovalTests {
 
         #expect(sessions.harnesses.in(placeA).count == 2, "the session was replaced: \(model.status)")
         #expect(await decision(of: parked, old, in: broker) == .cancelled, "the old request returns")
-        let next = agentProposal(in: placeA)
+        let next = agentProposal(in: placeA, conversation: conversationA)
         let nextParked = Task { await broker.request(next) }
         #expect(await waitUntil { await broker.current(for: placeA)?.id == next.id },
                 "the new session's gated call parks, not .busy")
@@ -683,7 +685,7 @@ struct PlaceApprovalTests {
         #expect(await model.send("hello B"))
         show(placeA, in: model)
         #expect(await model.send("hello A"))
-        let other = agentProposal(in: placeB)
+        let other = agentProposal(in: placeB, conversation: try #require(model.agents[placeB]?.id))
         let parked = Task { await broker.request(other) }
         #expect(await waitUntil { await broker.current(for: placeB)?.id == other.id })
 
@@ -701,7 +703,7 @@ struct PlaceApprovalTests {
         let model = twoPlaceWindow(harnesses, confirmations: broker)
         show(placeA, in: model)
         #expect(await model.send("hello A"))
-        let proposal = agentProposal(in: placeA)
+        let proposal = agentProposal(in: placeA, conversation: try #require(model.agents[placeA]?.id))
         let parked = Task { await broker.request(proposal) }
         #expect(await waitUntil { await broker.current(for: placeA)?.id == proposal.id })
 

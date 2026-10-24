@@ -2,7 +2,8 @@ import Foundation
 import Observation
 
 /// One place's agent: its harness, its session, its thread and its turn (background agents,
-/// 3 of 4). `WindowModel.agents` holds one per `Place`, so an agent keeps working, and its
+/// 3 of 4) — a conversation, stored by its `id` in `WindowModel.conversations`.
+/// `WindowModel.agents` projects the one each `Place` shows, so an agent keeps working, and its
 /// events keep landing in its own thread, while the screen shows another place. The window's
 /// `thoughts`, `turnInFlight`, `sessionId`, `sessionStarted` and `lineageRoot` read the
 /// on-screen place's entry.
@@ -13,6 +14,11 @@ import Observation
 @MainActor
 @Observable
 public final class PlaceAgent {
+    /// The conversation's id: the id Wakil mints before its first session (the one the place's
+    /// shown socket reserved), which that session, its socket and `DispatchCaller.conversation`
+    /// carry. **Never moved** — a resume or a provider switch moves `assignedSessionId` and
+    /// `sessionId`, not this — so it is what the window keys the conversation by.
+    public let id: String
     /// The place the agent works in, fixed for the entry's life — except that renaming its project
     /// or environment moves an entry with no live session to the new name
     /// (`WindowModel.carryAgents`), so its conversation is not lost with the old one.
@@ -74,15 +80,17 @@ public final class PlaceAgent {
     /// new session starts on.
     public internal(set) var providerId: String
 
-    init(place: Place, providerId: String, mirror: TerminalMirrorFeed) {
+    init(id: String, place: Place, providerId: String, mirror: TerminalMirrorFeed) {
+        self.id = id
         self.place = place
         self.providerId = providerId
         self.mirror = mirror
         self.productionEnvironment = isProductionEnvironment(place.environment)
     }
 
-    /// Whom this agent's calls are for: its own place and session, wherever the screen is.
-    public var caller: DispatchCaller { DispatchCaller(place: place, session: sessionId) }
+    /// Whom this agent's calls are for: its own place, session and conversation, wherever the
+    /// screen is.
+    public var caller: DispatchCaller { DispatchCaller(place: place, session: sessionId, conversation: id) }
 
     /// The canvas this agent's dispatches read and write: its place in its conversation. Nil
     /// with no project, which has no arrangement.

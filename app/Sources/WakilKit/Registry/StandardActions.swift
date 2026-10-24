@@ -2397,8 +2397,10 @@ public func registerStandardActions(
         ]),
         handler: { params in
             let id = try requireStringParam(params, "id", action: "session_resume")
+            let caller = ActionRegistry.dispatchCaller
+            let place = pinnedPlace(of: caller)
             await resumes.request(ResumeRequest(
-                sessionId: id, place: pinnedPlace(of: ActionRegistry.dispatchCaller)))
+                sessionId: id, place: place, conversation: place == nil ? nil : caller?.conversation))
             return .object([
                 "resuming": .string(id),
                 "note": .string("this session ends as the fork starts"),

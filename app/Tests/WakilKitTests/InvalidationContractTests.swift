@@ -122,14 +122,17 @@ private let orgDerived: Set<String> = [
 /// (`OrgSwitchTests.comingBackToAnOrgFindsItsCanvasAsLeft`). `invalidateForOrgChange` must NOT
 /// reset these: doing so is the teardown this plan removed.
 private let keptPerPlace: Set<String> = [
-    // One `PlaceAgent` per place — harness, socket, session, thread, turn, conversation and
+    // Every conversation by its id — harness, socket, session, thread, turn, conversation and
     // `Bash` mirror (OrgSwitchTests.anOrgSwitchLeavesTheRunningAgentAlone), and what its chip
-    // shows: an unseen result or failure, and whether its environment is production (Plan 4).
-    "agents",
-    // The socket each shown place opened before a session took it, pinned to that place.
+    // shows: an unseen result or failure, and whether its environment is production (Plan 4) —
+    // the order they were created in, which one each place shows, and the id each place's next
+    // one takes (conversations 1 of 3). `agents` is their projection by place.
+    "conversations", "conversationOrder", "screenConversations", "reservedConversations",
+    // The socket each shown place opened before a session took it, by its conversation, pinned
+    // to that place.
     "shownSockets",
-    // Every proposal waiting, by place (OrgSwitchTests.anOrgSwitchWithAParkedApprovalSwitchesAnyway).
-    "parkedProposals",
+    // Every proposal waiting, by slot (OrgSwitchTests.anOrgSwitchWithAParkedApprovalSwitchesAnyway).
+    "parkedSlots",
     // The screen's scope and every scope this window has read or written for an agent: kept so
     // a return reads nothing off disk and re-runs no subject.
     "layoutScope", "loadedLayoutScopes", "scopesAwaitingRestore", "backgroundLayouts",

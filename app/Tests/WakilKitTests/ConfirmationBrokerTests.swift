@@ -8,13 +8,13 @@ private let placeB = Place(organization: "org", project: "billing", environment:
 
 private func proposal(
     _ id: String = "p1", statement: String = "DELETE FROM t WHERE id=1",
-    place: Place = placeA, origin: ActionOrigin = .agent
+    place: Place = placeA, origin: ActionOrigin = .agent, conversation: String? = "conv"
 ) -> PendingMutation {
     PendingMutation(
         id: id, action: "db_run_mutation",
         params: .object(["statement": .string(statement)]),
         database: "orders", statement: statement,
-        affectsEveryRow: false, origin: origin, place: place)
+        affectsEveryRow: false, origin: origin, place: place, conversation: conversation)
 }
 
 @Test func approvingAParkedProposalResolvesTheWaiter() async throws {
@@ -116,8 +116,9 @@ private func proposal(
             thoughts: 0, project: place.project, environment: place.environment)
     }
     show(placeA)
-    let a = proposal("a", place: placeA)
-    let b = proposal("b", place: placeB)
+    // The operator's, so each takes its place's own slot: no conversation is on screen here.
+    let a = proposal("a", place: placeA, origin: .ui)
+    let b = proposal("b", place: placeB, origin: .ui)
     let aTask = Task { await broker.request(a) }
     let bTask = Task { await broker.request(b) }
     while model.waitingPlaces != [placeA, placeB] { await Task.yield() }
@@ -166,4 +167,32 @@ private func proposal(
     let released = await iterator.next()
     #expect(released == [:])
     _ = await decision
+}
+
+@Test func twoConversationsInOnePlaceEachParkTheirOwn() async throws {
+    let broker = ConfirmationBroker(timeout: .seconds(60))
+    let a = proposal("a", place: placeA, conversation: "conv-a")
+    let b = proposal("b", place: placeA, conversation: "conv-b")
+    async let aDecision = broker.request(a)
+    async let bDecision = broker.request(b)
+    while await broker.allSlots().count < 2 { await Task.yield() }
+    #expect(await broker.current(in: ProposalSlot(place: placeA, conversation: "conv-b")) == b)
+    await broker.cancelAgentProposal(inConversation: "conv-a")
+    #expect(await aDecision == .cancelled)
+    #expect(await broker.allSlots() == [b.slot: b])
+    await broker.approve(id: b.id)
+    #expect(await bDecision == .approved)
+}
+
+@Test func theOperatorsProposalKeepsThePlaceSlotBesideAnAgentsInThatPlace() async throws {
+    let broker = ConfirmationBroker(timeout: .seconds(60))
+    let agent = proposal("agent", place: placeA, conversation: "conv-a")
+    let mine = proposal("mine", place: placeA, origin: .ui, conversation: "conv-a")
+    async let agentDecision = broker.request(agent)
+    async let mineDecision = broker.request(mine)
+    while await broker.allSlots().count < 2 { await Task.yield() }
+    #expect(mine.slot == ProposalSlot(place: placeA, conversation: nil))
+    #expect(await broker.current(for: placeA) == mine, "the plane's projection shows the operator's")
+    await broker.cancelAll()
+    _ = await (agentDecision, mineDecision)
 }
