@@ -431,21 +431,30 @@ struct PalettePlane: View {
             controller.choose(index)
         } label: {
             HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title(entry, selected: selected, dim: dim))
-                        .font(.system(size: 14))
-                        .italic(loading)
-                        .lineLimit(1)
-                    if !entry.subtitle.isEmpty {
-                        Text(entry.subtitle)
-                            .font(.system(size: 10.5, design: .monospaced))
-                            .foregroundStyle(entry.isCaution && !dim
-                                ? Self.caution
-                                : tone.opacity(entry.isProduction ? 0.66 : (dim || entry.isDimmed ? 0.38 : 0.50)))
-                            // A source's error is its subtitle, and an error is drawn whole.
-                            .lineLimit(entry.isError && !loading ? nil : 1)
-                            .truncationMode(.tail)
-                            .fixedSize(horizontal: false, vertical: entry.isError && !loading)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    // A live conversation's row: its state's dot, as its chip and the Landing's
+                    // Running row draw it. No other row has one (running and past never mix).
+                    if let state = entry.state {
+                        ChipDot(colour: state.hue, breathes: state == .working && !dim)
+                            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                            .opacity(dim ? 0.4 : 1)
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title(entry, selected: selected, dim: dim))
+                            .font(.system(size: 14))
+                            .italic(loading)
+                            .lineLimit(1)
+                        if !entry.subtitle.isEmpty {
+                            Text(entry.subtitle)
+                                .font(.system(size: 10.5, design: .monospaced))
+                                .foregroundStyle(entry.isCaution && !dim
+                                    ? Self.caution
+                                    : tone.opacity(entry.isProduction ? 0.66 : (dim || entry.isDimmed ? 0.38 : 0.50)))
+                                // A source's error is its subtitle, and an error is drawn whole.
+                                .lineLimit(entry.isError && !loading ? nil : 1)
+                                .truncationMode(.tail)
+                                .fixedSize(horizontal: false, vertical: entry.isError && !loading)
+                        }
                     }
                 }
                 Spacer(minLength: 0)
@@ -480,7 +489,7 @@ struct PalettePlane: View {
         // kind where one is drawn) is the hint. The value stays the in-flight mark (rule 5).
         .accessibilityLabel(entry.title)
         .accessibilityHint(accessibilityHint(entry, showsKind: showsKind))
-        .accessibilityValue(running ? "working" : "")
+        .accessibilityValue(running ? "working" : (entry.state?.spoken ?? ""))
         .accessibilityIdentifier("palette.row.\(entry.id)")
         .id(entry.id)
     }

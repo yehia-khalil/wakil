@@ -319,6 +319,25 @@ private func bridgeReply(toolName: String, input: JSONValue) async throws -> [St
 /// first. Pins the literal sentence rather than a substring, so a
 /// refactor that quietly reworded it is caught here rather than only in
 /// `ProviderSwitchTests`, which checks reachability but not wording.
+/// Conversations 2 of 3: `session_new` and `session_switch` are the operator's — an agent must not
+/// push aside the operator's conversation — each with its own sentence, verbatim.
+@Test func sessionNewAndSwitchAreDeniedToTheAgentWithTheirOwnSentences() {
+    let expected = [
+        "session_new": "mcp__\(wakilShimServerName)__session_new: only the operator starts a new conversation "
+            + "— an agent must not push aside the operator's conversation. Ask the operator to press ⌘N "
+            + "in the Wakil window.",
+        "session_switch": "mcp__\(wakilShimServerName)__session_switch: only the operator switches between "
+            + "conversations — an agent must not push aside the operator's conversation. Tell the operator "
+            + "which conversation the work needs; they can switch to it with ⌘P.",
+    ]
+    for (name, sentence) in expected {
+        #expect(operatorOnlyActions.contains(name))
+        let decision = permissionDecision(
+            toolName: "mcp__\(wakilShimServerName)__\(name)", knownActions: [name])
+        #expect(decision == .deny(sentence), "\(name): \(decision)")
+    }
+}
+
 @Test func theProviderFamilysWordingIsUnchanged() {
     for name in ["session_set_provider", "ctx_set_provider"] {
         let decision = permissionDecision(

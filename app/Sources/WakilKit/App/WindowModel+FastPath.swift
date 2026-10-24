@@ -89,7 +89,8 @@ extension WindowModel {
     /// theirs there, or not at all. The scope, the schemas and the model's answer all fit inside
     /// the deadline; the routed model alone is asked, never the session's as a fall-back.
     public func runFastPath(_ line: String, scope typed: TurnScope? = nil) async -> FastPathOutcome {
-        let typedIn = (typed ?? turnScope).place
+        let scopeTyped = typed ?? turnScope
+        let typedIn = scopeTyped.place
         guard fastPathEnabled, let tasks = quickTasks, place == typedIn else { return .toAgent }
         let generation = quickTasksGeneration
         let org = organization
@@ -107,7 +108,10 @@ extension WindowModel {
         do {
             _ = try await registry.dispatch(
                 name: name, params: params, origin: .ui,
-                caller: DispatchCaller(place: typedIn, session: nil, via: "fastPath"), confirmation: nil)
+                caller: DispatchCaller(
+                    place: typedIn, session: nil, via: "fastPath",
+                    conversation: Self.screenPinnedActions.contains(name) ? scopeTyped.conversation : nil),
+                confirmation: nil)
             return .ran(FastPathReceipt(line: line, text: Self.fastPathReceiptText(action: name, params: params), refused: false))
         } catch {
             return .refused(FastPathReceipt(line: line, text: statusDescribingFailure(name, error), refused: true))

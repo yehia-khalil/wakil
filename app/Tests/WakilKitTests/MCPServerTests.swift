@@ -35,8 +35,9 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
     let pinned = Place(organization: "initech", project: "api", environment: "staging")
     let screen = Place(organization: "initech", project: "billing", environment: "qa")
     let out = await handle(
-        m, surface: await surface(), caller: { DispatchCaller(place: pinned, session: "s-1") },
-        screen: { screen })
+        m, surface: await surface(),
+        caller: { DispatchCaller(place: pinned, session: "s-1", conversation: "conv-a") },
+        screen: { ScreenShown(place: screen, conversation: "conv-b") })
     guard case .object(let result)? = out?.result, case .object(let meta)? = result["_meta"] else {
         Issue.record("no _meta: \(String(describing: out?.result))"); return
     }
@@ -47,11 +48,16 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
         "organization": .string("initech"), "project": .string("billing"), "environment": .string("qa"),
     ]))
 
+    #expect(meta["wakil/conversation"] == .string("conv-a"), "the conversation every call on it is made for")
+    #expect(meta["wakil/screenConversation"] == .string("conv-b"), "the conversation the window shows")
+
     let unknown = await handle(m, surface: await surface(), caller: { .test("staging", conversation: "conv") })
     guard case .object(let bare)? = unknown?.result, case .object(let bareMeta)? = bare["_meta"] else {
         Issue.record("no _meta without a screen"); return
     }
     #expect(bareMeta["wakil/screen"] == .null, "no screen known: said, not invented")
+    #expect(bareMeta["wakil/screenConversation"] == .null)
+    #expect(bareMeta["wakil/conversation"] == .string("conv"))
 }
 
 /// Probe §8: the CLI refuses at its first permission check if the name
@@ -1221,7 +1227,7 @@ private actor EnvironmentBox {
         "name": .string("editor_changes_branch_delete"),
         "arguments": .object(["root": .string("/p/api"), "branch": .string("fix-login")]),
     ]))
-    async let reply = handle(call, surface: surface, caller: { .test("staging") })
+    async let reply = handle(call, surface: surface, caller: { .test("staging", conversation: "c1") })
     var spins = 0
     while await broker.all().isEmpty, spins < 2_000 { await Task.yield(); spins += 1 }
     let parked = await broker.all().values.first

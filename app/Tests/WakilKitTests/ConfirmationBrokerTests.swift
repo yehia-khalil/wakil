@@ -175,11 +175,13 @@ private func proposal(
     let b = proposal("b", place: placeA, conversation: "conv-b")
     async let aDecision = broker.request(a)
     async let bDecision = broker.request(b)
-    while await broker.allSlots().count < 2 { await Task.yield() }
+    var slots = await broker.slotUpdates().makeAsyncIterator()
+    var seen = await slots.next()
+    while seen?.count != 2 { seen = await slots.next() }
     #expect(await broker.current(in: ProposalSlot(place: placeA, conversation: "conv-b")) == b)
     await broker.cancelAgentProposal(inConversation: "conv-a")
     #expect(await aDecision == .cancelled)
-    #expect(await broker.allSlots() == [b.slot: b])
+    #expect(await slots.next() == [b.slot: b])
     await broker.approve(id: b.id)
     #expect(await bDecision == .approved)
 }
@@ -190,9 +192,39 @@ private func proposal(
     let mine = proposal("mine", place: placeA, origin: .ui, conversation: "conv-a")
     async let agentDecision = broker.request(agent)
     async let mineDecision = broker.request(mine)
-    while await broker.allSlots().count < 2 { await Task.yield() }
+    var slots = await broker.slotUpdates().makeAsyncIterator()
+    var seen = await slots.next()
+    while seen?.count != 2 { seen = await slots.next() }
     #expect(mine.slot == ProposalSlot(place: placeA, conversation: nil))
     #expect(await broker.current(for: placeA) == mine, "the plane's projection shows the operator's")
+    #expect(await broker.current(in: agent.slot) == agent, "the agent's is still parked beside it")
+    #expect(seen == [mine.slot: mine, agent.slot: agent])
     await broker.cancelAll()
     _ = await (agentDecision, mineDecision)
+}
+
+// Two conversations' proposals in one place, no operator's: the place projection shows the
+// lowest conversation id's, whatever order the slots come in.
+@Test func theProjectionBreaksATieByTheLowestConversationId() {
+    let a = proposal("a", place: placeA, conversation: "conv-a")
+    let b = proposal("b", place: placeA, conversation: "conv-b")
+    let c = proposal("c", place: placeB, conversation: "conv-c")
+    for _ in 0..<20 {
+        var slots: [ProposalSlot: PendingMutation] = [:]
+        for p in [b, c, a].shuffled() { slots[p.slot] = p }
+        #expect(ConfirmationBroker.project(slots) == [placeA: a, placeB: c])
+    }
+}
+
+@Test func slotUpdatesPublishEachSlotsParkAndRelease() async throws {
+    let broker = ConfirmationBroker(timeout: .seconds(60))
+    var slots = await broker.slotUpdates().makeAsyncIterator()
+    let a = proposal("a", place: placeA, conversation: "conv-a")
+
+    async let decision = broker.request(a)
+    #expect(await slots.next() == [a.slot: a])
+
+    await broker.approve(id: a.id)
+    #expect(await slots.next() == [:])
+    #expect(await decision == .approved)
 }

@@ -904,6 +904,16 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         #expect(w.model.layoutSnapshot.focusedId == db)
     }
 
+    /// Conversations 2 of 3, Task 3: with nothing live, ⌘P draws no Running group — not an empty
+    /// header, not a loading row.
+    @Test func nothingLiveDrawsNoRunningGroup() async throws {
+        let w = await paletteWindow()
+        await w.model.refreshContext()
+        let entries = await w.model.paletteRootEntries(mode: .open) { _ in }
+        #expect(!entries.isEmpty)
+        #expect(!entries.contains { $0.group == .running }, "\(entries.map(\.id))")
+    }
+
     /// Defence in depth: a step with no stamp after the window left an organisation is refused,
     /// even once a root list has been built in the new one.
     @Test func anUnstampedStepAfterAnOrgSwitchIsRefused() async throws {
@@ -973,8 +983,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "pane_close", "pane_focus", "pane_maximize", "pane_move", "pane_open", "pane_resize", "pane_restore",
     "pane_scroll_clear", "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
     "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
-    "session_get", "session_list", "session_read", "session_record_parent", "session_resume",
-    "session_set_provider", "settings_open", "term_open", "term_propose", "term_run", "term_scroll",
+    "session_get", "session_list", "session_new", "session_read", "session_record_parent", "session_resume",
+    "session_set_provider", "session_switch", "settings_open", "term_open", "term_propose", "term_run", "term_scroll",
 ]
 
 /// The agent's `--allowedTools`, captured at the same moment.

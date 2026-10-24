@@ -127,7 +127,10 @@ private let keptPerPlace: Set<String> = [
     // shows: an unseen result or failure, and whether its environment is production (Plan 4) —
     // the order they were created in, which one each place shows, and the id each place's next
     // one takes (conversations 1 of 3). `agents` is their projection by place.
-    "conversations", "conversationOrder", "screenConversations", "reservedConversations",
+    "conversations", "conversationOrder", "conversationsMade", "screenConversations", "reservedConversations",
+    // Conversations 2 of 3: keyed by place, like `reservedConversations` — what each place's
+    // canvas held when its conversation went to the background.
+    "landingBaselines", "landingsLoading",
     // The socket each shown place opened before a session took it, by its conversation, pinned
     // to that place.
     "shownSockets",
@@ -190,6 +193,15 @@ private let orgIndependent: Set<String> = [
     // Plan 4 final review I1: `goTosInFlight` counts chip clicks between switches, raised and
     // lowered by the `goTo` that runs each, whichever org it ends in — the shape of `switching`.
     "goTosInFlight",
+    // Conversations 2 of 3: the composer's hook for a change of the conversation on screen,
+    // set once by `ComposerModel.init`; it carries no organisation's state.
+    "onScreenChange",
+    // Fix round 1: the screen it was last told about, and New Conversation's focus flag — what
+    // is on screen, which an org switch changes and `activateLayout` then tells.
+    "toldScreenKey", "composerFocusForced",
+    // Final review, item 3: set only while `agent(for:)` tells one screen change, and cleared
+    // before it returns — never held across an org switch.
+    "landingBecoming",
     "registry", "persistence", "context",
     "harnessFactory", "lookupFactory", "resumes", "confirmations",
     // 3b-viii: takes the organisation per call, like `harnessFactory`; the generation only orders
@@ -201,6 +213,9 @@ private let orgIndependent: Set<String> = [
     // Set by `shutdown`: no organisation's state, the window's end.
     "socketsClosed",
     "providerSwitches", "providerSwitchPump", "resumePump",
+    // Conversations 2 of 3: the broker and pump of `session_new`/`session_switch`, the shape of
+    // `providerSwitches` — capabilities, no organisation's state.
+    "conversationRequests", "conversationPump",
     "status",
     "dragCandidate", "confirmationPump", "observationPump",
     "pendingSave", "debugEventSink", "debugEventsEnabledOverride",

@@ -67,7 +67,7 @@ struct AgentChipTests {
         #expect(model.chips.count == 1)
         #expect(chip.place == placeA)
         #expect(chip.state == .working)
-        #expect(chip.label == "initech · api · staging")
+        #expect(chip.label == "initech · api · staging — hello api")
         #expect(!chip.productionEnvironment)
     }
 
@@ -184,7 +184,7 @@ struct AgentChipTests {
 
         #expect(model.chips.map(\.place) == [production, placeB], "ordered by org, project, environment")
         #expect(model.chips.map(\.productionEnvironment) == [true, false])
-        #expect(model.chips.first?.label == "initech · api · production")
+        #expect(model.chips.first?.label == "initech · api · production — hello api")
     }
 
     @Test func goToReachesAPlaceInAnotherOrg() async throws {
@@ -395,6 +395,21 @@ struct AgentChipProductionTests {
         #expect(model.chips.map(\.place) == [live])
     }
 
+    // Final review, item 2: a conversation that has sent nothing is listed too, and its row is
+    // production red from the moment it exists.
+    @Test func aNeverSentConversationReadsItsPlacesDeclarationFromCreation() async throws {
+        let pinned = GatedContext(place: live, declarations: ["live": true])
+        let model = flagWindow(Harnesses(), pinned: pinned)
+        show(live, in: model)
+
+        _ = await model.openPane(kind: "note")
+
+        let row = try #require(model.liveConversationRows(in: live).first)
+        #expect(row.session == nil, "never sent")
+        #expect(await waitUntil { model.liveConversationRows(in: live).first?.isProduction == true },
+                "\(model.liveConversationRows(in: live))")
+    }
+
     @Test func aDeclarationWinsOverTheNameOnceRead() async throws {
         // Decision 26: an environment named production that declares it is not, is not.
         let pinned = GatedContext(place: namedProduction, declarations: ["production": false])
@@ -413,6 +428,20 @@ struct AgentChipProductionTests {
         #expect(await waitUntil { await pinned.asked > 0 })
         try await Task.sleep(nanoseconds: 50_000_000)
         #expect(model.chips.first?.productionEnvironment == true, "unread, the name says production")
+    }
+
+    @Test func aChipIsNamedByItsConversationAndOrdinal() {
+        let first = AgentChip(place: placeA, state: .working, productionEnvironment: false, conversation: "c1")
+        #expect(first.title == "New conversation" && first.ordinal == 1)
+        #expect(first.label == "initech · api · staging — New conversation")
+        #expect(first.identifier == "window.agentChip.initech/api/staging")
+        #expect(first.id == "c1")
+        let third = AgentChip(
+            place: placeA, state: .done, productionEnvironment: false, conversation: "c3",
+            title: "fix the flaky login test", ordinal: 3)
+        #expect(third.label == "initech · api · staging — fix the flaky login test")
+        #expect(third.identifier == "window.agentChip.initech/api/staging#3")
+        #expect(third.id != first.id, "two chips in one place are two rows")
     }
 
     @Test func aTrayOfTwoOrFewerShowsThemAll() {
@@ -545,5 +574,130 @@ private actor FakeContext: ToolCaller {
 
     private func refusal(_ text: String) -> JSONValue {
         .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(text)])])])
+    }
+}
+
+// Conversations 2 of 3, Task 4 fix round 1: the composer's draft belongs to the conversation on
+// screen whatever moved it — a picker, a ⌘P jump, an org switch — told once per change from
+// `activateLayout`, where every path converges.
+@MainActor
+struct DraftPerScreenTests {
+    /// The composer over `model`, with every `onScreenChange` counted on the way through.
+    private func composer(over model: WindowModel) -> (ComposerModel, () -> Int) {
+        let composer = ComposerModel(window: model, speech: SpeechRegistry(engines: []))
+        let inner = model.onScreenChange
+        var told = 0
+        model.onScreenChange = { told += 1; inner?($0, $1, $2) }
+        return (composer, { told })
+    }
+
+    @Test func aDraftStaysWithItsEnvironmentAcrossThePicker() async throws {
+        let ctx = FakeContext()
+        let harnesses = Harnesses()
+        let model = await goToWindow(ctx, harnesses: harnesses)
+        await model.refreshContext()
+        #expect(await model.send("first job"))
+        let (composer, told) = composer(over: model)
+        composer.edited(draft: "drop the users table", caret: 20)
+
+        #expect(await model.setEnvironment("production"))
+        #expect(composer.draft.isEmpty, "staging's draft is not staged in production")
+        #expect(told() == 1)
+
+        #expect(await model.setEnvironment("staging"))
+        #expect(composer.draft == "drop the users table" && composer.caret == 20)
+        #expect(told() == 2)
+    }
+
+    @Test func aDraftStaysWithItsPlaceAcrossAJumpToAnotherOrg() async throws {
+        let ctx = FakeContext()
+        let model = await goToWindow(ctx, harnesses: Harnesses())
+        await model.refreshContext()
+        let home = model.place
+        #expect(await model.send("first job"))
+        let (composer, _) = composer(over: model)
+        composer.edited(draft: "half a thought", caret: 14)
+
+        await model.goTo(Place(organization: "globex", project: "shop", environment: "staging"))
+        #expect(composer.draft.isEmpty, "\(model.status)")
+
+        await model.goTo(home)
+        #expect(model.place == home && composer.draft == "half a thought")
+    }
+
+    // Fix round 2: an org switch reserves the place's next conversation only once the switch is
+    // over, after the activation told the composer; that reservation is told too.
+    @Test func aDraftTypedInAFreshOrgSurvivesItsFirstSend() async throws {
+        let ctx = FakeContext()
+        let model = await goToWindow(ctx, harnesses: Harnesses())
+        await model.refreshContext()
+        let (composer, _) = composer(over: model)
+
+        await model.requestOrganizationSwitch("globex")
+        #expect(model.organization == "globex", "\(model.status)")
+        composer.edited(draft: "and then", caret: 8)
+        #expect(await model.send("first job"))
+
+        #expect(composer.draft == "and then", "the Landing's draft is the conversation's")
+        let globex = model.place
+        await model.goTo(Place(organization: "initech", project: "api", environment: "staging"))
+        #expect(composer.draft.isEmpty)
+        await model.goTo(globex)
+        #expect(composer.draft == "and then", "kept under the conversation it became")
+    }
+
+    @Test func noDraftLeaksBetweenTwoFreshPlacesInDifferentOrgs() async throws {
+        let ctx = FakeContext()
+        let model = await goToWindow(ctx, harnesses: Harnesses())
+        await model.refreshContext()
+        let initech = model.place
+        let (composer, _) = composer(over: model)
+
+        await model.requestOrganizationSwitch("globex")
+        let globex = model.place
+        composer.edited(draft: "globex only", caret: 11)
+        await model.goTo(initech)
+        #expect(composer.draft.isEmpty, "globex's draft is not initech's")
+        composer.edited(draft: "initech only", caret: 12)
+        await model.goTo(globex)
+        #expect(composer.draft == "globex only")
+        await model.goTo(initech)
+        #expect(composer.draft == "initech only")
+    }
+
+    @Test func anUnreservedLandingIsKeyedByItsPlace() {
+        let model = WindowModel.forTesting(scratchRoot: testScratchRoot, organization: org)
+        show(placeA, in: model)
+        #expect(model.screenKey == "landing:@initech/api/staging")
+        // Renamed only into the id the place reserves (final review, item 3).
+        #expect(!model.isSameScreenRenamed(from: "landing:@initech/api/staging", to: "landing:r"))
+        let r = model.pinTurnScope().conversation ?? ""
+        #expect(model.isSameScreenRenamed(from: "landing:@initech/api/staging", to: "landing:" + r))
+        #expect(model.isSameScreenRenamed(from: "landing:r", to: "r"))
+        #expect(!model.isSameScreenRenamed(from: "landing:@globex/web/dev", to: "landing:r"), "another place's")
+        #expect(!model.isSameScreenRenamed(from: "landing:q", to: "landing:r"))
+    }
+
+    @Test func aLandingsDraftSurvivesItsOwnFirstSendAndStaysWithTheConversation() async throws {
+        let ctx = FakeContext()
+        let harnesses = Harnesses()
+        let model = await goToWindow(ctx, harnesses: harnesses)
+        await model.refreshContext()
+        let (composer, told) = composer(over: model)
+        let landing = model.screenKey
+        #expect(landing.hasPrefix("landing:") && landing != "landing:")
+        composer.edited(draft: "and then", caret: 8)
+
+        #expect(await model.send("first job"))
+
+        let conversation = try #require(model.currentAgent).id
+        #expect(model.screenKey == conversation && landing == "landing:" + conversation)
+        #expect(composer.draft == "and then", "the same screen, re-keyed: nothing cleared")
+        #expect(told() == 1)
+
+        #expect(await model.setEnvironment("production"))
+        #expect(composer.draft.isEmpty)
+        #expect(await model.setEnvironment("staging"))
+        #expect(composer.draft == "and then", "kept under the conversation's id, not the Landing's")
     }
 }

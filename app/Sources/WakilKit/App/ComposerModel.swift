@@ -30,6 +30,13 @@ public final class ComposerModel {
     /// Which hold an engine belongs to, so a late engine from an earlier
     /// hold is cancelled instead of adopted.
     private var hold = 0
+    /// The draft and caret of every screen not shown, by `WindowModel.screenKey` (conversations
+    /// 2 of 3): text only — a landed-unsent mark does not travel.
+    private var drafts: [String: (draft: String, caret: Int)] = [:]
+    /// The screen the draft on show belongs to, and the one the hold in progress was begun on:
+    /// words heard before a switch land in the draft they were spoken into, not the one switched to.
+    private var screen: String
+    private var holdScreen: String?
 
     public init(
         window: WindowModel, speech: SpeechRegistry,
@@ -40,6 +47,37 @@ public final class ComposerModel {
         self.fastPathRunner = fastPathRunner ?? { [window] line, scope in await window.runFastPath(line, scope: scope) }
         self.speech = speech
         self.now = now
+        self.screen = window.screenKey
+        window.onScreenChange = { [weak self] from, to, focusComposer in
+            self?.screenChanged(from: from, to: to, focusComposer: focusComposer)
+        }
+    }
+
+    /// The screen moved from `from` to `to` (`WindowModel.onScreenChange`): dictation stops
+    /// (`resigned`), the draft and caret are kept under `from`, and `to`'s come back — empty for
+    /// a screen never typed on. `focusComposer` hands the field the keyboard (ruling 7). A
+    /// fast-path receipt answered a line typed on the screen left, and goes.
+    ///
+    /// One screen renamed (`WindowModel.isSameScreenRenamed`) — a Landing whose first message
+    /// made it a conversation — is not a change: only its key moves, and the draft (what was
+    /// typed while that message went out), a hold and the keyboard stay where they are.
+    public func screenChanged(from: String, to: String, focusComposer: Bool) {
+        if window.isSameScreenRenamed(from: from, to: to) {
+            if holdScreen == screen || holdScreen == from { holdScreen = to }
+            screen = to
+            return
+        }
+        resigned()
+        receipt = nil
+        drafts[from] = (draft, caret)
+        let next = drafts.removeValue(forKey: to)
+        draft = next?.draft ?? ""
+        caret = next?.caret ?? 0
+        landedUnsent = false
+        // A hold begun on the screen on show was spoken into the draft just kept under `from`.
+        if holdScreen == screen { holdScreen = from }
+        screen = to
+        if focusComposer { focusToken += 1 }
     }
 
     public var bar: ComposerBarContent {
@@ -76,8 +114,11 @@ public final class ComposerModel {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let source: WindowModel.TurnSource = landedUnsent ? .voice : .typed
-        // Read before the first await: the line belongs to the place it was typed in.
-        let scope = window.turnScope
+        // Read before the first await: the line belongs to the conversation it was typed on —
+        // on a Landing, the one its first message starts (`WindowModel.pinTurnScope`) — and the
+        // screen it was typed on is where it comes back to.
+        let scope = window.pinTurnScope()
+        let typedOn = screen
         draft = ""
         caret = 0
         landedUnsent = false
@@ -94,12 +135,17 @@ public final class ComposerModel {
             break
         }
         let started = await window.send(text, via: source, scope: scope)
-        // No turn started (no harness, a failed send): the
-        // operator's words come back. Not if they have typed since.
-        if !started, draft.isEmpty {
+        // No turn started (no harness, a failed send, a screen gone): the operator's words come
+        // back to the screen they were typed on (Rule 2) — on show, or kept for it when the
+        // screen has moved — not to whichever is shown now. Not if they have typed there since.
+        guard !started else { return }
+        if screen == typedOn || window.isSameScreenRenamed(from: typedOn, to: screen) {
+            guard draft.isEmpty else { return }
             draft = text
             caret = (text as NSString).length
             landedUnsent = source == .voice
+        } else if drafts[typedOn]?.draft.isEmpty ?? true {
+            drafts[typedOn] = (text, (text as NSString).length)
         }
     }
 
@@ -126,6 +172,7 @@ public final class ComposerModel {
             switch effect {
             case .startEngine:
                 hold += 1
+                holdScreen = screen
                 start(hold: hold)
             case .stopEngine:
                 let current = provider
@@ -137,6 +184,13 @@ public final class ComposerModel {
                 pump = nil
                 Task { await current?.cancel() }
             case .land(let text):
+                if let spokenIn = holdScreen, spokenIn != screen {
+                    // Spoken into a screen since left: it lands there, waiting, unfocused.
+                    let left = drafts[spokenIn] ?? ("", 0)
+                    let landed = ComposerText.insert(text, into: left.draft, at: left.caret)
+                    drafts[spokenIn] = (landed.draft, landed.caret)
+                    continue
+                }
                 let landed = ComposerText.insert(text, into: draft, at: caret)
                 draft = landed.draft
                 caret = landed.caret
@@ -152,6 +206,7 @@ public final class ComposerModel {
         if machine.phase == .idle {
             provider = nil
             pump = nil
+            holdScreen = nil
         }
         window.setListening(machine.isListening)
     }
