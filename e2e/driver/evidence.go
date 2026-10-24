@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
 )
 
 // DefaultEvidenceRoot is where a run leaves what it saw and what it observed:
@@ -54,6 +58,11 @@ type Evidence struct {
 	// section that listed the three artefacts a failing check usually writes
 	// would be asserting what it had not looked at.
 	artefacts map[string][]string
+
+	// GoneFixture describes a fixture whose process has gone (#15): what macOS logged for its
+	// pid, and any crash report. Capture writes it to fixture-gone.txt only when the pid is no
+	// longer running. Nil skips it — the session sets `DescribeGoneFixture`.
+	GoneFixture func(pid int) string
 }
 
 // RunDir names a fresh evidence directory for one run.
@@ -113,6 +122,15 @@ func (e *Evidence) Capture(orca Orca, pid int, channel Channel, check string) {
 	}
 
 	e.write(check, dir, "panes.json", e.panes(channel, check))
+
+	// **A fixture that went away mid-check is the fact, not a missing tree** (#15). It was seen
+	// once, with no crash report, as "orca refused the read: app_not_found" — which reads like
+	// the harness losing the pid. Whether the process is gone, and what macOS said about it,
+	// is what tells the two apart.
+	if e.GoneFixture != nil && pid > 0 && syscall.Kill(pid, 0) == syscall.ESRCH {
+		e.write(check, dir, "fixture-gone.txt",
+			fmt.Sprintf("the fixture (pid %d) is no longer running\n\n%s", pid, e.GoneFixture(pid)))
+	}
 }
 
 // panes renders what every pane in the window contains.
@@ -301,4 +319,37 @@ func copyFile(from, to string) error {
 		return err
 	}
 	return destination.Close()
+}
+
+// DescribeGoneFixture is GoneFixture's shipped answer: the unified log's last ten minutes for
+// the pid — an exit, a watchdog or a jetsam kill leaves a line there and no crash report — and
+// any Wakil crash report written in the same ten minutes.
+func DescribeGoneFixture(pid int) string {
+	var b strings.Builder
+	out, err := exec.Command("/usr/bin/log", "show", "--last", "10m", "--style", "compact",
+		"--predicate", fmt.Sprintf("processID == %d", pid)).CombinedOutput()
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if len(lines) > 200 {
+		lines = lines[len(lines)-200:]
+	}
+	fmt.Fprintf(&b, "unified log, last 10 minutes, processID == %d", pid)
+	if err != nil {
+		fmt.Fprintf(&b, " (log show: %v)", err)
+	}
+	b.WriteString(":\n" + strings.Join(lines, "\n") + "\n\ncrash reports from the last 10 minutes:\n")
+	reports := filepath.Join(os.Getenv("HOME"), "Library", "Logs", "DiagnosticReports")
+	entries, _ := os.ReadDir(reports)
+	found := false
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil || !strings.Contains(entry.Name(), "Wakil") || time.Since(info.ModTime()) > 10*time.Minute {
+			continue
+		}
+		b.WriteString(filepath.Join(reports, entry.Name()) + "\n")
+		found = true
+	}
+	if !found {
+		b.WriteString("none\n")
+	}
+	return b.String()
 }

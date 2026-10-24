@@ -321,7 +321,8 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		Dir: RunDir(s.EvidenceRoot, time.Now().UTC().Format("20060102-150405")),
 		// The scripted agent writes beside the script the seed laid down, and
 		// the seed puts that in the provider's config directory.
-		AgentLog: agentLogPath(fixture, seeded, s.Agent.Stub),
+		AgentLog:    agentLogPath(fixture, seeded, s.Agent.Stub),
+		GoneFixture: DescribeGoneFixture,
 	}
 	s.logf("evidence for any failure lands in %s", evidence.Dir)
 
