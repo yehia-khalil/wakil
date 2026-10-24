@@ -286,8 +286,8 @@ func (g *GitRemote) Fetch(ctx context.Context) (GitRemoteResult, error) {
 	return g.result(out, stderr), nil
 }
 
-// Pull integrates the upstream by the organisation's strategy. A conflict aborts the rebase or
-// merge, leaves the tree as it was, and reports the conflicting paths (3a-v resolves conflicts).
+// Pull integrates the upstream by the organisation's strategy. A conflict stops it with the
+// conflicts left in the tree and reports their paths; only a cancel undoes what it started.
 func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	branch, err := g.branch()
 	if err != nil {
@@ -302,7 +302,7 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 		return GitRemoteResult{}, err
 	}
 	// A merge, rebase, cherry-pick or revert already under way is the operator's: refuse, so the
-	// abort below only ever undoes what this pull started.
+	// cancel's abort below only ever undoes what this pull started.
 	if err := g.inProgress().InProgressError(g.Root); err != nil {
 		return GitRemoteResult{}, err
 	}
@@ -325,13 +325,11 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 		return GitRemoteResult{}, ctx.Err()
 	}
 	if g.inProgress().Kind != "" {
-		paths, _ := g.plain("diff", "--name-only", "--diff-filter=U")
-		conflicts := strings.Fields(paths)
-		g.abortInProgress()
+		// Left in place (3a-v-b, call 2): the operator resolves them, or Abort brings back the tree.
+		paths, _ := g.plain("ls-files", "-u", "-z")
 		r := g.result(nil, stderr)
-		r.Conflicts = conflicts
-		return r, UserError("Pull stopped on conflicts in " + strings.Join(conflicts, ", ") +
-			"; nothing was changed. Resolve them in a terminal, or wait for Wakil's conflict view")
+		r.Conflicts = unmergedPaths([]byte(paths))
+		return r, UserError("Pull stopped on conflicts in " + strings.Join(r.Conflicts, ", ") + "; resolve them below")
 	}
 	if strings.Contains(stderr, "Not possible to fast-forward") {
 		return GitRemoteResult{}, UserError("Both sides have new commits, so Fast-forward only cannot pull. " +

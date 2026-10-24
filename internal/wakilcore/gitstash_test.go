@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -77,14 +78,14 @@ func TestApplyPopDropByIndexAndID(t *testing.T) {
 	if len(s) != 2 || s[0].Message != "second" {
 		t.Fatalf("stashes = %+v", s)
 	}
-	if note, err := w.StashApply(ctx, 1, s[1].ID, false); err != nil || note != "" {
-		t.Fatalf("apply: %q %v", note, err)
+	if note, clash, err := w.StashApply(ctx, 1, s[1].ID, false); err != nil || note != "" || clash != nil {
+		t.Fatalf("apply: %q %+v %v", note, clash, err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(work, "a.txt")); string(b) != "one\n" || len(strings.Split(git("stash", "list"), "\n")) != 2 {
 		t.Fatal("apply did not keep the stash")
 	}
 	git("checkout", "--", "a.txt")
-	if _, err := w.StashApply(ctx, 0, s[0].ID, true); err != nil {
+	if _, _, err := w.StashApply(ctx, 0, s[0].ID, true); err != nil {
 		t.Fatal(err)
 	}
 	if git("stash", "list") == "" || strings.Contains(git("stash", "list"), "second") {
@@ -117,28 +118,74 @@ func TestAMovedStashListIsRefused(t *testing.T) {
 	}
 }
 
-// A clash puts back only the files the stash touched; the operator's other changes stay.
-func TestPopClashKeepsStashAndCleansTree(t *testing.T) {
-	work, w, git := branchFixture(t)
+// clashFixture pops a stash whose a.txt clashes with a commit made since; the operator's other.txt is
+// unrelated. b.txt is the stash's non-conflicting change, which git leaves staged.
+func clashFixture(t *testing.T) (work string, w *GitWriter, git func(args ...string) string, note string, clash *GitStashClash) {
+	t.Helper()
+	work, w, git = branchFixture(t)
 	ctx := context.Background()
 	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+	writeIn(t, work, "b.txt", "stashed b\n")
+	git("add", "b.txt")
 	w.Stash(ctx, "clashing", "default")
 	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
 	git("commit", "-qam", "moved on")
 	writeIn(t, work, "other.txt", "mine, unrelated\n")
 	s, _ := ReadStashes(ctx, w.runner())
-	note, err := w.StashApply(ctx, 0, s[0].ID, true)
-	if err != nil || note != "Your stash clashes with main; it is kept in git stash" {
-		t.Fatalf("note %q err %v", note, err)
+	note, clash, err := w.StashApply(ctx, 0, s[0].ID, true)
+	if err != nil || clash == nil {
+		t.Fatalf("note %q clash %+v err %v", note, clash, err)
+	}
+	return work, w, git, note, clash
+}
+
+// A clash is left in the tree to resolve, the stash kept, and recorded for Undo Apply.
+func TestStashPopClashLeavesConflictsAndTheStash(t *testing.T) {
+	work, _, git, note, clash := clashFixture(t)
+	if note != "Your stash clashes with main in a.txt; resolve it below, or Undo Apply" {
+		t.Fatalf("note = %q", note)
+	}
+	if git("ls-files", "-u") == "" || !strings.Contains(readIn(t, work, "a.txt"), "<<<<<<<") {
+		t.Fatalf("no conflict left: %q", readIn(t, work, "a.txt"))
+	}
+	if readIn(t, work, "b.txt") != "stashed b\n" || readIn(t, work, "other.txt") != "mine, unrelated\n" {
+		t.Fatal("the stash's other change or the operator's file was touched")
+	}
+	if clash.ID != git("rev-parse", "stash@{0}") || !slices.Equal(clash.Conflicts, []string{"a.txt"}) || len(clash.Created) != 0 {
+		t.Fatalf("clash = %+v", clash)
+	}
+	if len(clash.Files) != 2 || clash.Files[0].Path != "a.txt" || clash.Files[0].Hash != git("hash-object", "a.txt") ||
+		clash.Files[1].Path != "b.txt" || clash.Files[1].Hash != git("hash-object", "b.txt") {
+		t.Fatalf("files = %+v", clash.Files)
+	}
+}
+
+func TestUndoApplyRestoresAndKeepsTheStash(t *testing.T) {
+	work, w, git, _, clash := clashFixture(t)
+	if err := w.StashUndoApply(context.Background(), *clash); err != nil {
+		t.Fatal(err)
 	}
 	if st := git("status", "--porcelain"); st != "?? other.txt" {
 		t.Fatalf("status = %q", st)
 	}
-	if b, _ := os.ReadFile(filepath.Join(work, "a.txt")); string(b) != "one\nCOMMITTED\nthree\n" {
-		t.Fatalf("a.txt = %q", b)
+	if readIn(t, work, "a.txt") != "one\nCOMMITTED\nthree\n" {
+		t.Fatalf("a.txt = %q", readIn(t, work, "a.txt"))
 	}
 	if git("stash", "list") == "" {
 		t.Fatal("the stash went")
+	}
+}
+
+// Review Focus 5: an edit made since the clash is never thrown away.
+func TestUndoApplyRefusesAnEditedFile(t *testing.T) {
+	work, w, git, _, clash := clashFixture(t)
+	writeIn(t, work, "a.txt", "one\nRESOLVED\nthree\n")
+	err := w.StashUndoApply(context.Background(), *clash)
+	if err == nil || err.Error() != "a.txt changed since the clash; Undo Apply would lose that — resolve it by hand" {
+		t.Fatalf("err = %v", err)
+	}
+	if readIn(t, work, "a.txt") != "one\nRESOLVED\nthree\n" || git("ls-files", "-u") == "" {
+		t.Fatal("the refusal changed the tree")
 	}
 }
 
@@ -164,9 +211,9 @@ func TestGitShowReadsAStashFile(t *testing.T) {
 	}
 }
 
-// Review C1: a clash's recovery never deletes a file the apply did not create, and reads names with
-// spaces or non-ASCII letters whole.
-func TestAClashNeverDeletesTheOperatorsFiles(t *testing.T) {
+// Review C1: Undo Apply never deletes a file the apply did not create, and reads names with spaces or
+// non-ASCII letters whole.
+func TestUndoApplyNeverDeletesTheOperatorsFiles(t *testing.T) {
 	work, w, git := branchFixture(t)
 	ctx := context.Background()
 	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
@@ -184,13 +231,29 @@ func TestAClashNeverDeletesTheOperatorsFiles(t *testing.T) {
 	if got := strings.Join(s[0].Files, "|"); got != "a.txt|café.txt|my notes.txt|u.txt" {
 		t.Fatalf("files = %q", got)
 	}
-	note, err := w.StashApply(ctx, 0, s[0].ID, true)
-	if err != nil || note != "Your stash clashes with main; it is kept in git stash" {
-		t.Fatalf("note %q err %v", note, err)
+	note, clash, err := w.StashApply(ctx, 0, s[0].ID, true)
+	if err != nil || clash == nil || note != "Your stash clashes with main in a.txt; resolve it below, or Undo Apply" {
+		t.Fatalf("note %q clash %+v err %v", note, clash, err)
+	}
+	if !slices.Equal(clash.Created, []string{"café.txt", "my notes.txt"}) {
+		t.Fatalf("created = %q", clash.Created)
+	}
+	for _, f := range clash.Files {
+		if f.Path == "u.txt" {
+			t.Fatalf("the operator's u.txt is in the clash: %+v", clash.Files)
+		}
+	}
+	if err := w.StashUndoApply(ctx, *clash); err != nil {
+		t.Fatal(err)
 	}
 	for name, want := range map[string]string{"u.txt": "OPERATOR\n", "notes.txt": "unrelated\n", "a.txt": "one\nCOMMITTED\nthree\n"} {
 		if b, err := os.ReadFile(filepath.Join(work, name)); err != nil || string(b) != want {
 			t.Errorf("%s = %q, %v", name, b, err)
+		}
+	}
+	for _, name := range []string{"my notes.txt", "café.txt"} {
+		if _, err := os.Stat(filepath.Join(work, name)); !os.IsNotExist(err) {
+			t.Errorf("%s left behind", name)
 		}
 	}
 	if git("stash", "list") == "" {

@@ -97,6 +97,9 @@ func GitShow(ctx context.Context, g *GitRunner, path, rev string) (GitShowResult
 		data, err = g.Run(ctx, "show", "HEAD:"+filepath.ToSlash(rel))
 	case "index":
 		data, err = g.Run(ctx, "show", ":"+filepath.ToSlash(rel))
+	case "ours", "theirs": // 3a-v-b: a conflict's sides, index stages 2 and 3
+		stage := map[string]string{"ours": ":2:", "theirs": ":3:"}[rev]
+		data, err = g.Run(ctx, "show", stage+filepath.ToSlash(rel))
 	case "worktree":
 		var size int
 		data, size, err = readWorktree(g.Root, rel)
@@ -122,7 +125,7 @@ func GitShow(ctx context.Context, g *GitRunner, path, rev string) (GitShowResult
 		}
 		suffix, ok := map[string]string{"stash": "", "stash-base": "^1", "stash-untracked": "^3", "commit": "", "commit-parent": "^1"}[kind]
 		if !ok || !stashID.MatchString(id) {
-			return GitShowResult{}, UserError("rev must be HEAD, index, worktree, a stash side or a commit side, got " + rev)
+			return GitShowResult{}, UserError("rev must be HEAD, index, worktree, ours, theirs, a stash side or a commit side, got " + rev)
 		}
 		if kind == "commit-parent" && len(g.parents(ctx, id)) == 0 {
 			return GitShowResult{Absent: true}, nil // the root commit: nothing came before it
@@ -131,10 +134,12 @@ func GitShow(ctx context.Context, g *GitRunner, path, rev string) (GitShowResult
 	}
 	if err != nil {
 		// A file absent at HEAD (added) or in the index (untracked) has an empty original side.
-		// Also handle staged deletions: "does not exist (neither on disk nor in the index)".
+		// Also handle staged deletions: "does not exist (neither on disk nor in the index)", and a
+		// conflict's side that deleted the file: "is in the index, but not at stage 3".
 		if (rev != "worktree") && (strings.Contains(err.Error(), "exists on disk, but not in") ||
 			strings.Contains(err.Error(), "does not exist in") ||
-			strings.Contains(err.Error(), "does not exist (neither on disk")) {
+			strings.Contains(err.Error(), "does not exist (neither on disk") ||
+			strings.Contains(err.Error(), "is in the index, but not at stage")) {
 			return GitShowResult{Absent: true}, nil
 		}
 		return GitShowResult{}, err

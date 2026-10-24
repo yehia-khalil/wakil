@@ -437,7 +437,7 @@ func addWriteTools(s *mcp.Server) {
 				if fail != nil {
 					return fail, noteResult{}, nil
 				}
-				note, err := w.StashApply(ctx, a.Index, a.ID, op.pop)
+				note, _, err := w.StashApply(ctx, a.Index, a.ID, op.pop)
 				if err != nil {
 					return mcpx.ToolErr("wakil-git", err), noteResult{}, nil
 				}

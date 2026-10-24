@@ -164,6 +164,11 @@ func (w *GitWriter) conflicts(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return unmergedPaths(out), nil
+}
+
+// unmergedPaths reads `ls-files -u -z`: each path once, in git's order.
+func unmergedPaths(out []byte) []string {
 	var paths []string
 	seen := map[string]bool{}
 	for _, rec := range nulFields(out) {
@@ -173,7 +178,7 @@ func (w *GitWriter) conflicts(ctx context.Context) ([]string, error) {
 			paths = append(paths, p)
 		}
 	}
-	return paths, nil
+	return paths
 }
 
 // oneLine is git's result in a line: its first that is not progress, autostash bookkeeping or a hint, from

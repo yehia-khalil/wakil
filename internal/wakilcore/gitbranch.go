@@ -101,12 +101,14 @@ type SwitchOptions struct {
 }
 
 // SwitchResult: Blocked lists the paths a refused switch would overwrite; Stash is the id of the
-// stash the switch left changes in; Note is a sentence for the operator.
+// stash the switch left changes in; Note is a sentence for the operator; Clash is Bring Them Along's
+// pop that stopped on conflicts, for Undo Apply.
 type SwitchResult struct {
-	Switched bool     `json:"switched"`
-	Blocked  []string `json:"blocked,omitempty"`
-	Stash    string   `json:"stash,omitempty"`
-	Note     string   `json:"note,omitempty"`
+	Switched bool           `json:"switched"`
+	Blocked  []string       `json:"blocked,omitempty"`
+	Stash    string         `json:"stash,omitempty"`
+	Note     string         `json:"note,omitempty"`
+	Clash    *GitStashClash `json:"clash,omitempty"`
 }
 
 // NormaliseBranchName trims a typed name and turns each run of spaces into one "-" (VS Code's default).
@@ -234,12 +236,16 @@ func (w *GitWriter) Switch(ctx context.Context, branch string, o SwitchOptions) 
 		r.Note = "Your changes are in git stash (" + ref + ")"
 		return r, nil
 	}
+	untracked, existed := w.stashUntrackedBefore(steady, stash)
 	if _, err := w.git(steady, nil, "stash", "pop", ref); err != nil {
-		// git keeps the stash on a clash; the tree goes back to the branch's, so nothing is left
-		// half-merged — the stash holds every change (it was taken with the untracked files).
-		w.git(steady, nil, "reset", "--hard", "-q")
-		w.git(steady, nil, "clean", "-fdq")
-		r.Note = "Switched to " + branch + "; your changes clash with it and are kept in git stash"
+		// git keeps the stash on a clash; the conflicts are left to resolve, as a stash apply's are
+		// (R5), and recorded for Undo Apply.
+		if r.Clash = w.stashClash(steady, stash, untracked, existed); r.Clash != nil {
+			r.Note = "Switched to " + branch + "; your changes clash with it in " + clashPaths(r.Clash) +
+				" — resolve them below, or Undo Apply"
+		} else {
+			r.Note = "Switched to " + branch + "; your changes clash with it and are kept in git stash"
+		}
 		return r, nil
 	}
 	r.Stash = ""

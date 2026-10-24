@@ -124,7 +124,7 @@ func TestEveryWriteRefusesMidCherryPick(t *testing.T) {
 	ctx := context.Background()
 	_, switchErr := w.Switch(ctx, "other", SwitchOptions{})
 	stashErr := w.Stash(ctx, "", "default")
-	_, applyErr := w.StashApply(ctx, 0, "0000000000000000000000000000000000000000", false)
+	_, _, applyErr := w.StashApply(ctx, 0, "0000000000000000000000000000000000000000", false)
 	_, pullErr := g.Pull(ctx)
 	for name, err := range map[string]error{"Switch": switchErr, "Stash": stashErr, "StashApply": applyErr, "Pull": pullErr} {
 		if err == nil || err.Error() != want {

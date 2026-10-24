@@ -110,58 +110,35 @@ func (w *GitWriter) stashAt(ctx context.Context, index int, id string) (string, 
 	return ref, nil
 }
 
-// StashApply applies (or, with pop, pops) the stash at index, if it is still id. A clash keeps the
-// stash and puts back what the apply changed: the tracked files it touched (each clean before, or git
-// would have refused) and the untracked files it created — never a file that was there before it.
-func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bool) (string, error) {
+// StashApply applies (or, with pop, pops) the stash at index, if it is still id. A clash is left in
+// the tree to resolve, the stash kept (git keeps it), and recorded so Undo Apply can put it back.
+func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bool) (string, *GitStashClash, error) {
 	if err := w.inProgress(ctx); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	ref, err := w.stashAt(ctx, index, id)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	g := w.runner()
-	untracked := stashUntracked(ctx, g, id)
-	untrackedSet := map[string]bool{}
-	existed := map[string]bool{}
-	for _, f := range untracked {
-		untrackedSet[f] = true
-		if r, err := g.ResolvePath(f); err == nil && fileExists(filepath.Join(w.Root, r)) {
-			existed[f] = true
-		}
-	}
+	untracked, existed := w.stashUntrackedBefore(ctx, id)
 	verb := "apply"
 	if pop {
 		verb = "pop"
 	}
 	_, applyErr := w.git(ctx, nil, "stash", verb, ref)
 	if applyErr == nil {
-		return "", nil
+		return "", nil, nil
 	}
-	steady := context.WithoutCancel(ctx)
-	conflicted, _ := w.git(steady, nil, "ls-files", "-u", "-z")
-	if len(conflicted) == 0 {
-		return "", applyErr // refused before it changed anything (a file in the way)
+	clash := w.stashClash(context.WithoutCancel(ctx), id, untracked, existed)
+	if clash == nil {
+		return "", nil, applyErr // refused before it changed anything (a file in the way)
 	}
-	var tracked []string
-	for _, f := range stashFiles(ctx, g, id) {
-		switch {
-		case !untrackedSet[f]:
-			tracked = append(tracked, f)
-		case !existed[f]:
-			removeInRoot(w.Root, f)
-		}
-	}
-	if len(tracked) > 0 {
-		w.git(steady, nil, "restore", append([]string{"--source=HEAD", "--staged", "--worktree", "--"}, tracked...)...)
-	}
-	b, _ := ReadBranches(ctx, g)
+	b, _ := ReadBranches(ctx, w.runner())
 	on := b.Current
 	if on == "" {
 		on = "HEAD"
 	}
-	return "Your stash clashes with " + on + "; it is kept in git stash", nil
+	return "Your stash clashes with " + on + " in " + clashPaths(clash) + "; resolve it below, or Undo Apply", clash, nil
 }
 
 // StashDrop drops the stash at index, if it is still id.
@@ -204,7 +181,7 @@ func (w *GitWriter) StashDropAll(ctx context.Context, ids []string) error {
 	return nil
 }
 
-// removeInRoot deletes rel, an untracked file a failed apply restored, if it resolves inside root.
+// removeInRoot deletes rel, a file a clashed apply created, if it resolves inside root.
 func removeInRoot(root, rel string) {
 	g := &GitRunner{Root: root}
 	if r, err := g.ResolvePath(rel); err == nil {
