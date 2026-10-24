@@ -519,6 +519,11 @@ struct WakilWindow: View {
         .onChange(of: session?.model.pending != nil) { _, pending in
             if pending { palette?.close(restoringFocus: false) }
         }
+        // The Close question, drawn below the palette, takes the keyboard (Rules 3 and 4): the
+        // palette's key monitor would otherwise keep its Return and Esc (final review M2).
+        .onChange(of: session?.model.closeQuestion != nil) { _, asked in
+            if asked { palette?.close(restoringFocus: false) }
+        }
         .modifier(UnsavedPromptWatch(
             model: session?.model,
             closePalette: { palette?.close(restoringFocus: false) },

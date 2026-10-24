@@ -202,6 +202,9 @@ private let orgIndependent: Set<String> = [
     // Conversations 3 of 3: the composer's hook for a conversation closed, set once by
     // `ComposerModel.init`, for `onScreenChange`'s reason.
     "onConversationClosed",
+    // Conversations 3 final review: the composer's hook for Keep it on the Close question, set
+    // once by `ComposerModel.init`, for `onScreenChange`'s reason.
+    "onCloseQuestionKept",
     // Fix round 1: the screen it was last told about, and New Conversation's focus flag — what
     // is on screen, which an org switch changes and `activateLayout` then tells.
     "toldScreenKey", "composerFocusForced",

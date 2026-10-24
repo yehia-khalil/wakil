@@ -580,6 +580,77 @@ struct ConversationCloseTests {
         #expect(model.runningAgent(in: "api", environment: "staging") == "agent (test-provider)")
         await model.shutdown()
     }
+
+    // MARK: Final review
+
+    /// A window whose first session start holds where `makeSession` waits on the shown socket's
+    /// start, after it took that socket and before `install` — once: every later socket opens
+    /// at once. Returns the gate that lets it go on.
+    private func windowHoldingTheFirstStart(_ sessions: Sessions) async throws -> (WindowModel, HoldGate) {
+        let gate = HoldGate()
+        let reached = Flag()
+        let base = sessions.socketFactory
+        let model = try await wiredWindow(sessions, socketFactory: { path, caller in
+            if gate.isArmed, !reached.value {
+                reached.set()
+                await gate.wait()
+            }
+            return try await base(path, caller)
+        }).model
+        show(placeA, in: model)
+        gate.arm()
+        await model.activateLayoutForTesting()
+        #expect(await waitUntil { reached.value }, "the shown socket's start is held")
+        return (model, gate)
+    }
+
+    /// I1: a session still starting is work in flight — the operator's message on its way — so a
+    /// close asks, and Keep it leaves the start to finish and the turn to go out.
+    @Test func closingWhileTheSessionStartsAsksAndKeepItLetsTheTurnGoOut() async throws {
+        let sessions = Sessions()
+        let (model, gate) = try await windowHoldingTheFirstStart(sessions)
+        let composer = ComposerModel(window: model, speech: SpeechRegistry(engines: []))
+        let sending = Task { await model.send("first job") }
+        #expect(await waitUntil { model.shownSocketSessionIdForTesting(placeA) == nil }, "makeSession took it")
+        let agent = try #require(model.currentAgent)
+        #expect(agent.harness == nil && !agent.turnInFlight, "nothing is installed yet")
+
+        await model.closeConversation()
+
+        #expect(model.closeQuestion == CloseConversationQuestion(conversation: agent.id))
+        let focus = composer.focusToken
+        await model.answerCloseQuestion(close: false)
+        #expect(composer.focusToken == focus + 1, "Keep it gives the composer the keyboard back")
+        gate.release()
+        #expect(await sending.value)
+        #expect(model.conversation(id: agent.id) === agent && agent.turnInFlight)
+        #expect(!sessions.harnesses.in(placeA)[0].stopped)
+        await model.shutdown()
+    }
+
+    /// I1: Close it during the start ends the conversation, and the session that finishes
+    /// starting afterwards is stopped rather than installed on the closed one, where nothing — not
+    /// a close, not quit — would reach it again.
+    @Test func aStartThatFinishesAfterCloseItLeavesNoRunningHarness() async throws {
+        let sessions = Sessions()
+        let (model, gate) = try await windowHoldingTheFirstStart(sessions)
+        let sending = Task { await model.send("first job") }
+        #expect(await waitUntil { model.shownSocketSessionIdForTesting(placeA) == nil })
+        let agent = try #require(model.currentAgent)
+        await model.closeConversation()
+        await model.answerCloseQuestion(close: true)
+        #expect(model.conversation(id: agent.id) == nil)
+
+        gate.release()
+
+        #expect(await sending.value == false, "the turn goes nowhere")
+        #expect(agent.harness == nil && agent.socket == nil && !agent.turnInFlight)
+        let started = sessions.harnesses.in(placeA)
+        #expect(!started.isEmpty && started.allSatisfy { $0.stopped }, "no claude is left running")
+        let own = await sockets(of: agent.id, sessions)
+        #expect(!own.isEmpty && own.allSatisfy { $0.stopped }, "nor its socket")
+        await model.shutdown()
+    }
 }
 
 /// A flag a test double raises from any executor.

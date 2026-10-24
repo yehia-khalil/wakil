@@ -1805,6 +1805,11 @@ public final class WindowModel {
         shownSockets.values.first { $0.place == place }?.sessionId
     }
 
+    /// TEST-ONLY: the id `place` reserves for its next conversation, if any.
+    func reservedConversationForTesting(_ place: Place) -> String? {
+        reservedConversations[place]
+    }
+
     /// TEST-ONLY: the pane ids `place`'s Landing ignores after `newConversation`, if any.
     func landingBaselineForTesting(_ place: Place) -> Set<String>? {
         landingBaselines[place]
@@ -3765,6 +3770,28 @@ public final class WindowModel {
         }
     }
 
+    /// Drops what a removed place's Landing held (final review M1), as `carryAgents` moves it on a
+    /// rename: the id it reserved for its next conversation (`reservedConversations`), its
+    /// baseline (`landingBaselines`, and `landingsLoading`'s entry), and every socket opened for
+    /// it that no session took (`shownSockets`), stopped — otherwise it listens until quit,
+    /// answering for a place that no longer exists, and a place added again under the same name
+    /// would find the old baseline.
+    private func dropLandings(project: String, environment: String?) async {
+        func isRemoved(_ p: Place) -> Bool {
+            p.organization == organization && p.project == project
+                && (environment == nil || p.environment == environment)
+        }
+        for removed in Set(reservedConversations.keys).union(landingBaselines.keys).filter(isRemoved) {
+            reservedConversations[removed] = nil
+            landingBaselines[removed] = nil
+            landingsLoading.remove(removed)
+        }
+        for (id, shown) in shownSockets where isRemoved(shown.place) {
+            shownSockets.removeValue(forKey: id)
+            await shown.opening.value.socket?.stop()
+        }
+    }
+
     /// Kills the shells of every canvas of a removed place: nothing can reach them any more.
     private func closeShells(project: String, environment: String?) async {
         for scope in await scopesInMemory(project: project, environment: environment) {
@@ -3840,6 +3867,7 @@ public final class WindowModel {
         let reply = await projectLifecycle("ctx_remove_project", ["name": .string(name)])
         if let error = reply.error { return error }
         await closeConversations(project: name, environment: nil)
+        await dropLandings(project: name, environment: nil)
         await closeShells(project: name, environment: nil)
         releaseLayouts(project: name, environment: nil)
         await followDisk()
@@ -3901,6 +3929,7 @@ public final class WindowModel {
             ["project": .string(project), "projectPath": .string(projectPath), "name": .string(name)])
         if let error = reply.error { return (nil, error) }
         await closeConversations(project: project, environment: name)
+        await dropLandings(project: project, environment: name)
         await closeShells(project: project, environment: name)
         releaseLayouts(project: project, environment: name)
         await followDisk()
@@ -7305,8 +7334,17 @@ public final class WindowModel {
         return StartedSession(harness: harness, socket: socket, socketFailure: opened?.failure)
     }
 
-    /// Installs `started` as `agent`'s live session: its harness and its socket.
-    private func install(_ started: StartedSession, in agent: PlaceAgent, resumed: Bool = false) {
+    /// Installs `started` as `agent`'s live session: its harness and its socket. False, with
+    /// `started` stopped, when `agent` is no longer live (final review I1): a Close it, or a
+    /// removal (`closeConversations`), landed while the session started, so nothing would ever
+    /// reach or stop a session put on the detached conversation — not Close, and not `shutdown`,
+    /// which stops only the live ones. Every caller returns without its session on false.
+    private func install(_ started: StartedSession, in agent: PlaceAgent, resumed: Bool = false) async -> Bool {
+        guard conversations[agent.id] === agent else {
+            await started.harness.stop()
+            await started.socket?.stop()
+            return false
+        }
         agent.harness = started.harness
         // A new session's first turn records what it launched with. A resumed one keeps the prompt
         // its parent was first launched with (the 3a-iii-b probe), which may predate the current
@@ -7314,6 +7352,7 @@ public final class WindowModel {
         agent.launchedInstructions = resumed ? resumedInstructionsUnknown : nil
         agent.socket = started.socket
         agent.socketFailure = started.socketFailure
+        return true
     }
 
     /// Stops an agent's harness, then the socket its shim reached Wakil on: the `claude` child,
@@ -7458,7 +7497,11 @@ public final class WindowModel {
             if let started = await startHarness(
                 in: agent.place, provider: startProvider, sessionId: id, conversation: agent.id
             ) {
-                install(started, in: agent)
+                // Closed while it started: the session is stopped, and the turn goes nowhere.
+                guard await install(started, in: agent) else {
+                    status = ""
+                    return false
+                }
                 agent.providerId = startProvider
             }
             retainAgentPlace()
@@ -7790,7 +7833,8 @@ public final class WindowModel {
         agent.thoughts = rebuiltThread(thread, parent: parent, for: agent)
         agent.turnInFlight = false
 
-        install(started, in: agent, resumed: true)
+        // Closed while the fork started: the fork is stopped, and nothing else is done.
+        guard await install(started, in: agent, resumed: true) else { return }
         agent.providerId = providerId
         retainAgentPlace()
         agent.sessionId = child
@@ -8076,7 +8120,8 @@ public final class WindowModel {
         appendSeam("\(previous.isEmpty ? Self.unsetProviderLabel : previous) → \(id)", in: agent)
         agent.turnInFlight = false
 
-        install(started, in: agent)
+        // Closed while the new session started: it is stopped, and nothing else is done.
+        guard await install(started, in: agent) else { return }
         agent.providerId = id
         retainAgentPlace()
         agent.sessionId = fresh
@@ -8398,8 +8443,8 @@ public final class WindowModel {
     // MARK: - Conversations 3 of 3: close
 
     /// The Close question on show, if any: asked when the conversation a close names has its
-    /// turn running or a write waiting (Rule 1: closing destroys work in flight). Answered by
-    /// `answerCloseQuestion`.
+    /// turn running, its session starting or a write waiting (Rule 1: closing destroys work in
+    /// flight). Answered by `answerCloseQuestion`.
     public private(set) var closeQuestion: CloseConversationQuestion?
     /// The conversations `endConversation` is ending now: a second close of one is ignored
     /// (Rule 5), as is a second close while one is asked about.
@@ -8407,8 +8452,9 @@ public final class WindowModel {
 
     /// Ends `conversation` — nil, the one on screen — as Close Conversation does: its agent stops,
     /// its panes close as on quit, and it moves to Continue; its place then shows its next live
-    /// conversation, or its Landing. Asks first (`closeQuestion`) only when its turn is running
-    /// or its agent has a write waiting; otherwise nothing is asked. Does nothing on a Landing
+    /// conversation, or its Landing. Asks first (`closeQuestion`) only when its turn is running,
+    /// its session is starting (`PlaceAgent.startsSession`, the start Invariant 5 counts as
+    /// running) or its agent has a write waiting; otherwise nothing is asked. Does nothing on a Landing
     /// (an id no conversation has), for an id no longer live, or for a conversation already
     /// asked about or closing (Rule 5).
     public func closeConversation(_ conversation: String? = nil) async {
@@ -8423,7 +8469,9 @@ public final class WindowModel {
         // A second close of it that came in across that await is ignored (Rule 5), as it is above.
         guard closeQuestion?.conversation != target.id, !closing.contains(target.id),
               conversations[target.id] === target else { return }
-        guard target.turnInFlight || waitingConversations.contains(target.id) else {
+        // A start in flight is the operator's message on its way to an agent (final review I1):
+        // closing it silently would lose that message, so it asks, as for a turn running.
+        guard target.turnInFlight || target.startsSession || waitingConversations.contains(target.id) else {
             await endConversation(target)
             return
         }
@@ -8436,11 +8484,16 @@ public final class WindowModel {
 
     /// The operator's answer to `closeQuestion`: **Close it** (`close: true`) ends the
     /// conversation whatever its turn did since — a turn that ended meanwhile asks nothing more;
-    /// **Keep it** leaves it exactly as it was.
+    /// **Keep it** leaves it exactly as it was, and gives the keyboard back to the composer
+    /// (`onCloseQuestionKept`; Rule 6, final review M3): the question took it from there.
     public func answerCloseQuestion(close: Bool) async {
         guard let question = closeQuestion else { return }
         closeQuestion = nil
-        guard close, let target = conversation(id: question.conversation) else { return }
+        guard close else {
+            onCloseQuestionKept?()
+            return
+        }
+        guard let target = conversation(id: question.conversation) else { return }
         // A tab left unsaved while it asked is refused as it would have been before.
         if let refusal = await unsavedTabsRefusal(closing: target) {
             status = refusal
@@ -8565,6 +8618,12 @@ public final class WindowModel {
     /// off it: `ComposerModel` drops the draft it kept for it. Registered in its `init`.
     @ObservationIgnored
     public var onConversationClosed: (@MainActor (_ conversation: String) -> Void)?
+
+    /// Told when the Close question is answered **Keep it** (`answerCloseQuestion`), by click,
+    /// Return or Esc: `ComposerModel` takes the keyboard back, as after New Conversation.
+    /// Registered in its `init`.
+    @ObservationIgnored
+    public var onCloseQuestionKept: (@MainActor () -> Void)?
 
     /// The `screenKey` `onScreenChange` was last told about — set when it is registered, so the
     /// listener and the window agree on where they start; nil only with no one listening.
