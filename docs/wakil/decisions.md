@@ -1376,11 +1376,18 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* a trash or move the agent made through the editor reaches something its own `mv`
     or `rm` could not.
 
-41. **One agent per place: each agent keeps the place it started in, and switching tears nothing
-    down.**
+41. **Each agent keeps the place it started in, and switching tears nothing down.**
     *(2026-10-16, operator, during the background-agents design —
     `docs/superpowers/specs/2026-10-16-background-agents-design.md`; built over four stacked plans,
     2026-10-16 to 2026-10-17.)*
+
+    *Amended 2026-10-23 (operator): a place holds any number of live conversations, one on screen,
+    and the pin is per conversation, not per place. Each agent keeps the place it started in, as
+    before. The headline's "one agent per place" and "a finished agent's session stays alive until
+    quit or a new conversation" are replaced in the text below: a conversation stays live until it
+    is closed or Wakil quits, and a new one (⌘N) puts the one on screen into the background
+    without ending it.
+    See `docs/superpowers/specs/2026-10-23-conversations-design.md`.*
 
     Before this a window ran one agent. An org switch ended it, and a project or environment switch
     silently retargeted it: every Wakil tool it called resolved against whatever the operator was
@@ -1388,15 +1395,15 @@ Each entry: the call, why, and what would change our mind.
     recording that it moved.
 
     **The operator's decisions.** A **place** is an (organization, project, environment) triple,
-    with at most one agent and its own thread and canvas. An agent is **pinned** to the place it
+    with any number of live conversations (one on screen), each with its own agent, thread and canvas. An agent is **pinned** to the place it
     started in for its whole life: its Wakil actions, database, API, git and file calls go there,
     whatever is on screen. Switching org, project or environment never stops, holds or redirects
     an agent, so the org switch's "switch when this turn finishes" queue is gone. Several agents
-    run at once, one per place. An agent that needs the operator **waits**; it never pulls them
+    run at once. An agent that needs the operator **waits**; it never pulls them
     back. Each agent elsewhere shows as a **chip**, top right (option B of three shown over the real
     window): violet while it works, amber while it waits, green when it finished and the operator
     has not looked; a visit clears it, and a click goes there. A finished agent's session stays
-    alive until quit or a new conversation in that place. Quitting stops every agent; each is in
+    alive until its conversation is closed or Wakil quits. Quitting stops every agent; each is in
     its place's Continue, resumable as a fork (Decision 12). The journal records, for every entry
     an agent caused, which agent and which place. The environment is part of the place and of
     the **layout scope**: api · staging and api · production are two places, so switching

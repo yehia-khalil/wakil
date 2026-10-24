@@ -8694,11 +8694,8 @@ public final class WindowModel {
     /// opening a pane adds no thought. So this is set once, by whichever of
     /// the three happens first, and cleared only by a new session.
     ///
-    /// **Owed: nothing clears it in-window.** `session_resume` exists and
-    /// nothing mints a fresh session without relaunching, so there is no way
-    /// back to the Landing short of quitting. A `session_new` action is that
-    /// return path; it is recorded here and on `LandingStates.dc.html` rather
-    /// than invented.
+    /// Cleared in-window by `session_new` (`newConversation`): the place's
+    /// Landing returns and the conversation keeps running in the background.
     ///
     /// Per place (`PlaceAgent.sessionStarted`): a place where no work has begun draws its
     /// Landing, whatever has begun elsewhere.

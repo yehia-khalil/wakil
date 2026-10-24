@@ -103,3 +103,21 @@ An agent left in the outgoing org keeps working there: its clients are pinned to
 (`PlaceClients`), its credentials resolve in its own org, and its events land in its own thread.
 The next harness is built for the new org: `harnessFactory` takes the org as a parameter, so its MCP
 config carries the new `WAKIL_ORG`.
+
+## 4. Switching and closing a conversation
+
+A place holds any number of live conversations, one on screen. ⌘N, a Running row, a chip, ⌘P's
+Running group and ⌘⇧W are operator clicks or the actions `session_new`, `session_switch` and
+`session_close`; the actions are `.control`, operator-only, and reach the window through
+`ConversationBroker` (`Harness/ConversationBroker.swift`), drained by a pump, as `session_resume` is.
+
+1. **New.** `WindowModel.newConversation(_:)` puts the on-screen conversation into the background,
+   untouched, and the place draws its Landing. Nothing is asked and nothing is stopped.
+2. **Switch.** `WindowModel.switchToConversation(_:in:)` brings a live conversation on screen:
+   the same session, its thread, canvas, panes and composer draft. It never forks and never touches
+   a turn in flight. Only an ended conversation resumes as a fork.
+3. **Close.** `WindowModel.closeConversation(_:)` asks first only when the target has a turn in
+   flight or a write waiting (`closeQuestion`, a `CloseConversationQuestion`); otherwise it closes
+   at once. `answerCloseQuestion(close:)` takes the answer. Closing stops the agent through
+   `stopSession(of:)`, closes the conversation's panes as on quit, and the conversation moves to
+   Continue. The place then shows its next live conversation, or its Landing.
