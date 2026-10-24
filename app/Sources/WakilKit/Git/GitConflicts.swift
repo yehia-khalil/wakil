@@ -14,17 +14,31 @@ public struct GitClashFile: Sendable, Equatable, Hashable, Codable {
     }
 }
 
+/// A file the stash touched whose index entry was staged before the apply (mode and hash empty for a
+/// staged deletion): Undo Apply puts that entry back, not HEAD's.
+public struct GitClashIndex: Sendable, Equatable, Hashable, Codable {
+    public var path: String
+    public var mode: String
+    public var hash: String
+
+    public init(path: String, mode: String, hash: String) {
+        (self.path, self.mode, self.hash) = (path, mode, hash)
+    }
+}
+
 /// A Wakil stash apply, pop or Bring Them Along that stopped on conflicts, as `wakil-git` returns it
 /// (`clash`) and `git_stash_undo_apply` takes it back: the stash's id, the files it touched, the
-/// untracked ones it created, and the paths left unmerged. A list Go sends as `null` reads empty.
+/// untracked ones it created, the paths left unmerged, and the entries staged before it. A list Go
+/// sends as `null` or leaves out reads empty.
 public struct GitStashClash: Sendable, Equatable, Hashable, Codable {
     public var id: String
     public var files: [GitClashFile]
     public var created: [String]
     public var conflicts: [String]
+    public var staged: [GitClashIndex]
 
-    public init(id: String, files: [GitClashFile], created: [String], conflicts: [String]) {
-        (self.id, self.files, self.created, self.conflicts) = (id, files, created, conflicts)
+    public init(id: String, files: [GitClashFile], created: [String], conflicts: [String], staged: [GitClashIndex] = []) {
+        (self.id, self.files, self.created, self.conflicts, self.staged) = (id, files, created, conflicts, staged)
     }
 
     public init(from decoder: any Decoder) throws {
@@ -33,6 +47,7 @@ public struct GitStashClash: Sendable, Equatable, Hashable, Codable {
         files = try c.decodeIfPresent([GitClashFile].self, forKey: .files) ?? []
         created = try c.decodeIfPresent([String].self, forKey: .created) ?? []
         conflicts = try c.decodeIfPresent([String].self, forKey: .conflicts) ?? []
+        staged = try c.decodeIfPresent([GitClashIndex].self, forKey: .staged) ?? []
     }
 }
 
@@ -52,6 +67,9 @@ extension GitStashClash {
             "files": .array(files.map { .object(["path": .string($0.path), "hash": .string($0.hash)]) }),
             "created": .array(created.map { .string($0) }),
             "conflicts": .array(conflicts.map { .string($0) }),
+            "staged": .array(staged.map {
+                .object(["path": .string($0.path), "mode": .string($0.mode), "hash": .string($0.hash)])
+            }),
         ])
     }
 }

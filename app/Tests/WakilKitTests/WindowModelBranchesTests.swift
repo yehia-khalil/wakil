@@ -65,10 +65,12 @@ private let clashJSON: JSONValue = .object([
     "files": .array([.object(["path": .string("a.txt"), "hash": .string("h1")]),
                      .object(["path": .string("new file.txt"), "hash": .string("h2")])]),
     "created": .array([.string("new file.txt")]), "conflicts": .array([.string("a.txt")]),
+    "staged": .array([.object(["path": .string("a.txt"), "mode": .string("100644"), "hash": .string("h0")])]),
 ])
 private let clash = GitStashClash(id: String(repeating: "c", count: 40),
                                   files: [GitClashFile(path: "a.txt", hash: "h1"), GitClashFile(path: "new file.txt", hash: "h2")],
-                                  created: ["new file.txt"], conflicts: ["a.txt"])
+                                  created: ["new file.txt"], conflicts: ["a.txt"],
+                                  staged: [GitClashIndex(path: "a.txt", mode: "100644", hash: "h0")])
 private let stash = GitStashInfo(index: 0, id: String(repeating: "c", count: 40), message: "wip", branch: "main", date: "", files: ["a.txt"])
 
 @MainActor

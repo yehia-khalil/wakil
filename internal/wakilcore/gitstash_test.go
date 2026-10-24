@@ -313,3 +313,91 @@ func TestDropAllDropsOnlyTheListedStashes(t *testing.T) {
 		t.Fatalf("list = %q", l)
 	}
 }
+
+// Final review C1: an edit staged before the apply is in no stash, so Undo Apply puts it back staged
+// and in the tree, for the file that clashed and for one that merged cleanly, rather than to HEAD.
+func TestUndoApplyKeepsAnEditStagedBeforeTheApply(t *testing.T) {
+	work, w, git := branchFixture(t)
+	ctx := context.Background()
+	writeIn(t, work, "c.txt", "1\n2\n3\n4\n5\n")
+	git("add", "c.txt")
+	git("commit", "-qm", "c")
+	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+	writeIn(t, work, "c.txt", "STASHED\n2\n3\n4\n5\n")
+	w.Stash(ctx, "clashing", "default")
+	writeIn(t, work, "a.txt", "one\nSTAGED\nthree\n")
+	writeIn(t, work, "c.txt", "1\n2\n3\n4\nSTAGED\n")
+	git("add", "a.txt", "c.txt")
+	stagedA, stagedC := git("rev-parse", ":a.txt"), git("rev-parse", ":c.txt")
+	s, _ := ReadStashes(ctx, w.runner())
+	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
+	if err != nil || clash == nil || !slices.Equal(clash.Conflicts, []string{"a.txt"}) {
+		t.Fatalf("clash %+v err %v", clash, err)
+	}
+	if err := w.StashUndoApply(ctx, *clash); err != nil {
+		t.Fatal(err)
+	}
+	if git("rev-parse", ":a.txt") != stagedA || git("rev-parse", ":c.txt") != stagedC {
+		t.Fatalf("the staged edits went: %s", git("ls-files", "-s"))
+	}
+	if readIn(t, work, "a.txt") != "one\nSTAGED\nthree\n" || readIn(t, work, "c.txt") != "1\n2\n3\n4\nSTAGED\n" {
+		t.Fatalf("tree: %q %q", readIn(t, work, "a.txt"), readIn(t, work, "c.txt"))
+	}
+	if st := git("status", "--porcelain"); st != "M  a.txt\nM  c.txt" {
+		t.Fatalf("status = %q", st)
+	}
+}
+
+// Bring Them Along stashes the index too, so its clash has nothing staged to keep: Undo Apply puts
+// the files back to the new branch's HEAD, the stash kept.
+func TestUndoApplyAfterABringAlongClash(t *testing.T) {
+	work, w, git := blockedFixture(t)
+	git("add", "a.txt")
+	r, err := w.Switch(context.Background(), "other", SwitchOptions{Carry: "bring"})
+	if err != nil || r.Clash == nil {
+		t.Fatalf("r = %+v err %v", r, err)
+	}
+	if err := w.StashUndoApply(context.Background(), *r.Clash); err != nil {
+		t.Fatal(err)
+	}
+	if st := git("status", "--porcelain"); st != "" || readIn(t, work, "a.txt") != "one\nOTHER\nthree\n" {
+		t.Fatalf("status %q a.txt %q", st, readIn(t, work, "a.txt"))
+	}
+	if git("stash", "list") == "" {
+		t.Fatal("the stash went")
+	}
+}
+
+// A file the clash recorded as absent (Hash "") that is there now is the operator's: refused.
+func TestUndoApplyRefusesAFileRecreatedSinceTheClash(t *testing.T) {
+	work, w, git := branchFixture(t)
+	ctx := context.Background()
+	writeIn(t, work, "c.txt", "c\n")
+	git("add", "c.txt")
+	git("commit", "-qm", "c")
+	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+	git("rm", "-q", "c.txt")
+	w.Stash(ctx, "clashing", "default")
+	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
+	git("commit", "-qam", "moved on")
+	s, _ := ReadStashes(ctx, w.runner())
+	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
+	if err != nil || clash == nil {
+		t.Fatalf("clash %+v err %v", clash, err)
+	}
+	var recorded bool
+	for _, f := range clash.Files {
+		recorded = recorded || (f.Path == "c.txt" && f.Hash == "")
+	}
+	if !recorded {
+		t.Fatalf("files = %+v", clash.Files)
+	}
+	writeIn(t, work, "c.txt", "OPERATOR\n")
+	err = w.StashUndoApply(ctx, *clash)
+	if err == nil || err.Error() != "c.txt changed since the clash; Undo Apply would lose that — resolve it by hand" {
+		t.Fatalf("err = %v", err)
+	}
+	if readIn(t, work, "c.txt") != "OPERATOR\n" {
+		t.Fatal("the refusal changed c.txt")
+	}
+}

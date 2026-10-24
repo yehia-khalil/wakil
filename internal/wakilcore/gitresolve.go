@@ -49,14 +49,60 @@ type GitClashFile struct {
 	Hash string `json:"hash"`
 }
 
+// GitClashIndex is a file the stash touches whose index entry differed from HEAD before the apply: an
+// edit staged then is in no stash, so Undo Apply puts that entry back (Mode and Hash "" for a staged
+// deletion) rather than HEAD's.
+type GitClashIndex struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+	Hash string `json:"hash"`
+}
+
 // GitStashClash records a Wakil stash apply, pop or Bring Them Along that stopped on conflicts, for Undo
 // Apply (call 13): the stash's id, the files it touched (tracked, and the untracked ones it created),
-// the part of those it created, and the paths left unmerged.
+// the part of those it created, the paths left unmerged, and the index entries staged before it.
 type GitStashClash struct {
-	ID        string         `json:"id"`
-	Files     []GitClashFile `json:"files"`
-	Created   []string       `json:"created"`
-	Conflicts []string       `json:"conflicts"`
+	ID        string          `json:"id"`
+	Files     []GitClashFile  `json:"files"`
+	Created   []string        `json:"created"`
+	Conflicts []string        `json:"conflicts"`
+	Staged    []GitClashIndex `json:"staged,omitempty"`
+}
+
+// stashStagedBefore is the index entries, before stash id is applied, of the files it touches that
+// differ from HEAD. git applies a stash over a staged edit (the edit becomes the upstream side), so
+// putting those files back to HEAD would lose it.
+func (w *GitWriter) stashStagedBefore(ctx context.Context, id string) []GitClashIndex {
+	staged := []GitClashIndex{}
+	files := stashFiles(ctx, w.runner(), id)
+	if len(files) == 0 {
+		return staged
+	}
+	out, err := w.git(ctx, nil, "diff", append([]string{"--cached", "--name-only", "-z", "HEAD", "--"}, files...)...)
+	if err != nil {
+		return staged
+	}
+	changed := nulFields(out)
+	if len(changed) == 0 {
+		return staged
+	}
+	entries := map[string]GitClashIndex{}
+	if out, err := w.git(ctx, nil, "ls-files", append([]string{"-s", "-z", "--"}, changed...)...); err == nil {
+		for _, rec := range nulFields(out) {
+			meta, p, ok := strings.Cut(rec, "\t") // "<mode> <id> <stage>\t<path>"
+			if f := strings.Fields(meta); ok && len(f) == 3 && f[2] == "0" {
+				entries[p] = GitClashIndex{Path: p, Mode: f[0], Hash: f[1]}
+			}
+		}
+	}
+	for _, p := range changed {
+		if e, ok := entries[p]; ok {
+			staged = append(staged, e)
+		} else {
+			staged = append(staged, GitClashIndex{Path: p}) // staged as deleted
+		}
+	}
+	return staged
 }
 
 // stashUntrackedBefore is a stash's untracked files, and the part of them already in the tree before
@@ -75,12 +121,12 @@ func (w *GitWriter) stashUntrackedBefore(ctx context.Context, id string) (untrac
 
 // stashClash reads what a failed apply of stash id left: nil when it stopped before changing anything
 // (no path unmerged), else the clash with each touched file's hash as it is now.
-func (w *GitWriter) stashClash(ctx context.Context, id string, untracked, existed map[string]bool) *GitStashClash {
+func (w *GitWriter) stashClash(ctx context.Context, id string, untracked, existed map[string]bool, staged []GitClashIndex) *GitStashClash {
 	conflicts, _ := w.conflicts(ctx)
 	if len(conflicts) == 0 {
 		return nil
 	}
-	c := &GitStashClash{ID: id, Files: []GitClashFile{}, Created: []string{}, Conflicts: conflicts}
+	c := &GitStashClash{ID: id, Files: []GitClashFile{}, Created: []string{}, Conflicts: conflicts, Staged: staged}
 	for _, f := range stashFiles(ctx, w.runner(), id) {
 		h := w.hashOf(ctx, f)
 		if untracked[f] {
@@ -107,8 +153,9 @@ func (w *GitWriter) hashOf(ctx context.Context, rel string) string {
 func clashPaths(c *GitStashClash) string { return strings.Join(c.Conflicts, ", ") }
 
 // StashUndoApply puts a stash clash back (call 13, 3a-iv's recovery): the tracked files it touched go
-// back to HEAD, index and tree, and the untracked files it created are removed; the stash stays. It is
-// refused, naming the first, while any file differs from the clash: an edit since would be lost.
+// back to HEAD, index and tree, or to the entry staged before the apply, and the untracked files it
+// created are removed; the stash stays. It is refused, naming the first, while any file differs from
+// the clash: an edit since would be lost.
 func (w *GitWriter) StashUndoApply(ctx context.Context, c GitStashClash) error {
 	paths := make([]string, 0, len(c.Files))
 	for _, f := range c.Files {
@@ -117,6 +164,19 @@ func (w *GitWriter) StashUndoApply(ctx context.Context, c GitStashClash) error {
 	ps, err := w.paths(paths)
 	if err != nil {
 		return err
+	}
+	stagedPaths := make([]string, 0, len(c.Staged))
+	for _, e := range c.Staged {
+		if e.Hash != "" && !slices.Contains([]string{"100644", "100755", "120000"}, e.Mode) {
+			return UserError(e.Path + " has no file mode to put back")
+		}
+		stagedPaths = append(stagedPaths, e.Path)
+	}
+	var staged []string
+	if len(stagedPaths) > 0 {
+		if staged, err = w.paths(stagedPaths); err != nil {
+			return err
+		}
 	}
 	// The stash holds the only copy of what the put-back removes: once it is dropped, nothing is.
 	if _, ok := w.stashRef(ctx, c.ID); !ok || c.ID == "" {
@@ -170,6 +230,28 @@ func (w *GitWriter) StashUndoApply(ctx context.Context, c GitStashClash) error {
 		}
 		for _, p := range absent {
 			removeInRoot(w.Root, p)
+		}
+	}
+	return w.putBackStaged(steady, c.Staged, staged)
+}
+
+// putBackStaged restores, after the put-back to HEAD, the index entries staged before the apply, and
+// writes each one's blob to the tree (git refused the apply over a tree file that differed from its
+// index, so the tree held that too). A staged deletion is staged again; HEAD's copy stays in the tree.
+func (w *GitWriter) putBackStaged(ctx context.Context, entries []GitClashIndex, paths []string) error {
+	for i, e := range entries {
+		p := paths[i]
+		if e.Hash == "" {
+			if _, err := w.git(ctx, nil, "rm", "--cached", "-q", "--ignore-unmatch", "--", p); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := w.git(ctx, nil, "update-index", "--add", "--cacheinfo", e.Mode+","+e.Hash+","+p); err != nil {
+			return err
+		}
+		if _, err := w.git(ctx, nil, "checkout-index", "-f", "--", p); err != nil {
+			return err
 		}
 	}
 	return nil

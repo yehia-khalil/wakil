@@ -121,6 +121,7 @@ func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bo
 		return "", nil, err
 	}
 	untracked, existed := w.stashUntrackedBefore(ctx, id)
+	staged := w.stashStagedBefore(ctx, id)
 	verb := "apply"
 	if pop {
 		verb = "pop"
@@ -129,7 +130,7 @@ func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bo
 	if applyErr == nil {
 		return "", nil, nil
 	}
-	clash := w.stashClash(context.WithoutCancel(ctx), id, untracked, existed)
+	clash := w.stashClash(context.WithoutCancel(ctx), id, untracked, existed, staged)
 	if clash == nil {
 		return "", nil, applyErr // refused before it changed anything (a file in the way)
 	}
