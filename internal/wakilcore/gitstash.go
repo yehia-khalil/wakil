@@ -55,10 +55,11 @@ func ReadStashes(ctx context.Context, g *GitRunner) ([]GitStash, error) {
 }
 
 // stashFiles is what a stash holds: the tracked paths it changed, then its untracked ones. Read
-// NUL-separated, so a name with a space or a non-ASCII letter comes back whole.
+// NUL-separated, so a name with a space or a non-ASCII letter comes back whole, and without rename
+// detection, so a rename lists both names: Undo Apply puts back the old one too.
 func stashFiles(ctx context.Context, g *GitRunner, id string) []string {
 	files := []string{}
-	if out, err := g.Run(ctx, "diff", "--name-only", "-z", id+"^1", id, "--"); err == nil {
+	if out, err := g.Run(ctx, "diff", "--name-only", "--no-renames", "-z", id+"^1", id, "--"); err == nil {
 		files = append(files, nulFields(out)...)
 	}
 	return append(files, stashUntracked(ctx, g, id)...)

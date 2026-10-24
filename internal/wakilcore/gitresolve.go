@@ -82,10 +82,10 @@ func (w *GitWriter) stashStagedBefore(ctx context.Context, id string) (staged []
 	if len(files) == 0 {
 		return staged, unstaged
 	}
-	if out, err := w.git(ctx, nil, "diff", append([]string{"--name-only", "-z", "--"}, files...)...); err == nil {
+	if out, err := w.git(ctx, nil, "diff", append([]string{"--name-only", "--no-renames", "-z", "--"}, files...)...); err == nil {
 		unstaged = nulFields(out)
 	}
-	out, err := w.git(ctx, nil, "diff", append([]string{"--cached", "--name-only", "-z", "HEAD", "--"}, files...)...)
+	out, err := w.git(ctx, nil, "diff", append([]string{"--cached", "--name-only", "--no-renames", "-z", "HEAD", "--"}, files...)...)
 	if err != nil {
 		return staged, unstaged
 	}

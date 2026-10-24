@@ -57,7 +57,7 @@ var gitSafetyArgs = []string{
 // and are not inspected. A key ending in "=" matches by prefix.
 var gitAllowedFlags = map[string][]string{
 	"status":       {"--porcelain=v2", "-z", "--branch", "--untracked-files=all"},
-	"diff":         {"--cached", "--no-color", "--name-only", "-z", "--"},
+	"diff":         {"--cached", "--no-color", "--name-only", "--no-renames", "-z", "--"},
 	"show":         {"--name-only", "--format=", "-z", "--"},
 	"rev-parse":    {"--show-toplevel", "--abbrev-ref", "--verify", "--short", "--absolute-git-dir", "--"},
 	"for-each-ref": {"--sort=", "--format="},

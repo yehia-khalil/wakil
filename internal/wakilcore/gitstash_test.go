@@ -415,6 +415,64 @@ func TestUndoApplyRefusesAnUnstagedEditOverHEAD(t *testing.T) {
 	}
 }
 
+// A stash that renames c.txt to n.txt touches both names: listed with rename detection, only n.txt is
+// recorded, so Undo Apply removed it and left c.txt deleted. Both names go back.
+func TestUndoApplyPutsBackBothNamesOfARename(t *testing.T) {
+	work, w, git := branchFixture(t)
+	ctx := context.Background()
+	writeIn(t, work, "c.txt", "1\n2\n3\n")
+	git("add", "c.txt")
+	git("commit", "-qm", "c")
+	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+	git("mv", "c.txt", "n.txt")
+	w.Stash(ctx, "clashing", "default")
+	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
+	git("commit", "-qam", "moved on")
+	s, _ := ReadStashes(ctx, w.runner())
+	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
+	if err != nil || clash == nil || !slices.Equal(clash.Conflicts, []string{"a.txt"}) {
+		t.Fatalf("clash %+v err %v", clash, err)
+	}
+	if err := w.StashUndoApply(ctx, *clash); err != nil {
+		t.Fatal(err)
+	}
+	if st := git("status", "--porcelain"); st != "" || readIn(t, work, "c.txt") != "1\n2\n3\n" {
+		t.Fatalf("status %q", st)
+	}
+}
+
+// The same rename over an edit staged to c.txt: git merges the edit into n.txt and stages c.txt
+// deleted. Undo Apply puts the staged edit back on c.txt, never loses it.
+func TestUndoApplyKeepsAnEditStagedOnARenamedFile(t *testing.T) {
+	work, w, git := branchFixture(t)
+	ctx := context.Background()
+	writeIn(t, work, "c.txt", "1\n2\n3\n")
+	git("add", "c.txt")
+	git("commit", "-qm", "c")
+	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+	git("mv", "c.txt", "n.txt")
+	w.Stash(ctx, "clashing", "default")
+	writeIn(t, work, "a.txt", "one\nCOMMITTED\nthree\n")
+	git("commit", "-qam", "moved on")
+	writeIn(t, work, "c.txt", "1\n2\n3\nSTAGED MINE\n")
+	git("add", "c.txt")
+	staged := git("rev-parse", ":c.txt")
+	s, _ := ReadStashes(ctx, w.runner())
+	_, clash, err := w.StashApply(ctx, 0, s[0].ID, false)
+	if err != nil || clash == nil || !slices.Equal(clash.Conflicts, []string{"a.txt"}) {
+		t.Fatalf("clash %+v err %v", clash, err)
+	}
+	if err := w.StashUndoApply(ctx, *clash); err != nil {
+		t.Fatal(err)
+	}
+	if git("rev-parse", ":c.txt") != staged || readIn(t, work, "c.txt") != "1\n2\n3\nSTAGED MINE\n" {
+		t.Fatalf("the staged edit went: %s", git("status", "--porcelain"))
+	}
+	if st := git("status", "--porcelain"); st != "M  c.txt" {
+		t.Fatalf("status = %q", st)
+	}
+}
+
 // Bring Them Along stashes the index too, so its clash has nothing staged to keep: Undo Apply puts
 // the files back to the new branch's HEAD, the stash kept.
 func TestUndoApplyAfterABringAlongClash(t *testing.T) {
