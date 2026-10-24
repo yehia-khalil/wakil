@@ -29,6 +29,7 @@ public func editorTabTitles(_ tabs: [EditorTab]) -> [String] {
             case nil: return "\((path as NSString).lastPathComponent) (\(editorDiffGroupTitle(group)))"
             case .stash: return "\((path as NSString).lastPathComponent) (Stash)"
             case .commit(let c): return editorCommitTabTitle(path: c.path, id: c.id)
+            case .conflict: return editorConflictTabTitle(path: path)
             }
         }
     }

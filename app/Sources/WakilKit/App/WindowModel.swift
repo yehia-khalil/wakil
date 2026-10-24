@@ -6121,6 +6121,10 @@ public final class WindowModel {
                   case .diff(let root, let path, let group, nil) = s.tabs[i].subject else { return nil }
             return EditorActiveDiff(path: root + "/" + path, group: group)
         }()
+        let editorActiveConflicted: Bool = {
+            guard let f = focused, f.kind == "editor", let s = editor(f.id), let i = s.active, i < s.tabs.count else { return false }
+            return editorConflicted(s.tabs[i], roots: gitRoots)
+        }()
         return PaletteContext(
             focusedPane: focused.map { FocusedPane(id: $0.id, kind: $0.kind) },
             apiSendInFlight: sending != nil,
@@ -6130,7 +6134,7 @@ public final class WindowModel {
             hasEnvironments: hasEnvironments, projectCount: projectCount, providerCount: providerCount,
             editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project,
             editorActiveDiff: editorActiveDiff, conversationOnScreen: conversationOnScreen,
-            activeGitRoot: activeBranchRoot?.root)
+            activeGitRoot: activeBranchRoot?.root, editorActiveConflicted: editorActiveConflicted)
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.

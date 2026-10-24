@@ -198,3 +198,19 @@ private func paneKind(_ c: CatalogCommand) -> String? {
     #expect(c.available(context))
     #expect(c.params(context, "feature/search") == .object(["root": .string("/p/api"), "branch": .string("feature/search")]))
 }
+
+// 3a-v-b: ⌘K's Next Conflict and Previous Conflict, on the focused editor pane while its tab in front
+// is conflicted, each a registered action naming the pane.
+@Test func theConflictCommandsNameRegisteredActions() async throws {
+    let names = Set(try await testRegistryActionNames())
+    var c = ctx("editor")
+    let titles = { CommandCatalog.entries(for: c).map(\.title) }
+    #expect(!titles().contains("Next Conflict") && !titles().contains("Previous Conflict"))
+    c.editorActiveConflicted = true
+    #expect(titles().contains("Next Conflict") && titles().contains("Previous Conflict"))
+    for (title, action) in [("Next Conflict", "editor_conflict_next"), ("Previous Conflict", "editor_conflict_previous")] {
+        let entry = CommandCatalog.entries(for: c).first { $0.title == title }
+        #expect(entry?.action == .dispatch(action: action, params: .object(["pane": .string("editor-1")])))
+        #expect(names.contains(action), "\(action) is not registered")
+    }
+}

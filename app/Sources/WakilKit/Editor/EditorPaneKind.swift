@@ -29,6 +29,7 @@ enum EditorPaneKind: PaneKind {
                     "root": .string(r), "path": .string(p), "group": .string(g.rawValue),
                     "stash": source?.stashID.map { .string($0) } ?? .null,
                     "commit": editorDiffSourceParams(source)["commit"] ?? .null,
+                    "conflict": .bool(source == .conflict),
                     "loading": .bool(d.loading), "error": d.error.map { .string($0) } ?? .null,
                     "binary": .bool(d.binary), "bytes": .number(Double(d.bytes)), "lines": .number(Double(d.lines)),
                     "truncated": .bool(d.truncated), "no_longer_changed": .bool(d.noLongerChanged),
