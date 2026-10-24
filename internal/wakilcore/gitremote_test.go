@@ -491,3 +491,21 @@ func TestFastForwardOnlyRefusalIsPlain(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// Final review I1: mid-rebase HEAD is detached, and Pull (so Sync) names the rebase, not the detached
+// HEAD it would otherwise trip on first.
+func TestPullMidRebaseNamesTheRebase(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+	commitHere(t, work, "one\nMINE\nthree\n")
+	gitIn(t, work, "fetch", "-q", "origin")
+	c := exec.Command("git", "-C", work, "-c", "core.editor=true", "rebase", "@{u}")
+	c.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	c.CombinedOutput() // conflicts: the operator is mid-rebase
+	want := "A rebase is in progress in " + work + "; finish or abort it first"
+	for name, run := range map[string]func(context.Context) (GitRemoteResult, error){"pull": g.Pull, "sync": g.Sync} {
+		if _, err := run(context.Background()); err == nil || err.Error() != want {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+	}
+}

@@ -99,9 +99,6 @@ this Mac. Do them in order: each starts where the one before left off.
 
 ## 2. Known and not fixed
 
-- Pull or Sync while a rebase is under way is refused as `HEAD is detached: check out a branch
-  first`, not as `A rebase is in progress in …; finish or abort it first`: the remote's detached
-  check runs before the in-progress one (found by this task's e2e). A merge under way is named.
 - The picker shows no spinner and Escape cannot cancel while a merge or rebase it started runs
   (Rules 4/5), as Switch's.
 - **Amend Last Commit** stays enabled in ▾ while conflicts remain.

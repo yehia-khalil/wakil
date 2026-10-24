@@ -289,6 +289,11 @@ func (g *GitRemote) Fetch(ctx context.Context) (GitRemoteResult, error) {
 // Pull integrates the upstream by the organisation's strategy. A conflict stops it with the
 // conflicts left in the tree and reports their paths; only a cancel undoes what it started.
 func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
+	// A merge, rebase, cherry-pick or revert already under way is the operator's: refuse, so the
+	// cancel's abort below only ever undoes what this pull started. First, as a rebase detaches HEAD.
+	if err := g.inProgress().InProgressError(g.Root); err != nil {
+		return GitRemoteResult{}, err
+	}
 	branch, err := g.branch()
 	if err != nil {
 		return GitRemoteResult{}, err
@@ -299,11 +304,6 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	}
 	inv, a, host, err := g.prepare(remote)
 	if err != nil {
-		return GitRemoteResult{}, err
-	}
-	// A merge, rebase, cherry-pick or revert already under way is the operator's: refuse, so the
-	// cancel's abort below only ever undoes what this pull started.
-	if err := g.inProgress().InProgressError(g.Root); err != nil {
 		return GitRemoteResult{}, err
 	}
 	o, _ := LoadOrgFor(g.Org)
