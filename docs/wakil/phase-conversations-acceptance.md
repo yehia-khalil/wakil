@@ -20,22 +20,22 @@ agents run in that one place.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 1 | In the project's staging place, ask the agent for something long, such as reading a large part of the repository and summarising it. While it works, press ⌘N and ask the second agent a short question | The first conversation goes to the background untouched and the Landing appears. After the question, the place shows the second conversation | not walked |
-| 2 | Click the first conversation's chip, then the second's Running row on the Landing, going back and forth while the first is still working | Each time you land on exactly what you left: its thread, its canvas, its composer draft. The first thread keeps streaming while you look at it | not walked |
-| 3 | Have the background conversation ask for a write, with the other one on screen. Click its chip and approve | The chip is amber and reads `— waiting` while it waits, and nothing moves you. Approving from the chip lands you in that conversation and the write goes through | not walked |
-| 4 | Repeat row 3, this time approving from its Running row on the Landing | Same result, and the Running row's dot is amber until you answer | not walked |
-| 5 | Leave two conversations live, one working, then quit. Relaunch and open the place's Landing | Nothing was asked at quit. Neither conversation is in Running; each is in Continue. Opening one resumes it, and it leaves Continue for Running | not walked |
-| 6 | With a conversation working in a production environment, look at its chip and its Running row | The environment segment keeps its production red on both (Invariant 8) | not walked |
-| 7 | Get one conversation into each state: working, waiting, done unseen, failed and idle (seen and finished). Look at the dots in Running and in ⌘P | Violet, amber, green, red and grey. A past row in Continue carries no dot | not walked |
+| 1 | In the project's staging place, ask the agent for something long, such as reading a large part of the repository and summarising it. While it works, press ⌘N and ask the second agent a short question | The first conversation goes to the background untouched and the Landing appears. After the question, the place shows the second conversation |  |
+| 2 | Click the first conversation's chip, then the second's Running row on the Landing, going back and forth while the first is still working | Each time you land on exactly what you left: its thread, its canvas, its composer draft. The first thread keeps streaming while you look at it |  |
+| 3 | Have the background conversation ask for a write, with the other one on screen. Click its chip and approve | The chip is amber and reads `— waiting` while it waits, and nothing moves you. Approving from the chip lands you in that conversation and the write goes through |  |
+| 4 | Repeat row 3, this time approving from its Running row on the Landing | Same result, and the Running row's dot is amber until you answer |  |
+| 5 | Leave two conversations live, one working, then quit. Relaunch and open the place's Landing | Nothing was asked at quit. Neither conversation is in Running; each is in Continue. Opening one resumes it, and it leaves Continue for Running |  |
+| 6 | With a conversation working in a production environment, look at its chip and its Running row | The environment segment keeps its production red on both (Invariant 8) |  |
+| 7 | Get one conversation into each state: working, waiting, done unseen, failed and idle (seen and finished). Look at the dots in Running and in ⌘P | Violet, amber, green, red and grey. A past row in Continue carries no dot |  |
 
 ## 2. Residue: what no check covers, and why
 
 - **The colour of the five dots, grey idle included, and the production red on a chip and a
-  Running row** (Rule 5, Invariant 8; walk 7 and 8): colour is not expressible. The checks hold
+  Running row** (Rule 5, Invariant 8; walk 6 and 7): colour is not expressible. The checks hold
   each row's state as a value, not its hue.
 - **Two real agents in one place, switching mid-turn, a real approval from a chip** (walk 1 to 4):
   the e2e agent is a stub. The checks cover the same moves against it, not a live provider.
-- **Quit, relaunch, and finding each conversation in Continue** (Rule 1; walk 6): a check cannot
+- **Quit, relaunch, and finding each conversation in Continue** (Rule 1; walk 5): a check cannot
   quit and relaunch inside one launch.
 - **Did the right real account get used** against a live provider: the operator's, always.
 
