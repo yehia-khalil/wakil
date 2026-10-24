@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-v-b-conflict-reveal.jsonl",
+  "baseCommit": "c95c303b6a4957e2377e43d86917a436b8106820",
+  "provedAt": "2026-10-24T20:49:51.779494Z",
+  "checkBlob": "5fda0bc49fc97fe9b5996c61446c88e511de9bac"
+}

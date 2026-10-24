@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3a-iii-remote-conflict.jsonl",
-  "baseCommit": "dd65cbf2bbacdf39358e36f7e0797eb1bd593313",
-  "provedAt": "2026-10-23T07:50:58.522727Z",
-  "checkBlob": "7537195bae4da0c66ff4eef3d38b93b8b38107e7"
+  "baseCommit": "c95c303b6a4957e2377e43d86917a436b8106820",
+  "provedAt": "2026-10-24T20:49:51.779494Z",
+  "checkBlob": "d15eab7ed1dac002ca950f951d6e5fff860b009b"
 }

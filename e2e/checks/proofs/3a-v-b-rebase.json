@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-v-b-rebase.jsonl",
+  "baseCommit": "c95c303b6a4957e2377e43d86917a436b8106820",
+  "provedAt": "2026-10-24T20:49:51.779494Z",
+  "checkBlob": "801df29c7bc8b8e534edc08446d1e7282a0dad2d"
+}
