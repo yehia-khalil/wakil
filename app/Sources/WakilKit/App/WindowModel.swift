@@ -2694,19 +2694,28 @@ public final class WindowModel {
         // W12: choosing the environment already active changes nothing, so it dispatches
         // nothing — no plane, no cleared reply, no refetch.
         guard !environmentSwitchIsNoOp(from: environment, to: name) else { return true }
-        // Run as a task the pump can wait on (fix round 1, item 5): `observationPump` sees this
-        // dispatch too, and waits for this to finish before judging whether anything changed.
-        let previous = operatorEnvironmentSwitch
-        let task = Task { @MainActor [weak self] () -> Bool in
-            _ = await previous?.value
-            return await self?.switchEnvironment(to: name) ?? false
+        return await asOperatorEnvironmentSwitch { [weak self] in
+            await self?.switchEnvironment(to: name) ?? false
         }
-        operatorEnvironmentSwitch = task
+    }
+
+    /// Runs `body` — an environment switch the operator made: its dispatch, then the window
+    /// catching up with it — as a task the pump can wait on (fix round 1, item 5):
+    /// `observationPump` sees that dispatch too, and waits for this to finish before judging
+    /// whether anything changed, so the switch is not done twice. After the switches before it.
+    /// `setEnvironment` and the fast path's `ctx_set_environment` (`runFastPath`) both run here.
+    func asOperatorEnvironmentSwitch<T: Sendable>(_ body: @escaping @MainActor () async -> T) async -> T {
+        let previous = operatorEnvironmentSwitch
+        let task = Task { @MainActor () -> T in
+            _ = await previous?.value
+            return await body()
+        }
+        operatorEnvironmentSwitch = Task { @MainActor in _ = await task.value }
         return await task.value
     }
 
     /// The operator's environment switch in progress, if any (fix round 1, item 5).
-    @ObservationIgnored private var operatorEnvironmentSwitch: Task<Bool, Never>?
+    @ObservationIgnored private var operatorEnvironmentSwitch: Task<Void, Never>?
 
     private func switchEnvironment(to name: String) async -> Bool {
         guard await dispatch("ctx_set_environment", .object(["name": .string(name)])) != nil
