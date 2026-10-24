@@ -489,7 +489,7 @@ func addWriteTools(s *mcp.Server) {
 			}
 			return nil, emptyResult{}, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_undo_apply", Description: "Writes. Puts back the files a stash apply or pop clashed in, to HEAD, from the clash that call returned; the stash stays in the list. Refused naming any file changed since the clash."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_undo_apply", Description: "Writes. Puts back the files a stash apply or pop clashed in, from the clash that call returned: each goes back to what was staged before the apply (HEAD where nothing was), and files the apply created are removed; the stash stays in the list. Refused, naming the file, when one changed since the clash or had unstaged edits on a staged copy, or when the stash is gone."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a undoApplyArg) (*mcp.CallToolResult, emptyResult, error) {
 			w, fail := writer(a.Root)
 			if fail != nil {
