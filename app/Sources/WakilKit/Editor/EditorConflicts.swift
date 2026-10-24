@@ -106,13 +106,14 @@ public func editorConflictAccept(_ text: String, _ b: EditorConflictBlock,
     return (EditorRange(start: from, end: EditorPosition(line: b.end, column: width + 1)), kept)
 }
 
-/// Whether `tab` is a file its root lists in the Merge Changes group (Task 5): the one tab the
-/// conflict actions and ⌘K's Next / Previous Conflict work on.
+/// Whether `tab` is a file its root lists in the Merge Changes group (Task 5), or as staged with
+/// conflict markers (spec call 4): the tabs the conflict actions and ⌘K's Next / Previous Conflict
+/// work on. Markers in a file in neither are text git did not write.
 public func editorConflicted(_ tab: EditorTab?, roots: [GitRootState]) -> Bool {
     guard case .file(let path, let root)? = tab?.subject, path.hasPrefix(root + "/"),
           let state = roots.first(where: { $0.root == root }) else { return false }
     let rel = String(path.dropFirst(root.count + 1))
-    return state.files.contains { $0.group == .conflicts && $0.path == rel }
+    return state.files.contains { $0.path == rel && ($0.group == .conflicts || ($0.group == .staged && $0.markers)) }
 }
 
 /// The block Next (`forward`) or Previous Conflict moves the cursor on `line` to: the first starting

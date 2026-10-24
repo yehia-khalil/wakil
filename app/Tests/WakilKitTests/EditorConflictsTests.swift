@@ -35,6 +35,18 @@ private func conflictFixture(_ text: String, conflicted: Bool = true) async thro
     return f
 }
 
+extension FakeGit {
+    /// `a.txt` in `/p/api` as one status row of `group`, flagged with markers when asked.
+    func set(conflictRow group: String, markers: Bool) {
+        status["/p/api"] = .object([
+            "root": .string("/p/api"), "branch": .string("main"), "detached": .string(""),
+            "upstream": .string(""), "ahead": .integer(0), "behind": .integer(0),
+            "files": .array([.object(["path": .string("a.txt"), "group": .string(group),
+                                      "status": .string(group == "conflicts" ? "U" : "M"), "markers": .bool(markers)])]),
+        ])
+    }
+}
+
 @Suite struct EditorConflictsTests {
     @Test func blocksParseWithTheirLabels() {
         #expect(editorConflictBlocks(twoBlocks) == [
@@ -184,5 +196,27 @@ private func conflictFixture(_ text: String, conflicted: Bool = true) async thro
         #expect(!editorConflicted(EditorTab.file(path: "/p/api/b.txt", root: "/p/api", text: "", mtime: 0, language: "plaintext"),
                                   roots: roots))
         #expect(!editorConflicted(nil, roots: roots))
+    }
+
+    // Spec call 4: a file staged with conflict markers keeps the actions; markers in a file in neither
+    // group are text git did not write.
+    @Test func aStagedFileWithMarkersIsConflictedToo() async throws {
+        let f = try await conflictFixture(twoBlocks, conflicted: false)
+        func conflicted() async -> Bool { editorConflicted(await f.snapshot().tabs[0], roots: await f.status.roots) }
+        #expect(!(await conflicted()))
+        await f.git.set(conflictRow: "staged", markers: true)
+        await f.status.refresh()
+        #expect(await conflicted())
+        try await f.dispatch("editor_conflict_accept", ["block": .integer(2), "take": .string("current")])
+        #expect(await f.snapshot().tabs[0].text.hasPrefix("top\nours one\nmiddle\n<<<<<<< HEAD\n"))
+        await f.git.set(conflictRow: "staged", markers: false)
+        await f.status.refresh()
+        #expect(!(await conflicted()))
+        await f.git.set(conflictRow: "changed", markers: true)
+        await f.status.refresh()
+        #expect(!(await conflicted()))
+        await #expect(throws: EditorActionError.noConflict(action: "editor_conflict_next", path: "/p/api/a.txt")) {
+            try await f.dispatch("editor_conflict_next")
+        }
     }
 }
