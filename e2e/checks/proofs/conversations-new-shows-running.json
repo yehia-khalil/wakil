@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/agent/conversations-new-shows-running.jsonl",
   "baseCommit": "1fb2b49b1b5c6e2c43805b311032dfa94e957a71",
-  "provedAt": "2026-10-24T03:56:41.981818Z",
-  "checkBlob": "845ce2aa24e88c7f576feb012b243ad32798703f"
+  "provedAt": "2026-10-24T11:33:21.013755Z",
+  "checkBlob": "4592ef55acf789577c3235436472896933c443f2"
 }
