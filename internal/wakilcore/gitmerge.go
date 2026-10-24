@@ -65,6 +65,9 @@ func (w *GitWriter) Continue(ctx context.Context, message string) (GitMergeResul
 	if op.Kind == "" {
 		return GitMergeResult{}, UserError("Nothing to continue")
 	}
+	if op.Kind == "am" {
+		return GitMergeResult{}, op.InProgressError(w.Root)
+	}
 	conflicts, err := w.conflicts(ctx)
 	if err != nil {
 		return GitMergeResult{}, err
@@ -78,6 +81,12 @@ func (w *GitWriter) Continue(ctx context.Context, message string) (GitMergeResul
 		if err != nil {
 			return GitMergeResult{}, err
 		}
+		// A pick or revert of several commits (begun in a terminal) keeps a sequencer: the commit
+		// above settles the one that stopped, and `--continue` goes on with the rest.
+		if w.sequencing(ctx) {
+			out, errb, err := w.gitWith(ctx, noEditor, nil, op.Kind, "--continue")
+			return w.finish(ctx, stash, "", out, errb, err)
+		}
 		return w.done(ctx, stash, c.Commit+" "+c.Summary, ""), nil
 	}
 	b := w.readRebaseBase(ctx)
@@ -90,6 +99,9 @@ func (w *GitWriter) Skip(ctx context.Context) (GitMergeResult, error) {
 	op, err := ReadGitOp(ctx, w.runner())
 	if err != nil {
 		return GitMergeResult{}, err
+	}
+	if op.Kind == "am" {
+		return GitMergeResult{}, op.InProgressError(w.Root)
 	}
 	if op.Kind != "rebase" {
 		return GitMergeResult{}, UserError("Skip is for a rebase")
@@ -109,6 +121,9 @@ func (w *GitWriter) Abort(ctx context.Context) (GitMergeResult, error) {
 	}
 	if op.Kind == "" {
 		return GitMergeResult{}, UserError("Nothing to abort")
+	}
+	if op.Kind == "am" {
+		return GitMergeResult{}, op.InProgressError(w.Root)
 	}
 	stash := w.stashTop(ctx)
 	out, errb, err := w.gitWith(ctx, nil, nil, op.Kind, "--abort")
@@ -169,6 +184,12 @@ func (w *GitWriter) stopNote(ctx context.Context, conflicts []string) string {
 			strconv.Itoa(op.Steps) + "); resolve them below"
 	}
 	return "Merge stopped on conflicts in " + paths + "; resolve them below"
+}
+
+// sequencing: a cherry-pick or revert of several commits is under way (git's sequencer directory).
+func (w *GitWriter) sequencing(ctx context.Context) bool {
+	dir := w.oneOf(ctx, "rev-parse", "--absolute-git-dir")
+	return dir != "" && fileExists(filepath.Join(dir, "sequencer"))
 }
 
 // conflicts is each unmerged path once, in git's order, from `ls-files -u -z`.

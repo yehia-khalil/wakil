@@ -27,7 +27,7 @@
 {"dispatch":{"action":"editor_changes_fetch","params":{"root":"{fixtureRoot}/e2e-portal"}}}
 {"expect":{"tree":"contains","text":"e2e-portal · main ↑1 ↓1 · clean"}}
 {"dispatch":{"action":"editor_changes_pull","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"Pull stopped on conflicts in index.txt; resolve them below"}}
-{"expect":{"tree":"contains","text":"rebasing 1/1 onto"}}
+{"expect":{"tree":"contains","text":"rebasing 1/1 onto origin/main"}}
 {"expect":{"tree":"contains","text":"U, index.txt, both modified"}}
 {"do":{"click":"rail.terminal-2"}}
 {"do":{"keys":"grep -c '^<<<<<<< ' ../e2e-portal/index.txt"}}
@@ -54,7 +54,7 @@
 {"expect":{"tree":"absent","text":"rebasing 1/1 onto"}}
 {"do":{"click":"editor.changes.e2e-portal.remote"}}
 {"expect":{"tree":"contains","text":"Pull stopped on conflicts in index.txt; resolve them below"}}
-{"expect":{"tree":"contains","text":"rebasing 1/1 onto"}}
+{"expect":{"tree":"contains","text":"rebasing 1/1 onto origin/main"}}
 {"do":{"click":"rail.terminal-2"}}
 {"do":{"keys":"git -C ../e2e-portal rebase --abort"}}
 {"do":{"press":"Return"}}

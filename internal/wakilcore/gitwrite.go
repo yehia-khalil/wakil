@@ -282,7 +282,7 @@ func (w *GitWriter) UndoCommit(ctx context.Context) (string, error) {
 // commit. A rebase's commits are made by `rebase --continue`, not here.
 func (w *GitWriter) merging(ctx context.Context) bool {
 	op, _ := ReadGitOp(ctx, w.runner())
-	return op.Kind != "" && op.Kind != "rebase"
+	return op.Kind == "merge" || op.Kind == "cherry-pick" || op.Kind == "revert"
 }
 
 func (w *GitWriter) head(ctx context.Context) (GitCommitResult, error) {

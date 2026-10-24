@@ -394,3 +394,30 @@ func TestAutostashClashAfterAMergeOrRebaseSaysResolve(t *testing.T) {
 		})
 	}
 }
+
+// Final review M6: a cherry-pick of several commits begun in a terminal goes on past the one that
+// stopped, so .git/sequencer is not left behind.
+func TestContinueGoesOnWithAMultiCommitPick(t *testing.T) {
+	work, w, git := conflictFixture(t)
+	git("switch", "-q", "feature/search")
+	writeIn(t, work, "b.txt", "b\n")
+	git("add", "b.txt")
+	git("commit", "-qm", "Add b")
+	git("switch", "-q", "main")
+	tryGit(work, "cherry-pick", "feature/search~1", "feature/search")
+	gitDir := git("rev-parse", "--absolute-git-dir")
+	if !fileExists(filepath.Join(gitDir, "sequencer")) {
+		t.Fatal("fixture: no sequencer")
+	}
+	stageA(t, work, git, "one\nBOTH\nthree\n")
+	r, err := w.Continue(context.Background(), "Pick search")
+	if err != nil || !r.Done {
+		t.Fatalf("r = %+v, %v", r, err)
+	}
+	if fileExists(filepath.Join(gitDir, "sequencer")) || readOp(t, w).Kind != "" {
+		t.Fatalf("still picking: %+v", readOp(t, w))
+	}
+	if log := git("log", "--format=%s", "-2"); log != "Add b\nPick search" {
+		t.Fatalf("log = %q", log)
+	}
+}

@@ -13,7 +13,7 @@ import (
 // Head and Subject are the commit being applied (rebase, cherry-pick, revert); Message is git's
 // prepared message (MERGE_MSG without its comment lines), which fills an empty commit box.
 type GitOp struct {
-	Kind     string `json:"kind"` // "merge" | "rebase" | "cherry-pick" | "revert" | ""
+	Kind     string `json:"kind"` // "merge" | "rebase" | "cherry-pick" | "revert" | "am" | ""
 	Incoming string `json:"incoming"`
 	Onto     string `json:"onto"`
 	Step     int    `json:"step"`
@@ -40,6 +40,10 @@ func ReadGitOp(ctx context.Context, g *GitRunner) (GitOp, error) {
 	}
 	var op GitOp
 	switch {
+	case fileExists(filepath.Join(dir, "rebase-apply", "applying")):
+		// A `git am` session shares rebase-apply with an apply-backend rebase, but is not one: it is
+		// named for the refusals only, and the status carries no state for it.
+		return GitOp{Kind: "am"}, nil
 	case fileExists(filepath.Join(dir, "rebase-merge")):
 		op = GitOp{Kind: "rebase", Onto: read("rebase-merge", "onto"), Head: read("REBASE_HEAD")}
 		op.Step, _ = strconv.Atoi(read("rebase-merge", "msgnum"))
@@ -96,12 +100,18 @@ func preparedMessage(msg string) string {
 	return strings.TrimSpace(strings.Join(keep, "\n"))
 }
 
-// branchAt names the local branch whose tip is id (R6), else id's first seven letters.
+// branchAt names the local branch whose tip is id (R6), else the remote-tracking one (a pull's rebase
+// is onto its upstream), else id's first seven letters. A remote's symbolic HEAD is not a name.
 func branchAt(ctx context.Context, g *GitRunner, id string) string {
-	out, err := g.Run(ctx, "for-each-ref", "--format=%(objectname) %(refname:short)", "refs/heads")
-	if err == nil {
+	for _, refs := range []string{"refs/heads", "refs/remotes"} {
+		out, err := g.Run(ctx, "for-each-ref", "--format=%(objectname) %(symref) %(refname:short)", refs)
+		if err != nil {
+			continue
+		}
 		for _, l := range strings.Split(string(out), "\n") {
-			if oid, name, ok := strings.Cut(l, " "); ok && oid == id {
+			oid, rest, _ := strings.Cut(l, " ")
+			symref, name, ok := strings.Cut(rest, " ")
+			if ok && oid == id && symref == "" {
 				return name
 			}
 		}
@@ -118,6 +128,9 @@ func short(id string) string {
 
 // InProgressError refuses a write while op is under way, naming it; nil when nothing is.
 func (op GitOp) InProgressError(root string) error {
+	if op.Kind == "am" {
+		return UserError("A git am session is in progress in " + root + "; finish or abort it in a terminal")
+	}
 	what := map[string]string{"merge": "A merge", "rebase": "A rebase", "cherry-pick": "A cherry-pick", "revert": "A revert"}[op.Kind]
 	if what == "" {
 		return nil

@@ -116,7 +116,7 @@ func ReadGitStatus(ctx context.Context, g *GitRunner) (GitStatus, error) {
 	if err != nil {
 		return st, err
 	}
-	if op.Kind != "" {
+	if op.Kind != "" && op.Kind != "am" { // an am session is the terminal's: the UI offers nothing for it
 		st.State = &op
 	}
 	var staged []string

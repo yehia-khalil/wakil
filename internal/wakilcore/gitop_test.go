@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"testing"
 )
@@ -130,5 +131,50 @@ func TestEveryWriteRefusesMidCherryPick(t *testing.T) {
 		if err == nil || err.Error() != want {
 			t.Errorf("%s: err = %v, want %q", name, err, want)
 		}
+	}
+}
+
+// Final review M7: a `git am` session leaves rebase-apply/applying, which is not a rebase: every write
+// names it, and the status carries no state, so the UI offers no Continue Rebase or Abort for it.
+func TestAGitAmSessionIsNamedAndNotARebase(t *testing.T) {
+	work, w, git := branchFixture(t)
+	git("switch", "-q", "-c", "other")
+	commitA(t, work, git, "one\nOTHER\nthree\n", "other")
+	patch := filepath.Join(t.TempDir(), "p.patch")
+	os.WriteFile(patch, []byte(git("format-patch", "-1", "--stdout")), 0o644)
+	git("switch", "-q", "main")
+	commitA(t, work, git, "one\nMAIN\nthree\n", "main")
+	tryGit(work, "am", patch)
+	if gitDir := git("rev-parse", "--absolute-git-dir"); !fileExists(filepath.Join(gitDir, "rebase-apply", "applying")) {
+		t.Fatal("fixture: no am session")
+	}
+	want := "A git am session is in progress in " + w.Root + "; finish or abort it in a terminal"
+	ctx := context.Background()
+	_, switchErr := w.Switch(ctx, "other", SwitchOptions{})
+	_, continueErr := w.Continue(ctx, "")
+	_, skipErr := w.Skip(ctx)
+	_, abortErr := w.Abort(ctx)
+	for name, err := range map[string]error{"Switch": switchErr, "Continue": continueErr, "Skip": skipErr, "Abort": abortErr} {
+		if err == nil || err.Error() != want {
+			t.Errorf("%s: err = %v, want %q", name, err, want)
+		}
+	}
+	if st, err := ReadGitStatus(ctx, w.runner()); err != nil || st.State != nil {
+		t.Fatalf("state = %+v, err %v", st.State, err)
+	}
+}
+
+// Final review M8: a pull's rebase is onto the upstream, which has no local branch: it is named by
+// its remote-tracking branch, not a short id.
+func TestRebaseOntoARemoteBranchIsNamed(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+	commitHere(t, work, "one\nMINE\nthree\n")
+	if _, err := g.Pull(context.Background()); err == nil {
+		t.Fatal("want a stopped pull")
+	}
+	w, _ := NewGitWriter(work, []string{work}, GitIdentity{})
+	if op := readOp(t, w); op.Kind != "rebase" || op.Onto != "origin/main" {
+		t.Fatalf("op = %+v", op)
 	}
 }
