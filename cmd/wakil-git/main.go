@@ -476,7 +476,7 @@ func addWriteTools(s *mcp.Server) {
 			}
 			return nil, r, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "git_resolve", Description: "Writes. Resolves one conflicted file by taking a side whole: current (HEAD's) or incoming, or for a delete/modify conflict keep or delete. Stages the result. Edits made to the file are lost."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_resolve", Description: "Writes. Resolves one conflicted file by taking a side whole: current (HEAD's) or incoming, or for a delete/modify conflict keep or delete. Stages the result. current, incoming and delete lose edits made to the file; keep stages the file as it is in the tree."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a resolveArg) (*mcp.CallToolResult, emptyResult, error) {
 			w, fail := writer(a.Root)
 			if fail != nil {
