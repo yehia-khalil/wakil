@@ -178,3 +178,18 @@ private func stated(_ files: [GitFileRow], _ state: GitOpState?) -> GitRootState
     #expect(changesUndoApplyConfirmation(message: "On main: wip")
             == "Undo applying \"On main: wip\"? The files it touched go back to HEAD; the stash stays in the list.")
 }
+
+@Test func theIncomingSideIsNamedForTheRowsTakes() {
+    let id = "abc1234" + String(repeating: "f", count: 33)
+    #expect(changesIncomingSide(stated([], op("merge", incoming: "feature/search"))) == "feature/search")
+    #expect(changesIncomingSide(stated([], op("rebase", onto: "main", head: id))) == "abc1234")
+    #expect(changesIncomingSide(stated([], op("cherry-pick", head: id))) == "abc1234")
+    // A stash clash has no operation: its incoming side is the stash.
+    #expect(changesIncomingSide(r([])) == "the stash")
+}
+
+@Test func onlyADeleteModifyRowKeepsOrDeletes() {
+    let kinds = ["UU", "AA", "DU", "UD", "AU", "UA", "DD"]
+    let rows = kinds.map { GitFileRow(path: "a.txt", origPath: nil, group: .conflicts, status: "U", kind: $0) }
+    #expect(rows.filter(gitConflictIsDeleteModify).map(\.kind) == ["DU", "UD"])
+}

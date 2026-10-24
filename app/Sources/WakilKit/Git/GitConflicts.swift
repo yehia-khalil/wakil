@@ -111,6 +111,18 @@ public func gitRowMarkersNote(_ row: GitFileRow) -> String? {
     return "\(gitRowName(row)) — staged with conflict markers"
 }
 
+/// The incoming side a whole-file take names: the merged branch, the commit a rebase, cherry-pick or
+/// revert applies (its short id), or the stash for a stash clash, which has no operation.
+public func changesIncomingSide(_ r: GitRootState) -> String {
+    guard let s = r.state else { return "the stash" }
+    return s.kind == "merge" ? s.incoming : gitId7(s.head)
+}
+
+/// A delete/modify conflict (`DU`, `UD`): its row offers Keep File and Delete File, not the Accept Alls.
+public func gitConflictIsDeleteModify(_ row: GitFileRow) -> Bool {
+    row.kind == "DU" || row.kind == "UD"
+}
+
 /// Abort's in-place confirm (Rule 1).
 public func changesAbortConfirmation(_ s: GitOpState) -> String {
     "Abort the \(s.kind)? The tree goes back to before it, and your resolutions are lost."

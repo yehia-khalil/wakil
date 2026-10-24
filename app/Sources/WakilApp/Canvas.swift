@@ -517,7 +517,15 @@ extension WakilWindow {
                             model.changesHistoryStep(root: root, by: delta)
                             return model.changesMessages[root] != before
                         },
-                        commit: { root in await model.changesCommit(root: root) },
+                        // 3a-v-b: mid-merge or mid-rebase the commit button (and ⌘⏎) is Commit Merge /
+                        // Continue Rebase, read from the root's state at the press.
+                        commit: { root in
+                            if model.gitRoots.first(where: { $0.root == root })?.state != nil {
+                                _ = await model.changesContinue(root: root)
+                            } else {
+                                await model.changesCommit(root: root)
+                            }
+                        },
                         amend: { root in await model.changesAmend(root: root) },
                         undo: { root in await model.changesUndoCommit(root: root) },
                         stage: { root, paths, group in await model.changesStage(root: root, paths: paths, group: group) },
@@ -542,7 +550,9 @@ extension WakilWindow {
                             },
                             create: { root, name, from in await model.changesBranchCreate(root: root, name: name, from: from) },
                             fetch: { await model.changesFetch(root: $0) },
-                            delete: { root, branch, force in await model.changesBranchDelete(root: root, branch: branch, force: force) }),
+                            delete: { root, branch, force in await model.changesBranchDelete(root: root, branch: branch, force: force) },
+                            merge: { root, branch in await model.changesMerge(root: root, branch: branch) },
+                            rebase: { root, onto in await model.changesRebase(root: root, onto: onto) }),
                         branchStash: BranchStashControls(
                             stashes: { await model.changesStashes(root: $0) },
                             stash: { root, message, mode in await model.changesStash(root: root, message: message, mode: mode) },
@@ -550,7 +560,14 @@ extension WakilWindow {
                             drop: { root, stash in await model.changesStashDrop(root: root, stash: stash) },
                             dropAll: { root, shown in await model.changesStashDropAll(root: root, stashes: shown) },
                             rename: { root, to in await model.changesBranchRename(root: root, to: to) },
-                            create: { root, name in await model.changesBranchCreate(root: root, name: name) })),
+                            create: { root, name in await model.changesBranchCreate(root: root, name: name) }),
+                        conflicts: ChangesConflictControls(
+                            clashes: model.changesClashes,
+                            skip: { await model.changesSkip(root: $0) },
+                            abort: { await model.changesAbort(root: $0) },
+                            take: { root, path, take in await model.changesTake(root: root, path: path, take: take) },
+                            keepFile: { root, path in await model.changesKeepFile(root: root, path: path) },
+                            undoApply: { await model.changesStashUndoApply(root: $0) })),
                     stageHunk: { await model.changesStageHunk() },
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
                     unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) })
