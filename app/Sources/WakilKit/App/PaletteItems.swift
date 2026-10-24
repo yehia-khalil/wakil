@@ -83,9 +83,14 @@ enum PaletteItems {
             var absorbed = 0
             var cursor = fields
             var visited = Set([id])
+            // The parent this row names counts even when the listing lacks it.
+            var chain = Set([id])
+            if case .string(let named)? = fields["parent"] { chain.insert(named) }
             while case .string(let parentId)? = cursor["parent"], let parentFields = fieldsById[parentId],
                   visited.insert(parentId).inserted {
                 absorbed += 1
+                chain.insert(parentId)
+                if case .string(let named)? = parentFields["parent"] { chain.insert(named) }
                 cursor = parentFields
             }
 
@@ -110,8 +115,16 @@ enum PaletteItems {
 
             return PaletteItem(
                 id: "session:\(id)", kind: .session, title: title,
-                subtitle: subtitle, payload: id)
+                subtitle: subtitle, payload: id, chain: chain)
         }
+    }
+
+    /// Continue's rows without the chains live conversations hold: a row whose chain contains any
+    /// of `sessions` is a conversation already running, listed once, among the live ones.
+    nonisolated internal static func continueItems(
+        _ items: [PaletteItem], excluding sessions: Set<String>
+    ) -> [PaletteItem] {
+        items.filter { $0.chain.isDisjoint(with: sessions) }
     }
 
     /// How long ago, in the artboards' own vocabulary: `2h 14m` inside a
@@ -137,7 +150,11 @@ enum PaletteItems {
                 return plain.date(from: stamp)
             }()
         guard let date = parsed else { return nil }
+        return age(since: date, now: now)
+    }
 
+    /// `age(ofRFC3339:)` for a date already in hand: a live conversation's last activity.
+    nonisolated internal static func age(since date: Date, now: Date = Date()) -> String {
         let seconds = now.timeIntervalSince(date)
         guard seconds > 0 else { return "now" }
 

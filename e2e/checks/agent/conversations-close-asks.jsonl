@@ -1,0 +1,25 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"hold a turn open here"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"hold a turn open here"}}
+{"expect":{"process":{"any-matching":"wakil-e2e-agent -p"}}}
+{"do":{"hotkey":"cmd+shift+w"}}
+{"expect":{"tree":"contains","text":"Close this conversation? The agent is still working; what it is doing now stops."}}
+{"expect":{"frame":"window.closeConversation.close","inside":"window"}}
+{"expect":{"frame":"window.closeConversation.keep","inside":"window"}}
+{"expect":{"focus":"window.closeConversation"}}
+{"do":{"click":"window.closeConversation.keep"}}
+{"expect":{"tree":"absent","text":"Close this conversation?"}}
+{"expect":{"tree":"contains","text":"hold a turn open here"}}
+{"expect":{"tree":"absent","text":"NEWEST FIRST"}}
+{"expect":{"process":{"any-matching":"wakil-e2e-agent -p"}}}
+{"do":{"hotkey":"cmd+shift+w"}}
+{"expect":{"tree":"contains","text":"Close this conversation? The agent is still working; what it is doing now stops."}}
+{"do":{"click":"window.closeConversation.close"}}
+{"expect":{"tree":"contains","text":"NEWEST FIRST"}}
+{"expect":{"frame":"landing.row.open:terminal","inside":"window"}}
+{"expect":{"tree":"absent","text":"Close this conversation?"}}
+{"expect":{"tree":"absent","text":"RUNNING"}}
+{"expect":{"tree":"absent","text":"Reading sessions"}}
+{"expect":{"tree":"absent","text":"Nothing to continue"}}
+{"expect":{"process":{"none-matching":"wakil-e2e-agent -p"}}}

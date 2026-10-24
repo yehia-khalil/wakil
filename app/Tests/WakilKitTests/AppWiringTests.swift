@@ -265,8 +265,8 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "pane_open", "pane_resize", "pane_restore", "pane_scroll_clear",
              "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
              "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
-             "session_get", "session_list", "session_read", "session_record_parent",
-             "session_resume", "session_set_provider", "settings_open", "term_open",
+             "session_close", "session_get", "session_list", "session_new", "session_read",
+             "session_record_parent", "session_resume", "session_set_provider", "session_switch", "settings_open", "term_open",
              "term_propose", "term_run", "term_scroll"])
     #expect(wiring.contextClient == nil)
     #expect(wiring.databaseClient == nil)

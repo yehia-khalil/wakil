@@ -1,9 +1,11 @@
 import WakilKit
 import SwiftUI
 
-/// One chip per agent working in a place that is not the one on screen, top right of the window
-/// (background agents, 4 of 4). `WindowModel.chips` decides which agents have one and in what
-/// state; this only draws them, and a click is `WindowModel.goTo(_:)`.
+/// One chip per live conversation not on screen — in another place, or backgrounded in this one —
+/// top right of the window (background agents 4 of 4; conversations 2 of 3). `WindowModel.chips`
+/// decides which have one and in what state; this only draws them, and a click is
+/// `session_switch` through the registry (`WindowModel.switchToRunning`): the conversation
+/// brought back as it was left, in its own place, no fork.
 ///
 /// **Nothing when there is nothing elsewhere.** No agents elsewhere means an empty `chips`, and
 /// this draws nothing at all — not an empty tray — so the window's resting state is what it was
@@ -28,8 +30,9 @@ import SwiftUI
 /// "+N more" chip in the same style, carrying the strongest state among those it hides; its
 /// click opens a small popover listing them, each a chip that goes there. So the chips never
 /// grow down over the rail's top rows or the canvas's top right, and never need a scroll view.
-/// A label is bounded too: the organisation and project truncate in the middle, the environment
-/// and the state never do; the whole label is in the tooltip and read to VoiceOver.
+/// A label is bounded too: the organisation and project truncate in the middle and the title at
+/// its end, while the environment and the state never do; the whole label is in the tooltip and
+/// read to VoiceOver.
 struct AgentChips: View {
     let model: WindowModel
 
@@ -45,11 +48,11 @@ struct AgentChips: View {
         let tray = AgentChipTray(model.chips)
         VStack(alignment: .trailing, spacing: 6) {
             ForEach(tray.shown) { chip in
-                AgentChipView(chip: chip) { Task { await model.goTo(chip.place) } }
+                AgentChipView(chip: chip) { Task { await model.switchToRunning(chip.conversation) } }
                     .transition(arrival)
             }
             if let state = tray.hiddenState {
-                MoreChip(tray: tray, state: state) { place in Task { await model.goTo(place) } }
+                MoreChip(tray: tray, state: state) { chip in Task { await model.switchToRunning(chip.conversation) } }
                     .transition(arrival)
             }
         }
@@ -75,6 +78,31 @@ private extension AgentChip.State {
         case .waiting: "waiting on you"
         case .done: "done"
         case .failed: "failed"
+        }
+    }
+}
+
+extension ConversationState {
+    /// The dot's hue on a Running row (the Landing's, ⌘P's): the chip's own hue for the state,
+    /// and for an idle, seen conversation — which has no chip — §5's text luminance at half, grey.
+    var hue: Color {
+        switch self {
+        case .working: AgentChip.State.working.hue
+        case .waiting: AgentChip.State.waiting.hue
+        case .done: AgentChip.State.done.hue
+        case .failed: AgentChip.State.failed.hue
+        case .idle: coolWhite.opacity(0.50)
+        }
+    }
+
+    /// What VoiceOver says for the row's dot: the chip's word, and "idle".
+    var spoken: String {
+        switch self {
+        case .working: AgentChip.State.working.word
+        case .waiting: AgentChip.State.waiting.word
+        case .done: AgentChip.State.done.word
+        case .failed: AgentChip.State.failed.word
+        case .idle: "idle"
         }
     }
 }
@@ -143,15 +171,16 @@ private struct AgentChipView: View {
     let chip: AgentChip
     let go: () -> Void
 
-    /// `chip.label` split in two: the organisation and project, which may be truncated in the
-    /// middle, and the environment segment with the state's suffix, which never is — so a
-    /// production place's red segment (Invariant 8) cannot be truncated away.
+    /// `chip.label` in three: the organisation and project, which may be truncated in the
+    /// middle; the environment segment, which never is — so a production place's red segment
+    /// (Invariant 8) cannot be truncated away; and the title, cut at its end, then the state's
+    /// suffix, which never is.
     private var head: String {
         [chip.place.organization, chip.place.project].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    /// The environment segment, in production red when it is production, then the suffix.
-    private var tail: AttributedString {
+    /// The environment segment, in production red when it is production.
+    private var environmentSegment: AttributedString {
         let environment = chip.place.environment
         var text = AttributedString()
         if !environment.isEmpty {
@@ -162,9 +191,7 @@ private struct AgentChipView: View {
                 ? Color(EnvironmentBadge.productionColour) : coolWhite.opacity(0.82)
             text = separator + segment
         }
-        var suffix = AttributedString(chip.state.suffix)
-        suffix.foregroundColor = coolWhite.opacity(0.62)
-        return text + suffix
+        return text
     }
 
     var body: some View {
@@ -173,26 +200,31 @@ private struct AgentChipView: View {
                 if !head.isEmpty {
                     Text(head).foregroundStyle(coolWhite.opacity(0.82))
                 }
-                Text(tail).fixedSize()
+                Text(environmentSegment).fixedSize()
+                Text(" — ").foregroundStyle(coolWhite.opacity(0.62)).fixedSize()
+                Text(chip.title).foregroundStyle(coolWhite.opacity(0.82)).truncationMode(.tail)
+                if !chip.state.suffix.isEmpty {
+                    Text(chip.state.suffix).foregroundStyle(coolWhite.opacity(0.62)).fixedSize()
+                }
             }
         }
             // The place is the label and the state its value, which VoiceOver reads after it — and
             // which is what changes while the chip stays put.
             .accessibilityLabel(chip.label)
             .accessibilityValue(chip.state.word)
-            // One per place, so a check can press the chip for the place it means — and a
-            // place's three parts, joined by `/`, can never spell `more`.
-            .accessibilityIdentifier("window.agentChip.\(chip.place.organization)/\(chip.place.project)/\(chip.place.environment)")
-            .help("Go to \(chip.label)\(chip.state.suffix)")
+            // One per conversation, by its place and ordinal (ruling 2), so a check can press the
+            // chip it means — and a place's three parts, joined by `/`, can never spell `more`.
+            .accessibilityIdentifier(chip.identifier)
+            .help("Switch to \(chip.label)\(chip.state.suffix)")
     }
 }
 
-/// The agents past the first two, as one chip. Its dot is the strongest hidden state; a click
-/// opens a popover listing them, each an ordinary chip that goes there (and closes the list).
+/// The conversations past the first two, as one chip. Its dot is the strongest hidden state; a
+/// click opens a popover listing them, each an ordinary chip that switches to it (and closes the list).
 private struct MoreChip: View {
     let tray: AgentChipTray
     let state: AgentChip.State
-    let go: (Place) -> Void
+    let go: (AgentChip) -> Void
 
     @State private var open = false
 
@@ -200,7 +232,7 @@ private struct MoreChip: View {
         ChipButton(state: state, action: { open.toggle() }) {
             Text(tray.moreLabel).foregroundStyle(coolWhite.opacity(0.82))
         }
-        .accessibilityLabel("\(tray.hidden.count) more agents")
+        .accessibilityLabel("\(tray.hidden.count) more conversations")
         .accessibilityValue(state.word)
         .accessibilityIdentifier("window.agentChip.more")
         .help(tray.hidden.map { $0.label + $0.state.suffix }.joined(separator: "\n"))
@@ -209,7 +241,7 @@ private struct MoreChip: View {
                 ForEach(tray.hidden) { chip in
                     AgentChipView(chip: chip) {
                         open = false
-                        go(chip.place)
+                        go(chip)
                     }
                 }
             }
@@ -226,7 +258,8 @@ private struct MoreChip: View {
 /// time, so a dot that stops breathing — the agent's turn ends, or reduced motion comes on — is
 /// simply full on the next frame, with no running animation to unwind. Drawn at 120 frames a
 /// cycle, the room's own rule for its cadence (§7: at least 25 a cycle), and paused when still.
-private struct ChipDot: View {
+/// The Landing's and ⌘P's Running rows draw the same dot, so a conversation reads alike in all three.
+struct ChipDot: View {
     let colour: Color
     let breathes: Bool
 

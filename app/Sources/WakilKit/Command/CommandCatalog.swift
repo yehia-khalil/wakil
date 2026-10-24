@@ -43,6 +43,8 @@ public struct PaletteContext: Sendable, Equatable {
     /// on another.
     public var organisation: String
     public var project: String
+    /// The screen shows a conversation, not its place's Landing: *New conversation* is offered.
+    public var conversationOnScreen: Bool
     /// 3a-iv: the root the Branch segment is about (`WindowModel.activeBranchRoot`); nil with no git root.
     public var activeGitRoot: String?
 
@@ -51,7 +53,8 @@ public struct PaletteContext: Sendable, Equatable {
         dbPageHasNext: Bool = false, dbPageHasPrevious: Bool = false,
         hasEnvironments: Bool = false, projectCount: Int = 0, providerCount: Int = 0,
         editorActiveIsFile: Bool = false, organisation: String = "", project: String = "",
-        editorActiveDiff: EditorActiveDiff? = nil, activeGitRoot: String? = nil
+        editorActiveDiff: EditorActiveDiff? = nil, conversationOnScreen: Bool = false,
+        activeGitRoot: String? = nil
     ) {
         self.activeGitRoot = activeGitRoot
         self.focusedPane = focusedPane
@@ -65,6 +68,7 @@ public struct PaletteContext: Sendable, Equatable {
         self.providerCount = providerCount
         self.organisation = organisation
         self.project = project
+        self.conversationOnScreen = conversationOnScreen
     }
 }
 
@@ -192,6 +196,16 @@ public enum CommandCatalog {
             input: .choice(.paneKinds, placeholder: "Pane kind"),
             params: { _, value in .object(["kind": .string(value ?? "")]) },
             available: { _ in true }),
+        // Conversations 2 of 3: ⌘N's verb. Hidden on a Landing, where it would do nothing.
+        CatalogCommand(
+            id: "global.newConversation", label: "New conversation", scope: .global,
+            action: "session_new", input: nil,
+            params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen }),
+        // Conversations 3 of 3: File ▸ Close Conversation's row (⌘⇧W), hidden on a Landing (ruling 6).
+        CatalogCommand(
+            id: "global.closeConversation", label: "Close conversation", scope: .global,
+            action: "session_close", input: nil,
+            params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen }),
     ]
 
     /// Focused pane's commands first (catalog order), then global; unavailable ones dropped.

@@ -62,8 +62,9 @@ final class WindowSession {
         // for `sun_path`, say) leaves that session running without Wakil's own tools, and its
         // status says why.
         let surface = wiring.mcpSurface
-        // Filled once the model exists, below: `initialize` reports the place on screen beside
-        // the socket's own (`initializeMeta`), which is how the e2e harness picks its channel.
+        // Filled once the model exists, below: `initialize` reports the place and conversation on
+        // screen beside the socket's own (`initializeMeta`), which is how the e2e harness picks
+        // its channel.
         let screen = ScreenPlace()
         let agentSocketFactory: AgentSocketFactory = { path, caller in
             // The registry *and* the pane store the window itself draws
@@ -72,7 +73,7 @@ final class WindowSession {
             // agent is told is on screen is what is on screen (Invariant 3).
             // The gate judges the session's own place, whatever the screen shows.
             let server = MCPSocketServer(
-                surface: surface, socketPath: path, caller: caller, screen: { await screen.place })
+                surface: surface, socketPath: path, caller: caller, screen: { await screen.shown })
             try await server.start()
             return server
         }
@@ -325,6 +326,10 @@ final class WindowSession {
             // before a call gets anywhere near this broker — but the
             // broker itself does not know that, and does not need to.
             providerSwitches: wiring.providerSwitches,
+            // Conversations 2 of 3: `session_new` and `session_switch` park here and this
+            // window's `conversationPump` drains it — the same instance, or nothing would ever
+            // switch.
+            conversationRequests: wiring.conversationRequests,
             // The model cannot reach `wiring` itself — it lives in
             // WakilKit and WakilWiring's clients are handed to it
             // individually — so the switch is injected as a closure here,
@@ -440,10 +445,13 @@ private struct FailingCredentialsLookup: ProviderCredentialsLookup {
     }
 }
 
-/// The place the window shows, for a socket's `initialize` (`initializeMeta`). Weak, so a socket
-/// does not keep a closed window alive; a released model answers nil.
+/// What the window shows — its place and the conversation in it (`WindowModel.screenConversation`)
+/// — for a socket's `initialize` (`initializeMeta`). Weak, so a socket does not keep a closed
+/// window alive; a released model answers nil.
 @MainActor
 private final class ScreenPlace {
     weak var model: WindowModel?
-    var place: Place? { model?.place }
+    var shown: ScreenShown? {
+        model.map { ScreenShown(place: $0.place, conversation: $0.screenConversation) }
+    }
 }

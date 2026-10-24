@@ -272,7 +272,19 @@ public func registerStandardActions(
     // environment of it), or nil. `ctx_rename_project`, `ctx_remove_project`,
     // `ctx_rename_environment` and `ctx_remove_environment` ask it before touching a place an
     // agent is pinned to (Invariant 5). The one production call site passes the window's.
-    agentIn: (@Sendable (_ project: String, _ environment: String?) async -> String?)? = nil
+    agentIn: (@Sendable (_ project: String, _ environment: String?) async -> String?)? = nil,
+    // Conversations 2 of 3. Defaulted for `providerSwitches`' reason: no existing call site
+    // starts or switches a conversation. The one production call site (`WakilWiring.build`)
+    // passes the broker the window drains.
+    conversationRequests: ConversationBroker = ConversationBroker(),
+    // Conversations 2 of 3, defaulted for the same reason: the window's live conversations,
+    // every place's (nil) or one place's, which `session_list` lists beside Go's past sessions.
+    // The one production call site passes `LiveConversationLookup`'s read.
+    liveConversations: (@Sendable (Place?) async -> [LiveConversation])? = nil,
+    // The organisation on screen, for an unpinned caller's `live` (the operator, `--dispatch`):
+    // the one Go's past half answers for. Nil, or answering nil, lists no live conversation —
+    // never every organisation's.
+    liveOrganization: (@Sendable () async -> String?)? = nil
 ) async {
     // Every dispatch is homed in the canvas on screen when it began, unless its caller has one of
     // its own (`ActionRegistry.setScreenScope`): a db read, a git status or a page whose reply
@@ -2400,12 +2412,78 @@ public func registerStandardActions(
         ]),
         handler: { params in
             let id = try requireStringParam(params, "id", action: "session_resume")
+            let caller = ActionRegistry.dispatchCaller
+            // An agent's own conversation, or the operator's screen's as it was when they asked
+            // (`WindowModel.screenPinnedActions`); nil — `--dispatch` — the screen's at drain.
             await resumes.request(ResumeRequest(
-                sessionId: id, place: pinnedPlace(of: ActionRegistry.dispatchCaller)))
+                sessionId: id, place: pinnedPlace(of: caller), conversation: caller?.conversation))
             return .object([
                 "resuming": .string(id),
                 "note": .string("this session ends as the fork starts"),
             ])
+        }
+    ))
+
+    // Conversations 3 of 3: `session_close`, beside them on the same terms — `.control` (the
+    // conversation is Wakil's own state), operator-only (an agent must not end the operator's
+    // conversation), parked on `conversationRequests`, pinned to the conversation it is
+    // dispatched in. The window asks first only with work in flight (`closeConversation`).
+    await registry.register(Action(
+        name: "session_close",
+        description: "End the conversation on screen: its agent stops, its panes close as on quit, "
+            + "and it moves to Continue. The operator is asked first when its turn is running or it "
+            + "has a write waiting. Does nothing on a Landing. Operator use only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            let conversation = ActionRegistry.dispatchCaller?.conversation
+            await conversationRequests.request(.close(conversation: conversation))
+            return .object(["closing": conversation.map(JSONValue.string) ?? .null])
+        }
+    ))
+
+    // Conversations 2 of 3. **`.control`**: which conversation a place shows is Wakil's own
+    // state, and nothing outside Wakil changes. **Operator-only** (`operatorOnlyActions`): an
+    // agent must not push aside the operator's conversation. Both park on `conversationRequests`
+    // and return, as `session_set_provider` parks: no `WindowModel` exists when this runs.
+    // **Pinned to the conversation they are dispatched in** — a session's own socket names it
+    // (`pinnedPlace(of:)`), and the operator's window names the screen's as it was when the
+    // gesture was made (`WindowModel.screenPinnedActions`); `--dispatch` names none, which is the
+    // screen's when the request drains.
+    await registry.register(Action(
+        name: "session_new",
+        description: "Put the conversation on screen into the background, untouched — its turn "
+            + "carries on — and show the place's Landing, where the next turn starts a new "
+            + "conversation. Does nothing on a Landing. Operator use only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            let caller = ActionRegistry.dispatchCaller
+            let conversation = caller?.conversation
+            await conversationRequests.request(.new(conversation: conversation))
+            return .object(["backgrounded": conversation.map(JSONValue.string) ?? .null])
+        }
+    ))
+
+    await registry.register(Action(
+        name: "session_switch",
+        description: "Bring a live conversation back on screen — the same session, thread and "
+            + "canvas, no fork — going to its place first. `conversation` is its id, or its "
+            + "title when that names one live conversation in this place. Operator use only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object(["conversation": .object(["type": .string("string")])]),
+            "required": .array([.string("conversation")]),
+        ]),
+        handler: { params in
+            let conversation = try requireStringParam(params, "conversation", action: "session_switch")
+            await conversationRequests.request(.switchTo(
+                conversation: conversation, place: pinnedPlace(of: ActionRegistry.dispatchCaller)))
+            return .object(["switching": .string(conversation)])
         }
     ))
 
@@ -2508,17 +2586,45 @@ public func registerStandardActions(
             "List Claude Code sessions for the active project's roots across every provider the "
             + "active org holds, newest first. Reports how many transcript stores could not be "
             + "read, so an empty list with a non-zero skipped count means \"could not look\", not "
-            + "\"none exist\".",
+            + "\"none exist\". `live` lists the conversations running in this window now in this "
+            + "organization — every project's, or, given `project` and/or `environment`, those "
+            + "places' — newest activity first, each with its title and state (working, waiting, done, "
+            + "failed, idle). Only the operator brings one on screen, with ⌘P.",
         kind: .read,
         audience: .agentReachable,
-        schema: .object(["type": .string("object"), "properties": .object([:])]),
-        handler: { _ in
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "project": .object(["type": .string("string")]),
+                "environment": .object(["type": .string("string")]),
+            ]),
+        ]),
+        handler: { params in
             guard let context else {
                 throw StandardActionError.missingClient(action: "session_list", role: "context")
             }
-            return try await callChecked(
+            let past = try await callChecked(
                 context, tool: "list_sessions", arguments: .object([:]),
                 action: "session_list", timeout: MCPClient.readReplyTimeout)
+            guard let liveConversations else { return past }
+            let project = optionalStringParam(params, "project")
+            let environment = optionalStringParam(params, "environment")
+            // **One organisation, always** (north-star non-goal: no query spans two orgs — the
+            // organisation is the credential boundary): a pinned session's own, else the one on
+            // screen, which is the one Go's past half answered for. None known lists none.
+            let organization: String?
+            if let pinned = pinnedPlace(of: ActionRegistry.dispatchCaller) {
+                organization = pinned.organization
+            } else {
+                organization = await liveOrganization?()
+            }
+            let live = await liveConversations(nil).filter { row in
+                guard let organization, !organization.isEmpty else { return false }
+                return row.place.organization == organization
+                    && (project == nil || row.place.project == project)
+                    && (environment == nil || row.place.environment == environment)
+            }
+            return withStructured(past, "live", .array(live.map(\.json)))
         }
     ))
 
@@ -3130,6 +3236,26 @@ private func requireStringParam(_ params: JSONValue, _ key: String, action: Stri
         throw StandardActionError.missingParam(action: action, param: key)
     }
     return value
+}
+
+/// An optional string param `key`, or nil when it is absent, not a string, or empty.
+private func optionalStringParam(_ params: JSONValue, _ key: String) -> String? {
+    guard case .object(let obj) = params, case .string(let value)? = obj[key], !value.isEmpty else {
+        return nil
+    }
+    return value
+}
+
+/// `result` with `structuredContent[key] = value`, everything else as it came: a Go tool's
+/// answer, carrying one more thing Swift alone knows. A result with no `structuredContent`
+/// gains one; one that is not an object is returned as it was.
+private func withStructured(_ result: JSONValue, _ key: String, _ value: JSONValue) -> JSONValue {
+    guard case .object(var object) = result else { return result }
+    var structured: [String: JSONValue] = [:]
+    if case .object(let existing)? = object["structuredContent"] { structured = existing }
+    structured[key] = value
+    object["structuredContent"] = .object(structured)
+    return .object(object)
 }
 
 /// Calls `tool` on `client` and translates the MCP tool-error convention

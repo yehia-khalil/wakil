@@ -1,0 +1,13 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"expect":{"process":{"any-matching":"wakil-e2e-agent -p"}}}
+{"do":{"hotkey":"cmd+shift+w"}}
+{"expect":{"tree":"contains","text":"NEWEST FIRST"}}
+{"expect":{"tree":"absent","text":"Close this conversation?"}}
+{"expect":{"tree":"absent","text":"first reply in the thread"}}
+{"expect":{"tree":"absent","text":"Reading sessions"}}
+{"expect":{"tree":"absent","text":"Nothing to continue"}}
+{"expect":{"tree":"absent","text":"RUNNING"}}
+{"expect":{"process":{"none-matching":"wakil-e2e-agent -p"}}}

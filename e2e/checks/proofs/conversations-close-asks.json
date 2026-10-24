@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/conversations-close-asks.jsonl",
+  "baseCommit": "1fb2b49b1b5c6e2c43805b311032dfa94e957a71",
+  "provedAt": "2026-10-24T11:33:21.013755Z",
+  "checkBlob": "9cd9f650005947f91830e3035d45ffdaeb1f3e1b"
+}

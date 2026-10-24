@@ -19,7 +19,14 @@ import SwiftUI
 /// drawn. A zeroed stat row is a claim that nothing happened, and three large
 /// numerals reading 0 are worse than the space they take.
 ///
-/// **Invariant 2.** Every control dispatches through `WindowModel` — a
+/// **Running, before both, while this place has live conversations**
+/// (conversations 2 of 3): each with its state's dot — the chip's hue, grey when
+/// idle — and how long since it last did anything. Running and past never mix: a
+/// conversation is in one list only, so a past session resumed leaves Continue.
+/// With nothing live the column is not drawn, and the two columns stand as before.
+///
+/// **Invariant 2.** Every control dispatches through `WindowModel` — a Running
+/// row through `switchToRunning` (`session_switch`), a
 /// Continue row through `continueSession` (`session_resume`), an Open row through
 /// `openPane`/`openTerminalPane` — the same actions ⌘P's rows run.
 struct Landing: View {
@@ -39,9 +46,39 @@ struct Landing: View {
 
     private var coolWhite: Color { Color(red: 0.910, green: 0.925, blue: 0.965) }
 
+    /// This place's live conversations, newest activity first (`liveConversationRows`). Read in
+    /// `body`, so a row's state, title and order follow the conversation as it changes.
+    private var running: [LiveConversation] {
+        hasProject ? model.liveConversationRows(in: model.place) : []
+    }
+
+    /// What the Continue read depends on: the place, and every session a live conversation holds
+    /// — a past session resumed leaves Continue (`landingSessions`), so Continue re-reads when
+    /// one does.
+    private var readKey: String {
+        let live = model.liveConversationRows().compactMap(\.session).sorted().joined(separator: ",")
+        return "\(placeKey)|\(live)"
+    }
+
+    private var placeKey: String { "\(model.organization)/\(model.project)" }
+
+    /// The place the last read was for: a re-read for a change of the live set alone keeps the
+    /// rows standing rather than flashing "Reading sessions…".
+    @State private var readFor: String?
+
     var body: some View {
+        let running = running
         HStack(alignment: .top, spacing: 48) {
-            if hasProject {
+            if hasProject, !running.isEmpty {
+                // **Three columns, and the page never draws wider than its pane (§14).** At the
+                // artboard's widths they need ~1060pt; the window's floor leaves the Landing
+                // ~920, so a narrower window takes the same three columns at narrower widths —
+                // the rows' titles wrap to their two lines, and nothing is dropped or clipped.
+                ViewThatFits(in: .horizontal) {
+                    threeColumns(running, widths: (300, 360, 300), spacing: 48)
+                    threeColumns(running, widths: (248, 320, 248), spacing: 36)
+                }
+            } else if hasProject {
                 column("Continue · newest first", width: 620) { continueRows }
                 column("Open", width: 380) { openRows }
             } else {
@@ -57,16 +94,28 @@ struct Landing: View {
         // Continue column was a single empty row. The canvas is greedy by way
         // of its `GeometryReader`; this branch has to say so itself.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: "\(model.organization)/\(model.project)") {
+        .task(id: readKey) {
             // Re-read on an org or project change: `session_list` filters to
             // the active project's roots and `ctx_list_projects` is
             // org-scoped, so neither list survives a switch.
-            loaded = false
+            let place = placeKey
+            if readFor != place { loaded = false }
             // Projects first: `listProjects`' success clears `status`, and `landingSessions`
             // writes what any read could not answer, so it goes last.
             projects = await model.listProjects()
             sessions = await model.landingSessions()
+            readFor = place
             loaded = true
+        }
+    }
+
+    private func threeColumns(
+        _ running: [LiveConversation], widths: (CGFloat, CGFloat, CGFloat), spacing: CGFloat
+    ) -> some View {
+        HStack(alignment: .top, spacing: spacing) {
+            column("Running", width: widths.0) { runningRows(running) }
+            column("Continue · newest first", width: widths.1) { continueRows }
+            column("Open", width: widths.2) { openRows }
         }
     }
 
@@ -124,6 +173,31 @@ struct Landing: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5))
+    }
+
+    // MARK: - Running
+
+    /// The live conversations, each with its state's dot and how long since it last did
+    /// anything. A click brings it back as it was left — `session_switch`, never a fork. Its
+    /// ages re-read once a minute, so an idle row does not claim "now" for an hour.
+    private func runningRows(_ running: [LiveConversation]) -> some View {
+        TimelineView(.everyMinute) { context in
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(running.enumerated()), id: \.element.id) { index, conversation in
+                    row(
+                        // Ordinal, not the conversation's id (ruling 2): a check cannot know it.
+                        id: "running:\(index)", hoverKey: "running:\(conversation.id)",
+                        title: conversation.title,
+                        subtitle: "\(conversation.state.rawValue) \u{00b7} \(WindowModel.age(since: conversation.lastActivity, now: context.date))",
+                        state: conversation.state,
+                        // Invariant 8: a production place keeps its red segment, as its chip draws it.
+                        productionSegment: conversation.isProduction ? conversation.place.environment : nil
+                    ) {
+                        Task { await model.switchToRunning(conversation.id) }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Continue
@@ -218,22 +292,34 @@ struct Landing: View {
             .padding(.vertical, 12)
     }
 
+    /// A row: its title, its subtitle in monospace, and — a live conversation's only — its
+    /// state's dot before the title, hung in the gutter so the titles of one column still align.
+    /// `productionSegment` is drawn in production red before the subtitle.
     private func row(
-        id: String, title: String, subtitle: String, action: @escaping () -> Void
+        id: String, hoverKey: String? = nil, title: String, subtitle: String,
+        state: ConversationState? = nil, productionSegment: String? = nil,
+        action: @escaping () -> Void
     ) -> some View {
-        let isHovered = hovered == id
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 15))
-                .foregroundStyle(coolWhite.opacity(0.92))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            if !subtitle.isEmpty {
-                // §6: identifiers are monospace, always.
-                Text(subtitle)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(coolWhite.opacity(0.50))
-                    .lineLimit(1)
+        let hoverKey = hoverKey ?? id
+        let isHovered = hovered == hoverKey
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            if let state {
+                // The dot's centre on the title's x-height, as the chip's sits on its text.
+                ChipDot(colour: state.hue, breathes: state == .working)
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.system(size: 15))
+                    .foregroundStyle(coolWhite.opacity(0.92))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !subtitle.isEmpty {
+                    // §6: identifiers are monospace, always.
+                    Text(subtitleText(subtitle, productionSegment: productionSegment))
+                        .font(.system(size: 10, design: .monospaced))
+                        .lineLimit(1)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -244,7 +330,7 @@ struct Landing: View {
         .onHover { hovering in
             // §7, and the artboards' own `transition: background 240ms
             // ease-out` on a palette row.
-            withAnimation(.easeOut(duration: 0.24)) { hovered = hovering ? id : nil }
+            withAnimation(.easeOut(duration: 0.24)) { hovered = hovering ? hoverKey : nil }
         }
         .onTapGesture(perform: action)
         // **A tappable `VStack` is not a button to anybody but a mouse.**
@@ -264,5 +350,17 @@ struct Landing: View {
         // "project:wakil", "open:terminal", a session id — and is what the
         // hover state keys on, so it is the row's name here too.
         .accessibilityIdentifier("landing.row.\(id)")
+        .accessibilityValue(state?.spoken ?? "")
+    }
+
+    private func subtitleText(_ subtitle: String, productionSegment: String?) -> AttributedString {
+        var rest = AttributedString(subtitle)
+        rest.foregroundColor = coolWhite.opacity(0.50)
+        guard let productionSegment, !productionSegment.isEmpty else { return rest }
+        var segment = AttributedString(productionSegment)
+        segment.foregroundColor = Color(EnvironmentBadge.productionColour)
+        var separator = AttributedString(" \u{00b7} ")
+        separator.foregroundColor = coolWhite.opacity(0.50)
+        return segment + separator + rest
     }
 }

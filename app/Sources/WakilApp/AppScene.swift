@@ -366,13 +366,30 @@ struct WakilApplication: App {
         // It matches what the runbooks already assume: one window, opened
         // once, quit once.
         .commands {
-            CommandGroup(replacing: .newItem) {}
+            // **⌘N is New Conversation** (conversations 2 of 3), in the slot New Window held:
+            // replacing `.newItem` still removes New Window. It reaches the model as the pane
+            // commands below do, so it cannot read whether a conversation is on screen and stays
+            // enabled; on a Landing `session_new` does nothing visible (ruling 5).
+            CommandGroup(replacing: .newItem) {
+                Button("New Conversation") {
+                    withModel { model in Task { await model.dispatchSessionNew() } }
+                }
+                .keyboardShortcut("n", modifiers: .command)
+            }
+            // This materialises the File menu, which SwiftUI fills with Close and Close All —
+            // either shuts the only window (see the Window menu's comment below). Replacing
+            // `.saveItem` keeps them out (plan 2, ruling 6), and its slot holds **Close
+            // Conversation ⇧⌘W** (conversations 3 of 3, ruling 6): `session_close` through the
+            // registry, pinned to the conversation on screen at the press. Like ⌘N it cannot read
+            // the screen, so it stays enabled, and on a Landing it does nothing.
+            CommandGroup(replacing: .saveItem) {
+                Button("Close Conversation") {
+                    withModel { model in Task { await model.dispatchSessionClose() } }
+                }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
+            }
             // The two pane commands: ⌘⏎ toggles maximize on the focused
             // pane and ⌘W closes it.
-            // **⌘N is still not here**, and the group above is still
-            // what removes it — the reasoning is unchanged, and a "new
-            // pane" command must not be spelled the same as the "new
-            // window" one that was deliberately taken away.
             //
             // They live in the scene rather than as buttons in the view
             // because a menu command is the only place a shortcut can
@@ -388,7 +405,7 @@ struct WakilApplication: App {
             // materialises one, and SwiftUI fills it out with *Close* and
             // *Close All* (⇧⌘W), either of which shuts the only window and
             // leaves the app running with nothing on screen. Placed here
-            // the File menu stays absent, ⌘W belongs to *Close Pane*
+            // the File menu holds New and Close Conversation alone, ⌘W belongs to *Close Pane*
             // uniquely, and a pane command sits next to the other things
             // that act on what is on screen.
             CommandGroup(after: .windowArrangement) {

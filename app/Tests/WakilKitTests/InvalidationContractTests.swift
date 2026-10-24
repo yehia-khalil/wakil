@@ -122,14 +122,23 @@ private let orgDerived: Set<String> = [
 /// (`OrgSwitchTests.comingBackToAnOrgFindsItsCanvasAsLeft`). `invalidateForOrgChange` must NOT
 /// reset these: doing so is the teardown this plan removed.
 private let keptPerPlace: Set<String> = [
-    // One `PlaceAgent` per place — harness, socket, session, thread, turn, conversation and
+    // Every conversation by its id — harness, socket, session, thread, turn, conversation and
     // `Bash` mirror (OrgSwitchTests.anOrgSwitchLeavesTheRunningAgentAlone), and what its chip
-    // shows: an unseen result or failure, and whether its environment is production (Plan 4).
-    "agents",
-    // The socket each shown place opened before a session took it, pinned to that place.
+    // shows: an unseen result or failure, and whether its environment is production (Plan 4) —
+    // the order they were created in, which one each place shows, and the id each place's next
+    // one takes (conversations 1 of 3). `agents` is their projection by place.
+    "conversations", "conversationOrder", "conversationsMade", "screenConversations", "reservedConversations",
+    // Conversations 2 of 3: keyed by place, like `reservedConversations` — what each place's
+    // canvas held when its conversation went to the background.
+    "landingBaselines", "landingsLoading",
+    // Conversations 3 of 3: the Close question names a conversation by its id, and the ones
+    // being closed — both survive an org switch, as the conversations they name do.
+    "closeQuestion", "closing",
+    // The socket each shown place opened before a session took it, by its conversation, pinned
+    // to that place.
     "shownSockets",
-    // Every proposal waiting, by place (OrgSwitchTests.anOrgSwitchWithAParkedApprovalSwitchesAnyway).
-    "parkedProposals",
+    // Every proposal waiting, by slot (OrgSwitchTests.anOrgSwitchWithAParkedApprovalSwitchesAnyway).
+    "parkedSlots",
     // The screen's scope and every scope this window has read or written for an agent: kept so
     // a return reads nothing off disk and re-runs no subject.
     "layoutScope", "loadedLayoutScopes", "scopesAwaitingRestore", "backgroundLayouts",
@@ -187,6 +196,21 @@ private let orgIndependent: Set<String> = [
     // Plan 4 final review I1: `goTosInFlight` counts chip clicks between switches, raised and
     // lowered by the `goTo` that runs each, whichever org it ends in — the shape of `switching`.
     "goTosInFlight",
+    // Conversations 2 of 3: the composer's hook for a change of the conversation on screen,
+    // set once by `ComposerModel.init`; it carries no organisation's state.
+    "onScreenChange",
+    // Conversations 3 of 3: the composer's hook for a conversation closed, set once by
+    // `ComposerModel.init`, for `onScreenChange`'s reason.
+    "onConversationClosed",
+    // Conversations 3 final review: the composer's hook for Keep it on the Close question, set
+    // once by `ComposerModel.init`, for `onScreenChange`'s reason.
+    "onCloseQuestionKept",
+    // Fix round 1: the screen it was last told about, and New Conversation's focus flag — what
+    // is on screen, which an org switch changes and `activateLayout` then tells.
+    "toldScreenKey", "composerFocusForced",
+    // Final review, item 3: set only while `agent(for:)` tells one screen change, and cleared
+    // before it returns — never held across an org switch.
+    "landingBecoming",
     "registry", "persistence", "context",
     "harnessFactory", "lookupFactory", "resumes", "confirmations",
     // 3b-viii: takes the organisation per call, like `harnessFactory`; the generation only orders
@@ -198,6 +222,9 @@ private let orgIndependent: Set<String> = [
     // Set by `shutdown`: no organisation's state, the window's end.
     "socketsClosed",
     "providerSwitches", "providerSwitchPump", "resumePump",
+    // Conversations 2 of 3: the broker and pump of `session_new`/`session_switch`, the shape of
+    // `providerSwitches` — capabilities, no organisation's state.
+    "conversationRequests", "conversationPump",
     "status",
     "dragCandidate", "confirmationPump", "observationPump",
     "pendingSave", "debugEventSink", "debugEventsEnabledOverride",

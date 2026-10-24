@@ -423,3 +423,59 @@ private final class ReplyGeneration: @unchecked Sendable {
         set { lock.withLock { _value = newValue } }
     }
 }
+
+private func sessionRow(_ id: String, parent: String? = nil) -> JSONValue {
+    var fields: [String: JSONValue] = ["id": .string(id), "firstPrompt": .string(id)]
+    if let parent { fields["parent"] = .string(parent) }
+    return .object(fields)
+}
+
+@Test func continueLeavesOutEveryChainALiveConversationHolds() {
+    let rows = PaletteItems.sessionItems(from: [
+        sessionRow("c", parent: "p"), sessionRow("p"), sessionRow("other"),
+    ])
+    #expect(PaletteItems.continueItems(rows, excluding: ["c"]).map(\.payload) == ["other"])
+    #expect(PaletteItems.continueItems(rows, excluding: ["p"]).map(\.payload) == ["other"],
+            "the child's transcript not listed yet: its parent is the chain's row")
+    let lone = PaletteItems.sessionItems(from: [sessionRow("c", parent: "gone"), sessionRow("other")])
+    #expect(PaletteItems.continueItems(lone, excluding: ["gone"]).map(\.payload) == ["other"])
+}
+
+// MARK: - Running (conversations 2 of 3, Task 3)
+
+@Test func runningRowsSwitchToTheirConversationAndCarryTheirState() async {
+    let staging = Place(organization: "initech", project: "api", environment: "staging")
+    let prod = Place(organization: "initech", project: "api", environment: "production")
+    let source = RunningConversationsSource(conversations: {
+        [
+            LiveConversation(id: "c-1", session: "s-1", place: staging, title: "fix the login test",
+                             state: .waiting, onScreen: false, lastActivity: Date()),
+            LiveConversation(id: "c-2", session: nil, place: prod, title: "New conversation",
+                             state: .idle, onScreen: true, lastActivity: Date(), isProduction: true),
+        ]
+    })
+    #expect(source.id == "running" && source.group == .running)
+
+    let rows = await source.entries()
+
+    #expect(rows.map(\.id) == ["running:c-1", "running:c-2"])
+    #expect(rows.map(\.title) == ["fix the login test", "New conversation"])
+    #expect(rows.map(\.subtitle) == ["initech · api · staging · waiting", "initech · api · production · idle"])
+    #expect(rows.allSatisfy { $0.kindLabel == "conversation" && $0.verb == "switch to" && $0.group == .running })
+    #expect(rows.map(\.state) == [.waiting, .idle])
+    #expect(rows.map(\.isProduction) == [false, true], "production stays red (Invariant 8)")
+    #expect(rows[0].action == .dispatch(action: "session_switch", params: .object(["conversation": .string("c-1")])))
+}
+
+@Test func theRunningGroupSitsAboveOpenPanes() async {
+    #expect(PaletteGroup.running.rawValue == -1 && PaletteGroup.running.label == "Running")
+    #expect(PaletteGroup.allCases.sorted().first == .running)
+    let live = LiveConversation(id: "c", session: nil, place: Place(organization: "o", project: "p", environment: "e"),
+                                title: "t", state: .working, onScreen: false, lastActivity: Date())
+    let rows = await openModeEntries([
+        OpenPanesSource(panes: { [PaneSummary(id: "p1", kind: "db", title: "db", holds: "")] }),
+        RunningConversationsSource(conversations: { [live] }),
+    ])
+    #expect(rows.map(\.group) == [.running, .openPanes])
+    #expect(rows.last?.state == nil, "a row that is not a conversation carries no dot")
+}

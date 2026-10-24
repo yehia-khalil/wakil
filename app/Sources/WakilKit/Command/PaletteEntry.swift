@@ -3,6 +3,9 @@ import Foundation
 /// The section a palette row sits under. The raw value is the display
 /// order, so sorting by group is sorting by `rawValue`.
 public enum PaletteGroup: Int, Sendable, Comparable, CaseIterable {
+    /// Live conversations, above everything (conversations 2 of 3): -1, so no other group's
+    /// value moves.
+    case running = -1
     case openPanes = 0, newPane, resources, projects, sessions, providers, commands, choices
 
     public static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
@@ -10,6 +13,7 @@ public enum PaletteGroup: Int, Sendable, Comparable, CaseIterable {
     /// The section header the operator reads.
     public var label: String {
         switch self {
+        case .running: "Running"
         case .openPanes: "Open panes"
         case .newPane: "New pane"
         case .resources: "Resources"
@@ -62,11 +66,13 @@ public struct PaletteEntry: Sendable, Equatable, Identifiable {
     /// Drawn dimmed and ranked after every undimmed match: a gitignored file (3b-ii), listed so it
     /// can be opened, but below everything the project tracks.
     public var isDimmed: Bool
+    /// A live conversation's row draws its state's dot; every other row is nil and draws none.
+    public var state: ConversationState?
 
     public init(
         id: String, group: PaletteGroup, title: String, subtitle: String, kindLabel: String,
         verb: String, action: PaletteAction, isProduction: Bool = false, isError: Bool = false,
-        isCaution: Bool = false, isDimmed: Bool = false
+        isCaution: Bool = false, isDimmed: Bool = false, state: ConversationState? = nil
     ) {
         self.id = id
         self.group = group
@@ -79,5 +85,6 @@ public struct PaletteEntry: Sendable, Equatable, Identifiable {
         self.isError = isError
         self.isCaution = isCaution
         self.isDimmed = isDimmed
+        self.state = state
     }
 }

@@ -15,20 +15,20 @@ the record.
 
 ---
 
-## Track — a future feature with no phase-map row (8)
+## Track — answered by Conversations (8)
 
-Its design was opened as a map and never settled. **Since 2026-10-22 it has a §8 row, *Track***
-(two sessions in one place), after *New conversation*; these eight are its design's agenda. When Track
-earns a slot it gets a spec of its own, and these questions are that spec's agenda.
+Track became the *Conversations* row of the phase map on 2026-10-23, folded with New conversation.
+Its agenda is answered by `docs/superpowers/specs/2026-10-23-conversations-design.md`; each item
+below points at the call there that answers it.
 
-- **#78** — Track — two tickets in one window, without a second window *(the map)*
-- **#79** — What a Track is, and where its boundaries fall
-- **#80** — Does switching to a Track fork its session, and can Wakil afford that?
-- **#82** — Does the agent know about Tracks?
-- **#83** — What the Track switcher looks like, and where it lives
-- **#84** — Where Track state lives on disk
-- **#85** — What happens to an in-flight turn when the operator switches Track
-- **#86** — Where Track lands in the phase map, and what it displaces
+- **#78** — Track — two tickets in one window, without a second window *(the map)* → answered: calls 1–2
+- **#79** — What a Track is, and where its boundaries fall → answered: calls 1–2
+- **#80** — Does switching to a Track fork its session, and can Wakil afford that? → answered: call 3
+- **#82** — Does the agent know about Tracks? → answered: call 5
+- **#83** — What the Track switcher looks like, and where it lives → answered: "What the operator gets" items 2–4
+- **#84** — Where Track state lives on disk → answered: call 7
+- **#85** — What happens to an in-flight turn when the operator switches Track → answered: call 4
+- **#86** — Where Track lands in the phase map, and what it displaces → answered: the phase-map row, *Conversations*
 
 ## Findings not tied to a live sub-phase (12)
 

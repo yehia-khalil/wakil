@@ -19,8 +19,8 @@ import (
 // answers, for the place it was opened in.
 //
 // **Checked before every call, cheaply.** The socket in hand is asked, on its
-// own connection, whether its place is still the one on screen
-// (`MCP.Places`); only when it is not — or it has gone — are the pid's sockets
+// own connection, whether its place — and conversation — is still the one on
+// screen (`MCP.Probe`); only when it is not — or it has gone — are the pid's sockets
 // listed again and each asked (SelectScreenSocket). A switch the window is
 // still landing is waited for, up to `within`; past that the refusal names
 // every socket and what it said.
@@ -94,8 +94,8 @@ func (c *ScreenChannel) screenClient() (*MCP, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.client != nil {
-		place, screen, err := c.client.Places()
-		if err == nil && screen != nil && place == *screen {
+		probe, err := c.client.Probe()
+		if err == nil && probe.isScreens() {
 			return c.client, nil
 		}
 		// The one socket of a build from before the shown-place sockets: it
@@ -151,12 +151,13 @@ func probeSocket(path string) (SocketPlace, error) {
 		return SocketPlace{}, err
 	}
 	defer client.Close()
-	place, screen, err := client.Places()
+	probe, err := client.Probe()
 	if errors.Is(err, ErrNoPlaceMeta) {
 		return SocketPlace{Path: path, Unplaced: true}, nil
 	}
 	if err != nil {
 		return SocketPlace{}, fmt.Errorf("%s: %w", path, err)
 	}
-	return SocketPlace{Path: path, Place: place, Screen: screen}, nil
+	probe.Path = path
+	return probe, nil
 }

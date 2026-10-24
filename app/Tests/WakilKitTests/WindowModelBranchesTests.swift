@@ -75,7 +75,7 @@ private func branchWindow() async -> (WindowModel, BranchGit) {
         ] {
             await #expect(throws: ActionError.needsConfirmation(name)) {
                 _ = try await registry.dispatch(name: name, params: .object(params), origin: .agent,
-                                                caller: DispatchCaller(place: window.place, session: nil), confirmation: nil)
+                                                caller: DispatchCaller(place: window.place, session: nil, conversation: "c1"), confirmation: nil)
             }
             _ = try await registry.dispatch(name: name, params: .object(params), origin: .ui,
                                             caller: DispatchCaller(place: window.place, session: nil), confirmation: nil)
@@ -84,7 +84,7 @@ private func branchWindow() async -> (WindowModel, BranchGit) {
                 == ["git_branch_delete", "git_stash_drop", "git_stash_drop_all"])
         // Everything else runs for the agent too.
         _ = try await registry.dispatch(name: "editor_changes_stash", params: .object(["root": .string("/p")]), origin: .agent,
-                                        caller: DispatchCaller(place: window.place, session: nil), confirmation: nil)
+                                        caller: DispatchCaller(place: window.place, session: nil, conversation: "c1"), confirmation: nil)
         #expect(await git.names().contains("git_stash"))
     }
 

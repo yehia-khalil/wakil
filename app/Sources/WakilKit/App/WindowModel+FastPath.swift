@@ -89,7 +89,8 @@ extension WindowModel {
     /// theirs there, or not at all. The scope, the schemas and the model's answer all fit inside
     /// the deadline; the routed model alone is asked, never the session's as a fall-back.
     public func runFastPath(_ line: String, scope typed: TurnScope? = nil) async -> FastPathOutcome {
-        let typedIn = (typed ?? turnScope).place
+        let scopeTyped = typed ?? turnScope
+        let typedIn = scopeTyped.place
         guard fastPathEnabled, let tasks = quickTasks, place == typedIn else { return .toAgent }
         let generation = quickTasksGeneration
         let org = organization
@@ -104,15 +105,38 @@ extension WindowModel {
         guard generation == quickTasksGeneration, org == organization, place == typedIn,
               case .action(let name, let params) = route else { return .toAgent }
         composerHoldsKeyboardUntil = .now + Self.fastPathKeyboardHold
-        do {
-            _ = try await registry.dispatch(
-                name: name, params: params, origin: .ui,
-                caller: DispatchCaller(place: typedIn, session: nil, via: "fastPath"), confirmation: nil)
+        let run = { @MainActor @Sendable [self] () async -> Result<Void, any Error> in
+            do {
+                _ = try await registry.dispatch(
+                    name: name, params: params, origin: .ui,
+                    caller: DispatchCaller(
+                        place: typedIn, session: nil, via: "fastPath",
+                        conversation: Self.screenPinnedActions.contains(name) ? scopeTyped.conversation : nil),
+                    confirmation: nil)
+            } catch {
+                return .failure(error)
+            }
+            // A context switch is the operator's (`setEnvironment`, `setProject`): the window
+            // reads the new place and moves the screen to it BEFORE the line is answered, as
+            // those setters do. Left to `observationPump`, the screen moved after the composer
+            // had shown the receipt, and the screen change it told wiped the receipt the switch
+            // itself had earned (Conversations 3, the 3b-ix e2e).
+            if Self.fastPathSwitchesContext.contains(name) { await refreshContext() }
+            return .success(())
+        }
+        // An environment switch runs as the operator's does, one the pump waits for, not repeats.
+        let outcome = name == "ctx_set_environment" ? await asOperatorEnvironmentSwitch(run) : await run()
+        switch outcome {
+        case .success:
             return .ran(FastPathReceipt(line: line, text: Self.fastPathReceiptText(action: name, params: params), refused: false))
-        } catch {
+        case .failure(let error):
             return .refused(FastPathReceipt(line: line, text: statusDescribingFailure(name, error), refused: true))
         }
     }
+
+    /// The fast path's actions that move the place on screen: the window catches up with them
+    /// before the line is answered (`runFastPath`).
+    static let fastPathSwitchesContext: Set<String> = ["ctx_set_environment", "ctx_set_project"]
 
     /// The receipt's words for an action and its params.
     public static func fastPathReceiptText(action: String, params: JSONValue) -> String {

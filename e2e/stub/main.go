@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/yehia-khalil/wakil/e2e/driver"
+	"github.com/yehia-khalil/wakil/internal/wakilcore"
 )
 
 func main() {
@@ -109,6 +110,7 @@ func run(args []string, in *os.File, out *os.File) error {
 
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 0, 1<<20), 1<<24)
+	recorded := false
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -122,6 +124,16 @@ func run(args []string, in *os.File, out *os.File) error {
 			continue
 		}
 		fmt.Fprintf(log, "prompt: %q\n", prompt)
+		// Before the answer, so a held turn's session is on disk while it is
+		// held — as `claude`'s is from its first prompt.
+		if !recorded {
+			recorded = true
+			if path, err := writeTranscript(configDir, flags["--session-id"], prompt); err != nil {
+				fmt.Fprintf(log, "transcript: %v\n", err)
+			} else if path != "" {
+				fmt.Fprintf(log, "transcript: %s\n", path)
+			}
+		}
 		// **What it answered, not that it answered. #284.** A turn that
 		// answered the wrong thing and a turn whose answer never reached the
 		// thread are the same word in this log, and they are opposite
@@ -137,6 +149,58 @@ func run(args []string, in *os.File, out *os.File) error {
 		fmt.Fprintf(log, "answered: %q\n", text)
 	}
 	return scanner.Err()
+}
+
+// writeTranscript leaves the session's transcript where `claude` would:
+// `<CLAUDE_CONFIG_DIR>/projects/<encoded cwd>/<session id>.jsonl`, holding the
+// first prompt as one `user` record that carries the cwd (plan 3, ruling 2).
+//
+// **Why the stub writes one at all.** Continue lists the sessions
+// `wakilcore.ListSessions` finds, and it confirms each by the cwd a record
+// carries (`firstCwd`) and labels it by its first prompt (`firstPrompt`). A
+// stub that wrote nothing left every closed conversation out of Continue, so
+// "Close moves it to Continue" was something no check could see.
+//
+// **One record, never rewritten.** It is what the listing reads and no more;
+// the file is created exclusively, so a session id that already has a
+// transcript keeps it. A session with no id (none passed) writes nothing.
+// A failure is logged, not fatal: the turn itself is still the thing a check
+// is about, and a check that reads Continue says what it found there.
+func writeTranscript(configDir, session, prompt string) (string, error) {
+	if session == "" {
+		return "", nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("no cwd to record: %w", err)
+	}
+	dir := filepath.Join(configDir, "projects", wakilcore.EncodeRootPath(cwd))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, session+".jsonl")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if os.IsExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	record, err := json.Marshal(map[string]interface{}{
+		"type": "user", "cwd": cwd, "sessionId": session,
+		"message": map[string]interface{}{
+			"role":    "user",
+			"content": []interface{}{map[string]interface{}{"type": "text", "text": prompt}},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if _, err := file.Write(append(record, '\n')); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // answer performs one turn: find the rule, do what it says, say what happened.

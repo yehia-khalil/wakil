@@ -41,7 +41,7 @@ never written to `project.json`, only the ref.
   result set is not persisted; the pane's page and sort (`PaneFetch`) are, with the layout.
 - **Recent api sends**, capped at `PaneStore.recentCap` (200) per list, gone with the session.
 - **Live PTYs** (`TerminalStore`).
-- **Pending confirmations** (`ConfirmationBroker`, one per place), resume and provider-switch requests (`ResumeBroker`,
+- **Pending confirmations** (`ConfirmationBroker`, one per conversation), resume and provider-switch requests (`ResumeBroker`,
   `ProviderSwitchBroker`).
 - **The window's own state** (`WindowModel`): context, snapshots, thought thread, status, palette.
 - **The window's git status** (`GitStatus`, mirrored in `WindowModel.gitRoots`, 3b-iii): one read
@@ -61,7 +61,7 @@ window's git status and its `gitRoots` mirror (of the screen's roots). Then
 caller, `setOrganization`.
 
 **Nothing of a place is reset.** Every place's agent, thread, turn and conversation
-(`WindowModel.agents`), its waiting approval (`parkedProposals`), both stores' scopes, every shell,
+(`WindowModel.conversations`, by conversation id; `agents` reads the one each place shows), its waiting approval (`parkedProposals`), both stores' scopes, every shell,
 every editor buffer and agents' reads in flight survive the switch (the operator's db reads in the org left are cancelled first, `PaneStore.cancelOperatorDBReads`, since they went out on the window's clients), keyed by their place or scope; coming
 back to an org finds its canvas as it was left; its git and editor panes re-read the disk then (`catchUpReturnedCanvas`, R4).
 

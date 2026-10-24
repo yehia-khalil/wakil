@@ -34,3 +34,45 @@ public final class ActiveAgentLookup: @unchecked Sendable {
         return source
     }
 }
+
+/// The window's live conversations, asked live (conversations 2 of 3): what `session_list`
+/// lists beside the past sessions Go finds. Captured by `registerStandardActions` for
+/// `ActiveAgentLookup`'s reason — no window exists yet — and pointed at the window by
+/// `WakilWiring.useActiveContext(of:)`. Unwired, it answers none.
+public final class LiveConversationLookup: @unchecked Sendable {
+    public typealias Source = @Sendable (_ place: Place?) async -> [LiveConversation]
+    public typealias Organization = @Sendable () async -> String?
+
+    private let lock = NSLock()
+    private var source: Source?
+    private var organizationSource: Organization?
+
+    public init() {}
+
+    /// `organization` is the organisation on screen: whose live conversations an unpinned
+    /// caller — the operator, `--dispatch` — is answered with (`session_list`).
+    public func use(_ source: @escaping Source, organization: @escaping Organization) {
+        lock.lock()
+        self.source = source
+        organizationSource = organization
+        lock.unlock()
+    }
+
+    /// Every live conversation, or `place`'s, newest activity first.
+    public func live(in place: Place?) async -> [LiveConversation] {
+        guard let source = installed().source else { return [] }
+        return await source(place)
+    }
+
+    /// The organisation on screen, or nil — unwired, or none chosen yet.
+    public func organization() async -> String? {
+        guard let organizationSource = installed().organization else { return nil }
+        return await organizationSource()
+    }
+
+    private func installed() -> (source: Source?, organization: Organization?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (source, organizationSource)
+    }
+}

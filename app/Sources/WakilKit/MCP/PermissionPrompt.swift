@@ -92,6 +92,11 @@ public let operatorOnlyActions: Set<String> = [
     // provider capacity: the agent may not forge a reading the operator chooses accounts by.
     "capacity_record",
     "session_set_provider", "ctx_set_provider",
+    // Conversations 2 of 3: which conversation is on screen is the operator's; an agent must not
+    // push aside the operator's conversation.
+    "session_new", "session_switch",
+    // Conversations 3 of 3: nor end it.
+    "session_close",
     // An agent's place is fixed when its session starts (Invariant 5); only the operator moves it.
     "ctx_set_project", "ctx_set_environment",
     "ctx_list_orgs", "ctx_create_org",
@@ -230,11 +235,25 @@ public let operatorOnlyActions: Set<String> = [
 ///   in. Not the org family's sentence, which is about Invariant 4.
 /// - The API entry actions and `db_update_database` (2e-iii): an API token is a secret
 ///   the operator types, and a database edit carries no secret but is still theirs.
+/// - `session_new` and `session_switch` (conversations 2 of 3): which conversation is on
+///   screen is the operator's; each names the gesture that does it (⌘N, ⌘P).
+/// - `session_close` (conversations 3 of 3): ending a conversation is the operator's; the
+///   sentence names ⌘⇧W.
 private func operatorOnlyDenialMessage(toolName: String, action: String) -> String {
     switch action {
     case "session_set_provider", "ctx_set_provider":
         return "\(toolName): the operator chooses which account a session runs under; you "
             + "cannot switch it. Ask the operator to switch it in the Wakil window instead."
+    case "session_new":
+        return "\(toolName): only the operator starts a new conversation — an agent must not push "
+            + "aside the operator's conversation. Ask the operator to press \u{2318}N in the Wakil window."
+    case "session_switch":
+        return "\(toolName): only the operator switches between conversations — an agent must not "
+            + "push aside the operator's conversation. Tell the operator which conversation the work "
+            + "needs; they can switch to it with \u{2318}P."
+    case "session_close":
+        return "\(toolName): only the operator closes a conversation — an agent must not end the "
+            + "operator's conversation. Ask the operator to close it in the Wakil window (\u{2318}\u{21E7}W)."
     case "ctx_set_project", "ctx_set_environment":
         return "\(toolName): An agent's place is fixed when its session starts. "
             + "Tell the operator which place the work needs; they can start an agent there."

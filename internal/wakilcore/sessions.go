@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -269,6 +270,30 @@ func ProjectRootPaths(r Resolved) []string {
 	return roots
 }
 
+// sessionRootPaths is roots as a session's transcript can name them: each as
+// declared, then — when it differs — as `filepath.EvalSymlinks` resolves it.
+//
+// **The CLI records its physical working directory.** It takes its cwd from
+// getcwd, which resolves every link, and both the transcript's directory
+// name and its records' "cwd" come from that. A root declared through a link
+// — macOS's own temp dir is one, `/var` -> `/private/var` — therefore holds
+// sessions recorded under a path that is not the declared one, and matching
+// only the declared spelling dropped them without a word: not skipped, not
+// unread, just absent from Continue (conversations-close-asks, step 23). The
+// declared spelling stays first and stays matched, for a transcript written
+// under it. A root that does not resolve (gone, unreadable) is kept as
+// declared only.
+func sessionRootPaths(roots []string) []string {
+	out := append([]string(nil), roots...)
+	for _, root := range roots {
+		if physical, err := filepath.EvalSymlinks(root); err == nil && physical != root &&
+			!slices.Contains(out, physical) {
+			out = append(out, physical)
+		}
+	}
+	return out
+}
+
 // ListSessions returns every session transcript belonging to any root of
 // the active project, across every provider the active org holds, newest
 // first. Each returned session is tagged with the provider whose store it
@@ -357,7 +382,9 @@ func ListSessions() (SessionList, error) {
 	// Computed once, outside the provider loop: the roots and their
 	// encodings are a property of the project, not of the store being
 	// searched.
-	roots := ProjectRootPaths(*r)
+	// Each declared root and its physical path (`sessionRootPaths`): the CLI
+	// records the second.
+	roots := sessionRootPaths(ProjectRootPaths(*r))
 	var prefixes []string
 	for _, abs := range roots {
 		prefixes = append(prefixes, EncodeRootPath(abs))

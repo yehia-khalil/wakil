@@ -52,10 +52,10 @@ private func registryWithRead() async -> ActionRegistry {
 
 extension DispatchCaller {
     /// A caller in a fixed test place, for tests that only care which environment is judged.
-    static func test(_ environment: String, session: String? = nil) -> DispatchCaller {
+    static func test(_ environment: String, session: String? = nil, conversation: String? = nil) -> DispatchCaller {
         DispatchCaller(
             place: Place(organization: "org", project: "proj", environment: environment),
-            session: session)
+            session: session, conversation: conversation)
     }
 }
 
@@ -110,4 +110,28 @@ extension DispatchCaller {
     #expect(entry.project == nil)
     #expect(entry.session == nil)
     #expect(entry.environment == "staging")
+}
+
+private func journalLine(dispatchedAs caller: DispatchCaller, origin: ActionOrigin) async throws -> String {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let r = ActionRegistry(journalDirectory: dir, sessionId: "s1")
+    await r.register(Action(name: "db_run_query", description: "run a query",
+                            kind: .read, schema: .object(["type": .string("object")])) { p in p })
+    _ = try await r.dispatch(
+        name: "db_run_query", params: .object([:]), origin: origin, caller: caller, confirmation: nil)
+    let text = try String(contentsOf: dir.appendingPathComponent("s1.jsonl"), encoding: .utf8)
+    return try #require(text.split(separator: "\n").last.map(String.init))
+}
+
+@Test func anAgentsEntryNamesItsConversation() async throws {
+    let line = try await journalLine(
+        dispatchedAs: DispatchCaller(place: initechStaging, session: "s-1", conversation: "conv-1"),
+        origin: .agent)
+    #expect(line.contains("\"conversation\":\"conv-1\""))
+}
+
+@Test func theOperatorsEntryNamesNoConversation() async throws {
+    let line = try await journalLine(
+        dispatchedAs: DispatchCaller(place: initechStaging, session: nil), origin: .ui)
+    #expect(!line.contains("\"conversation\""))
 }

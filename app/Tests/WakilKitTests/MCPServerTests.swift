@@ -23,7 +23,7 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
 
 @Test func initializeIsAnswered() async throws {
     let m = JSONRPCMessage(id: .number(1), method: "initialize", params: .object([:]), result: nil, error: nil)
-    let out = await handle(m, surface: await surface(), caller: { .test("staging") })
+    let out = await handle(m, surface: await surface(), caller: { .test("staging", conversation: "conv") })
     #expect(out?.id == .number(1))
     #expect(out?.error == nil)
 }
@@ -35,8 +35,9 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
     let pinned = Place(organization: "initech", project: "api", environment: "staging")
     let screen = Place(organization: "initech", project: "billing", environment: "qa")
     let out = await handle(
-        m, surface: await surface(), caller: { DispatchCaller(place: pinned, session: "s-1") },
-        screen: { screen })
+        m, surface: await surface(),
+        caller: { DispatchCaller(place: pinned, session: "s-1", conversation: "conv-a") },
+        screen: { ScreenShown(place: screen, conversation: "conv-b") })
     guard case .object(let result)? = out?.result, case .object(let meta)? = result["_meta"] else {
         Issue.record("no _meta: \(String(describing: out?.result))"); return
     }
@@ -47,11 +48,16 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
         "organization": .string("initech"), "project": .string("billing"), "environment": .string("qa"),
     ]))
 
-    let unknown = await handle(m, surface: await surface(), caller: { .test("staging") })
+    #expect(meta["wakil/conversation"] == .string("conv-a"), "the conversation every call on it is made for")
+    #expect(meta["wakil/screenConversation"] == .string("conv-b"), "the conversation the window shows")
+
+    let unknown = await handle(m, surface: await surface(), caller: { .test("staging", conversation: "conv") })
     guard case .object(let bare)? = unknown?.result, case .object(let bareMeta)? = bare["_meta"] else {
         Issue.record("no _meta without a screen"); return
     }
     #expect(bareMeta["wakil/screen"] == .null, "no screen known: said, not invented")
+    #expect(bareMeta["wakil/screenConversation"] == .null)
+    #expect(bareMeta["wakil/conversation"] == .string("conv"))
 }
 
 /// Probe §8: the CLI refuses at its first permission check if the name
@@ -61,7 +67,7 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
 /// was measured and does not work.
 @Test func toolsListProjectsTheRegistryPlusBothReadToolsAndTheBridge() async throws {
     let m = JSONRPCMessage(id: .number(2), method: "tools/list", params: nil, result: nil, error: nil)
-    let out = await handle(m, surface: await surface(), caller: { .test("staging") })
+    let out = await handle(m, surface: await surface(), caller: { .test("staging", conversation: "conv") })
     guard case .object(let r)? = out?.result, case .array(let tools)? = r["tools"] else {
         Issue.record("no tools array"); return
     }
@@ -88,7 +94,7 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
     let surface = MCPSurface(registry: registry, panes: PaneStore(), layout: LayoutStore(),
                              confirmations: ConfirmationBroker())
     let m = JSONRPCMessage(id: .number(2), method: "tools/list", params: nil, result: nil, error: nil)
-    let out = await handle(m, surface: surface, caller: { .test("staging") })
+    let out = await handle(m, surface: surface, caller: { .test("staging", conversation: "conv") })
     guard case .object(let r)? = out?.result, case .array(let tools)? = r["tools"] else {
         Issue.record("no tools array"); return
     }
@@ -113,7 +119,7 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
                            params: .object(["name": .string("db_run_query"),
                                             "arguments": .object(["sql": .string("select 1")])]),
                            result: nil, error: nil)
-    let out = await handle(m, surface: await surface(), caller: { .test("staging") })
+    let out = await handle(m, surface: await surface(), caller: { .test("staging", conversation: "conv") })
     #expect(out?.error == nil)
 }
 
@@ -137,13 +143,13 @@ private func surface(panes: PaneStore = PaneStore(), layout: LayoutStore = Layou
     let m = JSONRPCMessage(id: .number(4), method: "tools/call",
                            params: .object(["name": .string("nope"), "arguments": .object([:])]),
                            result: nil, error: nil)
-    let out = await handle(m, surface: await surface(), caller: { .test("staging") })
+    let out = await handle(m, surface: await surface(), caller: { .test("staging", conversation: "conv") })
     #expect(out?.error != nil)
 }
 
 @Test func aNotificationGetsNoReply() async throws {
     let m = JSONRPCMessage(id: nil, method: "notifications/initialized", params: nil, result: nil, error: nil)
-    #expect(await handle(m, surface: await surface(), caller: { .test("staging") }) == nil)
+    #expect(await handle(m, surface: await surface(), caller: { .test("staging", conversation: "conv") }) == nil)
 }
 
 // MARK: - read_pane
@@ -161,7 +167,7 @@ private func readPane(
         id: .number(9), method: "tools/call",
         params: .object(["name": .string("read_pane"), "arguments": arguments]),
         result: nil, error: nil)
-    return await handle(m, surface: await surface(panes: panes, layout: layout), caller: { .test("staging") })
+    return await handle(m, surface: await surface(panes: panes, layout: layout), caller: { .test("staging", conversation: "conv") })
 }
 
 @Test func readPaneAnswersFromThePaneStore() async throws {
@@ -278,7 +284,7 @@ private func readPane(
     let out = await handle(
         m,
         surface: MCPSurface(registry: registry, panes: panes, layout: LayoutStore(), confirmations: ConfirmationBroker()),
-        caller: { .test("production") })
+        caller: { .test("production", conversation: "conv") })
     // Answered even in `production`: reading a pane is not a mutation, so
     // there is nothing for the gate to refuse.
     #expect(out?.error == nil)
@@ -287,7 +293,7 @@ private func readPane(
 
 @Test func readPaneAdvertisesEverythingItReturns() async throws {
     let m = JSONRPCMessage(id: .number(20), method: "tools/list", params: nil, result: nil, error: nil)
-    let out = await handle(m, surface: await surface(), caller: { .test("staging") })
+    let out = await handle(m, surface: await surface(), caller: { .test("staging", conversation: "conv") })
     guard case .object(let r)? = out?.result, case .array(let tools)? = r["tools"] else {
         Issue.record("no tools array"); return
     }
@@ -423,7 +429,7 @@ private func readWithTimeout(_ fd: Int32, seconds: Int) throws -> String {
     // long enough to overflow sockaddr_un's 104-byte sun_path, which
     // `makeUnixSocketAddress` rejects outright rather than truncating.
     let socketPath = "/tmp/wakil-mcpserver-test-\(UUID().uuidString).sock"
-    let server = MCPSocketServer(surface: await surface(), socketPath: socketPath, caller: { .test("staging") })
+    let server = MCPSocketServer(surface: await surface(), socketPath: socketPath, caller: { .test("staging", conversation: "conv") })
     try await server.start()
 
     do {
@@ -530,7 +536,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         // /tmp rather than FileManager's temporary directory, for the
         // sun_path length reason the test above documents.
         let socketPath = "/tmp/wakil-mcpserver-order-\(UUID().uuidString).sock"
-        let server = MCPSocketServer(surface: await surface(), socketPath: socketPath, caller: { .test("staging") })
+        let server = MCPSocketServer(surface: await surface(), socketPath: socketPath, caller: { .test("staging", conversation: "conv") })
         try await server.start()
         let fd = try connectRawClient(to: socketPath)
         for id in 1...requests {
@@ -575,7 +581,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         JSONRPCMessage(
             id: .number(1), method: "tools/call",
             params: .object(["name": .string("read_layout"), "arguments": .object([:])])),
-        surface: surface, caller: { .test("staging") })
+        surface: surface, caller: { .test("staging", conversation: "conv") })
 
     guard case .object(let result)? = reply?.result,
           case .object(let structured)? = result["structuredContent"],
@@ -603,7 +609,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
 
     let listed = await handle(
         JSONRPCMessage(id: .number(1), method: "tools/list", params: nil),
-        surface: surface, caller: { .test("staging") })
+        surface: surface, caller: { .test("staging", conversation: "conv") })
     guard case .object(let result)? = listed?.result, case .array(let tools)? = result["tools"] else {
         Issue.record("tools/list returned no tools")
         return
@@ -619,7 +625,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         JSONRPCMessage(
             id: .number(2), method: "tools/call",
             params: .object(["name": .string("read_layout"), "arguments": .object([:])])),
-        surface: surface, caller: { .test("staging") })
+        surface: surface, caller: { .test("staging", conversation: "conv") })
     // Hand-written like read_pane: a pure read of UI state, so it reaches
     // neither the gate nor the journal.
     #expect(try await registry.journalEntries().isEmpty)
@@ -637,7 +643,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         JSONRPCMessage(
             id: .number(1), method: "tools/call",
             params: .object(["name": .string("read_layout"), "arguments": .object([:])])),
-        surface: surface, caller: { .test("staging") })
+        surface: surface, caller: { .test("staging", conversation: "conv") })
 
     #expect(reply?.error == nil)
     guard case .object(let result)? = reply?.result,
@@ -684,7 +690,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
                     "id": .string(pane.id), "x": .number(321), "y": .number(654),
                 ]),
             ])),
-        surface: surface, caller: { .test("staging") })
+        surface: surface, caller: { .test("staging", conversation: "conv") })
 
     #expect(reply?.error == nil)
     let after = try #require(await layout.snapshot().panes.first { $0.id == pane.id })
@@ -725,7 +731,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
                 "name": .string("pane_open"),
                 "arguments": .object(["kind": .string("db"), "title": .string("Customers")]),
             ])),
-        surface: surface, caller: { .test("staging") })
+        surface: surface, caller: { .test("staging", conversation: "conv") })
 
     #expect(reply?.error == nil)
     let minted = try #require(await layout.snapshot().panes.first?.id)
@@ -781,7 +787,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         id: .number(1), method: "tools/call",
         params: .object(["name": .string("test_mutate"), "arguments": .object([:])]))
 
-    let reply = await handle(call, surface: surface, caller: { .test("staging") })
+    let reply = await handle(call, surface: surface, caller: { .test("staging", conversation: "conv") })
 
     #expect(reply?.error?.code == -32602)
     // Never reached the broker at all -- not parked-then-rejected, refused
@@ -820,7 +826,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
         id: .number(1), method: "tools/call",
         params: .object(["name": .string("test_mutate"), "arguments": arguments]))
 
-    async let reply = handle(call, surface: surface, caller: { .test("staging") })
+    async let reply = handle(call, surface: surface, caller: { .test("staging", conversation: "conv") })
     while await broker.all().isEmpty { await Task.yield() }
     let parked = await broker.all().values.first
     #expect(parked?.statement == "DELETE FROM t WHERE id=1")
@@ -861,7 +867,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
             "arguments": .object(["statement": .string("DELETE FROM t")]),
         ]))
 
-    async let reply = handle(call, surface: surface, caller: { .test("staging") })
+    async let reply = handle(call, surface: surface, caller: { .test("staging", conversation: "conv") })
     while await broker.all().isEmpty { await Task.yield() }
     await broker.cancel(id: (await broker.all().values.first)!.id)
 
@@ -893,10 +899,10 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
                 "name": .string("test_mutate"),
                 "arguments": .object(["statement": .string("DELETE FROM t")]),
             ])),
-        surface: surface, caller: { .test("staging") })
+        surface: surface, caller: { .test("staging", conversation: "conv") })
     while await broker.all().isEmpty { await Task.yield() }
     try await Task.sleep(for: .milliseconds(200))
-    let parked = await broker.current(for: DispatchCaller.test("staging").place)
+    let parked = await broker.current(for: DispatchCaller.test("staging", conversation: "conv").place)
     #expect(parked != nil)
     await broker.cancel(id: parked!.id)
 
@@ -924,7 +930,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
                 "name": .string("test_mutate"),
                 "arguments": .object(["statement": .string("DELETE FROM t")]),
             ])),
-        surface: surface, caller: { .test("production") })
+        surface: surface, caller: { .test("production", conversation: "conv") })
 
     #expect(reply?.error?.code == -32003)
     #expect(await broker.all().isEmpty)
@@ -962,7 +968,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
             "arguments": .object(["name": .string("production")]),
         ]))
 
-    async let reply = handle(call, surface: surface, caller: { .test("staging") })
+    async let reply = handle(call, surface: surface, caller: { .test("staging", conversation: "conv") })
     while await broker.all().isEmpty { await Task.yield() }
     let parked = await broker.all().values.first
     #expect(parked?.statement.isEmpty == false)
@@ -1020,7 +1026,7 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
 
     // Active environment "production", target "staging" — D10's leaving
     // direction.
-    async let reply = handle(call, surface: surface, caller: { .test("production") })
+    async let reply = handle(call, surface: surface, caller: { .test("production", conversation: "conv") })
     while await broker.all().isEmpty { await Task.yield() }
     let parked = await broker.all().values.first
     #expect(parked?.statement == "switch the active environment to staging")
@@ -1072,7 +1078,7 @@ private actor EnvironmentBox {
         id: .number(1), method: "tools/call",
         params: .object(["name": .string("test_mutate"), "arguments": arguments]))
 
-    async let reply = handle(call, surface: surface, caller: { .test(await env.current()) })
+    async let reply = handle(call, surface: surface, caller: { .test(await env.current(), conversation: "conv") })
     while await broker.all().isEmpty { await Task.yield() }
     let parked = await broker.all().values.first
     #expect(parked?.statement == "DELETE FROM t WHERE id=1")
@@ -1165,7 +1171,7 @@ private actor EnvironmentBox {
             "name": .string("read_pane"),
             "arguments": .object(["paneId": .string(opened.id)]),
         ])),
-        surface: surface, caller: { .test("staging") })
+        surface: surface, caller: { .test("staging", conversation: "conv") })
 
     guard case .object(let result)? = reply?.result,
           case .object(let structured)? = result["structuredContent"] else {
@@ -1192,7 +1198,7 @@ private actor EnvironmentBox {
             "name": .string("read_pane"),
             "arguments": .object(["paneId": .string("db-404")]),
         ])),
-        surface: surface, caller: { .test("staging") })
+        surface: surface, caller: { .test("staging", conversation: "conv") })
 
     guard case .object(let result)? = reply?.result,
           case .object(let structured)? = result["structuredContent"] else {
@@ -1221,7 +1227,7 @@ private actor EnvironmentBox {
         "name": .string("editor_changes_branch_delete"),
         "arguments": .object(["root": .string("/p/api"), "branch": .string("fix-login")]),
     ]))
-    async let reply = handle(call, surface: surface, caller: { .test("staging") })
+    async let reply = handle(call, surface: surface, caller: { .test("staging", conversation: "c1") })
     var spins = 0
     while await broker.all().isEmpty, spins < 2_000 { await Task.yield(); spins += 1 }
     let parked = await broker.all().values.first

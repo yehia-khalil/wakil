@@ -180,17 +180,35 @@ func TestSelectScreenSocketRefusesAnUnknownScreen(t *testing.T) {
 
 // screen is the window's place on screen, which every stand-in socket reports.
 type screen struct {
-	mu    sync.Mutex
-	place driver.Place
+	mu           sync.Mutex
+	place        driver.Place
+	conversation string
 }
 
 func (s *screen) set(place driver.Place) { s.mu.Lock(); s.place = place; s.mu.Unlock() }
-func (s *screen) get() driver.Place     { s.mu.Lock(); defer s.mu.Unlock(); return s.place }
+func (s *screen) get() driver.Place      { s.mu.Lock(); defer s.mu.Unlock(); return s.place }
+func (s *screen) show(conversation string) {
+	s.mu.Lock()
+	s.conversation = conversation
+	s.mu.Unlock()
+}
+func (s *screen) shown() string { s.mu.Lock(); defer s.mu.Unlock(); return s.conversation }
 
 // placeSocket serves one stand-in socket pinned to place: `initialize` reports
 // it and the screen, and every `tools/call` answers with the place it was made
 // for, so a test can read which socket a dispatch reached.
 func placeSocket(t *testing.T, dir string, name string, place driver.Place, on *screen) string {
+	t.Helper()
+	return conversationSocket(t, dir, name, place, "", on)
+}
+
+// conversationSocket is placeSocket for a socket of one conversation: its
+// `initialize` also names the conversation it is pinned to and the one the
+// window shows, and a call answers `<conversation>:<environment>@<org>`. An
+// empty conversation is a socket from before conversations, which says neither.
+func conversationSocket(
+	t *testing.T, dir string, name string, place driver.Place, conversation string, on *screen,
+) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
 	listener, err := net.Listen("unix", path)
@@ -222,13 +240,22 @@ func placeSocket(t *testing.T, dir string, name string, place driver.Place, on *
 					var result interface{}
 					switch request.Method {
 					case "initialize":
+						meta := map[string]interface{}{"wakil/place": place, "wakil/screen": on.get()}
+						if conversation != "" {
+							meta["wakil/conversation"] = conversation
+							meta["wakil/screenConversation"] = on.shown()
+						}
 						result = map[string]interface{}{
 							"serverInfo": map[string]string{"name": "wakil"},
-							"_meta":      map[string]interface{}{"wakil/place": place, "wakil/screen": on.get()},
+							"_meta":      meta,
 						}
 					default:
+						text := place.Environment + "@" + place.Organization
+						if conversation != "" {
+							text = conversation + ":" + text
+						}
 						result = map[string]interface{}{
-							"content": []map[string]string{{"type": "text", "text": place.Environment + "@" + place.Organization}},
+							"content": []map[string]string{{"type": "text", "text": text}},
 						}
 					}
 					frame, _ := json.Marshal(map[string]interface{}{"jsonrpc": "2.0", "id": request.ID, "result": result})
@@ -372,4 +399,81 @@ func TestSelectScreenSocketRefusesUnplacedSocketsItCannotTellApart(t *testing.T)
 			t.Errorf("chose %q among %d sockets, %d of them unplaced", path, len(probes), 1)
 		}
 	}
+}
+
+func shows(conversation string) *string { return &conversation }
+
+// Two conversations of one place each have a socket: the one to drive is the
+// screen's conversation's, not either of the place's.
+func TestTwoSocketsOfOnePlacePickTheScreensConversation(t *testing.T) {
+	path, err := driver.SelectScreenSocket(7, []driver.SocketPlace{
+		{Path: "/tmp/wakil-a.sock", Place: staging, Screen: on(staging), Conversation: "a", ScreenConversation: shows("b")},
+		{Path: "/tmp/wakil-b.sock", Place: staging, Screen: on(staging), Conversation: "b", ScreenConversation: shows("b")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/tmp/wakil-b.sock" {
+		t.Errorf("got %q, want the screen's conversation's socket", path)
+	}
+}
+
+// A socket that names no conversation — a build from before them — is chosen
+// by its place, as before.
+func TestASocketWithoutConversationMetaIsChosenByPlace(t *testing.T) {
+	path, err := driver.SelectScreenSocket(7, []driver.SocketPlace{
+		{Path: "/tmp/wakil-a.sock", Place: staging, Screen: on(staging)},
+		{Path: "/tmp/wakil-b.sock", Place: qa, Screen: on(staging)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/tmp/wakil-a.sock" {
+		t.Errorf("got %q, want the staging socket", path)
+	}
+	// Nor does a screen that names none rule out a socket that does.
+	path, err = driver.SelectScreenSocket(7, []driver.SocketPlace{
+		{Path: "/tmp/wakil-a.sock", Place: staging, Screen: on(staging), Conversation: "a"},
+	})
+	if err != nil || path != "/tmp/wakil-a.sock" {
+		t.Errorf("got %q, %v; want the staging socket", path, err)
+	}
+}
+
+// Sockets that disagree about the conversation on screen answered either side
+// of a switch: refused, as a disagreement about the place is.
+func TestSelectScreenSocketRefusesSocketsThatDisagreeAboutTheScreensConversation(t *testing.T) {
+	_, err := driver.SelectScreenSocket(7, []driver.SocketPlace{
+		{Path: "/tmp/wakil-a.sock", Place: staging, Screen: on(staging), Conversation: "a", ScreenConversation: shows("a")},
+		{Path: "/tmp/wakil-b.sock", Place: staging, Screen: on(staging), Conversation: "b", ScreenConversation: shows("b")},
+	})
+	if err == nil {
+		t.Fatal("chose while the sockets disagreed about the conversation on screen")
+	}
+}
+
+// Review Focus 5: ⌘N keeps the place on screen but moves the screen to the
+// Landing's own conversation, so the socket in hand — the backgrounded one's —
+// is no longer the screen's, though its place still is.
+func TestScreenChannelFollowsTheScreensConversationWithinAPlace(t *testing.T) {
+	dir := socketDir(t)
+	window := &screen{place: staging, conversation: "a"}
+	var mu sync.Mutex
+	paths := []string{conversationSocket(t, dir, "wakil-a.sock", staging, "a", window)}
+	channel := driver.NewScreenChannel(7, 2*time.Second, func() ([]string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), paths...), nil
+	})
+	t.Cleanup(func() { _ = channel.Close() })
+	expectCall(t, channel, "a:staging@e2e-fixture")
+
+	window.show("b")
+	mu.Lock()
+	paths = append(paths, conversationSocket(t, dir, "wakil-b.sock", staging, "b", window))
+	mu.Unlock()
+	expectCall(t, channel, "b:staging@e2e-fixture")
+
+	window.show("a")
+	expectCall(t, channel, "a:staging@e2e-fixture")
 }

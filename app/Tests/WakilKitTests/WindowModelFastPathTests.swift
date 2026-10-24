@@ -311,3 +311,73 @@ private func makeFastPathWindow(
 }
 
 private actor Listed { var names: [String] = []; func add(_ n: String) { names.append(n) } }
+
+/// `wakil-ctx` whose active environment is whatever `ctx_set_environment` last set: a switch the
+/// fast path dispatches moves the place the window reads back, as the real one does.
+private actor SwitchableContext: ToolCaller {
+    private var environment: String
+    init(environment: String) { self.environment = environment }
+    func set(_ name: String) { environment = name }
+
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        switch name {
+        case "config_tree":
+            return try await FastPathBackend(fastPath: true).callTool(name: name, arguments: arguments, timeout: timeout)
+        case "get_context":
+            return .object(["structuredContent": .object([
+                "Org": .string("test-org"), "Environment": .string(environment),
+                "Project": .object(["name": .string("shop")]), "ProjectKey": .string("shop"),
+                "RootPaths": .array([]), "ActiveProvider": .string(""),
+            ])])
+        default:
+            return .object(["structuredContent": .object([:])])
+        }
+    }
+}
+
+@MainActor
+private func waitUntilTrue(_ condition: @MainActor () async -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(2 * testWaitLoadMultiplier)
+    while Date() < deadline {
+        if await condition() { return true }
+        try? await Task.sleep(nanoseconds: 2_000_000)
+    }
+    return await condition()
+}
+
+@Suite @MainActor struct FastPathReceiptAcrossItsOwnScreenChangeTests {
+    // The 3b-ix e2e on the Conversations branch: "go to qa" switched the environment, and the
+    // window caught up with that switch only after the composer had shown the receipt — the
+    // screen change it told then wiped the receipt the switch itself had earned.
+    @Test func aFastPathLineThatSwitchesTheEnvironmentKeepsItsReceipt() async throws {
+        let context = SwitchableContext(environment: "staging")
+        let model = CannedQuickModel(reply: #"{"action":"ctx_set_environment","params":{"name":"qa"}}"#)
+        let window = WindowModel.forTesting(
+            scratchRoot: testScratchRoot, context: ContextStore(client: context),
+            quickModelFactory: { _, _ in model })
+        await window.registryForTesting.register(Action(
+            name: "ctx_set_environment", description: "", kind: .control, audience: .operatorOnly,
+            schema: obj(["name": "string"], required: ["name"])) { params in
+                if case .object(let o) = params, case .string(let n)? = o["name"] { await context.set(n) }
+                return .object([:])
+            })
+        window.setSettingsForTesting(SettingsTree(
+            org: SettingsOrg(id: "test-org"),
+            projects: [SettingsProject(name: "shop", environments: [SettingsEnvironment(name: "staging"), SettingsEnvironment(name: "qa")])]))
+        await window.refreshContext()
+        await window.rebuildQuickTasks()
+        #expect(window.environment == "staging")
+        let composer = ComposerModel(window: window, speech: SpeechRegistry(engines: []))
+
+        composer.edited(draft: "go to qa", caret: 8)
+        await composer.submit()
+
+        // The switch has reached the composer (the staging Landing's draft is kept under its key)
+        // whenever the window catches up with it; the receipt must outlive that.
+        #expect(await waitUntilTrue { !composer.draftKeysForTesting.isEmpty })
+        #expect(window.environment == "qa")
+        #expect(composer.receipt?.text == "Ran: switch environment to qa")
+        #expect(composer.receipt?.scope?.place.environment == "staging", "Ask the agent instead goes where it was typed")
+        #expect(composer.draft.isEmpty)
+    }
+}

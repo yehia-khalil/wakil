@@ -10,10 +10,17 @@ public struct ResumeRequest: Sendable, Equatable {
     /// so an agent's `session_resume` acts where it works whatever is on screen. Nil — the
     /// operator, `--dispatch` — is the place on screen.
     public let place: Place?
+    /// The conversation whose session the fork replaces: an agent caller's own, so a resume
+    /// asked for by one conversation forks that one, whichever the place shows — or, for the
+    /// operator's window, the screen's when they asked (on a Landing, the id it reserves), so
+    /// the fork never lands in a conversation the screen moved to meanwhile. Nil (`--dispatch`)
+    /// is the place's on-screen conversation when the request drains.
+    public let conversation: String?
 
-    public init(sessionId: String, place: Place? = nil) {
+    public init(sessionId: String, place: Place? = nil, conversation: String? = nil) {
         self.sessionId = sessionId
         self.place = place
+        self.conversation = conversation
     }
 }
 

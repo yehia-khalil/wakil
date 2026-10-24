@@ -2,7 +2,8 @@ import Foundation
 import Observation
 
 /// One place's agent: its harness, its session, its thread and its turn (background agents,
-/// 3 of 4). `WindowModel.agents` holds one per `Place`, so an agent keeps working, and its
+/// 3 of 4) — a conversation, stored by its `id` in `WindowModel.conversations`.
+/// `WindowModel.agents` projects the one each `Place` shows, so an agent keeps working, and its
 /// events keep landing in its own thread, while the screen shows another place. The window's
 /// `thoughts`, `turnInFlight`, `sessionId`, `sessionStarted` and `lineageRoot` read the
 /// on-screen place's entry.
@@ -13,6 +14,11 @@ import Observation
 @MainActor
 @Observable
 public final class PlaceAgent {
+    /// The conversation's id: the id Wakil mints before its first session (the one the place's
+    /// shown socket reserved), which that session, its socket and `DispatchCaller.conversation`
+    /// carry. **Never moved** — a resume or a provider switch moves `assignedSessionId` and
+    /// `sessionId`, not this — so it is what the window keys the conversation by.
+    public let id: String
     /// The place the agent works in, fixed for the entry's life — except that renaming its project
     /// or environment moves an entry with no live session to the new name
     /// (`WindowModel.carryAgents`), so its conversation is not lost with the old one.
@@ -23,7 +29,9 @@ public final class PlaceAgent {
     /// since. nil until the session's first turn records it.
     var launchedInstructions: String?
     /// The id the running child was started with; set and cleared with `harness`.
-    public internal(set) var sessionId: String?
+    public internal(set) var sessionId: String? {
+        didSet { if let sessionId { sessionIds.insert(sessionId) } }
+    }
     /// The socket the live session's shim reaches Wakil on (background agents 3 of 4, Task 4):
     /// the one the place opened when it was shown (`WindowModel.openShownSocket`), or for a
     /// replacement session one started before its harness; stopped when that harness is
@@ -36,6 +44,20 @@ public final class PlaceAgent {
     /// and then goes to that session (Rule 5), as a turn typed during a turn goes to the
     /// running harness.
     var startWaiters: [CheckedContinuation<Void, Never>]?
+    /// Resumes and provider switches building this conversation's next session, from
+    /// `makeSession` to `install` (plan 1's parked race): with `startWaiters`, what makes a session
+    /// start in flight count as a running agent (`runsOrStarts`).
+    var sessionStartsInFlight = 0
+    /// Whether a session start for this conversation is in flight — a first turn's
+    /// (`startWaiters`) or a resume's or provider switch's (`sessionStartsInFlight`) — from
+    /// `makeSession` to `install`: work in flight for Close (`WindowModel.closeConversation`),
+    /// as for Invariant 5 (`runsOrStarts`).
+    var startsSession: Bool { startWaiters != nil || sessionStartsInFlight > 0 }
+    /// Whether this conversation's agent runs, or a session start for it is in flight
+    /// (`startsSession`): what Invariant 5 refuses a rename or removal for. A start counts
+    /// because it takes the shown socket, answering for the place as it was, before its harness
+    /// is installed.
+    var runsOrStarts: Bool { harness != nil || startsSession }
     public internal(set) var thoughts: [ThoughtRow] = []
     /// Monotonic row ids (`WindowModel.thoughts`), per thread.
     var nextThoughtId = 0
@@ -62,27 +84,47 @@ public final class PlaceAgent {
     /// The agent's own `Bash` calls, for backfilling a terminal pane opened after them.
     let mirror: TerminalMirrorFeed
     var eventPump: Task<Void, Never>?
+    /// The live session's event stream ended under a pump nothing replaced or cancelled: its
+    /// process went away (conversations 3 of 3, Errors and edges). The conversation stays live,
+    /// its failure shown in its thread, and its next turn first resumes it as a fork
+    /// (`WindowModel.send`). Cleared when a pump starts for a new harness.
+    public internal(set) var sessionEnded = false
     /// Bumped before a harness is stopped, so the pump drops what the old stream still buffers.
     var eventPumpGeneration = 0
     /// The conversation this place is in: what its arrangement is filed under.
     public internal(set) var lineageRoot: String?
     /// The conversation id minted for this place's work, before or with its first session.
-    public internal(set) var assignedSessionId: String?
+    public internal(set) var assignedSessionId: String? {
+        didSet { if let assignedSessionId { sessionIds.insert(assignedSessionId) } }
+    }
+    /// The conversation's title: `newConversationTitle` until its first `send` sets it, once,
+    /// from the typed text.
+    public internal(set) var title = newConversationTitle
+    /// Creation, each `send`, each event appended: what "most recent" orders by.
+    public internal(set) var lastActivity = Date()
+    /// The window-wide creation counter's value when this conversation was made.
+    public let ordinal: Int
+    /// Every session the conversation ran, plus the parent it forked from: Continue leaves out
+    /// whatever chain these name.
+    public internal(set) var sessionIds: Set<String> = []
     /// Whether work has begun here: the Landing draws until it has.
     public internal(set) var sessionStarted = false
     /// The provider the running session was built for; the window's `providerId` is the one a
     /// new session starts on.
     public internal(set) var providerId: String
 
-    init(place: Place, providerId: String, mirror: TerminalMirrorFeed) {
+    init(id: String, place: Place, providerId: String, mirror: TerminalMirrorFeed, ordinal: Int = 0) {
+        self.id = id
+        self.ordinal = ordinal
         self.place = place
         self.providerId = providerId
         self.mirror = mirror
         self.productionEnvironment = isProductionEnvironment(place.environment)
     }
 
-    /// Whom this agent's calls are for: its own place and session, wherever the screen is.
-    public var caller: DispatchCaller { DispatchCaller(place: place, session: sessionId) }
+    /// Whom this agent's calls are for: its own place, session and conversation, wherever the
+    /// screen is.
+    public var caller: DispatchCaller { DispatchCaller(place: place, session: sessionId, conversation: id) }
 
     /// The canvas this agent's dispatches read and write: its place in its conversation. Nil
     /// with no project, which has no arrangement.
@@ -91,6 +133,12 @@ public final class PlaceAgent {
         return LayoutScope(
             organization: place.organization, project: place.project,
             environment: place.environment, lineageRoot: lineageRoot)
+    }
+
+    /// A `send`: the first one names the conversation from the typed text.
+    func noteSend(_ text: String) {
+        if title == newConversationTitle { title = conversationTitle(text) }
+        lastActivity = Date()
     }
 
     /// Lets every turn waiting on the session's start go on.
@@ -104,6 +152,7 @@ public final class PlaceAgent {
     func appendRow(label: String, detail: String, isError: Bool = false) {
         thoughts.append(ThoughtRow(id: nextThoughtId, label: label, detail: detail, isError: isError))
         nextThoughtId += 1
+        lastActivity = Date()
     }
 }
 
