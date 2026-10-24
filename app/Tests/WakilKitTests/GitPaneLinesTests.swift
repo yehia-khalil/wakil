@@ -195,3 +195,26 @@ private func stated(_ files: [GitFileRow], _ state: GitOpState?) -> GitRootState
     let rows = kinds.map { GitFileRow(path: "a.txt", origPath: nil, group: .conflicts, status: "U", kind: $0) }
     #expect(rows.filter(gitConflictIsDeleteModify).map(\.kind) == ["DU", "UD"])
 }
+
+// Final review M10: a row offers only the sides that exist — added by us has no incoming copy, added by
+// them no current one — and a file both sides deleted is kept or deleted, as a delete/modify one is.
+@Test func aConflictRowOffersTheSidesThatExist() {
+    func actions(_ kind: String) -> [GitConflictAction] {
+        gitConflictActions(GitFileRow(path: "a.txt", origPath: nil, group: .conflicts, status: "U", kind: kind))
+    }
+    #expect(actions("UU") == [.takeCurrent, .takeIncoming])
+    #expect(actions("AA") == [.takeCurrent, .takeIncoming])
+    #expect(actions("AU") == [.takeCurrent])
+    #expect(actions("UA") == [.takeIncoming])
+    #expect(actions("DU") == [.keep, .delete])
+    #expect(actions("UD") == [.keep, .delete])
+    #expect(actions("DD") == [.keep, .delete])
+}
+
+// Final review M10: the ▾ abort item names the operation, as its confirm does.
+@Test func theAbortItemNamesTheOperation() {
+    #expect(changesAbortTitle(op("merge", incoming: "side")) == "Abort Merge")
+    #expect(changesAbortTitle(op("rebase", onto: "main")) == "Abort Rebase")
+    #expect(changesAbortTitle(op("cherry-pick")) == "Abort Cherry-Pick")
+    #expect(changesAbortTitle(op("revert")) == "Abort Revert")
+}

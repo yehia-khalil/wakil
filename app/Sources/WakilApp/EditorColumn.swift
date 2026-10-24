@@ -762,26 +762,32 @@ struct EditorColumn: View {
             .id(ref)
     }
 
-    /// Accept All Current / Incoming, or — for a delete/modify conflict — Keep File / Delete File. Every
-    /// choice but Keep File loses edits, so it asks under the row first (Rule 1); Keep File runs.
+    /// Accept All Current / Incoming for the sides that exist, or — where a side deleted the file — Keep
+    /// File / Delete File (`gitConflictActions`). Every choice but Keep File loses edits, so it asks under
+    /// the row first (Rule 1); Keep File runs.
     @ViewBuilder
     private func conflictMenu(_ row: GitFileRow, root: GitRootState) -> some View {
         let key = root.root
         let busy = changes.inFlight.contains(key)
-        if gitConflictIsDeleteModify(row) {
-            Button("Keep File") { Task { _ = await changes.conflicts.keepFile(key, row.path) } }
-                .disabled(busy)
-                .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.keep")
-            Button("Delete File") { asking = .take(root: key, path: row.path, take: "delete") }
-                .disabled(busy)
-                .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.delete")
-        } else {
-            Button("Accept All Current") { asking = .take(root: key, path: row.path, take: "current") }
-                .disabled(busy)
-                .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.takeCurrent")
-            Button("Accept All Incoming") { asking = .take(root: key, path: row.path, take: "incoming") }
-                .disabled(busy)
-                .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.takeIncoming")
+        ForEach(gitConflictActions(row), id: \.self) { action in
+            switch action {
+            case .keep:
+                Button("Keep File") { Task { _ = await changes.conflicts.keepFile(key, row.path) } }
+                    .disabled(busy)
+                    .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.keep")
+            case .delete:
+                Button("Delete File") { asking = .take(root: key, path: row.path, take: "delete") }
+                    .disabled(busy)
+                    .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.delete")
+            case .takeCurrent:
+                Button("Accept All Current") { asking = .take(root: key, path: row.path, take: "current") }
+                    .disabled(busy)
+                    .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.takeCurrent")
+            case .takeIncoming:
+                Button("Accept All Incoming") { asking = .take(root: key, path: row.path, take: "incoming") }
+                    .disabled(busy)
+                    .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.takeIncoming")
+            }
         }
     }
 
@@ -1093,7 +1099,7 @@ struct EditorColumn: View {
                             Button("Skip Commit") { asking = .skip(root: key) }
                                 .accessibilityIdentifier("editor.changes.\(root.name).skip")
                         }
-                        Button(op.kind == "rebase" ? "Abort Rebase" : "Abort Merge") { asking = .abort(root: key) }
+                        Button(changesAbortTitle(op)) { asking = .abort(root: key) }
                             .accessibilityIdentifier("editor.changes.\(root.name).abort")
                     }
                     Divider()

@@ -141,6 +141,33 @@ public func gitConflictIsDeleteModify(_ row: GitFileRow) -> Bool {
     row.kind == "DU" || row.kind == "UD"
 }
 
+/// A conflicted row's whole-file choices, in menu order.
+public enum GitConflictAction: Sendable, Equatable {
+    case takeCurrent, takeIncoming, keep, delete
+}
+
+/// What a conflicted row offers: only the sides that exist — added by us (`AU`) has no incoming copy, added
+/// by them (`UA`) no current one — and Keep File / Delete File where a side deleted it (`DU`, `UD`, `DD`).
+public func gitConflictActions(_ row: GitFileRow) -> [GitConflictAction] {
+    switch row.kind {
+    case "DU", "UD", "DD": [.keep, .delete]
+    case "AU": [.takeCurrent]
+    case "UA": [.takeIncoming]
+    default: [.takeCurrent, .takeIncoming]
+    }
+}
+
+/// The ▾ item that aborts the operation, named by its kind: `Abort Merge`, `Abort Rebase`,
+/// `Abort Cherry-Pick`, `Abort Revert`.
+public func changesAbortTitle(_ s: GitOpState) -> String {
+    switch s.kind {
+    case "rebase": "Abort Rebase"
+    case "cherry-pick": "Abort Cherry-Pick"
+    case "revert": "Abort Revert"
+    default: "Abort Merge"
+    }
+}
+
 /// Abort's in-place confirm (Rule 1).
 public func changesAbortConfirmation(_ s: GitOpState) -> String {
     "Abort the \(s.kind)? The tree goes back to before it, and your resolutions are lost."
