@@ -1,0 +1,135 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"g() { git -C ../e2e-portal -c user.name=Ada -c user.email=ada@e2e.invalid \"$@\"; }; g checkout -q -- index.txt && printf 'top\\nbase\\nbottom\\n' > ../e2e-portal/doc && echo old > ../e2e-portal/gone && g add doc gone && g commit -qm base && g switch -qc feature && printf 'top\\nfeature\\nbottom\\n' > ../e2e-portal/doc && g rm -q gone && g commit -qam feature && g switch -q main && printf 'top\\nmain\\nbottom\\n' > ../e2e-portal/doc && echo 'old, mine' > ../e2e-portal/gone && g commit -qam main"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.editor-1"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.branchMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Branch"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"expect":{"tree":"contains","text":"Choose the branch to merge in"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"Choose the branch to merge in"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.branchMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Branch"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"do":{"click":"branch.picker.row.feature"}}
+{"expect":{"tree":"contains","text":"Merge stopped on conflicts in doc, gone; resolve them below"}}
+{"expect":{"tree":"absent","text":"Choose the branch to merge in"}}
+{"expect":{"tree":"contains","text":"merging feature"}}
+{"expect":{"tree":"contains","text":"Merge Changes, 2"}}
+{"expect":{"tree":"contains","text":"doc, both modified"}}
+{"expect":{"tree":"contains","text":"gone, deleted by them"}}
+{"expect":{"frame":"editor.changes.e2e-portal.commitMerge","minWidth":40}}
+{"expect":{"tree":"contains","text":"Resolve 2 conflicts first"}}
+{"dispatch":{"action":"editor_changes_merge","params":{"root":"{fixtureRoot}/e2e-portal","branch":"feature"},"refuses":"A merge is in progress in"}}
+{"do":{"click":"editor.changes.e2e-portal.menu"}}
+{"expect":{"tree":"contains","text":"Abort Merge"}}
+{"do":{"click":"editor.changes.e2e-portal.abort"}}
+{"expect":{"tree":"contains","text":"Abort the merge? The tree goes back to before it, and your resolutions are lost."}}
+{"do":{"click":"editor.changes.e2e-portal.abort.keep"}}
+{"expect":{"tree":"absent","text":"Abort the merge? The tree goes back"}}
+{"expect":{"tree":"contains","text":"merging feature"}}
+{"expect":{"tree":"contains","text":"doc, both modified"}}
+{"do":{"click":"editor.changes.e2e-portal.menu"}}
+{"expect":{"tree":"contains","text":"Abort Merge"}}
+{"do":{"click":"editor.changes.e2e-portal.abort"}}
+{"expect":{"tree":"contains","text":"Abort the merge? The tree goes back to before it, and your resolutions are lost."}}
+{"do":{"click":"editor.changes.e2e-portal.abort.confirm"}}
+{"expect":{"tree":"absent","text":"merging feature"}}
+{"expect":{"tree":"absent","text":"doc, both modified"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"test -f ../e2e-portal/.git/MERGE_HEAD || git -C ../e2e-portal status --porcelain | wc -l | tr -d ' '"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"0"}}
+{"do":{"click":"rail.editor-1"}}
+{"dispatch":{"action":"editor_changes_merge","params":{"root":"{fixtureRoot}/e2e-portal","branch":"feature"}}}
+{"expect":{"tree":"contains","text":"merging feature"}}
+{"expect":{"tree":"contains","text":"Resolve 2 conflicts first"}}
+{"dispatch":{"action":"editor_changes_continue","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"Resolve the conflicts in doc, gone first"}}
+{"dispatch":{"action":"editor_changes_keep_file","params":{"root":"{fixtureRoot}/e2e-portal","path":"gone"}}}
+{"expect":{"tree":"absent","text":"gone, deleted by them"}}
+{"expect":{"tree":"contains","text":"Resolve 1 conflict first"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/doc"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"e2e-portal/doc"}}
+{"dispatch":{"action":"editor_goto","params":{"pane":"editor-1","line":1,"column":1}}}
+{"expect":{"pane":"editor-1","field":"cursor.line","equals":"1"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"next conflict"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"parity":{"action":"editor_conflict_next","params":{"pane":"editor-1"},"click":"palette.row.editor.nextConflict","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"cursor.line","equals":"2"}}
+{"dispatch":{"action":"editor_goto","params":{"pane":"editor-1","line":7,"column":1}}}
+{"expect":{"pane":"editor-1","field":"cursor.line","equals":"7"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"previous conflict"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"parity":{"action":"editor_conflict_previous","params":{"pane":"editor-1"},"click":"palette.row.editor.previousConflict","assert":"read_pane"}}
+{"expect":{"pane":"editor-1","field":"cursor.line","equals":"2"}}
+{"dispatch":{"action":"editor_conflict_compare","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[1].diff.conflict","equals":"true"}}
+{"expect":{"tree":"contains","text":"doc (Current ↔ Incoming)"}}
+{"dispatch":{"action":"editor_conflict_accept","params":{"pane":"editor-1","block":2,"take":"both"},"refuses":"has no conflict"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/doc"}}}
+{"expect":{"pane":"editor-1","field":"active","equals":"0"}}
+{"dispatch":{"action":"editor_conflict_accept","params":{"pane":"editor-1","block":2,"take":"both"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_conflict_accept","params":{"pane":"editor-1","block":2,"take":"both"},"refuses":"doc has no conflict at line 2"}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"paste -sd'|' ../e2e-portal/doc"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"top|main|feature|bottom"}}
+{"dispatch":{"action":"editor_changes_stage","params":{"root":"{fixtureRoot}/e2e-portal","paths":["doc"]}}}
+{"expect":{"tree":"absent","text":"Resolve 1 conflict first"}}
+{"expect":{"tree":"absent","text":"doc, both modified"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"click":"editor.changes.e2e-portal.commitMerge"}}
+{"expect":{"tree":"absent","text":"merging feature"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal log -1 --format='%s / %p' | sed 's/[0-9a-f]\\{7,\\}/id/g'"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"Merge branch 'feature' / id id"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"cat ../e2e-portal/gone"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"old, mine"}}

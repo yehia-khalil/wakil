@@ -1,0 +1,75 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"g() { git -C ../e2e-portal -c user.name=Ada -c user.email=ada@e2e.invalid \"$@\"; }; g stash push -q -m 'tune the index' && echo 'portal, main' > ../e2e-portal/index.txt && g commit -qam main"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.editor-1"}}
+{"expect":{"tree":"contains","text":"e2e-portal · main · clean"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.stashMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Stash"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Your stash clashes with main in index.txt; resolve it below, or Undo Apply"}}
+{"expect":{"tree":"contains","text":"Merge Changes, 1"}}
+{"expect":{"tree":"contains","text":"index.txt, both modified"}}
+{"expect":{"frame":"editor.changes.e2e-portal.commit","minWidth":40}}
+{"expect":{"tree":"contains","text":"Resolve 1 conflict first"}}
+{"expect":{"tree":"absent","text":"merging"}}
+{"do":{"click":"editor.changes.e2e-portal.undoApply"}}
+{"expect":{"tree":"contains","text":"Undo applying \"tune the index\"? The files it touched go back to HEAD; the stash stays in the list."}}
+{"do":{"click":"editor.changes.e2e-portal.undoApply.keep"}}
+{"expect":{"tree":"absent","text":"Undo applying \"tune the index\"?"}}
+{"expect":{"tree":"contains","text":"index.txt, both modified"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"grep -c '^<<<<<<< ' ../e2e-portal/index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"echo 'my fix' > ../e2e-portal/index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"click":"editor.changes.e2e-portal.undoApply"}}
+{"expect":{"tree":"contains","text":"Undo applying \"tune the index\"? The files it touched go back to HEAD; the stash stays in the list."}}
+{"do":{"click":"editor.changes.e2e-portal.undoApply.confirm"}}
+{"expect":{"tree":"contains","text":"index.txt changed since the clash; Undo Apply would lose that — resolve it by hand"}}
+{"expect":{"tree":"contains","text":"index.txt, both modified"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"cat ../e2e-portal/index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"my fix"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal --no-pager stash list --format=%s"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"On main: tune the index"}}
+{"dispatch":{"action":"editor_changes_stage","params":{"root":"{fixtureRoot}/e2e-portal","paths":["index.txt"]}}}
+{"expect":{"tree":"absent","text":"index.txt, both modified"}}
+{"expect":{"tree":"absent","text":"Resolve 1 conflict first"}}
+{"expect":{"tree":"contains","text":"Staged, 1"}}

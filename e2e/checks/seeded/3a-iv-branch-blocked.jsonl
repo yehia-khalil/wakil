@@ -26,6 +26,8 @@
 {"expect":{"focus":"branch.picker.filter"}}
 {"do":{"click":"branch.picker.fetch"}}
 {"expect":{"journal":{"contains":"\"action\":\"editor_changes_fetch\""}}}
+{"expect":{"frame":"branch.picker.row.origin/other","minWidth":40}}
+{"expect":{"tree":"absent","text":"Fetching…"}}
 {"do":{"click":"branch.picker.row.origin/other"}}
 {"expect":{"tree":"contains","text":"Your changes to index.txt would be overwritten by other."}}
 {"do":{"click":"branch.picker.blocked.cancel"}}
