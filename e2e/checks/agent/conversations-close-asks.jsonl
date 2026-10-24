@@ -5,8 +5,8 @@
 {"expect":{"process":{"any-matching":"wakil-e2e-agent -p"}}}
 {"do":{"hotkey":"cmd+shift+w"}}
 {"expect":{"tree":"contains","text":"Close this conversation? The agent is still working; what it is doing now stops."}}
-{"expect":{"tree":"contains","text":"Close it"}}
-{"expect":{"tree":"contains","text":"Keep it"}}
+{"expect":{"frame":"window.closeConversation.close","inside":"window"}}
+{"expect":{"frame":"window.closeConversation.keep","inside":"window"}}
 {"expect":{"focus":"window.closeConversation"}}
 {"do":{"click":"window.closeConversation.keep"}}
 {"expect":{"tree":"absent","text":"Close this conversation?"}}

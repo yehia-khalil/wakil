@@ -1209,3 +1209,67 @@ func TestListSessions_TitleAbsentIsEmptyNotAnError(t *testing.T) {
 		t.Errorf("Title = %q, want empty", got.Sessions[0].Title)
 	}
 }
+
+// symlinkedRootFixture declares the project's root through a symlink and writes one session
+// transcript the way `claude` does: under the encoding of the PHYSICAL working directory, with
+// that physical path as its cwd — the CLI records what getcwd answers, which resolves every link.
+// macOS's own temp dir is one (`/var` -> `/private/var`), so a project registered under
+// `/var/folders/...` records its sessions under `/private/var/folders/...`; the explicit link
+// here makes the fixture the same on every platform.
+func symlinkedRootFixture(t *testing.T, sessionID string) {
+	t.Helper()
+	home, claudeConfigDir := setupHome(t)
+	real := filepath.Join(home, "real")
+	if err := os.MkdirAll(filepath.Join(real, "proj"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link := filepath.Join(home, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	declared := filepath.Join(link, "proj")
+	projPath := writeProjectWithRoots(t, declared, "proj", "initech", []Root{{Path: declared}})
+	activateProject(t, "proj", projPath)
+
+	physical, err := filepath.EvalSymlinks(declared)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if physical == declared {
+		t.Fatalf("fixture invariant broken: %q resolved to itself, so nothing here is a link", declared)
+	}
+	writeSessionFile(t, claudeConfigDir, EncodeRootPath(physical), sessionID, []map[string]any{
+		{"type": "user", "cwd": physical, "message": map[string]any{"content": "hold a turn open here"}},
+	})
+}
+
+// TestListSessions_FindsASessionRecordedUnderTheRootsPhysicalPath is the Continue column that
+// stayed empty after a close (conversations-close-asks step 23): the e2e project's root is
+// declared as `/var/folders/...`, and the session's transcript sat under `-private-var-...`, so
+// neither the directory prefix nor the recorded cwd matched the declared root, and the session
+// was dropped without a word — not skipped, not unread.
+func TestListSessions_FindsASessionRecordedUnderTheRootsPhysicalPath(t *testing.T) {
+	symlinkedRootFixture(t, "linked-session")
+
+	sessions, err := ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(sessions.Sessions) != 1 || sessions.Sessions[0].ID != "linked-session" {
+		t.Fatalf("sessions = %+v, want linked-session: a root declared through a link holds the sessions "+
+			"recorded under its physical path", sessions.Sessions)
+	}
+	if sessions.Sessions[0].FirstPrompt != "hold a turn open here" {
+		t.Errorf("FirstPrompt = %q, want the prompt", sessions.Sessions[0].FirstPrompt)
+	}
+}
+
+// TestReadSession_ResumesASessionRecordedUnderTheRootsPhysicalPath: the Continue row that
+// lists it can also be resumed — its cwd is that root, not a foreign directory.
+func TestReadSession_ResumesASessionRecordedUnderTheRootsPhysicalPath(t *testing.T) {
+	symlinkedRootFixture(t, "linked-session")
+
+	if _, err := ReadSession("linked-session", 0); err != nil {
+		t.Fatalf("ReadSession: %v — its cwd is the declared root's physical path", err)
+	}
+}

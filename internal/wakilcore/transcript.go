@@ -159,7 +159,8 @@ func ReadSession(id string, limit int) (SessionThread, error) {
 	if err != nil {
 		return NewErrSessionThread(), err
 	}
-	if !cwdMatchesAnyRoot(cwd, ProjectRootPaths(*r)) {
+	// A root's physical path is that root too (`sessionRootPaths`): the CLI records it.
+	if !cwdMatchesAnyRoot(cwd, sessionRootPaths(ProjectRootPaths(*r))) {
 		return NewErrSessionThread(), UserError(
 			"session " + id + " ran in " + cwd +
 				", which is not a root of the active project " + r.Project.Name +
