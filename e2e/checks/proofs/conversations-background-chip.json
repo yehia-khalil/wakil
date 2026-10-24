@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/conversations-background-chip.jsonl",
+  "baseCommit": "1fb2b49b1b5c6e2c43805b311032dfa94e957a71",
+  "provedAt": "2026-10-24T03:56:41.981818Z",
+  "checkBlob": "876ca5ef403a6e62f287788761a04f645285cdce"
+}

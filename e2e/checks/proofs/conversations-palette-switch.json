@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/conversations-palette-switch.jsonl",
+  "baseCommit": "1fb2b49b1b5c6e2c43805b311032dfa94e957a71",
+  "provedAt": "2026-10-24T03:56:41.981818Z",
+  "checkBlob": "e7a87c10c8e794a03060b73247f456f6940b9083"
+}

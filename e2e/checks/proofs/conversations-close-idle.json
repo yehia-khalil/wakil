@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/conversations-close-idle.jsonl",
+  "baseCommit": "1fb2b49b1b5c6e2c43805b311032dfa94e957a71",
+  "provedAt": "2026-10-24T03:56:41.981818Z",
+  "checkBlob": "827ca31ca6678079a83b7621916707cd17ddf5e0"
+}
