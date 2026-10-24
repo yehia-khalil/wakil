@@ -121,6 +121,14 @@ func (w *GitWriter) inProgress(ctx context.Context) error {
 	return op.InProgressError(w.Root)
 }
 
+// notAFlag refuses a branch name that starts with "-": handed to git as a word, it would be a flag.
+func notAFlag(name string) error {
+	if strings.HasPrefix(name, "-") {
+		return UserError(strconv.Quote(name) + " is not a branch")
+	}
+	return nil
+}
+
 func (w *GitWriter) validName(ctx context.Context, name string) error {
 	if _, err := w.git(ctx, nil, "check-ref-format", "--branch", name); err != nil {
 		return UserError(strconv.Quote(name) + " is not a valid branch name")
@@ -157,8 +165,8 @@ func (w *GitWriter) Switch(ctx context.Context, branch string, o SwitchOptions) 
 	// Each is handed to git as a word: one that starts with "-" would be a flag (-C force-resets a
 	// branch, --orphan empties the tree), so it is refused, never passed.
 	for _, v := range []string{branch, o.From, o.Track} {
-		if strings.HasPrefix(v, "-") {
-			return SwitchResult{}, UserError(strconv.Quote(v) + " is not a branch")
+		if err := notAFlag(v); err != nil {
+			return SwitchResult{}, err
 		}
 	}
 	if !o.Create && !w.localBranchExists(ctx, branch) && !w.remoteBranchExists(ctx, branch) {
