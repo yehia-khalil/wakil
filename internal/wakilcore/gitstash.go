@@ -47,31 +47,34 @@ func ReadStashes(ctx context.Context, g *GitRunner) ([]GitStash, error) {
 			s.Branch, s.Message = m[1], m[2]
 		}
 		s.Date, _ = time.Parse(time.RFC3339, f[2])
-		s.Files = stashFiles(ctx, g, s.ID)
-		s.Untracked = stashUntracked(ctx, g, s.ID)
+		tracked, untracked, _ := stashPaths(ctx, g, s.ID)
+		s.Files, s.Untracked = append(tracked, untracked...), untracked
 		stashes = append(stashes, s)
 	}
 	return stashes, nil
 }
 
-// stashFiles is what a stash holds: the tracked paths it changed, then its untracked ones. Read
-// NUL-separated, so a name with a space or a non-ASCII letter comes back whole, and without rename
-// detection, so a rename lists both names: Undo Apply puts back the old one too.
-func stashFiles(ctx context.Context, g *GitRunner, id string) []string {
-	files := []string{}
-	if out, err := g.Run(ctx, "diff", "--name-only", "--no-renames", "-z", id+"^1", id, "--"); err == nil {
-		files = append(files, nulFields(out)...)
-	}
-	return append(files, stashUntracked(ctx, g, id)...)
-}
-
-// stashUntracked is the files a stash took untracked (its third parent).
-func stashUntracked(ctx context.Context, g *GitRunner, id string) []string {
-	out, err := g.Run(ctx, "show", "--name-only", "-z", "--format=", id+"^3", "--")
+// stashPaths is what a stash holds: the tracked paths it changed and its untracked ones (its third
+// parent), with any failure to read them — a write decides on these, so it never takes a failed read
+// for an empty one. Read NUL-separated, so a name with a space or a non-ASCII letter comes back whole,
+// and without rename detection, so a rename lists both names: Undo Apply puts back the old one too.
+func stashPaths(ctx context.Context, g *GitRunner, id string) (tracked, untracked []string, err error) {
+	out, err := g.Run(ctx, "diff", "--name-only", "--no-renames", "-z", id+"^1", id, "--")
 	if err != nil {
-		return []string{}
+		return []string{}, []string{}, err
 	}
-	return nulFields(out)
+	parents, err := g.Run(ctx, "log", "--max-count=1", "--format=%P", id, "--")
+	if err != nil {
+		return []string{}, []string{}, err
+	}
+	tracked, untracked = append([]string{}, nulFields(out)...), []string{}
+	if len(strings.Fields(string(parents))) >= 3 {
+		if out, err = g.Run(ctx, "show", "--name-only", "-z", "--format=", id+"^3", "--"); err != nil {
+			return []string{}, []string{}, err
+		}
+		untracked = append(untracked, nulFields(out)...)
+	}
+	return tracked, untracked, nil
 }
 
 // Stash sets the root's changes aside: mode "default" (tracked changes), "untracked" (with untracked
@@ -131,7 +134,7 @@ func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bo
 	if applyErr == nil {
 		return "", nil, nil
 	}
-	clash := w.stashClash(context.WithoutCancel(ctx), id)
+	clash, readErr := w.stashClash(context.WithoutCancel(ctx), id)
 	if clash == nil {
 		return "", nil, applyErr // refused before it changed anything (a file in the way)
 	}
@@ -141,7 +144,7 @@ func (w *GitWriter) StashApply(ctx context.Context, index int, id string, pop bo
 		on = "HEAD"
 	}
 	note := "Your stash clashes with " + on + " in " + clashPaths(clash) + "; resolve it below"
-	if !clean {
+	if !clean || readErr != nil {
 		return note, nil, nil
 	}
 	return note + ", or Undo Apply", clash, nil

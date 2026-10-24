@@ -62,14 +62,15 @@ type GitStashClash struct {
 
 // stashCleanBefore reports, before stash id is applied, whether every path it touches is clean: the
 // tracked ones (both names of a rename) and its untracked ones with the index at HEAD and the tree at
-// the index, and no untracked file at any of them. Only then does Undo Apply's
-// put-back — HEAD for the tracked paths, removal of what the apply created — lose nothing; otherwise
-// the clash is left to resolve by hand, as VS Code leaves it.
+// the index, none marked assume-unchanged or skip-worktree (git hides an edit there), and no untracked
+// file at any of them. Only then does Undo Apply's put-back — HEAD for the tracked paths, removal of
+// what the apply created — lose nothing; otherwise the clash is left to resolve by hand, as VS Code
+// leaves it. A read that fails, or lists nothing, is not clean.
 func (w *GitWriter) stashCleanBefore(ctx context.Context, id string) bool {
-	g := w.runner()
-	files := stashFiles(ctx, g, id)
-	if len(files) == 0 {
-		return true
+	tracked, untracked, err := stashPaths(ctx, w.runner(), id)
+	files := append(tracked, untracked...)
+	if err != nil || len(files) == 0 {
+		return false
 	}
 	for _, args := range [][]string{
 		{"diff", "--cached", "--name-only", "--no-renames", "-z", "HEAD", "--"},
@@ -80,31 +81,47 @@ func (w *GitWriter) stashCleanBefore(ctx context.Context, id string) bool {
 			return false
 		}
 	}
+	out, err := w.git(ctx, nil, "ls-files", append([]string{"-v", "-z", "--"}, files...)...)
+	if err != nil {
+		return false
+	}
+	for _, rec := range nulFields(out) { // "<tag> <path>": lower case is assume-unchanged, S skip-worktree
+		if tag, _, ok := strings.Cut(rec, " "); !ok || tag == "S" || strings.ToLower(tag) == tag {
+			return false
+		}
+	}
 	return true
 }
 
 // stashClash reads what a failed apply of stash id left: nil when it stopped before changing anything
-// (no path unmerged), else the clash with each touched file's hash as it is now.
-func (w *GitWriter) stashClash(ctx context.Context, id string) *GitStashClash {
+// (no path unmerged), else the clash with each touched file's hash as it is now. With an error the
+// clash names only its conflicts: the record could not be read, so it is not one Undo Apply can use.
+func (w *GitWriter) stashClash(ctx context.Context, id string) (*GitStashClash, error) {
 	conflicts, _ := w.conflicts(ctx)
 	if len(conflicts) == 0 {
-		return nil
-	}
-	untracked, atHead := map[string]bool{}, map[string]bool{}
-	if u := stashUntracked(ctx, w.runner(), id); len(u) > 0 {
-		for _, f := range u {
-			untracked[f] = true
-		}
-		if out, err := w.git(ctx, nil, "ls-tree", append([]string{"-z", "--name-only", "HEAD", "--"}, u...)...); err == nil {
-			for _, f := range nulFields(out) {
-				atHead[f] = true
-			}
-		}
+		return nil, nil
 	}
 	c := &GitStashClash{ID: id, Files: []GitClashFile{}, Created: []string{}, Conflicts: conflicts}
-	for _, f := range stashFiles(ctx, w.runner(), id) {
+	tracked, untracked, err := stashPaths(ctx, w.runner(), id)
+	if err != nil {
+		return c, err
+	}
+	isUntracked, atHead := map[string]bool{}, map[string]bool{}
+	if len(untracked) > 0 {
+		for _, f := range untracked {
+			isUntracked[f] = true
+		}
+		out, err := w.git(ctx, nil, "ls-tree", append([]string{"-z", "--name-only", "HEAD", "--"}, untracked...)...)
+		if err != nil {
+			return c, err
+		}
+		for _, f := range nulFields(out) {
+			atHead[f] = true
+		}
+	}
+	for _, f := range append(tracked, untracked...) {
 		h := w.hashOf(ctx, f)
-		if untracked[f] {
+		if isUntracked[f] {
 			// HEAD's own, clean before the apply (stashCleanBefore), so git left it alone; or one the
 			// apply did not restore.
 			if atHead[f] || h == "" {
@@ -114,7 +131,7 @@ func (w *GitWriter) stashClash(ctx context.Context, id string) *GitStashClash {
 		}
 		c.Files = append(c.Files, GitClashFile{Path: f, Hash: h})
 	}
-	return c
+	return c, nil
 }
 
 // hashOf is the blob id of rel's work-tree file, "" when there is none.
@@ -146,6 +163,31 @@ func (w *GitWriter) StashUndoApply(ctx context.Context, c GitStashClash) error {
 	if _, ok := w.stashRef(ctx, c.ID); !ok || c.ID == "" {
 		return UserError("The stash is gone, so Undo Apply would lose its changes; resolve it by hand")
 	}
+	// The record comes back from the caller: it may name only the stash's own paths, and only its
+	// untracked ones as created.
+	tracked, untracked, err := stashPaths(ctx, w.runner(), c.ID)
+	if err != nil {
+		return err
+	}
+	own := map[string]bool{}
+	for _, f := range tracked {
+		own[f] = true
+	}
+	ownUntracked := map[string]bool{}
+	for _, f := range untracked {
+		own[f], ownUntracked[f] = true, true
+	}
+	mismatch := UserError("That clash record doesn't match the stash; resolve it by hand")
+	for _, f := range c.Files {
+		if !own[f.Path] {
+			return mismatch
+		}
+	}
+	for _, f := range c.Created {
+		if !ownUntracked[f] {
+			return mismatch
+		}
+	}
 	for i, f := range c.Files {
 		if w.hashOf(ctx, ps[i]) != f.Hash {
 			return UserError(ps[i] + " changed since the clash; Undo Apply would lose that — resolve it by hand")
@@ -155,26 +197,32 @@ func (w *GitWriter) StashUndoApply(ctx context.Context, c GitStashClash) error {
 	for _, f := range c.Created {
 		created[f] = true
 	}
-	var tracked []string
+	var remove, put []string
 	for i, f := range c.Files {
 		if created[f.Path] {
-			removeInRoot(w.Root, ps[i]) // checked above: only a file the clash recorded as created
+			remove = append(remove, ps[i])
 		} else {
-			tracked = append(tracked, ps[i])
+			put = append(put, ps[i])
 		}
 	}
-	if len(tracked) == 0 {
-		return nil
-	}
+	// Read before anything is written: a failed read would make every tracked path look absent from
+	// HEAD, and be deleted.
 	steady := context.WithoutCancel(ctx)
 	atHead := map[string]bool{}
-	if out, err := w.git(steady, nil, "ls-tree", append([]string{"-z", "--name-only", "HEAD", "--"}, tracked...)...); err == nil {
+	if len(put) > 0 {
+		out, err := w.git(steady, nil, "ls-tree", append([]string{"-z", "--name-only", "HEAD", "--"}, put...)...)
+		if err != nil {
+			return UserError("Undo Apply could not read HEAD; resolve it by hand")
+		}
 		for _, p := range nulFields(out) {
 			atHead[p] = true
 		}
 	}
+	for _, p := range remove {
+		removeInRoot(w.Root, p) // checked above: only a file the clash recorded as created
+	}
 	var restore, absent []string
-	for _, p := range tracked {
+	for _, p := range put {
 		if atHead[p] {
 			restore = append(restore, p)
 		} else {

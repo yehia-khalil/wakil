@@ -432,6 +432,32 @@ func TestAStashOverTheOperatorsChangesOffersNoUndoApply(t *testing.T) {
 				}
 				return ""
 			}},
+		{"a hidden edit on a file marked assume-unchanged",
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\n") },
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\n") },
+			func(work string, git func(...string) string) {
+				git("update-index", "--assume-unchanged", "c.txt")
+				writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\nHIDDEN\n")
+			},
+			func(work string, git func(...string) string) string {
+				if c := readIn(t, work, "c.txt"); c != "S\n2\n3\n4\n5\nHIDDEN\n" {
+					return "c.txt = " + c
+				}
+				return ""
+			}},
+		{"a hidden edit on a file marked skip-worktree",
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\n") },
+			func(work string, git func(...string) string) { writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\n") },
+			func(work string, git func(...string) string) {
+				git("update-index", "--skip-worktree", "c.txt")
+				writeIn(t, work, "c.txt", "S\n2\n3\n4\n5\nHIDDEN\n")
+			},
+			func(work string, git func(...string) string) string {
+				if c := readIn(t, work, "c.txt"); c != "S\n2\n3\n4\n5\nHIDDEN\n" {
+					return "c.txt = " + c
+				}
+				return ""
+			}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -517,5 +543,54 @@ func TestUndoApplyRefusesAFileRecreatedSinceTheClash(t *testing.T) {
 	}
 	if readIn(t, work, "c.txt") != "OPERATOR\n" {
 		t.Fatal("the refusal changed c.txt")
+	}
+}
+
+// A stash whose listing cannot be read is not known clean: Undo Apply is not offered over paths it
+// never checked. Here the untracked part (its third parent) is unreadable.
+func TestAStashThatCannotBeListedIsNotClean(t *testing.T) {
+	work, w, git := branchFixture(t)
+	ctx := context.Background()
+	writeIn(t, work, "a.txt", "one\nSTASHED\nthree\n")
+	writeIn(t, work, "u.txt", "stashed u\n")
+	if err := w.Stash(ctx, "s", "untracked"); err != nil {
+		t.Fatal(err)
+	}
+	id := git("rev-parse", "stash@{0}")
+	third := git("rev-parse", id+"^3")
+	if err := os.Remove(filepath.Join(git("rev-parse", "--absolute-git-dir"), "objects", third[:2], third[2:])); err != nil {
+		t.Fatal(err)
+	}
+	if w.stashCleanBefore(ctx, id) {
+		t.Fatal("an unreadable stash read as clean")
+	}
+}
+
+// Undo Apply puts back only the stash's own paths: a clash record naming any other file is refused,
+// and the file is left alone.
+func TestUndoApplyRefusesAClashThatIsNotTheStashs(t *testing.T) {
+	work, w, git, _, clash := clashFixture(t)
+	c := *clash
+	c.Files = append(slices.Clone(c.Files), GitClashFile{Path: "other.txt", Hash: git("hash-object", "other.txt")})
+	c.Created = append(slices.Clone(c.Created), "other.txt")
+	err := w.StashUndoApply(context.Background(), c)
+	if err == nil || err.Error() != "That clash record doesn't match the stash; resolve it by hand" {
+		t.Fatalf("err = %v", err)
+	}
+	if readIn(t, work, "other.txt") != "mine, unrelated\n" || git("ls-files", "-u") == "" {
+		t.Fatal("the refusal changed the tree")
+	}
+}
+
+// When HEAD cannot be read, every tracked path would look absent from it and be deleted: refused.
+func TestUndoApplyRefusesWhenHEADCannotBeRead(t *testing.T) {
+	work, w, git, _, clash := clashFixture(t)
+	git("symbolic-ref", "HEAD", "refs/heads/nowhere")
+	err := w.StashUndoApply(context.Background(), *clash)
+	if err == nil || err.Error() != "Undo Apply could not read HEAD; resolve it by hand" {
+		t.Fatalf("err = %v", err)
+	}
+	if readIn(t, work, "b.txt") != "stashed b\n" || !strings.Contains(readIn(t, work, "a.txt"), "<<<<<<<") {
+		t.Fatal("the refusal changed the tree")
 	}
 }
