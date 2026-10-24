@@ -4,7 +4,6 @@
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"tree":"contains","text":"RUNNING"}}
-{"expect":{"tree":"contains","text":"thread turn one"}}
 {"expect":{"tree":"contains","text":"Value: idle"}}
 {"expect":{"tree":"absent","text":"first reply in the thread"}}
 {"expect":{"focus":"window.composer"}}

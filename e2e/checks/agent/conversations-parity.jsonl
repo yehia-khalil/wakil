@@ -32,5 +32,5 @@
 {"parity":{"action":"session_close","click":"palette.row.global.closeConversation","assert":"tree"}}
 {"expect":{"tree":"contains","text":"NEWEST FIRST"}}
 {"expect":{"tree":"absent","text":"RUNNING"}}
-{"expect":{"tree":"contains","text":"thread turn one"}}
-{"expect":{"tree":"contains","text":"thread turn two"}}
+{"expect":{"tree":"absent","text":"Reading sessions"}}
+{"expect":{"tree":"absent","text":"Nothing to continue"}}

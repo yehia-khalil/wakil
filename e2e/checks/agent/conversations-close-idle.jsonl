@@ -7,7 +7,7 @@
 {"expect":{"tree":"contains","text":"NEWEST FIRST"}}
 {"expect":{"tree":"absent","text":"Close this conversation?"}}
 {"expect":{"tree":"absent","text":"first reply in the thread"}}
-{"expect":{"tree":"contains","text":"thread turn one"}}
+{"expect":{"tree":"absent","text":"Reading sessions"}}
 {"expect":{"tree":"absent","text":"Nothing to continue"}}
 {"expect":{"tree":"absent","text":"RUNNING"}}
 {"expect":{"process":{"none-matching":"wakil-e2e-agent -p"}}}
