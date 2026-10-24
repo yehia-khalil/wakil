@@ -2,9 +2,11 @@ package wakilcore
 
 import (
 	"context"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -135,5 +137,35 @@ func TestStatusHasNoStateOnACleanTree(t *testing.T) {
 	st, err := ReadGitStatus(context.Background(), g)
 	if err != nil || st.State != nil {
 		t.Fatalf("state = %+v, err %v", st.State, err)
+	}
+}
+
+// Final review I2: the staged copies are read in one batch, so each is matched to its own path (a
+// name with a space or a non-ASCII letter whole), and a staged blob over the limit is not read even
+// when the work-tree copy is small.
+func TestStatusReadsEachStagedCopyForMarkers(t *testing.T) {
+	repo := gitTestRepo(t)
+	put := func(name, text string) { os.WriteFile(filepath.Join(repo, name), []byte(text), 0o644) }
+	block := "<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> side\n"
+	put("plain.txt", "no markers\n")
+	put("my notes é.txt", "top\n"+block)
+	put("z.txt", block)
+	put("big.txt", block+strings.Repeat("x", 1<<20))
+	gitIn(t, repo, "add", ".")
+	put("big.txt", "small now\n")
+	g, _ := NewGitRunner(repo, []string{repo})
+	st, err := ReadGitStatus(context.Background(), g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, f := range st.Files {
+		if f.Group == "staged" {
+			got[f.Path] = f.Markers
+		}
+	}
+	want := map[string]bool{"plain.txt": false, "my notes é.txt": true, "z.txt": true, "big.txt": false}
+	if !maps.Equal(got, want) {
+		t.Fatalf("markers = %v", got)
 	}
 }

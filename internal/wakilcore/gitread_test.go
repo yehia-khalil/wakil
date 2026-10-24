@@ -251,6 +251,9 @@ func TestRunnerRefusesUnlistedFlags(t *testing.T) {
 		{"diff", "--textconv"},
 		{"status", "--git-dir=x"},
 		{"show", "--output=" + out},
+		{"cat-file", "--textconv", "HEAD:a.txt"},
+		{"cat-file", "--filters", "HEAD:a.txt"},
+		{"cat-file", "--batch-all-objects", "--batch-check"},
 	}
 	for _, c := range cases {
 		if _, err := g.Run(context.Background(), c[0], c[1:]...); err == nil {
