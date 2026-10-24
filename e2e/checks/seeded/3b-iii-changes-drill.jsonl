@@ -69,7 +69,7 @@
 {"expect":{"pane":"editor-1","field":"tabs[1]","present":false}}
 {"expect":{"pane":"editor-1","field":"tabs[0].diff.path","equals":"notes"}}
 {"dispatch":{"action":"editor_close","params":{"pane":"editor-1","diff":{"root":"{fixtureRoot}/e2e-api","path":"BookingController.php","group":"untracked"}},"refuses":"editor_close: the editor pane has no open tab"}}
-{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"notes","group":"modified"},"refuses":"editor_changes_select: group must be staged, changed or untracked, not \"modified\""}}
+{"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-api","path":"notes","group":"modified"},"refuses":"editor_changes_select: group must be conflicts, staged, changed or untracked, not \"modified\""}}
 {"dispatch":{"action":"editor_changes_select","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-project","path":"notes","group":"untracked"},"refuses":"is not a root of the active project (roots: "}}
 {"dispatch":{"action":"editor_changes_collapse","params":{"pane":"editor-1","root":"{fixtureRoot}/e2e-project"},"refuses":"editor_changes_collapse: "}}
 {"dispatch":{"action":"editor_changes_step","params":{"pane":"editor-1"},"refuses":"editor_changes_step"}}
