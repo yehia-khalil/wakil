@@ -45,6 +45,9 @@ conversation. It holds a single active context — an organization, a project, a
 environment — and every tool inside it inherits that context automatically. You never tell
 Wakil *which* Jira, *which* database, *which* Claude account; you tell it what you want.
 
+A place can hold several live conversations. The Landing's Running column lists them; ⌘N
+starts one and ⌘⇧W closes one.
+
 **The test that settles scope arguments** (§1): *a feature earns its place in Wakil only
 when its absence forces you to leave.*
 

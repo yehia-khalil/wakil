@@ -15,7 +15,9 @@ public final class ComposerModel {
     public private(set) var machine = ListeningMachine()
     /// True from a landing until the draft is sent or emptied.
     public private(set) var landedUnsent = false
-    /// Bumped on every landing; the bar focuses its field when it changes.
+    /// Bumped on every landing, and whenever the window gives the composer the keyboard (a
+    /// screen change that focuses it, Keep it on the Close question); the bar focuses its field
+    /// when it changes.
     public private(set) var focusToken = 0
 
     /// What a fast-path line did (3b-ix): kept until the next line, "Ask the agent instead" or Esc.
@@ -51,7 +53,12 @@ public final class ComposerModel {
         window.onScreenChange = { [weak self] from, to, focusComposer in
             self?.screenChanged(from: from, to: to, focusComposer: focusComposer)
         }
+        window.onConversationClosed = { [weak self] id in self?.drafts[id] = nil }
+        window.onCloseQuestionKept = { [weak self] in self?.focusToken += 1 }
     }
+
+    /// TEST-ONLY: the screens a draft is kept for, by `WindowModel.screenKey`.
+    var draftKeysForTesting: Set<String> { Set(drafts.keys) }
 
     /// The screen moved from `from` to `to` (`WindowModel.onScreenChange`): dictation stops
     /// (`resigned`), the draft and caret are kept under `from`, and `to`'s come back — empty for

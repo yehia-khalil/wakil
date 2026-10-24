@@ -95,6 +95,8 @@ public let operatorOnlyActions: Set<String> = [
     // Conversations 2 of 3: which conversation is on screen is the operator's; an agent must not
     // push aside the operator's conversation.
     "session_new", "session_switch",
+    // Conversations 3 of 3: nor end it.
+    "session_close",
     // An agent's place is fixed when its session starts (Invariant 5); only the operator moves it.
     "ctx_set_project", "ctx_set_environment",
     "ctx_list_orgs", "ctx_create_org",
@@ -235,6 +237,8 @@ public let operatorOnlyActions: Set<String> = [
 ///   the operator types, and a database edit carries no secret but is still theirs.
 /// - `session_new` and `session_switch` (conversations 2 of 3): which conversation is on
 ///   screen is the operator's; each names the gesture that does it (⌘N, ⌘P).
+/// - `session_close` (conversations 3 of 3): ending a conversation is the operator's; the
+///   sentence names ⌘⇧W.
 private func operatorOnlyDenialMessage(toolName: String, action: String) -> String {
     switch action {
     case "session_set_provider", "ctx_set_provider":
@@ -247,6 +251,9 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator switches between conversations — an agent must not "
             + "push aside the operator's conversation. Tell the operator which conversation the work "
             + "needs; they can switch to it with \u{2318}P."
+    case "session_close":
+        return "\(toolName): only the operator closes a conversation — an agent must not end the "
+            + "operator's conversation. Ask the operator to close it in the Wakil window (\u{2318}\u{21E7}W)."
     case "ctx_set_project", "ctx_set_environment":
         return "\(toolName): An agent's place is fixed when its session starts. "
             + "Tell the operator which place the work needs; they can start an agent there."

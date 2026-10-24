@@ -209,7 +209,7 @@ from `agentMCPConfigJSON`. The `claude` process itself gets `CLAUDE_CONFIG_DIR`,
 |---|---|---|
 | The four Wakil-owned `MCPClient`s | `WakilWiring.build` | `WakilWiring.shutdown`; restarted in place by `switchOrg` |
 | Pool clients (`PlaceClients`) | an agent's first call for its place | `retain` when no session holds the place; `WakilWiring.shutdown` |
-| `PlaceAgent`, one per place | the place's first turn, pane or resume | `WindowModel.shutdown` (a switch never drops it) |
+| `PlaceAgent`, one per live conversation | the conversation's first turn, pane or resume | `WindowModel.shutdown` (a switch never drops it) |
 | `MCPSocketServer`, one per agent session | `WindowModel`, when its place is first shown (a resume's or provider switch's: before its harness) | after that harness stops: next harness, `WindowModel.shutdown` for every place's agent and every shown place's socket |
 | `ClaudeCodeCLIHarness` (and the shim and agent servers `claude` spawns) | `WindowModel` on a session start, resume or provider switch | `harness.stop()`: next harness, `WindowModel.shutdown` |
 | Terminal PTYs (`TerminalStore`) | `term_open` | `pane_close`, shutdown (`shutdownAll()`) |

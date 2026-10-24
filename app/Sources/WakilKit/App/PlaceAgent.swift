@@ -44,6 +44,20 @@ public final class PlaceAgent {
     /// and then goes to that session (Rule 5), as a turn typed during a turn goes to the
     /// running harness.
     var startWaiters: [CheckedContinuation<Void, Never>]?
+    /// Resumes and provider switches building this conversation's next session, from
+    /// `makeSession` to `install` (plan 1's parked race): with `startWaiters`, what makes a session
+    /// start in flight count as a running agent (`runsOrStarts`).
+    var sessionStartsInFlight = 0
+    /// Whether a session start for this conversation is in flight — a first turn's
+    /// (`startWaiters`) or a resume's or provider switch's (`sessionStartsInFlight`) — from
+    /// `makeSession` to `install`: work in flight for Close (`WindowModel.closeConversation`),
+    /// as for Invariant 5 (`runsOrStarts`).
+    var startsSession: Bool { startWaiters != nil || sessionStartsInFlight > 0 }
+    /// Whether this conversation's agent runs, or a session start for it is in flight
+    /// (`startsSession`): what Invariant 5 refuses a rename or removal for. A start counts
+    /// because it takes the shown socket, answering for the place as it was, before its harness
+    /// is installed.
+    var runsOrStarts: Bool { harness != nil || startsSession }
     public internal(set) var thoughts: [ThoughtRow] = []
     /// Monotonic row ids (`WindowModel.thoughts`), per thread.
     var nextThoughtId = 0
@@ -70,6 +84,11 @@ public final class PlaceAgent {
     /// The agent's own `Bash` calls, for backfilling a terminal pane opened after them.
     let mirror: TerminalMirrorFeed
     var eventPump: Task<Void, Never>?
+    /// The live session's event stream ended under a pump nothing replaced or cancelled: its
+    /// process went away (conversations 3 of 3, Errors and edges). The conversation stays live,
+    /// its failure shown in its thread, and its next turn first resumes it as a fork
+    /// (`WindowModel.send`). Cleared when a pump starts for a new harness.
+    public internal(set) var sessionEnded = false
     /// Bumped before a harness is stopped, so the pump drops what the old stream still buffers.
     var eventPumpGeneration = 0
     /// The conversation this place is in: what its arrangement is filed under.

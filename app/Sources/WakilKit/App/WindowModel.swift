@@ -78,10 +78,12 @@ public final class WindowModel {
     }
     /// The name of an agent whose session is live in `project` (and, when given, in that
     /// `environment` of it) of the window's current organisation, or nil: what renaming or
-    /// removing the place checks first (Invariant 5). Live is a harness, as in `agentPlaces`.
+    /// removing the place checks first (Invariant 5). Live is a harness, as in `agentPlaces`, or a
+    /// session start in flight (`PlaceAgent.runsOrStarts`), which already holds a socket
+    /// answering for the place as it is.
     public func runningAgent(in project: String, environment: String?) -> String? {
         runningAgentName(
-            among: conversations.values.map { (place: $0.place, live: $0.harness != nil, providerId: $0.providerId) },
+            among: conversations.values.map { (place: $0.place, live: $0.runsOrStarts, providerId: $0.providerId) },
             organization: place.organization, project: project, environment: environment)
     }
 
@@ -248,7 +250,7 @@ public final class WindowModel {
     /// The operator's dispatches that act on a conversation: each is pinned, when it is made, to
     /// the screen's (`pinTurnScope`), and the window acts on that one when the request drains —
     /// or on none (`conversation(pinned:landingIn:)`).
-    static let screenPinnedActions: Set<String> = ["session_new", "session_resume"]
+    static let screenPinnedActions: Set<String> = ["session_new", "session_resume", "session_close"]
 
     /// The conversation a gesture pinned to `id` acts on, resolved when it runs: the live one
     /// `id` names; else — `id` being the one a place's Landing reserves, while that place still
@@ -1356,6 +1358,8 @@ public final class WindowModel {
                     await self.newConversation(conversation)
                 case .switchTo(let conversation, let place):
                     await self.switchToConversation(conversation, in: place)
+                case .close(let conversation):
+                    await self.closeConversation(conversation)
                 }
             }
         }
@@ -1397,6 +1401,10 @@ public final class WindowModel {
         // Background agents 3 of 4: an agent's dispatch reads and writes its own place's canvas
         // (`ScopeRouting.home`), wherever the screen is; everything else is homed on the screen
         // it began on.
+        // Conversations 3 of 3: a session of a conversation since closed acts for nothing.
+        registry.setCallerRefusal { [weak self] action, caller in
+            await self?.closedConversationRefusal(action, caller)
+        }
         registry.setScopeLookup { [weak self] caller in
             guard pinnedPlace(of: caller) != nil else { return nil }
             return await self?.agentScope(for: caller)
@@ -1410,9 +1418,15 @@ public final class WindowModel {
     /// canvas by default — a place's pane must not land in another place's. A place with no
     /// project has no conversation's arrangement (`PlaceAgent.layoutScope`), so its agent works
     /// in its organisation's own canvas, with project and environment empty (final review C1).
+    ///
+    /// **A caller that names its conversation gets that one's, or none** (conversations 3 of 3):
+    /// never the place's other conversation's. Only a caller that names none falls back to the
+    /// place's agent. One naming a conversation no longer live is refused before it gets here
+    /// (`closedConversationRefusal`); one naming its Landing's reserved id gets the place's canvas.
     private func agentScope(for caller: DispatchCaller) -> LayoutScope {
         let place = caller.place
-        return (caller.conversation.flatMap(conversation(id:)) ?? agents[place])?.layoutScope
+        let agent = caller.conversation.map { conversations[$0] } ?? agents[place]
+        return agent?.layoutScope
             ?? LayoutScope(
                 organization: place.organization, project: place.project, environment: place.environment,
                 lineageRoot: landingRoot(in: place))
@@ -1789,6 +1803,11 @@ public final class WindowModel {
     /// it (`openShownSocket`).
     func shownSocketSessionIdForTesting(_ place: Place) -> String? {
         shownSockets.values.first { $0.place == place }?.sessionId
+    }
+
+    /// TEST-ONLY: the id `place` reserves for its next conversation, if any.
+    func reservedConversationForTesting(_ place: Place) -> String? {
+        reservedConversations[place]
     }
 
     /// TEST-ONLY: the pane ids `place`'s Landing ignores after `newConversation`, if any.
@@ -2675,19 +2694,28 @@ public final class WindowModel {
         // W12: choosing the environment already active changes nothing, so it dispatches
         // nothing — no plane, no cleared reply, no refetch.
         guard !environmentSwitchIsNoOp(from: environment, to: name) else { return true }
-        // Run as a task the pump can wait on (fix round 1, item 5): `observationPump` sees this
-        // dispatch too, and waits for this to finish before judging whether anything changed.
-        let previous = operatorEnvironmentSwitch
-        let task = Task { @MainActor [weak self] () -> Bool in
-            _ = await previous?.value
-            return await self?.switchEnvironment(to: name) ?? false
+        return await asOperatorEnvironmentSwitch { [weak self] in
+            await self?.switchEnvironment(to: name) ?? false
         }
-        operatorEnvironmentSwitch = task
+    }
+
+    /// Runs `body` — an environment switch the operator made: its dispatch, then the window
+    /// catching up with it — as a task the pump can wait on (fix round 1, item 5):
+    /// `observationPump` sees that dispatch too, and waits for this to finish before judging
+    /// whether anything changed, so the switch is not done twice. After the switches before it.
+    /// `setEnvironment` and the fast path's `ctx_set_environment` (`runFastPath`) both run here.
+    func asOperatorEnvironmentSwitch<T: Sendable>(_ body: @escaping @MainActor () async -> T) async -> T {
+        let previous = operatorEnvironmentSwitch
+        let task = Task { @MainActor () -> T in
+            _ = await previous?.value
+            return await body()
+        }
+        operatorEnvironmentSwitch = Task { @MainActor in _ = await task.value }
         return await task.value
     }
 
     /// The operator's environment switch in progress, if any (fix round 1, item 5).
-    @ObservationIgnored private var operatorEnvironmentSwitch: Task<Bool, Never>?
+    @ObservationIgnored private var operatorEnvironmentSwitch: Task<Void, Never>?
 
     private func switchEnvironment(to name: String) async -> Bool {
         guard await dispatch("ctx_set_environment", .object(["name": .string(name)])) != nil
@@ -3721,12 +3749,56 @@ public final class WindowModel {
     /// leave them where nothing reaches them. The files are named, whole (Rule 8).
     private func unsavedTabsRefusal(removing name: String, project: String, environment: String?) async -> String? {
         let organization = organization
-        let titles = await panes.editorDirtyTabTitles { scope in
+        return await unsavedTabsRefusal(naming: name) { scope in
             scope.organization == organization && scope.project == project
                 && (environment == nil || scope.environment == environment)
         }
+    }
+
+    /// The refusal for losing the unsaved editor tabs of every canvas `include` takes, said as
+    /// `name` holding them: a removal's place (above), or a closed conversation's canvas
+    /// (`closeConversation`). Nil when none is unsaved.
+    private func unsavedTabsRefusal(
+        naming name: String, where include: @escaping @Sendable (LayoutScope) -> Bool
+    ) async -> String? {
+        let titles = await panes.editorDirtyTabTitles(where: include)
         guard !titles.isEmpty else { return nil }
         return "\(name) has unsaved changes in \(titles.joined(separator: ", ")) — save or close them first."
+    }
+
+    /// Closes every conversation of a removed place (plan 3, ruling 5), without asking: each is
+    /// idle — the removal was refused while any of them ran (Invariant 5) — so nothing in flight is
+    /// lost. Each ends as Close Conversation ends one (`endConversation`), its session in its
+    /// place's Continue, except that nothing is shown after it and nothing is written back: the
+    /// place is gone.
+    private func closeConversations(project: String, environment: String?) async {
+        let organization = organization
+        for agent in liveConversations() where agent.place.organization == organization
+            && agent.place.project == project && (environment == nil || agent.place.environment == environment) {
+            await endConversation(agent, placeRemoved: true)
+        }
+    }
+
+    /// Drops what a removed place's Landing held (final review M1), as `carryAgents` moves it on a
+    /// rename: the id it reserved for its next conversation (`reservedConversations`), its
+    /// baseline (`landingBaselines`, and `landingsLoading`'s entry), and every socket opened for
+    /// it that no session took (`shownSockets`), stopped — otherwise it listens until quit,
+    /// answering for a place that no longer exists, and a place added again under the same name
+    /// would find the old baseline.
+    private func dropLandings(project: String, environment: String?) async {
+        func isRemoved(_ p: Place) -> Bool {
+            p.organization == organization && p.project == project
+                && (environment == nil || p.environment == environment)
+        }
+        for removed in Set(reservedConversations.keys).union(landingBaselines.keys).filter(isRemoved) {
+            reservedConversations[removed] = nil
+            landingBaselines[removed] = nil
+            landingsLoading.remove(removed)
+        }
+        for (id, shown) in shownSockets where isRemoved(shown.place) {
+            shownSockets.removeValue(forKey: id)
+            await shown.opening.value.socket?.stop()
+        }
     }
 
     /// Kills the shells of every canvas of a removed place: nothing can reach them any more.
@@ -3803,6 +3875,8 @@ public final class WindowModel {
         }
         let reply = await projectLifecycle("ctx_remove_project", ["name": .string(name)])
         if let error = reply.error { return error }
+        await closeConversations(project: name, environment: nil)
+        await dropLandings(project: name, environment: nil)
         await closeShells(project: name, environment: nil)
         releaseLayouts(project: name, environment: nil)
         await followDisk()
@@ -3863,6 +3937,8 @@ public final class WindowModel {
             "ctx_remove_environment",
             ["project": .string(project), "projectPath": .string(projectPath), "name": .string(name)])
         if let error = reply.error { return (nil, error) }
+        await closeConversations(project: project, environment: name)
+        await dropLandings(project: project, environment: name)
         await closeShells(project: project, environment: name)
         releaseLayouts(project: project, environment: name)
         await followDisk()
@@ -6425,11 +6501,22 @@ public final class WindowModel {
     /// else the open pane the params `named`. A param that names no open pane — a closed pane,
     /// a session id — moves nothing. **Nor does a run that outlived its palette**: the operator
     /// closed it and may be anywhere by now, so the keyboard stays where they are (rule 6).
+    ///
+    /// **A pane already focused still asks for the keyboard**, as `paneClicked` does: `pane_open`
+    /// focuses the pane it opens, but `focusedId` is not the keyboard. Without a request the
+    /// palette's close reads the run as moving nothing and hands the keyboard back to what held
+    /// it at open — the composer, on a Landing (ruling 7) — so the line typed next went to the
+    /// agent instead of the new terminal (Conversations 3, the `palette-command-step` e2e).
     private func focusActedOn(since before: Set<String>, named: String?, mark: PaletteRunMark) async -> String? {
         guard paletteCloses == mark.closes else { return nil }
         let opened = layoutSnapshot.panes.map(\.id).filter { !before.contains($0) }
         let target = opened.count == 1 ? opened.first : named.flatMap { paneIds.contains($0) ? $0 : nil }
-        guard let target, layoutSnapshot.focusedId != target else { return nil }
+        guard let target else { return nil }
+        guard layoutSnapshot.focusedId != target else {
+            await layout.noteFocusRequest()
+            await readLayoutSnapshot()
+            return nil
+        }
         return await focusPane(id: target) ? nil : paletteFailure(since: mark)
     }
 
@@ -7161,6 +7248,9 @@ public final class WindowModel {
         let sessionId: String
         let place: Place
         let opening: Task<OpenedSocket, Never>
+        /// This entry's own identity: a failed open forgets its own entry only, never the one a
+        /// rename put under the same conversation and session id meanwhile (`carryAgents`).
+        var token = UUID()
     }
 
     /// One socket's start: the socket, or why it would not start.
@@ -7223,16 +7313,18 @@ public final class WindowModel {
             sessionId = conversation
         }
         let factory = agentSocketFactory
-        // One that would not start is forgotten, so the place's next showing tries again.
+        // One that would not start is forgotten, so the place's next showing tries again — this
+        // entry only: a rename that replaced it meanwhile keeps its reopened one (plan 1's race).
+        let token = UUID()
         let opening = Task { [weak self] () -> OpenedSocket in
             let opened = await Self.openSocket(
                 factory, in: place, sessionId: sessionId, conversation: conversation)
-            if opened.socket == nil, let self, self.shownSockets[conversation]?.sessionId == sessionId {
+            if opened.socket == nil, let self, self.shownSockets[conversation]?.token == token {
                 self.shownSockets[conversation] = nil
             }
             return opened
         }
-        shownSockets[conversation] = ShownSocket(sessionId: sessionId, place: place, opening: opening)
+        shownSockets[conversation] = ShownSocket(sessionId: sessionId, place: place, opening: opening, token: token)
     }
 
     /// A new session's socket, then its harness, told that socket's path (background agents 3
@@ -7276,8 +7368,22 @@ public final class WindowModel {
         return StartedSession(harness: harness, socket: socket, socketFailure: opened?.failure)
     }
 
-    /// Installs `started` as `agent`'s live session: its harness and its socket.
-    private func install(_ started: StartedSession, in agent: PlaceAgent, resumed: Bool = false) {
+    /// Installs `started` as `agent`'s live session: its harness and its socket. False, with
+    /// `started` stopped, when `agent` is no longer live (final review I1): a Close it, or a
+    /// removal (`closeConversations`), landed while the session started, so nothing would ever
+    /// reach or stop a session put on the detached conversation — not Close, and not `shutdown`,
+    /// which stops only the live ones. Every caller returns without its session on false.
+    ///
+    /// **Closed from the moment its close begins** (re-review N1), not only once it has left
+    /// `conversations`: `endConversation` marks it `closing` first, then awaits its stop and
+    /// its arrangement's write before it drops the entry, and a start finishing in between
+    /// would otherwise be installed after `stopSession` had found nothing to stop.
+    private func install(_ started: StartedSession, in agent: PlaceAgent, resumed: Bool = false) async -> Bool {
+        guard conversations[agent.id] === agent, !closing.contains(agent.id) else {
+            await started.harness.stop()
+            await started.socket?.stop()
+            return false
+        }
         agent.harness = started.harness
         // A new session's first turn records what it launched with. A resumed one keeps the prompt
         // its parent was first launched with (the 3a-iii-b probe), which may predate the current
@@ -7285,6 +7391,7 @@ public final class WindowModel {
         agent.launchedInstructions = resumed ? resumedInstructionsUnknown : nil
         agent.socket = started.socket
         agent.socketFailure = started.socketFailure
+        return true
     }
 
     /// Stops an agent's harness, then the socket its shim reached Wakil on: the `claude` child,
@@ -7382,6 +7489,15 @@ public final class WindowModel {
         while agent.startWaiters != nil {
             await withCheckedContinuation { agent.startWaiters?.append($0) }
         }
+        // Conversations 3 of 3: a session whose process went away is resumed first, as a fork of
+        // it, and the turn goes to the fork. A turn typed meanwhile waits for it (Rule 5), as for
+        // a first start. A resume refused says why in `status`, and nothing is sent.
+        if agent.sessionEnded, let ended = agent.sessionId {
+            agent.startWaiters = []
+            await resume(sessionId: ended, conversation: agent.id)
+            agent.releaseStartWaiters()
+            guard !agent.sessionEnded else { return false }
+        }
         let startsSession = agent.sessionId == nil
         if startsSession { agent.startWaiters = [] }
         defer { if startsSession { agent.releaseStartWaiters() } }
@@ -7420,7 +7536,11 @@ public final class WindowModel {
             if let started = await startHarness(
                 in: agent.place, provider: startProvider, sessionId: id, conversation: agent.id
             ) {
-                install(started, in: agent)
+                // Closed while it started: the session is stopped, and the turn goes nowhere.
+                guard await install(started, in: agent) else {
+                    status = ""
+                    return false
+                }
                 agent.providerId = startProvider
             }
             retainAgentPlace()
@@ -7521,6 +7641,7 @@ public final class WindowModel {
         // trivially agreeing with itself. See `resume`'s doc comment.
         let generation = agent.eventPumpGeneration
         let pumpProvider = agent.providerId
+        agent.sessionEnded = false
         // The `Task` inherits this method's `@MainActor` isolation, so the
         // loop appends on the main actor with no hop — it is the `for
         // await` that suspends, not the append, so a long-running session
@@ -7547,6 +7668,13 @@ public final class WindowModel {
             // agents 4 of 4) — and, once seen, not that it is still working.
             guard !Task.isCancelled, let self, agent.eventPumpGeneration == generation else { return }
             agent.turnInFlight = false
+            // Conversations 3 of 3: the conversation stays live, its failure said whole in its
+            // thread (Rule 8), and its next turn resumes it (`send`).
+            agent.sessionEnded = true
+            agent.appendRow(
+                label: "agent",
+                detail: "The agent's process ended, so this conversation stopped. Your next message resumes it.",
+                isError: true)
             self.markUnseen(failed: true, for: agent)
         }
     }
@@ -7648,7 +7776,8 @@ public final class WindowModel {
         // does not cover this case — that argument rests on the fork
         // writing to a FRESH id nothing else touches, not on the PARENT
         // being read while a live process still owns it.
-        guard parent != agent.sessionId else {
+        // A session whose process went away is no longer written to: forking it is its revival.
+        guard parent != agent.sessionId || agent.sessionEnded else {
             status = "resume \(parent): that is the session already running in this window"
             return
         }
@@ -7691,6 +7820,9 @@ public final class WindowModel {
         }
         // Minted before the harness: it names the fork's own socket, started first.
         let child = UUID().uuidString
+        // From here to `install`, a session start is in flight (`runsOrStarts`).
+        agent.sessionStartsInFlight += 1
+        defer { agent.sessionStartsInFlight -= 1 }
         guard let started = await makeSession(
             in: agent.place, ProviderSelection(id: providerId, credentials: credentials), sessionId: child,
             conversation: agent.id)
@@ -7740,7 +7872,8 @@ public final class WindowModel {
         agent.thoughts = rebuiltThread(thread, parent: parent, for: agent)
         agent.turnInFlight = false
 
-        install(started, in: agent, resumed: true)
+        // Closed while the fork started: the fork is stopped, and nothing else is done.
+        guard await install(started, in: agent, resumed: true) else { return }
         agent.providerId = providerId
         retainAgentPlace()
         agent.sessionId = child
@@ -7971,6 +8104,9 @@ public final class WindowModel {
         let agent = startConversation.flatMap(conversation(id:)) ?? agent(for: startPlace)
         // Minted before the harness: it names the new session's own socket, started first.
         let fresh = UUID().uuidString
+        // From here to `install`, a session start is in flight (`runsOrStarts`).
+        agent.sessionStartsInFlight += 1
+        defer { agent.sessionStartsInFlight -= 1 }
         guard let started = await makeSession(
             in: agent.place, ProviderSelection(id: id, credentials: credentials), sessionId: fresh,
             conversation: agent.id)
@@ -8023,7 +8159,8 @@ public final class WindowModel {
         appendSeam("\(previous.isEmpty ? Self.unsetProviderLabel : previous) → \(id)", in: agent)
         agent.turnInFlight = false
 
-        install(started, in: agent)
+        // Closed while the new session started: it is stopped, and nothing else is done.
+        guard await install(started, in: agent) else { return }
         agent.providerId = id
         retainAgentPlace()
         agent.sessionId = fresh
@@ -8267,7 +8404,12 @@ public final class WindowModel {
     public func newConversation(_ conversation: String? = nil) async {
         let target = conversation.map { self.conversation(id: $0) } ?? currentAgent
         guard let target, screenConversations[target.place] == target.id else { return }
-        let place = target.place
+        await showLanding(in: target.place)
+    }
+
+    /// The Landing path (`newConversation`, and a close that leaves its place none live): `place`
+    /// shows its Landing, over the canvas of the id it reserves for its next conversation.
+    private func showLanding(in place: Place) async {
         screenConversations[place] = nil
         let reserved = reservedConversations[place] ?? UUID().uuidString
         reservedConversations[place] = reserved
@@ -8337,6 +8479,147 @@ public final class WindowModel {
         markSeen(target)
     }
 
+    // MARK: - Conversations 3 of 3: close
+
+    /// The Close question on show, if any: asked when the conversation a close names has its
+    /// turn running, its session starting or a write waiting (Rule 1: closing destroys work in
+    /// flight). Answered by `answerCloseQuestion`.
+    public private(set) var closeQuestion: CloseConversationQuestion?
+    /// The conversations `endConversation` is ending now: a second close of one is ignored
+    /// (Rule 5), as is a second close while one is asked about.
+    @ObservationIgnored private var closing: Set<String> = []
+
+    /// Ends `conversation` — nil, the one on screen — as Close Conversation does: its agent stops,
+    /// its panes close as on quit, and it moves to Continue; its place then shows its next live
+    /// conversation, or its Landing. Asks first (`closeQuestion`) only when its turn is running,
+    /// its session is starting (`PlaceAgent.startsSession`, the start Invariant 5 counts as
+    /// running) or its agent has a write waiting; otherwise nothing is asked. Does nothing on a Landing
+    /// (an id no conversation has), for an id no longer live, or for a conversation already
+    /// asked about or closing (Rule 5).
+    public func closeConversation(_ conversation: String? = nil) async {
+        let target = conversation.map { self.conversation(id: $0) } ?? currentAgent
+        guard let target, closeQuestion?.conversation != target.id, !closing.contains(target.id) else { return }
+        // Rule 1: an unsaved tab is work a close would lose, so it refuses — before any question,
+        // and stopping nothing — as a removal does.
+        if let refusal = await unsavedTabsRefusal(closing: target) {
+            status = refusal
+            return
+        }
+        // A second close of it that came in across that await is ignored (Rule 5), as it is above.
+        guard closeQuestion?.conversation != target.id, !closing.contains(target.id),
+              conversations[target.id] === target else { return }
+        // A start in flight is the operator's message on its way to an agent (final review I1):
+        // closing it silently would lose that message, so it asks, as for a turn running.
+        guard target.turnInFlight || target.startsSession || waitingConversations.contains(target.id) else {
+            await endConversation(target)
+            return
+        }
+        guard closeQuestion == nil else {
+            status = "close: another conversation's Close question is open — answer it first"
+            return
+        }
+        closeQuestion = CloseConversationQuestion(conversation: target.id)
+    }
+
+    /// The operator's answer to `closeQuestion`: **Close it** (`close: true`) ends the
+    /// conversation whatever its turn did since — a turn that ended meanwhile asks nothing more;
+    /// **Keep it** leaves it exactly as it was, and gives the keyboard back to the composer
+    /// (`onCloseQuestionKept`; Rule 6, final review M3): the question took it from there.
+    public func answerCloseQuestion(close: Bool) async {
+        guard let question = closeQuestion else { return }
+        closeQuestion = nil
+        guard close else {
+            onCloseQuestionKept?()
+            return
+        }
+        guard let target = conversation(id: question.conversation) else { return }
+        // A tab left unsaved while it asked is refused as it would have been before.
+        if let refusal = await unsavedTabsRefusal(closing: target) {
+            status = refusal
+            return
+        }
+        await endConversation(target)
+    }
+
+    /// `unsavedTabsRefusal` for `agent`'s canvas, naming it by its title. Nil with no canvas.
+    private func unsavedTabsRefusal(closing agent: PlaceAgent) async -> String? {
+        guard let canvas = agent.layoutScope else { return nil }
+        return await unsavedTabsRefusal(naming: agent.title) { $0 == canvas }
+    }
+
+    /// Ends `agent`'s conversation (plan 3, ruling 4): `stopSession` stops its harness and socket
+    /// and cancels its proposals; it leaves `conversations`, and its place shows its next live
+    /// conversation (`liveConversationRows(in:)`, newest first) or its Landing (`showLanding`).
+    /// Its panes close as on quit: its arrangement is written to its file — by `activateLayout`'s
+    /// flush of the canvas it leaves, on screen — its shells are killed and its scope is let go
+    /// of in memory (`releaseCanvas`). Nothing is deleted on disk, so Continue lists it and a
+    /// resume reads its canvas back.
+    ///
+    /// `placeRemoved`: the place itself was removed (`closeConversations`), so its arrangement is
+    /// not written back under a name that is gone, and the place shows nothing after it — neither
+    /// its next conversation, which closes too, nor its Landing.
+    private func endConversation(_ agent: PlaceAgent, placeRemoved: Bool = false) async {
+        guard conversations[agent.id] === agent, closing.insert(agent.id).inserted else { return }
+        defer { closing.remove(agent.id) }
+        if closeQuestion?.conversation == agent.id { closeQuestion = nil }
+        // The stream the stop ends is the close, not a failure: the pump drops it.
+        agent.eventPumpGeneration += 1
+        agent.eventPump?.cancel()
+        await stopSession(of: agent)
+        agent.turnInFlight = false
+        let place = agent.place
+        let scope = agent.layoutScope
+        let shown = screenConversations[place] == agent.id
+        // Off screen, its arrangement as its agent last left it reaches its file now.
+        if !placeRemoved, !(shown && place == self.place), let scope, scope != layoutScope,
+           loadedLayoutScopes.contains(scope) {
+            let snapshot = await ScopeRouting.$home.withValue(scope) { await layout.snapshot() }
+            await persistLayout(snapshot, for: scope)
+        }
+        conversations[agent.id] = nil
+        conversationOrder.removeAll { $0 == agent.id }
+        if shown, placeRemoved {
+            screenConversations[place] = nil
+        } else if shown {
+            screenConversations[place] = nil
+            if let next = liveConversationRows(in: place).first {
+                if place == self.place {
+                    await switchToConversation(next.id)
+                } else {
+                    screenConversations[place] = next.id
+                }
+            } else {
+                await showLanding(in: place)
+            }
+        }
+        if let scope { await releaseCanvas(scope) }
+        retainAgentPlace()
+        onConversationClosed?(agent.id)
+    }
+
+    /// The refusal for `caller`, an agent session whose conversation is no longer live — a late
+    /// call on a closed conversation's still-open connection — so it writes into no canvas: not
+    /// the place's next conversation's, not its Landing's, and not the closed one's, let go of
+    /// (Invariant 4). Whole (Rule 8). Nil for anyone else: the operator, a caller that names no
+    /// conversation, and a Landing's reserved id, which its first message's conversation takes.
+    private func closedConversationRefusal(_ action: String, _ caller: DispatchCaller) -> String? {
+        guard pinnedPlace(of: caller) != nil, let id = caller.conversation, conversations[id] == nil,
+              !reservedConversations.values.contains(id) else { return nil }
+        return "\(action): the conversation this call came from was closed — nothing was done"
+    }
+
+    /// Kills `scope`'s shells and lets go of everything this window and its stores hold for it in
+    /// memory, as `releaseLayouts` does for a removed place. Its file stays.
+    private func releaseCanvas(_ scope: LayoutScope) async {
+        await terminals.close(scope: scope)
+        loadedLayoutScopes.remove(scope)
+        scopesAwaitingRestore.remove(scope)
+        backgroundLayouts[scope] = nil
+        layoutNotesAwaitingReturn[scope] = nil
+        await layout.forget(scope)
+        await panes.forget(scope)
+    }
+
     /// What the screen shows, as the composer keys its drafts (`ComposerModel.screenChanged`):
     /// the conversation on screen's id, else `"landing:"` and the id the place reserves for its
     /// next conversation — the one its Landing's first message will start — else, before the
@@ -8369,6 +8652,17 @@ public final class WindowModel {
         // Whoever registers starts on the screen as it is now, so the next tell is from it.
         didSet { toldScreenKey = screenKey }
     }
+
+    /// Told the id of each conversation closed (`endConversation`), after the screen has moved
+    /// off it: `ComposerModel` drops the draft it kept for it. Registered in its `init`.
+    @ObservationIgnored
+    public var onConversationClosed: (@MainActor (_ conversation: String) -> Void)?
+
+    /// Told when the Close question is answered **Keep it** (`answerCloseQuestion`), by click,
+    /// Return or Esc: `ComposerModel` takes the keyboard back, as after New Conversation.
+    /// Registered in its `init`.
+    @ObservationIgnored
+    public var onCloseQuestionKept: (@MainActor () -> Void)?
 
     /// The `screenKey` `onScreenChange` was last told about — set when it is registered, so the
     /// listener and the window agree on where they start; nil only with no one listening.
@@ -8416,6 +8710,13 @@ public final class WindowModel {
     /// row runs it. On a Landing it does nothing visible (ruling 5).
     public func dispatchSessionNew() async {
         await dispatchLayout("session_new", .object([:]))
+    }
+
+    /// File ▸ Close Conversation (⌘⇧W): `session_close` through the registry, origin `ui`, as ⌘K's
+    /// row runs it — pinned to the conversation on screen at the press (`screenPinnedActions`). On
+    /// a Landing it does nothing (plan 3, ruling 6).
+    public func dispatchSessionClose() async {
+        await dispatchLayout("session_close", .object([:]))
     }
 
     /// Goes to `target` the way the operator would by hand — the organisation, then the
@@ -8491,11 +8792,8 @@ public final class WindowModel {
     /// opening a pane adds no thought. So this is set once, by whichever of
     /// the three happens first, and cleared only by a new session.
     ///
-    /// **Owed: nothing clears it in-window.** `session_resume` exists and
-    /// nothing mints a fresh session without relaunching, so there is no way
-    /// back to the Landing short of quitting. A `session_new` action is that
-    /// return path; it is recorded here and on `LandingStates.dc.html` rather
-    /// than invented.
+    /// Cleared in-window by `session_new` (`newConversation`): the place's
+    /// Landing returns and the conversation keeps running in the background.
     ///
     /// Per place (`PlaceAgent.sessionStarted`): a place where no work has begun draws its
     /// Landing, whatever has begun elsewhere.
@@ -9630,6 +9928,18 @@ public struct UnsavedPrompt: Sendable, Equatable {
 }
 
 public enum UnsavedChoice: Sendable { case save, dontSave, cancel }
+
+/// Close Conversation's one question (conversations 3 of 3), asked when the conversation has its
+/// turn running or a write waiting — one sentence for both (plan 3, ruling 3). **Close it** ends
+/// it, cancelling the write; **Keep it** leaves it as it was.
+public struct CloseConversationQuestion: Sendable, Equatable {
+    /// The conversation it asks about, by id: the one the close named when it was asked.
+    public let conversation: String
+    public static let text = "Close this conversation? The agent is still working; what it is doing now stops."
+    public static let closeLabel = "Close it"
+    public static let keepLabel = "Keep it"
+    public init(conversation: String) { self.conversation = conversation }
+}
 
 /// The operator's reveal asking a pane's tree to select and scroll to a file's row (`WindowModel.editorTreeRevealRequest`).
 public struct EditorTreeRevealRequest: Sendable, Equatable {

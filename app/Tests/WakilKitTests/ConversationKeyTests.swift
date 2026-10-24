@@ -315,6 +315,42 @@ struct ConversationKeyTests {
         await model.shutdown()
     }
 
+    /// Plan 1's parked race: the place's first shown-socket open fails only after a rename has
+    /// replaced it with one for the new place. Its cleanup removes its own entry, never the
+    /// rename's, so the reopened socket is still the one the place's first session takes.
+    @Test func aFailedOldShownSocketFinishingAfterARenameLeavesTheReopenedOne() async throws {
+        let sessions = Sessions()
+        let gate = HoldGate()
+        let base = sessions.socketFactory
+        // Held from the first open: the place's shown socket, opened as the window reads its place.
+        gate.arm()
+        let window = try await renameWindow(sessions, socketFactory: { path, caller in
+            if gate.isArmed {
+                await gate.wait()
+                throw CocoaError(.fileWriteUnknown)
+            }
+            return try await base(path, caller)
+        })
+        let model = window.model
+        let oldPlace = model.place
+        await model.activateLayoutForTesting()
+        let reserved = try #require(model.shownSocketSessionIdForTesting(oldPlace))
+
+        #expect(await model.renameEnvironment(project: "p", projectPath: "/p", "dev", to: "local") == nil)
+        let renamed = Place(organization: oldPlace.organization, project: "p", environment: "local")
+        #expect(model.shownSocketSessionIdForTesting(renamed) == reserved)
+        gate.release()
+        #expect(await waitUntil { sessions.issuedSockets.count == 1 }, "the reopen started its socket")
+        await model.settleShownSocketsForTesting()
+
+        #expect(model.shownSocketSessionIdForTesting(renamed) == reserved, "the reopened entry is kept")
+        let live = try #require(sessions.issuedSockets.last)
+        let liveCaller = await live.caller()
+        #expect(!live.stopped && liveCaller.place == renamed)
+        await model.shutdown()
+        #expect(live.stopped, "the window still holds it, so quit stops it: none leaks")
+    }
+
     @Test func shutdownStopsEveryConversationAndEveryReservedSocket() async throws {
         let sessions = Sessions()
         let model = try await resumableWindow(sessions)
@@ -361,11 +397,11 @@ private actor RenameContext: ToolCaller {
 }
 
 @MainActor
-private func renameWindow(_ sessions: Sessions) async throws -> Wired {
+private func renameWindow(_ sessions: Sessions, socketFactory: AgentSocketFactory? = nil) async throws -> Wired {
     let ctx = RenameContext()
     let model = WindowModel.forTesting(
         scratchRoot: testScratchRoot, context: ContextStore(client: ctx),
-        agentSocketFactory: sessions.socketFactory)
+        agentSocketFactory: socketFactory ?? sessions.socketFactory)
     await registerStandardActions(
         into: model.registryForTesting, context: ctx, panes: model.panesForTesting,
         db: nil, resumes: ResumeBroker())

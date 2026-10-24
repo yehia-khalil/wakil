@@ -194,6 +194,29 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         #expect(try await w.journal().contains { $0.action == "pane_open" && $0.origin == .ui })
     }
 
+    /// The `palette-command-step` e2e on the Conversations branch: a launch onto a Landing gives
+    /// the composer the keyboard (ruling 7), so ⌘K opens over the composer's field. The pane the
+    /// run opens is focused by its own `pane_open`, and the run raised no focus request, so the
+    /// palette's close read "nothing moved" and handed the keyboard back to the composer. The
+    /// pane acted on asks for the keyboard even when opening it already focused it (rule 6).
+    @Test func aPaneThePaletteOpensAsksForTheKeyboardOnALanding() async throws {
+        let w = await paletteWindow()
+        let composer = ComposerModel(window: w.model, speech: SpeechRegistry(engines: []))
+        await w.model.refreshContext()
+        #expect(composer.focusToken == 1, "the launch onto the Landing gave the composer the keyboard")
+        let entries = await w.model.paletteRootEntries(mode: .open) { _ in }
+        let row = try #require(entries.first { $0.id == "newpane:editor" })
+        let requests = w.model.keyboardFocusRequests
+
+        #expect(await w.model.performPalette(.run(row.action)) == nil)
+
+        let editor = try #require(w.model.layoutSnapshot.panes.first { $0.kind == "editor" })
+        #expect(w.model.layoutSnapshot.focusedId == editor.id)
+        #expect(w.model.keyboardFocusRequests != requests, "the palette's close must read the run as moving the keyboard")
+        #expect(composer.focusToken == 1, "nothing hands the composer the keyboard")
+        #expect(try await w.journal().filter { $0.action == "pane_focus" }.isEmpty, "asked without a dispatch")
+    }
+
     /// An editor in focus puts the project's files first in Resources; with another pane focused the
     /// changed files keep the lead.
     @Test func fileRowsComeFirstInResourcesWhenAnEditorIsFocused() async throws {
@@ -983,7 +1006,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "pane_close", "pane_focus", "pane_maximize", "pane_move", "pane_open", "pane_resize", "pane_restore",
     "pane_scroll_clear", "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
     "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
-    "session_get", "session_list", "session_new", "session_read", "session_record_parent", "session_resume",
+    "session_close", "session_get", "session_list", "session_new", "session_read", "session_record_parent", "session_resume",
     "session_set_provider", "session_switch", "settings_open", "term_open", "term_propose", "term_run", "term_scroll",
 ]
 

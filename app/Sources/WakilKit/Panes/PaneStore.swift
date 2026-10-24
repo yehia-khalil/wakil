@@ -207,6 +207,15 @@ public actor PaneStore {
     /// of a project or an environment carries to the new name (2e-ii).
     public var scopes: Set<LayoutScope> { Set(byScope.keys) }
 
+    /// Lets go of `scope`'s pane contents in memory (a closed conversation's, conversations 3 of
+    /// 3), stopping any database read still in flight there, as `drop(paneId:)` does for one pane.
+    /// Never the one on screen.
+    public func forget(_ scope: LayoutScope) {
+        guard scope != screen, let held = byScope[scope] else { return }
+        inScope(scope) { for paneId in held.keys { _ = cancelDBRead(paneId: paneId) } }
+        byScope[scope] = nil
+    }
+
     /// Makes `scope` the active set of panes, keeping the outgoing one.
     ///
     /// Called beside `LayoutStore.switchScope`, from

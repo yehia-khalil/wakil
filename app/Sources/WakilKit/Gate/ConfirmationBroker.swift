@@ -101,7 +101,11 @@ public actor ConfirmationBroker {
     }
 
     /// Cancels the agent proposal parked for conversation `id`, in whichever place holds it.
-    public func cancelAgentProposal(inConversation id: String) {
+    public func cancelAgentProposal(inConversation id: String) async {
+        if holdNextCancel {
+            holdNextCancel = false
+            await withCheckedContinuation { heldCancel = $0 }
+        }
         for (slot, parked) in pending where slot.conversation == id && parked.origin == .agent {
             resolve(id: parked.id, with: .cancelled)
         }
@@ -167,6 +171,19 @@ public actor ConfirmationBroker {
     func releaseHeldCurrentForTesting() {
         heldCurrent?.resume()
         heldCurrent = nil
+    }
+
+    /// TEST-ONLY: set, the next `cancelAgentProposal(inConversation:)` waits until
+    /// `releaseHeldCancelForTesting`, so a test can land a session start while a close is
+    /// suspended there (`WindowModel.stopSession`).
+    private var holdNextCancel = false
+    private var heldCancel: CheckedContinuation<Void, Never>?
+
+    func holdNextCancelForTesting() { holdNextCancel = true }
+    var holdingCancelForTesting: Bool { heldCancel != nil }
+    func releaseHeldCancelForTesting() {
+        heldCancel?.resume()
+        heldCancel = nil
     }
 
     /// Everything parked, by place (the place projection; see `current(for:)`).

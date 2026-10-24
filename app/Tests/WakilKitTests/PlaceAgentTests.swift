@@ -46,6 +46,8 @@ final class ScriptedHarness: AgentHarness, @unchecked Sendable {
         continuation.finish()
     }
     func emit(_ event: HarnessEvent) { continuation.yield(event) }
+    /// Ends the event stream unasked, as a `claude` process that went away does: no `stop`.
+    func finish() { continuation.finish() }
 }
 
 /// Every harness the window asked for, in order, with the place it asked for.

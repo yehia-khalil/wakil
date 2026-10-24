@@ -338,6 +338,16 @@ private func bridgeReply(toolName: String, input: JSONValue) async throws -> [St
     }
 }
 
+/// Conversations 3 of 3: `session_close` is the operator's — an agent must not end the operator's
+/// conversation — with its own sentence, verbatim (plan 3, ruling 8).
+@Test func sessionCloseIsDeniedToTheAgentWithItsOwnSentence() {
+    let tool = "mcp__\(wakilShimServerName)__session_close"
+    #expect(operatorOnlyActions.contains("session_close"))
+    #expect(permissionDecision(toolName: tool, knownActions: ["session_close"]) == .deny(
+        "\(tool): only the operator closes a conversation — an agent must not end the operator's "
+            + "conversation. Ask the operator to close it in the Wakil window (⌘⇧W)."))
+}
+
 @Test func theProviderFamilysWordingIsUnchanged() {
     for name in ["session_set_provider", "ctx_set_provider"] {
         let decision = permissionDecision(

@@ -1,0 +1,26 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"absent","text":"first reply in the thread"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn two"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"second reply in the thread"}}
+{"expect":{"tree":"absent","text":"first reply in the thread"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"thread turn one"}}}
+{"expect":{"tree":"contains","text":"Value: thread turn one"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"expect":{"tree":"absent","text":"second reply in the thread"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"Value: idle"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"expect":{"tree":"absent","text":"thread turn two"}}
