@@ -59,10 +59,10 @@ this Mac. Do them in order: each starts where the one before left off.
 | 4 | Wakil, then Terminal | Right-click `Tune the search` → **Copy Commit ID**, then `pbpaste; echo; git -C "$TMPDIR/walk-3a-v-a/work" rev-parse HEAD~55` | The two lines are the same 40-character id | |
 | 5 | Wakil | ⌘P, open `log.txt` | The Timeline lists 50 commits, `Log 55` first, then **Load more**; pressing it adds five more and **Load more** goes | |
 | 6 | Wakil | Back on the `search.txt` tab, put the cursor on line 1, then line 2, then line 3 | At the end of the cursor's line, dim: `Ada Lovelace, <age> • Seed the search page`, then `Grace Hopper, … • Rename to search`, then `Seed, … • Tune the search`. Only the cursor's line has one | |
-| 7 | Wakil | Put the cursor at the start of line 1, press Return, leave it unsaved, cursor on the new line 1, then line 2 | Line 1 reads `Not committed yet`; line 2 reads Ada Lovelace's. The Timeline's top row is now **Uncommitted changes**, which opens the file's Changes diff. Then ⌘Z | |
-| 8 | Wakil | Cursor on line 2, hover its annotation, click **Open Changes**; hover again, click **Copy Commit ID** | The hover shows `Rename to search`, `Grace Hopper · <age> · <id7>`; Open Changes opens the same tab as step 2; the id is on the pasteboard (`pbpaste`) | |
+| 7 | Wakil | Put the cursor at the start of line 1, press Return, leave it unsaved, cursor on the new line 1, then line 2; then ⌘S | Unsaved: line 1 reads `Not committed yet`, line 2 Ada Lovelace's, and the Timeline has no **Uncommitted changes** row (the file on disk is unchanged). Saved: the Timeline's top row is **Uncommitted changes**, which opens the file's Changes diff with the new empty line. Then back on `search.txt`, ⌘Z and ⌘S | |
+| 8 | Wakil | Cursor on line 2, hover its annotation, click **Open Changes**; hover again, click **Copy Commit ID**; then cursor on line 1, **Open Changes** | The hover shows `Rename to search`, `Grace Hopper · <age> · <id7>`; Open Changes opens the same tab as step 2 (`beta` left, `BETA` right); the id is on the pasteboard (`pbpaste`); line 1's opens the same tab as step 3, `old name.txt (<id7>)` | |
 | 9 | Wakil | Settings → Editor → **Inline blame** → Off, back to `search.txt`; then On | Off: no annotation on any line. On: it is back on the cursor's line | |
-| 10 | Wakil | In the composer: `who last changed line 2 of search.txt in work, and in which commit?` | The agent answers Grace Hopper, `Rename to search`, from `editor_blame`, without a permission plane | |
+| 10 | Wakil | In the composer: `who last changed line 2 of search.txt in work, and in which commit?` | The agent answers Grace Hopper, `Rename to search`, without a permission plane | |
 
 ## 2. Known and not fixed
 
@@ -71,8 +71,10 @@ this Mac. Do them in order: each starts where the one before left off.
   tab carry the rest.
 - A rename commit that ends a Timeline page opens without its old name (an empty left side) until the
   next page is loaded.
-- Blame's Open Changes opens the commit under the file's current name; for a commit before a rename,
-  open it from the Timeline.
+- The agent may answer step 10 from `git blame` in its shell rather than `editor_blame`; the answer is
+  the same (2026-10-24 walk).
+- An accessibility "scroll to bottom" (VoiceOver's) on a long lazy list — the Timeline, Search's
+  results — traps in SwiftUI and quits Wakil. Search's on main does too; not 3a-v-a's.
 
 ## 3. Residue: what the walk cannot establish
 

@@ -73,10 +73,10 @@ struct EditorPane: View {
     /// of the pending one.
     let ghostTextEnabled: Bool
     /// 3a-v-a: inline blame on, the blame of (root, relative path, unsaved text or nil), and a
-    /// commit's change opened for (root, relative path, commit id).
+    /// commit's change opened for (root, the commit and the file's names there).
     var inlineBlame: Bool = false
     var blameFor: (String, String, String?) async -> [GitBlameInfo]? = { _, _, _ in nil }
-    var openCommitDiff: (String, String, String) -> Void = { _, _, _ in }
+    var openCommitDiff: (String, GitCommitRef) -> Void = { _, _ in }
     var timeline = EditorTimelineControls()
     let ghostSchema: () async -> GhostScope
     let ghostSuggest: (InfillRequest, Int) async -> String?
@@ -849,9 +849,10 @@ final class EditorHost {
     @ObservationIgnored var rangesPressed: ((String, [EditorRange]) -> Void)?
     @ObservationIgnored var markClicked: ((EditorTabSubject, Int) -> Void)?
     /// 3a-v-a inline blame: the fetch for (root, relative path, unsaved text or nil), and the hover's
-    /// Open Changes for (root, relative path, commit id). Fetched per tab text, never per cursor move (R1).
+    /// Open Changes for (root, the commit and the file's names there). Fetched per tab text, never per
+    /// cursor move (R1).
     @ObservationIgnored var blameFor: ((String, String, String?) async -> [GitBlameInfo]?)?
-    @ObservationIgnored var blameOpen: ((String, String, String) -> Void)?
+    @ObservationIgnored var blameOpen: ((String, GitCommitRef) -> Void)?
     @ObservationIgnored private var blameOn = false
     @ObservationIgnored private var blames = EditorBlameCache()
     @ObservationIgnored private var blameTask: Task<Void, Never>?
@@ -930,7 +931,10 @@ final class EditorHost {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(id, forType: .string)
             } else {
-                self.blameOpen?(root, String(path.dropFirst(root.count + 1)), id)
+                // Under the file's name at that commit, and the one before it across a rename (3a-v-a walk).
+                let current = String(path.dropFirst(root.count + 1))
+                let b = self.blames.commit(key: key, id: id)
+                self.blameOpen?(root, b.map { editorBlameCommitRef($0, currentPath: current) } ?? GitCommitRef(id: id, path: current))
             }
         }
         made.onMark = { [weak self] key, line in

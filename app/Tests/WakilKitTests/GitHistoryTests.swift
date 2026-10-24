@@ -114,6 +114,26 @@ import Testing
         #expect(editorBlameHover(GitBlameInfo(line: 1, id: String(repeating: "0", count: 40), author: "", date: "", subject: "")) == nil)
     }
 
+    // 3a-v-a walk step 8: blame's Open Changes opens the commit under the file's name there, with the
+    // name before it across a rename — the same sides the Timeline's row opens.
+    @Test func blameOpenChangesNamesBothSides() throws {
+        let id = String(repeating: "f", count: 40)
+        let rename = try JSONDecoder().decode(GitBlameInfo.self, from: Data(#"""
+            {"line":2,"id":"\#(id)","author":"Grace Hopper","date":"2026-10-24T00:00:00Z","subject":"Rename",
+             "path":"search.txt","parentPath":"old name.txt"}
+            """#.utf8))
+        var c = EditorBlameCache()
+        let g = c.begin(key: "k", text: "a")
+        c.land(key: "k", gen: g, lines: [blame(1, "Ada"), rename])
+        let found = try #require(c.commit(key: "k", id: id))
+        #expect(editorBlameCommitRef(found, currentPath: "search.txt")
+            == GitCommitRef(id: id, path: "search.txt", parentPath: "old name.txt"))
+        // A reply without names (an older capability layer) opens under today's name.
+        #expect(editorBlameCommitRef(blame(1, "Ada"), currentPath: "now.txt")
+            == GitCommitRef(id: String(repeating: "a", count: 40), path: "now.txt"))
+        #expect(c.commit(key: "k", id: String(repeating: "9", count: 40)) == nil)
+    }
+
     @Test func timelineFollowsFileAndDiffTabs() {
         let id = String(repeating: "c", count: 40)
         let file = EditorTab.file(path: "/p/api/src/a.txt", root: "/p/api", text: "x", mtime: 0, language: "plaintext")
@@ -136,6 +156,14 @@ import Testing
         #expect(editorTimelineRows([commit(1)], uncommitted: false, more: false) == [.commit(commit(1))])
     }
 
+    // 3a-v-a walk: the lazy list keyed rows by offset and an accessibility scroll trapped in SwiftUI;
+    // each row has its own id, and a commit a racing Load more brought twice shows once.
+    @Test func timelineRowsHaveUniqueIDs() {
+        let rows = editorTimelineRows([commit(1), commit(2), commit(1)], uncommitted: true, more: true)
+        #expect(rows == [.uncommitted, .commit(commit(1)), .commit(commit(2)), .more])
+        #expect(Set(rows.map(\.id)).count == rows.count)
+    }
+
     @Test func fiftyMeansThereMayBeMore() {
         #expect(editorTimelineHasMore(pageCount: 50))
         #expect(!editorTimelineHasMore(pageCount: 49))
@@ -153,10 +181,11 @@ import Testing
         let rows = [GitFileRow(path: "a.txt", origPath: nil, group: .staged, status: "M"),
                     GitFileRow(path: "b.txt", origPath: nil, group: .staged, status: "M"),
                     GitFileRow(path: "b.txt", origPath: nil, group: .changed, status: "M")]
-        #expect(editorTimelineUncommittedGroup(rows, path: "a.txt", dirty: false) == .staged)
-        #expect(editorTimelineUncommittedGroup(rows, path: "b.txt", dirty: false) == .changed)
-        #expect(editorTimelineUncommittedGroup(rows, path: "c.txt", dirty: true) == .changed)
-        #expect(editorTimelineUncommittedGroup(rows, path: "c.txt", dirty: false) == nil)
+        #expect(editorTimelineUncommittedGroup(rows, path: "a.txt") == .staged)
+        #expect(editorTimelineUncommittedGroup(rows, path: "b.txt") == .changed)
+        // 3a-v-a walk step 7: an edit only unsaved leaves the file as HEAD has it — no row (VS Code's
+        // Timeline shows none), where it opened a Changes diff reading "No longer changed".
+        #expect(editorTimelineUncommittedGroup(rows, path: "c.txt") == nil)
     }
 
     // Final review I2: the same commit opened with and without its old name is two subjects, so two keys —

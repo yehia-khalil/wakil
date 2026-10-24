@@ -26,9 +26,15 @@ public struct GitBlameInfo: Sendable, Equatable, Codable {
     public var author: String
     public var date: String
     public var subject: String
+    /// The file's name at that commit, and its name in the commit before when a rename lies between
+    /// them: the commit's two sides for Open Changes (3a-v-a walk, step 8).
+    public var path: String?
+    public var parentPath: String?
 
-    public init(line: Int, id: String, author: String, date: String, subject: String) {
+    public init(line: Int, id: String, author: String, date: String, subject: String,
+                path: String? = nil, parentPath: String? = nil) {
         (self.line, self.id, self.author, self.date, self.subject) = (line, id, author, date, subject)
+        (self.path, self.parentPath) = (path, parentPath)
     }
 
     public var uncommitted: Bool { id.allSatisfy { $0 == "0" } }
@@ -53,6 +59,12 @@ public enum EditorDiffSource: Sendable, Hashable {
     case commit(GitCommitRef)
 
     public var stashID: String? { if case .stash(let id) = self { id } else { nil } }
+}
+
+/// The commit blame's Open Changes opens: under the file's name at that commit (today's when the reply
+/// names none), with the name before it across a rename.
+public func editorBlameCommitRef(_ b: GitBlameInfo, currentPath: String) -> GitCommitRef {
+    GitCommitRef(id: b.id, path: b.path ?? currentPath, parentPath: b.parentPath)
 }
 
 /// A commit's two sides for `git_show`: the file before it (under the name it had there) and after it.
@@ -160,6 +172,11 @@ public struct EditorBlameCache: Sendable {
     }
 
     public func line(key: String, _ n: Int) -> GitBlameInfo? { lines[key]?[n] }
+
+    /// A line of `key`'s landed blame from commit `id`: the hover's actions name only the commit.
+    public func commit(key: String, id: String) -> GitBlameInfo? {
+        lines[key]?.values.filter { $0.id == id }.min { $0.line < $1.line }
+    }
 
     /// The root's status moved (a commit, a checkout): every landed blame is fetched again, and shown
     /// until the new one lands.

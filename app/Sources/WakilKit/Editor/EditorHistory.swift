@@ -11,16 +11,28 @@ public func editorTimelineSubject(_ tab: EditorTab?) -> (root: String, path: Str
 }
 
 /// One row of the Timeline (3a-v-a): the file's uncommitted changes, a commit, or the next page.
-public enum EditorTimelineRow: Sendable, Equatable {
+public enum EditorTimelineRow: Sendable, Equatable, Identifiable {
     case uncommitted
     case commit(GitCommitInfo)
     case more
+
+    /// The lazy list keys rows by this (3a-v-a walk: by offset, an accessibility scroll trapped in SwiftUI).
+    public var id: String {
+        switch self {
+        case .uncommitted: "uncommitted"
+        case .commit(let c): c.id
+        case .more: "more"
+        }
+    }
 }
 
 /// The Timeline's rows: `Uncommitted changes` on top when the file differs from HEAD, the commits
-/// newest first, and `Load more` last when the last page came back full.
+/// newest first (each once: a Load more racing a reload can bring one twice), and `Load more` last when
+/// the last page came back full.
 public func editorTimelineRows(_ commits: [GitCommitInfo], uncommitted: Bool, more: Bool) -> [EditorTimelineRow] {
-    (uncommitted ? [.uncommitted] : []) + commits.map(EditorTimelineRow.commit) + (more ? [.more] : [])
+    var seen = Set<String>()
+    let unique = commits.filter { seen.insert($0.id).inserted }
+    return (uncommitted ? [.uncommitted] : []) + unique.map(EditorTimelineRow.commit) + (more ? [.more] : [])
 }
 
 /// A full page may have another after it; a short one is the end.
@@ -33,9 +45,10 @@ public func editorTimelineCommitRef(_ c: GitCommitInfo, older: GitCommitInfo?) -
 }
 
 /// Whether the Timeline shows `Uncommitted changes`, and the Changes diff it opens: the file's unstaged
-/// changes when it has any (or its tab is unsaved), else its staged ones; nil when it matches HEAD.
-public func editorTimelineUncommittedGroup(_ rows: [GitFileRow], path: String, dirty: Bool) -> GitGroup? {
+/// changes when it has any, else its staged ones; nil when it matches HEAD. An edit only unsaved is not
+/// one: the file on disk still matches, and its Changes diff would be empty (3a-v-a walk).
+public func editorTimelineUncommittedGroup(_ rows: [GitFileRow], path: String) -> GitGroup? {
     let groups = Set(rows.filter { $0.path == path }.map(\.group))
-    if groups.contains(.changed) || dirty { return .changed }
+    if groups.contains(.changed) { return .changed }
     return groups.contains(.staged) ? .staged : nil
 }

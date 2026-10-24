@@ -488,8 +488,8 @@ extension WakilWindow {
                     // 3a-v-a: inline blame, the app-tier setting.
                     inlineBlame: model.editorSettings.app.inlineBlame,
                     blameFor: { root, path, text in await model.editorBlame(root: root, path: path, text: text) },
-                    openCommitDiff: { root, path, id in
-                        Task { await model.editorOpenCommitDiff(root: root, path: path, commit: id, parentPath: nil) }
+                    openCommitDiff: { root, ref in
+                        Task { await model.editorOpenCommitDiff(root: root, path: ref.path, commit: ref.id, parentPath: ref.parentPath) }
                     },
                     timeline: EditorTimelineControls(
                         load: { root, path, skip in await model.editorTimeline(root: root, path: path, skip: skip) },

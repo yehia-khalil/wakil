@@ -1563,8 +1563,9 @@ public func registerEditorActions(
 
     await registry.register(Action(
         name: "editor_blame",
-        description: "Read who last changed each line of one file (or only line): commit id, author, date, subject; an "
-            + "all-zero id is a line not yet committed. root (absolute) and path (relative to it), or the editor pane's "
+        description: "Read who last changed each line of one file (or only line): commit id, author, date, subject, and "
+            + "path (the file's name at that commit) and parentPath (its name before, across a rename) for "
+            + "editor_open_commit_diff; an all-zero id is a line not yet committed. root (absolute) and path (relative to it), or the editor pane's "
             + "active tab, whose unsaved text is blamed as it stands; text: blame this text in place of the file.",
         kind: .read, audience: .agentReachable,
         schema: schema(pathSchema.merging(["line": .object(["type": .string("integer")]),

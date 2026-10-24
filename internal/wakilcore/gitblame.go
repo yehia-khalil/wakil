@@ -16,6 +16,10 @@ type GitBlameLine struct {
 	Author  string    `json:"author"`
 	Date    time.Time `json:"date"`
 	Subject string    `json:"subject"`
+	// Path is the file's name at that commit; ParentPath its name in the commit before, set only when
+	// a rename lies between them — the two sides of the commit's diff (3a-v-a walk, step 8).
+	Path       string `json:"path"`
+	ParentPath string `json:"parentPath,omitempty"`
 }
 
 // BlameDeadline bounds one blame: it is decoration, and a huge file must not hold a git process.
@@ -43,7 +47,8 @@ func ReadBlame(ctx context.Context, g *GitRunner, path string, text *string) ([]
 }
 
 // parseBlamePorcelain reads `blame --porcelain`: a header `<id> <orig> <final> [<count>]` per line,
-// the commit's fields only the first time that commit appears, then the line itself after a tab.
+// the commit's fields only the first time that commit appears, `previous` and `filename` every time,
+// then the line itself after a tab.
 func parseBlamePorcelain(out []byte) []GitBlameLine {
 	type info struct {
 		author, subject string
@@ -81,6 +86,15 @@ func parseBlamePorcelain(out []byte) []GitBlameLine {
 		key, val, _ := strings.Cut(l, " ")
 		c := seen[cur.ID]
 		switch key {
+		case "filename":
+			cur.Path = blameName(val)
+			if cur.ParentPath == cur.Path {
+				cur.ParentPath = ""
+			}
+		case "previous": // `previous <id> <name>`; the name may hold spaces
+			if _, name, ok := strings.Cut(val, " "); ok && blameName(name) != cur.Path {
+				cur.ParentPath = blameName(name)
+			}
 		case "author":
 			c.author = val
 		case "author-time":
@@ -92,4 +106,15 @@ func parseBlamePorcelain(out []byte) []GitBlameLine {
 		}
 	}
 	return lines
+}
+
+// blameName reads a file name as the porcelain writes it: as is, or C-quoted ("caf\303\251.txt")
+// when it holds a quote, a backslash, a control or a non-ASCII byte — the escapes Go's own literals use.
+func blameName(s string) string {
+	if strings.HasPrefix(s, `"`) {
+		if u, err := strconv.Unquote(s); err == nil {
+			return u
+		}
+	}
+	return s
 }

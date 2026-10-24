@@ -76,7 +76,8 @@ struct EditorTimelineSection: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(rows.enumerated()), id: \.offset) { i, row in rowView(row, at: i, in: rows) }
+                    // By each row's own id: keyed by offset, VoiceOver's scroll trapped in SwiftUI (3a-v-a walk).
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in rowView(row, at: i, in: rows) }
                 }
             }
             .frame(maxHeight: 240)

@@ -102,7 +102,7 @@ struct EditorColumn: View {
         return EditorTimelineSection(
             subject: subject,
             uncommitted: subject.flatMap { s in
-                editorTimelineUncommittedGroup(root?.files ?? [], path: s.path, dirty: timelineTab?.dirty ?? false)
+                editorTimelineUncommittedGroup(root?.files ?? [], path: s.path)
             },
             refreshKey: root.map { "\($0.branch)|\($0.detached)|\($0.files.count)|\($0.ahead)" } ?? "",
             controls: timeline, dispatch: dispatch)

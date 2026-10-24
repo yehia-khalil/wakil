@@ -99,7 +99,39 @@ func TestBlameReadsANameWithASpaceAndAccent(t *testing.T) {
 	git("add", ".")
 	git("commit", "-qm", "accent")
 	b, err := ReadBlame(context.Background(), w.runner(), "my café.txt", nil)
-	if err != nil || len(b) != 1 || b[0].Subject != "accent" {
+	// git quotes the porcelain's file name ("my caf\303\251.txt"); the line carries it as written.
+	if err != nil || len(b) != 1 || b[0].Subject != "accent" || b[0].Path != "my café.txt" {
 		t.Fatalf("blame = %+v err %v", b, err)
+	}
+}
+
+// 3a-v-a walk: each line names the file as it was at its commit, and the name before it across a
+// rename, so blame's Open Changes opens the commit's diff with both sides (step 8).
+func TestBlameNamesTheFileAtEachLinesCommit(t *testing.T) {
+	work, w, git := branchFixture(t)
+	writeIn(t, work, "old name.txt", "one\ntwo\n")
+	git("add", ".")
+	git("commit", "-qm", "seed")
+	git("mv", "old name.txt", "new.txt")
+	writeIn(t, work, "new.txt", "one\nTWO\n")
+	git("add", ".")
+	git("commit", "-qm", "rename")
+	writeIn(t, work, "new.txt", "one\nTWO\nthree\n")
+	git("commit", "-qam", "append")
+	text := "one\nTWO\nthree\n"
+	for _, in := range []*string{nil, &text} {
+		b, err := ReadBlame(context.Background(), w.runner(), "new.txt", in)
+		if err != nil || len(b) != 3 {
+			t.Fatalf("blame = %+v err %v", b, err)
+		}
+		if b[0].Path != "old name.txt" || b[0].ParentPath != "" {
+			t.Errorf("line 1 (seed) = %+v", b[0])
+		}
+		if b[1].Path != "new.txt" || b[1].ParentPath != "old name.txt" {
+			t.Errorf("line 2 (rename) = %+v", b[1])
+		}
+		if b[2].Path != "new.txt" || b[2].ParentPath != "" {
+			t.Errorf("line 3 (append) = %+v", b[2])
+		}
 	}
 }
