@@ -107,6 +107,8 @@ this Mac. Do them in order: each starts where the one before left off.
 - After a relaunch, or for a clash made in a terminal, there is no Undo Apply: resolve it by hand.
 - Undo Apply is offered only when the stash's files had no changes of your own before the apply;
   otherwise the clash is left to resolve by hand, as VS Code leaves it.
+- If the branch renamed a file the stash edits, git merges the stash's edit into the new name; Undo
+  Apply leaves that file as git left it.
 - The agent may resolve row 10 with git in its shell instead of the editor tools; the files end the
   same.
 - VS Code's three-way Merge Editor, the Source Control Graph, starting a cherry-pick or revert,
