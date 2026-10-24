@@ -657,3 +657,28 @@ private func waitUntil(
     #expect(open.description.contains("⌘P"))
     #expect(open.description.contains("Landing"))
 }
+
+/// #1: `pane_open {kind: terminal}` opened a pane with no shell behind it — "no shell · 0×0"
+/// for good, and keys typed into it went nowhere. It opens through `term_open`'s handler now.
+@Test func paneOpenOfATerminalStartsItsShell() async throws {
+    let registry = ActionRegistry(journalDirectory: try scratchDirectory(), sessionId: "t")
+    let panes = PaneStore()
+    let layout = LayoutStore()
+    let terminals = TerminalStore(scratchRoot: testScratchRoot, panes: panes)
+    let termOpen = terminalActions(terminals: terminals, panes: panes, layout: layout)
+        .first { $0.name == "term_open" }?.handler
+    await registerLayoutActions(
+        into: registry, layout: layout, panes: panes, terminals: terminals, openTerminal: termOpen)
+
+    let result = try await registry.dispatch(
+        name: "pane_open", params: .object(["kind": .string("terminal"), "title": .string("mine")]),
+        origin: .agent, caller: .test("staging"), confirmation: nil)
+
+    guard case .object(let fields) = result, case .string(let paneId)? = fields["id"] else {
+        Issue.record("no pane id returned"); return
+    }
+    #expect(await terminals.isRunning(paneId: paneId))
+    #expect(await layout.snapshot().panes.first { $0.id == paneId }?.title == "mine")
+    #expect(await layout.snapshot().panes.count == 1)
+    await terminals.shutdownAll()
+}

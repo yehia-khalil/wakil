@@ -58,6 +58,9 @@ public enum LayoutActionError: Error, Sendable, Equatable, CustomStringConvertib
 /// - Parameter unsavedEditorTabs: Asked by `pane_close`: the titles of the pane's unsaved editor
 ///   tabs, empty for any other pane. Layout does not know editors; the assembly (`App/`) does, and
 ///   passes the answer in. The default answers none, for geometry-only tests.
+/// - Parameter openTerminal: `term_open`'s handler, which `pane_open` runs for a terminal (#1):
+///   a terminal pane is its shell, and one opened bare drew "no shell" for good. Nil for
+///   geometry-only tests, which open a bare terminal pane as before.
 /// - Parameter terminals: Whose shell dies when the pane does. Optional
 ///   for the same reason `panes` is — a geometry-only test has no shell to
 ///   kill either — but every shipped assembly passes one: a closed pane
@@ -65,10 +68,12 @@ public enum LayoutActionError: Error, Sendable, Equatable, CustomStringConvertib
 public func registerLayoutActions(
     into registry: ActionRegistry, layout: LayoutStore, panes: PaneStore? = nil,
     terminals: TerminalStore? = nil,
-    unsavedEditorTabs: @escaping @Sendable (String) async -> [String] = { _ in [] }
+    unsavedEditorTabs: @escaping @Sendable (String) async -> [String] = { _ in [] },
+    openTerminal: (@Sendable (JSONValue) async throws -> JSONValue)? = nil
 ) async {
     for action in layoutActions(
-        layout: layout, panes: panes, terminals: terminals, unsavedEditorTabs: unsavedEditorTabs)
+        layout: layout, panes: panes, terminals: terminals, unsavedEditorTabs: unsavedEditorTabs,
+        openTerminal: openTerminal)
     {
         await registry.register(action)
     }
@@ -83,7 +88,8 @@ public func registerLayoutActions(
 /// assembly (`WakilWiring.build`) or a test with its own registry needs.
 func layoutActions(
     layout: LayoutStore, panes: PaneStore? = nil, terminals: TerminalStore? = nil,
-    unsavedEditorTabs: @escaping @Sendable (String) async -> [String] = { _ in [] }
+    unsavedEditorTabs: @escaping @Sendable (String) async -> [String] = { _ in [] },
+    openTerminal: (@Sendable (JSONValue) async throws -> JSONValue)? = nil
 ) -> [Action] {
     [
         // 2e (#198). ⌘, reaches the canvas through this and through
@@ -169,6 +175,16 @@ func layoutActions(
                 guard kind != Pane.settingsKind else {
                     throw LayoutActionError.badParam(
                         action: "pane_open", param: "kind", value: kind)
+                }
+                // **A terminal opens with its shell (#1).** `term_open` at its default path — the
+                // project's root, else home — exactly as ⌘P and the Landing open one; a title the
+                // caller gave replaces the one it takes from that path.
+                if kind == "terminal", let openTerminal,
+                   case .object(let opened) = try await openTerminal(.object([:])),
+                   case .string(let id)? = opened["pane"]
+                {
+                    if let title = optionalString(params, "title") { await layout.retitle(id: id, to: title) }
+                    return .object(["id": .string(id)])
                 }
                 let title = optionalString(params, "title") ?? Pane.defaultTitle(kind: kind)
                 let pane = await layout.open(kind: kind, title: title)
