@@ -118,6 +118,7 @@ Running group and ⌘⇧W are operator clicks or the actions `session_new`, `ses
    a turn in flight. Only an ended conversation resumes as a fork.
 3. **Close.** `WindowModel.closeConversation(_:)` asks first only when the target has a turn in
    flight or a write waiting (`closeQuestion`, a `CloseConversationQuestion`); otherwise it closes
-   at once. `answerCloseQuestion(close:)` takes the answer. Closing stops the agent through
+   at once. An unsaved tab refuses first, before any question (`<name> has unsaved changes in
+   <titles> — save or close them first.`). `answerCloseQuestion(close:)` takes the answer. Closing stops the agent through
    `stopSession(of:)`, closes the conversation's panes as on quit, and the conversation moves to
    Continue. The place then shows its next live conversation, or its Landing.

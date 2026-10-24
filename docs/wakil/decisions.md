@@ -1452,7 +1452,7 @@ Each entry: the call, why, and what would change our mind.
     scope is the product, and an explicit project argument on every tool call would forfeit it — no
     agent-facing tool grows a project or environment argument; each agent is pinned to the place
     it started in and never follows the operator's place. The charter's glossary says the same in
-    brief: a **place** has at most one agent, its own thread and its own canvas; the **active
+    brief (as then): a **place** has at most one agent, its own thread and its own canvas; the **active
     context** is the place on screen, and every tool resolves against it implicitly, except that an
     agent resolves against its own place; the **layout scope** includes the environment. Invariant 4 stays
     structural: an agent's processes carry its own org's `WAKIL_ORG`, and `Resolve()` still checks

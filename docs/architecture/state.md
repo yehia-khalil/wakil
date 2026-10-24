@@ -41,7 +41,7 @@ never written to `project.json`, only the ref.
   result set is not persisted; the pane's page and sort (`PaneFetch`) are, with the layout.
 - **Recent api sends**, capped at `PaneStore.recentCap` (200) per list, gone with the session.
 - **Live PTYs** (`TerminalStore`).
-- **Pending confirmations** (`ConfirmationBroker`, one per place), resume and provider-switch requests (`ResumeBroker`,
+- **Pending confirmations** (`ConfirmationBroker`, one per conversation), resume and provider-switch requests (`ResumeBroker`,
   `ProviderSwitchBroker`).
 - **The window's own state** (`WindowModel`): context, snapshots, thought thread, status, palette.
 - **The window's git status** (`GitStatus`, mirrored in `WindowModel.gitRoots`, 3b-iii): one read

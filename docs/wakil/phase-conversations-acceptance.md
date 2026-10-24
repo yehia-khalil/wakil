@@ -24,10 +24,9 @@ agents run in that one place.
 | 2 | Click the first conversation's chip, then the second's Running row on the Landing, going back and forth while the first is still working | Each time you land on exactly what you left: its thread, its canvas, its composer draft. The first thread keeps streaming while you look at it | not walked |
 | 3 | Have the background conversation ask for a write, with the other one on screen. Click its chip and approve | The chip is amber and reads `— waiting` while it waits, and nothing moves you. Approving from the chip lands you in that conversation and the write goes through | not walked |
 | 4 | Repeat row 3, this time approving from its Running row on the Landing | Same result, and the Running row's dot is amber until you answer | not walked |
-| 5 | Press ⌘⇧W on a conversation whose agent is working | The question `Close this conversation? The agent is still working; what it is doing now stops.` with **Close it** and **Keep it**. **Keep it** leaves the conversation as it was. **Close it** ends it and the place shows its next live conversation | not walked |
-| 6 | Leave two conversations live, one working, then quit. Relaunch and open the place's Landing | Nothing was asked at quit. Neither conversation is in Running; each is in Continue. Opening one resumes it, and it leaves Continue for Running | not walked |
-| 7 | With a conversation working in a production environment, look at its chip and its Running row | The environment segment keeps its production red on both (Invariant 8) | not walked |
-| 8 | Get one conversation into each state: working, waiting, done unseen, failed and idle (seen and finished). Look at the dots in Running and in ⌘P | Violet, amber, green, red and grey. A past row in Continue carries no dot | not walked |
+| 5 | Leave two conversations live, one working, then quit. Relaunch and open the place's Landing | Nothing was asked at quit. Neither conversation is in Running; each is in Continue. Opening one resumes it, and it leaves Continue for Running | not walked |
+| 6 | With a conversation working in a production environment, look at its chip and its Running row | The environment segment keeps its production red on both (Invariant 8) | not walked |
+| 7 | Get one conversation into each state: working, waiting, done unseen, failed and idle (seen and finished). Look at the dots in Running and in ⌘P | Violet, amber, green, red and grey. A past row in Continue carries no dot | not walked |
 
 ## 2. Residue: what no check covers, and why
 
