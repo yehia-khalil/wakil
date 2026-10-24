@@ -13,6 +13,7 @@
 {"do":{"click":"palette.row.qa"}}
 {"expect":{"tree":"absent","text":"Placeholder: Environment"}}
 {"expect":{"tree":"contains","text":"Value: working"}}
+{"do":{"resize":{"width":1000,"height":888}}}
 {"expect":{"tree":"contains","text":"Nothing to continue"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","inside":"window"}}
 {"expect":{"frame":"window.agentChip.e2e-fixture/e2e-project/staging","clear":"window.contextLine"}}

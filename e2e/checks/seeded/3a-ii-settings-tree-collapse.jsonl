@@ -18,7 +18,7 @@
 {"expect":{"tree":"contains","text":"project.e2e-git open"}}
 {"expect":{"frame":"settings.tree.projectEditor.e2e-git","minWidth":1}}
 {"do":{"click":"settings.tree.environment.e2e-project.qa"}}
-{"expect":{"tree":"contains","text":"An environment holds the databases"}}
+{"expect":{"tree":"contains","text":"e2e-project  ›  qa"}}
 {"do":{"press":"Left"}}
 {"expect":{"tree":"contains","text":"environment.e2e-project.qa closed"}}
 {"do":{"press":"Right"}}

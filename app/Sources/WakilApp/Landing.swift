@@ -79,12 +79,10 @@ struct Landing: View {
                     threeColumns(running, widths: (248, 320, 248), spacing: 36)
                 }
             } else if hasProject {
-                column("Continue · newest first", width: 620) { continueRows }
-                column("Open", width: 380) { openRows }
+                twoColumns("Continue · newest first", { continueRows }, "Open", { openRows })
             } else {
                 // The empty workspace's one job is to get you a project.
-                column("Projects", width: 620) { projectRows }
-                column("Continue · newest first", width: 380) { continueRows }
+                twoColumns("Projects", { projectRows }, "Continue · newest first", { continueRows })
             }
             Spacer(minLength: 0)
         }
@@ -116,6 +114,24 @@ struct Landing: View {
             column("Running", width: widths.0) { runningRows(running) }
             column("Continue · newest first", width: widths.1) { continueRows }
             column("Open", width: widths.2) { openRows }
+        }
+    }
+
+    /// Two columns take 1048pt at the artboard's widths, wider than the ~920 a 1000pt window
+    /// leaves the Landing (#57), so a narrower window takes them narrower, as `threeColumns` does.
+    private func twoColumns<First: View, Second: View>(
+        _ firstLabel: String, _ first: @escaping () -> First,
+        _ secondLabel: String, _ second: @escaping () -> Second
+    ) -> some View {
+        let pair = { (widths: (CGFloat, CGFloat), spacing: CGFloat) in
+            HStack(alignment: .top, spacing: spacing) {
+                column(firstLabel, width: widths.0) { first() }
+                column(secondLabel, width: widths.1) { second() }
+            }
+        }
+        return ViewThatFits(in: .horizontal) {
+            pair((620, 380), 48)
+            pair((500, 340), 36)
         }
     }
 
