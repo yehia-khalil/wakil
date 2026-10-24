@@ -586,11 +586,13 @@ struct ConversationCloseTests {
     /// A window whose first session start holds where `makeSession` waits on the shown socket's
     /// start, after it took that socket and before `install` — once: every later socket opens
     /// at once. Returns the gate that lets it go on.
-    private func windowHoldingTheFirstStart(_ sessions: Sessions) async throws -> (WindowModel, HoldGate) {
+    private func windowHoldingTheFirstStart(
+        _ sessions: Sessions, confirmations: ConfirmationBroker = ConfirmationBroker()
+    ) async throws -> (WindowModel, HoldGate) {
         let gate = HoldGate()
         let reached = Flag()
         let base = sessions.socketFactory
-        let model = try await wiredWindow(sessions, socketFactory: { path, caller in
+        let model = try await wiredWindow(sessions, confirmations: confirmations, socketFactory: { path, caller in
             if gate.isArmed, !reached.value {
                 reached.set()
                 await gate.wait()
@@ -649,6 +651,40 @@ struct ConversationCloseTests {
         #expect(!started.isEmpty && started.allSatisfy { $0.stopped }, "no claude is left running")
         let own = await sockets(of: agent.id, sessions)
         #expect(!own.isEmpty && own.allSatisfy { $0.stopped }, "nor its socket")
+        await model.shutdown()
+    }
+
+    /// Re-review N1: the start finishes while Close it is itself suspended — in `stopSession`,
+    /// on the broker, after it found no harness to stop and before the conversation leaves
+    /// `conversations`. It is closed to installs from the moment the close began, so the session
+    /// is stopped unstarted rather than installed where the close has already looked.
+    @Test func aStartThatFinishesWhileCloseItIsUnderWayIsNeverInstalled() async throws {
+        let sessions = Sessions()
+        let broker = ConfirmationBroker()
+        let (model, gate) = try await windowHoldingTheFirstStart(sessions, confirmations: broker)
+        let sending = Task { await model.send("first job") }
+        #expect(await waitUntil { model.shownSocketSessionIdForTesting(placeA) == nil })
+        let agent = try #require(model.currentAgent)
+        await model.closeConversation()
+        #expect(model.closeQuestion?.conversation == agent.id)
+
+        await broker.holdNextCancelForTesting()
+        let closing = Task { await model.answerCloseQuestion(close: true) }
+        #expect(await waitUntil { await broker.holdingCancelForTesting }, "the close waits in stopSession")
+        #expect(model.conversation(id: agent.id) === agent, "still in the live map")
+        gate.release()
+        #expect(await waitUntil { !sessions.harnesses.in(placeA).isEmpty }, "the start finished")
+        #expect(await sending.value == false, "the turn goes nowhere")
+        await broker.releaseHeldCancelForTesting()
+        await closing.value
+
+        #expect(model.conversation(id: agent.id) == nil)
+        #expect(agent.harness == nil && agent.socket == nil && !agent.turnInFlight)
+        let harness = try #require(sessions.harnesses.in(placeA).first)
+        #expect(!harness.log.contains { $0.hasPrefix("start:") }, "no claude was started")
+        #expect(harness.stopped)
+        let own = await sockets(of: agent.id, sessions)
+        #expect(!own.isEmpty && own.allSatisfy { $0.stopped })
         await model.shutdown()
     }
 }

@@ -7339,8 +7339,13 @@ public final class WindowModel {
     /// removal (`closeConversations`), landed while the session started, so nothing would ever
     /// reach or stop a session put on the detached conversation — not Close, and not `shutdown`,
     /// which stops only the live ones. Every caller returns without its session on false.
+    ///
+    /// **Closed from the moment its close begins** (re-review N1), not only once it has left
+    /// `conversations`: `endConversation` marks it `closing` first, then awaits its stop and
+    /// its arrangement's write before it drops the entry, and a start finishing in between
+    /// would otherwise be installed after `stopSession` had found nothing to stop.
     private func install(_ started: StartedSession, in agent: PlaceAgent, resumed: Bool = false) async -> Bool {
-        guard conversations[agent.id] === agent else {
+        guard conversations[agent.id] === agent, !closing.contains(agent.id) else {
             await started.harness.stop()
             await started.socket?.stop()
             return false
