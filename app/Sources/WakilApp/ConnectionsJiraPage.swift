@@ -65,8 +65,11 @@ struct JiraConnectionPage: View {
             LabelledField(label: "EMAIL", prompt: "you@initech.test", text: $email, width: 280,
                           identifier: "\(id).email", focus: $focus, focusKey: "email")
                 // Rule 3: the form appears when there is a sign-in to give (none stored, or
-                // Replace), and its first field takes the keyboard then.
-                .onAppear { focus = "email" }
+                // Replace), and its first field takes the keyboard then — one turn late, like the
+                // database card's fields after their scroll: set in the update that inserts the
+                // form, the field has no AppKit view yet and the keyboard stays on the settings
+                // scroll area.
+                .onAppear { DispatchQueue.main.async { focus = "email" } }
             LabelledField(label: "API TOKEN", text: $token, width: 280, identifier: "\(id).token", secure: true,
                           focus: $focus, focusKey: "token")
             if org.jiraTokenStored && ready {

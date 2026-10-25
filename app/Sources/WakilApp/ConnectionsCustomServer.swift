@@ -89,7 +89,9 @@ struct CustomServerForm: View {
             }
             if let refusal { SheetMessage(text: refusal, identifier: "settings.org.connections.custom.error") }
         }
-        .onAppear { focus = "name" }
+        // Rule 3: NAME takes the keyboard — one turn late, as the Jira form's EMAIL does: set in
+        // the update that inserts the form, the field has no AppKit view yet.
+        .onAppear { DispatchQueue.main.async { focus = "name" } }
     }
 
     private var ready: Bool { !saving && !(http ? url : command).trimmingCharacters(in: .whitespaces).isEmpty }
