@@ -12,6 +12,10 @@ import (
 
 type empty struct{}
 
+type configTreeArgs struct {
+	ID string `json:"id,omitempty" jsonschema:"read this organisation's configuration instead of the active one"`
+}
+
 type capacityArgs struct {
 	Refresh bool `json:"refresh,omitempty" jsonschema:"probe each claude-code account whose reading is over a minute old before answering; costs a 1-token request per account"`
 }
@@ -701,8 +705,8 @@ func newServer() *mcp.Server {
 	// that is a Keychain entry NAME, and the operator's own settings pane
 	// is exactly where one is worth reading — and its value does not.
 	mcp.AddTool(s, &mcp.Tool{Name: "config_tree", Description: "Read the active organisation's whole configuration as the settings pane draws it: the organisation's display name, Jira site and default provider; the providers (accounts) it has registered; and every project with its roots, scopes and environments, each environment carrying its databases and its API entry. Four levels deep, because an ENVIRONMENT holds the databases and the API, not a project; providers sit beside the projects because a binding is (organisation, provider id) and cannot nest under one. Projects that could not be read, and those whose project.json declares another organisation, are NAMED rather than dropped. Never returns a credential's value — a database's Keychain entry name travels, the secret it names does not."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.ConfigTree, error) {
-			out, err := wakilcore.LoadConfigTree()
+		func(ctx context.Context, _ *mcp.CallToolRequest, a configTreeArgs) (*mcp.CallToolResult, wakilcore.ConfigTree, error) {
+			out, err := configTreeFor(a.ID)
 			if err != nil {
 				return toolErr(err), out, nil
 			}
@@ -1352,4 +1356,12 @@ func main() {
 	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// configTreeFor reads the named organisation's tree, or the active one's when id is empty.
+func configTreeFor(id string) (wakilcore.ConfigTree, error) {
+	if id == "" {
+		return wakilcore.LoadConfigTree()
+	}
+	return wakilcore.LoadConfigTreeFor(id)
 }

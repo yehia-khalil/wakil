@@ -291,7 +291,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         gitPRInstructions = try container.decodeIfPresent(String.self, forKey: .gitPRInstructions) ?? ""
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
-        connections = try container.decodeIfPresent([AgentConnection].self, forKey: .connections) ?? []
+        // `try?`: a malformed connections field must not blank the whole Settings tree.
+        connections = (try? container.decodeIfPresent([AgentConnection].self, forKey: .connections)) ?? []
     }
 
     private enum CodingKeys: String, CodingKey {

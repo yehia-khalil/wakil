@@ -1623,3 +1623,32 @@ func TestJiraTokenSetStoresOneLine(t *testing.T) {
 		}
 	}
 }
+
+// config_tree with an id reads that organisation, not the active one: a session launching in
+// another organisation than the window's reads its own connections.
+func TestConfigTreeReadsTheNamedOrganisation(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+	if err := wakilcore.CreateOrg("umbrella", wakilcore.Org{}); err != nil {
+		t.Fatal(err)
+	}
+	callOK(t, ctx, cs, "connection_add", map[string]any{"id": "umbrella", "kind": "datadog", "values": map[string]any{"site": "datadoghq.eu"}})
+
+	active, _ := treeOf(t, ctx, cs)
+	if active.Org.ID != "initech" || len(active.Org.Connections) != 0 {
+		t.Fatalf("no id should read the active org, got %q with %d connections", active.Org.ID, len(active.Org.Connections))
+	}
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "config_tree", Arguments: map[string]any{"id": "umbrella"}})
+	if err != nil || res.IsError {
+		t.Fatalf("config_tree: %v %v", err, res)
+	}
+	raw, _ := json.Marshal(res.StructuredContent)
+	var tree wakilcore.ConfigTree
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		t.Fatal(err)
+	}
+	if tree.Org.ID != "umbrella" || len(tree.Org.Connections) != 1 {
+		t.Fatalf("id=umbrella read %q with %d connections", tree.Org.ID, len(tree.Org.Connections))
+	}
+}

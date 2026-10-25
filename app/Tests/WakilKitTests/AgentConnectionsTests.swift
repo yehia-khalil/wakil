@@ -41,7 +41,27 @@ private let initech = Place(organization: "initech", project: "api", environment
     let plain = try servers(initech)
     let withDefaults = try servers(initech, connections: [], approval: "/tmp/1-approval.sock")
     #expect(plain == withDefaults)
-    #expect(plain.count == agentFacingServers.count + 1)
+    // Pinned to what the config was before connections existed.
+    #expect(Set(plain.keys) == ["wakil", "wakil-pm", "wakil-recall", "wakil-git"])
+    let placeEnv: [String: JSONValue] = [
+        "WAKIL_ORG": .string("initech"), "WAKIL_PROJECT": .string("api"),
+        "WAKIL_ENVIRONMENT": .string("staging"), "WAKIL_PROVIDER": .string("primary"),
+    ]
+    #expect(plain["wakil"] == .object([
+        "command": .string(shim.path),
+        "args": .array([.string("--mcp-shim"), .string("--socket"), .string("/tmp/wakil-1.sock")]),
+        "env": .object(placeEnv),
+    ]))
+    #expect(plain["wakil-pm"] == .object([
+        "command": .string("/bin/wakil-pm"), "args": .array([]), "env": .object(placeEnv),
+    ]))
+}
+
+@Test func aMalformedConnectionsFieldDoesNotBlankTheTree() throws {
+    let json = #"{"id":"initech","displayName":"Initech","connections":"oops"}"#
+    let org = try JSONDecoder().decode(SettingsOrg.self, from: Data(json.utf8))
+    #expect(org.id == "initech" && org.displayName == "Initech")
+    #expect(org.connections.isEmpty)
 }
 
 @Test func eachConnectionIsAServerOfWakilConnect() throws {
@@ -112,29 +132,91 @@ private let initech = Place(organization: "initech", project: "api", environment
 
 @Suite @MainActor struct AgentConnectionsLaunchTests {
     private actor Reads {
-        var count = 0
-        func add() { count += 1 }
+        var ids: [String] = []
+        func add(_ id: String) { ids.append(id) }
+    }
+
+    nonisolated private static func tree(org: String, names: [String]) -> JSONValue {
+        .object(["structuredContent": .object([
+            "org": .object(["id": .string(org), "connections": .array(names.map { .object(["name": .string($0)]) })]),
+            "providers": .array([]), "projects": .array([]),
+        ])])
+    }
+
+    private func window(
+        _ box: AgentConnectionsBox, handler: @escaping @Sendable (JSONValue) async throws -> JSONValue
+    ) async -> WindowModel {
+        let model = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { _, _ in RecordingHarness() })
+        model.agentConnectionsBox = box
+        await model.registryForTesting.register(Action(
+            name: "ctx_config_tree", description: "", kind: .read, schema: .object([:]), handler: handler))
+        return model
     }
 
     @Test func aLaunchReadsTheOrganisationsConnectionsOnceWhenNothingHas() async throws {
-        let model = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { _, _ in RecordingHarness() })
         let box = AgentConnectionsBox()
-        model.agentConnectionsBox = box
-        let org = model.place.organization
         let reads = Reads()
-        await model.registryForTesting.register(Action(
-            name: "ctx_config_tree", description: "", kind: .read, schema: .object([:]),
-            handler: { _ in
-                await reads.add()
-                return .object(["structuredContent": .object([
-                    "org": .object(["id": .string(org), "connections": .array([.object(["name": .string("tracker")])])]),
-                    "providers": .array([]), "projects": .array([]),
-                ])])
-            }))
+        let t = { @Sendable (o: String, n: [String]) in Self.tree(org: o, names: n) }
+        let model = await window(box) { params in
+            guard case .object(let o) = params, case .string(let id)? = o["id"] else { return .object([:]) }
+            await reads.add(id)
+            return t(id, ["tracker"])
+        }
+        let org = model.place.organization
         #expect(!box.isKnown(org: org))
         await model.send("hi")
         #expect(box.connections(org: org) == [AgentConnection(name: "tracker")])
         await model.send("again")
-        #expect(await reads.count == 1)
+        #expect(await reads.ids == [org])
+    }
+
+    @Test func aPlaceInAnotherOrganisationReadsThatOrganisationsTree() async throws {
+        let box = AgentConnectionsBox()
+        let reads = Reads()
+        let t = { @Sendable (o: String, n: [String]) in Self.tree(org: o, names: n) }
+        let model = await window(box) { params in
+            guard case .object(let o) = params, case .string(let id)? = o["id"] else { return t("initech", ["wrong"]) }
+            await reads.add(id)
+            return t(id, id == "umbrella" ? ["wiki"] : ["tracker"])
+        }
+        #expect(model.place.organization != "umbrella")
+        await model.ensureAgentConnections(in: Place(organization: "umbrella", project: "", environment: ""))
+        #expect(await reads.ids == ["umbrella"])
+        #expect(box.connections(org: "umbrella") == [AgentConnection(name: "wiki")])
+        #expect(!box.isKnown(org: model.place.organization))
+    }
+
+    @Test func aTreeForAnotherOrganisationIsAFailedRead() async throws {
+        let box = AgentConnectionsBox()
+        let t = { @Sendable (o: String, n: [String]) in Self.tree(org: o, names: n) }
+        let model = await window(box) { _ in t("initech", ["tracker"]) }
+        await model.ensureAgentConnections(in: Place(organization: "umbrella", project: "", environment: ""))
+        #expect(!box.isKnown(org: "umbrella"))
+        #expect(!box.isKnown(org: "initech"))
+    }
+
+    @Test func aReadThatNeverAnswersDoesNotHoldTheLaunch() async throws {
+        let box = AgentConnectionsBox()
+        let model = await window(box) { _ in
+            try await Task.sleep(for: .seconds(600))
+            return .object([:])
+        }
+        model.agentConnectionsReadTimeout = .milliseconds(100)
+        let started = ContinuousClock.now
+        await model.send("hi")
+        #expect(ContinuousClock.now - started < .seconds(10))
+        #expect(!box.isKnown(org: model.place.organization))
+    }
+
+    @Test func theMissingBinaryIsSaidOnlyWhenConnectionsAreDropped() async throws {
+        let note = "wakil-connect: not found, so the agent has no connections this session"
+        for (names, said) in [(["tracker"], true), ([String](), false)] {
+            let box = AgentConnectionsBox()
+            let model = await window(box) { _ in .object([:]) }
+            box.set(org: model.place.organization, connections: names.map(AgentConnection.init(name:)))
+            model.connectionsUnavailable = note
+            await model.send("hi")
+            #expect(model.status.contains(note) == said, "\(names)")
+        }
     }
 }

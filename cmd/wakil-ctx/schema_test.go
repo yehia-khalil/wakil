@@ -250,6 +250,7 @@ func TestGitAccountReadsNeedNoHost(t *testing.T) {
 		"git_ssh_keys":         {"id": "initech"},
 		"git_gh_logins":        {"id": "initech"},
 		"git_device_start":     {"id": "initech", "provider": "github"},
+		"config_tree":          {"id": "initech"},
 	} {
 		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		text := ""

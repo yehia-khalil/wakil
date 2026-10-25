@@ -617,9 +617,19 @@ public func registerStandardActions(
             + "no credential value ever is.",
         kind: .read,
         audience: .agentReachable,
-        schema: .object(["type": .string("object"), "properties": .object([:])]),
-        handler: { _ in
-            try await readConfigTree(context)
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "id": .object([
+                    "type": .string("string"),
+                    "description": .string("Read this organisation's configuration instead of the active one."),
+                ])
+            ]),
+        ]),
+        handler: { params in
+            var id: String?
+            if case .object(let o) = params, case .string(let s)? = o["id"], !s.isEmpty { id = s }
+            return try await readConfigTree(context, organisation: id)
         }
     ))
 
@@ -3318,12 +3328,13 @@ private func annotatedWithPaneOutcome(
 /// sites assembling the same read separately is the two-code-paths-to-one-
 /// state shape Invariant 2 forbids for mutations, and is no better for a
 /// read the screen and the agent must agree about.
-func readConfigTree(_ context: (any ToolCaller)?) async throws -> JSONValue {
+func readConfigTree(_ context: (any ToolCaller)?, organisation: String? = nil) async throws -> JSONValue {
     guard let context else {
         throw StandardActionError.missingClient(action: "ctx_config_tree", role: "context")
     }
     return try await callChecked(
-        context, tool: "config_tree", arguments: .object([:]),
+        context, tool: "config_tree",
+        arguments: .object(organisation.map { ["id": .string($0)] } ?? [:]),
         action: "ctx_config_tree", timeout: MCPClient.readReplyTimeout)
 }
 

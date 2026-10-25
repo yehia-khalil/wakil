@@ -154,6 +154,7 @@ final class WindowSession {
         // same `wakil` executable and the same per-org construction: the
         // mint writes the credential that lookup later reads.
         let mintFactory: (@Sendable (String) -> any ProviderMinting)?
+        var connectionsUnavailable: String?
         do {
             guard let wakilExecutable = WakilWiring.binaryURL(
                 named: "wakil", executableDirectory: executableDirectory, environment: environment)
@@ -201,12 +202,13 @@ final class WindowSession {
                 }
             }
             // Connections run through `wakil-connect`; without it they are dropped, for the
-            // session's config and its allow list alike.
+            // session's config and its allow list alike. Said only when a launch drops some
+            // (`WindowModel.connectionsUnavailable`), not at window open.
             if let url = WakilWiring.binaryURL(
                 named: wakilConnectBinaryName, executableDirectory: executableDirectory, environment: environment) {
                 mutableBinaries[wakilConnectBinaryName] = url
             } else {
-                notes.append("\(wakilConnectBinaryName): not found, so the agent has no connections this session")
+                connectionsUnavailable = "\(wakilConnectBinaryName): not found, so the agent has no connections this session"
             }
             // Reassigned to an immutable `let` before the `@Sendable`
             // closure below captures it: a captured `var` is a compile
@@ -441,6 +443,7 @@ final class WindowSession {
         // exported at all (final review, Critical 3). Asked on every
         // open, never captured: see `ActiveShellContext`.
         wiring.useActiveContext(of: model)
+        model.connectionsUnavailable = connectionsUnavailable
         // 3a-ii-b. `editor_changes_draft_message` reaches this window's ✨ through the sink.
         await wiring.commitDrafts.bind { [weak model] root in
             guard let model else { throw CancellationError() }

@@ -793,6 +793,11 @@ public final class WindowModel {
     var agentInstructionsBox: AgentInstructionsBox = .shared
     /// Where each organisation's connections go for a launch to read; the process's own unless a test swaps it.
     var agentConnectionsBox: AgentConnectionsBox = .shared
+    /// Why launches cannot give an agent its connections (`wakil-connect` is missing); nil when they can.
+    /// Shown in the status of a launch that drops some.
+    public var connectionsUnavailable: String?
+    /// How long a launch waits to learn its organisation's connections before starting without them.
+    var agentConnectionsReadTimeout: Duration = .seconds(2)
     public let backgroundFetchInterval: Duration = .seconds(300)
     var backgroundFetchSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     var backgroundFetchTask: Task<Void, Never>?
@@ -7395,7 +7400,11 @@ public final class WindowModel {
             }
             return nil
         }
-        return StartedSession(harness: harness, socket: socket, socketFailure: opened?.failure)
+        var failure = opened?.failure
+        if let unavailable = connectionsUnavailable, !agentConnectionsBox.connections(org: place.organization).isEmpty {
+            failure = [failure, unavailable].compactMap { $0 }.joined(separator: "; ")
+        }
+        return StartedSession(harness: harness, socket: socket, socketFailure: failure)
     }
 
     /// Installs `started` as `agent`'s live session: its harness and its socket. False, with
