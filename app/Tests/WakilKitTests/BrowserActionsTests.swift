@@ -427,3 +427,30 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     try await rebuilt.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
     #expect(FileManager.default.fileExists(atPath: state.path), "a rebuilt page's state is not deleted after the remover")
 }
+
+/// Fix round 1 (Ruling: browser_zoom persists): the action writes the factor for the active tab's
+/// host into the organisation's zoom.json — no web view needed (Invariant 2: the agent's zoom and
+/// the operator's take one path). The host is the URL's, lowercased, as the web view reads it.
+@Test func zoomPersistsForTheTabsHostWithNoLiveView() async throws {
+    let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let files = try BrowserOrgFiles(home: home, org: "acme")
+    let f = try await browserFixture(orgFiles: files)
+    try await f.dispatch("browser_new_tab", ["url": .string("https://Docs.A.test/page")])
+    try await f.dispatch("browser_zoom", ["step": .string("in")])
+    #expect(files.zoom(host: "docs.a.test") == 1.1)
+    try await f.dispatch("browser_zoom", ["step": .string("reset")])
+    #expect(files.zoom(host: "docs.a.test") == 1.0)
+    #expect(BrowserOrgFiles.zoomHost(of: URL(string: "https://Docs.A.test/x")!) == "docs.a.test")
+    #expect(BrowserOrgFiles.zoomHost(of: URL(string: "about:blank")!) == nil)
+}
+
+/// A blank tab has no host: its zoom changes, nothing is written.
+@Test func zoomOnABlankTabWritesNothing() async throws {
+    let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let files = try BrowserOrgFiles(home: home, org: "acme")
+    let f = try await browserFixture(orgFiles: files)
+    try await f.dispatch("browser_new_tab", [:])
+    try await f.dispatch("browser_zoom", ["step": .string("in")])
+    #expect(await f.active()?.zoom == 1.1)
+    #expect(!FileManager.default.fileExists(atPath: files.directory.appendingPathComponent("zoom.json").path))
+}

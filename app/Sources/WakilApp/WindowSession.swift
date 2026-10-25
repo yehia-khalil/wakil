@@ -461,6 +461,8 @@ final class WindowSession {
     /// a child in the middle of a slow tool call would not read that EOF
     /// promptly.
     func shutdown() async {
+        // 3c-i: no page's question is left with its WebKit handler uncalled.
+        browserTabs.closeAll()
         await wiring.commitDrafts.bind(nil)
         await model.shutdown()
         await wiring.shutdown()

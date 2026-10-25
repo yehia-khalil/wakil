@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import Foundation
 import Observation
 import WakilKit
@@ -58,6 +59,10 @@ final class BrowserTabHost {
     private(set) var certificates: [Key: String] = [:]
     /// Tabs whose web content process ended: the crash page is drawn until the tab reloads.
     private(set) var crashed: Set<Key> = []
+    /// The operator's sign-in answers, per organisation, host and realm, for the window's life.
+    /// Kept here rather than in WebKit's `.forSession` store, which may be process-wide and so
+    /// cross organisations (Invariant 4); a later challenge is answered from it.
+    @ObservationIgnored private var signIns: [SignInKey: URLCredential] = [:]
     /// Hosts the operator chose Visit Anyway for, per organisation, for the window's life.
     @ObservationIgnored private var certificateAllowed: Set<OrgHost> = []
     /// Camera / microphone answers, per place, host and device, for the window's life.
@@ -76,6 +81,12 @@ final class BrowserTabHost {
     struct OrgHost: Hashable {
         let org: String
         let host: String
+    }
+
+    struct SignInKey: Hashable {
+        let org: String
+        let host: String
+        let realm: String
     }
 
     struct MediaKey: Hashable {
@@ -281,12 +292,9 @@ final class BrowserTabHost {
             }
         case .stop: view.stopLoading()
         case .zoom(let factor):
+            // `browser_zoom` changed the store and wrote zoom.json; the page only shows it.
             view.pageZoom = factor
-            // `browser_zoom` changed the store; the host keeps it for the page's host (zoom.json).
-            if let site = view.url.flatMap(browserZoomHost) {
-                delegate?.zoomHost = site
-                try? delegate?.files?.setZoom(factor, host: site)
-            }
+            if let site = view.url.flatMap(BrowserOrgFiles.zoomHost(of:)) { delegate?.zoomHost = site }
         case .focusAddress: break
         }
         return true
@@ -441,6 +449,16 @@ final class BrowserTabHost {
         }
     }
 
+    // MARK: Sign-in
+
+    /// The credential the operator gave this organisation, host and realm this session, if any.
+    func signIn(for key: SignInKey) -> URLCredential? { signIns[key] }
+
+    func remember(_ credential: URLCredential, for key: SignInKey) { signIns[key] = credential }
+
+    /// The server refused it: the next challenge asks again.
+    func forgetSignIn(_ key: SignInKey) { signIns[key] = nil }
+
     // MARK: Certificate and crash pages
 
     /// Whether the operator chose Visit Anyway for this organisation and host this session.
@@ -487,6 +505,19 @@ final class BrowserTabHost {
             .appendingPathComponent("Downloads", isDirectory: true)
         let tracker = BrowserDownloadTracker(id: id, download: download, scope: scope, pane: pane, folder: folder, host: self)
         downloads[id] = tracker
+    }
+
+    /// A download ended and the store holds its final state: its tracker, WKDownload and KVO go.
+    func release(download id: String) { downloads[id] = nil }
+
+    /// The pane's list as the store holds it: an ended download no longer in it (cleared with
+    /// `browser_downloads_clear`) whose end was reported is let go.
+    func prune(_ listed: [BrowserDownload], scope: LayoutScope, pane: String) {
+        let ids = Set(listed.map(\.id))
+        for (id, tracker) in downloads where tracker.scope == scope && tracker.pane == pane
+            && tracker.hasEnded && tracker.hasReported && !ids.contains(id) {
+            downloads[id] = nil
+        }
     }
 
     /// The store asked for these downloads to stop (`browser_download_cancel`): each is cancelled,
@@ -631,9 +662,25 @@ final class BrowserTabHost {
     /// seqs are kept, so the rebuild repeats no ‹ › or reload.
     func beginClear(onStore identifier: UUID) {
         clearing.insert(identifier)
+        // The organisation's sign-ins go with its data.
+        if let home = model?.browserHome {
+            let orgs = Set(signIns.keys.map(\.org)).filter {
+                (try? BrowserOrgFiles(home: home, org: $0).identifier()) == identifier
+            }
+            signIns = signIns.filter { !orgs.contains($0.key.org) }
+        }
         for (key, view) in views where view.configuration.websiteDataStore.identifier == identifier {
             drop(key, mode: .discard)
         }
+    }
+
+    /// The window is closing: every page's open question is answered (Cancel) and its open panel
+    /// cancelled, and every web view dropped, so no WebKit completion handler is left uncalled.
+    /// Nothing is saved — the layout already holds each tab — and no state file is deleted.
+    func closeAll() {
+        for key in Array(views.keys) { drop(key, mode: .discard) }
+        for key in Array(prompts.keys) { dismissPrompts(key) }
+        for key in Array(openPanels.keys) { openPanels.removeValue(forKey: key)?.cancel(nil) }
     }
 
     /// The clear is done — the files deleted, then the store (or its removal failed): the panes
@@ -693,13 +740,6 @@ func browserDataIcon(_ href: String) -> NSImage? {
     return data.flatMap(NSImage.init(data:))
 }
 
-/// The host a page's zoom is kept under in `zoom.json`: the URL's host, lowercased; nil for a page
-/// with none (`about:blank`, a `data:` page), whose zoom is not kept.
-func browserZoomHost(_ url: URL) -> String? {
-    guard let host = url.host?.lowercased(), !host.isEmpty else { return nil }
-    return host
-}
-
 /// One download (3c-i): WebKit's `WKDownload`, saved to `~/Downloads` under a name Finder would
 /// give, its progress reported into its tab's pane through the seam (`browserDownloadDidChange`),
 /// one report in flight at a time, each read when it is sent.
@@ -723,6 +763,11 @@ final class BrowserDownloadTracker: NSObject, WKDownloadDelegate {
     private var reporting: Task<Void, Never>?
     private var reportAgain = false
     private var cancelling = false
+    /// The destination was free when it was chosen: only then is a half-written file there this
+    /// download's to delete. A file that was already there is never touched.
+    private var reservedFreshPath = false
+    private(set) var hasReported = false
+    var hasEnded: Bool { state != .running }
 
     init(id: String, download: WKDownload, scope: LayoutScope, pane: String, folder: URL, host: BrowserTabHost) {
         self.id = id
@@ -754,7 +799,15 @@ final class BrowserDownloadTracker: NSObject, WKDownloadDelegate {
             while let self, self.reportAgain {
                 self.reportAgain = false
                 guard let model = self.host?.model else { break }
-                await model.browserDownloadDidChange(scope: self.scope, pane: self.pane, self.snapshot)
+                let sent = self.snapshot
+                await model.browserDownloadDidChange(scope: self.scope, pane: self.pane, sent)
+                self.hasReported = true
+                // Ended, and the store on screen holds that end (not dropped as another place's):
+                // nothing more to say, so the tracker goes. Dropped, it waits for `reportAll`.
+                if sent.state != .running, !self.reportAgain, model.browserScope == self.scope,
+                   model.browser(self.pane)?.downloads.first(where: { $0.id == self.id })?.state == sent.state {
+                    self.host?.release(download: self.id)
+                }
             }
             self?.reporting = nil
         }
@@ -776,9 +829,34 @@ final class BrowserDownloadTracker: NSObject, WKDownloadDelegate {
         self.failure = failure
         observation?.invalidate()
         observation = nil
-        // What a stopped download wrote is not the file: it goes, so `~/Downloads` holds no half file.
-        if final != .finished, let destination { try? FileManager.default.removeItem(at: destination) }
+        // What a stopped download wrote is not the file: it goes, so `~/Downloads` holds no half file —
+        // only when this download reserved that path free, and what is there is no larger than it wrote.
+        if final != .finished, reservedFreshPath, let destination, writtenByThisDownload(destination) {
+            try? FileManager.default.removeItem(at: destination)
+        }
         scheduleReport()
+    }
+
+    private func writtenByThisDownload(_ url: URL) -> Bool {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
+        else { return false }
+        return size.int64Value <= max(0, download.progress.completedUnitCount)
+    }
+
+    /// Gatekeeper must see a web download as one (Ruling): `com.apple.quarantine`, agent Wakil,
+    /// type web download, and the address it came from. What WebKit already put there is kept;
+    /// these three keys are Wakil's.
+    private func quarantine(_ url: URL) throws {
+        var target = url
+        var properties = (try? url.resourceValues(forKeys: [.quarantinePropertiesKey]))?.quarantineProperties ?? [:]
+        properties[kLSQuarantineAgentNameKey as String] = "Wakil"
+        properties[kLSQuarantineTypeKey as String] = kLSQuarantineTypeWebDownload as String
+        if let source = download.originalRequest?.url {
+            properties[kLSQuarantineDataURLKey as String] = source.absoluteString
+        }
+        var values = URLResourceValues()
+        values.quarantineProperties = properties
+        try target.setResourceValues(values)
     }
 
     // MARK: WKDownloadDelegate
@@ -791,11 +869,20 @@ final class BrowserDownloadTracker: NSObject, WKDownloadDelegate {
         }
         filename = url.lastPathComponent
         destination = url
+        reservedFreshPath = !FileManager.default.fileExists(atPath: url.path)
         completionHandler(url)
         scheduleReport()
     }
 
     func downloadDidFinish(_ download: WKDownload) {
+        // A file Gatekeeper cannot tell came from the web is not kept.
+        if let destination {
+            do {
+                try quarantine(destination)
+            } catch {
+                return end(.failed, failure: "Couldn't mark it as downloaded from the web — \(error.localizedDescription)")
+            }
+        }
         end(.finished, failure: nil)
     }
 

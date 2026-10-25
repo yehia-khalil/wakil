@@ -209,7 +209,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         failure = nil
         host?.saveState(of: webView, scope: scope, pane: pane, tab: tab, files: files)
         // A page on another host takes that host's remembered zoom, and the store hears it.
-        if let site = webView.url.flatMap(browserZoomHost), site != zoomHost {
+        if let site = webView.url.flatMap(BrowserOrgFiles.zoomHost(of:)), site != zoomHost {
             zoomHost = site
             let factor = files?.zoom(host: site) ?? 1.0
             if webView.pageZoom != factor { webView.pageZoom = factor }
@@ -311,9 +311,18 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             }
         case NSURLAuthenticationMethodHTTPBasic, NSURLAuthenticationMethodHTTPDigest:
             guard let host, !tab.isEmpty else { return completionHandler(.cancelAuthenticationChallenge, nil) }
-            let prompt = BrowserPrompt(kind: .signIn(host: site, realm: space.realm ?? ""), origin: site) { answer in
+            // Answered from the host's own memory of this organisation's sign-ins, never WebKit's
+            // `.forSession` store, which may be shared by every organisation (Invariant 4).
+            let signInKey = BrowserTabHost.SignInKey(org: scope.organization, host: site, realm: space.realm ?? "")
+            if let known = host.signIn(for: signInKey) {
+                if challenge.previousFailureCount == 0 { return completionHandler(.useCredential, known) }
+                host.forgetSignIn(signInKey)   // refused: asked again
+            }
+            let prompt = BrowserPrompt(kind: .signIn(host: site, realm: space.realm ?? ""), origin: site) { [weak host] answer in
                 if case .credential(let user, let password) = answer {
-                    completionHandler(.useCredential, URLCredential(user: user, password: password, persistence: .forSession))
+                    let credential = URLCredential(user: user, password: password, persistence: .none)
+                    host?.remember(credential, for: signInKey)
+                    completionHandler(.useCredential, credential)
                 } else {
                     completionHandler(.cancelAuthenticationChallenge, nil)
                 }
@@ -393,7 +402,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     private func ask(_ kind: BrowserPrompt.Kind, _ frame: WKFrameInfo, _ webView: WKWebView,
-                     reply: @escaping (BrowserPrompt.Answer) -> Void) {
+                     reply: @escaping @MainActor @Sendable (BrowserPrompt.Answer) -> Void) {
         let prompt = BrowserPrompt(kind: kind, origin: origin(frame, webView), reply: reply)
         guard let host else { return prompt.answer(.withdrawn) }
         host.present(prompt, scope: scope, pane: pane, tab: tab)

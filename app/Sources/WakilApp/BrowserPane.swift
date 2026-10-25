@@ -329,6 +329,7 @@ struct BrowserPane: View {
         syncFind(old: old, now: now)
         // `browser_download_cancel` asked: the host stops each, and reports it once WebKit has.
         host.cancelRequested(now.downloads, scope: scope, pane: pane.id)
+        host.prune(now.downloads, scope: scope, pane: pane.id)
     }
 
     /// The find bar's state to the active tab's page, and the keyboard: ⌘F (a `browser_find` —

@@ -16,3 +16,7 @@
 {"expect":{"tree":"absent","text":"Hello from the page"}}
 {"expect":{"pane":"browser-1","field":"title","equals":"Alert"}}
 {"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"do":{"hotkey":"cmd+r"}}
+{"expect":{"tree":"contains","text":"Hello from the page"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"absent","text":"Hello from the page"}}

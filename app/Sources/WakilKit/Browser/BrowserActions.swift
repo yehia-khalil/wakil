@@ -443,17 +443,23 @@ func browserActions(
             let step = try requireString(params, "step", action: "browser_zoom")
             guard ["in", "out", "reset"].contains(step) else { throw BrowserActionError.unknownZoomStep(step) }
             let pane = try await browserPane(params, action: "browser_zoom").id
-            let found = await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
-                guard let i = s.tabIndex(nil) else { return false }
+            let zoomed = await panes.updateBrowser(paneId: pane, create: true) { s -> (factor: Double, url: String)? in
+                guard let i = s.tabIndex(nil) else { return nil }
                 let before = s.tabs[i].zoom
                 let after = step == "reset" ? 1.0 : browserZoom(before, stepIn: step == "in")
                 if after != before {
                     s.tabs[i].zoom = after
                     s.tabs[i].issue(.zoom(after))
                 }
-                return true
+                return (after, s.tabs[i].url)
             }
-            guard found else { throw BrowserActionError.noTab(action: "browser_zoom", tab: nil) }
+            guard let zoomed else { throw BrowserActionError.noTab(action: "browser_zoom", tab: nil) }
+            // Kept per host (zoom.json) here, not by the web view: a tab with no live view, or the
+            // agent's zoom, is remembered the same (Invariant 2). A blank tab has no host to keep.
+            if let site = URL(string: zoomed.url).flatMap(BrowserOrgFiles.zoomHost(of:)),
+               let files = try await orgFiles() {
+                try files.setZoom(zoomed.factor, host: site)
+            }
             return await reply(pane)
         }))
 

@@ -39,9 +39,9 @@ final class BrowserPrompt: Identifiable {
     let kind: Kind
     /// The host of the page that asked, shown over the question so a page cannot pass as Wakil.
     let origin: String
-    private var reply: ((Answer) -> Void)?
+    private var reply: (@MainActor @Sendable (Answer) -> Void)?
 
-    init(kind: Kind, origin: String, reply: @escaping (Answer) -> Void) {
+    init(kind: Kind, origin: String, reply: @escaping @MainActor @Sendable (Answer) -> Void) {
         self.kind = kind
         self.origin = origin
         self.reply = reply
@@ -55,6 +55,13 @@ final class BrowserPrompt: Identifiable {
     }
 
     var isAnswered: Bool { reply == nil }
+
+    /// The backstop: a prompt let go unanswered (its holder went without answering it) still
+    /// answers WebKit, as Cancel — WebKit asserts on a handler never called.
+    deinit {
+        guard let reply else { return }
+        Task { @MainActor in reply(.withdrawn) }
+    }
 }
 
 /// The camera / microphone question (global constraints): `<host> wants to use your camera`.
@@ -81,7 +88,9 @@ struct BrowserPromptCard: View {
     @State private var password = ""
     @FocusState private var focused: Field?
 
-    private enum Field { case text, user, password }
+    /// `card`: a question with no field (alert, confirm, camera / microphone) holds the keyboard
+    /// itself — Return is its default button, Esc its Cancel / Don't Allow (Rule 3).
+    private enum Field { case text, user, password, card }
 
     var body: some View {
         ZStack {
@@ -102,6 +111,20 @@ struct BrowserPromptCard: View {
                 buttons
             }
             .padding(16)
+            .focusable(hasField ? false : true)
+            .focused($focused, equals: .card)
+            .focusEffectDisabled()
+            .onKeyPress(.return) {
+                guard focused == .card else { return .ignored }
+                answer(.accept)
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                guard focused == .card else { return .ignored }
+                // An alert's one button is OK; elsewhere Esc is Cancel / Don't Allow.
+                if case .alert = prompt.kind { answer(.accept) } else { answer(.dismiss) }
+                return .handled
+            }
             .frame(maxWidth: 360, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(EditorPaneStyle.slab))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
@@ -114,10 +137,19 @@ struct BrowserPromptCard: View {
                 focused = .text
             } else if case .signIn = prompt.kind {
                 focused = .user
+            } else {
+                focused = .card
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser.prompt")
+    }
+
+    private var hasField: Bool {
+        switch prompt.kind {
+        case .text, .signIn: true
+        default: false
+        }
     }
 
     private var message: String {
@@ -231,39 +263,6 @@ struct BrowserCrashPage: View {
 }
 
 // MARK: - Downloads
-
-/// Where a download lands: `<downloads>/<name>`, or — when that is taken — `name 2.ext`,
-/// `name 3.ext`, as Finder names a copy. The suggested name is cut to its last path component, so
-/// a page cannot write outside the folder.
-func browserDownloadDestination(in folder: URL, suggested: String, exists: (URL) -> Bool) -> URL {
-    var name = (suggested as NSString).lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
-    if name.isEmpty || name == "." || name == ".." || name == "/" { name = "download" }
-    let first = folder.appendingPathComponent(name)
-    guard exists(first) else { return first }
-    let ext = (name as NSString).pathExtension
-    let stem = ext.isEmpty ? name : (name as NSString).deletingPathExtension
-    var n = 2
-    while true {
-        let candidate = folder.appendingPathComponent(ext.isEmpty ? "\(stem) \(n)" : "\(stem) \(n).\(ext)")
-        if !exists(candidate) { return candidate }
-        n += 1
-    }
-}
-
-/// The strip's size line: `12.4 of 80 MB` while running with a known size, the size alone when it
-/// is unknown or the download ended — decimal units, as Finder counts.
-func browserDownloadSize(received: Int64, expected: Int64, state: BrowserDownload.State) -> String {
-    let total = expected > 0 ? expected : received
-    let (unit, name): (Double, String) = total >= 1_000_000_000 ? (1e9, "GB") : total >= 1_000_000 ? (1e6, "MB") : (1e3, "KB")
-    func number(_ bytes: Int64) -> String {
-        let value = Double(bytes) / unit
-        if value >= 100 { return String(format: "%.0f", value) }
-        let text = String(format: "%.1f", value)
-        return text.hasSuffix(".0") ? String(text.dropLast(2)) : text
-    }
-    if state == .running, expected > 0 { return "\(number(received)) of \(number(expected)) \(name)" }
-    return "\(number(state == .finished ? total : received)) \(name)"
-}
 
 /// The pane's foot while a download is live or ended this session: each one's name, its size line,
 /// Cancel while it runs (Rule 4), Show in Finder once it finished; × clears the ended ones. Every

@@ -81,6 +81,14 @@ public struct BrowserOrgFiles: Sendable, Equatable {
         return zooms
     }
 
+    /// The host a page's zoom is kept under: the URL's host, lowercased; nil for a page with none
+    /// (`about:blank`, a `data:` page), whose zoom is not kept. `browser_zoom` writes under it and
+    /// the web view reads under it.
+    public static func zoomHost(of url: URL) -> String? {
+        guard let host = url.host?.lowercased(), !host.isEmpty else { return nil }
+        return host
+    }
+
     /// The remembered zoom for `host`; 1.0 when none, or when the file cannot be read.
     public func zoom(host: String) -> Double { zooms()[host] ?? 1.0 }
 
