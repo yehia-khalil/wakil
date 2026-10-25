@@ -3,6 +3,9 @@
 {"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
 {"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1"}}}
 {"expect":{"pane":"browser-1","field":"tabs[1].id","equals":"t2"}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","tab":"t1","input":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
 {"dispatch":{"action":"pane_open","params":{"kind":"db"}}}
 {"dispatch":{"action":"pane_focus","params":{"id":"browser-1"}}}
 {"do":{"resize":{"width":1000,"height":888}}}
@@ -23,6 +26,13 @@
 {"expect":{"frame":"browser.address","inside":"browser.pane"}}
 {"dispatch":{"action":"pane_resize","params":{"id":"browser-1","width":400,"height":400}}}
 {"expect":{"frame":"browser.tabMenu","inside":"browser.pane"}}
+{"expect":{"tree":"absent","text":"Page B"}}
+{"do":{"click":"browser.tabMenu"}}
+{"expect":{"tree":"contains","text":"Page B"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_select_tab\""}}}
 {"expect":{"frame":"browser.address","inside":"browser.pane"}}
 {"expect":{"frame":"browser.address","minWidth":120}}
 {"dispatch":{"action":"pane_resize","params":{"id":"browser-1","width":700,"height":400}}}

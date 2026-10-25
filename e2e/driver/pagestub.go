@@ -32,6 +32,7 @@ const bigBinTick = 125 * time.Millisecond
 //
 // `/big.bin` is not a file: it streams BigBinSize zero bytes at BigBinRate,
 // with a Content-Length, so a download has a known total and a progress.
+// `/stall.html` is not one either: it sends its head and never finishes.
 func StartPageStub(dir string) (string, func(), error) {
 	// Absolute and checked now: a relative http.Dir resolves at each request,
 	// and a missing folder would answer every page 404 rather than fail here.
@@ -71,6 +72,17 @@ func StartPageStub(dir string) (string, func(), error) {
 				return
 			}
 		}
+	})
+	// A page that never finishes: its head, then nothing until the tab stops it (or the stub
+	// closes), so the tab stays loading and the browser's Stop button is there to press.
+	mux.HandleFunc("/stall.html", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "<!doctype html><html><head><meta charset=\"utf-8\"><title>Stall</title></head><body><p>Still loading")
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-r.Context().Done()
 	})
 	mux.Handle("/", http.FileServer(http.Dir(dir)))
 	srv := &http.Server{Handler: mux}

@@ -10,6 +10,7 @@
 {"expect":{"focus":"browser.page"}}
 {"expect":{"tree":"contains","text":"Page A"}}
 {"expect":{"frame":"browser.footer","inside":"browser.pane"}}
+{"expect":{"frame":"browser.footer.host","inside":"browser.footer"}}
 {"do":{"hotkey":"cmd+l"}}
 {"expect":{"focus":"browser.address"}}
 {"do":{"keys":"{pageStub}/b.html"}}

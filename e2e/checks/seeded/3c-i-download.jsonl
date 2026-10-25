@@ -11,6 +11,12 @@
 {"expect":{"pane":"browser-1","field":"downloads[0].state","equals":"cancelled"}}
 {"expect":{"tree":"contains","text":"Cancelled"}}
 {"expect":{"journal":{"contains":"\"action\":\"browser_download_cancel\""}}}
-{"do":{"click":"browser.downloads.clear"}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/big.bin"}}}
+{"expect":{"pane":"browser-1","field":"downloads[1].state","equals":"running"}}
+{"expect":{"pane":"browser-1","field":"downloads[1].id","equals":"d2"}}
+{"dispatch":{"action":"browser_download_cancel","params":{"pane":"browser-1","download":"d2"}}}
+{"expect":{"pane":"browser-1","field":"downloads[1].state","equals":"cancelled"}}
+{"dispatch":{"action":"browser_download_cancel","params":{"pane":"browser-1","download":"d9"},"refuses":"this pane has no download d9"}}
+{"parity":{"action":"browser_downloads_clear","params":{"pane":"browser-1"},"click":"browser.downloads.clear","assert":"read_pane"}}
 {"expect":{"pane":"browser-1","field":"downloads[0]","present":false}}
 {"expect":{"journal":{"contains":"\"action\":\"browser_downloads_clear\""}}}

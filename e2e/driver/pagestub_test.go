@@ -77,3 +77,47 @@ func fetchPage(t *testing.T, url string) []byte {
 	body, _ := io.ReadAll(resp.Body)
 	return body
 }
+
+// TestPageStubStallsAPageUntilTheClientLeaves — `/stall.html` sends its head and then nothing,
+// so a tab stays loading until Stop: the one state the browser's Stop button is drawn in.
+func TestPageStubStallsAPageUntilTheClientLeaves(t *testing.T) {
+	origin, stop, err := StartPageStub(filepath.Join(repoRoot(t), PageFixtures))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	resp, err := http.Get(origin + "/stall.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("stall.html answered %d", resp.StatusCode)
+	}
+	got := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		n, _ := resp.Body.Read(buf)
+		got <- string(buf[:n])
+		_, err := io.ReadAll(resp.Body)
+		got <- "ended: " + errString(err)
+	}()
+	if head := <-got; !strings.Contains(head, "<title>Stall</title>") {
+		t.Errorf("stall.html's first bytes %q carry no title", head)
+	}
+	select {
+	case end := <-got:
+		t.Errorf("stall.html finished (%s); it must stay open", end)
+	case <-time.After(700 * time.Millisecond):
+	}
+	if body := string(fetchPage(t, origin+"/prompt.html")); !strings.Contains(body, "prompt(") {
+		t.Errorf("prompt.html carries no prompt(): %q", body)
+	}
+}
+
+func errString(err error) string {
+	if err == nil {
+		return "nil"
+	}
+	return err.Error()
+}

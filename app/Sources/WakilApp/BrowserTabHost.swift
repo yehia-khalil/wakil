@@ -621,7 +621,7 @@ final class BrowserTabHost {
 
     private static func clearSelection(in view: WKWebView) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            view.callAsyncJavaScript("window.getSelection()?.removeAllRanges();", arguments: [:], in: nil,
+            view.callAsyncJavaScript("document.getSelection()?.removeAllRanges();", arguments: [:], in: nil,
                                      in: findWorld) { _ in continuation.resume() }
         }
     }

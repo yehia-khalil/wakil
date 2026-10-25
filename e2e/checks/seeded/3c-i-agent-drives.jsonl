@@ -1,0 +1,61 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/a.html","newTab":false}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].url","contains":"/a.html"}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"canGoBack","equals":"true"}}
+{"parity":{"action":"browser_back","params":{"pane":"browser-1"},"click":"browser.back","assert":"read_pane"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"expect":{"pane":"browser-1","field":"canGoForward","equals":"true"}}
+{"parity":{"action":"browser_forward","params":{"pane":"browser-1"},"click":"browser.forward","assert":"read_pane"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"dispatch":{"action":"browser_back","params":{"pane":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"browser_forward","params":{"pane":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"do":{"click":"browser.reload"}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_reload\""}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"dispatch":{"action":"browser_reload","params":{"pane":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"dispatch":{"action":"browser_zoom","params":{"pane":"browser-1","step":"in"}}}
+{"expect":{"pane":"browser-1","field":"zoom","equals":"1.1"}}
+{"dispatch":{"action":"browser_zoom","params":{"pane":"browser-1","step":"reset"}}}
+{"expect":{"pane":"browser-1","field":"zoom","equals":"1"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"parity":{"action":"browser_select_tab","params":{"pane":"browser-1","tab":"t1"},"click":"browser.tab.t1","assert":"read_pane"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"dispatch":{"action":"browser_select_tab","params":{"pane":"browser-1","index":-1}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"dispatch":{"action":"browser_move_tab","params":{"pane":"browser-1","tab":"t2","to":0}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].id","equals":"t1"}}
+{"dispatch":{"action":"browser_close_tab","params":{"pane":"browser-1","tab":"t1"}}}
+{"expect":{"pane":"browser-1","field":"tabs[1]","present":false}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"dispatch":{"action":"browser_reopen_tab","params":{"pane":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t3"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].url","contains":"/b.html"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"dispatch":{"action":"browser_restore","params":{"pane":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].id","equals":"t3"}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/find.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Find"}}
+{"dispatch":{"action":"browser_find","params":{"pane":"browser-1","query":"needle"}}}
+{"expect":{"pane":"browser-1","field":"find.total","equals":"3"}}
+{"expect":{"pane":"browser-1","field":"find.current","equals":"1"}}
+{"dispatch":{"action":"browser_find_step","params":{"pane":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"find.current","equals":"2"}}
+{"dispatch":{"action":"browser_find_step","params":{"pane":"browser-1","forward":false}}}
+{"expect":{"pane":"browser-1","field":"find.current","equals":"1"}}
+{"parity":{"action":"browser_find_close","params":{"pane":"browser-1"},"click":"browser.find.close","assert":"read_pane"}}
+{"expect":{"pane":"browser-1","field":"find","equals":"null"}}
+{"dispatch":{"action":"browser_find_step","params":{"pane":"browser-1"},"refuses":"the find bar is closed"}}
+{"dispatch":{"action":"browser_focus_address","params":{"pane":"browser-1"}}}
+{"expect":{"focus":"browser.address"}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_focus_address\""}}}

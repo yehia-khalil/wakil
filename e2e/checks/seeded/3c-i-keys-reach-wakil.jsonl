@@ -27,3 +27,5 @@
 {"expect":{"journal":{"contains":"\"action\":\"browser_focus_address\""}}}
 {"do":{"press":"Escape"}}
 {"expect":{"focus":"browser.page"}}
+{"do":{"keys":"x"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Keys x"}}

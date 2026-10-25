@@ -6,6 +6,8 @@
 // Without Wakil's own key routing a focused page swallows these, and the palette never opens.
 document.addEventListener('keydown', (e) => {
   if (e.metaKey && (e.key === 'k' || e.key === 'p')) { e.preventDefault(); document.title = 'Keys ' + e.key; }
+  // A plain x marks that the page, not the address field or the window, has the keyboard.
+  if (!e.metaKey && e.key === 'x') { document.title = 'Keys x'; }
 }, true);
 </script>
 </body></html>
