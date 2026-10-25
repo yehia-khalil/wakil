@@ -13,6 +13,14 @@ public struct ConnectionCallRequest: Sendable, Equatable, Codable {
     public let allowed: Bool
     public let readOnly: Bool
     public let locked: Bool
+    /// The arguments exactly as the line carried them, when the request was read off the socket
+    /// (`ConnectionApprovalServer.request(fromLine:)`): the plane's statement is built from these
+    /// bytes, so a number `JSONValue` would round (an integer past 2^53) shows as it was sent.
+    public var rawArguments: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case connection, tool, arguments, allowed, readOnly, locked
+    }
 
     public init(connection: String, tool: String, arguments: JSONValue, allowed: Bool, readOnly: Bool, locked: Bool) {
         self.connection = connection
@@ -77,7 +85,7 @@ public func approvalSocketFailure(path: String, error: any Error) -> String {
 /// permission plane (`ConfirmationBroker`) in this conversation's slot, and the operator's answer
 /// is the decision. **Nothing a peer sends can approve anything**: the request's flags only ever
 /// narrow what runs unasked, and an approval comes only from the broker. Every decision is
-/// journalled (`journal`, outcome `allowed`, `asked-approved`, `asked-declined`, `asked-timeout`,
+/// journalled (`journal`, outcome `peer-allowed`, `asked-approved`, `asked-declined`, `asked-timeout`,
 /// `asked-busy`, or `conversation-ended` for a request the server's `stop` overtook).
 ///
 /// The socket is created owner-only and set to mode 0600 before it listens, after unlinking a
@@ -294,10 +302,19 @@ public actor ConnectionApprovalServer {
 
     /// One line's decision: a line that is not a request is refused.
     func answer(line: Data) async -> ConnectionCallDecision {
-        guard let request = try? JSONDecoder().decode(ConnectionCallRequest.self, from: line) else {
+        guard let request = Self.request(fromLine: line) else {
             return .deny("Wakil could not read the approval request: nothing was sent.")
         }
         return await answer(request)
+    }
+
+    /// The request one line carries, its arguments' own bytes kept beside the decoded value; nil
+    /// for a line that is not one.
+    static func request(fromLine line: Data) -> ConnectionCallRequest? {
+        guard var request = try? JSONDecoder().decode(ConnectionCallRequest.self, from: line) else { return nil }
+        request.rawArguments = RawJSON.member("arguments", ofObject: Array(line))
+            .map { String(decoding: $0, as: UTF8.self) }
+        return request
     }
 
     /// One request's decision, journalled. `stopped` is read again after every suspension: a
@@ -316,7 +333,8 @@ public actor ConnectionApprovalServer {
             return ended
         }
         if let decision = connectionCallDecision(request, spoken: spoken) {
-            await journal(request, "allowed")
+            // Allowed on the flags the peer sent: they only ever narrow what runs unasked.
+            await journal(request, "peer-allowed")
             return decision
         }
         let proposal = PendingMutation(
@@ -350,10 +368,15 @@ public actor ConnectionApprovalServer {
     /// `<connection> · <tool>(<arguments, one line>)`, the arguments cut at
     /// `statementArgumentsLimit` characters. JSON encoding escapes every newline, so it is one
     /// line; `displayEscaped` then spells out anything that would not show as itself.
+    ///
+    /// The arguments are the bytes `wakil-connect` sent when there are any (`rawArguments`), so
+    /// every number reads exactly as it will be sent; only each string is written again, the way
+    /// the encoder below writes one (Go's `\u003c` for `<` shown as `<`).
     static func statement(_ request: ConnectionCallRequest) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        var arguments = (try? encoder.encode(request.arguments)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+        var arguments = request.rawArguments.flatMap { RawJSON.rewritingStrings(Array($0.utf8), with: encoder) }
+            ?? (try? encoder.encode(request.arguments)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
         if arguments.count > statementArgumentsLimit {
             arguments = String(arguments.prefix(statementArgumentsLimit)) + "…"
         }
@@ -416,5 +439,106 @@ private final class OpenConnections: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         shut = true
         for fd in open { _ = shutdown(fd, SHUT_RD) }
+    }
+}
+
+/// Just enough of a JSON scanner to keep a value's own bytes: Foundation's decoders turn every
+/// number into a `Double` on the way in. Input is JSON a decoder has already accepted.
+enum RawJSON {
+    /// The bytes of the top-level object's member `key`, as they stand in `bytes`.
+    static func member(_ key: String, ofObject bytes: [UInt8]) -> ArraySlice<UInt8>? {
+        var i = skipSpace(bytes, 0)
+        guard i < bytes.count, bytes[i] == UInt8(ascii: "{") else { return nil }
+        i += 1
+        while true {
+            i = skipSpace(bytes, i)
+            guard i < bytes.count, bytes[i] == UInt8(ascii: "\"") else { return nil }
+            let nameEnd = endOfString(bytes, i)
+            guard nameEnd <= bytes.count,
+                  let name = try? JSONDecoder().decode(String.self, from: Data(bytes[i..<nameEnd])) else { return nil }
+            i = skipSpace(bytes, nameEnd)
+            guard i < bytes.count, bytes[i] == UInt8(ascii: ":") else { return nil }
+            let start = skipSpace(bytes, i + 1)
+            let end = endOfValue(bytes, start)
+            guard end > start, end <= bytes.count else { return nil }
+            if name == key { return bytes[start..<end] }
+            i = skipSpace(bytes, end)
+            guard i < bytes.count, bytes[i] == UInt8(ascii: ",") else { return nil }
+            i += 1
+        }
+    }
+
+    /// `bytes` with every string written again by `encoder` and everything else — numbers above
+    /// all — kept byte for byte. Nil if a string will not decode.
+    static func rewritingStrings(_ bytes: [UInt8], with encoder: JSONEncoder) -> String? {
+        var out: [UInt8] = []
+        out.reserveCapacity(bytes.count)
+        var i = 0
+        while i < bytes.count {
+            if bytes[i] == UInt8(ascii: "\"") {
+                let end = endOfString(bytes, i)
+                guard end <= bytes.count,
+                      let text = try? JSONDecoder().decode(String.self, from: Data(bytes[i..<end])),
+                      let again = try? encoder.encode(text) else { return nil }
+                out.append(contentsOf: again)
+                i = end
+            } else {
+                out.append(bytes[i])
+                i += 1
+            }
+        }
+        return String(decoding: out, as: UTF8.self)
+    }
+
+    private static func skipSpace(_ b: [UInt8], _ from: Int) -> Int {
+        var i = from
+        while i < b.count, [0x20, 0x09, 0x0A, 0x0D].contains(b[i]) { i += 1 }
+        return i
+    }
+
+    /// Just past the string opening at `start`.
+    private static func endOfString(_ b: [UInt8], _ start: Int) -> Int {
+        var i = start + 1
+        while i < b.count {
+            if b[i] == UInt8(ascii: "\\") { i += 2; continue }
+            if b[i] == UInt8(ascii: "\"") { return i + 1 }
+            i += 1
+        }
+        return b.count + 1
+    }
+
+    /// Just past the value starting at `start`: a string, an object or array (brackets counted
+    /// outside strings), or a bare literal or number.
+    private static func endOfValue(_ b: [UInt8], _ start: Int) -> Int {
+        guard start < b.count else { return start }
+        switch b[start] {
+        case UInt8(ascii: "\""):
+            return endOfString(b, start)
+        case UInt8(ascii: "{"), UInt8(ascii: "["):
+            var depth = 0
+            var i = start
+            while i < b.count {
+                switch b[i] {
+                case UInt8(ascii: "\""):
+                    i = endOfString(b, i)
+                    continue
+                case UInt8(ascii: "{"), UInt8(ascii: "["):
+                    depth += 1
+                case UInt8(ascii: "}"), UInt8(ascii: "]"):
+                    depth -= 1
+                    if depth == 0 { return i + 1 }
+                default:
+                    break
+                }
+                i += 1
+            }
+            return b.count + 1
+        default:
+            var i = start
+            while i < b.count, ![UInt8(ascii: ","), UInt8(ascii: "}"), UInt8(ascii: "]"), 0x20, 0x09, 0x0A, 0x0D].contains(b[i]) {
+                i += 1
+            }
+            return i
+        }
     }
 }

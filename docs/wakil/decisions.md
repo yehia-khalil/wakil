@@ -1817,7 +1817,10 @@ Still asks: a locked (destructive) tool, always; a ticked write reached by a spo
 7: it raises the plane once, as a *gate* write does); a tool the operator has not ticked. With Wakil
 not running, only ticked tools run and everything else is refused.
 
-The threat model the reviews surfaced: the gate is in `wakil-connect`, not the harness. An agent with
-a shell can already edit the organization's switches on disk and connect to its own approval socket,
-so the socket can only ask and never approve; the tick protects against a tool being used unasked,
-not against an agent that already owns the shell (Invariant 4's reasoning).
+The threat model the reviews surfaced: the gate is in `wakil-connect`, not the harness. The switches
+are files on disk and the approval socket is local, so the gate rests on two other layers: the
+CLI/harness permission layer, which decides whether a shell command the agent proposes may run (and
+so whether it can edit the switches or reach the socket), and `ActionRegistry.dispatch` refusing an
+operator-only action — `ctx_connection_allow_set`, `ctx_connection_update`, `ctx_config_tree_for` among
+them — when the agent asks. The socket can only ask and never approve; the tick protects against a
+tool being used unasked.

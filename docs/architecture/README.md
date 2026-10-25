@@ -47,7 +47,7 @@ flowchart LR
 - **The Go binaries** (`cmd/`, `internal/`) are headless capabilities behind MCP. The window starts
   four of them (`WakilWiring.build`). The agent's `claude` process starts the agent-facing ones
   (`agentFacingServers`). `wakil-git` is started by both.
-- **`wakil-connect`** is one process per connection of the active organization, started by the agent's
+- **`wakil-connect`** is one process per connection of the launching place's organization, started by the agent's
   `claude` process (`AgentConnectionsBox` builds its config). It fronts the organization's own MCP
   server, injects the credentials, and gates every call. See `go.md`.
 - **The agent** is the `claude` CLI, driven by `ClaudeCodeCLIHarness` (`Harness/`). It reaches

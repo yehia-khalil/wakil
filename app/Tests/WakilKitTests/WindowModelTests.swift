@@ -4580,7 +4580,9 @@ private func registerFakeRefetch(
 /// window last read, and — the dangerous half — `model.environment`, which
 /// feeds `writeGate` for the agent's own next dispatch, stayed stale too.
 ///
-/// Dispatched with `origin: .agent` straight through the registry, exactly
+/// Dispatched straight through the registry (`origin: .debug`, a
+/// `--dispatch` script — `ctx_set_environment` is operator-only, so
+/// `dispatch` refuses it from the agent), exactly
 /// like `anAgentsDispatchReachesTheScreenWithoutTheOperatorClicking` above
 /// does for `pane_select_cell` — never through `WindowModel.setEnvironment`,
 /// which is the operator's own route and already covered by
@@ -4631,13 +4633,14 @@ private func registerFakeRefetch(
     await model.refreshLayout()
     #expect(model.layoutSnapshot.panes.map(\.id) == ["db-1"])
 
-    // The agent's own path, not `model.setEnvironment` — straight through
-    // the registry, exactly what `MCPServer` does for a real `tools/call`.
-    // Neither side is production, so this clears the write gate as `.allow`
-    // without a confirmation.
+    // Not `model.setEnvironment` — straight through the registry, the way a
+    // `--dispatch` script reaches it (`.debug`): `ctx_set_environment` is
+    // operator-only, so `dispatch` refuses it from the agent. Neither side is
+    // production, so this clears the write gate as `.allow` without a
+    // confirmation.
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-        origin: .agent, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        origin: .debug, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
 
     #expect(await waitUntil { model.environment == "staging" })
     // `environment` is written before the swap that follows it in the same `refreshContext`, so
@@ -4692,10 +4695,12 @@ private actor SettingsBackend: ToolCaller {
 /// channels, one state on disk, two states on screen: Invariant 2, and
 /// Invariant 3's "what is actually on screen" with it.
 ///
-/// Dispatched with `origin: .agent` straight through the registry, exactly
-/// as `anAgentsEnvironmentSwitchReachesTheWindowsPanesAndItsOwnEnvironment`
+/// Dispatched straight through the registry, exactly as
+/// `anAgentsEnvironmentSwitchReachesTheWindowsPanesAndItsOwnEnvironment`
 /// above does, and never through `WindowModel.setDatabaseDSN`, which is
-/// the operator's route.
+/// the operator's route. `origin: .debug` (a `--dispatch` script), not
+/// `.agent`: `db_set_dsn` is operator-only, and `dispatch` refuses it from
+/// the agent; the pump's redraw is what is under test, whoever asked.
 @Test @MainActor func anAgentsSettingsWriteRedrawsAnOpenSettingsPane() async throws {
     let backend = SettingsBackend()
     let (registry, panes, layout) = try makeRegistry()
@@ -4717,7 +4722,7 @@ private actor SettingsBackend: ToolCaller {
             "name": .string("ledger"), "driver": .string("mysql"),
             "dsn": .string("mysql://u:p@h/ledger"),
         ]),
-        origin: .agent, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        origin: .debug, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
 
     #expect(await waitUntil {
         model.settings?.projects.first?.environments.first?.databases.map(\.name) == ["ledger"]
@@ -6942,9 +6947,10 @@ private func environmentWindow(
     let backend = EnvironmentBackend(environment: "staging", project: "api")
     let (model, registry, panes, _) = try await environmentWindow(backend)
 
+    // `.debug`, the socket's other caller: `ctx_set_environment` is operator-only, and `dispatch` refuses it from the agent.
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("qa")]),
-        origin: .agent, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        origin: .debug, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
 
     #expect(await waitUntil { model.environment == "qa" })
     #expect(await panes.apiSnapshot(paneId: "api-1").request.origin != "https://catalog-qa.example")
@@ -7228,9 +7234,10 @@ private func seededApiWindow(
     let before = await panes.apiSnapshot(paneId: "api-1")
     let listings = await backend.listings
 
+    // `.debug`, the socket's other caller: `ctx_set_environment` is operator-only, and `dispatch` refuses it from the agent.
     _ = try await registry.dispatch(
         name: "ctx_set_environment", params: .object(["name": .string("staging")]),
-        origin: .agent, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
+        origin: .debug, caller: DispatchCaller(place: model.place, session: nil), confirmation: nil)
     // The pump runs after the dispatch: give it the room every agent-path test here gives it.
     _ = await waitUntil { await backend.listings != listings }
 

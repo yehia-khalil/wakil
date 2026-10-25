@@ -205,7 +205,8 @@ private func parked(in broker: ConfirmationBroker) async throws -> PendingMutati
     }
     let entries = try await registry.journalEntries()
     #expect(entries.map(\.action) == ["connection_call", "connection_call", "connection_call"])
-    #expect(entries.map(\.outcome) == ["allowed", "asked-approved", "asked-declined"])
+    // The first ran on the peer's own flags, so it says so: nothing the peer sent approved it.
+    #expect(entries.map(\.outcome) == ["peer-allowed", "asked-approved", "asked-declined"])
     #expect(entries[0].params == allowed.params)
     #expect(entries[0].origin == .agent)
     #expect(entries[0].conversation == "conv-1")
@@ -368,6 +369,23 @@ private final class Gate: @unchecked Sendable {
     #expect(statement.hasSuffix("…)"))
     #expect(!statement.contains("\n"))
     #expect(statement.count < 400)
+}
+
+/// The statement shows the arguments as `wakil-connect` sent them: an integer past 2^53 is not
+/// rounded the way `JSONValue`'s `Double` would round it, a string reads as itself (Go's `\u003c`
+/// shown as `<`), and what would not show as itself is still spelled out.
+@Test func theStatementShowsNumbersExactlyAsSent() throws {
+    let line = Data(#"{"connection":"tracker","tool":"set_id","arguments":{"id":12345678901234567890,"note":"a\u003cb \u202e!","n":[1.50,-2e3]},"allowed":false,"readOnly":false,"locked":false}"#.utf8)
+    let request = try #require(ConnectionApprovalServer.request(fromLine: line))
+    #expect(request.tool == "set_id")
+    let statement = ConnectionApprovalServer.statement(request)
+    #expect(statement.contains(#""id":12345678901234567890"#), "\(statement)")
+    #expect(statement.contains(#""n":[1.50,-2e3]"#), "\(statement)")
+    #expect(statement.contains(#""note":"a<b \u{202E}!""#), "\(statement)")
+    #expect(!statement.unicodeScalars.contains { $0.properties.generalCategory == .format })
+    // Re-encoding the decoded value is what would have rounded it.
+    let encoded = String(decoding: try JSONEncoder().encode(request.arguments), as: UTF8.self)
+    #expect(!encoded.contains("12345678901234567890"))
 }
 
 @Test func theStatementSpellsOutWhatWouldNotShowAsItself() {

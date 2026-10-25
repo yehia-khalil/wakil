@@ -195,6 +195,34 @@ private let connectionActions = [
         #expect(await model.signIn(org: "initech", name: "docs") == nil)
         #expect(model.connectionAccounts["initech/docs"] == "ops@initech.test")
     }
+
+    /// A write for an organisation that is not the active one reads that organisation's tree by id
+    /// and refreshes its entry in the connections box, so its next launch sees the write; a write
+    /// for the active one needs no second read.
+    @Test func aWriteForAnotherOrganisationRefreshesItsConnections() async {
+        let asked = Asked()
+        let model = await window(connections: [Self.connection("docs")], asked: asked)
+        let box = AgentConnectionsBox()
+        model.agentConnectionsBox = box
+        let umbrella: JSONValue = .object(["structuredContent": .object([
+            "org": .object(["id": .string("umbrella"), "connections": .array([Self.connection("wiki", allow: ["edit": true])])]),
+            "providers": .array([]), "projects": .array([]),
+        ])])
+        await model.registryForTesting.register(Action(
+            name: "ctx_config_tree_for", description: "", kind: .read, audience: .operatorOnly, schema: .object([:]),
+            handler: { params in
+                await asked.add("ctx_config_tree_for", params)
+                return umbrella
+            }))
+
+        #expect(await model.setConnectionAllow(org: "umbrella", name: "wiki", tool: "edit", allow: true) == nil)
+        #expect(await asked.params("ctx_config_tree_for") == [.object(["id": .string("umbrella")])])
+        #expect(box.connections(org: "umbrella").map(\.name) == ["wiki"])
+
+        #expect(await model.setConnectionAllow(org: "initech", name: "docs", tool: "edit", allow: true) == nil)
+        #expect(await asked.params("ctx_config_tree_for").count == 1)
+        #expect(box.connections(org: "initech").map(\.name) == ["docs"])
+    }
 }
 
 private actor SeenArgs {

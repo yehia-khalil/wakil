@@ -68,7 +68,8 @@ public func connectionErrorWantsSignIn(_ error: String) -> Bool {
 }
 
 /// Settings → Connections: every call is an operator-only `ctx_connection_*` dispatch for the
-/// organisation named, and Settings is read again after a write. Each answers its refusal's own
+/// organisation named, and Settings is read again after a write — and that organisation's entry in
+/// the connections box, when it is not the active one. Each answers its refusal's own
 /// sentence, whole (Rule 8).
 extension WindowModel {
     func connectionCall(org: String, _ name: String, _ params: [String: JSONValue],
@@ -85,8 +86,22 @@ extension WindowModel {
         } catch {
             result = (nil, statusDescribingFailure(name, error))
         }
-        if refresh { await refreshSettings() }
+        if refresh {
+            await refreshSettings()
+            if org != settings?.org.id { await refreshAgentConnections(org: org) }
+        }
         return result
+    }
+
+    /// `org`'s entry in the connections box read again, for a write to an organisation that is not
+    /// the active one: Settings reads only the active organisation's tree, and the next launch in
+    /// `org` must see what was just written. A read that fails leaves the entry as it was.
+    func refreshAgentConnections(org: String) async {
+        let result = try? await registry.dispatch(
+            name: "ctx_config_tree_for", params: .object(["id": .string(org)]), origin: .ui,
+            caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        guard let tree = decodeSettingsTree(fromResult: result), tree.org.id == org else { return }
+        agentConnectionsBox.set(org: org, connections: tree.org.connections)
     }
 
     private static func string(_ v: JSONValue?, _ key: String) -> String? {

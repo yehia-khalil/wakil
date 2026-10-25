@@ -1,6 +1,8 @@
 package wakilcore
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -214,5 +216,51 @@ func TestResolvedConnectionURLPicksAmplitudesRegion(t *testing.T) {
 	amp = MCPConnection{Kind: "amplitude", URL: "https://proxy.example.test/mcp", Values: map[string]string{"region": "eu"}}
 	if got := ResolvedConnectionURL(amp); got != "https://proxy.example.test/mcp" {
 		t.Fatalf("an address the operator typed = %q, want it kept", got)
+	}
+}
+
+// A custom env: or header: key Wakil keeps for itself is refused at write time, whatever its case,
+// and nothing from that write is kept; an ordinary custom key still is.
+func TestSetConnectionSecretsRefusesReservedKeys(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	c, err := AddConnection("initech", connInput("github"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"env:WAKIL_ORG", "env:wakil_approval_socket", "env:DYLD_INSERT_LIBRARIES", "env:NODE_OPTIONS",
+		"env:path", "header:Authorization", "header:host", "header:CONTENT-TYPE", "header:Mcp-Session-Id", "header:mcp-protocol-version"} {
+		err := SetConnectionSecrets("initech", c.Name, map[string]string{key: "v", "env:WIKI_TOKEN": "w"})
+		if msg, ok := IsUserError(err); !ok || !strings.Contains(msg, key) || !strings.Contains(msg, "reserved") {
+			t.Fatalf("%s: err = %v", key, err)
+		}
+	}
+	if got, err := ConnectionSecrets("initech", c.Name); err != nil || len(got) != 0 {
+		t.Fatalf("a refused write kept %v (%v)", got, err)
+	}
+	if err := SetConnectionSecrets("initech", c.Name, map[string]string{"env:WIKI_TOKEN": "w", "header:X-API-Key": "k", "token": "t"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ConnectionForErr tells an organization with no such connection from one whose configuration
+// could not be read; ConnectionFor still answers neither.
+func TestConnectionForErrTellsUnreadableFromMissing(t *testing.T) {
+	localOrg(t)
+	if _, ok, err := ConnectionForErr("initech", "github"); ok || err != nil {
+		t.Fatalf("missing = %v %v", ok, err)
+	}
+	dir, err := OrgDirFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, orgFileName), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := ConnectionForErr("initech", "github"); ok || err == nil {
+		t.Fatalf("unreadable = %v %v", ok, err)
+	}
+	if _, ok := ConnectionFor("initech", "github"); ok {
+		t.Fatal("ConnectionFor found one in an unreadable org")
 	}
 }

@@ -28,13 +28,12 @@ func liveHint(tool *mcp.Tool) (hint string, ok bool) {
 	return "writes", true
 }
 
-// gateFlags is the rule's input for one call: the operator's switch over the live hint, falling
-// back to the stored hint when the server gave none, so a tool that turned destructive locks at once.
+// gateFlags is the rule's input for one call: the operator's switch over the live hint, so a tool
+// that turned destructive locks at once. tool is always the live one, so a tool listed with no
+// annotations has no hint ("") rather than the stored one: stored hints stand only for a tool
+// absent from the live list (Settings → Connections).
 func gateFlags(c wakilcore.MCPConnection, tool *mcp.Tool) (allowed, readOnly, locked bool) {
-	hint := c.Hints[tool.Name]
-	if live, ok := liveHint(tool); ok {
-		hint = live
-	}
+	hint, _ := liveHint(tool)
 	withLive := c
 	withLive.Hints = map[string]string{tool.Name: hint}
 	allowed, locked = wakilcore.ToolAllowed(withLive, tool.Name)
@@ -86,7 +85,10 @@ func canonicalArguments(raw json.RawMessage) (json.RawMessage, error) {
 // too, so the app can apply the spoken-turn rule. With no socket (no app to ask), only an allowed
 // tool goes through. Any trouble reaching or reading the app refuses the call.
 func gateCall(ctx context.Context, org, name, socket string, tool *mcp.Tool, args json.RawMessage) error {
-	c, ok := wakilcore.ConnectionFor(org, name)
+	c, ok, err := wakilcore.ConnectionForErr(org, name)
+	if err != nil {
+		return wakilcore.UserError("Wakil could not read " + org + "'s connections (" + errText(err) + "): nothing was sent")
+	}
 	if !ok {
 		return wakilcore.UserError("connection " + name + " is no longer in " + org + ": nothing was sent")
 	}

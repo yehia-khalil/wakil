@@ -31,7 +31,7 @@ import (
 
 // startLimit bounds dialling the real server and listing its tools, so a server that never
 // answers leaves the session with an empty connection instead of a hung one.
-const startLimit = 30 * time.Second
+const startLimit = 20 * time.Second
 
 // newServer dials connection name's real server once and fronts the tools it lists. If the
 // connection or its server cannot be reached, the server still runs, with no tools and the reason
@@ -100,7 +100,10 @@ func unavailableServer(name, msg string) *mcp.Server {
 // connectUpstream opens the client session to the real server and reads its tools and its own
 // instructions, which pass through to the agent.
 func connectUpstream(ctx context.Context, org, name string, dial dialFunc) (*mcp.ClientSession, []*mcp.Tool, string, error) {
-	c, ok := wakilcore.ConnectionFor(org, name)
+	c, ok, err := wakilcore.ConnectionForErr(org, name)
+	if err != nil {
+		return nil, nil, "", wakilcore.UserError("Wakil could not read organization " + org + "'s connections: " + errText(err))
+	}
 	if !ok {
 		return nil, nil, "", wakilcore.UserError("organization " + org + " has no connection named " + name)
 	}

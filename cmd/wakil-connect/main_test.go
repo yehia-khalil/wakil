@@ -392,7 +392,8 @@ func TestUnseenToolFollowsItsHint(t *testing.T) {
 	setupOrg(t)
 	c := github()
 	// What the page saw earlier: read_doc was not there, delete_repo was read-only, plain was
-	// read-only. The live annotations win where there are any; plain has none, so its stored hint holds.
+	// read-only. The live list wins for every tool on it: plain is listed with no annotations, so
+	// it has no hint, and its stored readOnly does not let it through unasked.
 	c.Hints = map[string]string{"delete_repo": "readOnly", "plain": "readOnly", "create_issue": "readOnly"}
 	addConn(t, c)
 	sock := listenSocket(t, `{"decision":"deny","message":"no"}`)
@@ -402,24 +403,28 @@ func TestUnseenToolFollowsItsHint(t *testing.T) {
 	if text, isErr := call(t, ctx, cs, "read_doc", nil); isErr {
 		t.Fatalf("unseen read-only read_doc = %q", text)
 	}
-	if text, isErr := call(t, ctx, cs, "plain", nil); isErr {
-		t.Fatalf("plain, no live annotations, stored readOnly = %q", text)
-	}
 	if len(sock.requests()) != 0 {
 		t.Fatalf("asked %v", sock.requests())
 	}
+	call(t, ctx, cs, "plain", nil)
 	call(t, ctx, cs, "create_issue", nil)
 	call(t, ctx, cs, "delete_repo", nil)
 	asks := sock.requests()
-	if len(asks) != 2 {
+	if len(asks) != 3 {
 		t.Fatalf("asks = %v", asks)
 	}
-	var issue, repo approval
-	if err := json.Unmarshal([]byte(asks[0]), &issue); err != nil {
+	var plain, issue, repo approval
+	if err := json.Unmarshal([]byte(asks[0]), &plain); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(asks[1]), &repo); err != nil {
+	if err := json.Unmarshal([]byte(asks[1]), &issue); err != nil {
 		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(asks[2]), &repo); err != nil {
+		t.Fatal(err)
+	}
+	if plain.ReadOnly || plain.Allowed || plain.Locked {
+		t.Fatalf("plain, listed without annotations, stored readOnly = %+v", plain)
 	}
 	if issue.ReadOnly || issue.Allowed || issue.Locked {
 		t.Fatalf("create_issue, now writes = %+v", issue)
@@ -867,5 +872,85 @@ func TestDialErrorsNeverCarryASecret(t *testing.T) {
 	why := cs.InitializeResult().Instructions
 	if strings.Contains(why, "ghp-leaky-5") || !strings.Contains(why, "is revoked") {
 		t.Fatalf("instructions = %q", why)
+	}
+}
+
+// A custom key Wakil reserves, already in the Keychain item from before the write-time refusal,
+// is skipped when the transport is built; the ordinary ones still go.
+func TestReservedCustomSecretsSkipped(t *testing.T) {
+	t.Run("http", func(t *testing.T) {
+		setupOrg(t)
+		memorySecurity(t)
+		addConn(t, wakilcore.MCPConnection{Name: "wiki", Kind: "custom", Transport: "http", URL: "https://wiki.example.test/mcp", SignIn: "token"})
+		raw := `{"header:X-API-Key":"xk-1","header:authorization":"a-1","header:Host":"h-1","header:Content-Type":"c-1","header:Mcp-Session-Id":"m-1"}`
+		if err := wakilcore.SecretSetFor("initech", "conn:wiki", raw); err != nil {
+			t.Fatal(err)
+		}
+		rt, sent := sentHeaders(t, "wiki")
+		req, _ := http.NewRequest("POST", "https://wiki.example.test/mcp", nil)
+		if _, err := rt.RoundTrip(req); err != nil {
+			t.Fatal(err)
+		}
+		h := (*sent)[0].Header
+		if len(h) != 1 || h["X-API-Key"][0] != "xk-1" {
+			t.Fatalf("headers = %v", h)
+		}
+	})
+	t.Run("stdio", func(t *testing.T) {
+		setupOrg(t)
+		memorySecurity(t)
+		addConn(t, wakilcore.MCPConnection{Name: "wiki", Kind: "custom", Transport: "stdio", Command: "wiki-mcp", SignIn: "none"})
+		raw := `{"env:WIKI_TOKEN":"wt-2","env:WAKIL_ORG":"umbrella","env:DYLD_INSERT_LIBRARIES":"d-1","env:NODE_OPTIONS":"n-1","env:Path":"p-1"}`
+		if err := wakilcore.SecretSetFor("initech", "conn:wiki", raw); err != nil {
+			t.Fatal(err)
+		}
+		tr, err := upstreamTransport(context.Background(), "initech", connFor(t, "wiki"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		env := strings.Join(tr.(*mcp.CommandTransport).Command.Env, "\n")
+		if !strings.Contains(env, "WIKI_TOKEN=wt-2") {
+			t.Fatalf("env = %s", env)
+		}
+		for _, v := range []string{"umbrella", "d-1", "n-1", "p-1"} {
+			if strings.Contains(env, v) {
+				t.Fatalf("reserved value %s injected: %s", v, env)
+			}
+		}
+	})
+}
+
+// An organization whose configuration cannot be read is said so, at the start and on a call,
+// rather than reported as having no such connection.
+func TestUnreadableOrgSaysSo(t *testing.T) {
+	setupOrg(t)
+	addConn(t, github())
+	up := &fakeUpstream{}
+	ctx, cs := fronted(t, "github", up.dial(t))
+	dir, err := wakilcore.OrgDirFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "org.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	text, isErr := call(t, ctx, cs, "read_doc", nil)
+	if !isErr || !strings.Contains(text, "could not read") || strings.Contains(text, "no longer") {
+		t.Fatalf("call = %q (error %v)", text, isErr)
+	}
+	if got := up.ran(); len(got) != 0 {
+		t.Fatalf("forwarded: %v", got)
+	}
+	_, cs2 := fronted(t, "github", up.dial(t))
+	why := cs2.InitializeResult().Instructions
+	if !strings.Contains(why, "could not read") || strings.Contains(why, "has no connection") {
+		t.Fatalf("instructions = %q", why)
+	}
+}
+
+// A server that never answers is given 20 seconds to start, then the session goes on without it.
+func TestStartLimitIsTwentySeconds(t *testing.T) {
+	if startLimit != 20*time.Second {
+		t.Fatalf("startLimit = %v", startLimit)
 	}
 }

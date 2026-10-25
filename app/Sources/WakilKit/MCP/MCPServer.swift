@@ -1032,6 +1032,8 @@ private func jsonRPCError(for error: ActionError) -> JSONRPCError {
         return JSONRPCError(code: -32003, message: "\(name) is blocked in production")
     case .callerGone(_, let reason):
         return JSONRPCError(code: -32006, message: reason)
+    case .operatorOnly:
+        return JSONRPCError(code: -32007, message: error.description)
     }
 }
 

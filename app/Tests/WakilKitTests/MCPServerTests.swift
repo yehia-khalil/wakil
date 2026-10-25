@@ -986,25 +986,16 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
     #expect(outcomes == ["gated", "ok"])
 }
 
-/// D10's actual action name, not a stand-in: `parkForConfirmation` must
-/// prefer `confirmationDescription`'s human sentence — "switch the active
-/// environment to staging" — over `describeProposal`'s machine-shaped
-/// `name {"json":"args"}` fallback, because an operator asked to approve a
-/// change to the one piece of state that decides whether a mutation is
-/// frightening should read a sentence, not parse an argument dump. This is
-/// what would go RED if `parkForConfirmation` used `describeProposal`
-/// alone: that fallback would still produce a non-empty statement (the
-/// action name plus its JSON arguments), so a bare "parks with something
-/// non-blank" test cannot tell the two apart — only asserting the exact
-/// wording can.
-@Test func aGatedEnvironmentSwitchParksWithTheHumanSentenceNotTheJSONForm() async throws {
+/// D10's actual action name, from the agent: `ctx_set_environment` is operator-only, so
+/// `dispatch` refuses it before the gate is asked, and nothing parks — the operator is never asked
+/// to approve an agent moving its own place (Invariant 5). This test used to park the call and
+/// read the plane's sentence; that path is closed, so the sentence `confirmationDescription`
+/// still writes for it is pinned on its own below.
+@Test func anAgentsEnvironmentSwitchIsRefusedAndNeverParks() async throws {
     let dir = testScratchRoot
         .appendingPathComponent("wakil-test-\(UUID().uuidString)")
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
     let broker = ConfirmationBroker(timeout: .seconds(60))
-    // Hand-registered under the real name `confirmationDescription`
-    // switches on, so this test needs no `wakil-ctx` binary but still
-    // exercises the exact string match that function performs.
     await registry.register(Action(
         name: "ctx_set_environment",
         description: "test",
@@ -1024,17 +1015,14 @@ func manyLargeFramesOnOneConnectionAreAnsweredInOrderAndInFull() async throws {
             "arguments": .object(["name": .string("staging")]),
         ]))
 
-    // Active environment "production", target "staging" — D10's leaving
-    // direction.
-    async let reply = handle(call, surface: surface, caller: { .test("production", conversation: "conv") })
-    while await broker.all().isEmpty { await Task.yield() }
-    let parked = await broker.all().values.first
-    #expect(parked?.statement == "switch the active environment to staging")
-    #expect(parked?.affectsEveryRow == false)
-    await broker.approve(id: parked!.id)
-
-    let answered = await reply
-    #expect(answered?.error == nil)
+    // Active environment "production", target "staging" — D10's leaving direction, which would
+    // have parked.
+    let answered = await handle(call, surface: surface, caller: { .test("production", conversation: "conv") })
+    #expect(answered?.error?.message.contains("only the operator") == true, "\(String(describing: answered))")
+    #expect(await broker.all().isEmpty)
+    #expect(try await registry.journalEntries().map(\.outcome) == ["refused"])
+    #expect(confirmationDescription(action: "ctx_set_environment", params: .object(["name": .string("staging")]))
+        == "switch the active environment to staging")
 }
 
 /// A mutable string an `environment` closure can read fresh each call, so a

@@ -335,7 +335,8 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
     /// into production prices `.control` actions **for the agent only**; the operator's own
     /// switch — the context line's chooser — has never raised a plane. The palette must leave
     /// that unchanged in both directions: the operator's switch runs as the chooser's does, and
-    /// the agent's identical call still parks for confirmation.
+    /// the agent's identical call is still refused (`ctx_set_environment` is operator-only, which
+    /// `dispatch` refuses from the agent before the gate is asked).
     @Test func switchingIntoProductionMeetsTheGateUnchanged() async throws {
         let w = await paletteWindow(register: { registry, _, _ in await registerEnvironmentSwitch(into: registry) })
         _ = await w.model.paletteRootEntries(mode: .commands) { _ in }
@@ -346,7 +347,7 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         #expect(ran.map(\.outcome) == ["ok"])
         #expect(ran.first?.origin == .ui)
 
-        await #expect(throws: ActionError.self) {
+        await #expect(throws: ActionError.operatorOnly("ctx_set_environment")) {
             try await w.registry.dispatch(
                 name: "ctx_set_environment", params: .object(["name": .string("production")]),
                 origin: .agent, caller: .test("staging"), confirmation: nil)

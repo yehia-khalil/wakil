@@ -46,6 +46,14 @@ struct CustomServerForm: View {
                 LabelledField(label: "ARGUMENTS", prompt: "-y @initech/wiki-mcp", text: $args, width: 456,
                               identifier: "settings.org.connections.custom.args", narrows: true)
             }
+            // The command, its arguments and the address go to the agent with the server's
+            // configuration; only the entries below are kept in the Keychain.
+            Text("The \(http ? "address" : "command and its arguments") can be seen by the agent. Put a token in "
+                 + "\(http ? "a Header" : "an Environment variable") entry below, never in the \(http ? "address" : "arguments").")
+                .font(.system(size: SettingsScale.meta))
+                .foregroundStyle(SettingsPalette.coolWhite.opacity(0.55))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("settings.org.connections.custom.visible")
             ForEach($entries) { $entry in
                 HStack(spacing: 8) {
                     FormButton(title: entry.header ? "Header" : "Environment variable", tone: SettingsPalette.coolWhite,

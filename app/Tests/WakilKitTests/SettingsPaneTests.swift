@@ -234,22 +234,25 @@ private func registryWithLayoutActions(_ layout: LayoutStore) async throws -> Ac
 /// A refused dispatch is journalled, so an attempt is visible rather than
 /// silent. The refusal the agent actually meets is
 /// `permissionDecision`'s — this is the second gate, for the case where
-/// the CLI asks anyway.
-@Test func anAgentsSettingsOpenIsJournalled() async throws {
+/// the CLI asks anyway: `dispatch` refuses it too.
+@Test func anAgentsSettingsOpenIsRefusedAndJournalled() async throws {
     let layout = LayoutStore()
     let journal = try scratch()
     let registry = ActionRegistry(journalDirectory: journal, sessionId: "settings")
     await registerLayoutActions(into: registry, layout: layout, panes: PaneStore(), terminals: nil)
 
-    _ = try await registry.dispatch(
-        name: "settings_open", params: .object([:]), origin: .agent,
-        caller: .test("staging"), confirmation: nil)
+    await #expect(throws: ActionError.operatorOnly("settings_open")) {
+        try await registry.dispatch(
+            name: "settings_open", params: .object([:]), origin: .agent,
+            caller: .test("staging"), confirmation: nil)
+    }
 
     let entries = try await registry.journalEntries()
     guard let entry = entries.first(where: { $0.action == "settings_open" }) else {
         Issue.record("settings_open left no journal entry: \(entries)"); return
     }
     #expect(entry.origin == .agent)
+    #expect(entry.outcome == "refused")
 }
 
 // MARK: - The decoder

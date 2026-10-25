@@ -12,6 +12,10 @@ public enum ActionError: Error, Equatable {
     /// on a closed conversation's still-open connection (`setCallerRefusal`). `reason` is the
     /// whole sentence, beginning `"<action>: "`.
     case callerGone(String, reason: String)
+    /// Refused before anything ran because the agent asked for an action only the operator may
+    /// run: one registered `.operatorOnly`, or named in `operatorOnlyActions`. The permission
+    /// prompt denies these first; this is the refusal that holds when it is not in the way.
+    case operatorOnly(String)
 }
 
 /// **The operator reads these**, so they are sentences rather than the
@@ -53,6 +57,9 @@ extension ActionError: CustomStringConvertible {
             return "\(name): blocked in production \u{2014} not gated, so no confirmation will run it"
         case .callerGone(_, let reason):
             return reason
+        case .operatorOnly(let name):
+            return "\(name): only the operator can run this \u{2014} the agent may not. "
+                + "Ask the operator to do it in the Wakil window."
         }
     }
 }
@@ -258,6 +265,14 @@ public actor ActionRegistry {
                                    caller: caller, outcome: "unknown",
                                    secretParams: nil)
             throw ActionError.unknown(name)
+        }
+
+        // An operator-only action is never the agent's, whatever let the call through.
+        if origin == .agent, action.audience == .operatorOnly || operatorOnlyActions.contains(name) {
+            try appendJournalEntry(action: name, params: params, origin: origin,
+                                   caller: caller, outcome: "refused",
+                                   secretParams: action.secretParams)
+            throw ActionError.operatorOnly(name)
         }
 
         // A caller with nothing left to act for is refused before anything reads or writes.

@@ -24,7 +24,8 @@ type dialFunc func(ctx context.Context, org string, c wakilcore.MCPConnection) (
 // HTTP request, and a browser sign-in's access token as a Bearer Authorization, refreshed as it
 // nears expiry. A secret field's value comes from the Keychain, any other from the record. Any
 // connection, custom ones especially, may also keep Keychain keys env:<NAME> (a stdio server's
-// environment variable NAME) and header:<Name> (an HTTP header, sent with that exact case).
+// environment variable NAME) and header:<Name> (an HTTP header, sent with that exact case); a
+// name Wakil reserves (wakilcore.ReservedConnectionSecretKey) is skipped.
 func upstreamTransport(ctx context.Context, org string, c wakilcore.MCPConnection) (mcp.Transport, error) {
 	secrets, err := wakilcore.ConnectionSecrets(org, c.Name)
 	if err != nil {
@@ -46,7 +47,7 @@ func upstreamTransport(ctx context.Context, org string, c wakilcore.MCPConnectio
 	prefixed := func(prefix string) [][2]string {
 		var out [][2]string
 		for k, v := range secrets {
-			if name, ok := strings.CutPrefix(k, prefix); ok && name != "" && v != "" {
+			if name, ok := strings.CutPrefix(k, prefix); ok && name != "" && v != "" && !wakilcore.ReservedConnectionSecretKey(k) {
 				out = append(out, [2]string{name, v})
 			}
 		}

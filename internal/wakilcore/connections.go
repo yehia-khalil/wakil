@@ -3,6 +3,7 @@ package wakilcore
 import (
 	"encoding/json"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -140,7 +141,7 @@ func UpdateConnection(org, name string, edit func(*MCPConnection)) error {
 			return err
 		}
 		if len(secrets) > 0 {
-			if err := SetConnectionSecrets(org, c.Name, secrets); err != nil {
+			if err := storeConnectionSecrets(org, c.Name, secrets); err != nil {
 				return err
 			}
 		}
@@ -172,16 +173,24 @@ func RemoveConnection(org, name string) error {
 	return SaveOrg(org, *o)
 }
 
-// ConnectionFor is org's connection called name, if it has one.
+// ConnectionFor is org's connection called name, if it has one. An organization that cannot be
+// read counts as having none; ConnectionForErr tells the two apart.
 func ConnectionFor(org, name string) (MCPConnection, bool) {
+	c, ok, err := ConnectionForErr(org, name)
+	return c, ok && err == nil
+}
+
+// ConnectionForErr is org's connection called name: ok is false when org has no such connection,
+// and err is set when org's configuration could not be read at all.
+func ConnectionForErr(org, name string) (MCPConnection, bool, error) {
 	o, err := LoadOrgFor(org)
 	if err != nil {
-		return MCPConnection{}, false
+		return MCPConnection{}, false, err
 	}
 	if i := indexOfConnection(o, name); i >= 0 {
-		return o.Connections[i], true
+		return o.Connections[i], true, nil
 	}
-	return MCPConnection{}, false
+	return MCPConnection{}, false, nil
 }
 
 // ConnectionSecrets is the connection's secret fields; none stored is an empty map, not an error.
@@ -200,8 +209,25 @@ func ConnectionSecrets(org, name string) (map[string]string, error) {
 	return out, nil
 }
 
-// SetConnectionSecrets merges values into the connection's secret item.
+// SetConnectionSecrets merges values into the connection's secret item. A custom env: or header:
+// key Wakil reserves (ReservedConnectionSecretKey) is refused and nothing is written.
 func SetConnectionSecrets(org, name string, values map[string]string) error {
+	keys := make([]string, 0, len(values))
+	for k := range values {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if ReservedConnectionSecretKey(k) {
+			return UserError(k + " is reserved: Wakil sets it itself, so a connection may not keep its own value for it")
+		}
+	}
+	return storeConnectionSecrets(org, name, values)
+}
+
+// storeConnectionSecrets merges values into the connection's secret item as they are; a rename
+// moves an item this way, whatever it already holds.
+func storeConnectionSecrets(org, name string, values map[string]string) error {
 	have, err := ConnectionSecrets(org, name)
 	if err != nil {
 		return err
@@ -214,6 +240,22 @@ func SetConnectionSecrets(org, name string, values map[string]string) error {
 		return err
 	}
 	return SecretSetFor(org, connectionRef(name), string(raw))
+}
+
+// ReservedConnectionSecretKey is whether key is a custom env: or header: key Wakil keeps for itself:
+// an environment variable that steers Wakil or the server's loader (WAKIL_*, DYLD_*, NODE_OPTIONS,
+// PATH), or a header the transport or the protocol owns (Authorization, Host, Content-Type, Mcp-*).
+// Names compare case-insensitively. upstream.go skips one already stored.
+func ReservedConnectionSecretKey(key string) bool {
+	if name, ok := strings.CutPrefix(key, "env:"); ok {
+		n := strings.ToUpper(name)
+		return strings.HasPrefix(n, "WAKIL_") || strings.HasPrefix(n, "DYLD_") || n == "NODE_OPTIONS" || n == "PATH"
+	}
+	if name, ok := strings.CutPrefix(key, "header:"); ok {
+		n := strings.ToLower(name)
+		return n == "authorization" || n == "host" || n == "content-type" || strings.HasPrefix(n, "mcp-")
+	}
+	return false
 }
 
 var connectionURLField = regexp.MustCompile(`\{([A-Za-z0-9_]+)\}`)
