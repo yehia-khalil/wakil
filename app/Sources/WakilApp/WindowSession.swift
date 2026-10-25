@@ -72,7 +72,7 @@ final class WindowSession {
                 await MainActor.run { browserTabsBox.host?.beginClear(onStore: id) }
                 do {
                     try deleteFiles()
-                    try await WKWebsiteDataStore.remove(forIdentifier: id)
+                    try await removeWebsiteDataStore(id)
                 } catch {
                     await MainActor.run { browserTabsBox.host?.endClear(onStore: id) }
                     throw error
@@ -493,5 +493,23 @@ private final class ScreenPlace {
     weak var model: WindowModel?
     var shown: ScreenShown? {
         model.map { ScreenShown(place: $0.place, conversation: $0.screenConversation) }
+    }
+}
+
+/// Removes the WebKit store `id`. A web view released a moment ago still holds it until WebKit has
+/// torn its page down, which happens after the release returns: WebKit answers "Data store is in
+/// use" (WKWebSiteDataStore code 1) meanwhile, so that answer is asked again, for up to two seconds.
+/// Found by 3c-i-settings.jsonl: with a browser pane open, Delete was refused every time.
+@MainActor
+private func removeWebsiteDataStore(_ id: UUID) async throws {
+    var attempt = 0
+    while true {
+        do {
+            try await WKWebsiteDataStore.remove(forIdentifier: id)
+            return
+        } catch let error as NSError where error.domain == "WKWebSiteDataStore" && error.code == 1 && attempt < 20 {
+            attempt += 1
+            try await Task.sleep(for: .milliseconds(100))
+        }
     }
 }
