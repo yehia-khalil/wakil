@@ -326,7 +326,7 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     let state = files.stateURL(tab: "t1")
     try FileManager.default.createDirectory(at: state.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data("{}".utf8).write(to: state)
-    try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
+    try await f.dispatch("browser_clear_data", ["org": .string("acme")], named: false, origin: .ui, confirmation: "confirm")
     #expect(removed.all == [id])
     #expect(!FileManager.default.fileExists(atPath: state.deletingLastPathComponent().path))
     #expect(files.zoom(host: "a.test") == 1.0)
@@ -338,7 +338,7 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     let (f, _) = try await clearFixture(removed: removed)
     for caller in [DispatchCaller.test("staging"), .test("production")] {
         do {
-            _ = try await f.registry.dispatch(name: "browser_clear_data", params: .object([:]), origin: .ui,
+            _ = try await f.registry.dispatch(name: "browser_clear_data", params: .object(["org": .string("acme")]), origin: .ui,
                                               caller: caller, confirmation: nil)
             Issue.record("ran without a confirmation")
         } catch let error as ActionError {
@@ -352,15 +352,30 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
 
 @Test func clearDataIsRefusedWhereNothingCanRemoveTheStore() async throws {
     let (f, _) = try await clearFixture(removed: nil)
-    let why = await refusal { try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm") }
+    let why = await refusal { try await f.dispatch("browser_clear_data", ["org": .string("acme")], named: false, origin: .ui, confirmation: "confirm") }
     #expect(why == "Browsing data can only be cleared from the app.")
 }
 
 @Test func clearDataIsRefusedWithNoOrganisation() async throws {
     let removed = Removed()
     let (f, _) = try await clearFixture(removed: removed, org: nil)
-    let why = await refusal { try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm") }
+    let why = await refusal { try await f.dispatch("browser_clear_data", ["org": .string("acme")], named: false, origin: .ui, confirmation: "confirm") }
     #expect(why == "No organisation is active.")
+    #expect(removed.all.isEmpty)
+}
+
+/// Task 10 (must-fix, destructive): the confirmation named an organisation; if another one is
+/// active by the time the yes arrives, nothing is deleted — the operator was asked about the first.
+@Test func clearDataRefusesWhenTheOrganisationTheQuestionNamedIsNotActive() async throws {
+    let removed = Removed()
+    let (f, _) = try await clearFixture(removed: removed)
+    let why = await refusal {
+        try await f.dispatch("browser_clear_data", ["org": .string("globex")], named: false, origin: .ui, confirmation: "confirm")
+    }
+    #expect(why == "The organisation changed; ask again.")
+    #expect(removed.all.isEmpty, "nothing deleted")
+    let unnamed = await refusal { try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm") }
+    #expect(unnamed != nil, "an unnamed organisation is refused too")
     #expect(removed.all.isEmpty)
 }
 
@@ -414,7 +429,7 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
         try deleteFiles()
         if !FileManager.default.fileExists(atPath: state.path) { steps.add(id) }
     })
-    try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
+    try await f.dispatch("browser_clear_data", ["org": .string("acme")], named: false, origin: .ui, confirmation: "confirm")
     #expect(steps.all == [mark, try files.identifier()], "files deleted when asked, before the store goes")
 
     // A page rebuilt once the store is gone writes its new state; the action deletes nothing after
@@ -424,7 +439,7 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
         try FileManager.default.createDirectory(at: state.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: state)
     })
-    try await rebuilt.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
+    try await rebuilt.dispatch("browser_clear_data", ["org": .string("acme")], named: false, origin: .ui, confirmation: "confirm")
     #expect(FileManager.default.fileExists(atPath: state.path), "a rebuilt page's state is not deleted after the remover")
 }
 

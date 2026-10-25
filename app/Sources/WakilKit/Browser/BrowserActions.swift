@@ -18,6 +18,9 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     case unknownZoomStep(String)
     case noOrganisation
     case clearOnlyFromTheApp
+    /// `browser_clear_data`'s `org` — the organisation the operator's question named — is not the
+    /// active one: the yes was for another organisation's data.
+    case organisationChanged
 
     public var description: String {
         switch self {
@@ -33,6 +36,7 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .unknownZoomStep(let step): "browser_zoom: step is in, out or reset, not \(step)"
         case .noOrganisation: "No organisation is active."
         case .clearOnlyFromTheApp: "Browsing data can only be cleared from the app."
+        case .organisationChanged: "The organisation changed; ask again."
         }
     }
 }
@@ -511,12 +515,18 @@ func browserActions(
     actions.append(Action(
         name: "browser_clear_data",
         description: "Delete the active organisation's browsing data: every site's cookies, logins and storage, "
-            + "in every project, and the saved zoom. Asks the operator first. Operator-only.",
+            + "in every project, and the saved zoom. `org` is the organisation the operator was asked "
+            + "about; refused when it is no longer the active one. Asks the operator first. Operator-only.",
         kind: .mutate, audience: .operatorOnly,
-        schema: schema([:]),
-        handler: { _ in
+        schema: schema(["org": string], required: ["org"]),
+        handler: { params in
             guard let removeData else { throw BrowserActionError.clearOnlyFromTheApp }
             guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
+            // The question named an organisation; a switch between the question and the yes must
+            // not turn that yes into another organisation's deletion.
+            guard case .object(let o) = params, case .string(let asked)? = o["org"], asked == files.org else {
+                throw BrowserActionError.organisationChanged
+            }
             let id = try files.identifier()
             // The window drops the store's web views, then deletes the files, then removes the
             // store: no page left alive can write a tab state after the deletion. Deleted only

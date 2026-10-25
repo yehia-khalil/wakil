@@ -5,7 +5,9 @@ import Testing
 /// A window over the layout, editor and browser actions (`editorWindowFull`'s shape, plus the
 /// browser's), its start page blank. `journal` is its registry's journal file.
 @MainActor
-private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, journal: URL, panes: PaneStore) {
+private func browserWindow(
+    orgFiles: BrowserOrgFiles? = nil, removeData: BrowserDataRemover? = nil
+) async -> (WindowModel, FakeFiles, LayoutStore, journal: URL, panes: PaneStore) {
     let journalDir = testScratchRoot.appendingPathComponent("browser-window-\(UUID().uuidString)")
     let registry = ActionRegistry(journalDirectory: journalDir, sessionId: "browser-window")
     let panes = PaneStore()
@@ -26,7 +28,8 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
     await registerEditorActions(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
         gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })
-    await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { .defaults })
+    await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { .defaults },
+                                 orgFiles: { orgFiles }, removeData: removeData)
     return (model, files, layout, journalDir.appendingPathComponent("browser-window.jsonl"), panes)
 }
 
@@ -66,6 +69,22 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
         #expect(try second.identifier() != first, "another organisation never gets this one's store id")
         model.browserHome = nil
         #expect(model.browserOrgFiles == nil, "no home, no files")
+    }
+
+    /// Task 10 (must-fix, destructive): Settings' Delete passes the organisation its question
+    /// named; the action deletes nothing when another one is active by then.
+    @Test func clearingBrowsingDataNamesTheOrganisationTheQuestionAsked() async throws {
+        let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "acme")
+        let removed = LockedFlag()
+        let (model, _, _, _, _) = await browserWindow(orgFiles: files, removeData: { @Sendable _, deleteFiles in
+            try deleteFiles()
+            removed.set()
+        })
+        let refused = try #require(await model.clearBrowserData(org: "globex"))
+        #expect(refused.contains("The organisation changed; ask again."))
+        #expect(!removed.value, "asked about globex, acme is active: nothing deleted")
+        #expect(await model.clearBrowserData(org: "acme") == nil)
+        #expect(removed.value)
     }
 
     @Test func noOrganisationYetMeansNoFiles() async {
@@ -246,4 +265,11 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
         #expect(await model.browserKey(.tab(9)))
         #expect(model.browser(pane)?.active == model.browser(pane)?.tabs[1].id)
     }
+}
+
+private final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = false
+    func set() { lock.withLock { stored = true } }
+    var value: Bool { lock.withLock { stored } }
 }

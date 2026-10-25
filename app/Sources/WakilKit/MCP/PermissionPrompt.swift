@@ -335,7 +335,7 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "and browser_reopen_tab."
     case "browser_clear_data":
         return "\(toolName): only the operator deletes an organisation's browsing data. It signs "
-            + "every site out, in every project. Ask the operator to do it from the browser's menu."
+            + "every site out, in every project. Ask the operator to do it in Settings → Browser (\u{2318},)."
     case "ctx_set_browser_settings":
         return "\(toolName): only the operator changes the browser's search engine and start "
             + "page. You may READ them: ctx_browser_settings answers the settings in force. "

@@ -3046,11 +3046,12 @@ public final class WindowModel {
 
     /// Deletes the active organisation's browsing data, after the Settings form's own confirmation
     /// (`browser_clear_data` is gated; that confirmation is the operator's yes). Answers the
-    /// refusal's sentence, or nil.
-    public func clearBrowserData() async -> String? {
+    /// refusal's sentence, or nil. `org` is the organisation the question named: if another one
+    /// is active by now, the action refuses and nothing is deleted.
+    public func clearBrowserData(org: String) async -> String? {
         do {
             _ = try await registry.dispatch(
-                name: "browser_clear_data", params: .object([:]), origin: .ui,
+                name: "browser_clear_data", params: .object(["org": .string(org)]), origin: .ui,
                 caller: DispatchCaller(place: place, session: nil), confirmation: "confirm")
             return nil
         } catch {

@@ -72,7 +72,7 @@ struct SettingsPane: View {
     /// Saves app-wide browser fields (3c-i) and answers the refusal's sentence, or nil.
     var saveBrowserSettings: ([String: JSONValue]) async -> String? = { _ in nil }
     /// Deletes this organisation's browsing data, after the form's own confirmation. Answers the refusal or nil.
-    var clearBrowserData: () async -> String? = { nil }
+    var clearBrowserData: (_ org: String) async -> String? = { _ in nil }
     /// Saves one project's editor fields: the project file's path, then the fields.
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
     /// 3a-iii-b: saves one of a project's agent boxes — the project file's path, then general, commits
@@ -1038,6 +1038,7 @@ struct SettingsPane: View {
             BrowserSettingsForm(
                 browser: tree.browser,
                 organisation: tree.org.displayName.isEmpty ? tree.org.id : tree.org.displayName,
+                organisationId: tree.org.id,
                 save: saveBrowserSettings, clearData: clearBrowserData)
         case .projectEditor(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {

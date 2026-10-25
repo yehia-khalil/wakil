@@ -8,9 +8,11 @@ struct BrowserSettingsForm: View {
     let browser: SettingsBrowser
     /// What the confirmation names: the organisation's display name.
     let organisation: String
+    /// The organisation's id: what Delete passes, so the action refuses if another is active by then.
+    let organisationId: String
     let save: ([String: JSONValue]) async -> String?
-    /// Deletes the organisation's browsing data; answers the refusal's sentence, or nil.
-    let clearData: () async -> String?
+    /// Deletes the named organisation's browsing data; answers the refusal's sentence, or nil.
+    let clearData: (_ org: String) async -> String?
 
     static let engines: [(label: String, key: String)] = [
         ("Google", "google"), ("DuckDuckGo", "duckduckgo"), ("Bing", "bing"), ("Kagi", "kagi"),
@@ -23,6 +25,8 @@ struct BrowserSettingsForm: View {
     @State private var clearing = false
     @State private var clearRefusal: String?
     @State private var cleared = false
+    /// The organisation the open question names, as (id, display name), fixed when it was asked.
+    @State private var asked: (id: String, name: String)?
     @FocusState private var focused: Bool
 
     private var coolWhite: Color { SettingsPalette.coolWhite }
@@ -105,6 +109,7 @@ struct BrowserSettingsForm: View {
                 Button {
                     clearRefusal = nil
                     cleared = false
+                    asked = (organisationId, organisation)
                     confirming = true
                 } label: {
                     Text("Clear this organisation's browsing data…")
@@ -120,7 +125,7 @@ struct BrowserSettingsForm: View {
             FormHint("Cookies, logins and site storage for every project of this organisation.")
             if confirming {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(BrowserClearDataQuestion.text(org: organisation))
+                    Text(BrowserClearDataQuestion.text(org: asked?.name ?? organisation))
                         .font(.system(size: SettingsScale.body))
                         .foregroundStyle(caution)
                         .fixedSize(horizontal: false, vertical: true)
@@ -130,8 +135,9 @@ struct BrowserSettingsForm: View {
                                    identifier: "settings.browser.clear.confirm") {
                             confirming = false
                             clearing = true
+                            let org = asked?.id ?? organisationId
                             Task {
-                                clearRefusal = await clearData()
+                                clearRefusal = await clearData(org)
                                 cleared = clearRefusal == nil
                                 clearing = false
                             }

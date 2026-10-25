@@ -621,7 +621,7 @@ extension WakilWindow {
                     },
                     saveEditorSettings: { fields in await model.saveEditorSettings(fields) },
                     saveBrowserSettings: { fields in await model.saveBrowserSettings(fields) },
-                    clearBrowserData: { await model.clearBrowserData() },
+                    clearBrowserData: { org in await model.clearBrowserData(org: org) },
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },
