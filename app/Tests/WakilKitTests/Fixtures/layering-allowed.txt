@@ -38,6 +38,7 @@ Editor -> Layout
 Editor -> MCP
 Editor -> Panes
 Editor -> Registry
+Gate -> MCP
 Git -> Context
 Git -> Identifiers
 Git -> MCP

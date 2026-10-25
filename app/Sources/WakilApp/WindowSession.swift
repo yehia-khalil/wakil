@@ -62,6 +62,8 @@ final class WindowSession {
         // for `sun_path`, say) leaves that session running without Wakil's own tools, and its
         // status says why.
         let surface = wiring.mcpSurface
+        let confirmations = wiring.confirmations
+        let registry = wiring.registry
         // Filled once the model exists, below: `initialize` reports the place and conversation on
         // screen beside the socket's own (`initializeMeta`), which is how the e2e harness picks
         // its channel.
@@ -75,7 +77,26 @@ final class WindowSession {
             let server = MCPSocketServer(
                 surface: surface, socketPath: path, caller: caller, screen: { await screen.shown })
             try await server.start()
-            return server
+            // The conversation's approval socket, beside its agent socket and stopped with it
+            // (`approvalSocketPath`): `wakil-connect` asks it before a gated connection call, and
+            // its answer is the permission plane's (`ConnectionApprovalServer`). One that would
+            // not start refuses nothing here (Rule 7): the session keeps Wakil's own tools, and
+            // `wakil-connect`, finding no socket, refuses every call that would have asked.
+            let pinned = await caller()
+            let conversation = pinned.conversation ?? ""
+            let approval = ConnectionApprovalServer(
+                socketPath: approvalSocketPath(forAgentSocket: path), place: pinned.place,
+                conversation: conversation, broker: confirmations,
+                spoken: { await screen.turnIsSpoken(conversation: conversation) },
+                journal: { request, outcome in
+                    try? await registry.journalConnectionCall(request, outcome: outcome, caller: pinned)
+                })
+            do {
+                try await approval.start()
+                return AgentSockets(mcp: server, approval: approval)
+            } catch {
+                return AgentSockets(mcp: server, approval: nil)
+            }
         }
 
         let executableDirectory = WakilWiring.defaultExecutableDirectory()
@@ -453,5 +474,22 @@ private final class ScreenPlace {
     weak var model: WindowModel?
     var shown: ScreenShown? {
         model.map { ScreenShown(place: $0.place, conversation: $0.screenConversation) }
+    }
+    /// Whether `conversation`'s turn is spoken (`WindowModel.turnIsSpoken`); with the window gone,
+    /// spoken — the operator is asked, and with no plane left the call is refused.
+    func turnIsSpoken(conversation: String) -> Bool {
+        model?.turnIsSpoken(conversation: conversation) ?? true
+    }
+}
+
+/// One conversation's sockets: its agent socket and, when it started, its approval socket.
+/// Stopped together — the approval socket first, so a call still asking is told its
+/// conversation ended.
+private struct AgentSockets: AgentSocket {
+    let mcp: MCPSocketServer
+    let approval: ConnectionApprovalServer?
+    func stop() async {
+        await approval?.stop()
+        await mcp.stop()
     }
 }

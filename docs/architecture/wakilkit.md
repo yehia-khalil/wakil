@@ -262,9 +262,13 @@ Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadP
 - `ConfirmationBroker.swift` — `ConfirmationBroker` (actor): holds at most one refused mutation while
   a human decides. One per assembly, shared by the agent's path and the window's.
 - `PendingMutation.swift` — `PendingMutation`, `ConfirmationDecision`, `mutationAffectsEveryRow`.
+- `ConnectionApproval.swift` — `ConnectionApprovalServer` (actor): one conversation's approval
+  socket (`approvalSocketPath(forAgentSocket:)`), which `wakil-connect` asks before a gated
+  connection call; `connectionCallDecision` allows or asks, and an ask parks a `connection_call`
+  on the broker. `ConnectionCallRequest`, `ConnectionCallDecision`.
 
-Uses: nothing but `Core`.
-Tests: `WriteGateTests`, `ConfirmationBrokerTests`, `ProductionDeclarationTests`.
+Uses: nothing but `Core` (`ConnectionApproval.swift` also `MCP`'s socket helpers).
+Tests: `WriteGateTests`, `ConfirmationBrokerTests`, `ProductionDeclarationTests`, `ConnectionApprovalTests`.
 
 ### Git/ — the window's git status
 

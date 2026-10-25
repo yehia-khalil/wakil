@@ -472,6 +472,17 @@ public actor ActionRegistry {
             caller: caller, outcome: "ok", secretParams: [])
     }
 
+    /// A connection call `wakil-connect` asked the app about, and how it was decided
+    /// (`ConnectionApprovalServer`). Not a registered action; nothing it records is a credential —
+    /// the arguments are the agent's own words — so its secret parameters are declared empty.
+    public func journalConnectionCall(
+        _ request: ConnectionCallRequest, outcome: String, caller: DispatchCaller
+    ) throws {
+        try appendJournalEntry(
+            action: "connection_call", params: request.params, origin: .agent,
+            caller: caller, outcome: outcome, secretParams: [])
+    }
+
     /// 2d-i: a note handed to the agent, or a vocabulary source that
     /// failed. Not a registered action, so its secret parameters are
     /// declared here: **none**. Nothing it records is a credential, and the

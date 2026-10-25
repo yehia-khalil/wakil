@@ -4488,6 +4488,13 @@ public final class WindowModel {
         await confirmations.cancel(id: parked.id)
     }
 
+    /// Whether conversation `id`'s turn in flight came from speech, for its approval socket
+    /// (`ConnectionApprovalServer`'s `spoken`). A conversation the window no longer holds counts
+    /// as spoken: when in doubt, the operator is asked.
+    public func turnIsSpoken(conversation id: String) -> Bool {
+        conversations[id]?.spoken ?? true
+    }
+
     /// Re-reads every pane on the canvas out of `PaneStore`.
     ///
     /// **It iterates the LAYOUT, not `panes.paneIds()`.** The snapshot is
@@ -7608,6 +7615,9 @@ public final class WindowModel {
             // either suspension, `append` clears what is already there,
             // and nothing re-sets it once `send` returns.
             agent.turnInFlight = true
+            // Before the send, so no call the turn makes can find it unset; a typed turn clears
+            // what a spoken one left (`PlaceAgent.spoken`).
+            agent.spoken = source == .voice
             refreshChipProduction(of: agent)
             // 2d-ii: the operator's own turn is a row, so what was actually
             // sent — a misheard sentence included — stays on screen.

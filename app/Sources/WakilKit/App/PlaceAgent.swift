@@ -62,7 +62,14 @@ public final class PlaceAgent {
     /// Monotonic row ids (`WindowModel.thoughts`), per thread.
     var nextThoughtId = 0
     /// True from a successful `send` to the `.result` that ends the turn.
-    public internal(set) var turnInFlight = false
+    public internal(set) var turnInFlight = false {
+        didSet { if !turnInFlight { spoken = false } }
+    }
+    /// Whether the turn in flight came from speech: set by `WindowModel.send` as each turn starts
+    /// (a typed one clears it), and cleared whenever the turn ends — every `turnInFlight = false`.
+    /// The approval socket reads it (`WindowModel.turnIsSpoken`): a spoken turn never runs a
+    /// connection's write unasked (Invariant 7).
+    public internal(set) var spoken = false
     /// A turn ended while the place was off screen, and the operator has not been back since
     /// (background agents 4 of 4): its chip says done. Cleared when the place is activated.
     public internal(set) var unseenResult = false
