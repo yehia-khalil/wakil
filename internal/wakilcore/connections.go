@@ -28,7 +28,7 @@ type MCPConnection struct {
 
 func connectionRef(name string) string { return "conn:" + name }
 
-var connectionNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
+var connectionNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 // validateConnectionName refuses a name that is not a lowercase slug, or that is Wakil's own:
 // the "wakil" prefix is for its built-in servers (wakil-pm, wakil-ctx, ...).
@@ -37,7 +37,7 @@ func validateConnectionName(name string) error {
 		return UserError("the name " + name + " is reserved for Wakil's own servers")
 	}
 	if !connectionNamePattern.MatchString(name) {
-		return UserError("a connection's name is lowercase letters, digits and hyphens, starting with a letter (at most 40 characters)")
+		return UserError("a connection's name is lowercase letters, digits and hyphens, starting with a letter (at most 32 characters)")
 	}
 	return nil
 }

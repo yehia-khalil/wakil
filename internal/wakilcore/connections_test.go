@@ -64,7 +64,10 @@ func TestAddConnectionRefusesADuplicateName(t *testing.T) {
 func TestRemoveConnectionDeletesItsSecret(t *testing.T) {
 	localOrg(t)
 	fakeKeychain(t)
-	c, _ := AddConnection("initech", connInput("github"))
+	c, err := AddConnection("initech", connInput("github"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := SetConnectionSecrets("initech", c.Name, map[string]string{"token": "t"}); err != nil {
 		t.Fatal(err)
 	}
@@ -82,12 +85,19 @@ func TestRemoveConnectionDeletesItsSecret(t *testing.T) {
 func TestSetConnectionSecretsMerges(t *testing.T) {
 	localOrg(t)
 	fakeKeychain(t)
-	c, _ := AddConnection("initech", connInput("github"))
+	c, err := AddConnection("initech", connInput("github"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got, err := ConnectionSecrets("initech", c.Name); err != nil || len(got) != 0 {
 		t.Fatalf("empty = %v %v", got, err)
 	}
-	SetConnectionSecrets("initech", c.Name, map[string]string{"token": "a"})
-	SetConnectionSecrets("initech", c.Name, map[string]string{"site": "x"})
+	if err := SetConnectionSecrets("initech", c.Name, map[string]string{"token": "a"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetConnectionSecrets("initech", c.Name, map[string]string{"site": "x"}); err != nil {
+		t.Fatal(err)
+	}
 	got, err := ConnectionSecrets("initech", c.Name)
 	if err != nil || got["token"] != "a" || got["site"] != "x" {
 		t.Fatalf("secrets = %v %v", got, err)
@@ -97,8 +107,13 @@ func TestSetConnectionSecretsMerges(t *testing.T) {
 func TestRenameMovesTheSecret(t *testing.T) {
 	localOrg(t)
 	fakeKeychain(t)
-	c, _ := AddConnection("initech", connInput("github"))
-	SetConnectionSecrets("initech", c.Name, map[string]string{"token": "a"})
+	c, err := AddConnection("initech", connInput("github"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SetConnectionSecrets("initech", c.Name, map[string]string{"token": "a"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := UpdateConnection("initech", "github", func(c *MCPConnection) { c.Name = "work-github" }); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +121,7 @@ func TestRenameMovesTheSecret(t *testing.T) {
 	if err != nil || got["token"] != "a" {
 		t.Fatalf("new secrets = %v %v", got, err)
 	}
-	if old, _ := ConnectionSecrets("initech", "github"); len(old) != 0 {
+	if old, err := ConnectionSecrets("initech", "github"); err != nil || len(old) != 0 {
 		t.Fatalf("old secret left: %v", old)
 	}
 	if _, ok := ConnectionFor("initech", "github"); ok {
@@ -145,15 +160,33 @@ func TestSetConnectionAllowRefusesLocked(t *testing.T) {
 	c := connInput("custom")
 	c.Name = "mine"
 	c.Hints = map[string]string{"drop": "destructive", "list": "readOnly"}
-	AddConnection("initech", c)
+	if _, err := AddConnection("initech", c); err != nil {
+		t.Fatal(err)
+	}
 	if err := SetConnectionAllow("initech", "mine", "drop", true); err == nil {
 		t.Fatal("locked tool switched on")
 	}
 	if err := SetConnectionAllow("initech", "mine", "list", false); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := ConnectionFor("initech", "mine")
+	got, ok := ConnectionFor("initech", "mine")
+	if !ok {
+		t.Fatal("mine missing")
+	}
 	if got.Allow["list"] != false || len(got.Allow) != 1 {
 		t.Fatalf("allow = %v", got.Allow)
+	}
+}
+
+func TestConnectionNameIsAtMost32Characters(t *testing.T) {
+	localOrg(t)
+	c := connInput("custom")
+	c.Name = strings.Repeat("a", 33)
+	if _, err := AddConnection("initech", c); err == nil {
+		t.Fatal("33-character name accepted")
+	}
+	c.Name = strings.Repeat("a", 32)
+	if _, err := AddConnection("initech", c); err != nil {
+		t.Fatalf("32-character name refused: %v", err)
 	}
 }
