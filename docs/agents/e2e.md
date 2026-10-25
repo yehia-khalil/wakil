@@ -99,6 +99,20 @@ Run it when a ticket's implementation is otherwise finished: `make test` and
    `ctx_set_project` or `ctx_set_environment` sent this way is refused (an agent
    cannot move its own place). Switch with a `do` step instead.
 
+   **An operator-only action goes over the operator channel instead.** The
+   agent socket refuses every operator-only action (`ActionError.operatorOnly`),
+   so the staged fixture — and only it: the app opens it when its bundle id is
+   `dev.wakil.e2e` (`startHarnessSocket`) — opens a second socket beside each
+   agent socket, `<dir>/<session id>-e2e.sock`, mode 0600, never named in an
+   agent's config. It serves only the operator-only actions and runs them with
+   origin `debug`. The runner sends a `dispatch` or a parity's dispatch half
+   there when the app lists the action on it (`channelFor`), except a
+   `refuses` naming the operator-only refusal (`only the operator can run
+   this`): that one asserts what an agent meets, so it stays on the agent
+   socket. A refusal on either is the step's failure, never retried on the
+   other. A build without the socket (the merge-base under `make e2e-new`)
+   sends everything over the agent socket, as it did.
+
    **Cover the interaction rules as well as the actions.** For each rule in
    `PRODUCT.md` §Interaction Rules that a touched surface can break, write a
    check: for example, type into a field, move focus away and expect the value

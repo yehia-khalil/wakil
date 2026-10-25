@@ -83,6 +83,11 @@ type Runner struct {
 	Channel  Channel
 	PID      int
 
+	// Operator is the operator channel (OperatorChannel): the e2e fixture's own socket for the
+	// actions only the operator may run. Nil on a build without one, and then every dispatch
+	// goes over Channel. See channelFor.
+	Operator OperatorRoute
+
 	// FixtureRoot is this run's fixture directory, which `FixtureRootToken`
 	// expands to in a dispatch's params. Empty in the unit tests, where no
 	// fixture exists and no expansion should happen.
@@ -706,12 +711,25 @@ func describeFrontmost() string {
 	return fmt.Sprintf("pid %d", pid)
 }
 
-// dispatch sends one action over the agent channel and re-reads.
+// channelFor is the channel a dispatch of action goes over. **An action the app serves on its
+// operator socket goes there** — the operator's channel for the operator's actions — unless the
+// step expects the operator-only refusal: that asserts what an agent meets, so it is the agent
+// socket's. Everything else stays on the agent socket, so a check asserting agent-origin
+// behaviour (journal origin, gated writes parking) means what it meant. Chosen once, before the
+// call: a refusal on either channel fails the step and is never retried on the other.
+func (r *Runner) channelFor(action, refuses string) Channel {
+	if r.Operator != nil && r.Operator.Serves(action) && !strings.Contains(refuses, OperatorOnlyRefusal) {
+		return r.Operator
+	}
+	return r.Channel
+}
+
+// dispatch sends one action over its channel (channelFor) and re-reads.
 func (r *Runner) dispatch(step *Dispatch) error {
 	if r.Channel == nil {
 		return fmt.Errorf("no agent channel is open, so %q cannot be dispatched", step.Action)
 	}
-	_, err := r.Channel.Call(step.Action, ExpandParams(step.Params, r.tokens()))
+	_, err := r.channelFor(step.Action, step.Refuses).Call(step.Action, ExpandParams(step.Params, r.tokens()))
 	switch {
 	case step.Refuses != "" && err == nil:
 		return fmt.Errorf("%q was expected to be refused with %q, and it ran", step.Action, step.Refuses)
@@ -1004,7 +1022,7 @@ func (r *Runner) parity(parity *Parity) error {
 			parity.UIHalf(), unverified)
 	}
 
-	if _, err := r.Channel.Call(parity.Action, ExpandParams(parity.Params, r.tokens())); err != nil {
+	if _, err := r.channelFor(parity.Action, "").Call(parity.Action, ExpandParams(parity.Params, r.tokens())); err != nil {
 		return fmt.Errorf("the dispatch half was refused: %w", err)
 	}
 	afterDispatch, err := r.settledParityState(parity)
