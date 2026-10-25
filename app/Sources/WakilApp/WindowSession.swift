@@ -439,6 +439,8 @@ final class WindowSession {
             return try await model.changesDraftMessage(root: root)
         }
         // The browser's per-organisation files live under the same `home`; Task 7's tabs ask for them.
+        // 3c-i. The browser actions read this cache; the model refreshes it.
+        model.browserSettingsCache = wiring.browserSettings
         model.browserHome = URL(fileURLWithPath: home)
         let browserTabs = BrowserTabHost(model: model)
         browserTabsBox.host = browserTabs

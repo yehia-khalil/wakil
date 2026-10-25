@@ -353,3 +353,39 @@ private actor GhostRecordingCaller: ToolCaller {
     let project = try JSONDecoder().decode(SettingsProject.self, from: Data(#"{"name":"api","agent":{"commits":"K"}}"#.utf8))
     #expect(project.agent == SettingsAgentTexts(general: "", commits: "K", pullRequests: ""))
 }
+
+/// 3c-i. The browser actions read a cache the window keeps, so a new tab reads memory and writes
+/// no journal line.
+@Suite @MainActor struct WindowBrowserSettingsTests {
+    @Test func aReadThatFailsKeepsTheDefaultsAndLeavesTheCacheEmpty() async throws {
+        let (model, _, _) = await editorWindowParts(roots: ["/p/api"])
+        await model.refreshBrowserSettings()
+        #expect(model.browserSettings == .defaults)
+        #expect(model.browserSettingsCache.current == nil)
+    }
+
+    @Test func aRefusedWriteAnswersItsSentence() async throws {
+        let (model, _, _) = await editorWindowParts(roots: ["/p/api"])
+        let refusal = await model.saveBrowserSettings(["searchEngine": .string("kagi")])
+        #expect(refusal?.isEmpty == false)
+    }
+
+    @Test func theCacheReadsOnceThenServesWhatItHolds() async throws {
+        let cache = BrowserSettingsCache()
+        let count = ReadCounter()
+        let first = await cache.value { count.bump(); return SettingsBrowser(searchEngine: "bing", startPage: "") }
+        let second = await cache.value { count.bump(); return nil }
+        #expect(first.searchEngine == "bing")
+        #expect(second.searchEngine == "bing")
+        #expect(count.value == 1)
+        cache.current = SettingsBrowser(searchEngine: "kagi", startPage: "")
+        #expect(await cache.value { nil }.searchEngine == "kagi")
+    }
+}
+
+private final class ReadCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func bump() { lock.withLock { n += 1 } }
+    var value: Int { lock.withLock { n } }
+}

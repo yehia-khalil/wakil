@@ -529,6 +529,25 @@ func browserActions(
     return actions
 }
 
+/// The browser settings the actions read. The window refreshes it (`WindowModel.refreshBrowserSettings`)
+/// at launch and after every save, so a new tab or a search reads memory, not a `ctx_browser_settings`
+/// dispatch with its journal line. Empty until the first refresh; `value(orRead:)` then reads once and keeps it.
+public final class BrowserSettingsCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: SettingsBrowser?
+    public init() {}
+    public var current: SettingsBrowser? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+    func value(orRead read: @Sendable () async -> SettingsBrowser?) async -> SettingsBrowser {
+        if let current { return current }
+        guard let read = await read() else { return .defaults }
+        current = read
+        return read
+    }
+}
+
 /// `ctx_browser_settings`' reply, or nil when it is not one (`decodeEditorSettings`' twin).
 public func decodeBrowserSettings(fromResult result: JSONValue?) -> SettingsBrowser? {
     guard case .object(let object)? = result, let structured = object["structuredContent"],

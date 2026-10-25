@@ -149,6 +149,8 @@ public struct WakilWiring: Sendable {
     /// one subscriber for the assembly's whole life — see `ResumeBroker`'s
     /// own doc comment for that lifecycle contract.
     public let resumes: ResumeBroker
+    /// 3c-i. The browser settings the browser actions read; the window refreshes it. Built here, before the window exists.
+    public let browserSettings: BrowserSettingsCache
     /// Where a `session_set_provider` request parks for the window to act
     /// on. Same reasoning and lifecycle contract as `resumes`, for the
     /// same action-set-shared-by-`--dispatch`-and-the-window reason — see
@@ -416,6 +418,7 @@ public struct WakilWiring: Sendable {
         let shellContext = ActiveShellContext()
         // 3c-i. The settings are read when a tab needs them (a search, a new tab's start page), so a
         // change in Settings → Browser applies to the next one; a failed read uses the defaults.
+        let browserSettings = BrowserSettingsCache()
         let browserSettingsRegistry = registry
         // The organisation's browser files are asked live, for the caller's own organisation (the
         // shell context follows the window, an agent's place stays its own): one organisation's id
@@ -424,13 +427,16 @@ public struct WakilWiring: Sendable {
         let browser = browserActions(
             panes: panes, layout: layout,
             settings: {
-                guard let result = try? await browserSettingsRegistry.dispatch(
-                          name: "ctx_browser_settings", params: .object([:]), origin: .ui,
-                          caller: DispatchCaller(place: Place(organization: "", project: "", environment: ""), session: nil),
-                          confirmation: nil),
-                      let decoded = decodeBrowserSettings(fromResult: result)
-                else { return .defaults }
-                return decoded
+                // The window keeps this fresh; a headless `--dispatch` has no window, so the first
+                // read comes from the action and is kept.
+                await browserSettings.value {
+                    guard let result = try? await browserSettingsRegistry.dispatch(
+                              name: "ctx_browser_settings", params: .object([:]), origin: .ui,
+                              caller: DispatchCaller(place: Place(organization: "", project: "", environment: ""), session: nil),
+                              confirmation: nil)
+                    else { return nil }
+                    return decodeBrowserSettings(fromResult: result)
+                }
             },
             orgFiles: {
                 let org = await shellContext.current().org
@@ -549,6 +555,7 @@ public struct WakilWiring: Sendable {
             placeClients: placeClients,
             confirmations: ConfirmationBroker(),
             resumes: resumes,
+            browserSettings: browserSettings,
             providerSwitches: providerSwitches,
             conversationRequests: conversationRequests,
             diagnostics: diagnostics,

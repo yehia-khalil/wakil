@@ -452,6 +452,14 @@ public final class WindowModel {
     /// editor pane is drawn with `editorSettings.viewOptions`, and autosave reads its mode here.
     public internal(set) var editorSettings: EditorSettings = .defaults
 
+    /// The browser settings in force (3c-i), read through `ctx_browser_settings` at launch and after
+    /// every save. The browser actions read `browserSettingsCache`, which this keeps current, so a
+    /// new tab dispatches nothing.
+    public internal(set) var browserSettings: SettingsBrowser = .defaults
+
+    /// What the browser actions read; `WindowSession` points it at the wiring's.
+    public var browserSettingsCache = BrowserSettingsCache()
+
     /// The database each pane's query line has been pointed at by the
     /// operator, keyed by pane id — see `QueryLineDatabaseChoice`, which
     /// carries what the pane's subject named at the time so a choice
@@ -2131,6 +2139,7 @@ public final class WindowModel {
             await vocabulary?.contextChanged(active)
             // 3b-v: the tabs follow the project, so the settings in force are read with it.
             await refreshEditorSettings()
+            await refreshBrowserSettings()
             // Capacity is read once the providers and the org are known,
             // so the hairlines are not empty until a turn ends or
             // Settings opens. Launch and an org switch both come here, so
@@ -3005,6 +3014,48 @@ public final class WindowModel {
               let decoded = decodeEditorSettings(fromResult: result)
         else { return }
         editorSettings = decoded
+    }
+
+    /// Re-reads the browser settings in force and hands them to the browser actions. A failed read
+    /// keeps what the window had, as the editor's does.
+    public func refreshBrowserSettings() async {
+        guard let result = try? await registry.dispatch(
+                  name: "ctx_browser_settings", params: .object([:]), origin: .ui,
+                  caller: DispatchCaller(place: place, session: nil), confirmation: nil),
+              let decoded = decodeBrowserSettings(fromResult: result)
+        else { return }
+        browserSettings = decoded
+        browserSettingsCache.current = decoded
+    }
+
+    /// Saves app-wide browser fields (`searchEngine`, `startPage`), then re-reads the tree and the
+    /// settings in force. Answers the refusal's own sentence, or nil.
+    public func saveBrowserSettings(_ fields: [String: JSONValue]) async -> String? {
+        var refusal: String?
+        do {
+            _ = try await registry.dispatch(
+                name: "ctx_set_browser_settings", params: .object(fields), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        } catch {
+            refusal = statusDescribingFailure("ctx_set_browser_settings", error)
+        }
+        await refreshSettings()
+        await refreshBrowserSettings()
+        return refusal
+    }
+
+    /// Deletes the active organisation's browsing data, after the Settings form's own confirmation
+    /// (`browser_clear_data` is gated; that confirmation is the operator's yes). Answers the
+    /// refusal's sentence, or nil.
+    public func clearBrowserData() async -> String? {
+        do {
+            _ = try await registry.dispatch(
+                name: "browser_clear_data", params: .object([:]), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: "confirm")
+            return nil
+        } catch {
+            return statusDescribingFailure("browser_clear_data", error)
+        }
     }
 
     /// Saves app-wide editor fields, then re-reads the tree and the settings in force. Answers
