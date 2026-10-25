@@ -132,7 +132,6 @@ browser_new_tab	its parity (3c-i): each press opens another tab, so the dispatch
 browser_open	its parity (3c-i): no operator control opens a URL in the browser from outside the pane — that arrives with 3c-iii's links from the terminal and editor — so no UI half exists. The dispatch is 3c-i-agent-drives.jsonl's and 3c-i-settings.jsonl's: it opens the pane and reads Page A's title back.
 browser_reload	its parity (3c-i): every reload is another load, and the fixture pages are the same after each, so nothing read_pane or the tree carries differs before and after the click — the parity would refuse it as having changed nothing. The click is 3c-i-agent-drives.jsonl's (journal, title) and Try Again's 3c-i-load-error.jsonl's; the dispatch re-runs the page's own prompt in 3c-i-prompt.jsonl.
 browser_zoom	its parity (3c-i): the operator's channel is ⌘+ / ⌘− / ⌘0, keys and not a click or a drag (editor_new_scratch's case); the pane draws no zoom control. The keys are 3c-i-zoom.jsonl's (1.1, 1.25, per host, reset); the dispatch is 3c-i-agent-drives.jsonl's (in, reset).
-browser_move_tab	its parity (3c-i): no operator control moves a tab — the strip has no drag — so no UI half exists. The dispatch is 3c-i-agent-drives.jsonl's, reading the new order back.
 browser_close_tab	its parity (3c-i): the click consumes its own subject — the dispatch after it closes another tab or is refused (`the browser pane has no tab …`), editor_close's case — and the tab's × is drawn only under the pointer (browser.tab.<…>.close). ⌘W is 3c-i-tabs.jsonl's; the dispatch is 3c-i-agent-drives.jsonl's.
 browser_reopen_tab	its parity (3c-i): the operator's channels are ⌘⇧T and the Reopen Closed Tab menu item — a key and a menu, not a click or a drag — and each reopen consumes the closed stack, so the halves could not agree anyway. ⌘⇧T is 3c-i-tabs.jsonl's; the dispatch is 3c-i-agent-drives.jsonl's (t3, b.html).
 browser_find	its parity (3c-i): the operator's channel is ⌘F and typing into the find field — keys, not a click or a drag. The keys are 3c-i-find.jsonl's (needle, 1 of 3); the dispatch is 3c-i-agent-drives.jsonl's, reading the query and count back.
@@ -273,7 +272,7 @@ browser.downloads	the download strip's container (.contain, 3c-i): its rows and 
 browser.download.<…>	one download's row (.contain, 3c-i). Read, not pressed — 3c-i-download.jsonl reads d1 and d2 through read_pane and presses d1's Cancel.
 browser.download.<…>.name	a Text (3c-i): the download's file name. Read, not pressed — 3c-i-download.jsonl reads it as downloads[0].filename (big.bin).
 browser.download.<…>.status	a Text (3c-i): the size line or the ended state. Read, not pressed — 3c-i-download.jsonl asserts "of 10.5 MB" and "Cancelled".
-browser.page	the tab's web view (3c-i, Decision 48): the page is the operator's, and clicks and typing inside it are not Wakil's controls. Its focus is read, not pressed — 3c-i-keys-reach-wakil.jsonl asserts expect.focus browser.page after Return, ⌘K, ⌘P, ⌘1 and Escape, and a key typed there.
+browser.page	the tab's web view (3c-i, Decision 48). Clicks and typing inside a page are the operator's and walk-only: the harness presses Wakil's own controls by identifier, and a page's links and fields carry none (runbook rows 1, 3 and 5 click in pages). Its focus is read, not pressed — 3c-i-keys-reach-wakil.jsonl asserts expect.focus browser.page after Return, ⌘K, ⌘P, ⌘1 and Escape, and a key typed there reaches the page.
 settings.browser.clear.question	a Text (3c-i, Rule 1): `Delete <org>'s browsing data? …`. Read, not pressed — 3c-i-settings.jsonl asserts it before Keep it and before Delete.
 settings.browser.clear.done	a Text (3c-i): `Deleted <org>'s browsing data.`. Read, not pressed — 3c-i-settings.jsonl asserts it after Delete.
 settings.browser.startPage.refusal	a Text (3c-i, Rule 8): the start page's refusal. Read, not pressed — 3c-i-settings.jsonl asserts `start page "not a url" is not an http or https URL — …`.
@@ -317,6 +316,20 @@ window.closeConversation.message	a Text (conversations, Rule 1): the prompt's qu
 # process that crashes (WebKit gives no way to crash one on purpose), an HTTP
 # sign-in, and a file revealed in Finder (its effect leaves the window). The
 # runbook's §3 names each.
+#
+# Three walk-only flows have no Wakil surface for an entry to name, and an
+# entry that excuses nothing fails the gate, so they are recorded here, as
+# comments, with their reason and where the walk covers them:
+#   - a page's file chooser (<input type=file>): WebKit asks Wakil for an open
+#     panel and Wakil shows the system's NSOpenPanel, whose controls are AppKit's,
+#     not Wakil's, and no step kind drives a system panel. Runbook §3.
+#   - Web Inspector (Inspect Element): offered by WebKit's own context menu on
+#     the page, and no arm opens a context menu (editor_rename's case); the
+#     inspector is WebKit's window. Runbook row 9.
+#   - a pop-up sign-in (GitHub OAuth): needs a real identity provider and a real
+#     account, and a check signing in leaves a real credential behind (#254's
+#     rule). The pop-up-as-a-tab mechanics are 3c-i-tabs.jsonl's popup.html.
+#     Runbook row 5.
 browser.certificate	a Text (3c-i): `<host>'s certificate isn't trusted — <reason>`. Drawn only over an https page whose certificate WebKit refuses, and the page stub is loopback http; walk-only (runbook §3, self-signed.badssl.com).
 browser.visitAnyway	Visit Anyway (3c-i, operator only, for the session): drawn only on the certificate page (browser.certificate's case); walk-only.
 browser.crashed	a Text (3c-i): `This page stopped.`. Drawn only after WebKit's web content process for the tab ends, and nothing a check can do crashes it; walk-only (runbook §3).
@@ -324,3 +337,5 @@ browser.crashReload	Reload on the crashed page (3c-i): browser.crashed's case; w
 browser.prompt.user	an HTTP sign-in's user name (3c-i): drawn only for a basic-auth challenge, which the page stub never sends; walk-only (runbook §3).
 browser.prompt.password	an HTTP sign-in's password (3c-i): browser.prompt.user's case — and a check typing a password is a credential in a check file; walk-only.
 browser.download.<…>.show	Show in Finder (3c-i): drawn only on a finished download, and pressing it reveals the file in Finder — the act's whole effect leaves the window (settings.org.git.account.add.openKeys' case). The fixture's big.bin takes minutes by design; a real download is the runbook's row 7.
+browser.prompt.allow	the camera / microphone prompt's Allow (3c-i): drawn only when a page asks for a camera or microphone, and macOS first asks the operator itself (TCC), a system dialog no step kind answers; a fixture camera would also have to exist. Walk-only: runbook row 8.
+browser.prompt.deny	the camera / microphone prompt's Don't Allow (3c-i): browser.prompt.allow's case. Walk-only: runbook row 8.

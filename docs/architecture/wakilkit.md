@@ -130,6 +130,9 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   `displayHost` (host without `www.`, or a file's name), and `footer` — the pane footer's
   `BrowserFooterLine`: the host, then TLS for https, NOT SECURE for http, the host alone for loopback
   http (beside `isSecure`, so the address row's padlock and the footer agree), nothing for a blank page.
+- `BrowserFocusRetry.swift` — `browserRetryFocus`: a page focus that waits for its web view to
+  join the window asks again before every try whether the pane may still take the keyboard and the
+  tab is still the active one, and gives up quietly when not (Rule 6).
 - `BrowserDownloadNames.swift` — where a download lands (`browserDownloadDestination`: the suggested
   name cut to its last component, `name 2.ext` when taken) and the strip's size line
   (`browserDownloadSize`, decimal units).
@@ -152,7 +155,8 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   saved tabs. Also `BrowserKey`, the keys `WindowModel.browserKey` takes over in a focused browser pane.
   `browser_clear_data` (`.mutate`, operator-only, gated in production and out of it) asks the injected
   `removeData` to delete the organisation's WebKit store, handing it the deletion of `tabs/` and
-  `zoom.json` to run once no web view on the store is left. Its `org` is the organisation the
+  `zoom.json` to run after the store is gone (`browserRemoveStoreThenFiles`: a store that will not
+  go deletes nothing, and its error is shown whole). Its `org` is the organisation the
   operator's question named; it refuses `The organisation changed; ask again.` when that is no longer
   the active one, and refuses without a remover (nothing but the app can) or without an active
   organisation. `BrowserSettingsCache` holds the search engine and start page the actions read,
@@ -169,7 +173,7 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `WindowModelBrowserTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 

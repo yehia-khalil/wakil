@@ -35,7 +35,7 @@ this Mac. Do them in order: each starts where the one before left off.
 | # | Where | Do | Expect | Walked |
 |---|---|---|---|---|
 | 1 | Wakil | ⌘K → **New Browser pane**. Type `github.com`, Return. Click **Sign in**, then ⌘[ and ⌘] | The pane opens with one blank tab and the address field focused. `https://github.com/` loads: the strip's tab shows GitHub's title and favicon, the address row the whole URL with a padlock, the footer `GITHUB.COM · TLS`. ⌘[ goes back to the home page and ⌘] forward to the sign-in page, ‹ and › greying at each end | |
-| 2 | Wakil | ⌘T, type `example.com`, Return. ⌘W, then ⌘⇧T. ⌘1, then ⌘9 | ⌘T opens a tab with the address field focused. ⌘W closes it and the GitHub tab is shown; ⌘⇧T brings `example.com` back with its page, not a blank tab. ⌘1 selects the first tab, ⌘9 the last | |
+| 2 | Wakil | ⌘T, type `example.com`, Return. ⌘W, then ⌘⇧T. ⌘1, then ⌘9. Drag the second tab onto the first | ⌘T opens a tab with the address field focused. ⌘W closes it and the GitHub tab is shown; ⌘⇧T brings `example.com` back with its page, not a blank tab. ⌘1 selects the first tab, ⌘9 the last. The drag shows a line where the tab will land and moves it there; the order stays | |
 | 3 | Wakil | On the GitHub tab, sign in to GitHub. ⌘⇧O → switch to **B**, open a browser pane there and go to `github.com`. ⌘⇧O → back to **A** | In **A** you are signed in. In **B** GitHub shows **Sign in**: no cookie crossed. Back in **A**, the pane and its tabs are where you left them and you are still signed in, with no reload | |
 | 4 | Wakil | Quit Wakil (⌘Q) and launch it again as in §0. Select the GitHub tab, press ‹ | Both tabs come back in their order, the selected one loaded, the other loading only when selected. ‹ goes back through the pages visited before the quit | |
 | 5 | Wakil | Go to `vercel.com/login` → **Continue with GitHub** (or any site whose GitHub sign-in opens a pop-up) and authorise | The pop-up opens as a new tab in the same pane, already signed in to GitHub from row 3; when GitHub finishes, that tab closes itself and the first tab is signed in to the site | |
@@ -51,7 +51,6 @@ this Mac. Do them in order: each starts where the one before left off.
   or the editor still opens in the system browser.
 - The agent reads the pane (tabs, URL, title) and dispatches its actions; it cannot read or act
   inside the page until 3c-ii.
-- Tabs cannot be dragged to reorder; `browser_move_tab` (the agent's) is the only way.
 - A favicon shows only when the page names a `data:` icon; every other tab shows the globe
   (no network fetch, Invariant 4).
 - A load that times out (rather than being refused) shows its error only after WebKit's own

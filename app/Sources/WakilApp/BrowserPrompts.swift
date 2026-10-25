@@ -211,8 +211,10 @@ struct BrowserPromptCard: View {
                 button("Cancel", "browser.prompt.cancel", primary: false) { answer(.dismiss) }
                 button("Sign In", "browser.prompt.ok", primary: true) { answer(.credential(user: user, password: password)) }
             case .media:
-                button("Don't Allow", "browser.prompt.cancel", primary: false) { answer(.dismiss) }
-                button("Allow", "browser.prompt.ok", primary: true) { answer(.accept) }
+                // Their own names: a camera's Allow is not a page's OK, and VoiceOver and the
+                // harness should tell them apart.
+                button("Don't Allow", "browser.prompt.deny", primary: false) { answer(.dismiss) }
+                button("Allow", "browser.prompt.allow", primary: true) { answer(.accept) }
             }
         }
     }
