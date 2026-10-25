@@ -43,3 +43,17 @@ import Testing
     let empty = try JSONDecoder().decode(SettingsOrg.self, from: Data(#"{"id":"umbrella","connections":[]}"#.utf8))
     #expect(empty.connections == [])
 }
+
+/// A malformed field drops that field only: the connection, and the one beside it, still decode.
+@Test func aMalformedFieldDropsOnlyThatField() throws {
+    let json = """
+    {"id":"initech","connections":[
+      {"name":"datadog","kind":"datadog","fields":[{"label":"no id"},{"id":"apiKey","label":"API key","secret":true}]},
+      {"name":"wiki"},
+      {"kind":"no name"}
+    ]}
+    """
+    let org = try JSONDecoder().decode(SettingsOrg.self, from: Data(json.utf8))
+    #expect(org.connections.map(\.name) == ["datadog", "wiki"])
+    #expect(org.connections[0].fields == [SettingsConnectionField(id: "apiKey", label: "API key", secret: true)])
+}

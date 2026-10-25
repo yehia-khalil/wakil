@@ -279,7 +279,10 @@ public struct SettingsConnection: Sendable, Equatable, Decodable {
         args = try c.decodeIfPresent([String].self, forKey: .args) ?? []
         signIn = try c.decodeIfPresent(String.self, forKey: .signIn) ?? "none"
         values = try c.decodeIfPresent([String: String].self, forKey: .values) ?? [:]
-        fields = try c.decodeIfPresent([SettingsConnectionField].self, forKey: .fields) ?? []
+        // Per element: one malformed field is dropped, not the connection (nor, with it, every
+        // connection a launch reads).
+        fields = (try? c.decodeIfPresent([LenientElement<SettingsConnectionField>].self, forKey: .fields))?
+            .compactMap(\.value) ?? []
         allow = try c.decodeIfPresent([String: Bool].self, forKey: .allow) ?? [:]
         hints = try c.decodeIfPresent([String: String].self, forKey: .hints) ?? [:]
         signedIn = try c.decodeIfPresent(Bool.self, forKey: .signedIn) ?? false
@@ -292,6 +295,12 @@ public struct SettingsConnection: Sendable, Equatable, Decodable {
 
     /// What the list and the page call it: the catalog's title, else the name.
     public var displayTitle: String { title.isEmpty || kind == "custom" ? name : title }
+}
+
+/// One element of a list decoded on its own: a malformed one is nil and the rest survive.
+struct LenientElement<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
 }
 
 /// A session launch reads only a connection's name (`AgentConnectionsBox`); it is the same record.
@@ -385,7 +394,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
         // `try?`: a malformed connections field must not blank the whole Settings tree.
-        connections = (try? container.decodeIfPresent([SettingsConnection].self, forKey: .connections)) ?? []
+        connections = (try? container.decodeIfPresent([LenientElement<SettingsConnection>].self, forKey: .connections))?
+            .compactMap(\.value) ?? []
         jiraTokenStored = (try? container.decodeIfPresent(Bool.self, forKey: .jiraTokenStored)) ?? false
     }
 

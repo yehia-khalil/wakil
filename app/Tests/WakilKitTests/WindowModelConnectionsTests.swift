@@ -125,7 +125,9 @@ private let connectionActions = [
 
     @Test func allowReadOnlyToolsSkipsLockedAndAllowed() async {
         let asked = Asked()
-        let model = await window(connections: [Self.connection("wiki", allow: ["read_page": true], hints: [
+        // read_page is on by its switch, list_pages by its hint; search was turned off; the rest
+        // are not read-only or are locked.
+        let model = await window(connections: [Self.connection("wiki", allow: ["read_page": true, "search": false, "edit_page": false], hints: [
             "read_page": "readOnly", "list_pages": "readOnly", "search": "readOnly",
             "edit_page": "writes", "drop_page": "destructive", "plain": "",
         ])], asked: asked)
@@ -135,7 +137,7 @@ private let connectionActions = [
                   o["id"] == .string("initech"), o["name"] == .string("wiki") else { return nil }
             return t
         }
-        #expect(tools == ["list_pages", "search"])
+        #expect(tools == ["search"])
     }
 
     @Test func checkConnectionMapsErrorWhole() async {

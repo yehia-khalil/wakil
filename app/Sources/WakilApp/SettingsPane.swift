@@ -983,6 +983,8 @@ struct SettingsPane: View {
             SettingsSection("Connections") {
                 ConnectionsBlock(org: tree.org, actions: connections,
                                  jiraSite: AnyView(organisationEditor(.jiraBase, label: "Site", in: tree)))
+                    // Its page, statuses and checks are one organisation's: a switch starts afresh.
+                    .id(tree.org.id)
                     .padding(.vertical, 6)
             }
             // 3a-ii: who commits from the Changes view.
