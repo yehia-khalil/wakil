@@ -149,8 +149,10 @@ Tools: `recall`.
 Fronts one of the organization's MCP connections (`cmd/wakil-connect`, run as
 `wakil-connect --connection <name>`). It dials the real server once at start (`upstream.go`: a stdio
 command, or Streamable HTTP at `ResolvedConnectionURL`), with the connection's credentials in place:
-each catalog field's `Env` or `Header` from the record or the `conn:<name>` Keychain item, and a
-browser sign-in's token from `BrowserToken`. It offers the server's tools unchanged and gates every
+each catalog field's `Env` or `Header` from the record or the `conn:<name>` Keychain item, any
+`env:<NAME>` / `header:<Name>` key of that item (how a custom connection carries its own), and a
+browser sign-in's token from `BrowserToken`. Credentials go only to the server's own origin, and a
+redirect elsewhere is not followed. It offers the server's tools unchanged and gates every
 call (`gate.go`): the hint comes from the server's live annotations, falling back to the stored
 `Hints`; an allowed read-only tool runs, anything else asks the app over `WAKIL_APPROVAL_SOCKET`
 (one JSON line each way) and is refused if the app cannot answer. With no socket only an allowed

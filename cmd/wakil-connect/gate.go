@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net"
@@ -57,6 +58,29 @@ type approvalAnswer struct {
 	Message  string `json:"message"`
 }
 
+// canonicalArguments is the agent's arguments decoded once and written again: what the app is
+// asked about and what the server runs are these same bytes, so a repeated key cannot show the
+// operator one value and send the server another. None, or null, is {}.
+func canonicalArguments(raw json.RawMessage) (json.RawMessage, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return json.RawMessage(`{}`), nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var args map[string]any
+	if err := dec.Decode(&args); err != nil || dec.More() {
+		return nil, wakilcore.UserError("the arguments are not a JSON object: nothing was sent")
+	}
+	if args == nil {
+		return json.RawMessage(`{}`), nil
+	}
+	out, err := json.Marshal(args)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // gateCall decides one call: nil forwards it, an error is the refusal the agent reads. An allowed
 // read-only tool goes straight through. Everything else asks the app over socket — a ticked write
 // too, so the app can apply the spoken-turn rule. With no socket (no app to ask), only an allowed
@@ -80,9 +104,6 @@ func gateCall(ctx context.Context, org, name, socket string, tool *mcp.Tool, arg
 		}
 		return wakilcore.UserError(tool.Name + " on connection " + name + " needs the operator's approval, and Wakil is not running to ask. " +
 			"To let the agent run it, switch on \"Allow agent\" for it in Wakil's Settings → Connections → " + name + ".")
-	}
-	if len(args) == 0 {
-		args = json.RawMessage(`{}`)
 	}
 	answer, err := askApp(ctx, socket, approvalRequest{
 		Connection: name, Tool: tool.Name, Arguments: args, Allowed: allowed, ReadOnly: readOnly, Locked: locked,
