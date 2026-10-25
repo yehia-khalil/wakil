@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3c-i-load-error.jsonl",
   "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
-  "provedAt": "2026-10-25T21:29:32.846565Z",
+  "provedAt": "2026-10-25T22:34:29.476045Z",
   "checkBlob": "2211031d1711f717646f275ab98116a29413acff"
 }

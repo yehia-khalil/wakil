@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3c-i-open-and-navigate.jsonl",
   "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
-  "provedAt": "2026-10-25T21:29:32.846565Z",
+  "provedAt": "2026-10-25T22:34:29.476045Z",
   "checkBlob": "d3b486489f3e831a297c6df48446db5786753423"
 }
