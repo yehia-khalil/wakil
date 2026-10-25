@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3a-v-b-stash-clash.jsonl",
+  "baseCommit": "c95c303b6a4957e2377e43d86917a436b8106820",
+  "provedAt": "2026-10-24T21:21:47.239936Z",
+  "checkBlob": "0001d766e205ef3eb89c576b2cdc078deeacd2f2"
+}

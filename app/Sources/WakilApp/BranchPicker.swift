@@ -9,11 +9,16 @@ struct BranchPickerActions {
     var fetch: (String) async -> Void = { _ in }
     /// Delete Branch…: the root, the branch, and force (it has commits no other branch has).
     var delete: (_ root: String, _ branch: String, _ force: Bool) async -> String? = { _, _, _ in nil }
+    /// 3a-v-b: Merge Branch… and Rebase Branch… — nil when done or stopped on conflicts (the note is left
+    /// under the root's box), else git's refusal.
+    var merge: (_ root: String, _ branch: String) async -> String? = { _, _ in nil }
+    var rebase: (_ root: String, _ onto: String) async -> String? = { _, _ in nil }
 }
 
 /// What the picker is for: switching (the default), choosing the base of a new branch (▾ Create
-/// Branch From…), or choosing the branch to delete (▾ Delete Branch…).
-enum BranchPickerMode { case switchBranch, createFrom, delete }
+/// Branch From…), choosing the branch to delete (▾ Delete Branch…), or the branch to merge in or
+/// rebase onto (▾ Merge Branch…, Rebase Branch…, 3a-v-b).
+enum BranchPickerMode { case switchBranch, createFrom, delete, merge, rebase }
 
 /// The branch picker — VS Code's Quick Pick (spec, calls 1–2, 5): a filter field that takes the
 /// keyboard, the roots as tabs when there are several, **Create branch "…"**, **Create branch from…**,
@@ -48,6 +53,12 @@ struct BranchPicker: View {
         if mode == .delete {
             return branches.local.filter { !$0.current && (filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter)) }
                 .map(BranchPickerRow.local)
+        }
+        // Merge and Rebase: the local branches but the current one, then the remote ones.
+        if mode == .merge || mode == .rebase {
+            func matches(_ name: String) -> Bool { filter.isEmpty || name.localizedCaseInsensitiveContains(filter) }
+            return branches.local.filter { !$0.current && matches($0.name) }.map(BranchPickerRow.local)
+                + branches.remote.filter(matches).map(BranchPickerRow.remote)
         }
         if choosingBase { return branches.local.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }.map(BranchPickerRow.local) }
         if base != nil { return normaliseBranchName(filter).isEmpty ? [] : [.create(normaliseBranchName(filter))] }
@@ -125,6 +136,8 @@ struct BranchPicker: View {
 
     private var prompt: String {
         if mode == .delete { return "Choose the branch to delete" }
+        if mode == .merge { return "Choose the branch to merge in" }
+        if mode == .rebase { return "Choose the branch to rebase onto" }
         if choosingBase { return "Choose the branch to start from" }
         if let base { return "Name the new branch (from \(base))" }
         return "Switch to a branch, or type a new name"
@@ -216,6 +229,10 @@ struct BranchPicker: View {
             filter = ""
         case .local(let b) where mode == .delete:
             deleting = b
+        case .local(let b) where mode == .merge || mode == .rebase:
+            operate(b.name)
+        case .remote(let r) where mode == .merge || mode == .rebase:
+            operate(r)
         case .local(let b) where choosingBase:
             choosingBase = false
             base = b.name
@@ -248,6 +265,19 @@ struct BranchPicker: View {
             let outcome = await body()
             working = nil
             handle(outcome)
+        }
+    }
+
+    /// Merges `branch` in, or rebases onto it, as the picker's work in flight (Rules 4, 5): the picker
+    /// closes once git is done or stopped on conflicts — the Changes list then shows them (Rule 6) — and
+    /// stays with git's refusal, whole (Rule 8).
+    private func operate(_ branch: String) {
+        let rebase = mode == .rebase
+        message = nil
+        working = Task {
+            let refusal = rebase ? await actions.rebase(root, branch) : await actions.merge(root, branch)
+            working = nil
+            if let refusal, !refusal.isEmpty { message = refusal } else { close() }
         }
     }
 

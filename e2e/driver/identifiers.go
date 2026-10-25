@@ -108,6 +108,9 @@ var AuditedSources = []string{
 	// to either later cannot arrive unnamed.
 	"BranchPicker.swift",
 	"ChangesStashes.swift",
+	// 3a-v-b moves the Changes view's in-place confirm into its own file, shared by the Stashes group
+	// and the conflicts' Abort, Skip, takes and Undo Apply: under the gate with the views that use it.
+	"ChangesConfirm.swift",
 	"Landing.swift",
 	"OrgPlane.swift",
 	"Palettes.swift",

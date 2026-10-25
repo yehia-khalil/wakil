@@ -1,8 +1,8 @@
 import Foundation
 
-/// Which list a changed file sits in: what is staged, what is changed in the
-/// working tree, or what git does not track yet.
-public enum GitGroup: String, Sendable, Codable, CaseIterable { case staged, changed, untracked }
+/// Which list a changed file sits in: what is unmerged (3a-v-b, drawn first), what is staged, what is
+/// changed in the working tree, or what git does not track yet. Case order is draw order.
+public enum GitGroup: String, Sendable, Codable, CaseIterable { case conflicts, staged, changed, untracked }
 
 /// One file in one group of one root's status.
 public struct GitFileRow: Sendable, Equatable, Hashable {
@@ -10,12 +10,38 @@ public struct GitFileRow: Sendable, Equatable, Hashable {
     public var origPath: String?
     public var group: GitGroup
     public var status: String
+    /// 3a-v-b: a conflict's XY (`UU`, `DU`, …); "" outside the conflicts group.
+    public var kind: String
+    /// 3a-v-b: a staged file still holding a whole conflict block.
+    public var markers: Bool
 
-    public init(path: String, origPath: String?, group: GitGroup, status: String) {
+    public init(path: String, origPath: String?, group: GitGroup, status: String, kind: String = "", markers: Bool = false) {
         self.path = path
         self.origPath = origPath
         self.group = group
         self.status = status
+        self.kind = kind
+        self.markers = markers
+    }
+}
+
+/// 3a-v-b: the merge, rebase, cherry-pick or revert stopped part-way in a root, as `git_status` names it.
+/// `incoming` is a merge's branch (or id), `onto` a rebase's; `step`/`steps` a rebase's place; `head` the
+/// commit being replayed, picked or reverted, with its `subject`; `message` git's prepared message.
+public struct GitOpState: Sendable, Equatable {
+    public var kind: String           // "merge" | "rebase" | "cherry-pick" | "revert"
+    public var incoming: String
+    public var onto: String
+    public var step: Int
+    public var steps: Int
+    public var head: String
+    public var subject: String
+    public var message: String
+
+    public init(kind: String, incoming: String = "", onto: String = "", step: Int = 0, steps: Int = 0,
+                head: String = "", subject: String = "", message: String = "") {
+        (self.kind, self.incoming, self.onto, self.step, self.steps, self.head, self.subject, self.message)
+            = (kind, incoming, onto, step, steps, head, subject, message)
     }
 }
 
@@ -33,9 +59,12 @@ public struct GitRootState: Sendable, Equatable {
     public var loading: Bool
     /// 3a-iii: the branch's upstream (`origin/main`), "" when it has none — Publish's case.
     public var upstream: String
+    /// 3a-v-b: the operation stopped part-way, nil when none is.
+    public var state: GitOpState?
 
     public init(root: String, name: String, branch: String, detached: String, ahead: Int,
-                behind: Int, files: [GitFileRow], error: String?, loading: Bool, upstream: String = "") {
+                behind: Int, files: [GitFileRow], error: String?, loading: Bool, upstream: String = "",
+                state: GitOpState? = nil) {
         self.root = root
         self.name = name
         self.branch = branch
@@ -46,6 +75,7 @@ public struct GitRootState: Sendable, Equatable {
         self.error = error
         self.loading = loading
         self.upstream = upstream
+        self.state = state
     }
 }
 
@@ -55,7 +85,7 @@ public enum GitActionError: Error, Sendable, Equatable, CustomStringConvertible 
     /// `root` is not one of the active project's roots. The pane lists only those, and
     /// wakil-git refuses anything else anyway; refusing here names the roots there are.
     case notAProjectRoot(action: String, root: String, roots: [String])
-    /// `group` is not staged, changed or untracked.
+    /// `group` is not conflicts, staged, changed or untracked.
     case unknownGroup(action: String, group: String)
 
     public var description: String {
@@ -64,7 +94,7 @@ public enum GitActionError: Error, Sendable, Equatable, CustomStringConvertible 
             return "\(action): \(root) is not a root of the active project (roots: "
                 + roots.joined(separator: ", ") + ")"
         case .unknownGroup(let action, let group):
-            return "\(action): group must be staged, changed or untracked, not \"\(group)\""
+            return "\(action): group must be conflicts, staged, changed or untracked, not \"\(group)\""
         }
     }
 }
@@ -77,9 +107,10 @@ func gitString(_ o: [String: JSONValue], _ key: String) -> String {
 
 private func gitGroupRank(_ name: String) -> Int {
     switch GitGroup(rawValue: name) {
-    case .staged?: 0
-    case .changed?: 1
-    case .untracked?, nil: 2
+    case .conflicts?: 0
+    case .staged?: 1
+    case .changed?: 2
+    case .untracked?, nil: 3
     }
 }
 
@@ -113,7 +144,8 @@ func gitRootState(root: String, result: Result<JSONValue, Error>) -> GitRootStat
             guard let g = GitGroup(rawValue: gitString(row, "group")) else { continue }
             let orig = gitString(row, "origPath")
             files.append(GitFileRow(path: gitString(row, "path"), origPath: orig.isEmpty ? nil : orig,
-                                    group: g, status: gitString(row, "status")))
+                                    group: g, status: gitString(row, "status"), kind: gitString(row, "kind"),
+                                    markers: row["markers"] == .bool(true)))
         }
     }
     files.sort { a, b in
@@ -121,9 +153,15 @@ func gitRootState(root: String, result: Result<JSONValue, Error>) -> GitRootStat
         if ga != gb { return ga < gb }
         return a.path.utf8.lexicographicallyPrecedes(b.path.utf8)
     }
+    var state: GitOpState?
+    if case .object(let o)? = s["state"], !gitString(o, "kind").isEmpty {
+        state = GitOpState(kind: gitString(o, "kind"), incoming: gitString(o, "incoming"), onto: gitString(o, "onto"),
+                           step: Int(o["step"]?.intValue ?? 0), steps: Int(o["steps"]?.intValue ?? 0),
+                           head: gitString(o, "head"), subject: gitString(o, "subject"), message: gitString(o, "message"))
+    }
     return GitRootState(root: root, name: name, branch: gitString(s, "branch"), detached: gitString(s, "detached"),
                         ahead: s["ahead"]?.intValue ?? 0, behind: s["behind"]?.intValue ?? 0,
-                        files: files, error: nil, loading: false, upstream: gitString(s, "upstream"))
+                        files: files, error: nil, loading: false, upstream: gitString(s, "upstream"), state: state)
 }
 
 
@@ -150,6 +188,13 @@ public actor GitStatus {
     public private(set) var roots: [GitRootState] = []
     private var latest: [String: Int] = [:]
     private var generation = 0
+    /// 3a-v-b (R4): the last Wakil stash apply, pop or Bring Them Along that clashed, per root, for Undo
+    /// Apply — the operator's and the agent's alike, so it lives beside the status both read. Forgotten by
+    /// Undo Apply, by a read that finds the root's conflicts group empty, by `reset`, or by a relaunch.
+    public private(set) var clashes: [String: GitStashClash] = [:]
+    /// The generation each clash was remembered at: only a read begun after it sampled the tree with the
+    /// clash in it, so only such a read may forget it (a read in flight across the apply may not).
+    private var clashGenerations: [String: Int] = [:]
 
     public init(git: (any ToolCaller)?, roots: @escaping @Sendable () async -> [String]) {
         self.git = git
@@ -198,14 +243,32 @@ public actor GitStatus {
                 kept.loading = false
                 return kept
             }
+            if fresh.error == nil, !fresh.files.contains(where: { $0.group == .conflicts }),
+               ticket.generation > clashGenerations[state.root] ?? Int.min {
+                clashes[state.root] = nil
+                clashGenerations[state.root] = nil
+            }
             return fresh
         }
+    }
+
+    /// Remembers `clash` as `root`'s (R4).
+    func remember(_ clash: GitStashClash, root: String) {
+        clashes[root] = clash
+        clashGenerations[root] = generation
+    }
+    /// Forgets `root`'s clash: Undo Apply put it back.
+    func forgetClash(_ root: String) {
+        clashes[root] = nil
+        clashGenerations[root] = nil
     }
 
     /// Forgets every root (an org switch, or no pane left that shows git).
     public func reset() {
         roots = []
         latest = [:]
+        clashes = [:]
+        clashGenerations = [:]
     }
 }
 

@@ -27,6 +27,9 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
     case diffTab(action: String)
     /// `editor_replace_range` whose `expect` is no longer the text in its range: nothing is replaced.
     case staleRange(action: String, path: String)
+    /// 3a-v-b: a conflict action on a tab whose file is not in its root's Merge Changes group, or has no
+    /// block left (or none starting at `line`, for an Accept).
+    case noConflict(action: String, path: String, line: Int? = nil)
 
     public var description: String {
         switch self {
@@ -58,6 +61,8 @@ public enum EditorActionError: Error, Sendable, Equatable, CustomStringConvertib
             "\(action): the text in range of \((path as NSString).lastPathComponent) is no longer what expect says "
                 + "(the buffer changed since the range was read), so nothing was replaced; read the pane again "
                 + "and retry against the text as it is now"
+        case .noConflict(let action, let path, let line):
+            "\(action): \((path as NSString).lastPathComponent) has no conflict" + (line.map { " at line \($0)" } ?? "")
         case .nothingToUndo:
             "editor_replace_undo: this pane has no replace to undo; only its latest replace can be undone, "
                 + "once, while the window is open"
@@ -425,6 +430,7 @@ public func registerEditorActions(
         switch source {
         case .stash(let id)?: revs = editorStashDiffRevs(stash: id, untracked: group == .untracked)
         case .commit(let c)?: revs = editorCommitDiffRevs(c)
+        case .conflict?: revs = editorConflictDiffRevs()
         case nil: revs = editorDiffRevs(group, status: status)
         }
         @Sendable func side(_ rev: String?) async throws -> FilesOutcome {
@@ -573,6 +579,15 @@ public func registerEditorActions(
         let subject = EditorTabSubject.diff(root: row.root, path: row.path, group: group)
         let status = await gitStatus?.roots ?? []
         let file = editorChangesFile(row, in: status)
+        // 3a-v-b review: a Merge Changes row opens the file itself, where its blocks' actions row is,
+        // as VS Code's does; only a file no longer on disk (both deleted) falls back to the diff.
+        if group == .conflicts, let file, file.kind != "DD",
+           (try? await openFile(pane, path: row.root + "/" + row.path, at: nil, selection: nil,
+                                preview: !pin, action: "editor_changes_select")) != nil {
+            await updateColumn(pane, asDefault: false) { c in c.changesHighlight = row }
+            await persist(pane)
+            return
+        }
         let listed = status.first { $0.root == row.root }.map(editorRootIsKnown) ?? false
         let gone = listed && file == nil
         let flight: Task<Void, Never>? = await panes.updateEditor(paneId: pane, create: true) { s in
@@ -830,6 +845,43 @@ public func registerEditorActions(
             return await reply(pane)
         }))
 
+    /// `editor_replace_range`'s edit, shared with `editor_conflict_accept` (R2): `range` of the tab
+    /// `path` names (else the active one) becomes `text`, refused when `expect` is no longer what the
+    /// range holds. The renderer applies `lastAgentEdit` as one undo step.
+    @Sendable func replaceRange(_ pane: String, path: String?, range r: EditorRange, text: String,
+                                expect: String?, action: String) async throws {
+        let outcome = await panes.updateEditor(paneId: pane) { s -> EditorReplaceOutcome in
+            guard let i = editorTabIndex(s, path: path) else { return .noTab }
+            if s.tabs[i].readOnly { return .readOnly(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0], s.tabs[i].notice) }
+            // Checked in the same turn as the write, so nothing can change the range in between.
+            if let expect, editorText(s.tabs[i].text, in: r) != expect {
+                return .stale(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0])
+            }
+            s.tabs[i].text = editorReplacing(s.tabs[i].text, r, with: text)
+            if s.tabs[i].peek != nil {
+                // The peek moves with the cursor, as editor_peek_step does (R12).
+                let p = editorPeekClamped(s.tabs[i].peek, baseline: s.tabs[i].baseline, text: s.tabs[i].text)
+                s.tabs[i].peek = p
+                if let p, let base = s.tabs[i].baseline {
+                    let marks = editorGutterMarks(editorHunks(base: base, text: s.tabs[i].text))
+                    s.tabs[i].cursor = EditorPosition(line: marks[p].start, column: 1)
+                    s.tabs[i].selection = nil
+                }
+            }
+            s.tabs[i].edits += 1
+            s.tabs[i].preview = false   // an edit keeps a preview tab (spec)
+            let serial = (s.tabs[i].lastAgentEdit?.serial ?? 0) + 1
+            s.tabs[i].lastAgentEdit = EditorAgentEdit(serial: serial, range: r, text: text)
+            return .replaced
+        }
+        switch outcome {
+        case .noTab: throw EditorActionError.noTab(action: action)
+        case .readOnly(let p, let n): throw EditorActionError.readOnly(action: action, path: p, notice: n)
+        case .stale(let p): throw EditorActionError.staleRange(action: action, path: p)
+        case .replaced: break
+        }
+    }
+
     await registry.register(Action(
         name: "editor_replace_range",
         description: "Replace range ({start,end}, 1-based) of a tab's buffer (path, or the active tab) with "
@@ -849,38 +901,99 @@ public func registerEditorActions(
             guard let text = optionalString(params, "text") else {
                 throw StandardActionError.missingParam(action: "editor_replace_range", param: "text")
             }
-            let path = tabPath(params)
-            let expect = optionalString(params, "expect")
-            let outcome = await panes.updateEditor(paneId: pane) { s -> EditorReplaceOutcome in
-                guard let i = editorTabIndex(s, path: path) else { return .noTab }
-                if s.tabs[i].readOnly { return .readOnly(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0], s.tabs[i].notice) }
-                // Checked in the same turn as the write, so nothing can change the range in between.
-                if let expect, editorText(s.tabs[i].text, in: r) != expect {
-                    return .stale(s.tabs[i].path ?? editorTabTitles([s.tabs[i]])[0])
-                }
-                s.tabs[i].text = editorReplacing(s.tabs[i].text, r, with: text)
-                if s.tabs[i].peek != nil {
-                    // The peek moves with the cursor, as editor_peek_step does (R12).
-                    let p = editorPeekClamped(s.tabs[i].peek, baseline: s.tabs[i].baseline, text: s.tabs[i].text)
-                    s.tabs[i].peek = p
-                    if let p, let base = s.tabs[i].baseline {
-                        let marks = editorGutterMarks(editorHunks(base: base, text: s.tabs[i].text))
-                        s.tabs[i].cursor = EditorPosition(line: marks[p].start, column: 1)
-                        s.tabs[i].selection = nil
-                    }
-                }
-                s.tabs[i].edits += 1
-                s.tabs[i].preview = false   // an edit keeps a preview tab (spec)
-                let serial = (s.tabs[i].lastAgentEdit?.serial ?? 0) + 1
-                s.tabs[i].lastAgentEdit = EditorAgentEdit(serial: serial, range: r, text: text)
-                return .replaced
+            try await replaceRange(pane, path: tabPath(params), range: r, text: text,
+                                   expect: optionalString(params, "expect"), action: "editor_replace_range")
+            return await reply(pane)
+        }))
+
+    // 3a-v-b: the conflict blocks of a conflicted file's tab. Each works on the editor pane's active tab
+    // while its root lists the file in Merge Changes; the blocks are read from the buffer as it is now.
+
+    /// The pane's active tab, when its file is conflicted: its path, root, path in the root, and text.
+    @Sendable func conflictTab(_ pane: String, action: String) async throws
+        -> (path: String, root: String, rel: String, text: String) {
+        let s = await panes.editorSnapshot(paneId: pane)
+        guard let i = editorTabIndex(s, path: nil) else { throw EditorActionError.noTab(action: action) }
+        let tab = s.tabs[i]
+        guard editorConflicted(tab, roots: await gitStatus?.roots ?? []), case .file(let path, let root) = tab.subject else {
+            throw EditorActionError.noConflict(action: action, path: tab.path ?? editorTabTitles([tab])[0])
+        }
+        return (path, root, String(path.dropFirst(root.count + 1)), tab.text)
+    }
+
+    await registry.register(Action(
+        name: "editor_conflict_accept",
+        description: "Resolve one conflict block in the editor pane's active tab: take current keeps the "
+            + "current side (above =======, HEAD's in a merge), incoming the incoming side, both the two, "
+            + "current first; the marker lines go. block is the 1-based line of the block's <<<<<<< marker. "
+            + "Edits the buffer as editor_replace_range does: unsaved, undoable with ⌘Z; editor_save writes "
+            + "it, and staging the file marks it resolved. Refused when the tab's file is not conflicted or no "
+            + "block starts at that line.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["block": .object(["type": .string("integer")]),
+                        "take": .object(["type": .string("string"),
+                                         "enum": .array(EditorConflictTake.allCases.map { .string($0.rawValue) })])],
+                       required: ["block", "take"]),
+        handler: { params in
+            let name = "editor_conflict_accept"
+            let pane = try await editorPane(params, action: name)
+            guard let line = jsonObject(params)?["block"]?.intValue else {
+                throw StandardActionError.missingParam(action: name, param: "block")
             }
-            switch outcome {
-            case .noTab: throw EditorActionError.noTab(action: "editor_replace_range")
-            case .readOnly(let p, let n): throw EditorActionError.readOnly(action: "editor_replace_range", path: p, notice: n)
-            case .stale(let p): throw EditorActionError.staleRange(action: "editor_replace_range", path: p)
-            case .replaced: break
+            guard let raw = optionalString(params, "take") else {
+                throw StandardActionError.missingParam(action: name, param: "take")
             }
+            guard let take = EditorConflictTake(rawValue: raw) else {
+                throw EditorFilesError(description: "\(name): take is current, incoming or both, not \(raw)")
+            }
+            let c = try await conflictTab(pane, action: name)
+            guard let b = editorConflictBlocks(c.text).first(where: { $0.start == line }) else {
+                throw EditorActionError.noConflict(action: name, path: c.path, line: line)
+            }
+            let (r, text) = editorConflictAccept(c.text, b, take: take)
+            // expect: a buffer that changed since it was read is refused, not written over.
+            try await replaceRange(pane, path: c.path, range: r, text: text,
+                                   expect: editorText(c.text, in: r), action: name)
+            return await reply(pane)
+        }))
+
+    for (name, forward, which) in [("editor_conflict_next", true, "next"), ("editor_conflict_previous", false, "previous")] {
+        await registry.register(Action(
+            name: name,
+            description: "Move the editor pane's active tab's cursor to the start of the \(which) conflict block "
+                + "(its <<<<<<< line), wrapping round the file. Refused when the tab's file is not conflicted "
+                + "or has no block left.",
+            kind: .control, audience: .agentReachable,
+            schema: schema([:]),
+            handler: { params in
+                let pane = try await editorPane(params, action: name)
+                let c = try await conflictTab(pane, action: name)
+                let moved = await panes.updateEditor(paneId: pane) { s -> Bool in
+                    guard let i = editorTabIndex(s, path: c.path),
+                          let b = editorConflictStep(editorConflictBlocks(s.tabs[i].text),
+                                                     from: s.tabs[i].cursor.line, forward: forward) else { return false }
+                    s.tabs[i].cursor = EditorPosition(line: b.start, column: 1)
+                    s.tabs[i].selection = nil
+                    return true
+                }
+                guard moved else { throw EditorActionError.noConflict(action: name, path: c.path) }
+                await persist(pane)
+                return await reply(pane)
+            }))
+    }
+
+    await registry.register(Action(
+        name: "editor_conflict_compare",
+        description: "Compare Changes for the editor pane's active tab: a read-only diff tab of the whole file, "
+            + "its current side (index stage 2) against its incoming side (stage 3); a side git has none of "
+            + "(a delete/modify conflict) reads empty. Focused when already open. Refused when the tab's file "
+            + "is not conflicted.",
+        kind: .control, audience: .agentReachable,
+        schema: schema([:]),
+        handler: { params in
+            let pane = try await editorPane(params, action: "editor_conflict_compare")
+            let c = try await conflictTab(pane, action: "editor_conflict_compare")
+            await openSourceDiff(pane, root: c.root, path: c.rel, group: .conflicts, source: .conflict)
             return await reply(pane)
         }))
 
@@ -1611,7 +1724,9 @@ public func registerEditorActions(
         name: "editor_changes_select",
         description: "Open one changed file's diff in an editor pane, as a read-only diff tab titled `name (Changes)`, "
             + "`(Staged)` or `(Untracked)`: root (absolute, one of the active project's roots), path (relative to "
-            + "root), group (staged, changed or untracked — a partly staged file is in two). Staged compares HEAD "
+            + "root), group (conflicts, staged, changed or untracked — a partly staged file is in two). A conflicts "
+            + "row opens the file itself, with its blocks' Accept actions, not a diff (a file both sides deleted "
+            + "opens the diff). Staged compares HEAD "
             + "with the index, changed the index with the working tree (a conflicted file HEAD with the working "
             + "tree), untracked nothing with the working tree; a deleted file is compared with nothing. A preview "
             + "tab, replaced by the next one, unless pin is true. A file no longer in that group opens reading "

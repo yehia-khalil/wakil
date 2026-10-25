@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -52,6 +53,12 @@ func remoteFixture(t *testing.T) (bare, work string, g *GitRemote) {
 // pushFromElsewhere commits change to a.txt in another clone and pushes it to bare.
 func pushFromElsewhere(t *testing.T, bare, content string) {
 	t.Helper()
+	pushFileFromElsewhere(t, bare, "a.txt", content)
+}
+
+// pushFileFromElsewhere commits content as name in another clone and pushes it to bare.
+func pushFileFromElsewhere(t *testing.T, bare, name, content string) {
+	t.Helper()
 	other := filepath.Join(t.TempDir(), "other")
 	for _, args := range [][]string{
 		{"clone", "-q", "file://" + bare, other},
@@ -62,7 +69,7 @@ func pushFromElsewhere(t *testing.T, bare, content string) {
 			t.Fatalf("%v: %s", err, out)
 		}
 	}
-	os.WriteFile(filepath.Join(other, "a.txt"), []byte(content), 0o644)
+	os.WriteFile(filepath.Join(other, name), []byte(content), 0o644)
 	for _, args := range [][]string{{"add", "."}, {"commit", "-qm", "elsewhere"}, {"push", "-q"}} {
 		c := exec.Command("git", append([]string{"-C", other, "-c", "user.name=o", "-c", "user.email=o@x"}, args...)...)
 		c.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
@@ -98,23 +105,32 @@ func TestFetchPruneAndAheadBehind(t *testing.T) {
 	}
 }
 
-func TestPullRebaseConflictAbortsAndListsPaths(t *testing.T) {
-	bare, work, g := remoteFixture(t)
-	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
-	commitHere(t, work, "one\nMINE\nthree\n")
-	before := porcelain(t, work)
-	r, err := g.Pull(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "a.txt") {
-		t.Fatalf("err = %v", err)
-	}
-	if len(r.Conflicts) != 1 || r.Conflicts[0] != "a.txt" {
-		t.Fatalf("conflicts = %v", r.Conflicts)
-	}
-	if _, err := os.Stat(filepath.Join(work, ".git", "rebase-merge")); err == nil {
-		t.Fatal("rebase still in progress")
-	}
-	if after := porcelain(t, work); after != before {
-		t.Fatalf("tree changed:\n%s\n%s", before, after)
+// Review Focus 1: under either strategy the pull stops with the conflicts in the tree, a name with a
+// space listed whole.
+func TestPullConflictIsLeftInPlace(t *testing.T) {
+	for _, strategy := range []string{"rebase", "merge"} {
+		t.Run(strategy, func(t *testing.T) {
+			bare, work, g := remoteFixture(t)
+			UpdateOrg("initech", OrgPatch{PullStrategy: &strategy})
+			pushFileFromElsewhere(t, bare, "a b.txt", "theirs\n")
+			pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+			os.WriteFile(filepath.Join(work, "a b.txt"), []byte("mine\n"), 0o644)
+			gitIn(t, work, "add", "a b.txt")
+			commitHere(t, work, "one\nMINE\nthree\n")
+			r, err := g.Pull(context.Background())
+			if err == nil || err.Error() != "Pull stopped on conflicts in a b.txt, a.txt; resolve them below" {
+				t.Fatalf("err = %v", err)
+			}
+			if !slices.Equal(r.Conflicts, []string{"a b.txt", "a.txt"}) {
+				t.Fatalf("conflicts = %q", r.Conflicts)
+			}
+			if u, _ := exec.Command("git", "-C", work, "ls-files", "-u").Output(); len(u) == 0 {
+				t.Fatal("the conflicts were put back")
+			}
+			if op, _ := ReadGitOp(context.Background(), &GitRunner{Root: work}); op.Kind != strategy {
+				t.Fatalf("in progress = %+v", op)
+			}
+		})
 	}
 }
 
@@ -440,8 +456,8 @@ func TestPullWhoseChangesClashKeepsThemInTheStash(t *testing.T) {
 	}
 }
 
-// A conflicting pull aborts and hands the set-aside changes back.
-func TestAConflictingPullGivesTheUncommittedChangesBack(t *testing.T) {
+// A conflicting pull holds the set-aside changes, and Abort hands them back with the tree from before.
+func TestAbortAfterAConflictingPullGivesTheUncommittedChangesBack(t *testing.T) {
 	bare, work, g := remoteFixture(t)
 	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
 	commitHere(t, work, "one\nMINE\nthree\n")
@@ -450,6 +466,13 @@ func TestAConflictingPullGivesTheUncommittedChangesBack(t *testing.T) {
 	before := porcelain(t, work)
 	if _, err := g.Pull(context.Background()); err == nil || !strings.Contains(err.Error(), "a.txt") {
 		t.Fatalf("err = %v", err)
+	}
+	w, err := NewGitWriter(work, []string{work}, GitIdentity{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Abort(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 	if after := porcelain(t, work); after != before {
 		t.Fatalf("tree changed:\n%s\n%s", before, after)
@@ -466,5 +489,40 @@ func TestFastForwardOnlyRefusalIsPlain(t *testing.T) {
 	_, err := g.Pull(context.Background())
 	if err == nil || err.Error() != "Both sides have new commits, so Fast-forward only cannot pull. Choose Rebase or Merge in Settings → Organisation → Git" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Final review I1: mid-rebase HEAD is detached, and Pull (so Sync) names the rebase, not the detached
+// HEAD it would otherwise trip on first.
+func TestPullMidRebaseNamesTheRebase(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+	commitHere(t, work, "one\nMINE\nthree\n")
+	gitIn(t, work, "fetch", "-q", "origin")
+	c := exec.Command("git", "-C", work, "-c", "core.editor=true", "rebase", "@{u}")
+	c.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	c.CombinedOutput() // conflicts: the operator is mid-rebase
+	want := "A rebase is in progress in " + work + "; finish or abort it first"
+	for name, run := range map[string]func(context.Context) (GitRemoteResult, error){"pull": g.Pull, "sync": g.Sync} {
+		if _, err := run(context.Background()); err == nil || err.Error() != want {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+	}
+}
+
+// Final review I3: an autostash that comes back with conflicts leaves them in the tree, and a copy in
+// git stash; popping that would apply them twice, so the note says to resolve them, not to pop.
+func TestPullRebaseWhoseAutostashClashesSaysResolve(t *testing.T) {
+	bare, work, g := remoteFixture(t)
+	s := "rebase"
+	UpdateOrg("initech", OrgPatch{PullStrategy: &s})
+	pushFromElsewhere(t, bare, "one\nTHEIRS\nthree\n")
+	os.WriteFile(filepath.Join(work, "a.txt"), []byte("one\nMINE\nthree\n"), 0o644)
+	r, err := g.Pull(context.Background())
+	if err == nil || err.Error() != "Your uncommitted changes clash in a.txt; resolve them below — a copy is kept in git stash" {
+		t.Fatalf("err = %v", err)
+	}
+	if !slices.Equal(r.Conflicts, []string{"a.txt"}) {
+		t.Fatalf("conflicts = %q", r.Conflicts)
 	}
 }

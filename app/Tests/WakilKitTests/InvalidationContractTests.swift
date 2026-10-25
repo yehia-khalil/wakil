@@ -31,6 +31,9 @@ private let orgDerived: Set<String> = [
     "changesDrafting", "changesDraftTasks", "changesLastDraft",
     // 3a-iii-a: the background fetch's notes are the outgoing org's roots'.
     "changesRemoteNotes",
+    // 3a-v-b: the outgoing org's roots' stash clashes (R4, mirrored from the status, which resets) and the
+    // operations whose prepared message already filled a box.
+    "changesClashes", "changesFilledFrom",
     "project", "projectKey", "environment", "environmentProduction",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",

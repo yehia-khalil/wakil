@@ -64,12 +64,12 @@ func gitByteSize(_ bytes: Int) -> String {
 /// - Changes: the index against the working tree.
 /// - Untracked: nothing against the working tree.
 /// - Deleted (`D`): the original against nothing on the right, since nothing is left to read.
-/// - Conflicted (`U`, always in Changes): HEAD against the working tree, because mid-merge the index
-///   holds stages, not one version.
+/// - Merge Changes (3a-v-b): HEAD against the working tree, because mid-merge the index holds stages,
+///   not one version.
 public func editorDiffRevs(_ group: GitGroup, status: String?) -> (original: String?, modified: String?) {
-    if group == .changed, status == "U" { return ("HEAD", "worktree") }
     let deleted = status == "D"
     switch group {
+    case .conflicts: return ("HEAD", "worktree")
     case .staged: return ("HEAD", deleted ? nil : "index")
     case .changed: return ("index", deleted ? nil : "worktree")
     case .untracked: return (nil, "worktree")
@@ -97,6 +97,7 @@ public func editorCommandReturnOpensFile(_ s: EditorSnapshot?, roots: [GitRootSt
 /// A diff tab's own name for its group, in its title.
 func editorDiffGroupTitle(_ g: GitGroup) -> String {
     switch g {
+    case .conflicts: "Merge Changes"
     case .staged: "Staged"
     case .changed: "Changes"
     case .untracked: "Untracked"

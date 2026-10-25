@@ -53,10 +53,11 @@ public struct GitCommitRef: Sendable, Hashable, Codable {
 }
 
 /// What a non-Changes diff tab compares (3a-iv, 3a-v-a): a stash against its base, or a commit
-/// against its first parent.
+/// against its first parent. 3a-v-b: `.conflict`, a conflicted file's current side against its incoming.
 public enum EditorDiffSource: Sendable, Hashable {
     case stash(String)
     case commit(GitCommitRef)
+    case conflict
 
     public var stashID: String? { if case .stash(let id) = self { id } else { nil } }
 }
@@ -70,6 +71,15 @@ public func editorBlameCommitRef(_ b: GitBlameInfo, currentPath: String) -> GitC
 /// A commit's two sides for `git_show`: the file before it (under the name it had there) and after it.
 public func editorCommitDiffRevs(_ c: GitCommitRef) -> (original: String, modified: String) {
     ("commit-parent:\(c.id)" + (c.parentPath.map { ":\($0)" } ?? ""), "commit:\(c.id)")
+}
+
+/// A conflict's two sides for `git_show` (3a-v-b): current (index stage 2) and incoming (stage 3). A
+/// side git has no stage for (a delete/modify conflict) comes back absent and reads empty.
+public func editorConflictDiffRevs() -> (original: String, modified: String) { ("ours", "theirs") }
+
+/// `a.txt (Current ↔ Incoming)`: Compare Changes' tab.
+public func editorConflictTabTitle(path: String) -> String {
+    "\((path as NSString).lastPathComponent) (Current ↔ Incoming)"
 }
 
 /// `a.txt (abc1234)`: the file's name at that commit and the commit's short id.
@@ -99,16 +109,18 @@ public func editorBlameText(_ b: GitBlameInfo, now: Date = Date()) -> String {
     b.uncommitted ? "Not committed yet" : "\(b.author), \(editorRelativeAge(b.date, now: now)) • \(b.subject)"
 }
 
-/// The part of a diff tab's key that tells its source apart: `stash@<id>/`, `commit@<id>/`, or nothing.
+/// The part of a diff tab's key that tells its source apart: `stash@<id>/`, `commit@<id>/`,
+/// `conflict/`, or nothing.
 public func editorDiffSourceKey(_ source: EditorDiffSource?) -> String {
     switch source {
     case .stash(let id)?: "stash@\(id)/"
     case .commit(let c)?: "commit@\(c.id)\(c.parentPath.map { ":" + $0 } ?? "")/"
+    case .conflict?: "conflict/"
     case nil: ""
     }
 }
 
-/// A diff tab's source as tab params: `stash: <id>`, or `commit: {id, path, parentPath?}`.
+/// A diff tab's source as tab params: `stash: <id>`, `commit: {id, path, parentPath?}`, or `conflict: true`.
 public func editorDiffSourceParams(_ source: EditorDiffSource?) -> [String: JSONValue] {
     switch source {
     case .stash(let id)?: return ["stash": .string(id)]
@@ -116,6 +128,7 @@ public func editorDiffSourceParams(_ source: EditorDiffSource?) -> [String: JSON
         var o: [String: JSONValue] = ["id": .string(c.id), "path": .string(c.path)]
         if let p = c.parentPath { o["parentPath"] = .string(p) }
         return ["commit": .object(o)]
+    case .conflict?: return ["conflict": .bool(true)]
     case nil: return [:]
     }
 }
@@ -123,6 +136,7 @@ public func editorDiffSourceParams(_ source: EditorDiffSource?) -> [String: JSON
 /// Reads `editorDiffSourceParams` back.
 public func editorDiffSource(_ d: [String: JSONValue]) -> EditorDiffSource? {
     if case .string(let id)? = d["stash"] { return .stash(id) }
+    if d["conflict"] == .bool(true) { return .conflict }
     if case .object(let c)? = d["commit"], case .string(let id)? = c["id"], case .string(let p)? = c["path"] {
         if case .string(let pp)? = c["parentPath"] { return .commit(GitCommitRef(id: id, path: p, parentPath: pp)) }
         return .commit(GitCommitRef(id: id, path: p))

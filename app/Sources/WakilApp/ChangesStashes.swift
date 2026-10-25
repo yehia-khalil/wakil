@@ -235,21 +235,7 @@ struct ChangesStashesGroup: View {
     }
 
     private func confirm(_ text: String, keepId: String, confirmId: String, _ go: @escaping () -> Void) -> some View {
-        HStack(spacing: 8) {
-            Text(text)
-                .font(.system(size: 11))
-                .foregroundStyle(Color(red: 0.910, green: 0.706, blue: 0.353))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            Button("Keep it") { confirming = nil }
-                .buttonStyle(.plain).font(.system(size: 10.5))
-                .accessibilityIdentifier(keepId)
-            Button("Drop") { confirming = nil; go() }
-                .buttonStyle(.plain).font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(Color(red: 0.910, green: 0.706, blue: 0.353))
-                .accessibilityIdentifier(confirmId)
-        }
-        .padding(.vertical, 4)
+        ChangesConfirm(text: text, verb: "Drop", keepId: keepId, confirmId: confirmId, keep: { confirming = nil }, go: go)
     }
 
     private func age(_ iso: String) -> String {

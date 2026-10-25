@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3a-iv-branch-menu.jsonl",
-  "baseCommit": "164af87a096b085b1c4022f95206ec8eec83dc64",
-  "provedAt": "2026-10-23T13:19:55.139518Z",
-  "checkBlob": "69505b0b1269e98e1ef9054437b2f98fe144e8c6"
+  "baseCommit": "c95c303b6a4957e2377e43d86917a436b8106820",
+  "provedAt": "2026-10-24T21:21:47.239936Z",
+  "checkBlob": "9c612f13406e7783cb1f6fd2945fcf1d1456e577"
 }

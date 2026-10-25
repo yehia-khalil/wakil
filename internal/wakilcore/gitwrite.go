@@ -75,6 +75,16 @@ func (w *GitWriter) paths(in []string) ([]string, error) {
 }
 
 func (w *GitWriter) git(ctx context.Context, stdin []byte, sub string, args ...string) ([]byte, error) {
+	out, _, err := w.gitWith(ctx, nil, stdin, sub, args...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// gitWith is git with config (`-c` pairs) placed before the subcommand, returning stderr too: a
+// rebase reports its result there.
+func (w *GitWriter) gitWith(ctx context.Context, config []string, stdin []byte, sub string, args ...string) ([]byte, []byte, error) {
 	m, _ := gitWriteLocks.LoadOrStore(w.Root, &sync.Mutex{})
 	mu := m.(*sync.Mutex)
 	mu.Lock()
@@ -96,7 +106,7 @@ func (w *GitWriter) git(ctx context.Context, stdin []byte, sub string, args ...s
 			full = append(full, "-c", k+".email="+w.Identity.Email)
 		}
 	}
-	full = append(append(full, sub), args...)
+	full = append(append(append(full, config...), sub), args...)
 	cmd := exec.Command("git", full...)
 	cmd.Env = gitScrubbedEnv(w.Root)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // a cancel kills hooks too
@@ -109,7 +119,7 @@ func (w *GitWriter) git(ctx context.Context, stdin []byte, sub string, args ...s
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -117,15 +127,15 @@ func (w *GitWriter) git(ctx context.Context, stdin []byte, sub string, args ...s
 	case <-ctx.Done():
 		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		<-done
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	case err := <-done:
 		if errors.Is(err, exec.ErrWaitDelay) {
 			err = nil // git exited 0; only a leftover child's pipe was cut
 		}
 		if err != nil {
-			return nil, gitWriteError(sub, out.Bytes(), errb.Bytes(), err)
+			return out.Bytes(), errb.Bytes(), gitWriteError(sub, out.Bytes(), errb.Bytes(), err)
 		}
-		return out.Bytes(), nil
+		return out.Bytes(), errb.Bytes(), nil
 	}
 }
 
@@ -268,9 +278,11 @@ func (w *GitWriter) UndoCommit(ctx context.Context) (string, error) {
 	return strings.TrimRight(string(msg), "\n"), nil
 }
 
+// merging: a merge, cherry-pick or revert is stopped part-way, so git has a message prepared for its
+// commit. A rebase's commits are made by `rebase --continue`, not here.
 func (w *GitWriter) merging(ctx context.Context) bool {
-	_, err := w.runner().Run(ctx, "rev-parse", "--verify", "MERGE_HEAD")
-	return err == nil
+	op, _ := ReadGitOp(ctx, w.runner())
+	return op.Kind == "merge" || op.Kind == "cherry-pick" || op.Kind == "revert"
 }
 
 func (w *GitWriter) head(ctx context.Context) (GitCommitResult, error) {

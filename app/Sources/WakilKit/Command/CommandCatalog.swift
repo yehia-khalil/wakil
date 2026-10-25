@@ -33,6 +33,8 @@ public struct PaletteContext: Sendable, Equatable {
     public var editorActiveIsFile: Bool
     /// The focused editor pane has a diff tab in front: Stage / Unstage Selected Ranges are offered.
     public var editorActiveDiff: EditorActiveDiff?
+    /// 3a-v-b: the focused editor pane's tab in front is a conflicted file: Next / Previous Conflict are offered.
+    public var editorActiveConflicted: Bool
     public var dbPageHasNext: Bool
     public var dbPageHasPrevious: Bool
     public var hasEnvironments: Bool
@@ -54,9 +56,10 @@ public struct PaletteContext: Sendable, Equatable {
         hasEnvironments: Bool = false, projectCount: Int = 0, providerCount: Int = 0,
         editorActiveIsFile: Bool = false, organisation: String = "", project: String = "",
         editorActiveDiff: EditorActiveDiff? = nil, conversationOnScreen: Bool = false,
-        activeGitRoot: String? = nil
+        activeGitRoot: String? = nil, editorActiveConflicted: Bool = false
     ) {
         self.activeGitRoot = activeGitRoot
+        self.editorActiveConflicted = editorActiveConflicted
         self.focusedPane = focusedPane
         self.apiSendInFlight = apiSendInFlight
         self.editorActiveIsFile = editorActiveIsFile
@@ -171,6 +174,12 @@ public enum CommandCatalog {
         // 3a-ii-b. The diff tab in front, with its selection (or its caret's line) as the ranges.
         diffRanges("editor.stageRanges", "Stage Selected Ranges", "editor_changes_stage_ranges", .changed),
         diffRanges("editor.unstageRanges", "Unstage Selected Ranges", "editor_changes_unstage_ranges", .staged),
+
+        // 3a-v-b. Between the conflict blocks of a conflicted file in front, wrapping.
+        pane("editor.nextConflict", "Next Conflict", "editor", "editor_conflict_next",
+             available: { $0.editorActiveConflicted }),
+        pane("editor.previousConflict", "Previous Conflict", "editor", "editor_conflict_previous",
+             available: { $0.editorActiveConflicted }),
 
         choice("global.env", "Switch environment…", "ctx_set_environment",
                .environments, "Environment", available: { $0.hasEnvironments }),

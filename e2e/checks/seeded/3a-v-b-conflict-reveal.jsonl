@@ -1,0 +1,33 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"g() { git -C ../e2e-portal -c user.name=Ada -c user.email=ada@e2e.invalid \"$@\"; }; g checkout -q -- index.txt && printf 'top\\nbase\\nbottom\\n' > ../e2e-portal/doc && echo old > ../e2e-portal/gone && g add doc gone && g commit -qm base && g switch -qc feature && printf 'top\\nfeature\\nbottom\\n' > ../e2e-portal/doc && g rm -q gone && g commit -qam feature && g switch -q main && printf 'top\\nmain\\nbottom\\n' > ../e2e-portal/doc && echo 'old, mine' > ../e2e-portal/gone && g commit -qam main"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.editor-1"}}
+{"dispatch":{"action":"editor_changes_merge","params":{"root":"{fixtureRoot}/e2e-portal","branch":"feature"}}}
+{"expect":{"tree":"contains","text":"merging feature"}}
+{"expect":{"tree":"contains","text":"doc, both modified"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"doc"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"e2e-portal/doc"}}
+{"expect":{"journal":{"contains":"\"action\":\"editor_goto\""}}}
+{"expect":{"pane":"editor-1","field":"cursor.line","equals":"2"}}

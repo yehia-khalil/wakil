@@ -20,6 +20,16 @@
 @keyframes ghost-pulse{0%,100%{opacity:.25}50%{opacity:1}}
 /* 3a-v-a: inline blame, dim, after the cursor line's text. */
 .wakil-blame{color:rgba(232,236,246,.32)!important;font-style:normal;cursor:default}
+/* 3a-v-b: a conflict block — current green, incoming blue, its marker lines stronger and each with a
+   dim suffix — and the actions row above it, laid over a one-line view zone as the peek is. */
+.wakil-conflict-current-head{background:rgba(139,224,200,.24)}
+.wakil-conflict-current{background:rgba(139,224,200,.10)}
+.wakil-conflict-incoming{background:rgba(92,157,255,.10)}
+.wakil-conflict-incoming-head{background:rgba(92,157,255,.24)}
+.wakil-conflict-label{color:rgba(232,236,246,.38)!important;font-style:normal}
+.wakil-conflict-row{pointer-events:auto;display:flex;align-items:center;gap:6px;padding:0 8px;color:rgba(232,236,246,.38);font:11px Menlo,monospace}
+.wakil-conflict-row button{all:unset;cursor:pointer;white-space:nowrap;color:rgba(232,236,246,.72)}
+.wakil-conflict-row button:hover{color:#e8ecf6}
 </style></head>
 <body><div id="d"></div>
 <script>
@@ -168,7 +178,7 @@
     // tab's (line, column, top). `diffKey` is null across the swap, so the fresh models' reset to 1:1
     // is reported under neither key; then one report says where the new key's view is.
     window.wakilShowDiff = function (key, original, modified, language, line, column, top) {
-      ed.changeViewZones(dropPeek);
+      ed.changeViewZones(function (acc) { dropPeek(acc); dropConflictRows(acc); });
       const same = key === diffKey;
       const at = same ? dme.getPosition() : { lineNumber: line, column: column };
       const scroll = same ? (diffScroll !== null ? diffScroll : dme.getScrollTop()) : top;
@@ -281,6 +291,7 @@
     }
     ed.onDidChangeModelContent(function () {
       if (applying || !current) return;
+      conflictCaret = null;   // typed over: an Accept still on its way places no cursor
       if (typingTimer !== null) cancelAnimationFrame(typingTimer);
       const key = current;
       typingTimer = requestAnimationFrame(function () {
@@ -340,12 +351,15 @@
       if (p && key === current) ed.revealLinesInCenterIfOutsideViewport(Math.max(p.afterLine, 1), p.afterLine + 1 + p.old.length + p.new.length);
     };
     window.wakilShowModel = function (key, text, language, readOnly) {
-      ed.changeViewZones(dropPeek);
+      ed.changeViewZones(function (acc) { dropPeek(acc); dropConflictRows(acc); });
       showCode();
       const created = !models[key];
       if (created) { models[key] = monaco.editor.createModel(text, language); indent(models[key]); }
       current = key;
+      conflictCaret = null;
       ed.setModel(models[key]);
+      // Its tints stayed on the model; its rows (editor-level, as view zones are) come back with it.
+      ed.changeViewZones(function (acc) { drawConflictRows(acc, key); });
       // 3b-vii: a log's bottom is its last line at the bottom edge, as in a terminal, so opening at
       // the bottom and following show the newest entries, not the blank space past them.
       ed.updateOptions({ readOnly: readOnly, scrollBeyondLastLine: models[key].getLanguageId() !== 'log' });
@@ -407,6 +421,9 @@
     };
     window.wakilApplyEdit = function (key, sl, sc, el, ec, text, before, after, serial) {
       const m = models[key]; if (!m) return;
+      // 3a-v-b: the edit an Accept pressed here made (it starts at its block's <<<<<<< line).
+      const caret = conflictCaret !== null && conflictCaret.key === key && conflictCaret.line === sl;
+      if (caret) conflictCaret = null;
       if (m.getValue() !== before) {
         replaceWhole(key, after);
       } else {
@@ -419,6 +436,12 @@
         else if (key === current) report();
       }
       basis[key] = serial;
+      // Rule 6: after an Accept the cursor stays at the block's place, the line its text now starts
+      // on, wherever Monaco's own tracking would have moved it; the move reports itself.
+      if (caret && key === current) {
+        ed.setPosition({ lineNumber: Math.min(sl, m.getLineCount()), column: 1 });
+        ed.revealLineInCenterIfOutsideViewport(sl);
+      }
     };
     window.wakilReveal = function (key, line, column, sel) {
       if (key !== current) return;
@@ -458,6 +481,93 @@
         if (b && b.id) post({ type: 'blame', key: current, op: op, id: b.id });
       });
     });
+    // 3a-v-b: a conflicted file's blocks. WakilKit parses them from the tab's text and pushes them on
+    // every change (none for a file git did not mark conflicted); the page tints them per model and
+    // lays an actions row over a one-line view zone above each, as the peek's buttons are (R3): content
+    // in a view zone gets no clicks. A press only posts {type:'conflict'}; the Accept itself comes back
+    // from the store as an edit, one undo step (R2).
+    const conflicts = {};      // key -> { ids, blocks }
+    let conflictRows = [];     // the shown key's rows: [{ zone, widget }]
+    let conflictCaret = null;  // { key, line }: an Accept pressed, its edit not yet applied
+    function dropConflictRows(acc) {
+      conflictRows.forEach(function (r) { acc.removeZone(r.zone); ed.removeOverlayWidget(r.widget); });
+      conflictRows = [];
+    }
+    function placeConflictRows() {
+      const l = ed.getLayoutInfo();
+      conflictRows.forEach(function (r) {
+        const n = r.widget.getDomNode();
+        n.style.left = l.contentLeft + 'px';
+        n.style.width = Math.max(0, l.contentWidth - l.verticalScrollbarWidth) + 'px';
+        // A pane too narrow for the full labels takes the short ones, so no action is clipped out of
+        // reach (3a-v-b walk); the names a reader hears stay whole.
+        const buttons = n.querySelectorAll('button');
+        buttons.forEach(function (el) { el.textContent = el.dataset.full; });
+        if (n.scrollWidth > n.clientWidth) buttons.forEach(function (el) { el.textContent = el.dataset.short; });
+      });
+    }
+    ed.onDidLayoutChange(placeConflictRows);
+    const conflictActions = [['Accept Current Change', 'current', 'Current'],
+                             ['Accept Incoming Change', 'incoming', 'Incoming'],
+                             ['Accept Both Changes', 'both', 'Both'], ['Compare Changes', 'compare', 'Compare']];
+    function drawConflictRows(acc, key) {
+      dropConflictRows(acc);
+      const c = conflicts[key];
+      if (!c || key !== current) return;
+      c.blocks.forEach(function (b, i) {
+        const node = document.createElement('div'); node.className = 'wakil-conflict-row';
+        conflictActions.forEach(function (a, j) {
+          if (j) { const dot = document.createElement('span'); dot.textContent = '\u00b7'; node.appendChild(dot); }
+          const el = document.createElement('button'); el.textContent = a[0];
+          el.dataset.full = a[0]; el.dataset.short = a[2];
+          el.setAttribute('aria-label', a[0]); el.title = a[0];
+          // mousedown, not click, and the default prevented: the press never moves Monaco's cursor.
+          el.addEventListener('mousedown', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            if (!current) return;
+            if (a[1] !== 'compare') conflictCaret = { key: current, line: b.start };
+            post({ type: 'conflict', key: current, block: b.start, op: a[1] });
+          });
+          node.appendChild(el);
+        });
+        node.style.position = 'absolute';
+        const widget = { getId: function () { return 'wakil.conflict.' + i; }, getDomNode: function () { return node; },
+                         getPosition: function () { return null; } };
+        ed.addOverlayWidget(widget);
+        const zone = acc.addZone({
+          afterLineNumber: b.start - 1, heightInLines: 1, domNode: document.createElement('div'),
+          onDomNodeTop: function (top) { node.style.top = top + 'px'; },
+          onComputedHeight: function (h) { node.style.height = h + 'px'; },
+        });
+        conflictRows.push({ zone: zone, widget: widget });
+      });
+      placeConflictRows();
+    }
+    function conflictLines(start, end, className) {
+      return { range: new monaco.Range(start, 1, end, 1), options: { isWholeLine: true, className: className } };
+    }
+    function conflictLabel(m, line, text) {
+      const end = m.getLineMaxColumn(line);
+      return { range: new monaco.Range(line, end, line, end), options: { showIfCollapsed: true,
+        after: { content: ' ' + text, inlineClassName: 'wakil-conflict-label',
+                 cursorStops: monaco.editor.InjectedTextCursorStops.None } } };
+    }
+    window.wakilSetConflicts = function (key, blocks) {
+      const m = models[key]; if (!m) return;
+      // A block past the model's end was parsed from text the page has since moved on from.
+      const shown = blocks.filter(function (b) { return b.end <= m.getLineCount(); });
+      const list = [];
+      shown.forEach(function (b) {
+        list.push(conflictLines(b.start, b.start, 'wakil-conflict-current-head'));
+        if (b.separator - 1 > b.start) list.push(conflictLines(b.start + 1, b.separator - 1, 'wakil-conflict-current'));
+        if (b.end - 1 > b.separator) list.push(conflictLines(b.separator + 1, b.end - 1, 'wakil-conflict-incoming'));
+        list.push(conflictLines(b.end, b.end, 'wakil-conflict-incoming-head'));
+        list.push(conflictLabel(m, b.start, '(Current Change)'));
+        list.push(conflictLabel(m, b.end, '(Incoming Change)'));
+      });
+      conflicts[key] = { ids: m.deltaDecorations((conflicts[key] || {}).ids || [], list), blocks: shown };
+      if (key === current && !diffKey) ed.changeViewZones(function (acc) { drawConflictRows(acc, key); });
+    };
     // 3b-viii: ghost-text. Swift owns the debounce, the model and the clean-up; the page asks
     // and draws. A resolve for an id that is no longer pending is ignored, so a stale reply never
     // lands over newer typing. Tab accepts, ⌘→ a word, Esc dismisses — Monaco's own keys; an
@@ -518,10 +628,15 @@
       if (!current || !e.target || e.target.type !== monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS) return;
       post({ type: 'mark', key: current, line: e.target.position.lineNumber });
     });
-    window.wakilDispose = function (key) { if (models[key]) { models[key].dispose(); delete models[key]; } delete basis[key]; delete marks[key]; delete blames[key]; if (current === key) current = null; };
+    window.wakilDispose = function (key) {
+      if (current === key) ed.changeViewZones(dropConflictRows);
+      if (models[key]) { models[key].dispose(); delete models[key]; }
+      delete basis[key]; delete marks[key]; delete blames[key]; delete conflicts[key];
+      if (current === key) current = null;
+    };
     // A renamed tab (3b-iv R2): its model, undo history and marks move to the new key.
     window.wakilRekey = function (from, to) {
-      [models, basis, marks, blames].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
+      [models, basis, marks, blames, conflicts].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
       if (current === from) current = to;
     };
     window.wakilFocus = function () { if (diffKey) dme.focus(); else ed.focus(); };

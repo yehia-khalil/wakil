@@ -256,6 +256,40 @@ func TestFilesListInARepoRespectsGitignore(t *testing.T) {
 	}
 }
 
+// A merge stopped on conflicts keeps a conflicted file in the index three times (base, ours,
+// theirs); the listing names it once, so ⌘P and the tree show one row (3a-v-b review).
+func TestFilesListNamesAConflictedFileOnce(t *testing.T) {
+	a, _, _ := filesRoots(t)
+	run := func(args ...string) {
+		c := exec.Command("git", append([]string{"-c", "user.name=Ada Lovelace", "-c", "user.email=ada@example.com"}, args...)...)
+		c.Dir = a
+		c.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		out, err := c.CombinedOutput()
+		if err != nil && args[0] != "merge" {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-b", "main")
+	write(t, filepath.Join(a, "doc"), "one\n")
+	write(t, filepath.Join(a, "other"), "x\n")
+	run("add", ".")
+	run("commit", "-qm", "seed")
+	run("switch", "-qc", "feature")
+	write(t, filepath.Join(a, "doc"), "theirs\n")
+	run("commit", "-qam", "theirs")
+	run("switch", "-q", "main")
+	write(t, filepath.Join(a, "doc"), "ours\n")
+	run("commit", "-qam", "ours")
+	run("merge", "feature")
+	l, err := ListFiles(context.Background(), a, []string{a}, testHeavy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(l.Files, ",") != "doc,other" {
+		t.Fatalf("got %v", l.Files)
+	}
+}
+
 func TestFilesListOutsideARepoWalksAndSkipsDotGit(t *testing.T) {
 	a, _, _ := filesRoots(t)
 	write(t, filepath.Join(a, "one.txt"), "1")

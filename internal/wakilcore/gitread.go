@@ -25,6 +25,9 @@ var gitReadSubcommands = map[string]bool{
 	"for-each-ref": true, "rev-list": true, "log": true,
 	// 3a-v-a: blame, porcelain only, of the committed file or of text handed in on stdin.
 	"blame": true,
+	// 3a-v-b: the staged copies read for conflict markers, all in one batch, as stored: no textconv
+	// or filter flag is allowed, so no driver runs.
+	"cat-file": true,
 }
 
 // gitSafetyArgs come before the subcommand on every call, so a repository's
@@ -54,7 +57,7 @@ var gitSafetyArgs = []string{
 // and are not inspected. A key ending in "=" matches by prefix.
 var gitAllowedFlags = map[string][]string{
 	"status":       {"--porcelain=v2", "-z", "--branch", "--untracked-files=all"},
-	"diff":         {"--cached", "--no-color", "--name-only", "-z", "--"},
+	"diff":         {"--cached", "--no-color", "--name-only", "--no-renames", "-z", "--"},
 	"show":         {"--name-only", "--format=", "-z", "--"},
 	"rev-parse":    {"--show-toplevel", "--abbrev-ref", "--verify", "--short", "--absolute-git-dir", "--"},
 	"for-each-ref": {"--sort=", "--format="},
@@ -62,6 +65,8 @@ var gitAllowedFlags = map[string][]string{
 	// --contents=- only: any other value is a file path, read from anywhere on the disk.
 	"blame": {"--porcelain", "--contents=-", "--"},
 	"log":   {"-g", "--format=", "-z", "--follow", "--max-count=", "--skip=", "--name-status", "--"},
+	// --batch-check and --batch with the default format; -Z for NUL-separated names in and out.
+	"cat-file": {"--batch-check", "--batch", "-Z"},
 }
 
 // checkGitFlags refuses the first flag of args that sub does not allow.
@@ -114,7 +119,7 @@ func (g *GitRunner) Run(ctx context.Context, sub string, args ...string) ([]byte
 // RunInput is Run with stdin: blame's --contents=- reads the tab's unsaved text from it.
 func (g *GitRunner) RunInput(ctx context.Context, stdin []byte, sub string, args ...string) ([]byte, error) {
 	if !gitReadSubcommands[sub] {
-		return nil, UserError("wakil-git reads only with status, diff, show, rev-parse, for-each-ref, rev-list, log and blame; refused: " + sub)
+		return nil, UserError("wakil-git reads only with status, diff, show, rev-parse, for-each-ref, rev-list, log, blame and cat-file; refused: " + sub)
 	}
 	if err := checkGitFlags(sub, args); err != nil {
 		return nil, err

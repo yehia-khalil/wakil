@@ -7,6 +7,16 @@ private actor BranchGit: ToolCaller {
     var calls: [(String, JSONValue)] = []
     var blocked: [String] = []
     func block(_ paths: [String]) { blocked = paths }
+    /// 3a-v-b: the status's conflicted paths and operation, and whether a stash apply or a switch clashes.
+    var conflicts: [String] = []
+    var state: JSONValue?
+    var clashing = false
+    func set(conflicts paths: [String], state: JSONValue? = nil) { conflicts = paths; self.state = state }
+    func clash(_ on: Bool) { clashing = on }
+    /// git_continue's reply when set; else it stops as git_merge does.
+    var continueReply: [String: JSONValue]?
+    func set(continueReply r: [String: JSONValue]?) { continueReply = r }
+    func args(_ tool: String) -> JSONValue? { calls.last { $0.0 == tool }?.1 }
     func names() -> [String] { calls.map(\.0) }
 
     func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
@@ -14,8 +24,22 @@ private actor BranchGit: ToolCaller {
         if name != "git_status" { calls.append((name, arguments)) }
         switch name {
         case "git_status":
-            return ok(["root": .string("/p"), "branch": .string("main"), "detached": .string(""), "upstream": .string(""),
-                       "ahead": .integer(0), "behind": .integer(0), "files": .array([])])
+            var o: [String: JSONValue] = [
+                "root": .string("/p"), "branch": .string("main"), "detached": .string(""), "upstream": .string(""),
+                "ahead": .integer(0), "behind": .integer(0),
+                "files": .array(conflicts.map { .object(["path": .string($0), "group": .string("conflicts"),
+                                                         "status": .string("U"), "kind": .string("UU")]) })]
+            if let state { o["state"] = state }
+            return ok(o)
+        case "git_stash_apply", "git_stash_pop":
+            guard clashing else { return ok(["note": .string("")]) }
+            return ok(["note": .string("Your stash clashes with main in a.txt; resolve it below, or Undo Apply"),
+                       "clash": clashJSON])
+        case "git_continue" where continueReply != nil:
+            return ok(continueReply!)
+        case "git_merge", "git_continue":
+            return ok(["done": .bool(false), "conflicts": .array([.string("a.txt")]),
+                       "summary": .string("Merge stopped on conflicts in a.txt; resolve them below")])
         case "git_branches":
             return ok(["current": .string("main"), "remote": .array([.string("origin/theirs")]),
                        "local": .array([.object(["name": .string("main"), "current": .bool(true)]),
@@ -26,12 +50,26 @@ private actor BranchGit: ToolCaller {
                                                    "files": .array([.string("a.txt")])])])])
         case "git_switch":
             if !blocked.isEmpty { return ok(["switched": .bool(false), "blocked": .array(blocked.map { .string($0) })]) }
-            return ok(["switched": .bool(true), "note": .string("")])
+            guard clashing else { return ok(["switched": .bool(true), "note": .string("")]) }
+            return ok(["switched": .bool(true), "clash": clashJSON,
+                       "note": .string("Switched to other; your changes clash with it in a.txt — resolve them below, or Undo Apply")])
         default:
             return ok([:])
         }
     }
 }
+
+/// A clash as wakil-git returns it, and decoded.
+private let clashJSON: JSONValue = .object([
+    "id": .string(String(repeating: "c", count: 40)),
+    "files": .array([.object(["path": .string("a.txt"), "hash": .string("h1")]),
+                     .object(["path": .string("new file.txt"), "hash": .string("h2")])]),
+    "created": .array([.string("new file.txt")]), "conflicts": .array([.string("a.txt")]),
+])
+private let clash = GitStashClash(id: String(repeating: "c", count: 40),
+                                  files: [GitClashFile(path: "a.txt", hash: "h1"), GitClashFile(path: "new file.txt", hash: "h2")],
+                                  created: ["new file.txt"], conflicts: ["a.txt"])
+private let stash = GitStashInfo(index: 0, id: String(repeating: "c", count: 40), message: "wip", branch: "main", date: "", files: ["a.txt"])
 
 @MainActor
 private func branchWindow() async -> (WindowModel, BranchGit) {
@@ -95,6 +133,183 @@ private func branchWindow() async -> (WindowModel, BranchGit) {
         while window.gitRoots.isEmpty, spins < 200 { await Task.yield(); spins += 1 }
         #expect(window.activeBranchRoot?.root == "/p")
         #expect(window.branchSegment == "main")
+    }
+
+    // 3a-v-b: what throws work away asks only when the agent asks (Decision 46's option A, kept).
+    @Test func theAbortSkipTakeAndUndoGateOnlyTheAgent() async throws {
+        let (window, git) = await branchWindow()
+        await git.clash(true)
+        await git.set(conflicts: ["a.txt"])
+        #expect(await window.changesStashApply(root: "/p", stash: stash, pop: false) == nil)
+        let registry = window.registryForTesting
+        for (name, params) in [
+            ("editor_changes_abort", ["root": JSONValue.string("/p")]),
+            ("editor_changes_skip", ["root": .string("/p")]),
+            ("editor_changes_take", ["root": .string("/p"), "path": .string("a.txt"), "take": .string("incoming")]),
+            ("editor_changes_stash_undo_apply", ["root": .string("/p")]),
+        ] {
+            await #expect(throws: ActionError.needsConfirmation(name)) {
+                _ = try await registry.dispatch(name: name, params: .object(params), origin: .agent,
+                                                caller: DispatchCaller(place: window.place, session: nil, conversation: "c1"), confirmation: nil)
+            }
+            _ = try await registry.dispatch(name: name, params: .object(params), origin: .ui,
+                                            caller: DispatchCaller(place: window.place, session: nil), confirmation: nil)
+        }
+        #expect(await git.names().filter { ["git_abort", "git_skip", "git_resolve", "git_stash_undo_apply"].contains($0) }
+                == ["git_abort", "git_skip", "git_resolve", "git_stash_undo_apply"])
+        // Merge, rebase, continue and Keep File run for the agent too.
+        for (name, params) in [
+            ("editor_changes_merge", ["root": JSONValue.string("/p"), "branch": .string("side")]),
+            ("editor_changes_rebase", ["root": .string("/p"), "onto": .string("main")]),
+            ("editor_changes_continue", ["root": .string("/p")]),
+            ("editor_changes_keep_file", ["root": .string("/p"), "path": .string("a.txt")]),
+        ] {
+            _ = try await registry.dispatch(name: name, params: .object(params), origin: .agent,
+                                            caller: DispatchCaller(place: window.place, session: nil, conversation: "c1"), confirmation: nil)
+        }
+        #expect(await git.names().suffix(4) == ["git_merge", "git_rebase", "git_continue", "git_resolve"])
+    }
+
+    // R4: a Wakil stash clash is remembered per root until Undo Apply, or until the conflicts group empties.
+    @Test func aStashClashIsRememberedThenForgotten() async throws {
+        let (window, git) = await branchWindow()
+        await git.set(conflicts: ["a.txt"])
+        await window.refreshPanes()
+        #expect(window.changesClashes.isEmpty)
+        await git.clash(true)
+        #expect(await window.changesStashApply(root: "/p", stash: stash, pop: true) == nil)
+        #expect(window.changesClashes == ["/p": clash])
+        #expect(window.changesErrors["/p"] == "Your stash clashes with main in a.txt; resolve it below, or Undo Apply")
+        #expect(await window.changesStashUndoApply(root: "/p") == nil)
+        #expect(await git.args("git_stash_undo_apply") == .object(["root": .string("/p"), "clash": clashJSON]))
+        #expect(window.changesClashes.isEmpty)
+        #expect(await window.changesStashUndoApply(root: "/p")?.contains("No stash clash to undo") == true)
+
+        // Bring Them Along's clash is remembered the same way; resolving the last conflict forgets it.
+        #expect(await window.changesSwitch(root: "/p", branch: "other", carry: "bring")
+                == .switched(note: "Switched to other; your changes clash with it in a.txt — resolve them below, or Undo Apply"))
+        #expect(window.changesClashes == ["/p": clash])
+        await git.set(conflicts: [])
+        _ = try await window.registryForTesting.dispatch(
+            name: "editor_changes_keep_file", params: .object(["root": .string("/p"), "path": .string("a.txt")]), origin: .ui,
+            caller: DispatchCaller(place: window.place, session: nil), confirmation: nil)
+        await window.refreshPanes()
+        #expect(window.changesClashes.isEmpty)
+    }
+
+    // Rule 2: git's prepared message fills an empty box once; the operator's edits, emptying included, are kept.
+    @Test func theBoxFillsOnceWithGitsMessage() async {
+        let (window, git) = await branchWindow()
+        func state(_ kind: String, _ message: String) -> JSONValue {
+            .object(["kind": .string(kind), "incoming": .string("side"), "onto": .string(""), "step": .integer(0),
+                     "steps": .integer(0), "head": .string(""), "subject": .string(""), "message": .string(message)])
+        }
+        await git.set(conflicts: ["a.txt"], state: state("merge", "Merge branch 'side'"))
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == "Merge branch 'side'")
+        window.changesMessageEdited(root: "/p", text: "")
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == nil, "emptied by the operator, not filled again")
+
+        // The next operation fills again; a draft already in the box is kept; a rebase brings none.
+        await git.set(conflicts: [])
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        window.changesMessageEdited(root: "/p", text: "mine")
+        await git.set(conflicts: ["a.txt"], state: state("cherry-pick", "Seed search"))
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == "mine")
+        window.changesMessageEdited(root: "/p", text: "")
+        await git.set(conflicts: [], state: nil)
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        await git.set(conflicts: ["a.txt"], state: state("rebase", "Seed search"))
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == nil)
+        await git.set(conflicts: [], state: state("revert", "Revert \"Seed search\""))
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == "Revert \"Seed search\"")
+    }
+
+    // Final review M9: a rebase's commits keep their own messages, so Continue Rebase neither sends the box
+    // nor empties it.
+    @Test func continueRebaseLeavesTheBoxAlone() async {
+        let (window, git) = await branchWindow()
+        await git.set(conflicts: [], state: .object(["kind": .string("rebase"), "incoming": .string(""), "onto": .string("main"),
+                                                     "step": .integer(1), "steps": .integer(2), "head": .string(""),
+                                                     "subject": .string(""), "message": .string("")]))
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        window.changesMessageEdited(root: "/p", text: "a draft for later")
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string("Successfully rebased")])
+        #expect(await window.changesContinue(root: "/p") == nil)
+        #expect(await git.args("git_continue") == .object(["root": .string("/p")]))
+        #expect(window.changesMessages["/p"] == "a draft for later")
+        #expect(window.changesHistory["/p"] == nil)
+    }
+
+    // Final review M11: when the operation ends (Abort, here), git's prepared message goes with it unless
+    // the operator edited it (Rule 2), so the next plain commit is not "Merge branch 'side'".
+    @Test func thePreparedMessageGoesWhenTheOperationEnds() async {
+        let (window, git) = await branchWindow()
+        let merging: JSONValue = .object(["kind": .string("merge"), "incoming": .string("side"), "onto": .string(""),
+                                          "step": .integer(0), "steps": .integer(0), "head": .string(""),
+                                          "subject": .string(""), "message": .string("Merge branch 'side'")])
+        await git.set(conflicts: ["a.txt"], state: merging)
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == "Merge branch 'side'")
+        await git.set(conflicts: [], state: nil)
+        _ = await window.changesAbort(root: "/p")
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == nil)
+
+        await git.set(conflicts: ["a.txt"], state: merging)
+        await window.gitStatus?.refresh()
+        await window.refreshPanes()
+        window.changesMessageEdited(root: "/p", text: "Merge side, with the search fix")
+        await git.set(conflicts: [], state: nil)
+        _ = await window.changesAbort(root: "/p")
+        await window.refreshPanes()
+        #expect(window.changesMessages["/p"] == "Merge side, with the search fix")
+    }
+
+    // A stop's note is left under the box, as a stash clash's is; Continue sends what the box holds.
+    @Test func aStopsNoteIsShownAndContinueSendsTheBox() async {
+        let (window, git) = await branchWindow()
+        #expect(await window.changesMerge(root: "/p", branch: "side") == nil)
+        #expect(window.changesErrors["/p"] == "Merge stopped on conflicts in a.txt; resolve them below")
+        window.changesMessageEdited(root: "/p", text: "Merge side into main")
+        #expect(await window.changesContinue(root: "/p") == nil)
+        #expect(await git.args("git_continue") == .object(["root": .string("/p"), "message": .string("Merge side into main")]))
+        window.changesMessageEdited(root: "/p", text: "  ")
+        _ = await window.changesContinue(root: "/p")
+        #expect(await git.args("git_continue") == .object(["root": .string("/p")]))
+    }
+
+    // Fix round 1: a finish that kept the autostash, or rewrote pushed commits, says so; a clean one says nothing.
+    @Test func aFinishThatKeptTheStashSaysSo() async {
+        let (window, git) = await branchWindow()
+        let kept = "abc1234 Merge side; your uncommitted changes are in git stash"
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string(kept)])
+        #expect(await window.changesContinue(root: "/p") == nil)
+        #expect(window.changesErrors["/p"] == kept)
+        let rewritten = "Successfully rebased; commits already pushed were rewritten, so Push is refused as behind"
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string(rewritten)])
+        _ = await window.changesContinue(root: "/p")
+        #expect(window.changesErrors["/p"] == rewritten)
+        // Final review I3: an autostash that came back with conflicts says to resolve them.
+        let clashed = "Your uncommitted changes clash in a.txt; resolve them below — a copy is kept in git stash"
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([.string("a.txt")]), "summary": .string(clashed)])
+        _ = await window.changesContinue(root: "/p")
+        #expect(window.changesErrors["/p"] == clashed)
+        await git.set(continueReply: ["done": .bool(true), "conflicts": .array([]), "summary": .string("abc1234 Merge side")])
+        _ = await window.changesContinue(root: "/p")
+        #expect(window.changesErrors["/p"] == nil)
     }
 }
 

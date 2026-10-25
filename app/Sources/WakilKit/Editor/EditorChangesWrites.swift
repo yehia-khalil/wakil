@@ -22,7 +22,7 @@ public actor GitWriteFlights {
     }
 }
 
-/// Registers the seven `editor_changes_*` git writes (3a-ii). Each is a mutation priced allow in every
+/// Registers the `editor_changes_*` git writes (3a-ii, and those of 3a-iii to 3a-v-b). Each is a mutation priced allow in every
 /// environment: a stage, an unstage and a commit stay on this Mac and undo; a discard goes to the Trash.
 /// How long a remote git operation may take before the call gives up: a large push or a slow host.
 let gitRemoteReplyTimeout: TimeInterval = 600
@@ -76,7 +76,7 @@ func registerEditorChangesWrites(
         if let paths = strings(params, "paths"), !paths.isEmpty { return await withRenames(paths.map { relative($0, to: root) }) }
         if let g = optionalString(params, "group") {
             guard let group = GitGroup(rawValue: g) else {
-                throw EditorFilesError(description: "\(action): group is staged, changed or untracked")
+                throw EditorFilesError(description: "\(action): group is conflicts, staged, changed or untracked")
             }
             guard groups.contains(group) else {
                 throw EditorFilesError(description:
@@ -264,7 +264,7 @@ func registerEditorChangesWrites(
                 }
                 let rel = relative(path, to: root)
                 let rows = await rootState(root)?.files.filter { $0.path == rel } ?? []
-                if rows.contains(where: { $0.status == "U" }) {
+                if rows.contains(where: { $0.group == .conflicts || $0.status == "U" }) {
                     throw EditorFilesError(description: "\(name): \(rel) has a merge conflict; its index holds stages, not one text")
                 }
                 if group == .staged, rows.contains(where: { $0.group == .staged && $0.status == "D" }) {
@@ -346,7 +346,7 @@ func registerEditorChangesWrites(
     // a push never overlap, and the status is read again after, ahead and behind with it.
     for (name, tool, what) in [
         ("editor_changes_fetch", "git_fetch", "Fetch one root's remote (git fetch --prune) with the organisation's account."),
-        ("editor_changes_pull", "git_pull", "Pull one root's upstream by the organisation's pull strategy; a conflict aborts and names the paths."),
+        ("editor_changes_pull", "git_pull", "Pull one root's upstream by the organisation's pull strategy; a conflict stops it, left in the tree to resolve, and names the paths."),
         ("editor_changes_push", "git_push", "Push one root's branch to its upstream with the organisation's account. Never forces."),
         ("editor_changes_sync", "git_sync", "Pull one root's upstream, then push, stopping at the first failure."),
         ("editor_changes_publish", "git_publish", "Push one root's branch to origin and set it as the upstream."),
@@ -395,7 +395,7 @@ func registerEditorChangesWrites(
     }
     for (name, tool, keys, required, what, agentPrice) in [
         ("editor_changes_switch", "git_switch", ["branch", "carry", "track"], ["root", "branch"],
-         "Switch one root to a branch (track: a remote branch to create it from). Changes in the way come back as blocked unless carry is stash or bring (stash, switch, pop). Never forces.", GateDecision?.none),
+         "Switch one root to a branch (track: a remote branch to create it from). Changes in the way come back as blocked unless carry is stash or bring (stash, switch, pop); bring's clash is left in the tree to resolve, the stash kept, and editor_changes_stash_undo_apply puts it back when the stash's files had no changes of the operator's own before the pop. Never forces.", GateDecision?.none),
         ("editor_changes_branch_create", "git_switch", ["name", "from"], ["root", "name"],
          "Create a branch in one root and switch to it, from the current commit or from; an existing name is switched to.", nil),
         ("editor_changes_branch_rename", "git_branch_rename", ["to"], ["root", "to"],
@@ -405,9 +405,9 @@ func registerEditorChangesWrites(
         ("editor_changes_stash", "git_stash", ["message", "mode"], ["root"],
          "Stash one root's changes: mode default, untracked or staged, with an optional message.", nil),
         ("editor_changes_stash_apply", "git_stash_apply", ["index", "id"], ["root", "index", "id"],
-         "Apply one stash by index and id, keeping it. A clash puts back the files it touched and keeps the stash.", nil),
+         "Apply one stash by index and id, keeping it. A clash is left in the tree to resolve; when the stash's files had no changes of the operator's own before the apply, editor_changes_stash_undo_apply puts back the files it touched (otherwise it is resolved by hand).", nil),
         ("editor_changes_stash_pop", "git_stash_pop", ["index", "id"], ["root", "index", "id"],
-         "Apply one stash by index and id and drop it. A clash puts back the files it touched and keeps the stash.", nil),
+         "Apply one stash by index and id and drop it. A clash is left in the tree to resolve and the stash kept; when the stash's files had no changes of the operator's own before the pop, editor_changes_stash_undo_apply puts back the files it touched (otherwise it is resolved by hand).", nil),
         ("editor_changes_stash_drop", "git_stash_drop", ["index", "id"], ["root", "index", "id"],
          "Drop one stash by index and id; it cannot be applied again. Asks the operator when you ask.", .gate),
         ("editor_changes_stash_drop_all", "git_stash_drop_all", ["ids"], ["root"],
@@ -437,12 +437,95 @@ func registerEditorChangesWrites(
                     args["track"] = track
                 }
                 let callArgs = args
-                return try await write(root, action: name) { git in
+                let result = try await write(root, action: name) { git in
                     try await call(git, tool, callArgs, action: name, timeout: gitRemoteReplyTimeout)
+                }
+                // 3a-v-b (R4): a clash left in the tree is remembered for Undo Apply.
+                if let clash = GitStashClash(result: result) { await gitStatus?.remember(clash, root: root) }
+                return result
+            },
+            price: price, agentPrice: agentPrice))
+    }
+
+    // 3a-v-b: merge, rebase and resolving (Decision 47). A stop on conflicts is a result (done false, the
+    // paths, the note), not an error. What throws work away — Abort, Skip, a whole-file take, Undo Apply —
+    // carries an agent price of gate: the operator's press confirms in place, the agent's ask raises the plane.
+    for (name, tool, keys, required, what, agentPrice) in [
+        ("editor_changes_merge", "git_merge", ["branch"], ["root", "branch"],
+         "Merge a branch into one root's current one (autostashing). One that applies cleanly commits with git's message; conflicts stop it with done false and the paths, left in the tree to resolve.", GateDecision?.none),
+        ("editor_changes_rebase", "git_rebase", ["onto"], ["root", "onto"],
+         "Rebase one root's current branch onto another (autostashing). Conflicts stop it at one commit with done false and the paths; resolve them, then editor_changes_continue, _skip or _abort.", nil),
+        ("editor_changes_continue", "git_continue", ["message"], ["root"],
+         "Finish the merge, rebase, cherry-pick or revert in progress in one root once its conflicts are resolved and staged, with message when given (else git's). Refused naming the files that still conflict; a rebase may stop again at the next commit.", nil),
+        ("editor_changes_skip", "git_skip", [], ["root"],
+         "Skip the commit a rebase in one root stopped on; its changes are left out of the rebase. Asks the operator when you ask.", .gate),
+        ("editor_changes_abort", "git_abort", [], ["root"],
+         "Abort the merge, rebase, cherry-pick or revert in progress in one root; the tree goes back to before it and the resolutions made are lost. Asks the operator when you ask.", .gate),
+    ] as [(String, String, [String], [String], String, GateDecision?)] {
+        await registry.register(Action(
+            name: name, description: what + " root (absolute).", kind: .mutate, audience: .agentReachable,
+            schema: rootSchema(Dictionary(uniqueKeysWithValues: keys.map { ($0, string) }), required: required),
+            handler: { params in
+                let root = try requireString(params, "root", action: name)
+                for k in required where k != "root" { _ = try requireString(params, k, action: name) }
+                var args = forward(params, keys)
+                args["root"] = .string(root)
+                let callArgs = args
+                return try await write(root, action: name) { git in
+                    try await call(git, tool, callArgs, action: name, timeout: MCPClient.gitWriteReplyTimeout)
                 }
             },
             price: price, agentPrice: agentPrice))
     }
+    // R1: a whole-file take that loses edits (current, incoming, delete) is gated for the agent; Keep File
+    // keeps what is in the tree and is not. `+` on the row stays editor_changes_stage.
+    for (name, takes, what, agentPrice) in [
+        ("editor_changes_take", ["current", "incoming", "delete"],
+         "Resolve one conflicted file whole: path (relative to root, or absolute) and take — current (HEAD's), incoming, or delete for a delete/modify conflict. Stages the result; edits made to the file are lost. Asks the operator when you ask.", GateDecision.gate),
+        ("editor_changes_keep_file", [],
+         "Resolve one delete/modify conflict by keeping the file as it is in the tree: path (relative to root, or absolute). Stages it.", nil),
+    ] as [(String, [String], String, GateDecision?)] {
+        var props: [String: JSONValue] = ["path": string]
+        if !takes.isEmpty { props["take"] = .object(["type": .string("string"), "enum": .array(takes.map { .string($0) })]) }
+        await registry.register(Action(
+            name: name, description: what + " root (absolute).", kind: .mutate, audience: .agentReachable,
+            schema: rootSchema(props, required: takes.isEmpty ? ["root", "path"] : ["root", "path", "take"]),
+            handler: { params in
+                let root = try requireString(params, "root", action: name)
+                let path = relative(try requireString(params, "path", action: name), to: root)
+                var take = "keep"
+                if !takes.isEmpty {
+                    take = try requireString(params, "take", action: name)
+                    guard takes.contains(take) else {
+                        throw EditorFilesError(description: "\(name): take is current, incoming or delete, not \(take)")
+                    }
+                }
+                let args: [String: JSONValue] = ["root": .string(root), "path": .string(path), "take": .string(take)]
+                return try await write(root, action: name) { git in try await call(git, "git_resolve", args, action: name) }
+            },
+            price: price, agentPrice: agentPrice))
+    }
+    // Call 13 / R4: Undo Apply sends back the clash this session's own stash apply, pop or Bring Them Along
+    // left in the root (Go records one only when the stash's files were clean before the apply); Go
+    // refuses it naming any file changed since, or a stash that is gone.
+    await registry.register(Action(
+        name: "editor_changes_stash_undo_apply",
+        description: "Undo the stash apply, pop or Bring Them Along that clashed in one root this session: the files it touched go back to HEAD, the untracked ones it created are removed, and the stash stays in the list. Refused, naming the file, when one changed since the clash, or when the stash is gone. Asks the operator when you ask. root (absolute).",
+        kind: .mutate, audience: .agentReachable,
+        schema: rootSchema(),
+        handler: { params in
+            let name = "editor_changes_stash_undo_apply"
+            let root = try requireString(params, "root", action: name)
+            guard let clash = await gitStatus?.clashes[root] else {
+                throw EditorFilesError(description: "\(name): No stash clash to undo")
+            }
+            let result = try await write(root, action: name) { git in
+                try await call(git, "git_stash_undo_apply", ["root": .string(root), "clash": clash.json], action: name)
+            }
+            await gitStatus?.forgetClash(root)
+            return result
+        },
+        price: price, agentPrice: .gate))
 
     // 3a-iii-a: clone from a link. The operator's clone may go anywhere and becomes a project in
     // WindowModel.cloneProject; the agent's goes only into the folder the operator last cloned into,

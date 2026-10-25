@@ -1,0 +1,84 @@
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"e2e-git"}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","gitName":"E2E Org","gitEmail":"org@e2e.invalid"}}}
+{"do":{"hotkey":"cmd+shift+g"}}
+{"expect":{"pane":"editor-1","field":"column.view","equals":"changes"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"terminal"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.newpane:terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"g() { git -C ../e2e-portal -c user.name=Ada -c user.email=ada@e2e.invalid \"$@\"; }; g checkout -q -- index.txt && echo base > ../e2e-portal/doc && echo base > ../e2e-portal/notes && g add doc notes && g commit -qm base && g switch -qc rework && echo 'rework 1' > ../e2e-portal/doc && g commit -qam 'rework 1' && echo readme > ../e2e-portal/readme && g add readme && g commit -qm 'add readme' && echo 'rework 3' > ../e2e-portal/notes && g commit -qam 'rework 3' && g switch -q main && echo main > ../e2e-portal/doc && echo main > ../e2e-portal/notes && g commit -qam main && g switch -q rework"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"do":{"click":"rail.editor-1"}}
+{"expect":{"tree":"contains","text":"e2e-portal · rework · clean"}}
+{"do":{"focus":"editor.changes.e2e-portal.menu"}}
+{"expect":{"focus":"editor.changes.e2e-portal.menu"}}
+{"do":{"keys":" "}}
+{"expect":{"tree":"contains","text":"menu item Fetch"}}
+{"do":{"click":"editor.changes.e2e-portal.branchMenu"}}
+{"expect":{"tree":"contains","text":"(selected) Branch"}}
+{"do":{"press":"Right"}}
+{"do":{"press":"Down"}}
+{"do":{"press":"Return"}}
+{"expect":{"focus":"branch.picker.filter"}}
+{"expect":{"tree":"contains","text":"Choose the branch to rebase onto"}}
+{"do":{"click":"branch.picker.row.main"}}
+{"expect":{"tree":"contains","text":"Rebase stopped on conflicts in doc (step 1 of 3); resolve them below"}}
+{"expect":{"tree":"absent","text":"Choose the branch to rebase onto"}}
+{"expect":{"tree":"contains","text":"rebasing 1/3 onto main"}}
+{"expect":{"tree":"contains","text":"doc, both modified"}}
+{"expect":{"frame":"editor.changes.e2e-portal.continueRebase","minWidth":40}}
+{"expect":{"tree":"contains","text":"Resolve 1 conflict first"}}
+{"dispatch":{"action":"editor_changes_rebase","params":{"root":"{fixtureRoot}/e2e-portal","onto":"main"},"refuses":"A rebase is in progress in"}}
+{"do":{"click":"editor.changes.e2e-portal.menu"}}
+{"expect":{"tree":"contains","text":"Skip Commit"}}
+{"do":{"click":"editor.changes.e2e-portal.abort"}}
+{"expect":{"tree":"contains","text":"Abort the rebase? The tree goes back to before it, and your resolutions are lost."}}
+{"do":{"click":"editor.changes.e2e-portal.abort.confirm"}}
+{"expect":{"tree":"absent","text":"rebasing 1/3 onto main"}}
+{"expect":{"tree":"contains","text":"e2e-portal · rework · clean"}}
+{"dispatch":{"action":"editor_changes_rebase","params":{"root":"{fixtureRoot}/e2e-portal","onto":"main"}}}
+{"expect":{"tree":"contains","text":"rebasing 1/3 onto main"}}
+{"do":{"click":"editor.changes.e2e-portal.menu"}}
+{"expect":{"tree":"contains","text":"Abort Rebase"}}
+{"do":{"click":"editor.changes.e2e-portal.skip"}}
+{"expect":{"tree":"contains","text":"\"rework 1\"? Its changes are left out of the rebase."}}
+{"do":{"click":"editor.changes.e2e-portal.skip.keep"}}
+{"expect":{"tree":"absent","text":"Its changes are left out of the rebase."}}
+{"expect":{"tree":"contains","text":"rebasing 1/3 onto main"}}
+{"dispatch":{"action":"editor_open","params":{"pane":"editor-1","path":"{fixtureRoot}/e2e-portal/doc"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].path","contains":"e2e-portal/doc"}}
+{"dispatch":{"action":"editor_conflict_accept","params":{"pane":"editor-1","block":1,"take":"incoming"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"true"}}
+{"dispatch":{"action":"editor_save","params":{"pane":"editor-1"}}}
+{"expect":{"pane":"editor-1","field":"tabs[0].dirty","equals":"false"}}
+{"dispatch":{"action":"editor_changes_stage","params":{"root":"{fixtureRoot}/e2e-portal","paths":["doc"]}}}
+{"expect":{"tree":"absent","text":"Resolve 1 conflict first"}}
+{"do":{"click":"editor.changes.e2e-portal.continueRebase"}}
+{"expect":{"tree":"contains","text":"rebasing 3/3 onto main"}}
+{"expect":{"tree":"contains","text":"Rebase stopped on conflicts in notes (step 3 of 3); resolve them below"}}
+{"expect":{"tree":"contains","text":"notes, both modified"}}
+{"dispatch":{"action":"editor_changes_continue","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"Resolve the conflicts in notes first"}}
+{"do":{"click":"editor.changes.e2e-portal.menu"}}
+{"expect":{"tree":"contains","text":"Skip Commit"}}
+{"do":{"click":"editor.changes.e2e-portal.skip"}}
+{"expect":{"tree":"contains","text":"\"rework 3\"? Its changes are left out of the rebase."}}
+{"do":{"click":"editor.changes.e2e-portal.skip.confirm"}}
+{"expect":{"tree":"absent","text":"rebasing 3/3 onto main"}}
+{"expect":{"tree":"contains","text":"e2e-portal · rework · clean"}}
+{"dispatch":{"action":"editor_changes_continue","params":{"root":"{fixtureRoot}/e2e-portal"},"refuses":"Nothing to continue"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal --no-pager log --format=%s main..rework | paste -sd'|' -"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"add readme|rework 1"}}

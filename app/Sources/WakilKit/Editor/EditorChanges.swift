@@ -6,13 +6,14 @@ import Foundation
 
 private func editorChangesRank(_ group: String) -> Int {
     switch GitGroup(rawValue: group) {
-    case .staged?: 0
-    case .changed?: 1
-    case .untracked?, nil: 2
+    case .conflicts?: 0
+    case .staged?: 1
+    case .changed?: 2
+    case .untracked?, nil: 3
     }
 }
 
-/// Step order within one root: staged, changes, untracked, then path in byte order.
+/// Step order within one root: merge changes, staged, changes, untracked, then path in byte order.
 private func editorChangesPrecedes(_ a: EditorChangesRow, _ b: EditorChangesRow) -> Bool {
     let ra = editorChangesRank(a.group), rb = editorChangesRank(b.group)
     if ra != rb { return ra < rb }
@@ -25,7 +26,7 @@ private func editorChangesRows(of r: GitRootState) -> [EditorChangesRow] {
 }
 
 /// Every row the view draws, in step order: roots in project order, a collapsed root's rows and a
-/// closed group's rows left out, then staged, changes, untracked, then path.
+/// closed group's rows left out, then merge changes, staged, changes, untracked, then path.
 public func editorChangesRows(_ roots: [GitRootState], closed: Set<String>,
                               closedGroups: Set<EditorChangesGroup> = []) -> [EditorChangesRow] {
     roots.filter { !closed.contains($0.root) }.flatMap(editorChangesRows(of:))
@@ -74,7 +75,7 @@ public func editorChangesShown(_ highlight: EditorChangesRow?, roots: [GitRootSt
         ?? rows.last { drawn.contains($0) && editorChangesPrecedes($0, h) }
 }
 
-/// Closed groups in the order the view draws them: by root, then staged, changes, untracked.
+/// Closed groups in the order the view draws them: by root, then merge changes, staged, changes, untracked.
 public func editorChangesSortedGroups(_ groups: Set<EditorChangesGroup>) -> [EditorChangesGroup] {
     groups.sorted { a, b in
         if a.root != b.root { return a.root.utf8.lexicographicallyPrecedes(b.root.utf8) }
@@ -88,11 +89,11 @@ public func editorChangesFile(_ row: EditorChangesRow, in roots: [GitRootState])
 }
 
 /// The letter a Files tree row shows at its right edge, or nil for an unchanged file. A file both
-/// staged and changed shows its working-tree letter: Changes, then Untracked, then Staged.
+/// staged and changed shows its working-tree letter: a conflict's `U` first, then Changes, Untracked, Staged.
 public func editorTreeStatus(root: String, relative: String, roots: [GitRootState]) -> String? {
     guard let r = roots.first(where: { $0.root == root }) else { return nil }
     let rows = r.files.filter { $0.path == relative }
-    for group in [GitGroup.changed, .untracked, .staged] {
+    for group in [GitGroup.conflicts, .changed, .untracked, .staged] {
         if let f = rows.first(where: { $0.group == group }) { return f.status }
     }
     return nil

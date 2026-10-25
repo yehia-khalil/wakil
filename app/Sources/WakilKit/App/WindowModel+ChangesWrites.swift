@@ -152,7 +152,7 @@ extension WindowModel {
 
     /// Records `message` in the root's history and empties the box — unless the operator typed
     /// something else while the write ran (`committedDraft` is what the box held when it started).
-    private func changesRemember(_ root: String, _ message: String, committedDraft: String?) {
+    func changesRemember(_ root: String, _ message: String, committedDraft: String?) {
         var h = changesHistory[root] ?? []
         h.insert(message, at: 0)
         changesHistory[root] = Array(h.prefix(Self.changesHistoryLimit))

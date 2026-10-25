@@ -92,6 +92,19 @@ struct EditorColumn: View {
     @FocusState private var messageFocused: String?
     /// ⌘⏎ and ↑/↓ for the message box holding the keyboard, ahead of the menu (⌘⏎ is Maximize Pane).
     @State private var messageKeys = ChangesMessageKeys()
+    /// 3a-v-b: what throws work away, asking in place where it was pressed (Rule 1) — one at a time.
+    private enum ChangesAsk: Equatable {
+        case abort(root: String), skip(root: String)
+        case take(root: String, path: String, take: String)
+        case undoApply(root: String, message: String)
+
+        var root: String {
+            switch self {
+            case .abort(let r), .skip(let r), .take(let r, _, _), .undoApply(let r, _): r
+            }
+        }
+    }
+    @State private var asking: ChangesAsk?
 
     /// The name a row's root goes by in identifiers: `editor.tree.row:<root name>/<relative>`.
     private func rootName(_ row: EditorTreeRow) -> String { (row.root as NSString).lastPathComponent }
@@ -456,9 +469,21 @@ struct EditorColumn: View {
     @ViewBuilder
     private func changesRoot(_ root: GitRootState) -> some View {
         let closed = column.changesClosed.contains(root.root)
-        let boxed = !closed && root.error == nil && !root.files.isEmpty
+        // 3a-v-b: a merge or rebase in progress keeps its box even with nothing left to list, so its
+        // Commit Merge / Continue Rebase and ▾ Abort stay in reach.
+        let boxed = !closed && root.error == nil && (!root.files.isEmpty || root.state != nil)
         VStack(alignment: .leading, spacing: 0) {
             changesHeader(root, closed: closed, boxed: boxed)
+            // 3a-v-b: the operation in progress, in amber, under the header's line — its own element,
+            // since the line is read as one.
+            if root.error == nil, let state = root.state {
+                Text(gitOpStateLabel(state))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(EditorPaneStyle.amber)
+                    .lineLimit(1).truncationMode(.middle)
+                    .padding(.bottom, ChangesSpace.s)
+                    .accessibilityIdentifier("editor.changes.\(root.name).state")
+            }
             if let field = nameField, field.root == root.root {
                 ChangesNameField(root: root, kind: field.kind, busy: changes.inFlight.contains(root.root),
                                  run: { text in runNameField(root, field.kind, text) }, close: { nameField = nil })
@@ -479,8 +504,12 @@ struct EditorColumn: View {
             if !closed {
                 ForEach(gitListSections(root), id: \.group) { section in
                     changesGroupLabel(section.group, root: root, count: section.rows.count)
+                    if section.group == .conflicts { undoApplyConfirm(root) }
                     if groupOpen(root.root, section.group) {
-                        ForEach(section.rows, id: \.self) { changesRow($0, root: root) }
+                        ForEach(section.rows, id: \.self) { row in
+                            changesRow(row, root: root)
+                            if row.group == .conflicts { takeConfirm(row, root: root) }
+                        }
                     }
                 }
                 // 3a-iv: read again whenever the root's status moves or a write ends.
@@ -489,12 +518,19 @@ struct EditorColumn: View {
             }
         }
         .padding(.horizontal, ChangesSpace.m)
+        // A question about an operation that has ended or moved on (a step of a rebase) is not left open,
+        // nor a take's once its file has left Merge Changes (resolved with +, or by the agent).
+        .onChange(of: root.state) { _, _ in if asking?.root == root.root { asking = nil } }
+        .onChange(of: root.files) { _, files in
+            guard case .take(let r, let path, _)? = asking, r == root.root else { return }
+            if !files.contains(where: { $0.group == .conflicts && $0.path == path }) { asking = nil }
+        }
     }
 
     @ViewBuilder
     private func changesHeader(_ root: GitRootState, closed: Bool, boxed: Bool) -> some View {
         let detail = gitRootDetail(root)
-        let clean = root.error == nil && !root.loading && root.files.isEmpty && !detail.isEmpty
+        let clean = root.error == nil && !root.loading && root.files.isEmpty && root.state == nil && !detail.isEmpty
         HStack(spacing: ChangesSpace.m) {
             HStack(spacing: ChangesSpace.s) {
                 if root.loading { EditorBusyTick(label: "loading", identifier: "editor.changes.loading") }
@@ -542,6 +578,12 @@ struct EditorColumn: View {
     private func branchStashMenus(_ root: GitRootState) -> some View {
         let key = root.root
         Menu("Branch") {
+            // 3a-v-b: the picker in its Merge or Rebase mode, its filter taking the keyboard (Rule 3).
+            Button("Merge Branch…") { branchPickerMode = .merge; branchPickerRoot = key }
+                .accessibilityIdentifier("editor.changes.\(root.name).branch.merge")
+            Button("Rebase Branch…") { branchPickerMode = .rebase; branchPickerRoot = key }
+                .accessibilityIdentifier("editor.changes.\(root.name).branch.rebase")
+            Divider()
             Button("Create Branch…") { nameField = (key, .create) }
                 .accessibilityIdentifier("editor.changes.\(root.name).branch.create")
             Button("Create Branch From…") { branchPickerMode = .createFrom; branchPickerRoot = key }
@@ -715,15 +757,82 @@ struct EditorColumn: View {
             .onHover { inside in
                 if inside { hoveredChange = id } else if hoveredChange == id { hoveredChange = nil }
             }
+            // 3a-v-b: a conflicted row's whole-file choices, VS Code's right-click (spec call 5).
+            .contextMenu { if row.group == .conflicts { conflictMenu(row, root: root) } }
             .id(ref)
+    }
+
+    /// Accept All Current / Incoming for the sides that exist, or — where a side deleted the file — Keep
+    /// File / Delete File (`gitConflictActions`). Every choice but Keep File loses edits, so it asks under
+    /// the row first (Rule 1); Keep File runs.
+    @ViewBuilder
+    private func conflictMenu(_ row: GitFileRow, root: GitRootState) -> some View {
+        let key = root.root
+        let busy = changes.inFlight.contains(key)
+        ForEach(gitConflictActions(row), id: \.self) { action in
+            switch action {
+            case .keep:
+                Button("Keep File") { Task { _ = await changes.conflicts.keepFile(key, row.path) } }
+                    .disabled(busy)
+                    .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.keep")
+            case .delete:
+                Button("Delete File") { asking = .take(root: key, path: row.path, take: "delete") }
+                    .disabled(busy)
+                    .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.delete")
+            case .takeCurrent:
+                Button("Accept All Current") { asking = .take(root: key, path: row.path, take: "current") }
+                    .disabled(busy)
+                    .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.takeCurrent")
+            case .takeIncoming:
+                Button("Accept All Incoming") { asking = .take(root: key, path: row.path, take: "incoming") }
+                    .disabled(busy)
+                    .accessibilityIdentifier("editor.changes.row:\(root.name)/\(row.path):conflicts.takeIncoming")
+            }
+        }
+    }
+
+    /// A whole-file take's question, under its row. The operator stays in the list after it (Rule 6).
+    @ViewBuilder
+    private func takeConfirm(_ row: GitFileRow, root: GitRootState) -> some View {
+        if case .take(let r, let path, let take)? = asking, r == root.root, path == row.path {
+            ChangesConfirm(text: changesTakeConfirmation(path: row.path, take: take, incoming: changesIncomingSide(root),
+                                                         kind: row.kind),
+                           verb: take == "delete" ? "Delete" : "Accept",
+                           keepId: "editor.changes.row:\(root.name)/\(row.path):conflicts.take.keep",
+                           confirmId: "editor.changes.row:\(root.name)/\(row.path):conflicts.take.confirm",
+                           keep: { asking = nil }) {
+                Task { _ = await changes.conflicts.take(root.root, row.path, take) }
+            }
+            .disabled(changes.inFlight.contains(root.root))
+            .padding(.leading, ChangesSpace.l)
+        }
+    }
+
+    /// Undo Apply's question, under the Merge Changes header.
+    @ViewBuilder
+    private func undoApplyConfirm(_ root: GitRootState) -> some View {
+        if case .undoApply(let r, let message)? = asking, r == root.root {
+            ChangesConfirm(text: changesUndoApplyConfirmation(message: message), verb: "Undo",
+                           keepId: "editor.changes.\(root.name).undoApply.keep",
+                           confirmId: "editor.changes.\(root.name).undoApply.confirm",
+                           keep: { asking = nil }) {
+                Task { _ = await changes.conflicts.undoApply(root.root) }
+            }
+            .disabled(changes.inFlight.contains(root.root))
+        }
     }
 
     private func changesRowLine(_ row: GitFileRow, ref: EditorChangesRow, on: Bool, id: String) -> some View {
         let folder = gitRowFolder(row)
+        // 3a-v-b: a conflicted row reads its kind after its name (`a.txt  both modified`); a staged one
+        // still holding a whole block says so, in amber (Rule 7: allowed, and marked).
+        let kind = row.group == .conflicts ? gitConflictKindLabel(row.kind) : ""
+        let flagged = gitRowMarkersNote(row)
         return HStack(spacing: ChangesSpace.s) {
             EditorFileIcon(editorFileGlyph(forPath: row.path))
                 .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
-            (Text(gitRowName(row)).foregroundStyle(EditorPaneStyle.text.opacity(0.9))
+            (Text(flagged ?? gitRowName(row)).foregroundStyle(flagged == nil ? EditorPaneStyle.text.opacity(0.9) : EditorPaneStyle.amber)
+                + Text(kind.isEmpty ? "" : "  " + kind).foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
                 + Text(folder.isEmpty ? "" : "  " + folder)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed)))
@@ -742,7 +851,7 @@ struct EditorColumn: View {
         .onTapGesture { selectChange(ref, pin: NSApp.currentEvent?.clickCount ?? 1 >= 2) }
         // The tree reads `M, app.txt` (letter, then the path or `old → new`) whatever the drawn order.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(row.status), \(gitRowLabel(row))")
+        .accessibilityLabel("\(row.status), \(flagged ?? gitRowLabel(row))\(kind.isEmpty ? "" : ", " + kind)")
         .accessibilityIdentifier(id)
         .accessibilityAction { selectChange(ref, pin: false) }
         .accessibilityRemoveTraits(.isButton)
@@ -778,7 +887,10 @@ struct EditorColumn: View {
             .accessibilityAction { toggleGroup(root.root, group) }
             .accessibilityRemoveTraits(.isButton)
             .accessibilityAddTraits(.isStaticText)
-            if hoveredChange == key || current {
+            if group == .conflicts {
+                // 3a-v-b: after a Wakil stash clash, Undo Apply puts the stash's files back (call 13).
+                if let clash = changes.conflicts.clashes[root.root] { undoApplyButton(root, clash) }
+            } else if hoveredChange == key || current {
                 // Spelled out whole, as the row's, for the identifier harvest.
                 changesWriteButtons(group, root: root, paths: nil, ids: ChangesWriteIds(
                     stage: "editor.changes.\(root.name).\(group.rawValue).stageAll",
@@ -795,9 +907,27 @@ struct EditorColumn: View {
         }
     }
 
-    /// **+** stage and **↺** discard under Changes and Untracked, **−** unstage under Staged: one row's
-    /// (`paths`) or the whole group's (`paths` nil, the `…All` identifiers). Nothing asks (Rule 1:
-    /// a discard goes to the Trash); disabled while the root's write runs (Rule 5).
+    /// Asks before it runs, naming the stash by its message from the root's list (its short id once the
+    /// stash is gone, which Undo Apply then refuses).
+    private func undoApplyButton(_ root: GitRootState, _ clash: GitStashClash) -> some View {
+        let key = root.root
+        return Button("Undo Apply") {
+            Task {
+                let stash = await changes.branchStash.stashes(key).first { $0.id == clash.id }
+                asking = .undoApply(root: key, message: stash?.message ?? String(clash.id.prefix(7)))
+            }
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(EditorPaneStyle.text.opacity(0.75))
+        .disabled(changes.inFlight.contains(key))
+        .accessibilityIdentifier("editor.changes.\(root.name).undoApply")
+    }
+
+    /// **+** stage and **↺** discard under Changes and Untracked, **−** unstage under Staged, **+** alone
+    /// under Merge Changes, where it marks the file resolved: one row's (`paths`) or the whole group's
+    /// (`paths` nil, the `…All` identifiers). Nothing asks (Rule 1: a discard goes to the Trash, and
+    /// staging destroys nothing); disabled while the root's write runs (Rule 5).
     @ViewBuilder
     private func changesWriteButtons(_ group: GitGroup, root: GitRootState, paths: [String]?, ids: ChangesWriteIds) -> some View {
         let all = paths == nil ? "All" : ""
@@ -809,9 +939,11 @@ struct EditorColumn: View {
                     await changes.unstage(root.root, paths, target)
                 }
             } else {
-                changesWriteButton("arrow.uturn.backward", help: "Discard\(all.isEmpty ? "" : " All")",
-                                   id: ids.discard) {
-                    await changes.discard(root.root, paths, target)
+                if group != .conflicts {
+                    changesWriteButton("arrow.uturn.backward", help: "Discard\(all.isEmpty ? "" : " All")",
+                                       id: ids.discard) {
+                        await changes.discard(root.root, paths, target)
+                    }
                 }
                 changesWriteButton("plus", help: "Stage\(all.isEmpty ? "" : " All")", id: ids.stage) {
                     await changes.stage(root.root, paths, target)
@@ -867,9 +999,16 @@ struct EditorColumn: View {
         let draft = changes.messages[key] ?? ""
         let empty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let busy = changes.inFlight.contains(key)
-        // Rule 9: with nothing staged the default is everything, and the button says so.
-        let staged = root.files.contains { $0.group == .staged }
-        let title = staged ? "Commit" : "Commit All"
+        // Rule 9: with nothing staged the default is everything, and the button says so; mid-merge or
+        // mid-rebase it is Commit Merge / Continue Rebase, which git's own message lets run with the box
+        // empty. Whatever its title it is disabled, with the reason beside it, while conflicts remain —
+        // a stash clash's too, which has no operation: Commit All would otherwise stage the markers (3a-v-b).
+        let title = changesCommitTitle(root)
+        let op = root.state
+        let reason = changesConflictsReason(root)
+        let blocked = reason != nil || (op == nil && empty)
+        let commitId = op?.kind == "rebase" ? "editor.changes.\(root.name).continueRebase"
+            : op != nil ? "editor.changes.\(root.name).commitMerge" : "editor.changes.\(root.name).commit"
         let hint = changes.placeholders[key] ?? "Message (⌘⏎ to commit)"
         VStack(alignment: .leading, spacing: ChangesSpace.m) {
             // The box's height: the draft as it wraps at the box's width, at most six lines, or the
@@ -947,16 +1086,25 @@ struct EditorColumn: View {
                         .buttonStyle(.plain)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
-                        .disabled(empty)
-                        .opacity(empty ? 0.45 : 1)
+                        .disabled(blocked)
+                        .opacity(blocked ? 0.45 : 1)
                         .accessibilityLabel(title)
-                        .accessibilityIdentifier("editor.changes.\(root.name).commit")
+                        .accessibilityIdentifier(commitId)
                 }
                 Rectangle().fill(EditorPaneStyle.text.opacity(0.18)).frame(width: 0.5, height: ChangesSpace.l)
                 Menu {
                     Button(title) { Task { await changes.commit(key) } }
-                        .disabled(empty)
+                        .disabled(blocked)
                         .accessibilityIdentifier("editor.changes.\(root.name).menuCommit")
+                    if let op {
+                        // 3a-v-b: each asks under the bar before it runs (Rule 1).
+                        if op.kind == "rebase" {
+                            Button("Skip Commit") { asking = .skip(root: key) }
+                                .accessibilityIdentifier("editor.changes.\(root.name).skip")
+                        }
+                        Button(changesAbortTitle(op)) { asking = .abort(root: key) }
+                            .accessibilityIdentifier("editor.changes.\(root.name).abort")
+                    }
                     Divider()
                     Button("Amend Last Commit") { Task { await changes.amend(key) } }
                         .accessibilityIdentifier("editor.changes.\(root.name).amend")
@@ -977,9 +1125,40 @@ struct EditorColumn: View {
             }
             .frame(height: ChangesSpace.row)
             .background(EditorPaneStyle.violet.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
+            if let reason {
+                Text(reason)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(Self.dimmed))
+                    .accessibilityIdentifier("editor.changes.\(root.name).conflictsReason")
+            }
+            if let op { operationConfirm(root, op) }
             changesError(root)
         }
         .padding(.top, ChangesSpace.s)
+    }
+
+    /// ▾ Abort's or Skip Commit's question, under the commit bar.
+    @ViewBuilder
+    private func operationConfirm(_ root: GitRootState, _ op: GitOpState) -> some View {
+        let key = root.root
+        let busy = changes.inFlight.contains(key)
+        if asking == .abort(root: key) {
+            ChangesConfirm(text: changesAbortConfirmation(op), verb: "Abort",
+                           keepId: "editor.changes.\(root.name).abort.keep",
+                           confirmId: "editor.changes.\(root.name).abort.confirm",
+                           keep: { asking = nil }) {
+                Task { _ = await changes.conflicts.abort(key) }
+            }
+            .disabled(busy)
+        } else if asking == .skip(root: key) {
+            ChangesConfirm(text: changesSkipConfirmation(id7: String(op.head.prefix(7)), subject: op.subject), verb: "Skip",
+                           keepId: "editor.changes.\(root.name).skip.keep",
+                           confirmId: "editor.changes.\(root.name).skip.confirm",
+                           keep: { asking = nil }) {
+                Task { _ = await changes.conflicts.skip(key) }
+            }
+            .disabled(busy)
+        }
     }
 
     /// The message box's placeholder, onto the editor's first line, where its caret stands.
@@ -1873,6 +2052,21 @@ struct EditorChangesControls {
     var branches = BranchPickerActions()
     /// 3a-iv: the stash list and the stash, rename and create writes.
     var branchStash = BranchStashControls()
+    /// 3a-v-b: abort, skip, the whole-file takes and Undo Apply, and the clashes it can put back.
+    var conflicts = ChangesConflictControls()
+}
+
+/// 3a-v-b: the conflicts' writes the Changes view presses, through the window's `editor_changes_*`
+/// actions — each nil when done, else its refusal, which the root's box shows. Keyed by the root's path.
+struct ChangesConflictControls {
+    /// `WindowModel.changesClashes`: the roots whose Merge Changes header offers Undo Apply (R4).
+    var clashes: [String: GitStashClash] = [:]
+    var skip: (String) async -> String? = { _ in nil }
+    var abort: (String) async -> String? = { _ in nil }
+    /// `take` is current, incoming or delete.
+    var take: (_ root: String, _ path: String, _ take: String) async -> String? = { _, _, _ in nil }
+    var keepFile: (_ root: String, _ path: String) async -> String? = { _, _ in nil }
+    var undoApply: (String) async -> String? = { _ in nil }
 }
 
 /// The message box's keys (3a-ii), taken ahead of SwiftUI and the menu while a box holds the keyboard:

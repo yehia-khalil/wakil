@@ -168,6 +168,10 @@ struct EditorPane: View {
         .onChange(of: gitRoots.map { "\($0.root)|\($0.branch)|\($0.detached)|\($0.ahead)|\($0.files.count)" }) { _, _ in
             host.refreshBlame()
         }
+        // 3a-v-b: which files are conflicted decides which tabs show their blocks.
+        .onChange(of: gitRoots, initial: true) { _, roots in
+            host.setConflictRoots(roots)
+        }
         // The keys the page takes follow the pane's state (R13): the peek's, or Compare's Esc.
         .onChange(of: editorCapturedKeys(comparing: comparing != nil, peek: comparing == nil && activeTab.flatMap(editorPeekView) != nil), initial: true) { _, keys in
             host.renderer?.captureKeys(keys)
@@ -183,6 +187,11 @@ struct EditorPane: View {
                 Task { await dispatch("editor_peek", ["line": .integer(Int64(line))]) }
             }
             host.peekPressed = { op in peekOp(op) }
+            host.conflictPressed = { block, op in conflictOp(block, op) }
+            // A conflicted file opened at its top lands on its first block (spec): the page is moved at
+            // once and held there (`conflictLanding`), and the store and the journal learn it as any
+            // cursor move does.
+            host.conflictReveal = { line in Task { await dispatch("editor_goto", ["line": .integer(Int64(line))]) } }
             host.rangesPressed = { op, selections in
                 let spans = editorLineSpans(selections)
                 Task { if op == "unstage" { await unstageRanges(spans) } else { await stageRanges(spans) } }
@@ -584,6 +593,22 @@ struct EditorPane: View {
         }
     }
 
+    // MARK: - Conflicts
+
+    /// An actions-row press (R2): Accept through `editor_conflict_accept` — the store edits the buffer,
+    /// one undo step, and the page puts the cursor back at the block (Rule 6) — or Compare Changes'
+    /// tab. An Accept pressed while one is still in flight is dropped (Rule 5): a double-click takes
+    /// one block, not the one that moved up into its place.
+    private func conflictOp(_ block: Int, _ op: String) {
+        Task {
+            if op == "compare" { await dispatch("editor_conflict_compare", [:]); return }
+            guard !host.accepting else { return }
+            host.accepting = true
+            await dispatch("editor_conflict_accept", ["block": .integer(Int64(block)), "take": .string(op)])
+            host.accepting = false
+        }
+    }
+
     // MARK: - Compare
 
     private func openCompare(_ tab: EditorTab) {
@@ -860,6 +885,23 @@ final class EditorHost {
     @ObservationIgnored private var blameShown: [String: String] = [:]
     /// A Revert is on its way to the store: another press is dropped until it lands.
     @ObservationIgnored var reverting = false
+    /// 3a-v-b: an actions-row press — (the block's `<<<<<<<` line, "current" | "incoming" | "both" |
+    /// "compare") — and the line of the first block, asked once when a conflicted tab first shows at
+    /// its top. An Accept is on its way to the store while `accepting` holds.
+    @ObservationIgnored var conflictPressed: ((Int, String) -> Void)?
+    @ObservationIgnored var conflictReveal: ((Int) -> Void)?
+    @ObservationIgnored var accepting = false
+    /// The window's git roots, which say whether a tab's file is conflicted (`editorConflicted`).
+    @ObservationIgnored private var conflictRoots: [GitRootState] = []
+    /// Per key: the text last parsed ("" while the file is not conflicted), the blocks last sent, and
+    /// whether its first block was revealed (once per tab).
+    @ObservationIgnored private var conflictsParsed: [String: String] = [:]
+    @ObservationIgnored private var conflictsSent: [String: [EditorConflictBlock]] = [:]
+    @ObservationIgnored private var conflictsRevealed: Set<String> = []
+    /// A first block being revealed, per key, until the page reports a cursor off 1:1: every snapshot
+    /// renders it, so a 1:1 report the page made before the reveal cannot put the cursor back (3a-v-b
+    /// cover, defect 1).
+    @ObservationIgnored private var conflictLanding: [String: EditorPosition] = [:]
     /// Compare is on screen: snapshots are kept (`latest`) but not rendered, or the next one — a
     /// keystroke's echo, a view report — would put the active tab back over Compare.
     @ObservationIgnored private var comparing = false
@@ -901,6 +943,7 @@ final class EditorHost {
             case .send(let s): subject = s
             }
             self.rendered[key]?.text = text
+            self.showConflicts()
             self.typed[key, default: []].insert(text)
             self.typingInFlight += 1
             let send = self.bufferChanged
@@ -914,6 +957,7 @@ final class EditorHost {
             guard let self, let subject = self.subjects[key] else { return }
             self.rendered[key]?.cursor = cursor
             self.rendered[key]?.selection = selection
+            if cursor != EditorPosition(line: 1, column: 1) { self.conflictLanding[key] = nil }
             self.showBlame(key: key, line: cursor.line)
             self.viewsInFlight += 1
             let send = self.viewReported
@@ -936,6 +980,10 @@ final class EditorHost {
                 let b = self.blames.commit(key: key, id: id)
                 self.blameOpen?(root, b.map { editorBlameCommitRef($0, currentPath: current) } ?? GitCommitRef(id: id, path: current))
             }
+        }
+        made.onConflict = { [weak self] key, block, op in
+            guard let self, key == self.active else { return }
+            self.conflictPressed?(block, op)
         }
         made.onMark = { [weak self] key, line in
             guard let self, let s = self.subjects[key] else { return }
@@ -1014,13 +1062,27 @@ final class EditorHost {
         subjects = Dictionary(snapshot.tabs.map { (editorTabKey($0), $0.subject) }, uniquingKeysWith: { a, _ in a })
         guard !comparing, let renderer else { return }
         let activeKey = active
+        var snapshot = snapshot
+        for i in snapshot.tabs.indices {
+            guard let at = conflictLanding[editorTabKey(snapshot.tabs[i])] else { continue }
+            snapshot.tabs[i].cursor = at
+            snapshot.tabs[i].selection = nil
+        }
         guard let shown = editorSnapshotToRender(
             snapshot, rendered: rendered, active: activeKey, typed: activeKey.flatMap { typed[$0] } ?? [],
             typingInFlight: typingInFlight > 0, viewInFlight: viewsInFlight > 0) else { return }
         let found = findShown ?? editorFindShownSeed(shown)
         let steps = editorRenderSteps(rendered: rendered, active: activeKey, snapshot: shown, findShown: found)
         editorApply(steps, to: renderer)
-        for case .dispose(let k) in steps { marksSent[k] = nil; blames.forget(key: k); blameShown[k] = nil }
+        for case .dispose(let k) in steps {
+            marksSent[k] = nil; blames.forget(key: k); blameShown[k] = nil
+            conflictsParsed[k] = nil; conflictsSent[k] = nil; conflictsRevealed.remove(k); conflictLanding[k] = nil
+        }
+        // The page moves a renamed tab's blocks with its model; a rename is not a first show.
+        for case .rekey(let from, let to) in steps {
+            if conflictsRevealed.remove(from) != nil { conflictsRevealed.insert(to) }
+            if let at = conflictLanding.removeValue(forKey: from) { conflictLanding[to] = at }
+        }
         rendered = editorRenderedAfter(steps, rendered: rendered, snapshot: shown)
         findShown = editorFindShownAfter(steps, findShown: found, snapshot: shown)
         active = shown.active.flatMap { $0 < shown.tabs.count ? editorTabKey(shown.tabs[$0]) : nil }
@@ -1032,6 +1094,44 @@ final class EditorHost {
         }
         scheduleMarks(shown)
         scheduleBlame(shown)
+        showConflicts()
+    }
+
+    /// 3a-v-b: the git roots moved; every tab's conflicted state is read again, the active one now.
+    func setConflictRoots(_ roots: [GitRootState]) {
+        guard roots != conflictRoots else { return }
+        conflictRoots = roots
+        conflictsParsed = [:]
+        showConflicts()
+    }
+
+    /// The active file tab's conflict blocks, parsed from the text the page holds (the operator's
+    /// typing included) whenever it changes, while its root lists the file as conflicted; none
+    /// otherwise, so markers git did not write draw no row. Unchanged, nothing is sent. Synchronous, so
+    /// an Accept's edit and the blocks it leaves reach the page in one go and a row never posts a line
+    /// from before it.
+    private func showConflicts() {
+        guard let renderer, let key = active, let r = rendered[key], let subject = subjects[key],
+              let tab = latest?.tabs.first(where: { $0.subject == subject }), tab.diffState == nil else { return }
+        let on = editorConflicted(tab, roots: conflictRoots)
+        let text = on ? r.text : ""
+        guard conflictsParsed[key] != text else { return }
+        conflictsParsed[key] = text
+        let blocks = on ? editorConflictBlocks(text) : []
+        if (conflictsSent[key] ?? []) != blocks {
+            conflictsSent[key] = blocks
+            renderer.setConflicts(key: key, blocks: blocks)
+        }
+        // Once per tab, and only one opened at its top: a tab opened at a search hit stays there (Rule 6).
+        if let first = blocks.first, conflictsRevealed.insert(key).inserted,
+           r.cursor == EditorPosition(line: 1, column: 1), first.start > 1 {
+            let at = EditorPosition(line: first.start, column: 1)
+            conflictLanding[key] = at
+            rendered[key]?.cursor = at
+            rendered[key]?.selection = nil
+            renderer.reveal(key: key, cursor: at, selection: nil)
+            conflictReveal?(first.start)
+        }
     }
 
     /// 3a-v-a: turns inline blame on or off; off clears every annotation drawn.

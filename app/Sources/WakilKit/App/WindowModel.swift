@@ -783,6 +783,12 @@ public final class WindowModel {
     /// never as an error); the fetch loop, its interval, its sleep (tests replace it), and whether the
     /// app is frontmost.
     public internal(set) var changesRemoteNotes: [String: String] = [:]
+    /// 3a-v-b (R4): each root's Wakil stash clash, for Undo Apply — mirrored from `GitStatus.clashes`, where
+    /// the actions keep it for the operator and the agent alike.
+    public internal(set) var changesClashes: [String: GitStashClash] = [:]
+    /// 3a-v-b (Rule 2): the operation in progress whose prepared message already had its one chance to
+    /// fill the root's box, so an emptied box is not filled again, and the message it filled, if it did.
+    var changesFilledFrom: [String: WindowModel.ChangesFill] = [:]
     /// 3a-iii-b: where the composed agent instructions go; the process's own unless a test swaps it.
     var agentInstructionsBox: AgentInstructionsBox = .shared
     public let backgroundFetchInterval: Duration = .seconds(300)
@@ -2320,6 +2326,8 @@ public final class WindowModel {
         changesDrafting = []
         changesLastDraft = nil
         changesRemoteNotes = [:]
+        changesClashes = [:]
+        changesFilledFrom = [:]
         changesMessages = [:]
         changesHistory = [:]
         changesHistoryCursor = [:]
@@ -4516,6 +4524,7 @@ public final class WindowModel {
         tables = next
         editables = nextEditables
         gitRoots = await gitStatus?.roots ?? []
+        await changesFollowStatus()
         // The dictionary itself changes only when a pane opens or closes.
         let open = Set(layoutPanes.map(\.id))
         if Set(paneCells.keys) != open {
@@ -4938,6 +4947,7 @@ public final class WindowModel {
         case .stopped:
             await gitStatus?.reset()
             gitRoots = []
+            changesClashes = [:]
         }
     }
 
@@ -6115,6 +6125,10 @@ public final class WindowModel {
                   case .diff(let root, let path, let group, nil) = s.tabs[i].subject else { return nil }
             return EditorActiveDiff(path: root + "/" + path, group: group)
         }()
+        let editorActiveConflicted: Bool = {
+            guard let f = focused, f.kind == "editor", let s = editor(f.id), let i = s.active, i < s.tabs.count else { return false }
+            return editorConflicted(s.tabs[i], roots: gitRoots)
+        }()
         return PaletteContext(
             focusedPane: focused.map { FocusedPane(id: $0.id, kind: $0.kind) },
             apiSendInFlight: sending != nil,
@@ -6124,7 +6138,7 @@ public final class WindowModel {
             hasEnvironments: hasEnvironments, projectCount: projectCount, providerCount: providerCount,
             editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project,
             editorActiveDiff: editorActiveDiff, conversationOnScreen: conversationOnScreen,
-            activeGitRoot: activeBranchRoot?.root)
+            activeGitRoot: activeBranchRoot?.root, editorActiveConflicted: editorActiveConflicted)
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.

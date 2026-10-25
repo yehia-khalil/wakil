@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -146,18 +147,25 @@ func TestSwitchBringAlong(t *testing.T) {
 	}
 }
 
-// Review Focus 3: a clash leaves the tree clean on the new branch and the stash in place.
-func TestBringAlongClashLeavesCleanTreeAndStash(t *testing.T) {
-	_, w, git := blockedFixture(t)
+// Review Focus 3 (R5): a clash is left to resolve on the new branch, no file deleted, the stash kept
+// and recorded for Undo Apply.
+func TestBringAlongClashLeavesConflictsAndTheStash(t *testing.T) {
+	work, w, git := blockedFixture(t)
 	r, err := w.Switch(context.Background(), "other", SwitchOptions{Carry: "bring"})
-	if err != nil || !r.Switched {
+	if err != nil || !r.Switched || r.Clash == nil {
 		t.Fatalf("r = %+v err %v", r, err)
 	}
-	if r.Note != "Switched to other; your changes clash with it and are kept in git stash" {
+	if r.Note != "Switched to other; your changes clash with it in a.txt — resolve them below, or Undo Apply" {
 		t.Fatalf("note = %q", r.Note)
 	}
-	if s := git("status", "--porcelain"); s != "" {
-		t.Fatalf("tree not clean:\n%s", s)
+	if git("ls-files", "-u") == "" || !strings.Contains(readIn(t, work, "a.txt"), "<<<<<<<") {
+		t.Fatal("no conflict left")
+	}
+	if readIn(t, work, "u.txt") != "theirs\n" {
+		t.Fatalf("u.txt = %q", readIn(t, work, "u.txt"))
+	}
+	if r.Clash.ID != r.Stash || !slices.Equal(r.Clash.Conflicts, []string{"a.txt"}) || len(r.Clash.Created) != 0 {
+		t.Fatalf("clash = %+v", r.Clash)
 	}
 	if n := len(strings.Split(git("stash", "list"), "\n")); n != 1 {
 		t.Fatalf("stashes = %d", n)

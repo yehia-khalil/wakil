@@ -44,6 +44,7 @@ public func gitRootErrorDetail(_ r: GitRootState) -> String? {
 /// A group's header, in sentence case.
 public func gitGroupLabel(_ g: GitGroup) -> String {
     switch g {
+    case .conflicts: "Merge Changes"
     case .staged: "Staged"
     case .changed: "Changes"
     case .untracked: "Untracked"
@@ -56,7 +57,7 @@ public struct GitListSection: Sendable, Equatable {
     public var rows: [GitFileRow]
 }
 
-/// A root's groups as the list draws them: staged, changes, untracked, each in path (byte) order,
+/// A root's groups as the list draws them: merge changes, staged, changes, untracked, each in path (byte) order,
 /// and an empty group not drawn at all.
 public func gitListSections(_ r: GitRootState) -> [GitListSection] {
     GitGroup.allCases.compactMap { group in

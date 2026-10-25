@@ -286,9 +286,14 @@ func (g *GitRemote) Fetch(ctx context.Context) (GitRemoteResult, error) {
 	return g.result(out, stderr), nil
 }
 
-// Pull integrates the upstream by the organisation's strategy. A conflict aborts the rebase or
-// merge, leaves the tree as it was, and reports the conflicting paths (3a-v resolves conflicts).
+// Pull integrates the upstream by the organisation's strategy. A conflict stops it with the
+// conflicts left in the tree and reports their paths; only a cancel undoes what it started.
 func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
+	// A merge, rebase, cherry-pick or revert already under way is the operator's: refuse, so the
+	// cancel's abort below only ever undoes what this pull started. First, as a rebase detaches HEAD.
+	if err := g.inProgress().InProgressError(g.Root); err != nil {
+		return GitRemoteResult{}, err
+	}
 	branch, err := g.branch()
 	if err != nil {
 		return GitRemoteResult{}, err
@@ -301,22 +306,19 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	if err != nil {
 		return GitRemoteResult{}, err
 	}
-	// A merge or rebase already under way is the operator's: refuse, so the abort below only ever
-	// undoes what this pull started.
-	if rebasing, merging := g.inProgress(); rebasing || merging {
-		what := "A merge"
-		if rebasing {
-			what = "A rebase"
-		}
-		return GitRemoteResult{}, UserError(what + " is in progress in " + g.Root + "; finish or abort it first")
-	}
 	o, _ := LoadOrgFor(g.Org)
 	mode := map[string]string{"rebase": "--rebase", "merge": "--no-rebase", "ff-only": "--ff-only"}[PullStrategyOf(o)]
 	// --autostash sets uncommitted changes aside and puts them back, so work in progress does not
 	// stop a pull under any strategy (3a-iii walk; JetBrains' default).
 	out, stderr, err := g.git(ctx, inv, "pull", mode, "--autostash", "--progress")
 	if strings.Contains(string(out)+stderr, "autostash resulted in conflicts") {
-		return g.result(out, stderr), UserError("Pulled; your uncommitted changes clash with it and are kept in " +
+		r := g.result(out, stderr)
+		paths, _ := g.plain("ls-files", "-u", "-z")
+		if r.Conflicts = unmergedPaths([]byte(paths)); len(r.Conflicts) > 0 {
+			// In the tree to resolve and in git stash: a pop would apply them twice.
+			return r, UserError(autostashClashNote(r.Conflicts))
+		}
+		return r, UserError("Pulled; your uncommitted changes clash with it and are kept in " +
 			"git stash — run git stash pop to bring them back")
 	}
 	if err == nil {
@@ -328,14 +330,12 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 		g.abortInProgress()
 		return GitRemoteResult{}, ctx.Err()
 	}
-	if rebasing, merging := g.inProgress(); rebasing || merging {
-		paths, _ := g.plain("diff", "--name-only", "--diff-filter=U")
-		conflicts := strings.Fields(paths)
-		g.abortInProgress()
+	if g.inProgress().Kind != "" {
+		// Left in place (3a-v-b, call 2): the operator resolves them, or Abort brings back the tree.
+		paths, _ := g.plain("ls-files", "-u", "-z")
 		r := g.result(nil, stderr)
-		r.Conflicts = conflicts
-		return r, UserError("Pull stopped on conflicts in " + strings.Join(conflicts, ", ") +
-			"; nothing was changed. Resolve them in a terminal, or wait for Wakil's conflict view")
+		r.Conflicts = unmergedPaths([]byte(paths))
+		return r, UserError("Pull stopped on conflicts in " + strings.Join(r.Conflicts, ", ") + "; resolve them below")
 	}
 	if strings.Contains(stderr, "Not possible to fast-forward") {
 		return GitRemoteResult{}, UserError("Both sides have new commits, so Fast-forward only cannot pull. " +
@@ -344,22 +344,18 @@ func (g *GitRemote) Pull(ctx context.Context) (GitRemoteResult, error) {
 	return GitRemoteResult{}, remoteError("pull", stderr, a, host, err)
 }
 
-// inProgress reports a rebase or a merge stopped part-way in the repository.
-func (g *GitRemote) inProgress() (rebasing, merging bool) {
-	gitDir, _ := g.plain("rev-parse", "--git-dir")
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(g.Root, gitDir)
-	}
-	rebasing = fileExists(filepath.Join(gitDir, "rebase-merge")) || fileExists(filepath.Join(gitDir, "rebase-apply"))
-	return rebasing, fileExists(filepath.Join(gitDir, "MERGE_HEAD"))
+// inProgress is the operation stopped part-way in the repository (Kind "" when none is).
+func (g *GitRemote) inProgress() GitOp {
+	op, _ := ReadGitOp(context.Background(), &GitRunner{Root: g.Root})
+	return op
 }
 
 // abortInProgress aborts the rebase or merge this pull started.
 func (g *GitRemote) abortInProgress() {
-	switch rebasing, merging := g.inProgress(); {
-	case rebasing:
+	switch g.inProgress().Kind {
+	case "rebase":
 		g.git(context.Background(), GitInvocation{}, "rebase", "--abort")
-	case merging:
+	case "merge":
 		g.git(context.Background(), GitInvocation{}, "merge", "--abort")
 	}
 }

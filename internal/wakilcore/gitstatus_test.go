@@ -2,9 +2,11 @@ package wakilcore
 
 import (
 	"context"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,28 +67,105 @@ func TestParseAheadBehind(t *testing.T) {
 	}
 }
 
-// R13: a file mid-merge with a conflict is one Changes row with status U — not a staged
-// row and a changed row, and not dropped.
-func TestStatusConflictIsOneChangedRow(t *testing.T) {
+// 3a-v-b: each unmerged path is one row in the conflicts group, keeping its XY; the operation is
+// the status's state; a staged file still holding a whole marker block is flagged (spec call 4).
+func TestStatusKeepsEachConflictKind(t *testing.T) {
 	repo := gitTestRepo(t)
+	put := func(name, text string) { os.WriteFile(filepath.Join(repo, name), []byte(text), 0o644) }
+	put("du.txt", "base\n")
+	put("ud.txt", "base\n")
+	gitIn(t, repo, "add", ".")
+	gitIn(t, repo, "commit", "-q", "-m", "base")
 	gitIn(t, repo, "checkout", "-q", "-b", "side")
-	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("side\n"), 0o644)
-	gitIn(t, repo, "commit", "-q", "-am", "side")
+	put("a.txt", "side\n")
+	put("aa.txt", "side\n")
+	put("du.txt", "side\n")
+	gitIn(t, repo, "rm", "-q", "ud.txt")
+	gitIn(t, repo, "add", ".")
+	gitIn(t, repo, "commit", "-q", "-m", "side")
 	gitIn(t, repo, "checkout", "-q", "main")
-	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("main\n"), 0o644)
-	gitIn(t, repo, "commit", "-q", "-am", "main")
+	put("a.txt", "main\n")
+	put("aa.txt", "main\n")
+	put("ud.txt", "main\n")
+	gitIn(t, repo, "rm", "-q", "du.txt")
+	gitIn(t, repo, "add", ".")
+	gitIn(t, repo, "commit", "-q", "-m", "main")
 	cmd := exec.Command("git", "-C", repo, "merge", "-q", "side")
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
 	if err := cmd.Run(); err == nil {
 		t.Fatal("want a conflicted merge")
 	}
+	block := "<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> side\n"
+	put("m.txt", "top\n"+block)
+	put("half.txt", "<<<<<<< HEAD\nonly an opener\n")
+	big := make([]byte, 1<<20+1)
+	for i := range big {
+		big[i] = 'x'
+	}
+	put("big.txt", block+string(big))
+	gitIn(t, repo, "add", "m.txt", "half.txt", "big.txt")
 	g, _ := NewGitRunner(repo, []string{repo})
 	st, err := ReadGitStatus(context.Background(), g)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := GitFile{Path: "a.txt", Group: "changed", Status: "U"}
-	if len(st.Files) != 1 || st.Files[0] != want {
+	if st.State == nil || st.State.Kind != "merge" || st.State.Incoming != "side" {
+		t.Fatalf("state = %+v", st.State)
+	}
+	want := map[string]GitFile{
+		"a.txt":    {Path: "a.txt", Group: "conflicts", Status: "U", Kind: "UU"},
+		"aa.txt":   {Path: "aa.txt", Group: "conflicts", Status: "U", Kind: "AA"},
+		"du.txt":   {Path: "du.txt", Group: "conflicts", Status: "U", Kind: "DU"},
+		"ud.txt":   {Path: "ud.txt", Group: "conflicts", Status: "U", Kind: "UD"},
+		"m.txt":    {Path: "m.txt", Group: "staged", Status: "A", Markers: true},
+		"half.txt": {Path: "half.txt", Group: "staged", Status: "A"},
+		"big.txt":  {Path: "big.txt", Group: "staged", Status: "A"},
+	}
+	if len(st.Files) != len(want) {
 		t.Fatalf("files = %+v", st.Files)
+	}
+	for _, f := range st.Files {
+		if f != want[f.Path] {
+			t.Errorf("%s = %+v, want %+v", f.Path, f, want[f.Path])
+		}
+	}
+}
+
+func TestStatusHasNoStateOnACleanTree(t *testing.T) {
+	repo := gitTestRepo(t)
+	g, _ := NewGitRunner(repo, []string{repo})
+	st, err := ReadGitStatus(context.Background(), g)
+	if err != nil || st.State != nil {
+		t.Fatalf("state = %+v, err %v", st.State, err)
+	}
+}
+
+// Final review I2: the staged copies are read in one batch, so each is matched to its own path (a
+// name with a space or a non-ASCII letter whole), and a staged blob over the limit is not read even
+// when the work-tree copy is small.
+func TestStatusReadsEachStagedCopyForMarkers(t *testing.T) {
+	repo := gitTestRepo(t)
+	put := func(name, text string) { os.WriteFile(filepath.Join(repo, name), []byte(text), 0o644) }
+	block := "<<<<<<< HEAD\nmine\n=======\ntheirs\n>>>>>>> side\n"
+	put("plain.txt", "no markers\n")
+	put("my notes é.txt", "top\n"+block)
+	put("z.txt", block)
+	put("big.txt", block+strings.Repeat("x", 1<<20))
+	gitIn(t, repo, "add", ".")
+	put("big.txt", "small now\n")
+	g, _ := NewGitRunner(repo, []string{repo})
+	st, err := ReadGitStatus(context.Background(), g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, f := range st.Files {
+		if f.Group == "staged" {
+			got[f.Path] = f.Markers
+		}
+	}
+	want := map[string]bool{"plain.txt": false, "my notes é.txt": true, "z.txt": true, "big.txt": false}
+	if !maps.Equal(got, want) {
+		t.Fatalf("markers = %v", got)
 	}
 }

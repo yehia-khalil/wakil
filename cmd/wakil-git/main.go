@@ -30,7 +30,7 @@ type diffArg struct {
 type showArg struct {
 	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
 	Path string `json:"path" jsonschema:"file path relative to the root"`
-	Rev  string `json:"rev" jsonschema:"HEAD, index or worktree; or a stash side: stash:<id>, stash-base:<id>, stash-untracked:<id>; or a commit side: commit:<id> (the file after it), commit-parent:<id> (before it), commit-parent:<id>:<old path> (before it, under the name it had there)"`
+	Rev  string `json:"rev" jsonschema:"HEAD, index or worktree; or a stash side: stash:<id>, stash-base:<id>, stash-untracked:<id>; or a commit side: commit:<id> (the file after it), commit-parent:<id> (before it), commit-parent:<id>:<old path> (before it, under the name it had there); or a conflict's sides: ours (HEAD's, index stage 2) / theirs (the other side's, stage 3)"`
 }
 type historyArg struct {
 	Root  string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
@@ -124,6 +124,36 @@ type noteResult struct {
 	Note string `json:"note"`
 }
 
+// stashResult is a stash apply's note, and the clash it left in the tree (for git_stash_undo_apply).
+type stashResult struct {
+	Note  string                   `json:"note"`
+	Clash *wakilcore.GitStashClash `json:"clash,omitempty"`
+}
+type mergeArg struct {
+	Root   string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Branch string `json:"branch" jsonschema:"the branch to merge into the current one"`
+}
+type rebaseArg struct {
+	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Onto string `json:"onto" jsonschema:"the branch to rebase the current one onto"`
+}
+type continueArg struct {
+	Root    string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Message string `json:"message,omitempty" jsonschema:"a merge, cherry-pick or revert's commit message; omit to keep git's own. A rebase keeps each commit's message"`
+}
+type rootArg struct {
+	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+}
+type resolveArg struct {
+	Root string `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Path string `json:"path" jsonschema:"the conflicted file, relative to the root"`
+	Take string `json:"take" jsonschema:"current (HEAD's side), incoming (the other side), keep (a delete/modify conflict: keep the file) or delete (remove it)"`
+}
+type undoApplyArg struct {
+	Root  string                  `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Clash wakilcore.GitStashClash `json:"clash" jsonschema:"the clash object git_stash_apply or git_stash_pop returned"`
+}
+
 type emptyResult struct{}
 type trashedResult struct {
 	Trashed []string `json:"trashed"`
@@ -197,7 +227,7 @@ type cloneOut struct {
 func newServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "wakil-git", Version: "0.1.0"}, nil)
 
-	mcp.AddTool(s, &mcp.Tool{Name: "git_status", Description: "Read-only. One root's branch, ahead/behind against its local tracking ref (never fetched), and its files in three groups: staged (index vs HEAD), changed (work tree vs index), untracked. A partly staged file appears in both staged and changed."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_status", Description: "Read-only. One root's branch, ahead/behind against its local tracking ref (never fetched), and its files in four groups: conflicts (an unmerged file, with its kind: UU, AA, DU, UD, AU, UA or DD), staged (index vs HEAD), changed (work tree vs index), untracked. A partly staged file appears in both staged and changed; a staged file still holding a whole conflict block has markers set. state names a merge, rebase, cherry-pick or revert stopped part-way (kind, incoming, onto, step/steps, head, subject)."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, wakilcore.GitStatus, error) {
 			g, fail := runner(a.Root)
 			if fail != nil {
@@ -334,7 +364,7 @@ func addWriteTools(s *mcp.Server) {
 		run        func(*wakilcore.GitRemote, context.Context) (wakilcore.GitRemoteResult, error)
 	}{
 		{"git_fetch", "Writes. Fetches one root's remote (git fetch --prune) with the organisation's account; answers how far the branch is ahead and behind.", (*wakilcore.GitRemote).Fetch},
-		{"git_pull", "Writes. Pulls one root's upstream by the organisation's pull strategy (rebase, merge or ff-only). A conflict aborts and lists the paths; nothing is changed.", (*wakilcore.GitRemote).Pull},
+		{"git_pull", "Writes. Pulls one root's upstream by the organisation's pull strategy (rebase, merge or ff-only). A conflict stops it with the conflicts left in the tree; the paths are listed, and git_resolve and git_continue (or git_abort) finish it.", (*wakilcore.GitRemote).Pull},
 		{"git_push", "Writes. Pushes one root's branch to its upstream with the organisation's account. Never forces; a branch with no upstream needs git_publish.", (*wakilcore.GitRemote).Push},
 		{"git_publish", "Writes. Pushes one root's branch to origin and sets it as the upstream.", (*wakilcore.GitRemote).Publish},
 		{"git_sync", "Writes. Pulls one root's upstream (the organisation's strategy) then pushes, stopping at the first failure.", (*wakilcore.GitRemote).Sync},
@@ -375,8 +405,106 @@ func addWriteTools(s *mcp.Server) {
 			return nil, cloneOut{Path: path, Summary: r.Summary, Progress: r.Progress}, nil
 		})
 
+	// 3a-v-b: conflicts. A conflict stop is a result (done false, the paths), not an error.
+	mcp.AddTool(s, &mcp.Tool{Name: "git_merge", Description: "Writes. Merges a branch into the current one (autostashing the changes in the way; no editor opens). Conflicts stop it with done false and the paths, left in the tree to resolve with git_resolve; then git_continue, or git_abort."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a mergeArg) (*mcp.CallToolResult, wakilcore.GitMergeResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, wakilcore.GitMergeResult{}, nil
+			}
+			ctx, done := remoteContext(ctx)
+			defer done()
+			r, err := w.Merge(ctx, a.Branch)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitMergeResult{}, nil
+			}
+			return nil, r, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_rebase", Description: "Writes. Rebases the current branch onto another (autostashing; no editor opens). Conflicts stop it with done false and the paths, at one commit; resolve them with git_resolve, then git_continue, git_skip that commit, or git_abort."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a rebaseArg) (*mcp.CallToolResult, wakilcore.GitMergeResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, wakilcore.GitMergeResult{}, nil
+			}
+			ctx, done := remoteContext(ctx)
+			defer done()
+			r, err := w.Rebase(ctx, a.Onto)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitMergeResult{}, nil
+			}
+			return nil, r, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_continue", Description: "Writes. Finishes the merge, rebase, cherry-pick or revert in progress once its conflicts are resolved and staged; refused naming the files that still conflict. A rebase may stop again at the next commit (done false)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a continueArg) (*mcp.CallToolResult, wakilcore.GitMergeResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, wakilcore.GitMergeResult{}, nil
+			}
+			ctx, done := remoteContext(ctx)
+			defer done()
+			r, err := w.Continue(ctx, a.Message)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitMergeResult{}, nil
+			}
+			return nil, r, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_skip", Description: "Writes. Skips the commit a rebase stopped on; its changes are left out of the rebase. May stop again at the next commit (done false)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a rootArg) (*mcp.CallToolResult, wakilcore.GitMergeResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, wakilcore.GitMergeResult{}, nil
+			}
+			ctx, done := remoteContext(ctx)
+			defer done()
+			r, err := w.Skip(ctx)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitMergeResult{}, nil
+			}
+			return nil, r, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_abort", Description: "Writes. Abandons the merge, rebase, cherry-pick or revert in progress; the tree goes back to before it and any resolutions made are lost."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a rootArg) (*mcp.CallToolResult, wakilcore.GitMergeResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, wakilcore.GitMergeResult{}, nil
+			}
+			ctx, done := remoteContext(ctx)
+			defer done()
+			r, err := w.Abort(ctx)
+			if err != nil {
+				return mcpx.ToolErr("wakil-git", err), wakilcore.GitMergeResult{}, nil
+			}
+			return nil, r, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_resolve", Description: "Writes. Resolves one conflicted file by taking a side whole: current (HEAD's) or incoming, or for a delete/modify conflict keep or delete. Stages the result. current, incoming and delete lose edits made to the file; keep stages the file as it is in the tree."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a resolveArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			ctx, done := remoteContext(ctx)
+			defer done()
+			if err := w.Resolve(ctx, a.Path, a.Take); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_undo_apply", Description: "Writes. Puts back the files a stash apply or pop clashed in, from the clash that call returned: the tracked ones go back to HEAD and the untracked ones the apply created are removed; the stash stays in the list. Refused, naming the file, when one changed since the clash, or when the stash is gone."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a undoApplyArg) (*mcp.CallToolResult, emptyResult, error) {
+			w, fail := writer(a.Root)
+			if fail != nil {
+				return fail, emptyResult{}, nil
+			}
+			ctx, done := remoteContext(ctx)
+			defer done()
+			if err := w.StashUndoApply(ctx, a.Clash); err != nil {
+				return mcpx.ToolErr("wakil-git", err), emptyResult{}, nil
+			}
+			return nil, emptyResult{}, nil
+		})
+
 	// 3a-iv: branches and stash. Never --force or --discard-changes.
-	mcp.AddTool(s, &mcp.Tool{Name: "git_switch", Description: "Writes. Switches one root to a branch, or creates it (create; from a base, or tracking a remote branch). Changes a switch would overwrite are listed in blocked unless carry is stash or bring."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_switch", Description: "Writes. Switches one root to a branch, or creates it (create; from a base, or tracking a remote branch). Changes a switch would overwrite are listed in blocked unless carry is stash or bring; with bring, a clash is left in the tree to resolve (the stash kept) and, when the stash's files had no changes of your own before the pop, returned as clash, for git_stash_undo_apply."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a switchArg) (*mcp.CallToolResult, wakilcore.SwitchResult, error) {
 			w, fail := writer(a.Root)
 			if fail != nil {
@@ -427,21 +555,21 @@ func addWriteTools(s *mcp.Server) {
 		name, desc string
 		pop        bool
 	}{
-		{"git_stash_apply", "Writes. Applies one stash (by index and id) and keeps it. A clash puts back the files it touched and keeps the stash.", false},
-		{"git_stash_pop", "Writes. Applies one stash (by index and id) and drops it. A clash puts back the files it touched and keeps the stash.", true},
+		{"git_stash_apply", "Writes. Applies one stash (by index and id) and keeps it. A clash is left in the tree to resolve and the stash is kept; when the stash's files had no changes of your own before the apply, the result's clash is what git_stash_undo_apply takes to put the files back (otherwise there is none: resolve it by hand).", false},
+		{"git_stash_pop", "Writes. Applies one stash (by index and id) and drops it. A clash is left in the tree to resolve and the stash is kept (not dropped); when the stash's files had no changes of your own before the pop, the result's clash is what git_stash_undo_apply takes to put the files back (otherwise there is none: resolve it by hand).", true},
 	} {
 		op := op
 		mcp.AddTool(s, &mcp.Tool{Name: op.name, Description: op.desc},
-			func(ctx context.Context, _ *mcp.CallToolRequest, a stashRefArg) (*mcp.CallToolResult, noteResult, error) {
+			func(ctx context.Context, _ *mcp.CallToolRequest, a stashRefArg) (*mcp.CallToolResult, stashResult, error) {
 				w, fail := writer(a.Root)
 				if fail != nil {
-					return fail, noteResult{}, nil
+					return fail, stashResult{}, nil
 				}
-				note, err := w.StashApply(ctx, a.Index, a.ID, op.pop)
+				note, clash, err := w.StashApply(ctx, a.Index, a.ID, op.pop)
 				if err != nil {
-					return mcpx.ToolErr("wakil-git", err), noteResult{}, nil
+					return mcpx.ToolErr("wakil-git", err), stashResult{}, nil
 				}
-				return nil, noteResult{Note: note}, nil
+				return nil, stashResult{Note: note, Clash: clash}, nil
 			})
 	}
 	mcp.AddTool(s, &mcp.Tool{Name: "git_stash_drop", Description: "Writes. Drops one stash (by index and id); it cannot be applied again."},

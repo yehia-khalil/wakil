@@ -26,6 +26,8 @@
 {"expect":{"focus":"branch.picker.filter"}}
 {"do":{"click":"branch.picker.fetch"}}
 {"expect":{"journal":{"contains":"\"action\":\"editor_changes_fetch\""}}}
+{"expect":{"frame":"branch.picker.row.origin/other","minWidth":40}}
+{"expect":{"tree":"absent","text":"Fetching…"}}
 {"do":{"click":"branch.picker.row.origin/other"}}
 {"expect":{"tree":"contains","text":"Your changes to index.txt would be overwritten by other."}}
 {"do":{"click":"branch.picker.blocked.cancel"}}
@@ -35,24 +37,25 @@
 {"do":{"click":"branch.picker.row.origin/other"}}
 {"expect":{"tree":"contains","text":"Your changes to index.txt would be overwritten by other."}}
 {"do":{"click":"branch.picker.blocked.bring"}}
-{"expect":{"tree":"contains","text":"Switched to other; your changes clash with it and are kept in git stash"}}
+{"expect":{"tree":"contains","text":"Switched to other; your changes clash with it in index.txt — resolve them below, or Undo Apply"}}
 {"expect":{"tree":"contains","text":"e2e-portal · other"}}
 {"expect":{"tree":"absent","text":"M, index.txt"}}
+{"expect":{"tree":"contains","text":"U, index.txt, both modified"}}
 {"do":{"click":"rail.terminal-2"}}
 {"do":{"keys":"git -C ../e2e-portal rev-parse --abbrev-ref 'other@{u}'"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
 {"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"origin/other"}}
 {"do":{"click":"rail.terminal-2"}}
-{"do":{"keys":"cat ../e2e-portal/index.txt"}}
+{"do":{"keys":"grep -c '^<<<<<<< ' ../e2e-portal/index.txt"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
-{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"theirs"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
 {"do":{"click":"rail.terminal-2"}}
 {"do":{"keys":"git -C ../e2e-portal status --porcelain | wc -l | tr -d ' '"}}
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
-{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"1"}}
 {"do":{"click":"rail.terminal-2"}}
 {"do":{"keys":"git -C ../e2e-portal --no-pager stash list --format=%s"}}
 {"do":{"press":"Return"}}
@@ -63,6 +66,22 @@
 {"do":{"press":"Return"}}
 {"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
 {"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"portal, edited"}}
+{"do":{"click":"rail.editor-1"}}
+{"do":{"click":"editor.changes.e2e-portal.undoApply"}}
+{"expect":{"tree":"contains","text":"Undo applying \"wakil: switch to other\"? The files it touched go back to HEAD; the stash stays in the list."}}
+{"do":{"click":"editor.changes.e2e-portal.undoApply.confirm"}}
+{"expect":{"tree":"absent","text":"U, index.txt, both modified"}}
+{"expect":{"tree":"contains","text":"e2e-portal · other · clean"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"cat ../e2e-portal/index.txt"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"theirs"}}
+{"do":{"click":"rail.terminal-2"}}
+{"do":{"keys":"git -C ../e2e-portal --no-pager stash list --format=%s"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].exitCode","equals":"0"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"On main: wakil: switch to other"}}
 {"dispatch":{"action":"editor_changes_switch","params":{"root":"{fixtureRoot}/e2e-portal","branch":"main"}}}
 {"expect":{"tree":"contains","text":"e2e-portal · main"}}
 {"do":{"click":"rail.terminal-2"}}

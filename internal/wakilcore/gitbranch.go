@@ -2,7 +2,6 @@ package wakilcore
 
 import (
 	"context"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -102,12 +101,14 @@ type SwitchOptions struct {
 }
 
 // SwitchResult: Blocked lists the paths a refused switch would overwrite; Stash is the id of the
-// stash the switch left changes in; Note is a sentence for the operator.
+// stash the switch left changes in; Note is a sentence for the operator; Clash is Bring Them Along's
+// pop that stopped on conflicts, for Undo Apply.
 type SwitchResult struct {
-	Switched bool     `json:"switched"`
-	Blocked  []string `json:"blocked,omitempty"`
-	Stash    string   `json:"stash,omitempty"`
-	Note     string   `json:"note,omitempty"`
+	Switched bool           `json:"switched"`
+	Blocked  []string       `json:"blocked,omitempty"`
+	Stash    string         `json:"stash,omitempty"`
+	Note     string         `json:"note,omitempty"`
+	Clash    *GitStashClash `json:"clash,omitempty"`
 }
 
 // NormaliseBranchName trims a typed name and turns each run of spaces into one "-" (VS Code's default).
@@ -115,20 +116,19 @@ func NormaliseBranchName(s string) string {
 	return strings.Join(strings.Fields(s), "-")
 }
 
-// inProgress names a merge or rebase stopped part-way in the root, or "".
-func (w *GitWriter) inProgress(ctx context.Context) string {
-	gitDir, err := w.runner().Run(ctx, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return ""
+// inProgress refuses a write while a merge, rebase, cherry-pick or revert is stopped part-way in
+// the root, naming it; nil when none is.
+func (w *GitWriter) inProgress(ctx context.Context) error {
+	op, _ := ReadGitOp(ctx, w.runner())
+	return op.InProgressError(w.Root)
+}
+
+// notAFlag refuses a branch name that starts with "-": handed to git as a word, it would be a flag.
+func notAFlag(name string) error {
+	if strings.HasPrefix(name, "-") {
+		return UserError(strconv.Quote(name) + " is not a branch")
 	}
-	dir := strings.TrimSpace(string(gitDir))
-	if fileExists(filepath.Join(dir, "rebase-merge")) || fileExists(filepath.Join(dir, "rebase-apply")) {
-		return "A rebase"
-	}
-	if fileExists(filepath.Join(dir, "MERGE_HEAD")) {
-		return "A merge"
-	}
-	return ""
+	return nil
 }
 
 func (w *GitWriter) validName(ctx context.Context, name string) error {
@@ -161,14 +161,14 @@ func (w *GitWriter) localBranchExists(ctx context.Context, name string) bool {
 // stashed, or brought along, as o.Carry says. A cancel stops it only before git begins the checkout or
 // between its steps, never mid-checkout.
 func (w *GitWriter) Switch(ctx context.Context, branch string, o SwitchOptions) (SwitchResult, error) {
-	if what := w.inProgress(ctx); what != "" {
-		return SwitchResult{}, UserError(what + " is in progress in " + w.Root + "; finish or abort it first")
+	if err := w.inProgress(ctx); err != nil {
+		return SwitchResult{}, err
 	}
 	// Each is handed to git as a word: one that starts with "-" would be a flag (-C force-resets a
 	// branch, --orphan empties the tree), so it is refused, never passed.
 	for _, v := range []string{branch, o.From, o.Track} {
-		if strings.HasPrefix(v, "-") {
-			return SwitchResult{}, UserError(strconv.Quote(v) + " is not a branch")
+		if err := notAFlag(v); err != nil {
+			return SwitchResult{}, err
 		}
 	}
 	if !o.Create && !w.localBranchExists(ctx, branch) && !w.remoteBranchExists(ctx, branch) {
@@ -236,12 +236,20 @@ func (w *GitWriter) Switch(ctx context.Context, branch string, o SwitchOptions) 
 		r.Note = "Your changes are in git stash (" + ref + ")"
 		return r, nil
 	}
+	// Everything was stashed with -u, so the stash's paths are clean unless an ignored file sits on one
+	// or a read fails.
+	clean := w.stashCleanBefore(steady, stash)
 	if _, err := w.git(steady, nil, "stash", "pop", ref); err != nil {
-		// git keeps the stash on a clash; the tree goes back to the branch's, so nothing is left
-		// half-merged — the stash holds every change (it was taken with the untracked files).
-		w.git(steady, nil, "reset", "--hard", "-q")
-		w.git(steady, nil, "clean", "-fdq")
-		r.Note = "Switched to " + branch + "; your changes clash with it and are kept in git stash"
+		// git keeps the stash on a clash; the conflicts are left to resolve, as a stash apply's are
+		// (R5), and recorded for Undo Apply.
+		if c, readErr := w.stashClash(steady, stash); c != nil {
+			r.Note = "Switched to " + branch + "; your changes clash with it in " + clashPaths(c) + " — resolve them below"
+			if clean && readErr == nil {
+				r.Clash, r.Note = c, r.Note+", or Undo Apply"
+			}
+		} else {
+			r.Note = "Switched to " + branch + "; your changes clash with it and are kept in git stash"
+		}
 		return r, nil
 	}
 	r.Stash = ""
