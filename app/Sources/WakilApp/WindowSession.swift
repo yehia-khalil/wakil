@@ -200,6 +200,14 @@ final class WindowSession {
                     notes.append("\(name): not found, so the agent has no \(name) tools this session")
                 }
             }
+            // Connections run through `wakil-connect`; without it they are dropped, for the
+            // session's config and its allow list alike.
+            if let url = WakilWiring.binaryURL(
+                named: wakilConnectBinaryName, executableDirectory: executableDirectory, environment: environment) {
+                mutableBinaries[wakilConnectBinaryName] = url
+            } else {
+                notes.append("\(wakilConnectBinaryName): not found, so the agent has no connections this session")
+            }
             // Reassigned to an immutable `let` before the `@Sendable`
             // closure below captures it: a captured `var` is a compile
             // error under strict concurrency, and this dictionary is
@@ -209,8 +217,10 @@ final class WindowSession {
             // list written down here: the session's `--allowedTools` is what
             // keeps the CLI's permission layer from auto-denying the very
             // tools this config publishes (probe §6), so the two have to
-            // describe the same surface. See `agentAllowedTools`.
-            let allowedTools = agentAllowedTools(actions: await wiring.registry.all())
+            // describe the same surface. See `agentAllowedTools`. The registry's actions are fixed
+            // for the window; the connections are not (they differ by organisation), so the list is
+            // finished per launch below.
+            let actions = await wiring.registry.all()
             harnessFactory = { place, selection, socketPath in
                 // Rebuilt per call, never captured: this JSON carries
                 // WAKIL_PROVIDER and the session's whole place — WAKIL_ORG,
@@ -218,18 +228,23 @@ final class WindowSession {
                 // reusing JSON captured at window open would run the new
                 // account's session — or a post-switch session's servers —
                 // with the old provider id or the old place.
+                // The organisation's connections, read at each launch; none without `wakil-connect`.
+                let connections = binaries[wakilConnectBinaryName] == nil
+                    ? [] : AgentConnectionsBox.shared.connections(org: place.organization)
                 let configJSON = agentMCPConfigJSON(
                     shimExecutable: executableURL,
                     socketPath: socketPath,
                     binaries: binaries,
                     place: place,
-                    provider: selection.id)
+                    provider: selection.id,
+                    connections: connections,
+                    approvalSocket: approvalSocketPath(forAgentSocket: socketPath))
                 return ClaudeCodeCLIHarness(
                     claudePath: selection.credentials.claudePath,
                     configDir: selection.credentials.configDir,
                     oauthToken: selection.credentials.oauthToken,
                     mcpConfigJSON: configJSON,
-                    allowedTools: allowedTools,
+                    allowedTools: agentAllowedTools(actions: actions, connections: connections),
                     // 3a-iii-b: the operator's instructions for this place, read at each launch.
                     appendedInstructions: { AgentInstructionsBox.shared.text(org: place.organization, project: place.project) })
             }

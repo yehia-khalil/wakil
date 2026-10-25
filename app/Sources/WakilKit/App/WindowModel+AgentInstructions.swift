@@ -51,3 +51,18 @@ extension WindowModel {
         return agentInstructionsUpdateHeader + "\n\n" + body
     }
 }
+
+extension WindowModel {
+    /// The first launch in an organisation can come before anything read its configuration (the
+    /// settings read follows the pane opening), so a launch for an organisation the box has never
+    /// heard of reads the tree itself. A read that fails leaves the box empty for it: the session
+    /// runs without connections and the next launch asks again.
+    func ensureAgentConnections(in place: Place) async {
+        guard !agentConnectionsBox.isKnown(org: place.organization) else { return }
+        guard let result = try? await registry.dispatch(
+            name: "ctx_config_tree", params: .object([:]), origin: .ui,
+            caller: DispatchCaller(place: place, session: nil), confirmation: nil),
+              let tree = decodeSettingsTree(fromResult: result) else { return }
+        agentConnectionsBox.set(org: tree.org.id, connections: tree.org.connections)
+    }
+}

@@ -200,6 +200,14 @@ public struct SettingsGitAccount: Sendable, Equatable, Decodable {
     private enum CodingKeys: String, CodingKey { case host, provider, method, user, keyPath, username }
 }
 
+/// One of the organisation's connections, as a session launch needs it: the name its MCP server
+/// goes by. Task 7's `SettingsConnection` carries the rest; a launch reads nothing else.
+public struct AgentConnection: Sendable, Equatable, Decodable {
+    public var name: String
+
+    public init(name: String) { self.name = name }
+}
+
 /// The organisation's four editable strings, and the id, which is the
 /// directory name and therefore not editable at all.
 public struct SettingsOrg: Sendable, Equatable, Decodable {
@@ -231,6 +239,8 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
     /// Empty means the repository's own git config decides.
     public var gitName: String
     public var gitEmail: String
+    /// The organisation's connections; a session launch reads their names (`AgentConnectionsBox`).
+    public var connections: [AgentConnection]
 
     public init(
         id: String, displayName: String = "", jiraBase: String = "", defaultProvider: String = "",
@@ -238,7 +248,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         fastPath: Bool = false, gitName: String = "", gitEmail: String = "", commitDrafts: Bool = true,
         gitAccounts: [SettingsGitAccount] = [], pullStrategy: String = "rebase", lastCloneFolder: String = "",
         gitSignIn: [String] = [], agentGeneral: String = "", gitCommitInstructions: String = "",
-        gitPRInstructions: String = ""
+        gitPRInstructions: String = "", connections: [AgentConnection] = []
     ) {
         self.id = id
         self.displayName = displayName
@@ -258,6 +268,7 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         self.gitPRInstructions = gitPRInstructions
         self.gitName = gitName
         self.gitEmail = gitEmail
+        self.connections = connections
     }
 
     public init(from decoder: Decoder) throws {
@@ -280,12 +291,13 @@ public struct SettingsOrg: Sendable, Equatable, Decodable {
         gitPRInstructions = try container.decodeIfPresent(String.self, forKey: .gitPRInstructions) ?? ""
         gitName = try container.decodeIfPresent(String.self, forKey: .gitName) ?? ""
         gitEmail = try container.decodeIfPresent(String.self, forKey: .gitEmail) ?? ""
+        connections = try container.decodeIfPresent([AgentConnection].self, forKey: .connections) ?? []
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, displayName, jiraBase, defaultProvider, speechProvider, quickProvider, ghostText, fastPath, commitDrafts, gitAccounts, pullStrategy, lastCloneFolder, gitSignIn,
             agentGeneral, gitCommitInstructions, gitPRInstructions
-        case gitName, gitEmail
+        case gitName, gitEmail, connections
     }
 
     /// What the tree's Organisation node is labelled with: the display

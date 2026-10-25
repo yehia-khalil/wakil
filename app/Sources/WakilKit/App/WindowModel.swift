@@ -791,6 +791,8 @@ public final class WindowModel {
     var changesFilledFrom: [String: WindowModel.ChangesFill] = [:]
     /// 3a-iii-b: where the composed agent instructions go; the process's own unless a test swaps it.
     var agentInstructionsBox: AgentInstructionsBox = .shared
+    /// Where each organisation's connections go for a launch to read; the process's own unless a test swaps it.
+    var agentConnectionsBox: AgentConnectionsBox = .shared
     public let backgroundFetchInterval: Duration = .seconds(300)
     var backgroundFetchSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     var backgroundFetchTask: Task<Void, Never>?
@@ -2899,6 +2901,7 @@ public final class WindowModel {
             settings = tree
             settingsFailure = nil
             publishAgentInstructions(tree)
+            agentConnectionsBox.set(org: tree.org.id, connections: tree.org.connections)
             // The tree first, so the pane fills at once; finding `claude` (a login-shell lookup)
             // is for the account table below, and waits until the tree is drawn.
             await locateClaudeIfNeeded()
@@ -7382,6 +7385,7 @@ public final class WindowModel {
                 agentSocketFactory, in: place, sessionId: sessionId, conversation: conversation)
         }
         let socket = opened?.socket
+        await ensureAgentConnections(in: place)
         guard let harness = harnessFactory(place, selection, path) else {
             if let shown, let opened, socket != nil, !socketsClosed, shownSockets[conversation] == nil {
                 shownSockets[conversation] = ShownSocket(
