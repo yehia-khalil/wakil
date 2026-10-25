@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/connections-settings-list.jsonl",
   "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
-  "provedAt": "2026-10-25T18:26:27.23976Z",
+  "provedAt": "2026-10-25T18:33:05.975325Z",
   "checkBlob": "e187f630cfd6fd06204d9aff3c405aa82272693d"
 }

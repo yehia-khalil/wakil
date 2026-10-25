@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/connections-allow-agent.jsonl",
   "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
-  "provedAt": "2026-10-25T18:26:27.23976Z",
-  "checkBlob": "1150e572a4e5e3b11d827e8d4d2adb5380643810"
+  "provedAt": "2026-10-25T18:33:05.975325Z",
+  "checkBlob": "d02099b11e1697a5e45ef72fb7434800192719bd"
 }
