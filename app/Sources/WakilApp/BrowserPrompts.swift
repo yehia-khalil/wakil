@@ -21,6 +21,9 @@ final class BrowserPrompt: Identifiable {
         case signIn(host: String, realm: String)
         /// A camera / microphone request, its question already worded (global constraints' copy).
         case media(String)
+        /// A link to an app (`mailto:`, `zoommtg:`): `Open in <app>?` (final review I4). Not the
+        /// page's own question — Wakil asks before anything leaves the page.
+        case openApp(String)
     }
 
     enum Answer {
@@ -78,9 +81,16 @@ func browserMediaQuestion(host: String, type: WKMediaCaptureType) -> String {
 
 /// A prompt drawn over its own tab's page only: the page under it waits, the rest of the canvas —
 /// the pane's header and tab list, every other pane — stays usable (Rule 8; never a window-modal
-/// sheet). Its first field arrives focused (Rule 3).
+/// sheet). Its first field arrives focused (Rule 3) — **only when its pane may take the keyboard**
+/// (Rule 6, final review I3): a page in a pane the operator is not in asks shown, and waits; the
+/// card takes the keyboard on its pane's next turn (`focusTurn`), so a Return meant for the
+/// composer or the editor never answers a page's question.
 struct BrowserPromptCard: View {
     let prompt: BrowserPrompt
+    /// Whether the pane may take the keyboard now (`BrowserPane.mayTakeKeyboard`), read live.
+    let mayTakeKeyboard: @MainActor () -> Bool
+    /// Raised each time the pane takes the keyboard while this card is shown.
+    let focusTurn: Int
     let answer: (BrowserPrompt.Answer) -> Void
 
     @State private var text = ""
@@ -134,17 +144,21 @@ struct BrowserPromptCard: View {
             .padding(BrowserPaneStyle.promptPadding)
         }
         .onAppear {
-            if case .text(_, let initial) = prompt.kind {
-                text = initial
-                focused = .text
-            } else if case .signIn = prompt.kind {
-                focused = .user
-            } else {
-                focused = .card
-            }
+            if case .text(_, let initial) = prompt.kind { text = initial }
+            if mayTakeKeyboard() { takeKeyboard() }
         }
+        .onChange(of: focusTurn) { _, _ in if mayTakeKeyboard() { takeKeyboard() } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser.prompt")
+    }
+
+    /// The first field, or the card itself when it has none.
+    private func takeKeyboard() {
+        switch prompt.kind {
+        case .text: focused = .text
+        case .signIn: focused = .user
+        default: focused = .card
+        }
     }
 
     private var hasField: Bool {
@@ -156,7 +170,7 @@ struct BrowserPromptCard: View {
 
     private var message: String {
         switch prompt.kind {
-        case .alert(let m), .confirm(let m), .media(let m): m
+        case .alert(let m), .confirm(let m), .media(let m), .openApp(let m): m
         case .text(let m, _): m
         case .signIn(let host, let realm): realm.isEmpty ? "Sign in to \(host)" : "Sign in to \(host) — \(realm)"
         }
@@ -215,6 +229,9 @@ struct BrowserPromptCard: View {
                 // harness should tell them apart.
                 button("Don't Allow", "browser.prompt.deny", primary: false) { answer(.dismiss) }
                 button("Allow", "browser.prompt.allow", primary: true) { answer(.accept) }
+            case .openApp:
+                button("Cancel", "browser.prompt.cancel", primary: false) { answer(.dismiss) }
+                button("Open", "browser.prompt.open", primary: true) { answer(.accept) }
             }
         }
     }
@@ -310,7 +327,11 @@ struct BrowserDownloadStrip: View {
             Text(status(d))
                 .font(.system(size: BrowserPaneStyle.metaSize, design: .monospaced))
                 .foregroundStyle(d.state == .failed ? BrowserPaneStyle.amber : BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
-                .lineLimit(1)
+                // A failure is shown whole and can be copied (Rule 8, final review I5); the size
+                // line stays one line.
+                .lineLimit(d.state == .failed ? nil : 1)
+                .fixedSize(horizontal: false, vertical: d.state == .failed)
+                .textSelection(.enabled)
                 .accessibilityIdentifier("browser.download.\(d.id).status")
             switch d.state {
             case .running:

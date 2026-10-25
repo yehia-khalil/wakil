@@ -2577,6 +2577,8 @@ public final class WindowModel {
             await panes.switchScope(to: scope, adoptingFrom: outgoing)
             // Its shells too: they are keyed by the scope they were opened in.
             await terminals.rehome(from: outgoing, to: scope)
+            // And its browser pages (final review I1), before the canvas is drawn under the new name.
+            rehomeBrowser(from: outgoing, to: scope)
             loadedLayoutScopes.insert(scope)
         } else {
             await layout.switchScope(to: scope)
@@ -3763,6 +3765,7 @@ public final class WindowModel {
             await layout.switchScope(to: to, adoptingFrom: from)
             await panes.switchScope(to: to, adoptingFrom: from)
             await terminals.rehome(from: from, to: to)
+            rehomeBrowser(from: from, to: to)
         }
         if !affected.contains(screen) {
             await layout.switchScope(to: screen)
@@ -5742,6 +5745,23 @@ public final class WindowModel {
     public var browserScope: LayoutScope? {
         guard let drawnScope, !drawnScope.organization.isEmpty else { return nil }
         return drawnScope
+    }
+
+    /// Told when a place takes a new name — a conversation adopts the conversation-less canvas, or
+    /// its project or environment is renamed — after its tab states have moved
+    /// (`BrowserOrgFiles.moveStates`): the app's web-view host re-keys its pages under the new name,
+    /// as `TerminalStore.rehome` does the shells, so no page reloads (final review I1).
+    @ObservationIgnored
+    public var onBrowserRehome: (@MainActor (_ from: LayoutScope, _ to: LayoutScope) -> Void)?
+
+    /// The browser's half of a place's new name: its tab states move, then the host is told.
+    /// Synchronous, so nothing draws or saves between the two.
+    private func rehomeBrowser(from: LayoutScope, to: LayoutScope) {
+        guard from != to else { return }
+        if from.organization == to.organization, let files = browserOrgFiles(for: from) {
+            files.moveStates(from: from, to: to)
+        }
+        onBrowserRehome?(from, to)
     }
 
     /// Whether `scope` is the canvas drawn, and no swap is under way. **A web view keeps running

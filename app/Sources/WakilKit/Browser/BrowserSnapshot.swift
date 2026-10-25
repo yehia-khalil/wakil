@@ -46,12 +46,17 @@ public struct BrowserTab: Sendable, Equatable, Codable {
     public var loaded: Bool
     /// The latest request for the host to apply; a new `seq` is a new request.
     public var command: BrowserCommand?
+    /// Put back from the saved layout (`browserRestore`): the one kind of tab whose web view may
+    /// take a saved state (its ‹ › history) on its first build. A tab made this launch never does,
+    /// so a reissued pane or tab id never shows an earlier pane's page (final review I2).
+    public var fromSavedLayout: Bool
 
     public init(
         id: String, url: String, title: String, isLoading: Bool = false, progress: Double = 0,
         canGoBack: Bool = false, canGoForward: Bool = false, failure: String? = nil, zoom: Double = 1,
-        loaded: Bool = false, command: BrowserCommand? = nil
+        loaded: Bool = false, command: BrowserCommand? = nil, fromSavedLayout: Bool = false
     ) {
+        self.fromSavedLayout = fromSavedLayout
         self.id = id
         self.url = url
         self.title = title
@@ -72,6 +77,8 @@ public struct BrowserCommand: Sendable, Equatable, Codable {
 
     public enum Verb: Sendable, Equatable, Codable {
         case load(String), back, forward, reload, stop, zoom(Double), focusAddress
+        /// The page printed, through the system's print panel (⌘K → Print page).
+        case print
     }
 
     public init(seq: Int, verb: Verb) {

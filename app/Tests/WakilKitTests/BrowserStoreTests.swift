@@ -190,3 +190,17 @@ private let readPaneKeys: Set<String> = [
     #expect(await store.browserSnapshot(paneId: pane).tabs[0].zoom == 1.25)
     #expect(await store.browserSnapshot(paneId: pane).tabs[0].command == nil)
 }
+
+/// Final review I2: only a tab put back from the saved layout may take a saved state; a tab made
+/// this launch (a new tab, a pop-up) never does, whatever file a reissued id finds.
+@Test func onlyARestoredTabIsMarkedAsFromTheSavedLayout() async {
+    let store = PaneStore(kinds: PaneKinds.standard)
+    await store.browserRestore(paneId: pane, tabs: [BrowserSavedTab(id: "t1", url: "https://a.test/", title: "A"),
+                                                    BrowserSavedTab(id: "t2", url: "https://b.test/", title: "B")],
+                               active: "t1")
+    #expect(await store.browserSnapshot(paneId: pane).tabs.allSatisfy(\.fromSavedLayout))
+    let popup = await store.browserPageOpenedTab(paneId: pane, opener: "t1", url: "https://c.test/")
+    let s = await store.browserSnapshot(paneId: pane)
+    #expect(s.tabs.first { $0.id == popup }?.fromSavedLayout == false)
+    #expect(BrowserTab(id: "t9", url: "", title: "").fromSavedLayout == false)
+}

@@ -35,6 +35,18 @@ public enum BrowserAddress {
     }
 
     /// `https`, `file`, and `http` to a loopback host.
+    /// Whether a page shows `url` itself. Any other scheme (`mailto:`, `zoommtg:`) belongs to an app
+    /// on the Mac, and the tab asks in place before handing it over (final review I4, Rule 7).
+    public static func opensInPage(_ url: URL) -> Bool {
+        ["http", "https", "file", "about", "data", "blob"].contains(url.scheme?.lowercased() ?? "")
+    }
+
+    /// The in-place question before an app's link leaves the page (Open · Cancel), as Safari asks.
+    public static func openInAppQuestion(app: String) -> String { "Open in \(app)?" }
+
+    /// What the tab says when no app on the Mac takes the link's scheme.
+    public static func noAppLine(scheme: String) -> String { "No app on this Mac opens \(scheme): links." }
+
     public static func isSecure(_ url: URL) -> Bool {
         switch url.scheme?.lowercased() {
         case "https", "file": return true

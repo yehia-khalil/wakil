@@ -446,6 +446,8 @@ final class WindowSession {
         model.browserHome = URL(fileURLWithPath: home)
         let browserTabs = BrowserTabHost(model: model)
         browserTabsBox.host = browserTabs
+        // A place's new name carries its pages with it (final review I1), as `terminals.rehome`.
+        model.onBrowserRehome = { [weak browserTabs] from, to in browserTabs?.rehome(from: from, to: to) }
         screen.model = model
         let composer = ComposerModel(window: model, speech: wiring.speech)
 
@@ -465,7 +467,9 @@ final class WindowSession {
     /// a child in the middle of a slow tool call would not read that EOF
     /// promptly.
     func shutdown() async {
-        // 3c-i: no page's question is left with its WebKit handler uncalled.
+        // 3c-i: each tab's state written as it is now (I8), then no page's question is left with
+        // its WebKit handler uncalled.
+        browserTabs.saveAll()
         browserTabs.closeAll()
         await wiring.commitDrafts.bind(nil)
         await model.shutdown()

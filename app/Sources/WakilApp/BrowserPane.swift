@@ -46,6 +46,9 @@ struct BrowserPane: View {
     /// Whether the address row is the editable field (`.fieldBox`) rather than the URL's line —
     /// from a click on the line, ⌘L, or a blank tab taking the keyboard, until the field lets go.
     @State private var editingAddress = false
+    /// Raised when the pane takes the keyboard while its active tab's page is asking: the question
+    /// takes it, not the page under it (`BrowserPromptCard`, Rule 6).
+    @State private var promptFocusTurn = 0
 
     private var active: BrowserTab? { snapshot.activeTab }
     private var listMode: BrowserTabListMode { BrowserTabListMode(paneWidth: width) }
@@ -291,7 +294,8 @@ struct BrowserPane: View {
                 }
                 // The page's own question, over this tab's page only; switching tabs keeps it.
                 if let prompt = host.prompts[key]?.first {
-                    BrowserPromptCard(prompt: prompt) { answer in host.answer(prompt, answer, key: key) }
+                    BrowserPromptCard(prompt: prompt, mayTakeKeyboard: mayTakeKeyboard,
+                                      focusTurn: promptFocusTurn) { answer in host.answer(prompt, answer, key: key) }
                         .id(prompt.id)
                 }
             } else {
@@ -398,6 +402,8 @@ struct BrowserPane: View {
             if case .focusAddress = command.verb, tab.id == now.active { wantsAddress = true }
         }
         let switched = old != nil && old?.active != now.active
+        // The tab leaving the front keeps its scroll and its last moves for a relaunch (I8).
+        if switched, let left = old?.active { host.saveState(scope: scope, pane: pane.id, tab: left) }
         // An edit left in the field was the other tab's: the field holds this one's URL.
         if switched, editingAddress { draft = now.activeTab?.url ?? "" }
         // A new tab (⌘T, the agent's) takes the keyboard to its address field (Rule 3). Not one a
@@ -448,6 +454,12 @@ struct BrowserPane: View {
         if tab.url.isEmpty { focusAddress() } else { focusPage() }
     }
 
+    /// Whether the live active tab's page is asking a question: the keyboard is the question's.
+    private func promptWaits() -> Bool {
+        guard let tab = liveActiveTab() else { return false }
+        return host.prompts[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: tab)]?.isEmpty == false
+    }
+
     private func focusAddress() {
         guard isFocusedPane, isKeyboardOwner, !keyboardHeld(), active != nil else { return }
         beginEditingAddress()
@@ -457,6 +469,11 @@ struct BrowserPane: View {
     /// else holds the keyboard. Read live: this is often run a turn after it was asked.
     private func focusPage() {
         guard mayTakeKeyboard(), let tab = liveActiveTab() else { return }
+        // A question over the page takes the keyboard rather than the page under it.
+        if promptWaits() {
+            promptFocusTurn += 1
+            return
+        }
         host.focusPage(scope: scope, pane: pane.id, tab: tab, mayTakeKeyboard: mayTakeKeyboard, activeTab: liveActiveTab)
     }
 

@@ -77,6 +77,10 @@ final class BrowserTabHost {
     @ObservationIgnored private var findsRun: [Key: FindRun] = [:]
     @ObservationIgnored private var findsWanted: [Key: (BrowserFind?, String?)] = [:]
     @ObservationIgnored private var findsBusy: Set<Key> = []
+    /// Places rehomed (`rehome`) whose old name the canvas may still draw for a moment: a pane drawn
+    /// under the old name is given the page under the new one, never a fresh one. Let go once the
+    /// new name is drawn.
+    @ObservationIgnored private var renamed: [LayoutScope: LayoutScope] = [:]
 
     struct OrgHost: Hashable {
         let org: String
@@ -144,6 +148,15 @@ final class BrowserTabHost {
             touch(key)
             return view
         }
+        // The canvas still drawn under a place's old name, a moment after `rehome`: its page, or
+        // blank — never a second web view under the old name.
+        if let moved = renamed[scope] {
+            let movedKey = Key(scope: moved, pane: pane, tab: tab.id)
+            if views[movedKey] != nil { touch(movedKey) }
+            return views[movedKey]
+        }
+        // The new name is drawn: the old one is let go.
+        forgetOldNames(of: scope)
         // The place's own organisation, read now and never kept — not the context's, which a
         // switch names before the canvas drawn is swapped (`WindowModel.browserOrgFiles(for:)`).
         let files = model?.browserOrgFiles(for: scope)
@@ -156,7 +169,10 @@ final class BrowserTabHost {
             delegate.attach(to: view)
             delegates[key] = delegate
             let waiting = tab.command.map { $0.seq > applied[key] ?? 0 } ?? false
-            if restore(view, scope: scope, pane: pane, tab: tab.id, files: files) {
+            // Only a tab that had a page before — put back from the saved layout, or evicted and
+            // rebuilt — has a state to restore; a new tab never takes one (final review I2).
+            let hadPage = tab.fromSavedLayout || applied[key] != nil
+            if hadPage, restore(view, scope: scope, pane: pane, tab: tab.id, files: files) {
                 if waiting, let command = tab.command, case .load = command.verb { applied[key] = command.seq }
             } else if !tab.url.isEmpty, !waiting {
                 // Rebuilt with no state to restore: its address is all it kept.
@@ -258,6 +274,44 @@ final class BrowserTabHost {
         pendingPopups.remove(key)
     }
 
+    // MARK: A place's new name
+
+    /// A place took a new name (a conversation adopted its canvas, or its project or environment was
+    /// renamed; `WindowModel.onBrowserRehome`): every page, question, mark, download and find of
+    /// `from` is filed under `to`, so the pane drawn under the new name finds its own pages — none
+    /// reloads, nothing is stranded off screen. The tab states were moved by the model.
+    func rehome(from: LayoutScope, to: LayoutScope) {
+        guard from != to else { return }
+        func moved(_ key: Key) -> Key { key.scope == from ? Key(scope: to, pane: key.pane, tab: key.tab) : key }
+        func move<V>(_ d: [Key: V]) -> [Key: V] { Dictionary(d.map { (moved($0.key), $0.value) }) { new, _ in new } }
+        views = move(views)
+        delegates = move(delegates)
+        recency = recency.map(moved)
+        applied = move(applied)
+        openedByPage = Set(openedByPage.map(moved))
+        pendingPopups = Set(pendingPopups.map(moved))
+        favicons = move(favicons)
+        prompts = move(prompts)
+        certificates = move(certificates)
+        crashed = Set(crashed.map(moved))
+        openPanels = move(openPanels)
+        findsRun = move(findsRun)
+        findsWanted = move(findsWanted)
+        // `findsBusy` stays: its running loop reads the old key, ends, and lets it go.
+        mediaAnswers = Dictionary(mediaAnswers.map {
+            ($0.key.scope == from ? MediaKey(scope: to, host: $0.key.host, type: $0.key.type) : $0.key, $0.value)
+        }) { new, _ in new }
+        for delegate in delegates.values where delegate.scope == from { delegate.scope = to }
+        for tracker in downloads.values where tracker.scope == from { tracker.scope = to }
+        renamed = renamed.mapValues { $0 == from ? to : $0 }
+        renamed[from] = to
+    }
+
+    /// `scope` is drawn under its own name: no pane is drawn under an old name of it any more.
+    private func forgetOldNames(of scope: LayoutScope) {
+        if renamed.values.contains(scope) { renamed = renamed.filter { $0.value != scope } }
+    }
+
     // MARK: Commands
 
     /// Applies `command` to the tab's web view when its seq is above the last one applied, and
@@ -265,6 +319,8 @@ final class BrowserTabHost {
     @discardableResult
     func apply(_ command: BrowserCommand, scope: LayoutScope, pane: String, tab: BrowserTab) -> Bool {
         let key = Key(scope: scope, pane: pane, tab: tab.id)
+        // A place's old name, drawn a moment after `rehome`: the pane under the new name applies it.
+        guard renamed[scope] == nil else { return false }
         guard command.seq > applied[key] ?? 0 else { return false }
         if case .focusAddress = command.verb {
             applied[key] = command.seq
@@ -296,6 +352,14 @@ final class BrowserTabHost {
             view.pageZoom = factor
             if let site = view.url.flatMap(BrowserOrgFiles.zoomHost(of:)) { delegate?.zoomHost = site }
         case .focusAddress: break
+        case .print:
+            // The system's print panel, as a sheet on the window (its own, as the open panel is).
+            // A page with no window — its place off screen — prints nothing.
+            guard let window = view.window else { break }
+            let operation = view.printOperation(with: NSPrintInfo.shared)
+            // WKWebView's operation prints blank without its view sized to the page.
+            operation.view?.frame = view.bounds
+            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
         }
         return true
     }
@@ -303,6 +367,7 @@ final class BrowserTabHost {
     /// A place's pane is on screen again: each of its live web views reports, since what they said
     /// while the place was off screen was dropped.
     func reportAll(scope: LayoutScope, pane: String) {
+        forgetOldNames(of: scope)
         for (key, delegate) in delegates where key.scope == scope && key.pane == pane {
             delegate.reportZoomAgain()
             delegate.scheduleReport()
@@ -360,6 +425,22 @@ final class BrowserTabHost {
         let url = stateURL(files, scope: scope, pane: pane, tab: tab)
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? state.write(to: url, options: .atomic)
+    }
+
+    /// Writes a live tab's state now — when it leaves the front (a tab switch), say — so the
+    /// scroll and the same-document moves since its last load are what a relaunch puts back (I8).
+    func saveState(scope: LayoutScope, pane: String, tab: String) {
+        let key = Key(scope: scope, pane: pane, tab: tab)
+        guard let view = views[key] else { return }
+        saveState(of: view, scope: scope, pane: pane, tab: tab, files: delegates[key]?.files)
+    }
+
+    /// Every live tab's state, written at quit before the views go (`closeAll`), so each tab comes
+    /// back where it was — its scroll and its ‹ › history to the last move (final review I8).
+    func saveAll() {
+        for (key, view) in views where !pendingPopups.contains(key) {
+            saveState(of: view, scope: key.scope, pane: key.pane, tab: key.tab, files: delegates[key]?.files)
+        }
     }
 
     /// Restores the tab's saved state into a new web view; true when it put a page back.
@@ -653,10 +734,13 @@ final class BrowserTabHost {
         files.map { try? FileManager.default.removeItem(at: stateURL($0, scope: scope, pane: pane, tab: tab)) }
     }
 
-    /// A closed pane: every one of its tabs, the evicted ones' seqs and state files too.
+    /// A closed pane: every one of its tabs, the evicted ones' seqs too, and every state file under
+    /// its name — the tabs never shown this launch as well, so a later pane given the same id never
+    /// inherits one (final review I2).
     func release(scope: LayoutScope, pane: String) {
         let tabs = Set(views.keys).union(applied.keys).filter { $0.scope == scope && $0.pane == pane }
         for key in tabs { release(scope: scope, pane: pane, tab: key.tab) }
+        model?.browserOrgFiles(for: scope)?.removeStates(scope: scope, pane: pane)
         let paneKey = Key(scope: scope, pane: pane, tab: "")
         findsRun[paneKey] = nil
         findsWanted[paneKey] = nil
@@ -681,7 +765,7 @@ final class BrowserTabHost {
 
     /// The window is closing: every page's open question is answered (Cancel) and its open panel
     /// cancelled, and every web view dropped, so no WebKit completion handler is left uncalled.
-    /// Nothing is saved — the layout already holds each tab — and no state file is deleted.
+    /// No state file is deleted; the session writes them first (`saveAll`).
     func closeAll() {
         for key in Array(views.keys) { drop(key, mode: .discard) }
         for key in Array(prompts.keys) { dismissPrompts(key) }
@@ -755,7 +839,8 @@ func browserDataIcon(_ href: String) -> NSImage? {
 @MainActor
 final class BrowserDownloadTracker: NSObject, WKDownloadDelegate {
     let id: String
-    let scope: LayoutScope
+    /// Its place; moved by `BrowserTabHost.rehome` when the place takes a new name.
+    var scope: LayoutScope
     let pane: String
     private let download: WKDownload
     private let folder: URL

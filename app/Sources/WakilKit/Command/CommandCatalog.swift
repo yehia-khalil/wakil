@@ -157,6 +157,9 @@ public enum CommandCatalog {
 
         close("terminal"),
 
+        // 3c-i (final review I6): the spec's "⌘K → Print page" — the system's print panel.
+        pane("browser.print", "Print page", "browser", "browser_print"),
+
         CatalogCommand(
             id: "editor.language", label: "Set language…", scope: .pane("editor"),
             action: "editor_set_language",

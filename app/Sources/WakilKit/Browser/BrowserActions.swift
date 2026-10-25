@@ -21,6 +21,9 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     /// `browser_clear_data`'s `org` — the organisation the operator's question named — is not the
     /// active one: the yes was for another organisation's data.
     case organisationChanged
+    /// `browser_open` was handed an app's link (`zoommtg:`, `mailto:`): it opens web pages and files
+    /// only, so no app on the Mac is launched from an action (final review I4).
+    case notAWebPage(scheme: String)
 
     public var description: String {
         switch self {
@@ -37,6 +40,9 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .noOrganisation: "No organisation is active."
         case .clearOnlyFromTheApp: "Browsing data can only be cleared from the app."
         case .organisationChanged: "The organisation changed; ask again."
+        case .notAWebPage(let scheme):
+            "browser_open opens web pages and files (http, https, file), not \(scheme): links — an app's "
+                + "link opens from a page, after the operator allows it."
         }
     }
 }
@@ -226,6 +232,8 @@ func browserActions(
         schema: schema(["url": string, "newTab": .object(["type": .string("boolean")])], required: ["url"]),
         handler: { params in
             let url = try await address(try requireString(params, "url", action: "browser_open"))
+            let scheme = URL(string: url)?.scheme?.lowercased() ?? ""
+            guard ["http", "https", "file"].contains(scheme) else { throw BrowserActionError.notAWebPage(scheme: scheme) }
             let newTab: Bool = { if case .object(let o) = params, case .bool(let b)? = o["newTab"] { b } else { true } }()
             let pane = try await browserPane(params, action: "browser_open", open: true).id
             let loaded = newTab ? false : await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
@@ -286,6 +294,14 @@ func browserActions(
         kind: .control, audience: .agentReachable,
         schema: schema(tabSchema),
         handler: { params in try await command(params, action: "browser_focus_address") { _ in .focusAddress } }))
+
+    actions.append(Action(
+        name: "browser_print",
+        description: "Print a tab's page (tab, default the active one) through the system's print panel, "
+            + "as ⌘K → Print page.",
+        kind: .control, audience: .operatorOnly,
+        schema: schema(tabSchema),
+        handler: { params in try await command(params, action: "browser_print") { _ in .print } }))
 
     actions.append(Action(
         name: "browser_new_tab",

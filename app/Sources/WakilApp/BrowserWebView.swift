@@ -95,8 +95,9 @@ private let urlErrorNames: [Int: String] = [
 final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     weak var host: BrowserTabHost?
     /// The place this tab's web view belongs to: every seam call carries it, and the window drops
-    /// those whose place is not on screen (pane and tab ids repeat from place to place).
-    let scope: LayoutScope
+    /// those whose place is not on screen (pane and tab ids repeat from place to place). Moved by
+    /// `BrowserTabHost.rehome` when the place takes a new name.
+    var scope: LayoutScope
     let pane: String
     /// Empty while a pop-up waits for the store to name its tab (`BrowserTabHost.adoptPopup`).
     var tab: String
@@ -219,6 +220,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Again once loaded (I8): the state at commit holds the page as it began, not as it ended.
+        host?.saveState(of: webView, scope: scope, pane: pane, tab: tab, files: files)
         scheduleReport()
         host?.readFavicon(of: webView, scope: scope, pane: pane, tab: tab)
     }
@@ -250,11 +253,13 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         // A link with `download`: saved, not shown.
         if navigationAction.shouldPerformDownload { return decisionHandler(.download) }
         guard let url = navigationAction.request.url else { return decisionHandler(.allow) }
-        // Rule 7: a scheme a page cannot show is the Mac's (`mailto:` opens Mail).
-        if let scheme = url.scheme?.lowercased(),
-           !["http", "https", "file", "about", "data", "blob"].contains(scheme) {
-            NSWorkspace.shared.open(url)
-            return decisionHandler(.cancel)
+        // Rule 7: a scheme a page cannot show is an app's (`mailto:` is Mail's) — **asked in place
+        // first, never opened unasked** (final review I4, as Safari asks). Only the page itself
+        // asks; a frame inside it (`<iframe src="zoommtg:…">`) opens nothing.
+        if !BrowserAddress.opensInPage(url) {
+            decisionHandler(.cancel)
+            if navigationAction.targetFrame?.isMainFrame != false { askToOpen(url, webView) }
+            return
         }
         if navigationAction.navigationType == .linkActivated, opensInBackground(navigationAction) {
             openInBackground(url)
@@ -338,6 +343,27 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard !tab.isEmpty else { return }
         host?.pageCrashed(key: key)
         scheduleReport()
+    }
+
+    /// `Open in <app>?` over the page, with Open · Cancel; Open hands the link to the Mac. One such
+    /// question per tab at a time — a page asking again while one waits is not asked twice. With no
+    /// app for the scheme, the tab says so.
+    private func askToOpen(_ url: URL, _ webView: WKWebView) {
+        guard let host, !tab.isEmpty else { return }
+        if host.prompts[key]?.contains(where: { if case .openApp = $0.kind { true } else { false } }) == true { return }
+        let origin = webView.url.map(BrowserAddress.displayHost) ?? "This page"
+        guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else {
+            let line = BrowserAddress.noAppLine(scheme: url.scheme?.lowercased() ?? "")
+            return host.present(BrowserPrompt(kind: .alert(line), origin: origin) { _ in }, scope: scope, pane: pane, tab: tab)
+        }
+        let bundle = Bundle(url: app)
+        let name = (bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? app.deletingPathExtension().lastPathComponent
+        let prompt = BrowserPrompt(kind: .openApp(BrowserAddress.openInAppQuestion(app: name)), origin: origin) { answer in
+            if case .accept = answer { NSWorkspace.shared.open(url) }
+        }
+        host.present(prompt, scope: scope, pane: pane, tab: tab)
     }
 
     /// ⌘-click and middle-click: a new tab behind this one.

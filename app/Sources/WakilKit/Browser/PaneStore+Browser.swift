@@ -28,7 +28,8 @@ extension PaneStore {
             s = .empty
             s.tabs = tabs.map { saved in
                 BrowserTab(id: saved.id, url: saved.url, title: saved.title, loaded: false,
-                           command: saved.id == chosen ? BrowserCommand(seq: 1, verb: .load(saved.url)) : nil)
+                           command: saved.id == chosen ? BrowserCommand(seq: 1, verb: .load(saved.url)) : nil,
+                           fromSavedLayout: true)
             }
             s.active = chosen
             s.nextTab = highest + 1

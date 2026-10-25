@@ -118,6 +118,8 @@ public let operatorOnlyActions: Set<String> = [
     // but autosave decides when the operator's files are written, and showing ignored files
     // and the heavy folders decide what search covers; the operator, not the agent, chooses.
     "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+    // 3c-i (final review I6). Printing raises the system's print panel over the operator's window.
+    "browser_print",
     // 3c-i. Which search engine and start page the operator's browser uses is theirs, as the editor's are.
     "ctx_set_browser_settings",
     // 3c-i. Putting back a browser pane's saved tabs is the window's own relaunch step; the

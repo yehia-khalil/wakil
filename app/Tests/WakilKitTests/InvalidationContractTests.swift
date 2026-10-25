@@ -217,6 +217,9 @@ private let orgIndependent: Set<String> = [
     // Conversations 3 final review: the composer's hook for Keep it on the Close question, set
     // once by `ComposerModel.init`, for `onScreenChange`'s reason.
     "onCloseQuestionKept",
+    // 3c-i final review I1: the browser host's hook for a place's new name, set once by
+    // `WindowSession`; it carries no organisation's state, for `onScreenChange`'s reason.
+    "onBrowserRehome",
     // Fix round 1: the screen it was last told about, and New Conversation's focus flag — what
     // is on screen, which an org switch changes and `activateLayout` then tells.
     "toldScreenKey", "composerFocusForced",

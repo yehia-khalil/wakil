@@ -295,7 +295,8 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     let f = try await browserFixture()
     let all = await f.registry.all()
     #expect(all.first { $0.name == "browser_restore" }?.audience == .operatorOnly)
-    #expect(all.filter { $0.name.hasPrefix("browser_") && $0.name != "browser_restore" && $0.name != "browser_clear_data" }
+    // browser_print too (final review I6): its panel is the operator's window's.
+    #expect(all.filter { $0.name.hasPrefix("browser_") && !["browser_restore", "browser_clear_data", "browser_print"].contains($0.name) }
         .allSatisfy { $0.audience == .agentReachable && $0.kind == .control })
 }
 
@@ -504,4 +505,47 @@ private struct StoreInUse: Error, CustomStringConvertible {
     }
     #expect(why == #"Error Domain=WKWebSiteDataStore Code=1 "Data store is in use""#)
     #expect(files.zoom(host: "a.test") == 1.5, "the store stayed, so its files stay too")
+}
+
+// MARK: - Final review I4: an app's link is asked about, never opened unasked
+
+/// `browser_open` opens web pages and files only: an app's scheme (zoommtg:, mailto:) is refused
+/// with a sentence, and no pane opens.
+@Test func openRefusesASchemeThatIsNotAWebPage() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let before = await f.snapshot()
+    for url in ["zoommtg://zoom.us/join?confno=1", "mailto:a@b.test", "about:blank"] {
+        #expect(await refusal { try await f.dispatch("browser_open", ["url": .string(url)]) }
+            == BrowserActionError.notAWebPage(scheme: String(url.prefix { $0 != ":" })).description, "\(url)")
+    }
+    #expect(await f.snapshot() == before)
+    for url in ["https://a.test/x", "http://localhost:3000/", "file:///tmp/x.html"] {
+        try await f.dispatch("browser_open", ["url": .string(url), "newTab": .bool(false)])
+        #expect(await f.active()?.url == url)
+    }
+    let g = try await browserFixture(open: false)
+    #expect(await refusal { try await g.dispatch("browser_open", ["url": .string("zoommtg://x")], named: false) } != nil)
+    #expect(await g.layout.snapshot().panes.isEmpty, "a refused open opens no pane")
+}
+
+@Test func onlyWebSchemesOpenInThePage() {
+    for s in ["http", "https", "file", "about", "data", "blob", "HTTPS"] {
+        #expect(BrowserAddress.opensInPage(URL(string: "\(s):x")!), "\(s)")
+    }
+    for s in ["mailto", "zoommtg", "slack", "tel", "javascript"] {
+        #expect(!BrowserAddress.opensInPage(URL(string: "\(s):x")!), "\(s)")
+    }
+    #expect(BrowserAddress.openInAppQuestion(app: "Zoom") == "Open in Zoom?")
+    #expect(BrowserAddress.noAppLine(scheme: "zoommtg") == "No app on this Mac opens zoommtg: links.")
+}
+
+// MARK: - Final review I6: print (⌘K → Print page)
+
+/// `browser_print` asks the active tab's page to print — one more command, which the window's
+/// web view answers with the system's print panel.
+@Test func printIsACommandOnTheActiveTab() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let seq = await f.active()?.command?.seq ?? 0
+    try await f.dispatch("browser_print", origin: .ui)
+    #expect(await f.active()?.command == BrowserCommand(seq: seq + 1, verb: .print))
 }

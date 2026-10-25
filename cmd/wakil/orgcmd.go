@@ -188,10 +188,16 @@ func runOrgRm(args []string, stderr io.Writer) int {
 		return 2
 	}
 
+	// Read before the directory goes: the id is the only handle on the org's browser store.
+	store := wakilcore.BrowserStoreID(org)
 	if err := wakilcore.RemoveOrg(org, *force); err != nil {
 		fmt.Fprintln(stderr, message(err))
 		return regExitCode(err)
 	}
 	fmt.Fprintf(stderr, "removed org %q\n", org)
+	if store != "" {
+		// 3c-i (final review I6): WebKit keeps the org's site logins outside its directory.
+		fmt.Fprintf(stderr, "its browser data stays in WebKit's store %s under ~/Library/WebKit, and Wakil no longer has its id to clear it — next time, clear it first in Wakil (Settings → Browser → Clear this organisation's browsing data…)\n", store)
+	}
 	return 0
 }

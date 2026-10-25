@@ -214,3 +214,12 @@ private func paneKind(_ c: CatalogCommand) -> String? {
         #expect(names.contains(action), "\(action) is not registered")
     }
 }
+
+/// Final review I6: a focused browser pane offers *Print page*, the spec's "⌘K → Print page".
+@Test func aBrowserPaneOffersPrintPage() {
+    let rows = CommandCatalog.entries(for: PaletteContext(focusedPane: FocusedPane(id: "browser-1", kind: "browser")))
+    let print = rows.first { $0.title == "Print page" }
+    #expect(print?.action == .dispatch(action: "browser_print", params: .object(["pane": .string("browser-1")])))
+    #expect(!CommandCatalog.entries(for: PaletteContext(focusedPane: FocusedPane(id: "db-1", kind: "db")))
+        .contains { $0.title == "Print page" })
+}

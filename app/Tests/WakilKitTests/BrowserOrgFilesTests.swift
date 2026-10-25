@@ -99,3 +99,53 @@ private func scratchHome() -> URL { testScratchRoot.appendingPathComponent(UUID(
     let files = try BrowserOrgFiles(home: scratchHome(), org: "acme")
     #expect(files.stateURL(tab: key).deletingLastPathComponent().lastPathComponent == "tabs")
 }
+
+// MARK: - Final fix wave: states move with their place, and a closed pane takes all of its own
+
+private func writeState(_ files: BrowserOrgFiles, _ scope: LayoutScope, _ pane: String, _ tab: String) throws -> URL {
+    let url = files.stateURL(tab: BrowserOrgFiles.stateKey(scope: scope, pane: pane, tab: tab))
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data(tab.utf8).write(to: url)
+    return url
+}
+
+/// I1: a conversation taking the canvas (or a rename) carries each tab's state to the new place's
+/// name, so the rebuilt page keeps its ‹ › history; another place's states stay where they were.
+@Test func aPlacesTabStatesMoveToItsNewName() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "acme")
+    let seed = LayoutScope(organization: "acme", project: "api", environment: "staging")
+    let adopted = LayoutScope(organization: "acme", project: "api", environment: "staging", lineageRoot: "conv-1")
+    let other = LayoutScope(organization: "acme", project: "web", environment: "staging")
+    let t1 = try writeState(files, seed, "browser-1", "t1")
+    let t2 = try writeState(files, seed, "browser-2", "t2")
+    let elsewhere = try writeState(files, other, "browser-1", "t1")
+
+    files.moveStates(from: seed, to: adopted)
+
+    #expect(!FileManager.default.fileExists(atPath: t1.path))
+    #expect(!FileManager.default.fileExists(atPath: t2.path))
+    let moved = files.stateURL(tab: BrowserOrgFiles.stateKey(scope: adopted, pane: "browser-1", tab: "t1"))
+    #expect(try Data(contentsOf: moved) == Data("t1".utf8))
+    #expect(FileManager.default.fileExists(atPath:
+        files.stateURL(tab: BrowserOrgFiles.stateKey(scope: adopted, pane: "browser-2", tab: "t2")).path))
+    #expect(FileManager.default.fileExists(atPath: elsewhere.path), "another place's state is not touched")
+}
+
+/// I2: a closed pane takes every tab's state with it — the ones never shown this launch too —
+/// and leaves a pane whose id starts the same (`browser-10`) alone.
+@Test func aClosedPaneTakesEveryTabsStateAndOnlyItsOwn() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "acme")
+    let scope = LayoutScope(organization: "acme", project: "api", environment: "staging")
+    let t1 = try writeState(files, scope, "browser-1", "t1")
+    let t2 = try writeState(files, scope, "browser-1", "t2")
+    let ten = try writeState(files, scope, "browser-10", "t1")
+    let elsewhere = try writeState(files, LayoutScope(organization: "acme", project: "web", environment: "staging"),
+                                   "browser-1", "t1")
+
+    files.removeStates(scope: scope, pane: "browser-1")
+
+    #expect(!FileManager.default.fileExists(atPath: t1.path))
+    #expect(!FileManager.default.fileExists(atPath: t2.path))
+    #expect(FileManager.default.fileExists(atPath: ten.path))
+    #expect(FileManager.default.fileExists(atPath: elsewhere.path))
+}

@@ -109,15 +109,50 @@ public struct BrowserOrgFiles: Sendable, Equatable {
     /// conversation (the organisation is the directory already): the same place always names the
     /// same file, across launches, and the name stays short whatever the project key is.
     public static func stateKey(scope: LayoutScope, pane: String, tab: String) -> String {
+        "\(placeDigest(scope)).\(pane).\(tab)"
+    }
+
+    private static func placeDigest(_ scope: LayoutScope) -> String {
         let place = [scope.project, scope.environment, scope.lineageRoot ?? ""].joined(separator: "\u{1F}")
-        let digest = SHA256.hash(data: Data(place.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
-        return "\(digest).\(pane).\(tab)"
+        return SHA256.hash(data: Data(place.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func encoded(_ name: String) -> String {
+        name.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "tab"
     }
 
     /// Where tab `tab`'s state is kept (`tabs/<tab-id>.state`); the id is encoded, so it stays a name.
     public func stateURL(tab: String) -> URL {
-        let name = tab.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "tab"
-        return tabsDirectory.appendingPathComponent("\(name).state")
+        tabsDirectory.appendingPathComponent("\(Self.encoded(tab)).state")
+    }
+
+    /// The state files whose (encoded) name starts with `prefix`, an encoded `stateKey` head.
+    private func stateFiles(prefixed prefix: String) -> [URL] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: tabsDirectory.path)) ?? []
+        return names.filter { $0.hasPrefix(prefix) && $0.hasSuffix(".state") }
+            .map { tabsDirectory.appendingPathComponent($0) }
+    }
+
+    /// A place took a new name — a conversation adopted its canvas, or its project or environment
+    /// was renamed: every tab state kept under the old place's name moves to the new one, so the
+    /// tab's page comes back with its ‹ › history. Best effort: a file that cannot move stays.
+    public func moveStates(from old: LayoutScope, to new: LayoutScope) {
+        let from = Self.encoded("\(Self.placeDigest(old)).")
+        let to = Self.encoded("\(Self.placeDigest(new)).")
+        guard from != to else { return }
+        for url in stateFiles(prefixed: from) {
+            let target = tabsDirectory.appendingPathComponent(to + url.lastPathComponent.dropFirst(from.count))
+            try? FileManager.default.removeItem(at: target)
+            try? FileManager.default.moveItem(at: url, to: target)
+        }
+    }
+
+    /// A closed pane: every one of its tabs' states, the ones never shown this launch too, so a
+    /// later pane given the same id never inherits a page.
+    public func removeStates(scope: LayoutScope, pane: String) {
+        for url in stateFiles(prefixed: Self.encoded("\(Self.placeDigest(scope)).\(pane).")) {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     public func removeState(tab: String) {
