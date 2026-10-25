@@ -118,6 +118,8 @@ public let operatorOnlyActions: Set<String> = [
     // but autosave decides when the operator's files are written, and showing ignored files
     // and the heavy folders decide what search covers; the operator, not the agent, chooses.
     "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+    // 3c-i. Which search engine and start page the operator's browser uses is theirs, as the editor's are.
+    "ctx_set_browser_settings",
     // 3b-viii (Decision 42). Which model reads the operator's code is the operator's choice.
     "ctx_set_local_provider",
     // 3a-iii (Decision 44). Which account pushes for an organisation, and its secrets, are the
@@ -322,6 +324,10 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "avoid. You may READ what is configured: ctx_config_tree reports each database's "
             + "name, driver and Keychain entry name, and never a value. Ask the operator to set "
             + "it in the settings pane (\u{2318},)."
+    case "ctx_set_browser_settings":
+        return "\(toolName): only the operator changes the browser's search engine and start "
+            + "page. You may READ them: ctx_browser_settings answers the settings in force. "
+            + "Ask the operator to change them in the settings pane (\u{2318},)."
     case "ctx_set_editor_settings", "ctx_set_project_editor_settings":
         return "\(toolName): only the operator changes editor settings. Autosave "
             + "decides when their files are written, the font, wrap and tabs are how they read and "

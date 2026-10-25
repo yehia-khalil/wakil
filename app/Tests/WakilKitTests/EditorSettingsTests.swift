@@ -41,6 +41,33 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         #expect(tree.projects.first?.editor == SettingsProjectEditor(tabSize: 2, insertSpaces: false))
     }
 
+    /// 3c-i. The browser tier rides in the same tree; an older answer without it reads as the defaults.
+    @Test func theTreeDecodesTheBrowserTier() throws {
+        func tree(_ extra: String) throws -> SettingsTree {
+            let json = """
+            {"structuredContent":{"org":{"id":"acme","displayName":"","jiraBase":"","defaultProvider":""},
+             "providers":[],"projects":[]\(extra)}}
+            """
+            let value = try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
+            return try #require(decodeSettingsTree(fromResult: value))
+        }
+        #expect(try tree(#","browser":{"searchEngine":"kagi","startPage":"https://example.com"}"#).browser
+            == SettingsBrowser(searchEngine: "kagi", startPage: "https://example.com"))
+        #expect(try tree("").browser == SettingsBrowser.defaults)
+        #expect(SettingsBrowser.defaults == SettingsBrowser(searchEngine: "google", startPage: ""))
+    }
+
+    /// 3c-i. The browser setting is the operator's to write, as its editor twin is; the agent may read it.
+    @Test func theBrowserSettingWriteIsOperatorOnlyAndTheReadIsNot() async throws {
+        let (registry, _) = try await registryWithRecordingContext()
+        let set = try #require(await registry.all().first { $0.name == "ctx_set_browser_settings" })
+        let read = try #require(await registry.all().first { $0.name == "ctx_browser_settings" })
+        #expect(set.audience == .operatorOnly && set.kind == .control)
+        #expect(read.audience == .agentReachable && read.kind == .read)
+        #expect(operatorOnlyActions.contains("ctx_set_browser_settings"))
+        #expect(!operatorOnlyActions.contains("ctx_browser_settings"))
+    }
+
     /// An older wakil-ctx answers no editor keys: the tree still decodes, with the defaults.
     @Test func aTreeWithNoEditorKeysDecodesToTheDefaults() throws {
         let json = """
