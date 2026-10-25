@@ -4,17 +4,23 @@ package wakilcore
 // an environment variable of a stdio server, or an HTTP header of a remote one. A field with
 // neither is only recorded (Datadog's site, Amplitude's region) and shapes the address or the sign-in.
 type ConnectionField struct {
-	ID, Label string
-	Secret    bool
-	Env       string
-	Header    string
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Secret bool   `json:"secret"`
+	Env    string `json:"env,omitempty"`
+	Header string `json:"header,omitempty"`
 }
 
 // ConnectionKind is a ready-made connection the operator picks from a list instead of typing an address.
 type ConnectionKind struct {
-	ID, Title, Transport, Command, URL, SignIn string
-	Args                                       []string
-	Fields                                     []ConnectionField
+	ID        string            `json:"id"`
+	Title     string            `json:"title"`
+	Transport string            `json:"transport"`
+	Command   string            `json:"command,omitempty"`
+	URL       string            `json:"url,omitempty"`
+	SignIn    string            `json:"signIn"`
+	Args      []string          `json:"args,omitempty"`
+	Fields    []ConnectionField `json:"fields"`
 }
 
 // ConnectionCatalog is the ready-made list. "custom" is not an entry: it is Kind "custom" on a

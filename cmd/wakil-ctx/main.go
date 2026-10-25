@@ -182,6 +182,78 @@ type gitSecretArgs struct {
 	Passphrase string `json:"passphrase,omitempty" jsonschema:"the picked key's passphrase"`
 }
 
+// Added by Connections (Task 2): the operator's own MCP servers for an organisation. Every
+// argument set names the organisation in id, as update_org does.
+type connectionAddArgs struct {
+	ID        string            `json:"id" jsonschema:"the organisation's id"`
+	Kind      string            `json:"kind" jsonschema:"a catalog id (github, atlassian, figma, datadog, amplitude, slack) or custom"`
+	Name      string            `json:"name,omitempty" jsonschema:"optional; defaults to the kind, then kind-2, kind-3"`
+	Transport string            `json:"transport,omitempty" jsonschema:"custom only: stdio or http"`
+	URL       string            `json:"url,omitempty" jsonschema:"the address of an http server; a catalog kind has its own"`
+	Command   string            `json:"command,omitempty" jsonschema:"the program of a stdio server; a catalog kind has its own"`
+	Args      []string          `json:"args,omitempty" jsonschema:"the program's arguments"`
+	SignIn    string            `json:"signIn,omitempty" jsonschema:"custom only: token, fields, browser or none (default none)"`
+	Values    map[string]string `json:"values,omitempty" jsonschema:"non-secret field values; a secret field goes through connection_secrets_set"`
+}
+
+type connectionAddOut struct {
+	Name string `json:"name" jsonschema:"the connection's name, as stored"`
+}
+
+type connectionUpdateArgs struct {
+	ID      string            `json:"id" jsonschema:"the organisation's id"`
+	Name    string            `json:"name" jsonschema:"the connection to edit"`
+	NewName *string           `json:"newName,omitempty" jsonschema:"optional new name; the Keychain item moves with it"`
+	URL     *string           `json:"url,omitempty" jsonschema:"optional address; omit to leave unchanged"`
+	Command *string           `json:"command,omitempty" jsonschema:"optional program; omit to leave unchanged"`
+	Args    *[]string         `json:"args,omitempty" jsonschema:"optional arguments, the whole list; omit to leave unchanged"`
+	Values  map[string]string `json:"values,omitempty" jsonschema:"non-secret field values to set; an empty value clears that field"`
+}
+
+type connectionNameArgs struct {
+	ID   string `json:"id" jsonschema:"the organisation's id"`
+	Name string `json:"name" jsonschema:"the connection"`
+}
+
+type connectionSecretsArgs struct {
+	ID     string            `json:"id" jsonschema:"the organisation's id"`
+	Name   string            `json:"name" jsonschema:"the connection"`
+	Values map[string]string `json:"values" jsonschema:"secret field id to value, kept in the Keychain"`
+}
+
+type connectionAllowArgs struct {
+	ID    string `json:"id" jsonschema:"the organisation's id"`
+	Name  string `json:"name" jsonschema:"the connection"`
+	Tool  string `json:"tool" jsonschema:"the server's tool"`
+	Allow bool   `json:"allow" jsonschema:"whether the gate lets it through"`
+}
+
+type connectionCatalogOut struct {
+	Kinds []wakilcore.ConnectionKind `json:"kinds"`
+}
+
+type jiraTokenArgs struct {
+	ID    string `json:"id" jsonschema:"the organisation's id"`
+	Email string `json:"email" jsonschema:"the Atlassian account's email"`
+	Token string `json:"token" jsonschema:"the Atlassian API token"`
+}
+
+// refuseSecretValues refuses a value for a field the catalog marks secret: it must never reach
+// org.json.
+func refuseSecretValues(kind string, values map[string]string) error {
+	for _, k := range wakilcore.ConnectionCatalog {
+		if k.ID != kind {
+			continue
+		}
+		for _, f := range k.Fields {
+			if _, given := values[f.ID]; given && f.Secret {
+				return wakilcore.UserError(f.ID + " is a secret: it goes through connection_secrets_set, not into the record")
+			}
+		}
+	}
+	return nil
+}
+
 type gitDevicePollArgs struct {
 	ID         string `json:"id" jsonschema:"the organisation's id"`
 	Provider   string `json:"provider" jsonschema:"github or gitlab"`
@@ -969,6 +1041,132 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "git_token_set", Description: "Keep an organisation's token for one host in the Keychain."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a gitSecretArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.SetGitToken(a.ID, a.Host, a.Token); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_catalog", Description: "The ready-made connections an operator can pick from: id, title, transport, address, sign-in and the fields each asks for (a secret field is marked; its value is never here)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, connectionCatalogOut, error) {
+			return nil, connectionCatalogOut{Kinds: wakilcore.ConnectionCatalog}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_add", Description: "Add one of an organisation's own MCP servers behind Wakil's gate. A catalog kind fills transport, address, command and sign-in itself; custom needs a transport and a url (http) or a command (stdio). Answers the name it was stored under."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionAddArgs) (*mcp.CallToolResult, connectionAddOut, error) {
+			c := wakilcore.MCPConnection{Name: a.Name, Kind: a.Kind, URL: a.URL, Command: a.Command, Args: a.Args}
+			if err := refuseSecretValues(a.Kind, a.Values); err != nil {
+				return toolErr(err), connectionAddOut{}, nil
+			}
+			if len(a.Values) > 0 {
+				c.Values = a.Values
+			}
+			if a.Kind == "custom" {
+				c.Transport, c.SignIn = a.Transport, a.SignIn
+				if c.SignIn == "" {
+					c.SignIn = "none"
+				}
+				if c.Transport == "" {
+					return toolErr(wakilcore.UserError("a custom connection needs a transport, stdio or http")), connectionAddOut{}, nil
+				}
+				if c.URL == "" && c.Command == "" {
+					return toolErr(wakilcore.UserError("a custom connection needs a url or a command")), connectionAddOut{}, nil
+				}
+			} else {
+				var kind *wakilcore.ConnectionKind
+				for i := range wakilcore.ConnectionCatalog {
+					if wakilcore.ConnectionCatalog[i].ID == a.Kind {
+						kind = &wakilcore.ConnectionCatalog[i]
+					}
+				}
+				if kind == nil {
+					return toolErr(wakilcore.UserError("unknown connection kind " + a.Kind)), connectionAddOut{}, nil
+				}
+				c.Transport, c.SignIn = kind.Transport, kind.SignIn
+				if c.URL == "" {
+					c.URL = kind.URL
+				}
+				if c.Command == "" {
+					c.Command = kind.Command
+				}
+				if len(c.Args) == 0 {
+					c.Args = kind.Args
+				}
+			}
+			added, err := wakilcore.AddConnection(a.ID, c)
+			if err != nil {
+				return toolErr(err), connectionAddOut{}, nil
+			}
+			return nil, connectionAddOut{Name: added.Name}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_update", Description: "Change a connection's name, address, command, arguments or non-secret field values, leaving the rest as it is. A rename moves its Keychain item. A secret field is refused here: it goes through connection_secrets_set."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionUpdateArgs) (*mcp.CallToolResult, empty, error) {
+			c, ok := wakilcore.ConnectionFor(a.ID, a.Name)
+			if !ok {
+				return toolErr(wakilcore.UserError("no connection " + a.Name + " in " + a.ID)), empty{}, nil
+			}
+			if err := refuseSecretValues(c.Kind, a.Values); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			if err := wakilcore.UpdateConnection(a.ID, a.Name, func(c *wakilcore.MCPConnection) {
+				if a.NewName != nil {
+					c.Name = *a.NewName
+				}
+				if a.URL != nil {
+					c.URL = *a.URL
+				}
+				if a.Command != nil {
+					c.Command = *a.Command
+				}
+				if a.Args != nil {
+					c.Args = *a.Args
+				}
+				for k, v := range a.Values {
+					if v == "" {
+						delete(c.Values, k)
+						continue
+					}
+					if c.Values == nil {
+						c.Values = map[string]string{}
+					}
+					c.Values[k] = v
+				}
+			}); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_remove", Description: "Forget a connection and delete its Keychain item."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionNameArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.RemoveConnection(a.ID, a.Name); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_secrets_set", Description: "Keep a connection's secret field values in the Keychain, merged with what is already there."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionSecretsArgs) (*mcp.CallToolResult, empty, error) {
+			if _, ok := wakilcore.ConnectionFor(a.ID, a.Name); !ok {
+				return toolErr(wakilcore.UserError("no connection " + a.Name + " in " + a.ID)), empty{}, nil
+			}
+			if err := wakilcore.SetConnectionSecrets(a.ID, a.Name, a.Values); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_allow_set", Description: "Switch one of a connection's tools on or off at the gate. A destructive tool stays off and is refused."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionAllowArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetConnectionAllow(a.ID, a.Name, a.Tool, a.Allow); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "jira_token_set", Description: "Keep an organisation's Jira sign-in (Atlassian email and API token) in the Keychain."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a jiraTokenArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SetJiraToken(a.ID, a.Email, a.Token); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

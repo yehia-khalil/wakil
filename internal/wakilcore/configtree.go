@@ -33,6 +33,102 @@ type ConfigTreeOrg struct {
 	AgentGeneral          string `json:"agentGeneral"`
 	GitCommitInstructions string `json:"gitCommitInstructions"`
 	GitPRInstructions     string `json:"gitPRInstructions"`
+	// Connections: the organisation's own MCP servers (no secrets), and whether the Jira token
+	// (jira:<org>) is in the Keychain — presence only.
+	Connections     []ConfigTreeConnection `json:"connections"`
+	JiraTokenStored bool                   `json:"jiraTokenStored"`
+}
+
+// ConfigTreeConnectionField is one value a connection asks for. Secret says the pane draws a
+// masked field that writes through connection_secrets_set; the value of a secret never travels.
+type ConfigTreeConnectionField struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Secret bool   `json:"secret"`
+}
+
+// ConfigTreeConnection is one connection as the tree draws it. Values holds only the non-secret
+// field values; SignedIn is whether its Keychain item holds a sign-in (for browser sign-in, an
+// access token).
+type ConfigTreeConnection struct {
+	Name      string                      `json:"name"`
+	Kind      string                      `json:"kind"`
+	Title     string                      `json:"title"`
+	Transport string                      `json:"transport"`
+	URL       string                      `json:"url"`
+	Command   string                      `json:"command"`
+	SignIn    string                      `json:"signIn"`
+	Values    map[string]string           `json:"values"`
+	Fields    []ConfigTreeConnectionField `json:"fields"`
+	Allow     map[string]bool             `json:"allow"`
+	Hints     map[string]string           `json:"hints"`
+	SignedIn  bool                        `json:"signedIn"`
+}
+
+// configTreeConnections draws org's connections. Nothing here returns a secret: SignedIn is a
+// presence check and the fields are labels.
+func configTreeConnections(org string, conns []MCPConnection) []ConfigTreeConnection {
+	out := []ConfigTreeConnection{}
+	for _, c := range conns {
+		row := ConfigTreeConnection{
+			Name: c.Name, Kind: c.Kind, Title: c.Kind, Transport: c.Transport, URL: c.URL,
+			Command: c.Command, SignIn: c.SignIn,
+			Values: map[string]string{}, Fields: []ConfigTreeConnectionField{},
+			Allow: map[string]bool{}, Hints: map[string]string{},
+		}
+		for k, v := range c.Values {
+			row.Values[k] = v
+		}
+		for k, v := range c.Allow {
+			row.Allow[k] = v
+		}
+		for k, v := range c.Hints {
+			row.Hints[k] = v
+		}
+		if kind, ok := connectionKindOf(c.Kind); ok {
+			row.Title = kind.Title
+			for _, f := range kind.Fields {
+				row.Fields = append(row.Fields, ConfigTreeConnectionField{ID: f.ID, Label: f.Label, Secret: f.Secret})
+			}
+		}
+		row.SignedIn = connectionSignedIn(org, c)
+		out = append(out, row)
+	}
+	return out
+}
+
+// connectionKindOf is the catalog entry with this id; "custom" has none.
+func connectionKindOf(id string) (ConnectionKind, bool) {
+	for _, k := range ConnectionCatalog {
+		if k.ID == id {
+			return k, true
+		}
+	}
+	return ConnectionKind{}, false
+}
+
+// connectionSignedIn is whether the connection's Keychain item is there and says something: any
+// stored secret, or for browser sign-in an access token. A sign-in of none is never signed in.
+func connectionSignedIn(org string, c MCPConnection) bool {
+	if c.SignIn == "none" {
+		return false
+	}
+	if p, err := SecretPresenceFor(org, connectionRef(c.Name)); err != nil || !p.Present {
+		return false
+	}
+	secrets, err := ConnectionSecrets(org, c.Name)
+	if err != nil {
+		return false
+	}
+	if c.SignIn == "browser" {
+		return secrets["access"] != ""
+	}
+	for _, v := range secrets {
+		if v != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // ConfigTreeProvider is a provider binding as the settings tree draws it.
@@ -229,6 +325,10 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 	tree.Org.AgentGeneral = record.AgentGeneral
 	tree.Org.GitCommitInstructions = record.GitCommitInstructions
 	tree.Org.GitPRInstructions = record.GitPRInstructions
+	tree.Org.Connections = configTreeConnections(org, record.Connections)
+	if p, err := SecretPresenceFor(org, jiraTokenRef(org)); err == nil {
+		tree.Org.JiraTokenStored = p.Present
+	}
 	tree.Org.GitSignIn = []string{}
 	for _, p := range []string{"github", "gitlab"} {
 		if SignInProviders()[p] {
@@ -320,7 +420,7 @@ func configTreeProject(name, path string, project *Project) ConfigTreeProject {
 
 func emptyConfigTree(org string) ConfigTree {
 	return ConfigTree{
-		Org:       ConfigTreeOrg{ID: org},
+		Org:       ConfigTreeOrg{ID: org, Connections: []ConfigTreeConnection{}},
 		Providers: []ConfigTreeProvider{},
 		Projects:  []ConfigTreeProject{},
 		Editor:    EditorAppSettings{}.Resolved(),
