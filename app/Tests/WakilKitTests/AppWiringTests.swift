@@ -238,7 +238,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "api_render_curl", "api_reopen", "api_request", "api_send", "api_set_entry",
              "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
              "capacity_record", "ctx_add_provider", "ctx_adopt_provider", "ctx_capacity",
-             "ctx_config_tree", "ctx_create_environment", "ctx_create_org", "ctx_create_project",
+             "ctx_config_tree", "ctx_config_tree_for", "ctx_create_environment", "ctx_create_org", "ctx_create_project",
              "ctx_editor_settings", "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
              "ctx_git_device_start", "ctx_git_gh_import", "ctx_git_gh_logins", "ctx_git_host_suggestions",
              "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set", "ctx_list_accounts",

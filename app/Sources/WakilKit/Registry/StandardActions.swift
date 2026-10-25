@@ -617,18 +617,35 @@ public func registerStandardActions(
             + "no credential value ever is.",
         kind: .read,
         audience: .agentReachable,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            try await readConfigTree(context)
+        }
+    ))
+
+    // The same tree for a NAMED organisation, for the app's own launch read (a session launching
+    // in an organisation other than the window's active one learns that organisation's
+    // connections). **Operator-only**, because it is the one read that crosses the organisation
+    // boundary (Invariant 4): the agent reads the active organisation's tree through
+    // `ctx_config_tree` and nothing else's.
+    await registry.register(Action(
+        name: "ctx_config_tree_for",
+        description: "Read one named organisation's whole configuration, as ctx_config_tree reads "
+            + "the active one's. Operator-only.",
+        kind: .read,
+        audience: .operatorOnly,
         schema: .object([
             "type": .string("object"),
-            "properties": .object([
-                "id": .object([
-                    "type": .string("string"),
-                    "description": .string("Read this organisation's configuration instead of the active one."),
-                ])
-            ]),
+            "properties": .object(["id": .object(["type": .string("string")])]),
+            "required": .array([.string("id")]),
         ]),
         handler: { params in
-            var id: String?
-            if case .object(let o) = params, case .string(let s)? = o["id"], !s.isEmpty { id = s }
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_config_tree_for", role: "context")
+            }
+            guard case .object(let o) = params, case .string(let id)? = o["id"], !id.isEmpty else {
+                throw StandardActionError.missingParam(action: "ctx_config_tree_for", param: "id")
+            }
             return try await readConfigTree(context, organisation: id)
         }
     ))

@@ -128,6 +128,45 @@ private let initech = Place(organization: "initech", project: "api", environment
     #expect(allowed == agentAllowedTools(actions: []))
 }
 
+// MARK: - Invariant 4: another organisation's tree is not the agent's
+
+/// A context client that records the `config_tree` arguments it is asked with.
+private actor TreeClient: ToolCaller {
+    var asked: [JSONValue] = []
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        asked.append(arguments)
+        return .object(["structuredContent": .object(["org": .object(["id": .string("initech")])])])
+    }
+}
+
+@Test func anAgentCannotReadAnotherOrganisationsTree() async throws {
+    let client = TreeClient()
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "s1")
+    await registerStandardActions(into: registry, context: client, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    #expect(operatorOnlyActions.contains("ctx_config_tree_for"))
+
+    // The agent's route to an action is `permissionDecision`, which refuses what is operator-only.
+    let decision = permissionDecision(
+        toolName: "mcp__\(wakilShimServerName)__ctx_config_tree_for", knownActions: ["ctx_config_tree_for"])
+    guard case .deny = decision else {
+        Issue.record("an agent must not reach ctx_config_tree_for, got \(decision)")
+        return
+    }
+
+    // The agent-facing read ignores an id: it asks for the active organisation's tree.
+    _ = try await registry.dispatch(
+        name: "ctx_config_tree", params: .object(["id": .string("umbrella")]), origin: .agent,
+        caller: .test("staging"), confirmation: nil)
+    #expect(await client.asked == [.object([:])])
+
+    // The operator's read passes the id on.
+    _ = try await registry.dispatch(
+        name: "ctx_config_tree_for", params: .object(["id": .string("umbrella")]), origin: .ui,
+        caller: .test("staging"), confirmation: nil)
+    #expect(await client.asked.last == .object(["id": .string("umbrella")]))
+}
+
 // MARK: - The first launch in an organisation
 
 @Suite @MainActor struct AgentConnectionsLaunchTests {
@@ -149,7 +188,7 @@ private let initech = Place(organization: "initech", project: "api", environment
         let model = WindowModel.forTesting(scratchRoot: testScratchRoot, harnessFactory: { _, _ in RecordingHarness() })
         model.agentConnectionsBox = box
         await model.registryForTesting.register(Action(
-            name: "ctx_config_tree", description: "", kind: .read, schema: .object([:]), handler: handler))
+            name: "ctx_config_tree_for", description: "", kind: .read, schema: .object([:]), handler: handler))
         return model
     }
 

@@ -100,6 +100,8 @@ public let operatorOnlyActions: Set<String> = [
     // An agent's place is fixed when its session starts (Invariant 5); only the operator moves it.
     "ctx_set_project", "ctx_set_environment",
     "ctx_list_orgs", "ctx_create_org",
+    // Another organisation's whole configuration: the app's launch read, never the agent's.
+    "ctx_config_tree_for",
     "ctx_list_machine_providers", "ctx_adopt_provider",
     // 2e (#200). `ctx_list_accounts` is the settings pane's account
     // table, and it joins the weaker case above rather than a new one: it
@@ -270,7 +272,7 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator adds and removes an organisation's git accounts: "
             + "they decide which account pushes and hold its secrets. Ask the operator "
             + "to do it in Settings → Organisation → Git (\u{2318},)."
-    case "ctx_list_orgs", "ctx_list_machine_providers", "ctx_list_accounts":
+    case "ctx_list_orgs", "ctx_list_machine_providers", "ctx_list_accounts", "ctx_config_tree_for":
         return "\(toolName): this session is scoped to one organisation. Enumerating every "
             + "organisation and config dir on this machine is not something a session scoped "
             + "to one org has any business doing. Ask the operator to do it in the Wakil "

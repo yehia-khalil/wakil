@@ -2402,7 +2402,7 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
     // covers `registerStandardActions` alone.
     #expect(await r.all().map(\.name).sorted() ==
             ["api_remove_entry", "api_set_entry", "api_update_entry",
-             "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_environment",
+             "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_config_tree_for", "ctx_create_environment",
              "ctx_create_org", "ctx_create_project", "ctx_editor_settings",
              "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
              "ctx_git_device_start", "ctx_git_gh_import", "ctx_git_gh_logins", "ctx_git_host_suggestions",
@@ -2746,6 +2746,7 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         // handler that checked params before its client would still be
         // caught rather than accidentally satisfied.
         "ctx_list_orgs": .object([:]),
+        "ctx_config_tree_for": .object(["id": .string("umbrella")]),
         "ctx_create_org": .object(["id": .string("newco")]),
         "ctx_adopt_provider": .object([
             "org": .string("acme"), "id": .string("work"),

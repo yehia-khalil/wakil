@@ -65,18 +65,18 @@ extension WindowModel {
         let registry = self.registry
         let read = Task<JSONValue?, Never> {
             try? await registry.dispatch(
-                name: "ctx_config_tree", params: .object(["id": .string(org)]), origin: .ui,
+                name: "ctx_config_tree_for", params: .object(["id": .string(org)]), origin: .ui,
                 caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        }
+        let timeout = agentConnectionsReadTimeout
+        let timer = Task {
+            try? await Task.sleep(for: timeout)
+            if !Task.isCancelled { read.cancel() }
         }
         let result = await withCheckedContinuation { (continuation: CheckedContinuation<JSONValue?, Never>) in
             let once = ResumeOnce(continuation)
-            Task { once.resume(await read.value) }
-            let timeout = agentConnectionsReadTimeout
-            Task {
-                try? await Task.sleep(for: timeout)
-                read.cancel()
-                once.resume(nil)
-            }
+            Task { once.resume(await read.value); timer.cancel() }
+            Task { _ = await timer.value; once.resume(nil) }
         }
         guard let tree = decodeSettingsTree(fromResult: result), tree.org.id == org else { return }
         agentConnectionsBox.set(org: org, connections: tree.org.connections)

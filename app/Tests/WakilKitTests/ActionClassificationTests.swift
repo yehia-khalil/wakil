@@ -123,7 +123,7 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "api_remove_entry", "api_set_entry", "api_update_entry",
             // Provider capacity: the agent may not forge a reading.
             "capacity_record",
-            "ctx_add_provider", "ctx_adopt_provider", "ctx_create_environment", "ctx_create_org",
+            "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree_for", "ctx_create_environment", "ctx_create_org",
             "ctx_create_project",
             // 3a-iii-a (Decision 44): an organisation's git accounts and their secrets are the operator's.
             "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
