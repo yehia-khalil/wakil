@@ -123,6 +123,15 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 `ClaudeExecutableTests`, `ClaudeLocatorTests`, `OrgListingsTests`, `SurfaceChainTests`,
 `ThreadDisclosureTests`.
 
+### Browser/ — the browser pane's logic
+
+- `BrowserAddress.swift` — `BrowserAddress` (3c-i): the pure rule that turns typed text into a URL or a
+  search (`resolve`, with the settings' search engine), `isSecure` (https, file, loopback http) and
+  `displayHost` (host without `www.`, or a file's name). Later tasks extend this section.
+
+Uses: nothing but `Core` (and Foundation).
+Tests: `BrowserAddressTests`.
+
 ### Command/ — the ⌘K and ⌘P palettes
 
 The palettes' state machine and their lists, pure so the window only feeds keys and acts on effects.
