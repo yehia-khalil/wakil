@@ -457,7 +457,7 @@ struct BrowserPane: View {
     /// else holds the keyboard. Read live: this is often run a turn after it was asked.
     private func focusPage() {
         guard mayTakeKeyboard(), let tab = liveActiveTab() else { return }
-        host.focusPage(scope: scope, pane: pane.id, tab: tab)
+        host.focusPage(scope: scope, pane: pane.id, tab: tab, mayTakeKeyboard: mayTakeKeyboard, activeTab: liveActiveTab)
     }
 
     private func send(_ action: String, _ params: [String: JSONValue]) {

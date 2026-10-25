@@ -318,17 +318,22 @@ final class BrowserTabHost {
     // MARK: Keyboard
 
     /// The page takes the keyboard. A web view made this turn may not be in the window yet; it is
-    /// waited for, twenty tries a frame apart, as the editor's does.
-    func focusPage(scope: LayoutScope, pane: String, tab: String, tries: Int = 20) {
-        guard let view = existing(scope: scope, pane: pane, tab: tab) else { return }
-        guard let window = view.window else {
-            guard tries > 0 else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.focusPage(scope: scope, pane: pane, tab: tab, tries: tries - 1)
-            }
-            return
-        }
-        window.makeFirstResponder(view)
+    /// waited for, twenty tries a frame apart, as the editor's does — and before every try the pane
+    /// is asked again whether it may still take the keyboard and `tab` is still its active tab
+    /// (Rule 6, `browserRetryFocus`); once not, the focus is given up quietly.
+    func focusPage(scope: LayoutScope, pane: String, tab: String,
+                   mayTakeKeyboard: @escaping @MainActor () -> Bool,
+                   activeTab: @escaping @MainActor () -> String?) {
+        browserRetryFocus(
+            tries: 20,
+            stillWanted: { mayTakeKeyboard() && activeTab() == tab },
+            attempt: { [weak self] in
+                guard let view = self?.existing(scope: scope, pane: pane, tab: tab) else { return true }
+                guard let window = view.window else { return false }
+                window.makeFirstResponder(view)
+                return true
+            },
+            schedule: { next in DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { next() } })
     }
 
     /// The pane gives the keyboard up when one of its web views holds it.
