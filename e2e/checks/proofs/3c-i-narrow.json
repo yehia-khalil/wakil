@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3c-i-narrow.jsonl",
+  "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
+  "provedAt": "2026-10-25T20:09:39.584493Z",
+  "checkBlob": "8158ee59d5d8b1aa3502b10731adfb17cf75f05d"
+}

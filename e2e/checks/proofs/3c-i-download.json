@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3c-i-download.jsonl",
+  "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
+  "provedAt": "2026-10-25T20:09:39.584493Z",
+  "checkBlob": "efa9196353ea8d953a87b95bac47a88a1e6e1968"
+}
