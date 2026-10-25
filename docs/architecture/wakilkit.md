@@ -128,9 +128,20 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 - `BrowserAddress.swift` — `BrowserAddress` (3c-i): the pure rule that turns typed text into a URL or a
   search (`resolve`, with the settings' search engine), `isSecure` (https, file, loopback http) and
   `displayHost` (host without `www.`, or a file's name). Later tasks extend this section.
+- `BrowserSnapshot.swift` — `BrowserSnapshot` (tabs, `active` id, `find`, `downloads`, the ⌘⇧T
+  `closed` stack, `nextTab` for `"t<n>"` ids), `BrowserTab` (with `loaded`, false until its web view has
+  fetched, and `command`, the latest `BrowserCommand` for the host to apply), `BrowserFind`,
+  `BrowserDownload` and `BrowserPageReport`, what a web view reports.
+- `BrowserPaneKind.swift` — `BrowserPaneKind` (`browser`): contents are the snapshot, `failure` is the
+  active tab's, `readPane` gives tabs, address, title, loading, history, zoom, find and downloads, never
+  page text; `PaneRestorable` restores saved tabs through `browser_restore`.
+- `PaneStore+Browser.swift` — `browserSnapshot`, `updateBrowser` (the `updateEditor` shape),
+  `browserRestore` (keeps the saved ids, loads only the active tab), and **the seam** the web view
+  reports through: `browserPageDidReport`, `browserFindDidReport`, `browserDownloadDidChange`,
+  `browserPageOpenedTab`. The seam never creates a pane and never issues a command.
 
-Uses: nothing but `Core` (and Foundation).
-Tests: `BrowserAddressTests`.
+Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`), `Panes` (`PaneKind`, `PaneStore`).
+Tests: `BrowserAddressTests`, `BrowserStoreTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 

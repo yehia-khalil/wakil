@@ -10,6 +10,7 @@ enum PaneKinds {
         ApiPaneKind.self,
         SettingsPaneKind.self,
         EditorPaneKind.self,
+        BrowserPaneKind.self,
     ]
 
     static func kind(named name: String) -> (any PaneKind.Type)? {
