@@ -1488,7 +1488,14 @@ func TestConnectionToolsRoundTrip(t *testing.T) {
 		t.Fatalf("fields %+v", conns[0].Fields)
 	}
 
+	callOK(t, ctx, cs, "connection_secrets_set", map[string]any{"id": "initech", "name": "datadog", "values": map[string]any{"apiKey": "k-1"}})
 	callOK(t, ctx, cs, "connection_update", map[string]any{"id": "initech", "name": "datadog", "newName": "dd", "values": map[string]any{"site": "datadoghq.com"}})
+	if got, err := wakilcore.ConnectionSecrets("initech", "dd"); err != nil || got["apiKey"] != "k-1" {
+		t.Fatalf("the secret did not move to conn:dd: %v %v", got, err)
+	}
+	if got, err := wakilcore.ConnectionSecrets("initech", "datadog"); err != nil || len(got) != 0 {
+		t.Fatalf("conn:datadog is still there: %v %v", got, err)
+	}
 	callOK(t, ctx, cs, "connection_allow_set", map[string]any{"id": "initech", "name": "dd", "tool": "search_logs", "allow": true})
 	tree, _ = treeOf(t, ctx, cs)
 	conns = tree.Org.Connections

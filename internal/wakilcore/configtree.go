@@ -113,9 +113,6 @@ func connectionSignedIn(org string, c MCPConnection) bool {
 	if c.SignIn == "none" {
 		return false
 	}
-	if p, err := SecretPresenceFor(org, connectionRef(c.Name)); err != nil || !p.Present {
-		return false
-	}
 	secrets, err := ConnectionSecrets(org, c.Name)
 	if err != nil {
 		return false
