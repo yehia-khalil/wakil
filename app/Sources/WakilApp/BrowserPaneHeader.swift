@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 import WakilKit
 
-/// How much of the tab list a browser pane's width leaves room for (3c-i): the whole list from
-/// 640 pt, its favicons alone from 420 pt, and below that none — the header's tab count becomes
-/// the list, as a menu.
+/// How much of the tab strip a browser pane's width leaves room for (3c-i): whole entries from
+/// 640 pt, entries shrunk to favicon and × from 420 pt, and below that none — the header's tab
+/// count becomes the list, as a menu.
 enum BrowserTabListMode: Equatable {
     case full, folded, hidden
 
@@ -12,10 +12,12 @@ enum BrowserTabListMode: Equatable {
         self = paneWidth < 420 ? .hidden : paneWidth < 640 ? .folded : .full
     }
 
-    var width: CGFloat {
+    /// One entry's fixed width in the strip (`Browser.dc.html`'s `.tab`, 188–232 px wide; folded,
+    /// the tick, the favicon and the × slot with the row's own padding and gaps).
+    var entryWidth: CGFloat {
         switch self {
-        case .full: 176
-        case .folded: 34
+        case .full: BrowserPaneStyle.tabWidth
+        case .folded: BrowserPaneStyle.tabFoldedWidth
         case .hidden: 0
         }
     }
@@ -47,8 +49,15 @@ enum BrowserPaneStyle {
     static let tabTrailing: CGFloat = 11
     static let tabGap: CGFloat = 9
     static let tabRadius: CGFloat = 5
-    /// Whitespace between entries, never a rule: the rail's own 2 pt (`Browser.dc.html` rail).
-    static let tabSpacing: CGFloat = 2
+    /// Whitespace between entries, never a rule: the strip's `gap: 4px`.
+    static let tabSpacing: CGFloat = 4
+    /// A whole entry's width (the mockup's 188–232 px, one width so entries do not jump), and a
+    /// folded one's: 9 + tick 2 + 9 + favicon 12 + 9 + × 16 + 11.
+    static let tabWidth: CGFloat = 200
+    static let tabFoldedWidth: CGFloat = 68
+    /// The trailing ＋ entry, `.tab { padding: 0 10px }` round a 13 px plus.
+    static let newTabPadding: CGFloat = 10
+    static let newTabGlyph: CGFloat = 12
     /// `.tab.on { background: rgba(232,236,246,0.06) }` — the editor strip's active tab's lift.
     static let tabOnFill: Double = 0.06
     /// `.tab:hover`: the rail's row lift (`Rail.dc.html` state 3).
@@ -204,24 +213,27 @@ struct BrowserHeader<Address: View>: View {
     }
 }
 
-/// The vertical tab list (`Browser.dc.html`'s `.tab`, in the rail's language): no tab shapes and no
-/// rules, whitespace between entries; favicon, title, × on hover; the active tab lifted and carrying
-/// the rail's tick (`LuminousTick`).
+/// The tab strip (`Browser.dc.html`'s `.tab`, in the rail's language): a row of fixed-width
+/// entries, no tab shapes and no rules, whitespace between them; tick, favicon, title, × on hover;
+/// the active entry lifted and carrying the rail's tick (`LuminousTick`); a trailing ＋ (⌘T's
+/// `browser_new_tab`). Folded, an entry is its favicon and ×; more entries than fit scroll sideways.
 struct BrowserTabList: View {
     let snapshot: BrowserSnapshot
     let mode: BrowserTabListMode
     let favicon: (String) -> NSImage?
     let dispatch: (String, [String: JSONValue]) -> Void
     @State private var hovered: String?
+    @State private var newTabHovered = false
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: BrowserPaneStyle.tabSpacing) {
+        ScrollView(.horizontal) {
+            HStack(spacing: BrowserPaneStyle.tabSpacing) {
                 ForEach(snapshot.tabs, id: \.id) { tab in row(tab) }
+                newTab
             }
         }
         .scrollIndicators(.never)
-        .frame(width: mode.width)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser.tabs")
     }
@@ -229,43 +241,35 @@ struct BrowserTabList: View {
     private func row(_ tab: BrowserTab) -> some View {
         let active = tab.id == snapshot.active
         let lifted = hovered == tab.id
-        let tick = LuminousTick(
-            colour: active ? BrowserPaneStyle.tick : nil, height: BrowserPaneStyle.tickHeight,
-            glowRadius: BrowserPaneStyle.tickGlowRadius)
         return HStack(spacing: BrowserPaneStyle.tabGap) {
+            LuminousTick(
+                colour: active ? BrowserPaneStyle.tick : nil, height: BrowserPaneStyle.tickHeight,
+                glowRadius: BrowserPaneStyle.tickGlowRadius)
+            BrowserFavicon(image: favicon(tab.id))
             if mode == .full {
-                tick
-                BrowserFavicon(image: favicon(tab.id))
                 Text(browserTabLabel(tab))
                     .font(.system(size: BrowserPaneStyle.tabTitleSize))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundStyle(BrowserPaneStyle.text.opacity(active ? 1 : BrowserPaneStyle.tabTitleRest))
-                Spacer(minLength: 0)
-                if lifted {
-                    Button { dispatch("browser_close_tab", ["tab": .string(tab.id)]) } label: {
-                        Image(systemName: "xmark").font(.system(size: BrowserPaneStyle.closeGlyph, weight: .semibold))
-                            .frame(width: BrowserPaneStyle.closeHit, height: BrowserPaneStyle.closeHit)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(ChangesIconButtonStyle())
-                    .transition(.opacity)
-                    .accessibilityLabel("Close \(browserTabLabel(tab))")
-                    .accessibilityIdentifier("browser.tab.\(tab.id).close")
+            }
+            Spacer(minLength: 0)
+            if lifted {
+                Button { dispatch("browser_close_tab", ["tab": .string(tab.id)]) } label: {
+                    Image(systemName: "xmark").font(.system(size: BrowserPaneStyle.closeGlyph, weight: .semibold))
+                        .frame(width: BrowserPaneStyle.closeHit, height: BrowserPaneStyle.closeHit)
+                        .contentShape(Rectangle())
                 }
-            } else {
-                BrowserFavicon(image: favicon(tab.id))
+                .buttonStyle(ChangesIconButtonStyle())
+                .transition(.opacity)
+                .accessibilityLabel("Close \(browserTabLabel(tab))")
+                .accessibilityIdentifier("browser.tab.\(tab.id).close")
             }
         }
-        .padding(.leading, mode == .full ? BrowserPaneStyle.tabLeading : 0)
-        .padding(.trailing, mode == .full ? BrowserPaneStyle.tabTrailing : 0)
-        .frame(maxWidth: .infinity, minHeight: BrowserPaneStyle.tabHeight, alignment: mode == .full ? .leading : .center)
-        // Folded to favicons, the tick keeps the row's leading edge, as the rail's does.
-        .overlay(alignment: .leading) { if mode != .full { tick.padding(.leading, 2) } }
-        .background(
-            RoundedRectangle(cornerRadius: BrowserPaneStyle.tabRadius, style: .continuous)
-                .fill(BrowserPaneStyle.text.opacity(
-                    active ? BrowserPaneStyle.tabOnFill : (lifted ? BrowserPaneStyle.tabHoverFill : 0))))
+        .padding(.leading, BrowserPaneStyle.tabLeading)
+        .padding(.trailing, BrowserPaneStyle.tabTrailing)
+        .frame(width: mode.entryWidth, height: BrowserPaneStyle.tabHeight, alignment: .leading)
+        .background(entryFill(active ? BrowserPaneStyle.tabOnFill : (lifted ? BrowserPaneStyle.tabHoverFill : 0)))
         .animation(.easeOut(duration: BrowserPaneStyle.hoverDuration), value: lifted)
         .contentShape(Rectangle())
         .onTapGesture { dispatch("browser_select_tab", ["tab": .string(tab.id)]) }
@@ -276,6 +280,30 @@ struct BrowserTabList: View {
         .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { dispatch("browser_select_tab", ["tab": .string(tab.id)]) }
         .accessibilityIdentifier("browser.tab.\(tab.id)")
+    }
+
+    /// The strip's trailing ＋: ⌘T's `browser_new_tab`, drawn as a narrow entry.
+    private var newTab: some View {
+        Button { dispatch("browser_new_tab", [:]) } label: {
+            Image(systemName: "plus")
+                .font(.system(size: BrowserPaneStyle.newTabGlyph))
+                .foregroundStyle(BrowserPaneStyle.text.opacity(newTabHovered ? 1 : BrowserPaneStyle.tabTitleRest))
+                .padding(.horizontal, BrowserPaneStyle.newTabPadding)
+                .frame(height: BrowserPaneStyle.tabHeight)
+                .background(entryFill(newTabHovered ? BrowserPaneStyle.tabHoverFill : 0))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(.easeOut(duration: BrowserPaneStyle.hoverDuration), value: newTabHovered)
+        .onHover { newTabHovered = $0 }
+        .help("New Tab")
+        .accessibilityLabel("New Tab")
+        .accessibilityIdentifier("browser.newTab")
+    }
+
+    private func entryFill(_ opacity: Double) -> some View {
+        RoundedRectangle(cornerRadius: BrowserPaneStyle.tabRadius, style: .continuous)
+            .fill(BrowserPaneStyle.text.opacity(opacity))
     }
 }
 

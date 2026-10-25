@@ -3,8 +3,8 @@ import SwiftUI
 import WakilKit
 import WebKit
 
-/// The browser pane (3c-i): a header with ‹ › ↻ and the address field, the vertical tab list, and
-/// the active tab's page.
+/// The browser pane (3c-i): the tab strip, a header with ‹ › ↻ and the address field, and the
+/// active tab's page.
 ///
 /// **The pane holds no page state.** What it draws is the store's snapshot; every control is a
 /// `browser_*` action (Invariant 2); the web views are the window's (`BrowserTabHost`), which applies
@@ -44,22 +44,21 @@ struct BrowserPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // `Browser.dc.html`'s order: the tab strip, the address row beneath it, then the page.
+            // Whitespace between them all — no rules.
+            if listMode != .hidden {
+                BrowserTabList(
+                    snapshot: snapshot, mode: listMode,
+                    favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
+                    dispatch: send)
+                    .padding(.bottom, BrowserPaneStyle.gap)
+            }
             BrowserHeader(tab: active, tabs: snapshot.tabs, listMode: listMode, dispatch: send) { addressField }
             progressLine
-            // Whitespace between the list, the find bar, the page and the downloads — no rules
-            // (`Browser.dc.html`: the tabs in the rail's language).
-            HStack(alignment: .top, spacing: BrowserPaneStyle.gap) {
-                if listMode != .hidden {
-                    BrowserTabList(
-                        snapshot: snapshot, mode: listMode,
-                        favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
-                        dispatch: send)
-                }
-                VStack(spacing: BrowserPaneStyle.gap) {
-                    if let find = snapshot.find { findBar(find) }
-                    pageArea
-                        .clipShape(RoundedRectangle(cornerRadius: BrowserPaneStyle.pageRadius, style: .continuous))
-                }
+            VStack(spacing: BrowserPaneStyle.gap) {
+                if let find = snapshot.find { findBar(find) }
+                pageArea
+                    .clipShape(RoundedRectangle(cornerRadius: BrowserPaneStyle.pageRadius, style: .continuous))
             }
             if !snapshot.downloads.isEmpty {
                 BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
