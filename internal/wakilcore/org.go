@@ -59,6 +59,10 @@ type Org struct {
 	// rebase (the default when empty), merge or ff-only.
 	GitAccounts  []GitAccount `json:"gitAccounts,omitempty"`
 	PullStrategy string       `json:"pullStrategy,omitempty"`
+
+	// Connections are the operator's own MCP servers for this organisation, behind Wakil's gate
+	// (see connections.go); their secrets are in the Keychain, never here.
+	Connections []MCPConnection `json:"connections,omitempty"`
 	// LastCloneFolder is the folder the operator last cloned into: the only one the agent may.
 	LastCloneFolder string `json:"lastCloneFolder,omitempty"`
 

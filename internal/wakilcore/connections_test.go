@@ -1,0 +1,159 @@
+package wakilcore
+
+import (
+	"strings"
+	"testing"
+)
+
+func connInput(kind string) MCPConnection {
+	return MCPConnection{Kind: kind, Transport: "http", URL: "https://example.test/mcp", SignIn: "token"}
+}
+
+func TestAddConnectionNamesByKind(t *testing.T) {
+	localOrg(t)
+	a, err := AddConnection("initech", connInput("github"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := AddConnection("initech", connInput("github"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Name != "github" || b.Name != "github-2" {
+		t.Fatalf("names = %q, %q", a.Name, b.Name)
+	}
+	if got, ok := ConnectionFor("initech", "github-2"); !ok || got.Kind != "github" {
+		t.Fatalf("ConnectionFor = %+v %v", got, ok)
+	}
+}
+
+func TestAddConnectionRefusesReservedName(t *testing.T) {
+	localOrg(t)
+	c := connInput("custom")
+	c.Name = "wakil-pm"
+	_, err := AddConnection("initech", c)
+	msg, ok := IsUserError(err)
+	if !ok || !strings.Contains(msg, "reserved") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAddConnectionRefusesBadName(t *testing.T) {
+	localOrg(t)
+	c := connInput("custom")
+	c.Name = "Git Hub"
+	if _, err := AddConnection("initech", c); err == nil {
+		t.Fatal("bad name accepted")
+	} else if _, ok := IsUserError(err); !ok {
+		t.Fatalf("not a UserError: %v", err)
+	}
+}
+
+func TestAddConnectionRefusesADuplicateName(t *testing.T) {
+	localOrg(t)
+	c := connInput("custom")
+	c.Name = "mine"
+	if _, err := AddConnection("initech", c); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AddConnection("initech", c); err == nil {
+		t.Fatal("duplicate accepted")
+	}
+}
+
+func TestRemoveConnectionDeletesItsSecret(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	c, _ := AddConnection("initech", connInput("github"))
+	if err := SetConnectionSecrets("initech", c.Name, map[string]string{"token": "t"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveConnection("initech", c.Name); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ConnectionFor("initech", c.Name); ok {
+		t.Fatal("connection still there")
+	}
+	if _, err := SecretGetFor("initech", "conn:github"); err == nil {
+		t.Fatal("secret still there")
+	}
+}
+
+func TestSetConnectionSecretsMerges(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	c, _ := AddConnection("initech", connInput("github"))
+	if got, err := ConnectionSecrets("initech", c.Name); err != nil || len(got) != 0 {
+		t.Fatalf("empty = %v %v", got, err)
+	}
+	SetConnectionSecrets("initech", c.Name, map[string]string{"token": "a"})
+	SetConnectionSecrets("initech", c.Name, map[string]string{"site": "x"})
+	got, err := ConnectionSecrets("initech", c.Name)
+	if err != nil || got["token"] != "a" || got["site"] != "x" {
+		t.Fatalf("secrets = %v %v", got, err)
+	}
+}
+
+func TestRenameMovesTheSecret(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	c, _ := AddConnection("initech", connInput("github"))
+	SetConnectionSecrets("initech", c.Name, map[string]string{"token": "a"})
+	if err := UpdateConnection("initech", "github", func(c *MCPConnection) { c.Name = "work-github" }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ConnectionSecrets("initech", "work-github")
+	if err != nil || got["token"] != "a" {
+		t.Fatalf("new secrets = %v %v", got, err)
+	}
+	if old, _ := ConnectionSecrets("initech", "github"); len(old) != 0 {
+		t.Fatalf("old secret left: %v", old)
+	}
+	if _, ok := ConnectionFor("initech", "github"); ok {
+		t.Fatal("old name still listed")
+	}
+}
+
+func TestToolAllowedFollowsHint(t *testing.T) {
+	c := MCPConnection{Hints: map[string]string{"r": "readOnly", "w": "writes", "n": "", "d": "destructive"}}
+	for tool, want := range map[string][2]bool{"r": {true, false}, "w": {false, false}, "n": {false, false}, "d": {false, true}, "unknown": {false, false}} {
+		a, l := ToolAllowed(c, tool)
+		if a != want[0] || l != want[1] {
+			t.Errorf("%s = %v,%v want %v", tool, a, l, want)
+		}
+	}
+}
+
+func TestStoredSwitchBeatsHint(t *testing.T) {
+	c := MCPConnection{
+		Hints: map[string]string{"r": "readOnly", "w": "writes", "d": "destructive"},
+		Allow: map[string]bool{"r": false, "w": true, "d": true},
+	}
+	if a, _ := ToolAllowed(c, "r"); a {
+		t.Error("stored off lost to readOnly")
+	}
+	if a, _ := ToolAllowed(c, "w"); !a {
+		t.Error("stored on lost to writes")
+	}
+	if a, l := ToolAllowed(c, "d"); a || !l {
+		t.Errorf("locked tool = %v,%v", a, l)
+	}
+}
+
+func TestSetConnectionAllowRefusesLocked(t *testing.T) {
+	localOrg(t)
+	c := connInput("custom")
+	c.Name = "mine"
+	c.Hints = map[string]string{"drop": "destructive", "list": "readOnly"}
+	AddConnection("initech", c)
+	if err := SetConnectionAllow("initech", "mine", "drop", true); err == nil {
+		t.Fatal("locked tool switched on")
+	}
+	if err := SetConnectionAllow("initech", "mine", "list", false); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := ConnectionFor("initech", "mine")
+	if got.Allow["list"] != false || len(got.Allow) != 1 {
+		t.Fatalf("allow = %v", got.Allow)
+	}
+}
