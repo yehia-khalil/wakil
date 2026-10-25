@@ -95,22 +95,23 @@ struct BrowserPromptCard: View {
     var body: some View {
         ZStack {
             // Takes the page's clicks while the page waits for its answer.
-            Color.black.opacity(0.28).contentShape(Rectangle()).onTapGesture {}
-            VStack(alignment: .leading, spacing: 10) {
+            BrowserPaneStyle.promptScrim.contentShape(Rectangle()).onTapGesture {}
+            VStack(alignment: .leading, spacing: BrowserPaneStyle.gap) {
+                // The page's host, an identifier (§6: monospaced), over its question.
                 Text(prompt.origin)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(EditorPaneStyle.text.opacity(0.5))
+                    .font(.system(size: BrowserPaneStyle.metaSize, design: .monospaced))
+                    .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
                     .accessibilityIdentifier("browser.prompt.origin")
                 Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(EditorPaneStyle.text.opacity(0.92))
+                    .font(.system(size: BrowserPaneStyle.lineSize))
+                    .foregroundStyle(BrowserPaneStyle.text)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("browser.prompt.text")
                 fields
                 buttons
             }
-            .padding(16)
+            .padding(BrowserPaneStyle.promptPadding)
             .focusable(hasField ? false : true)
             .focused($focused, equals: .card)
             .focusEffectDisabled()
@@ -125,11 +126,12 @@ struct BrowserPromptCard: View {
                 if case .alert = prompt.kind { answer(.accept) } else { answer(.dismiss) }
                 return .handled
             }
-            .frame(maxWidth: 360, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(EditorPaneStyle.slab))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.white.opacity(0.1), lineWidth: 1))
-            .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-            .padding(16)
+            .frame(maxWidth: BrowserPaneStyle.promptWidth, alignment: .leading)
+            // `UnsavedPromptBar`'s surface: Wakil's in-place prompt, never a sheet.
+            .background(BrowserPaneStyle.slab, in: RoundedRectangle(cornerRadius: BrowserPaneStyle.promptRadius))
+            .overlay(RoundedRectangle(cornerRadius: BrowserPaneStyle.promptRadius)
+                .stroke(BrowserPaneStyle.text.opacity(BrowserPaneStyle.promptEdge)))
+            .padding(BrowserPaneStyle.promptPadding)
         }
         .onAppear {
             if case .text(_, let initial) = prompt.kind {
@@ -164,53 +166,59 @@ struct BrowserPromptCard: View {
         switch prompt.kind {
         case .text:
             TextField("", text: $text)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .font(.system(size: BrowserPaneStyle.lineSize))
                 .focused($focused, equals: .text)
                 .onSubmit { answer(.text(text)) }
                 .onExitCommand { answer(.dismiss) }
                 .accessibilityIdentifier("browser.prompt.field")
+                .fieldBox(maxWidth: .infinity)
         case .signIn:
             TextField("User name", text: $user)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .font(.system(size: BrowserPaneStyle.lineSize))
                 .focused($focused, equals: .user)
                 .onSubmit { focused = .password }
                 .onExitCommand { answer(.dismiss) }
                 .accessibilityIdentifier("browser.prompt.user")
+                .fieldBox(maxWidth: .infinity)
             SecureField("Password", text: $password)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .font(.system(size: BrowserPaneStyle.lineSize))
                 .focused($focused, equals: .password)
                 .onSubmit { answer(.credential(user: user, password: password)) }
                 .onExitCommand { answer(.dismiss) }
                 .accessibilityIdentifier("browser.prompt.password")
+                .fieldBox(maxWidth: .infinity)
         default:
             EmptyView()
         }
     }
 
     private var buttons: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: BrowserPaneStyle.promptButtonGap) {
             Spacer(minLength: 0)
             switch prompt.kind {
             case .alert:
-                button("OK", "browser.prompt.ok") { answer(.accept) }
+                button("OK", "browser.prompt.ok", primary: true) { answer(.accept) }
             case .confirm:
-                button("Cancel", "browser.prompt.cancel") { answer(.dismiss) }
-                button("OK", "browser.prompt.ok") { answer(.accept) }
+                button("Cancel", "browser.prompt.cancel", primary: false) { answer(.dismiss) }
+                button("OK", "browser.prompt.ok", primary: true) { answer(.accept) }
             case .text:
-                button("Cancel", "browser.prompt.cancel") { answer(.dismiss) }
-                button("OK", "browser.prompt.ok") { answer(.text(text)) }
+                button("Cancel", "browser.prompt.cancel", primary: false) { answer(.dismiss) }
+                button("OK", "browser.prompt.ok", primary: true) { answer(.text(text)) }
             case .signIn:
-                button("Cancel", "browser.prompt.cancel") { answer(.dismiss) }
-                button("Sign In", "browser.prompt.ok") { answer(.credential(user: user, password: password)) }
+                button("Cancel", "browser.prompt.cancel", primary: false) { answer(.dismiss) }
+                button("Sign In", "browser.prompt.ok", primary: true) { answer(.credential(user: user, password: password)) }
             case .media:
-                button("Don't Allow", "browser.prompt.cancel") { answer(.dismiss) }
-                button("Allow", "browser.prompt.ok") { answer(.accept) }
+                button("Don't Allow", "browser.prompt.cancel", primary: false) { answer(.dismiss) }
+                button("Allow", "browser.prompt.ok", primary: true) { answer(.accept) }
             }
         }
     }
 
-    private func button(_ title: String, _ id: String, _ action: @escaping () -> Void) -> some View {
-        Button(title, action: action).accessibilityIdentifier(id)
+    private func button(_ title: String, _ id: String, primary: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(title, action: action).browserLineButton(primary: primary).accessibilityIdentifier(id)
     }
 }
 
@@ -223,22 +231,17 @@ struct BrowserCertificatePage: View {
     let visitAnyway: () -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
+        BrowserPageLine {
             Image(systemName: "exclamationmark.lock")
-                .font(.system(size: 22))
-                .foregroundStyle(EditorPaneStyle.amber)
+                .font(.system(size: BrowserPaneStyle.pageGlyph))
+                .foregroundStyle(BrowserPaneStyle.amber)
             Text(text)
-                .font(.system(size: 12))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
-                .multilineTextAlignment(.center)
-                .textSelection(.enabled)
+                .browserErrorLine()
                 .accessibilityIdentifier("browser.certificate")
             Button("Visit Anyway", action: visitAnyway)
+                .browserLineButton(primary: true)
                 .accessibilityIdentifier("browser.visitAnyway")
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(EditorPaneStyle.slab)
     }
 }
 
@@ -248,17 +251,14 @@ struct BrowserCrashPage: View {
     let reload: () -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
+        BrowserPageLine {
             Text("This page stopped.")
-                .font(.system(size: 12))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
+                .browserErrorLine()
                 .accessibilityIdentifier("browser.crashed")
             Button("Reload", action: reload)
+                .browserLineButton(primary: true)
                 .accessibilityIdentifier("browser.crashReload")
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(EditorPaneStyle.slab)
     }
 }
 
@@ -272,61 +272,58 @@ struct BrowserDownloadStrip: View {
     let dispatch: (String, [String: JSONValue]) -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: BrowserPaneStyle.gap) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
+                HStack(spacing: BrowserPaneStyle.downloadSpacing) {
                     ForEach(downloads, id: \.id) { row($0) }
                 }
-                .padding(.horizontal, 8)
             }
             if downloads.contains(where: { $0.state != .running }) {
                 Button { dispatch("browser_downloads_clear", [:]) } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
-                        .frame(width: 16, height: 16).contentShape(Rectangle())
+                    Image(systemName: "xmark").font(.system(size: BrowserPaneStyle.closeGlyph, weight: .semibold))
+                        .frame(width: BrowserPaneStyle.closeHit, height: BrowserPaneStyle.closeHit).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.7))
+                .buttonStyle(ChangesIconButtonStyle())
                 .help("Clear finished downloads")
                 .accessibilityLabel("Clear finished downloads")
                 .accessibilityIdentifier("browser.downloads.clear")
-                .padding(.trailing, 8)
             }
         }
-        .frame(height: 30)
-        .background(EditorPaneStyle.slab)
+        .frame(minHeight: BrowserPaneStyle.controlSize)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser.downloads")
     }
 
     private func row(_ d: BrowserDownload) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: BrowserPaneStyle.gap) {
             Image(systemName: d.state == .finished ? "checkmark.circle" : d.state == .running ? "arrow.down.circle" : "xmark.circle")
-                .font(.system(size: 11))
-                .foregroundStyle(d.state == .failed ? EditorPaneStyle.amber : EditorPaneStyle.text.opacity(0.6))
+                .font(.system(size: BrowserPaneStyle.glyphSize))
+                .foregroundStyle(d.state == .failed ? BrowserPaneStyle.amber : BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
             Text(d.filename)
-                .font(.system(size: 11))
+                .font(.system(size: BrowserPaneStyle.buttonSize))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
+                .foregroundStyle(BrowserPaneStyle.text)
                 .accessibilityIdentifier("browser.download.\(d.id).name")
             Text(status(d))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(d.state == .failed ? EditorPaneStyle.amber : EditorPaneStyle.text.opacity(0.55))
+                .font(.system(size: BrowserPaneStyle.metaSize, design: .monospaced))
+                .foregroundStyle(d.state == .failed ? BrowserPaneStyle.amber : BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
                 .lineLimit(1)
                 .accessibilityIdentifier("browser.download.\(d.id).status")
             switch d.state {
             case .running:
                 // Rule 5: asked once, it cannot be asked again while the page stops it.
                 Button("Cancel") { dispatch("browser_download_cancel", ["download": .string(d.id)]) }
-                    .controlSize(.small)
+                    .browserLineButton(primary: false)
                     .disabled(d.cancelRequested)
+                    .opacity(d.cancelRequested ? BrowserPaneStyle.disabledOpacity : 1)
                     .accessibilityIdentifier("browser.download.\(d.id).cancel")
             case .finished:
                 if let path = d.path {
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                     }
-                    .controlSize(.small)
+                    .browserLineButton(primary: true)
                     .accessibilityIdentifier("browser.download.\(d.id).show")
                 }
             case .failed, .cancelled:

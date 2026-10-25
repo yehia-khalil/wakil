@@ -46,22 +46,24 @@ struct BrowserPane: View {
         VStack(spacing: 0) {
             BrowserHeader(tab: active, tabs: snapshot.tabs, listMode: listMode, dispatch: send) { addressField }
             progressLine
-            HStack(spacing: 0) {
+            // Whitespace between the list, the find bar, the page and the downloads — no rules
+            // (`Browser.dc.html`: the tabs in the rail's language).
+            HStack(alignment: .top, spacing: BrowserPaneStyle.gap) {
                 if listMode != .hidden {
                     BrowserTabList(
                         snapshot: snapshot, mode: listMode,
                         favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
                         dispatch: send)
-                    Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1)
                 }
-                VStack(spacing: 0) {
+                VStack(spacing: BrowserPaneStyle.gap) {
                     if let find = snapshot.find { findBar(find) }
                     pageArea
+                        .clipShape(RoundedRectangle(cornerRadius: BrowserPaneStyle.pageRadius, style: .continuous))
                 }
             }
             if !snapshot.downloads.isEmpty {
-                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
                 BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
+                    .padding(.top, BrowserPaneStyle.gap)
             }
         }
         .onAppear {
@@ -113,19 +115,19 @@ struct BrowserPane: View {
                url.scheme?.lowercased() != "about" {
                 let secure = BrowserAddress.isSecure(url)
                 Image(systemName: secure ? "lock.fill" : "lock.open")
-                    .font(.system(size: 9))
-                    .foregroundStyle(EditorPaneStyle.text.opacity(secure ? 0.55 : 0.8))
+                    .font(.system(size: BrowserPaneStyle.lockSize))
+                    .foregroundStyle(secure ? BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity) : BrowserPaneStyle.amber)
                     .accessibilityLabel(secure ? "Secure" : "Not Secure")
                 if !secure {
                     Text("Not Secure")
-                        .font(.system(size: 10))
-                        .foregroundStyle(EditorPaneStyle.amber)
+                        .font(.system(size: BrowserPaneStyle.metaSize))
+                        .foregroundStyle(BrowserPaneStyle.amber)
                 }
             }
             TextField("Search or enter address", text: $draft)
                 .textFieldStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
+                .font(.system(size: BrowserPaneStyle.addressSize, design: .monospaced))
+                .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.addressOpacity))
                 .focused($addressFocused)
                 .onSubmit { submit() }
                 .onExitCommand {
@@ -134,10 +136,8 @@ struct BrowserPane: View {
                 }
                 .accessibilityIdentifier("browser.address")
         }
-        .padding(.horizontal, 8)
-        .frame(height: 22)
-        .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(addressFocused ? 0.09 : 0.05)))
-        .frame(maxWidth: .infinity)
+        // The API pane's path box: the settings form's `.field`.
+        .fieldBox(maxWidth: .infinity)
     }
 
     /// Selects the address field's whole text, in that field's own editor: the window's first
@@ -172,7 +172,7 @@ struct BrowserPane: View {
     private var progressLine: some View {
         GeometryReader { geometry in
             Rectangle()
-                .fill(EditorPaneStyle.tick)
+                .fill(BrowserPaneStyle.tick)
                 .frame(width: geometry.size.width * CGFloat(max(0.05, min(1, active?.progress ?? 0))))
                 .opacity(active?.isLoading == true ? 1 : 0)
                 .animation(.easeOut(duration: 0.2), value: active?.progress)
@@ -219,27 +219,30 @@ struct BrowserPane: View {
     /// Above the page on ⌘F: the field, `2 of 3`, ↑ ↓ and ×. Each keystroke is a `browser_find`;
     /// Return and ⇧Return step; Esc closes it and gives the page the keyboard.
     private func findBar(_ find: BrowserFind) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 10))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.5))
-            TextField("Find in page", text: $findDraft)
-                .textFieldStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
-                .focused($findFocused)
-                .onSubmit {
-                    let back = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
-                    sendInOrder("browser_find_step", ["forward": .bool(!back)])
-                }
-                .onExitCommand { closeFind() }
-                .onChange(of: findDraft) { _, typed in
-                    if typed != snapshot.find?.query { sendInOrder("browser_find", ["query": .string(typed)]) }
-                }
-                .accessibilityIdentifier("browser.find.field")
+        HStack(spacing: BrowserPaneStyle.gap) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: BrowserPaneStyle.metaSize))
+                    .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
+                TextField("Find in page", text: $findDraft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: BrowserPaneStyle.addressSize))
+                    .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.addressOpacity))
+                    .focused($findFocused)
+                    .onSubmit {
+                        let back = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
+                        sendInOrder("browser_find_step", ["forward": .bool(!back)])
+                    }
+                    .onExitCommand { closeFind() }
+                    .onChange(of: findDraft) { _, typed in
+                        if typed != snapshot.find?.query { sendInOrder("browser_find", ["query": .string(typed)]) }
+                    }
+                    .accessibilityIdentifier("browser.find.field")
+            }
+            .fieldBox(maxWidth: .infinity)
             Text(find.query.isEmpty ? "" : find.total == 0 ? "No matches" : "\(find.current) of \(find.total)")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.55))
+                .font(.system(size: BrowserPaneStyle.metaSize, design: .monospaced))
+                .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
                 .accessibilityIdentifier("browser.find.count")
             findButton("chevron.up", "browser.find.previous", "Previous Match", enabled: find.total > 0) {
                 send("browser_find_step", ["forward": .bool(false)])
@@ -249,9 +252,6 @@ struct BrowserPane: View {
             }
             findButton("xmark", "browser.find.close", "Close Find", enabled: true) { closeFind() }
         }
-        .padding(.horizontal, 8)
-        .frame(height: 26)
-        .background(EditorPaneStyle.slab)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser.find")
     }
@@ -259,12 +259,12 @@ struct BrowserPane: View {
     private func findButton(_ symbol: String, _ id: String, _ label: String, enabled: Bool,
                             _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
-                .frame(width: 18, height: 18).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: BrowserPaneStyle.closeGlyph, weight: .semibold))
+                .frame(width: BrowserPaneStyle.controlSize, height: BrowserPaneStyle.controlSize).contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(EditorPaneStyle.text.opacity(enabled ? 0.8 : 0.25))
+        .buttonStyle(ChangesIconButtonStyle())
         .disabled(!enabled)
+        .opacity(enabled ? 1 : BrowserPaneStyle.disabledOpacity)
         .help(label)
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
@@ -402,24 +402,44 @@ struct BrowserPageHost: NSViewRepresentable {
     }
 }
 
-/// A page that did not load, drawn whole over the page area (Rule 8) with Try Again.
+/// A page that did not load, drawn whole over the page area (Rule 8) with Try Again: Wakil's own
+/// error line (the API pane's, in caution amber) and a plain verb, on the slab.
 struct BrowserLoadError: View {
     let text: String
     let tryAgain: () -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
+        BrowserPageLine {
             Text(text)
-                .font(.system(size: 12))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
-                .multilineTextAlignment(.center)
-                .textSelection(.enabled)
+                .browserErrorLine()
                 .accessibilityIdentifier("browser.loadError")
             Button("Try Again", action: tryAgain)
+                .browserLineButton(primary: true)
                 .accessibilityIdentifier("browser.tryAgain")
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(EditorPaneStyle.slab)
+    }
+}
+
+/// What Wakil draws in the page's place — a load error, a stopped page, an untrusted certificate:
+/// the slab, and its lines centred in it.
+struct BrowserPageLine<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(spacing: BrowserPaneStyle.pageLineSpacing) { content() }
+            .padding(BrowserPaneStyle.pageLinePadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(BrowserPaneStyle.slab)
+    }
+}
+
+extension Text {
+    /// An error line in Wakil's voice, whole and selectable (Rule 8): the API pane's caution amber.
+    func browserErrorLine() -> some View {
+        font(.system(size: BrowserPaneStyle.lineSize))
+            .foregroundStyle(BrowserPaneStyle.amber)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
     }
 }

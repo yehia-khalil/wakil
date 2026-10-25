@@ -394,10 +394,7 @@ struct EditorPane: View {
 
     private func tabView(_ tab: EditorTab, title: String, index: Int, on: Bool) -> some View {
         HStack(spacing: 9) {
-            RoundedRectangle(cornerRadius: 1)
-                .fill(on ? EditorPaneStyle.tick : .clear)
-                .frame(width: 2, height: 15)
-                .shadow(color: on ? EditorPaneStyle.tick.opacity(0.7) : .clear, radius: 3.5)
+            LuminousTick(colour: on ? EditorPaneStyle.tick : nil, height: 15, glowRadius: 3.5)
             EditorFileIcon(editorTabGlyph(tab))
                 .foregroundStyle(on ? EditorPaneStyle.text : EditorPaneStyle.text.opacity(0.62))
             Text(title)
