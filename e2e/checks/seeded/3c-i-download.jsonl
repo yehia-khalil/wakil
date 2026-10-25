@@ -13,3 +13,4 @@
 {"expect":{"journal":{"contains":"\"action\":\"browser_download_cancel\""}}}
 {"do":{"click":"browser.downloads.clear"}}
 {"expect":{"pane":"browser-1","field":"downloads[0]","present":false}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_downloads_clear\""}}}

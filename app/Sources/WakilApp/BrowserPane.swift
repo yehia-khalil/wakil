@@ -393,9 +393,11 @@ struct BrowserPane: View {
             focusAddress()
         } else if switched, isFocusedPane {
             // Another tab to the front: its page has the keyboard; an edit left in the address
-            // field was the other tab's, and is put back.
+            // field was the other tab's, and is put back. The field lets the keyboard go to the
+            // window as this update applies, so the page takes it a turn later — taken now, it
+            // would be taken straight back.
             addressFocused = false
-            focusPage()
+            DispatchQueue.main.async { focusPage() }
         }
         syncFind(old: old, now: now)
         // `browser_download_cancel` asked: the host stops each, and reports it once WebKit has.
