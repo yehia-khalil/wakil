@@ -499,11 +499,17 @@
         const n = r.widget.getDomNode();
         n.style.left = l.contentLeft + 'px';
         n.style.width = Math.max(0, l.contentWidth - l.verticalScrollbarWidth) + 'px';
+        // A pane too narrow for the full labels takes the short ones, so no action is clipped out of
+        // reach (3a-v-b walk); the names a reader hears stay whole.
+        const buttons = n.querySelectorAll('button');
+        buttons.forEach(function (el) { el.textContent = el.dataset.full; });
+        if (n.scrollWidth > n.clientWidth) buttons.forEach(function (el) { el.textContent = el.dataset.short; });
       });
     }
     ed.onDidLayoutChange(placeConflictRows);
-    const conflictActions = [['Accept Current Change', 'current'], ['Accept Incoming Change', 'incoming'],
-                             ['Accept Both Changes', 'both'], ['Compare Changes', 'compare']];
+    const conflictActions = [['Accept Current Change', 'current', 'Current'],
+                             ['Accept Incoming Change', 'incoming', 'Incoming'],
+                             ['Accept Both Changes', 'both', 'Both'], ['Compare Changes', 'compare', 'Compare']];
     function drawConflictRows(acc, key) {
       dropConflictRows(acc);
       const c = conflicts[key];
@@ -513,6 +519,8 @@
         conflictActions.forEach(function (a, j) {
           if (j) { const dot = document.createElement('span'); dot.textContent = '\u00b7'; node.appendChild(dot); }
           const el = document.createElement('button'); el.textContent = a[0];
+          el.dataset.full = a[0]; el.dataset.short = a[2];
+          el.setAttribute('aria-label', a[0]); el.title = a[0];
           // mousedown, not click, and the default prevented: the press never moves Monaco's cursor.
           el.addEventListener('mousedown', function (e) {
             e.preventDefault(); e.stopPropagation();
