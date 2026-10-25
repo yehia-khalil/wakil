@@ -28,6 +28,27 @@ const FixtureRootToken = "{fixtureRoot}"
 // `baseURL: "{chatStub}"` — could not otherwise name it.
 const ChatStubToken = "{chatStub}"
 
+// PageStubToken is what a check writes where it means "this launch's page
+// stub": the loopback origin StartPageStub serves the browser checks' pages
+// from. Its port changes on every launch, like the chat stub's.
+//
+// **The one token typed text may carry**, as well as params. The rule above
+// holds because nothing an operator types carries a fixture path; a browser
+// operator types a URL, and the address field is what the browser checks
+// drive — a check that could only dispatch `browser_navigate` would never
+// press Return in the field. See ExpandText.
+const PageStubToken = "{pageStub}"
+
+// ExpandText replaces PageStubToken in the text a keystroke arm types, and no
+// other token: the fixture root and the chat stub are not things an operator
+// types, so they stay literal and a check that types one fails on it.
+func ExpandText(text string, tokens map[string]string) string {
+	if value := tokens[PageStubToken]; value != "" {
+		return strings.ReplaceAll(text, PageStubToken, value)
+	}
+	return text
+}
+
 // ExpandParams replaces each token in every string a params map carries,
 // however deeply nested.
 //
