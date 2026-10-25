@@ -41,6 +41,11 @@ var Surfaces = []string{
 	// `window` nor `editor`. Added by the Cover rung, on `editor`'s precedent: without
 	// it no check can name a picker control and the gate cannot count them.
 	"branch",
+	// The browser pane's own namespace (3c-i), on `editor`'s precedent: the header's
+	// `browser.back` / `.forward` / `.reload` / `.stop`, the address field `browser.address`,
+	// the tab list `browser.tabs` and its rows `browser.tab.<id>`, the page `browser.page`.
+	// Added with the pane, so its first checks can name the address field and the page.
+	"browser",
 	// The data surface's own namespace, added in the change that first names
 	// one of its controls — the row grip, `db.row.<i>.grip` (2c-iv, #308). A
 	// grid row is the db pane's vocabulary, not chrome every kind shares, so

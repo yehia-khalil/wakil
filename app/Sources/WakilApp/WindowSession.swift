@@ -2,8 +2,16 @@ import AppKit
 import Foundation
 import WakilKit
 import SwiftUI
+import WebKit
 
 // MARK: - Session
+
+/// Where `removeBrowserData` finds the window's browser host, which is made after the wiring that
+/// takes the closure. Read and written on the main actor only.
+@MainActor
+private final class BrowserTabsBox: Sendable {
+    weak var host: BrowserTabHost?
+}
 
 /// One window's worth of assembled Wakil: the shared wiring, the MCP sockets
 /// the agents' shims connect back to, and the model the view draws.
@@ -25,12 +33,16 @@ final class WindowSession {
     /// fatal — the window still opens, and each failure is visible rather
     /// than silent.
     let notes: [String]
+    /// 3c-i: every browser tab's web view, for the window's life (`BrowserTabHost`).
+    let browserTabs: BrowserTabHost
 
-    private init(wiring: WakilWiring, model: WindowModel, composer: ComposerModel, notes: [String]) {
+    private init(wiring: WakilWiring, model: WindowModel, composer: ComposerModel, notes: [String],
+                 browserTabs: BrowserTabHost) {
         self.wiring = wiring
         self.model = model
         self.composer = composer
         self.notes = notes
+        self.browserTabs = browserTabs
     }
 
     static func start() async -> WindowSession {
@@ -47,7 +59,16 @@ final class WindowSession {
             .appendingPathComponent(".wakil", isDirectory: true)
             .appendingPathComponent("journal", isDirectory: true)
 
-        let wiring = await WakilWiring.build(journalDirectory: journalDirectory, sessionId: sessionId)
+        // 3c-i. `browser_clear_data` deletes the organisation's WebKit store, which only the app
+        // can: WebKit refuses while a web view still uses it, so those are released first (their
+        // tabs rebuild when shown). The host exists once the model does; set below.
+        let browserTabsBox = BrowserTabsBox()
+        let wiring = await WakilWiring.build(
+            journalDirectory: journalDirectory, sessionId: sessionId,
+            removeBrowserData: { id in
+                await MainActor.run { browserTabsBox.host?.releaseAll(onStore: id) }
+                try await WKWebsiteDataStore.remove(forIdentifier: id)
+            })
         notes.append(contentsOf: wiring.diagnostics)
 
         // Each agent session has a socket of its own (background agents 3 of 4, Task 4), at
@@ -409,10 +430,13 @@ final class WindowSession {
         }
         // The browser's per-organisation files live under the same `home`; Task 7's tabs ask for them.
         model.browserHome = URL(fileURLWithPath: home)
+        let browserTabs = BrowserTabHost(model: model)
+        browserTabsBox.host = browserTabs
         screen.model = model
         let composer = ComposerModel(window: model, speech: wiring.speech)
 
-        return WindowSession(wiring: wiring, model: model, composer: composer, notes: notes)
+        return WindowSession(wiring: wiring, model: model, composer: composer, notes: notes,
+                             browserTabs: browserTabs)
     }
 
     /// Stops every agent session and every shown place's MCP socket, then every Wakil-owned Go child:

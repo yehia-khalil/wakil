@@ -574,6 +574,33 @@ extension WakilWindow {
                     stageHunk: { await model.changesStageHunk() },
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
                     unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) })
+            case "browser":
+                // 3c-i. Every control is a `browser_*` action with this pane folded in; the web views
+                // are the window's (`BrowserTabHost`), so a rebuild here never reloads a page.
+                if let browserHost {
+                    let place = (model.organization, model.project, model.environment)
+                    BrowserPane(
+                        snapshot: model.browser(pane.id) ?? .empty, pane: pane,
+                        width: pane.frame.width + (resizeOffsets[pane.id]?.width ?? 0),
+                        org: model.organization, host: browserHost,
+                        dispatch: { name, params in
+                            var withPane = params
+                            withPane["pane"] = .string(pane.id)
+                            await model.dispatchFromSurface(name, .object(withPane))
+                        },
+                        isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
+                        isKeyboardOwner: !(
+                            model.showOrgPlane || model.organization.isEmpty || model.pending != nil
+                            || model.paletteShowing || model.unsavedPrompt != nil || model.closeQuestion != nil),
+                        keyboardHeld: { model.composerHoldsKeyboard },
+                        keyboardFocusRequests: model.keyboardFocusRequests,
+                        keyboardReturns: model.keyboardReturns,
+                        // Closed, not switched away from: the same place, and the pane gone from it.
+                        isClosed: {
+                            (model.organization, model.project, model.environment) == place
+                                && !model.layoutSnapshot.panes.contains { $0.id == pane.id }
+                        })
+                }
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw
                 // its kind — the rule `Pane.kinds` has always stated.
@@ -694,7 +721,7 @@ extension WakilWindow {
                     activeEnvironment: model.environment)
             default:
                 // Unreachable today: `Pane.kinds` is
-                // `["db", "terminal", "api", "settings", "editor"]`, all five arms
+                // `["db", "terminal", "api", "settings", "editor", "browser"]`, all six arms
                 // above are drawn, and `pane_open` and
                 // `layoutDroppingUnknownPaneKinds` check against the same
                 // set. Here so that adding a kind to that set without
