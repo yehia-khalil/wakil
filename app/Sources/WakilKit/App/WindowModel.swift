@@ -473,6 +473,12 @@ public final class WindowModel {
     /// have changed it — the store is an actor and SwiftUI cannot await one
     /// while rendering.
     public private(set) var layoutSnapshot = LayoutSnapshot()
+    /// The scope `layoutSnapshot` is the canvas of, recorded with it (3c-i). **Not the context's
+    /// place**: `refreshContext` names the incoming place several suspensions before
+    /// `activateLayout` swaps the canvas, and a browser pane drawn in that gap with the incoming
+    /// place would build a web view on the incoming organisation's store for the outgoing canvas's
+    /// tab. Nil until the first read.
+    public private(set) var drawnScope: LayoutScope?
 
     /// `LayoutStore.focusRequests`, mirrored: how many times *anything* has
     /// asked for a pane to be focused, counting the requests that named the
@@ -4860,6 +4866,7 @@ public final class WindowModel {
         // — see `LayoutStore.reading()`.
         let reading = await layout.reading()
         layoutSnapshot = reading.snapshot
+        drawnScope = reading.scope
         // 3b-v: focus leaving an editor pane is `focus` mode's trigger.
         if let left = before.focusedId, left != layoutSnapshot.focusedId { autosaveFocusLeft(pane: left) }
         pruneApiSendRequests()
@@ -4901,6 +4908,7 @@ public final class WindowModel {
         let before = layoutSnapshot
         let reading = await layout.reading()
         layoutSnapshot = reading.snapshot
+        drawnScope = reading.scope
         pruneApiSendRequests()
         pruneGhostSessions(before: before)
         keyboardFocusRequests = reading.focusRequests
@@ -5662,23 +5670,22 @@ public final class WindowModel {
         return true
     }
 
-    /// The place a browser web view belongs to (3c-i): the scope the canvas shows, as the
-    /// work-begun watcher derives it — the place's own canvas, or the organisation's bare one with no
-    /// project. Nil with no organisation. The window keys each web view by it, and every seam call
-    /// below carries the one its web view was made in.
+    /// The place a browser web view belongs to (3c-i): the scope of the canvas drawn
+    /// (`drawnScope`), so a pane is always keyed with the place whose canvas it is on. Nil with no
+    /// organisation on that canvas. The window keys each web view by it, and every seam call below
+    /// carries the one its web view was made in.
     public var browserScope: LayoutScope? {
-        guard !organization.isEmpty else { return nil }
-        return projectKey.isEmpty ? bareScope : currentLayoutScope
+        guard let drawnScope, !drawnScope.organization.isEmpty else { return nil }
+        return drawnScope
     }
 
-    /// Whether `scope` is the place on screen, and its canvas is the one drawn. **A web view keeps
-    /// running while its place is off screen**, and pane and tab ids repeat from place to place
+    /// Whether `scope` is the canvas drawn, and no swap is under way. **A web view keeps running
+    /// while its place is off screen**, and pane and tab ids repeat from place to place
     /// (`browser-1`, `t1`), so a report from another place would land in this one's pane and its
     /// saved layout (Invariant 4 across organisations). Such a call is dropped; the window
     /// re-reports a place's live web views when the place is shown again.
     private func browserScopeIsShown(_ scope: LayoutScope) async -> Bool {
-        guard !layoutSwapInFlight, scope == browserScope else { return false }
-        return await panes.screenScope == scope
+        !layoutSwapInFlight && scope == browserScope
     }
 
     /// A tab's web view after a navigation event: into the store, the cell re-read, and — when the

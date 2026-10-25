@@ -311,7 +311,7 @@ public actor LayoutStore {
     /// named by the old `focusedId` would answer a request meant for the new
     /// one.
     public func reading() -> LayoutReading {
-        LayoutReading(snapshot: snapshot(), focusRequests: focusRequests)
+        LayoutReading(snapshot: snapshot(), focusRequests: focusRequests, scope: scope)
     }
 
     /// Records that an operator asked for the keyboard where it already is.
@@ -923,9 +923,13 @@ public actor LayoutStore {
 public struct LayoutReading: Sendable {
     public let snapshot: LayoutSnapshot
     public let focusRequests: Int
+    /// The scope `snapshot` is the canvas of (3c-i): read in the same hop, so a window drawing the
+    /// snapshot knows whose canvas it is drawing, not whose place its context already names.
+    public let scope: LayoutScope?
 
-    public init(snapshot: LayoutSnapshot, focusRequests: Int) {
+    public init(snapshot: LayoutSnapshot, focusRequests: Int, scope: LayoutScope? = nil) {
         self.snapshot = snapshot
         self.focusRequests = focusRequests
+        self.scope = scope
     }
 }

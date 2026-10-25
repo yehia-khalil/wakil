@@ -45,6 +45,8 @@ final class BrowserTabHost {
     /// Raised when live web views were dropped under panes that may be on screen (clearing an
     /// organisation's data), so those panes draw again and rebuild their pages.
     private(set) var rebuilds = 0
+    /// Stores being deleted (a data clear): no web view is built on one until the clear is done.
+    @ObservationIgnored private var clearing: Set<UUID> = []
 
     init(model: WindowModel) {
         self.model = model
@@ -75,7 +77,9 @@ final class BrowserTabHost {
     /// tab rebuilt after a relaunch, an eviction or a data clear — restored from its saved state,
     /// else loaded from its address. A restored tab's waiting `.load` is skipped: the restore
     /// already shows that page, with its ‹ › history.
-    func page(scope: LayoutScope, pane: String, tab: BrowserTab) -> BrowserWebView {
+    /// Nil while the organisation's store is being cleared (`beginClear`): the page area is blank
+    /// until the clear is done and the pane draws again.
+    func page(scope: LayoutScope, pane: String, tab: BrowserTab) -> BrowserWebView? {
         let key = Key(scope: scope, pane: pane, tab: tab.id)
         if let view = views[key] {
             touch(key)
@@ -84,6 +88,7 @@ final class BrowserTabHost {
         // Read now, never kept: a tab built after an organisation switch must get the new
         // organisation's store (`WindowModel.browserOrgFiles`).
         let files = model?.browserOrgFiles
+        if !clearing.isEmpty, let id = try? files?.identifier(), clearing.contains(id) { return nil }
         return webView(scope: scope, pane: pane, tab: tab.id) {
             let view = BrowserWebView(frame: .zero, configuration: Self.configuration(files: files))
             prepare(view)
@@ -140,39 +145,51 @@ final class BrowserTabHost {
         delegate.requested = url
         delegate.attach(to: view)
         let expected = "t\(model?.browser(pane)?.nextTab ?? 1)"
-        file(view, delegate, under: Key(scope: scope, pane: pane, tab: expected))
+        let predicted = Key(scope: scope, pane: pane, tab: expected)
+        let filedEarly = file(view, delegate, under: predicted, force: false)
         Task { [weak self] in
             guard let self else { return }
             let id = await self.model?.browserPageOpenedTab(scope: scope, pane: pane, opener: opener, url: url)
-            let filed = Key(scope: scope, pane: pane, tab: expected)
+            if filedEarly, self.views[predicted] === view, id != expected {
+                // Not the tab the store made (or none): the predicted key goes back to nothing.
+                self.unfile(predicted)
+            }
             guard let id else {
-                if self.views[filed] === view { self.drop(filed, mode: .forget) }
+                delegate.detach()
+                view.stopLoading()
                 return
             }
             let key = Key(scope: scope, pane: pane, tab: id)
-            if id != expected, self.views[filed] === view {
-                self.views[filed] = nil
-                self.delegates[filed] = nil
-                self.recency.removeAll { $0 == filed }
-                self.openedByPage.remove(filed)
-                self.file(view, delegate, under: key)
-            }
-            // A view the pane made under the tab's key while the seam was awaited gives way.
-            if self.views[key] !== view { self.file(view, delegate, under: key) }
+            // The store says this is the pop-up's tab: a view the pane made for it meanwhile gives way.
+            if self.views[key] !== view { _ = self.file(view, delegate, under: key, force: true) }
             delegate.tab = id
             delegate.scheduleReport()
         }
         return view
     }
 
-    /// Puts `view` under `key`, replacing (and dropping) any other view there.
-    private func file(_ view: BrowserWebView, _ delegate: BrowserTabDelegate, under key: Key) {
-        if let other = views[key], other !== view { drop(key, mode: .forget) }
+    /// Puts `view` under `key`. Another view there is replaced only when `force`, or when it has had
+    /// no command applied — one made for the pop-up's tab while the seam was awaited. A real tab's
+    /// view, with its seq and marks, is never taken over by a stale guess; answers whether it filed.
+    private func file(_ view: BrowserWebView, _ delegate: BrowserTabDelegate, under key: Key, force: Bool) -> Bool {
+        if let other = views[key], other !== view {
+            guard force || applied[key] == nil else { return false }
+            drop(key, mode: .forget)
+        }
         views[key] = view
         delegates[key] = delegate
         openedByPage.insert(key)
         touch(key)
         evictBeyondLimit(keeping: key)
+        return true
+    }
+
+    /// Takes a pop-up's view back off a key it was filed under early, leaving the view alive.
+    private func unfile(_ key: Key) {
+        views[key] = nil
+        delegates[key] = nil
+        recency.removeAll { $0 == key }
+        openedByPage.remove(key)
     }
 
     // MARK: Commands
@@ -187,7 +204,8 @@ final class BrowserTabHost {
             applied[key] = command.seq
             return true
         }
-        let view = page(scope: scope, pane: pane, tab: tab)
+        // Held while the store is cleared: the command waits, and applies on the rebuild.
+        guard let view = page(scope: scope, pane: pane, tab: tab) else { return false }
         // `page` may have restored the tab and so already counted its load.
         guard command.seq > applied[key] ?? 0 else { return false }
         applied[key] = command.seq
@@ -311,16 +329,21 @@ final class BrowserTabHost {
         for key in tabs { release(scope: scope, pane: pane, tab: key.tab) }
     }
 
-    /// Every web view on the store `identifier`, before that store is deleted: WebKit refuses to
-    /// remove a store a live web view still uses. Their panes draw again (`rebuilds`), and each
-    /// shown tab rebuilds on a fresh store and loads its address.
-    func releaseAll(onStore identifier: UUID) {
-        var dropped = false
+    /// A data clear begins: every web view on the store `identifier` goes — WebKit refuses to remove
+    /// a store a live web view still uses — and none is built on it until `endClear`. Their applied
+    /// seqs are kept, so the rebuild repeats no ‹ › or reload.
+    func beginClear(onStore identifier: UUID) {
+        clearing.insert(identifier)
         for (key, view) in views where view.configuration.websiteDataStore.identifier == identifier {
             drop(key, mode: .discard)
-            dropped = true
         }
-        if dropped { rebuilds += 1 }
+    }
+
+    /// The clear is done — the files deleted, then the store (or its removal failed): the panes
+    /// draw again (`rebuilds`), and each shown tab rebuilds on the store and loads its address.
+    func endClear(onStore identifier: UUID) {
+        clearing.remove(identifier)
+        rebuilds += 1
     }
 
     private func touch(_ key: Key) {

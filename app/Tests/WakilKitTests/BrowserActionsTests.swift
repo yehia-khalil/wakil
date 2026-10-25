@@ -390,3 +390,20 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
                                     origin: .agent, caller: .test("staging"), confirmation: nil)
     #expect(await layout.snapshot().panes.count == 2)
 }
+
+/// The files go before the store does, so when the remover returns — the window's last word on a
+/// clear — nothing of the organisation's old tabs is left for a rebuilt page to restore.
+@Test func clearDataDeletesTheFilesBeforeTheStore() async throws {
+    let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let files = try BrowserOrgFiles(home: home, org: "acme")
+    _ = try files.identifier()
+    let state = files.stateURL(tab: "t1")
+    try FileManager.default.createDirectory(at: state.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: state)
+    let seen = Removed()
+    let f = try await browserFixture(orgFiles: files, removeData: { @Sendable id in
+        if !FileManager.default.fileExists(atPath: state.path) { seen.add(id) }
+    })
+    try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
+    #expect(seen.all == [try files.identifier()], "the tab state was already gone when the store was removed")
+}

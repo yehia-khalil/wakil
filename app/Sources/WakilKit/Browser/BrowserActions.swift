@@ -506,8 +506,11 @@ func browserActions(
         handler: { _ in
             guard let removeData else { throw BrowserActionError.clearOnlyFromTheApp }
             guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
-            try await removeData(try files.identifier())
+            let id = try files.identifier()
+            // The files first: when the remover returns, the window rebuilds its pages, and none
+            // may restore a tab state from before the clear.
             try files.removeEverythingButTheProfile()
+            try await removeData(id)
             return .object(["cleared": .string(files.org)])
         },
         // Signs out of every site in every project, in production and out of it.

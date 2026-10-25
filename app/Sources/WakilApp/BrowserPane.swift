@@ -61,6 +61,8 @@ struct BrowserPane: View {
             if isFocusedPane { takeKeyboard() }
         }
         .onChange(of: snapshot) { old, now in sync(old: old, now: now) }
+        // A data clear is done: commands held while the store went apply now.
+        .onChange(of: host.rebuilds) { _, _ in sync(old: nil, now: snapshot) }
         .onChange(of: isFocusedPane) { _, now in
             if now { takeKeyboard() } else {
                 addressFocused = false
@@ -172,9 +174,13 @@ struct BrowserPane: View {
             if let tab = active {
                 // `rebuilds` is read so a data clear that dropped this page draws a new one.
                 let _ = host.rebuilds
-                BrowserPageHost(webView: host.page(scope: scope, pane: pane.id, tab: tab))
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("browser.page")
+                if let page = host.page(scope: scope, pane: pane.id, tab: tab) {
+                    BrowserPageHost(webView: page)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("browser.page")
+                } else {
+                    Color(nsColor: .textBackgroundColor)
+                }
                 if let failure = tab.failure {
                     BrowserLoadError(text: failure) { send("browser_reload", ["tab": .string(tab.id)]) }
                 }

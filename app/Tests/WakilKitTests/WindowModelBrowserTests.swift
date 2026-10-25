@@ -171,6 +171,25 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
         #expect(!model.layoutSnapshot.panes.contains { $0.id == pane }, "its only tab closed, and the pane with it")
     }
 
+    /// A place switch names the incoming place before the canvas is swapped: until the swap, the
+    /// canvas drawn — and the scope a browser pane is keyed with — is still the outgoing place's,
+    /// and the incoming place's seam calls are refused.
+    @Test func theDrawnScopeIsTheCanvasNotTheContext() async throws {
+        let (model, pane, _, _) = try await focusedBrowser()
+        let drawn = try #require(model.browserScope)
+        #expect(model.drawnScope == drawn)
+        model.setOrganizationForTesting("globex")
+        #expect(model.organization == "globex")
+        #expect(model.browserScope == drawn, "the canvas on screen is still the outgoing place's")
+        let incoming = LayoutScope(organization: "globex", project: drawn.project, environment: drawn.environment,
+                                   lineageRoot: drawn.lineageRoot)
+        let tab = try #require(model.browser(pane)?.active)
+        await model.browserPageDidReport(scope: incoming, pane: pane, tab: tab, BrowserPageReport(
+            url: "https://mail.test/", title: "Inbox", isLoading: false, progress: 1, canGoBack: false,
+            canGoForward: false, failure: nil))
+        #expect(model.browser(pane)?.activeTab?.url == "https://a.test/", "the incoming place's report is refused")
+    }
+
     @Test func browserKeysDispatchTheirActions() async throws {
         let (model, pane, _, journal) = try await focusedBrowser()
         #expect(await model.browserKey(.zoomIn))

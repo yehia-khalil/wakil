@@ -578,7 +578,6 @@ extension WakilWindow {
                 // 3c-i. Every control is a `browser_*` action with this pane folded in; the web views
                 // are the window's (`BrowserTabHost`), so a rebuild here never reloads a page.
                 if let browserHost, let scope = model.browserScope {
-                    let place = (model.organization, model.project, model.environment)
                     BrowserPane(
                         snapshot: model.browser(pane.id) ?? .empty, pane: pane,
                         width: pane.frame.width + (resizeOffsets[pane.id]?.width ?? 0),
@@ -595,11 +594,14 @@ extension WakilWindow {
                         keyboardHeld: { model.composerHoldsKeyboard },
                         keyboardFocusRequests: model.keyboardFocusRequests,
                         keyboardReturns: model.keyboardReturns,
-                        // Closed, not switched away from: the same place, and the pane gone from it.
+                        // Closed, not switched away from: the same canvas drawn, and the pane gone from it.
                         isClosed: {
-                            (model.organization, model.project, model.environment) == place
-                                && !model.layoutSnapshot.panes.contains { $0.id == pane.id }
+                            model.drawnScope == scope && !model.layoutSnapshot.panes.contains { $0.id == pane.id }
                         })
+                    // **One view per place and pane.** Pane ids repeat from place to place, so
+                    // without this a switch from A's `browser-1` to B's would keep the view: no
+                    // appearance (no re-report of B's pages) and A's snapshot as B's `old`.
+                    .id(BrowserTabHost.Key(scope: scope, pane: pane.id, tab: ""))
                 }
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw

@@ -149,6 +149,8 @@ private let keptPerPlace: Set<String> = [
     "layoutNotesAwaitingReturn",
     // Projections of the screen's scope, rebuilt from the stores whenever a scope is activated.
     "tables", "editables", "paneCells", "layoutSnapshot", "databases", "databaseDrivers",
+    // 3c-i: the scope `layoutSnapshot` is the canvas of, read with it, so it follows the swap.
+    "drawnScope",
     // Per pane of the screen's canvas, as on a project switch. `apiSendRequests` is emptied by
     // the swap itself (`activateLayout`).
     "queryLineRefusals", "queryLineRestores", "queryLineRestoreToken",
