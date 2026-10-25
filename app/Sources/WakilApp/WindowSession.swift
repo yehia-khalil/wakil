@@ -80,8 +80,9 @@ final class WindowSession {
             // The conversation's approval socket, beside its agent socket and stopped with it
             // (`approvalSocketPath`): `wakil-connect` asks it before a gated connection call, and
             // its answer is the permission plane's (`ConnectionApprovalServer`). One that would
-            // not start refuses nothing here (Rule 7): the session keeps Wakil's own tools, and
-            // `wakil-connect`, finding no socket, refuses every call that would have asked.
+            // not start refuses nothing here (Rule 7): the session keeps Wakil's own tools,
+            // `wakil-connect`, finding no socket, refuses every call that would have asked, and
+            // the conversation's status says why after each turn (`AgentSocket.startFailure`).
             let pinned = await caller()
             let conversation = pinned.conversation ?? ""
             let approval = ConnectionApprovalServer(
@@ -93,9 +94,11 @@ final class WindowSession {
                 })
             do {
                 try await approval.start()
-                return AgentSockets(mcp: server, approval: approval)
+                return AgentSockets(mcp: server, approval: approval, startFailure: nil)
             } catch {
-                return AgentSockets(mcp: server, approval: nil)
+                return AgentSockets(
+                    mcp: server, approval: nil,
+                    startFailure: approvalSocketFailure(path: approvalSocketPath(forAgentSocket: path), error: error))
             }
         }
 
@@ -488,6 +491,7 @@ private final class ScreenPlace {
 private struct AgentSockets: AgentSocket {
     let mcp: MCPSocketServer
     let approval: ConnectionApprovalServer?
+    let startFailure: String?
     func stop() async {
         await approval?.stop()
         await mcp.stop()

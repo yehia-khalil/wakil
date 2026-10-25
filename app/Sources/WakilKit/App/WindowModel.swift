@@ -7294,7 +7294,8 @@ public final class WindowModel {
         let path = agentSocketPath(agentSessionId: sessionId)
         let caller = DispatchCaller(place: place, session: sessionId, conversation: conversation)
         do {
-            return OpenedSocket(socket: try await factory(path, { caller }), failure: nil)
+            let socket = try await factory(path, { caller })
+            return OpenedSocket(socket: socket, failure: socket.startFailure)
         } catch {
             return OpenedSocket(
                 socket: nil,
@@ -7584,6 +7585,8 @@ public final class WindowModel {
             }
             return false
         }
+        // Whether this send was counted (`noteSent`), so a failure takes back only its own.
+        var counted = false
         do {
             if agent.sessionId == nil {
                 // `markSessionStarted()` above assigned this before anything
@@ -7615,9 +7618,9 @@ public final class WindowModel {
             // either suspension, `append` clears what is already there,
             // and nothing re-sets it once `send` returns.
             agent.turnInFlight = true
-            // Before the send, so no call the turn makes can find it unset; a typed turn clears
-            // what a spoken one left (`PlaceAgent.spoken`).
-            agent.spoken = source == .voice
+            // Before the send, so no call the turn makes can find it unset (`PlaceAgent.spoken`).
+            agent.noteSent(spoken: source == .voice)
+            counted = true
             refreshChipProduction(of: agent)
             // 2d-ii: the operator's own turn is a row, so what was actually
             // sent — a misheard sentence included — stays on screen.
@@ -7645,6 +7648,8 @@ public final class WindowModel {
             // `harness.start` or `harness.send` after the line above already
             // set the flag — so nothing may be left in flight.
             agent.turnInFlight = false
+            // Only this send's count: a spoken message still unanswered keeps `spoken` raised.
+            if counted { agent.noteResult() }
             status = "agent: \(error)"
             return false
         }
@@ -7696,6 +7701,7 @@ public final class WindowModel {
             // agents 4 of 4) — and, once seen, not that it is still working.
             guard !Task.isCancelled, let self, agent.eventPumpGeneration == generation else { return }
             agent.turnInFlight = false
+            agent.endTurns()
             // Conversations 3 of 3: the conversation stays live, its failure said whole in its
             // thread (Rule 8), and its next turn resumes it (`send`).
             agent.sessionEnded = true
@@ -7899,6 +7905,7 @@ public final class WindowModel {
 
         agent.thoughts = rebuiltThread(thread, parent: parent, for: agent)
         agent.turnInFlight = false
+        agent.endTurns()
 
         // Closed while the fork started: the fork is stopped, and nothing else is done.
         guard await install(started, in: agent, resumed: true) else { return }
@@ -8186,6 +8193,7 @@ public final class WindowModel {
         // and what `ProviderSwitchTests` asserts.
         appendSeam("\(previous.isEmpty ? Self.unsetProviderLabel : previous) → \(id)", in: agent)
         agent.turnInFlight = false
+        agent.endTurns()
 
         // Closed while the new session started: it is stopped, and nothing else is done.
         guard await install(started, in: agent) else { return }
@@ -8595,6 +8603,7 @@ public final class WindowModel {
         agent.eventPump?.cancel()
         await stopSession(of: agent)
         agent.turnInFlight = false
+        agent.endTurns()
         let place = agent.place
         let scope = agent.layoutScope
         let shown = screenConversations[place] == agent.id
@@ -9561,6 +9570,7 @@ public final class WindowModel {
         debugLogIfEnabled(event)
         if case .result(let isError, _) = event {
             agent.turnInFlight = false
+            agent.noteResult()
             markUnseen(failed: isError, for: agent)
         }
         // Task 15, fix round 1 (Critical): `Date()` is captured exactly

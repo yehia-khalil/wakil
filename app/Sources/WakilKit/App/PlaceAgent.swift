@@ -62,14 +62,34 @@ public final class PlaceAgent {
     /// Monotonic row ids (`WindowModel.thoughts`), per thread.
     var nextThoughtId = 0
     /// True from a successful `send` to the `.result` that ends the turn.
-    public internal(set) var turnInFlight = false {
-        didSet { if !turnInFlight { spoken = false } }
-    }
-    /// Whether the turn in flight came from speech: set by `WindowModel.send` as each turn starts
-    /// (a typed one clears it), and cleared whenever the turn ends — every `turnInFlight = false`.
-    /// The approval socket reads it (`WindowModel.turnIsSpoken`): a spoken turn never runs a
-    /// connection's write unasked (Invariant 7).
+    public internal(set) var turnInFlight = false
+    /// Whether any message still unanswered in this conversation came from speech. The approval
+    /// socket reads it (`WindowModel.turnIsSpoken`): a spoken turn never runs a connection's write
+    /// unasked (Invariant 7). **Sticky**: a typed message sent beside a spoken one does not lower
+    /// it, and the first message's `.result` does not clear it while a later one is unanswered —
+    /// only the last `.result` (`noteResult`) or the session's end (`endTurns`) does.
     public internal(set) var spoken = false
+    /// Messages sent (`noteSent`) less `.result`s received (`noteResult`).
+    var unansweredSends = 0
+
+    /// A message is about to go: spoken stays raised, or is raised by this one.
+    func noteSent(spoken bySpeech: Bool) {
+        unansweredSends += 1
+        spoken = spoken || bySpeech
+    }
+
+    /// A `.result` landed: one message answered; the last clears `spoken`.
+    func noteResult() {
+        unansweredSends = max(0, unansweredSends - 1)
+        if unansweredSends == 0 { spoken = false }
+    }
+
+    /// Nothing the session was sent is still running: a send that failed, a session stopped,
+    /// replaced or gone.
+    func endTurns() {
+        unansweredSends = 0
+        spoken = false
+    }
     /// A turn ended while the place was off screen, and the operator has not been back since
     /// (background agents 4 of 4): its chip says done. Cleared when the place is activated.
     public internal(set) var unseenResult = false
@@ -167,6 +187,14 @@ public final class PlaceAgent {
 /// a recorder in tests. Stopping it stops new connections; one already open finishes.
 public protocol AgentSocket: Sendable {
     func stop() async
+    /// Why part of what the socket brings did not start, though the socket itself did — the
+    /// conversation's approval socket, say. Nil when everything started. Said in the session's
+    /// status after each turn, as `PlaceAgent.socketFailure` is (Rule 8).
+    var startFailure: String? { get }
+}
+
+extension AgentSocket {
+    public var startFailure: String? { nil }
 }
 
 extension MCPSocketServer: AgentSocket {}

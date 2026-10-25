@@ -165,6 +165,8 @@ alone.
   into, read by `LayoutStore` and `PaneStore` in place of the on-screen one), `PaneContents.swift` (`PaneCell`,
   `PaneColumn`, `PaneSort`, `sortedRows`, `PaneSelection`), `WakilShimServerName.swift`
   (`wakilShimServerName = "wakil"`).
+- `UnixSocket.swift` — `MCPTransportError`, `makeUnixSocketAddress`, `ignoreSIGPIPEProcessWide`,
+  `disableSIGPIPE`: the socket plumbing `MCP/` and `Gate/`'s approval socket share.
 
 Uses: nothing.
 Tests: `JSONValueIntegerTests`, `IntegerPassthroughTests`, `ToolCallerTests`, `PaneContentsTests`,
@@ -267,7 +269,7 @@ Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadP
   connection call; `connectionCallDecision` allows or asks, and an ask parks a `connection_call`
   on the broker. `ConnectionCallRequest`, `ConnectionCallDecision`.
 
-Uses: nothing but `Core` (`ConnectionApproval.swift` also `MCP`'s socket helpers).
+Uses: nothing but `Core`.
 Tests: `WriteGateTests`, `ConfirmationBrokerTests`, `ProductionDeclarationTests`, `ConnectionApprovalTests`.
 
 ### Git/ — the window's git status
