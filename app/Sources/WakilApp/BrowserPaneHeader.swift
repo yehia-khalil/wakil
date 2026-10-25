@@ -77,7 +77,19 @@ enum BrowserPaneStyle {
     /// `.act`'s hover fade, the rail's row duration.
     static let hoverDuration = RailTreatment.rowHoverDuration
 
+    /// The pane's label inline at the strip's left: `.micro { padding: 0 10px 0 4px }`.
+    static let labelLeading: CGFloat = 4
+    static let labelTrailing: CGFloat = 10
+
     // MARK: The header and the page
+
+    /// The address line's inset: the settings form's `.field` padding, so the URL does not move
+    /// when the field's box appears round it.
+    static let fieldInsetX: CGFloat = 9
+    static let fieldInsetY: CGFloat = 6
+    /// The footer's micro labels: `gap: 16px`, and the mono line's `letter-spacing: 1.2px`.
+    static let footerSpacing: CGFloat = 16
+    static let footerTracking: CGFloat = 1.2
 
     /// Between the header row, the find bar, the list, the page and the downloads: whitespace.
     static let gap: CGFloat = 8
@@ -323,5 +335,53 @@ struct BrowserFavicon: View {
             }
         }
         .frame(width: BrowserPaneStyle.glyphSize, height: BrowserPaneStyle.glyphSize)
+    }
+}
+
+/// The row under the page (`Browser.dc.html`'s last line), in micro labels: the page's host,
+/// uppercase, and how it arrived — `TLS` for https (WebKit's `serverTrust` names no protocol
+/// version, so none is shown), `NOT SECURE` in amber where the address row says Not Secure. A
+/// loopback `http` page — which the padlock calls secure — has its host alone. Nil for a page with
+/// no host (blank, `about:`, `file:`, `data:`).
+struct BrowserFooter: View {
+    let host: String
+    let transport: Transport?
+
+    enum Transport: Equatable { case tls, notSecure }
+
+    init?(url: URL) {
+        guard let host = url.host, !host.isEmpty else { return nil }
+        self.host = host.uppercased()
+        switch url.scheme?.lowercased() {
+        case "https": transport = .tls
+        case "http": transport = BrowserAddress.isSecure(url) ? nil : .notSecure
+        default: transport = nil
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: BrowserPaneStyle.footerSpacing) {
+            Text(host).browserFooterMicro(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
+                .accessibilityIdentifier("browser.footer.host")
+            switch transport {
+            case .tls: Text("TLS").browserFooterMicro(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
+            case .notSecure: Text("NOT SECURE").browserFooterMicro(BrowserPaneStyle.amber)
+            case nil: EmptyView()
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, BrowserPaneStyle.fieldInsetX)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("browser.footer")
+    }
+}
+
+extension Text {
+    /// `.mono.micro { letter-spacing: 1.2px }`: the footer's host and transport.
+    func browserFooterMicro(_ colour: Color) -> some View {
+        font(.system(size: SettingsScale.micro, weight: .medium, design: .monospaced))
+            .tracking(BrowserPaneStyle.footerTracking)
+            .foregroundStyle(colour)
+            .lineLimit(1)
     }
 }

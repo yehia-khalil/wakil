@@ -311,10 +311,9 @@ extension WakilWindow {
     // slab, same title bar, one definition — see `settingsPaneOverlay`.
     func paneView(_ model: WindowModel, _ pane: Pane) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(pane.title.uppercased())
-                .font(.system(size: 9, weight: .medium))
-                .tracking(1.7)
-                .foregroundStyle(Color(red: 0.910, green: 0.925, blue: 0.965).opacity(0.45))
+            // The browser draws this label itself, inline at the left of its tab strip
+            // (`Browser.dc.html`), so its first row is one row.
+            if pane.kind != "browser" { PaneTitle(title: pane.title) }
 
             // **The first `switch pane.kind` in the codebase.** Since 2b-i
             // every pane has drawn the same thing and `kind` has been read
@@ -825,5 +824,18 @@ private extension UnsavedPrompt {
     /// One tab's prompt, which its editor pane draws over its own strip.
     var isCloseTab: Bool {
         if case .closeTab = intent { true } else { false }
+    }
+}
+
+/// A pane's title as the canvas draws it over every slab: §6's micro-label, uppercase-tracked
+/// 9 pt. One definition — the browser pane puts the same label inline in its tab row.
+struct PaneTitle: View {
+    let title: String
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .medium))
+            .tracking(1.7)
+            .foregroundStyle(Color(red: 0.910, green: 0.925, blue: 0.965).opacity(0.45))
     }
 }

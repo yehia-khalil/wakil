@@ -9,6 +9,7 @@
 {"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
 {"expect":{"focus":"browser.page"}}
 {"expect":{"tree":"contains","text":"Page A"}}
+{"expect":{"frame":"browser.footer","inside":"browser.pane"}}
 {"do":{"hotkey":"cmd+l"}}
 {"expect":{"focus":"browser.address"}}
 {"do":{"keys":"{pageStub}/b.html"}}

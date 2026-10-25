@@ -35,9 +35,12 @@ struct BrowserPane: View {
     @State private var findDraft = ""
     /// The find field's sends, one after another, so a burst of keystrokes lands in typing order.
     @State private var findSends: Task<Void, Never>?
-    /// What the address field shows: the host while it is not focused, the whole URL — or what is
-    /// being typed — while it is.
+    /// What the address field holds while it is being edited: the whole URL as it opened, then what
+    /// is typed.
     @State private var draft = ""
+    /// Whether the address row is the editable field (`.fieldBox`) rather than the URL's line —
+    /// from a click on the line, ⌘L, or a blank tab taking the keyboard, until the field lets go.
+    @State private var editingAddress = false
 
     private var active: BrowserTab? { snapshot.activeTab }
     private var listMode: BrowserTabListMode { BrowserTabListMode(paneWidth: width) }
@@ -46,13 +49,24 @@ struct BrowserPane: View {
         VStack(spacing: 0) {
             // `Browser.dc.html`'s order: the tab strip, the address row beneath it, then the page.
             // Whitespace between them all — no rules.
-            if listMode != .hidden {
-                BrowserTabList(
-                    snapshot: snapshot, mode: listMode,
-                    favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
-                    dispatch: send)
-                    .padding(.bottom, BrowserPaneStyle.gap)
+            // The pane's label inline at the left of the strip: one row (the canvas draws no title
+            // over this pane).
+            HStack(spacing: BrowserPaneStyle.tabSpacing) {
+                PaneTitle(title: pane.title)
+                    .fixedSize()
+                    .padding(.leading, BrowserPaneStyle.labelLeading)
+                    .padding(.trailing, BrowserPaneStyle.labelTrailing)
+                if listMode != .hidden {
+                    BrowserTabList(
+                        snapshot: snapshot, mode: listMode,
+                        favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
+                        dispatch: send)
+                } else {
+                    Spacer(minLength: 0)
+                }
             }
+            .frame(minHeight: BrowserPaneStyle.tabHeight)
+            .padding(.bottom, BrowserPaneStyle.gap)
             BrowserHeader(tab: active, tabs: snapshot.tabs, listMode: listMode, dispatch: send) { addressField }
             progressLine
             VStack(spacing: BrowserPaneStyle.gap) {
@@ -64,9 +78,11 @@ struct BrowserPane: View {
                 BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
                     .padding(.top, BrowserPaneStyle.gap)
             }
+            if let url = active.flatMap({ URL(string: $0.url) }), let footer = BrowserFooter(url: url) {
+                footer.padding(.top, BrowserPaneStyle.gap)
+            }
         }
         .onAppear {
-            draft = unfocusedText(active)
             sync(old: nil, now: snapshot)
             // What its web views said while this place was off screen was dropped (the seam's
             // place rule); they say it again now.
@@ -86,13 +102,13 @@ struct BrowserPane: View {
         .onChange(of: keyboardReturns) { _, _ in if isFocusedPane { takeKeyboard() } }
         .onChange(of: addressFocused) { _, focused in
             if focused {
-                draft = active?.url ?? ""
-                // The whole URL selected, so typing replaces it (⌘L's promise). Next turn, once the
-                // field's editor holds the keyboard — and only if it is still this field's.
-                DispatchQueue.main.async { selectAddress() }
+                // The whole URL selected, so typing replaces it (⌘L's promise), once the field's
+                // editor holds the keyboard — and only if it is still this field's.
+                selectAddress()
             } else {
-                // Rule 2's stated exception: leaving without Return puts the address back.
-                draft = unfocusedText(active)
+                // Rule 2's stated exception: leaving without Return puts the address back — the
+                // field goes, and the line shows the tab's URL.
+                editingAddress = false
             }
         }
         .onDisappear {
@@ -108,9 +124,12 @@ struct BrowserPane: View {
 
     // MARK: The address field
 
-    private var addressField: some View {
-        HStack(spacing: 5) {
-            if !addressFocused, let url = active.flatMap({ URL(string: $0.url) }), !(active?.url.isEmpty ?? true),
+    /// `Browser.dc.html`'s address row: the tab's whole URL as a monospaced line, with the padlock
+    /// or Not Secure beside it; pressed (or ⌘L), it is the editable field — the API pane's
+    /// `.fieldBox` — until the field lets go. Both carry `browser.address`.
+    @ViewBuilder private var addressField: some View {
+        let row = HStack(spacing: 5) {
+            if !editingAddress, let url = active.flatMap({ URL(string: $0.url) }), !(active?.url.isEmpty ?? true),
                url.scheme?.lowercased() != "about" {
                 let secure = BrowserAddress.isSecure(url)
                 Image(systemName: secure ? "lock.fill" : "lock.open")
@@ -123,36 +142,88 @@ struct BrowserPane: View {
                         .foregroundStyle(BrowserPaneStyle.amber)
                 }
             }
-            TextField("Search or enter address", text: $draft)
-                .textFieldStyle(.plain)
-                .font(.system(size: BrowserPaneStyle.addressSize, design: .monospaced))
-                .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.addressOpacity))
-                .focused($addressFocused)
-                .onSubmit { submit() }
-                .onExitCommand {
-                    addressFocused = false
-                    focusPage()
-                }
-                .accessibilityIdentifier("browser.address")
+            if editingAddress {
+                TextField("Search or enter address", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: BrowserPaneStyle.addressSize, design: .monospaced))
+                    .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.addressOpacity))
+                    .focused($addressFocused)
+                    .onSubmit { submit() }
+                    .onExitCommand {
+                        addressFocused = false
+                        focusPage()
+                    }
+                    // The field arrives to be typed in: it takes the keyboard once it is in the
+                    // window — asked as it appears, SwiftUI drops the request.
+                    .onAppear { DispatchQueue.main.async { if editingAddress { addressFocused = true } } }
+                    .accessibilityIdentifier("browser.address")
+            } else {
+                addressLine
+            }
         }
-        // The API pane's path box: the settings form's `.field`.
-        .fieldBox(maxWidth: .infinity)
+        if editingAddress {
+            row.fieldBox(maxWidth: .infinity)
+        } else {
+            // The field's own inset, so the text does not move when the box appears round it.
+            row.padding(.horizontal, BrowserPaneStyle.fieldInsetX).padding(.vertical, BrowserPaneStyle.fieldInsetY)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The URL as a line: what the field opens holding. A blank tab shows the field's placeholder.
+    private var addressLine: some View {
+        let url = lineText(active)
+        return Button { beginEditingAddress() } label: {
+            Text(url.isEmpty ? "Search or enter address" : url)
+                .font(.system(size: BrowserPaneStyle.addressSize, design: .monospaced))
+                .foregroundStyle(BrowserPaneStyle.text.opacity(
+                    url.isEmpty ? BrowserPaneStyle.metaOpacity : BrowserPaneStyle.addressOpacity))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Edit the address (⌘L)")
+        .accessibilityLabel("Address")
+        .accessibilityValue(url)
+        .accessibilityIdentifier("browser.address")
+    }
+
+    /// The line becomes the field, holding the tab's whole URL; the field takes the keyboard as it
+    /// appears. Already the field, it takes the keyboard again.
+    private func beginEditingAddress() {
+        if editingAddress {
+            if addressFocused { selectAddress() } else { addressFocused = true }
+            return
+        }
+        draft = active?.url ?? ""
+        editingAddress = true
     }
 
     /// Selects the address field's whole text, in that field's own editor: the window's first
     /// responder when it is the field editor of an `NSTextField` named `browser.address` and this
-    /// pane's field still has focus. Anything else holding the keyboard by then is left alone.
-    private func selectAddress() {
-        guard addressFocused, let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
-              let field = editor.delegate as? NSTextField, field.accessibilityIdentifier() == "browser.address"
-        else { return }
+    /// pane's field still has focus. The editor is the field's a turn or two after focus moves, so
+    /// this asks again briefly; anything else holding the keyboard by then is left alone.
+    private func selectAddress(tries: Int = 10) {
+        guard addressFocused else { return }
+        guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
+              let field = editor.delegate as? NSTextField, field.accessibilityIdentifier() == "browser.address",
+              editor.string == draft
+        else {
+            if tries > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { selectAddress(tries: tries - 1) }
+            }
+            return
+        }
         editor.selectAll(nil)
     }
 
-    private func unfocusedText(_ tab: BrowserTab?) -> String {
+    /// The tab's URL as the line shows it: whole, and nothing for a blank or `about:` page.
+    private func lineText(_ tab: BrowserTab?) -> String {
         guard let tab, !tab.url.isEmpty, let url = URL(string: tab.url) else { return "" }
         if url.scheme?.lowercased() == "about" { return "" }
-        return BrowserAddress.displayHost(url)
+        return tab.url
     }
 
     /// Return: the typed text goes to `browser_navigate`, which holds it to the address rule, and the
@@ -309,6 +380,8 @@ struct BrowserPane: View {
             if case .focusAddress = command.verb, tab.id == now.active { wantsAddress = true }
         }
         let switched = old != nil && old?.active != now.active
+        // An edit left in the field was the other tab's: the field holds this one's URL.
+        if switched, editingAddress { draft = now.activeTab?.url ?? "" }
         // A new tab (⌘T, the agent's) takes the keyboard to its address field (Rule 3). Not one a
         // page opened, nor one ⌘⇧T brought back: those arrive with a page to read, as in Safari.
         if switched, let id = now.active, let old, !old.tabs.contains(where: { $0.id == id }),
@@ -324,7 +397,6 @@ struct BrowserPane: View {
             addressFocused = false
             focusPage()
         }
-        if !addressFocused { draft = unfocusedText(now.activeTab) }
         syncFind(old: old, now: now)
         // `browser_download_cancel` asked: the host stops each, and reports it once WebKit has.
         host.cancelRequested(now.downloads, scope: scope, pane: pane.id)
@@ -358,7 +430,7 @@ struct BrowserPane: View {
 
     private func focusAddress() {
         guard isFocusedPane, isKeyboardOwner, !keyboardHeld(), active != nil else { return }
-        addressFocused = true
+        beginEditingAddress()
     }
 
     private func focusPage() {
