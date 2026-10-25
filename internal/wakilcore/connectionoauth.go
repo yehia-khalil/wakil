@@ -35,9 +35,11 @@ const signInLifetime = 10 * time.Minute
 const refreshMargin = 60 * time.Second
 
 // connectionClient is the client the tokens were issued to: what a refresh needs. It is the
-// "client" key of the Keychain item, as JSON.
+// "client" key of the Keychain item, as JSON. Own is the operator's own app: its secret is not
+// copied here but read from clientSecret at each refresh, so a rotated secret is used.
 type connectionClient struct {
 	ID        string           `json:"id"`
+	Own       bool             `json:"own,omitempty"`
 	Secret    string           `json:"secret,omitempty"`
 	TokenURL  string           `json:"tokenUrl"`
 	AuthStyle oauth2.AuthStyle `json:"authStyle"`
@@ -56,7 +58,7 @@ type signInFlow struct {
 	resource string
 	issuer   string
 	checkIss bool
-	listener net.Listener
+	server   *http.Server
 	result   chan signInResult
 	done     chan struct{}
 	endOnce  sync.Once
@@ -71,11 +73,31 @@ var (
 	signInFlows = map[signInKey]*signInFlow{}
 )
 
+// tokenLocks serialises every read-and-rewrite of a connection's tokens in this process, so two
+// callers near expiry refresh once and a refresh cannot bring back what a sign-out removed.
+var (
+	tokenLocksMu sync.Mutex
+	tokenLocks   = map[signInKey]*sync.Mutex{}
+)
+
+func lockTokens(org, name string) func() {
+	key := signInKey{org, name}
+	tokenLocksMu.Lock()
+	l := tokenLocks[key]
+	if l == nil {
+		l = &sync.Mutex{}
+		tokenLocks[key] = l
+	}
+	tokenLocksMu.Unlock()
+	l.Lock()
+	return l.Unlock
+}
+
 // end closes the flow's listener, wakes its Wait and forgets it. Safe to call more than once.
 func (f *signInFlow) end(key signInKey) {
 	f.endOnce.Do(func() {
 		f.timer.Stop()
-		f.listener.Close()
+		f.server.Close() // the listener and any kept-alive connection
 		close(f.done)
 	})
 	signInMu.Lock()
@@ -110,7 +132,11 @@ func StartConnectionSignIn(ctx context.Context, org, name string) (string, error
 		return "", UserError("could not read " + name + "'s sign-in details: " + err.Error())
 	}
 	if asm == nil {
-		// The 2025-03-26 MCP spec's default endpoints, when the server publishes no metadata.
+		// The 2025-03-26 MCP spec's default endpoints, when the server publishes no metadata. The
+		// SDK checks published endpoints; these get the same check here.
+		if err := httpsOrLoopback(issuer); err != nil {
+			return "", UserError(name + "'s sign-in server " + issuer + " " + err.Error())
+		}
 		asm = &oauthex.AuthServerMeta{Issuer: issuer, AuthorizationEndpoint: issuer + "/authorize",
 			TokenEndpoint: issuer + "/token", RegistrationEndpoint: issuer + "/register"}
 	}
@@ -128,7 +154,8 @@ func StartConnectionSignIn(ctx context.Context, org, name string) (string, error
 	f := &signInFlow{
 		conn: c, client: client, resource: prm.Resource, issuer: asm.Issuer,
 		checkIss: asm.AuthorizationResponseIssParameterSupported,
-		verifier: oauth2.GenerateVerifier(), state: randomState(), listener: ln,
+		verifier: oauth2.GenerateVerifier(), state: randomState(),
+		server: &http.Server{ReadHeaderTimeout: 10 * time.Second},
 		result: make(chan signInResult, 1), done: make(chan struct{}),
 		cfg: oauth2.Config{
 			ClientID: client.ID, ClientSecret: client.Secret, RedirectURL: redirect, Scopes: prm.ScopesSupported,
@@ -140,7 +167,8 @@ func StartConnectionSignIn(ctx context.Context, org, name string) (string, error
 		f.timedOut.Store(true)
 		f.end(key)
 	})
-	go http.Serve(ln, http.HandlerFunc(f.callback))
+	f.server.Handler = http.HandlerFunc(f.callback)
+	go f.server.Serve(ln)
 
 	signInMu.Lock()
 	old := signInFlows[key]
@@ -153,8 +181,9 @@ func StartConnectionSignIn(ctx context.Context, org, name string) (string, error
 		oauth2.SetAuthURLParam("resource", f.resource)), nil
 }
 
-// callback is the loopback redirect: it hands the first answer to Wait and tells the operator
-// to go back to Wakil.
+// callback is the loopback redirect: it hands the first answer carrying a code or an error to
+// Wait, and tells the operator to go back to Wakil, which says how the sign-in ended. A request
+// with neither is not an answer and is ignored.
 func (f *signInFlow) callback(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/callback" {
 		http.NotFound(w, r)
@@ -162,19 +191,17 @@ func (f *signInFlow) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	res := signInResult{code: q.Get("code"), state: q.Get("state"), iss: q.Get("iss"), err: q.Get("error")}
-	if d := q.Get("error_description"); d != "" {
+	if d := q.Get("error_description"); d != "" && res.err != "" {
 		res.err += ": " + d
 	}
-	select {
-	case f.result <- res:
-	default:
+	if res.code != "" || res.err != "" {
+		select {
+		case f.result <- res:
+		default:
+		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if res.err != "" {
-		fmt.Fprint(w, "<p>Sign-in did not finish. You can close this tab and return to Wakil.</p>")
-		return
-	}
-	fmt.Fprint(w, "<p>Signed in. You can close this tab and return to Wakil.</p>")
+	fmt.Fprint(w, "<p>You can close this tab and return to Wakil.</p>")
 }
 
 // WaitConnectionSignIn blocks until the browser comes back to the flow Start began, then keeps
@@ -215,9 +242,22 @@ func WaitConnectionSignIn(ctx context.Context, org, name string) (string, error)
 		return "", UserError("could not finish the sign-in to " + name + ": " + err.Error())
 	}
 	account := tokenAccount(ctx, tok, f.issuer, f.conn.URL)
-	client, err := json.Marshal(f.client)
+	stored := f.client
+	if stored.Own {
+		stored.Secret = ""
+	}
+	client, err := json.Marshal(stored)
 	if err != nil {
 		return "", err
+	}
+	unlock := lockTokens(org, name)
+	defer unlock()
+	// A newer Start may have replaced this flow while the code was exchanged: its tokens win.
+	signInMu.Lock()
+	current := signInFlows[key] == f
+	signInMu.Unlock()
+	if !current {
+		return "", UserError("the sign-in to " + name + " was replaced by a newer one")
 	}
 	if err := SetConnectionSecrets(org, name, tokenSecrets(tok, string(client))); err != nil {
 		return "", err
@@ -225,9 +265,25 @@ func WaitConnectionSignIn(ctx context.Context, org, name string) (string, error)
 	return account, nil
 }
 
+// freshAccess is the item's access token if it needs no refresh: no expiry, or not within a
+// minute of it.
+func freshAccess(s map[string]string) (string, bool) {
+	if s["access"] == "" {
+		return "", false
+	}
+	if s["expiry"] == "" {
+		return s["access"], true
+	}
+	expiry, err := time.Parse(time.RFC3339, s["expiry"])
+	return s["access"], err == nil && time.Until(expiry) > refreshMargin
+}
+
 // BrowserToken is the access token for org's connection name, refreshed first when it expires
-// within a minute. A failed refresh leaves the item as it is and asks for a new sign-in.
+// within a minute. Refreshes are one at a time per connection. A failed refresh leaves the item
+// as it is and asks for a new sign-in, unless someone else refreshed it meanwhile.
 func BrowserToken(ctx context.Context, org, name string) (string, error) {
+	unlock := lockTokens(org, name)
+	defer unlock()
 	s, err := ConnectionSecrets(org, name)
 	if err != nil {
 		return "", err
@@ -235,23 +291,29 @@ func BrowserToken(ctx context.Context, org, name string) (string, error) {
 	if s["access"] == "" {
 		return "", UserError("connection " + name + " is not signed in: sign in from Settings → Connections")
 	}
-	if s["expiry"] == "" {
-		return s["access"], nil
-	}
-	expiry, err := time.Parse(time.RFC3339, s["expiry"])
-	if err == nil && time.Until(expiry) > refreshMargin {
-		return s["access"], nil
+	if access, fresh := freshAccess(s); fresh {
+		return access, nil
 	}
 	again := UserError("the sign-in to " + name + " has lapsed: sign in again from Settings → Connections")
 	var client connectionClient
 	if s["refresh"] == "" || json.Unmarshal([]byte(s["client"]), &client) != nil || client.TokenURL == "" {
 		return "", again
 	}
-	cfg := oauth2.Config{ClientID: client.ID, ClientSecret: client.Secret,
+	secret := client.Secret
+	if client.Own {
+		secret = s["clientSecret"]
+	}
+	cfg := oauth2.Config{ClientID: client.ID, ClientSecret: secret,
 		Endpoint: oauth2.Endpoint{TokenURL: client.TokenURL, AuthStyle: client.AuthStyle}}
 	tok, err := cfg.TokenSource(context.WithValue(ctx, oauth2.HTTPClient, connectionHTTP),
 		&oauth2.Token{RefreshToken: s["refresh"], Expiry: time.Unix(1, 0)}).Token()
 	if err != nil {
+		// Another process (a second fronting binary) may have refreshed it first.
+		if now, err := ConnectionSecrets(org, name); err == nil && now["access"] != s["access"] {
+			if access, fresh := freshAccess(now); fresh {
+				return access, nil
+			}
+		}
 		return "", again
 	}
 	if tok.RefreshToken == "" {
@@ -268,6 +330,8 @@ func SignOutConnection(org, name string) error {
 	if _, ok := ConnectionFor(org, name); !ok {
 		return UserError("no connection " + name + " in " + org)
 	}
+	unlock := lockTokens(org, name)
+	defer unlock()
 	s, err := ConnectionSecrets(org, name)
 	if err != nil {
 		return err
@@ -330,7 +394,7 @@ func preregisteredClient(org string, c MCPConnection) (*connectionClient, error)
 	if len(missing) > 0 {
 		return nil, UserError("connection " + c.Name + " signs in with your own app: fill in " + strings.Join(missing, " and ") + " first")
 	}
-	return &connectionClient{ID: value("clientId"), Secret: value("clientSecret")}, nil
+	return &connectionClient{ID: value("clientId"), Own: true, Secret: value("clientSecret")}, nil
 }
 
 // discoverResource finds the server's protected resource metadata at the two well-known places
@@ -460,10 +524,22 @@ func userinfoAccount(ctx context.Context, access, issuer string) string {
 	if endpoint == "" {
 		return ""
 	}
-	if u, err := url.Parse(endpoint); err != nil || (u.Scheme != "https" && !isLoopbackHost(u.Hostname())) {
+	if httpsOrLoopback(endpoint) != nil {
 		return ""
 	}
 	return accountClaim(getJSON(endpoint, access))
+}
+
+// httpsOrLoopback refuses an address Wakil would send a code or a secret to in the clear.
+func httpsOrLoopback(addr string) error {
+	u, err := url.Parse(addr)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackHost(u.Hostname())) {
+		return fmt.Errorf("is not https")
+	}
+	return nil
 }
 
 func isLoopbackHost(host string) bool {
