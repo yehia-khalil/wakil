@@ -102,6 +102,11 @@ Two traps met while building this:
    (`wakilKitKeepsItsLayering` fails otherwise). Links into `Core/` need none; links into `App/` are
    not allowed.
 
+### A new ready-made connection
+
+One `ConnectionKind` entry in `internal/wakilcore/connectioncatalog.go`, with the vendor's doc URL for
+its server in a comment. Nothing else changes: Settings → Connections and `wakil-connect` read the catalog.
+
 ### A new provider
 
 Organisations, providers and accounts are described in `docs/wakil/org-and-provider-model.md`. The

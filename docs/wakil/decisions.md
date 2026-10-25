@@ -1803,3 +1803,21 @@ inside `--abort` and Undo Apply's put-back, which is refused while a clashed fil
 pull, stash apply or pop that clashes leaves the conflicts in place. Still refused: starting a
 cherry-pick or revert (one begun in a terminal is resolved and aborted like a merge), interactive
 rebase, `merge --squash`, a chosen strategy, and tags. The reasoning is Decision 47.
+
+### 2026-10-25 — a connection's tool, allowed by the operator
+
+An organization's own MCP server (Jira, Notion, a custom one), fronted by `wakil-connect`. The
+operator ticks **Allow agent** per tool, per organization; that tick is the operator earning that
+write in. A tool the server marks read-only runs once ticked, voice included. A tool that writes
+runs once ticked, from a typed turn. **A destructive tool can never be ticked.** It earns in because
+the server is the organization's own, the operator chose each tool one by one, and the gate sits in
+`wakil-connect`, where the harness cannot skip it.
+
+Still asks: a locked (destructive) tool, always; a ticked write reached by a spoken turn (Invariant
+7: it raises the plane once, as a *gate* write does); a tool the operator has not ticked. With Wakil
+not running, only ticked tools run and everything else is refused.
+
+The threat model the reviews surfaced: the gate is in `wakil-connect`, not the harness. An agent with
+a shell can already edit the organization's switches on disk and connect to its own approval socket,
+so the socket can only ask and never approve; the tick protects against a tool being used unasked,
+not against an agent that already owns the shell (Invariant 4's reasoning).

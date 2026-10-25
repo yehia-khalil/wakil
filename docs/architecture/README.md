@@ -47,6 +47,9 @@ flowchart LR
 - **The Go binaries** (`cmd/`, `internal/`) are headless capabilities behind MCP. The window starts
   four of them (`WakilWiring.build`). The agent's `claude` process starts the agent-facing ones
   (`agentFacingServers`). `wakil-git` is started by both.
+- **`wakil-connect`** is one process per connection of the active organization, started by the agent's
+  `claude` process (`AgentConnectionsBox` builds its config). It fronts the organization's own MCP
+  server, injects the credentials, and gates every call. See `go.md`.
 - **The agent** is the `claude` CLI, driven by `ClaudeCodeCLIHarness` (`Harness/`). It reaches
   Wakil's own actions only through the shim.
 - **Quick tasks** (one-shot model calls, ghost-text first) go through `QuickTasks` (`App/QuickTasks.swift`),
@@ -67,6 +70,13 @@ flowchart LR
   action set, plus three hand-written tools answered in the window: `read_pane` (what a pane shows,
   from `PaneStore`), `read_layout` (what is on screen, from `LayoutStore`), and `approve_tool_use`
   (the CLI's permission prompt, answered by `permissionDecision`).
+- **The approval socket.** Each conversation has a second unix socket beside its agent socket,
+  `<dir>/<session id>-approval.sock` (`ConnectionApprovalServer`, `Gate/ConnectionApproval.swift`).
+  `wakil-connect` asks it before a gated call. It can only ask: a call it cannot allow outright
+  parks on the confirmation broker for the operator, and it never approves by itself.
+- **`ctx_config_tree_for`** (`StandardActions.swift`) reads a named organization's config tree for a
+  launch's connections. It is operator-only, never the agent's; `ctx_config_tree` stays the active
+  organization's.
 - **The `wakil` CLI** is run as a plain subprocess by the window to read and mint account
   credentials (`WakilCLICredentialsLookup`, `WakilCLIProviderMint`).
 
