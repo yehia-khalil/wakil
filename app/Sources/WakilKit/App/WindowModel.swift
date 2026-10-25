@@ -40,6 +40,14 @@ public final class WindowModel {
         guard let browserHome, !organization.isEmpty else { return nil }
         return try? BrowserOrgFiles(home: browserHome, org: organization)
     }
+    /// The browser files of `scope`'s organisation — **the place a web view belongs to, not the
+    /// context's** (3c-i): between a context change and the canvas swap the two differ, and a tab of
+    /// the canvas still drawn must be built on its own organisation's store, its state kept in its
+    /// own organisation's folder. Nil with no home, or no organisation on the scope.
+    public func browserOrgFiles(for scope: LayoutScope) -> BrowserOrgFiles? {
+        guard let browserHome, !scope.organization.isEmpty else { return nil }
+        return try? BrowserOrgFiles(home: browserHome, org: scope.organization)
+    }
     /// `project.json`'s name, for drawing. Never what a pin carries — that is `projectKey`.
     public private(set) var project = ""
     /// The active project's registry key (`ContextStore.ActiveContext.projectKey`), which
@@ -2694,8 +2702,13 @@ public final class WindowModel {
     private func showCanvas(_ scope: LayoutScope) async {
         // A Send asked of a pane on the canvas being left is not one to answer on the next.
         apiSendRequests = [:]
+        // A swap, as `activateLayout`'s is: the stores move before the window re-reads them, and
+        // nothing keyed by the screen (a browser page's report) may land in between.
+        let outerSwap = layoutSwapInFlight
+        layoutSwapInFlight = true
         await layout.switchScope(to: scope)
         await panes.switchScope(to: scope)
+        layoutSwapInFlight = outerSwap
         await readLayoutSnapshot()
         await refreshPanes()
     }
@@ -5684,8 +5697,13 @@ public final class WindowModel {
     /// (`browser-1`, `t1`), so a report from another place would land in this one's pane and its
     /// saved layout (Invariant 4 across organisations). Such a call is dropped; the window
     /// re-reports a place's live web views when the place is shown again.
+    ///
+    /// **Both the canvas drawn and the store's screen must be `scope`**: a canvas swap moves the
+    /// pane store's screen before the window re-reads the layout, and a report in between would be
+    /// written into the incoming place's pane of the same id.
     private func browserScopeIsShown(_ scope: LayoutScope) async -> Bool {
-        !layoutSwapInFlight && scope == browserScope
+        guard !layoutSwapInFlight, scope == browserScope else { return false }
+        return await panes.screenScope == scope && !layoutSwapInFlight && scope == browserScope
     }
 
     /// A tab's web view after a navigation event: into the store, the cell re-read, and — when the

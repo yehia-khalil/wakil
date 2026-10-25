@@ -38,6 +38,9 @@ final class BrowserTabHost {
     @ObservationIgnored private var applied: [Key: Int] = [:]
     /// Tabs a page opened (pop-ups): they arrive without taking the keyboard to the address field.
     @ObservationIgnored private(set) var openedByPage: Set<Key> = []
+    /// Keys a pop-up's web view was filed under before the store named its tab: placeholders, the
+    /// only views a later filing may replace.
+    @ObservationIgnored private var pendingPopups: Set<Key> = []
 
     /// The icon a page names in its `link rel=icon`, per tab — only a `data:` one, decoded here:
     /// nothing is fetched for it, so no request leaves outside the organisation's own store.
@@ -85,9 +88,9 @@ final class BrowserTabHost {
             touch(key)
             return view
         }
-        // Read now, never kept: a tab built after an organisation switch must get the new
-        // organisation's store (`WindowModel.browserOrgFiles`).
-        let files = model?.browserOrgFiles
+        // The place's own organisation, read now and never kept — not the context's, which a
+        // switch names before the canvas drawn is swapped (`WindowModel.browserOrgFiles(for:)`).
+        let files = model?.browserOrgFiles(for: scope)
         if !clearing.isEmpty, let id = try? files?.identifier(), clearing.contains(id) { return nil }
         return webView(scope: scope, pane: pane, tab: tab.id) {
             let view = BrowserWebView(frame: .zero, configuration: Self.configuration(files: files))
@@ -144,41 +147,46 @@ final class BrowserTabHost {
         let delegate = BrowserTabDelegate(host: self, scope: scope, pane: pane, tab: "", files: files)
         delegate.requested = url
         delegate.attach(to: view)
+        // Filed early only on screen, where the window's cell is this place's (an off-screen pop-up
+        // is refused before here, and its cell would be another place's).
+        let onScreen = model?.browserScope == scope
         let expected = "t\(model?.browser(pane)?.nextTab ?? 1)"
         let predicted = Key(scope: scope, pane: pane, tab: expected)
-        let filedEarly = file(view, delegate, under: predicted, force: false)
+        let filedEarly = onScreen && file(view, delegate, under: predicted, placeholder: true)
         Task { [weak self] in
             guard let self else { return }
             let id = await self.model?.browserPageOpenedTab(scope: scope, pane: pane, opener: opener, url: url)
-            if filedEarly, self.views[predicted] === view, id != expected {
-                // Not the tab the store made (or none): the predicted key goes back to nothing.
-                self.unfile(predicted)
-            }
+            if filedEarly, self.views[predicted] === view { self.unfile(predicted) }
             guard let id else {
                 delegate.detach()
                 view.stopLoading()
                 return
             }
             let key = Key(scope: scope, pane: pane, tab: id)
-            // The store says this is the pop-up's tab: a view the pane made for it meanwhile gives way.
-            if self.views[key] !== view { _ = self.file(view, delegate, under: key, force: true) }
+            // A real view already under the store's id is never replaced; this pop-up's then goes.
+            guard self.file(view, delegate, under: key, placeholder: false) else {
+                delegate.detach()
+                view.stopLoading()
+                return
+            }
             delegate.tab = id
             delegate.scheduleReport()
         }
         return view
     }
 
-    /// Puts `view` under `key`. Another view there is replaced only when `force`, or when it has had
-    /// no command applied — one made for the pop-up's tab while the seam was awaited. A real tab's
-    /// view, with its seq and marks, is never taken over by a stale guess; answers whether it filed.
-    private func file(_ view: BrowserWebView, _ delegate: BrowserTabDelegate, under key: Key, force: Bool) -> Bool {
+    /// Puts `view` under `key`. Another view there is replaced only when it is a pop-up's
+    /// placeholder (`pendingPopups`); a real tab's view, with its seq and marks, is never taken over.
+    /// Answers whether it filed.
+    private func file(_ view: BrowserWebView, _ delegate: BrowserTabDelegate, under key: Key, placeholder: Bool) -> Bool {
         if let other = views[key], other !== view {
-            guard force || applied[key] == nil else { return false }
-            drop(key, mode: .forget)
+            guard pendingPopups.contains(key) else { return false }
+            unfile(key)   // that pop-up's own adoption files it again once its tab is named
         }
         views[key] = view
         delegates[key] = delegate
         openedByPage.insert(key)
+        if placeholder { pendingPopups.insert(key) } else { pendingPopups.remove(key) }
         touch(key)
         evictBeyondLimit(keeping: key)
         return true
@@ -190,6 +198,7 @@ final class BrowserTabHost {
         delegates[key] = nil
         recency.removeAll { $0 == key }
         openedByPage.remove(key)
+        pendingPopups.remove(key)
     }
 
     // MARK: Commands

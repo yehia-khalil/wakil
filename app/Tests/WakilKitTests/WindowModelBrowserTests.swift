@@ -5,7 +5,7 @@ import Testing
 /// A window over the layout, editor and browser actions (`editorWindowFull`'s shape, plus the
 /// browser's), its start page blank. `journal` is its registry's journal file.
 @MainActor
-private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, journal: URL) {
+private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, journal: URL, panes: PaneStore) {
     let journalDir = testScratchRoot.appendingPathComponent("browser-window-\(UUID().uuidString)")
     let registry = ActionRegistry(journalDirectory: journalDir, sessionId: "browser-window")
     let panes = PaneStore()
@@ -27,23 +27,29 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
         gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })
     await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { .defaults })
-    return (model, files, layout, journalDir.appendingPathComponent("browser-window.jsonl"))
+    return (model, files, layout, journalDir.appendingPathComponent("browser-window.jsonl"), panes)
 }
 
 @Suite @MainActor struct WindowModelBrowserTests {
     /// A focused browser pane holding one tab on `https://a.test/`.
     private func focusedBrowser() async throws -> (WindowModel, String, LayoutStore, URL) {
-        let (model, _, layout, journal) = await browserWindow()
+        let (model, pane, layout, journal, _) = try await focusedBrowserAndPanes()
+        return (model, pane, layout, journal)
+    }
+
+    /// `focusedBrowser`, with the window's pane store, for a test that moves its screen.
+    private func focusedBrowserAndPanes() async throws -> (WindowModel, String, LayoutStore, URL, PaneStore) {
+        let (model, _, layout, journal, panes) = await browserWindow()
         await model.refreshContext()
         await model.dispatchFromSurface("browser_open", .object(["url": .string("https://a.test/")]))
         await model.refreshLayout()
         let pane = try #require(model.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
         await model.focusPane(id: pane)
-        return (model, pane, layout, journal)
+        return (model, pane, layout, journal, panes)
     }
 
     @Test func theWindowHandsOutTheActiveOrganisationsFilesOnly() async throws {
-        let (model, _, _, _) = await browserWindow()
+        let (model, _, _, _, _) = await browserWindow()
         let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
         model.browserHome = home
         await model.refreshContext()
@@ -63,14 +69,14 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
     }
 
     @Test func noOrganisationYetMeansNoFiles() async {
-        let (model, _, _, _) = await browserWindow()
+        let (model, _, _, _, _) = await browserWindow()
         model.browserHome = testScratchRoot
         #expect(model.organization.isEmpty)
         #expect(model.browserOrgFiles == nil)
     }
 
     @Test func keysOutsideABrowserKeepTodaysMeaning() async throws {
-        let (model, files, _, _) = await browserWindow()
+        let (model, files, _, _, _) = await browserWindow()
         await model.refreshContext()
         await files.put("/p/api/a.go", "a")
         await model.dispatchFromSurface("editor_open", .object(["path": .string("/p/api/a.go")]))
@@ -188,6 +194,37 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
             url: "https://mail.test/", title: "Inbox", isLoading: false, progress: 1, canGoBack: false,
             canGoForward: false, failure: nil))
         #expect(model.browser(pane)?.activeTab?.url == "https://a.test/", "the incoming place's report is refused")
+    }
+
+    /// A web view is built on its place's organisation's store, whatever the context names: in the
+    /// gap before a canvas swap they differ.
+    @Test func aPlacesFilesAreItsOwnOrganisationsNotTheContexts() async throws {
+        let (model, _, _, _) = try await focusedBrowser()
+        model.browserHome = testScratchRoot.appendingPathComponent(UUID().uuidString)
+        let drawn = try #require(model.browserScope)
+        model.setOrganizationForTesting("globex")
+        let files = try #require(model.browserOrgFiles(for: drawn))
+        #expect(files.org == drawn.organization && files.org != "globex")
+        #expect(model.browserOrgFiles?.org == "globex", "the context's are another organisation's")
+        #expect(model.browserOrgFiles(for: LayoutScope(organization: "", project: "", environment: "")) == nil)
+    }
+
+    /// Mid-swap — the pane store's screen moved to the incoming canvas, the window not yet re-read —
+    /// a report tagged with the canvas still drawn must not land in the incoming one's pane of the
+    /// same id (`showCanvas` to a bare organisation moves the stores before `readLayoutSnapshot`).
+    @Test func aReportDuringACanvasSwapChangesNothingInTheIncomingCanvas() async throws {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        let drawn = try #require(model.browserScope)
+        let tab = try #require(model.browser(pane)?.active)
+        let bare = LayoutScope(organization: "globex", project: "", environment: "")
+        await panes.switchScope(to: bare)
+        await panes.browserRestore(paneId: pane, tabs: [BrowserSavedTab(id: tab, url: "https://b.test/", title: "B")],
+                                         active: tab)
+        let incoming = await panes.browserSnapshot(paneId: pane)
+        await model.browserPageDidReport(scope: drawn, pane: pane, tab: tab, BrowserPageReport(
+            url: "https://mail.test/", title: "Inbox", isLoading: false, progress: 1, canGoBack: false,
+            canGoForward: false, failure: nil))
+        #expect(await panes.browserSnapshot(paneId: pane) == incoming, "the incoming canvas's pane is untouched")
     }
 
     @Test func browserKeysDispatchTheirActions() async throws {

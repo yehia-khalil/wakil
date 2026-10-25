@@ -306,7 +306,7 @@ public struct WakilWiring: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         // 3c-i. Deletes a WebKit data store by id. Only the app can (`WKWebsiteDataStore` is
         // WebKit's); nil leaves `browser_clear_data` refusing, as `--dispatch` and tests want.
-        removeBrowserData: (@Sendable (UUID) async throws -> Void)? = nil
+        removeBrowserData: BrowserDataRemover? = nil
     ) async -> WakilWiring {
         var diagnostics: [String] = []
         // `environment["WAKIL_PROVIDER"]` here, not a live pick: every

@@ -85,6 +85,11 @@ extension BrowserSnapshot {
     }
 }
 
+/// Deletes an organisation's WebKit store by id (`browser_clear_data`), which only the app can. It
+/// is handed `deleteFiles` — the organisation's tab states and zoom — to call once no web view on the
+/// store is left to write one, and before the store goes.
+public typealias BrowserDataRemover = @Sendable (_ store: UUID, _ deleteFiles: @Sendable () throws -> Void) async throws -> Void
+
 /// Registers the browser pane's actions (3c-i).
 ///
 /// **One path for the operator and the agent** (Invariant 2): the pane's header, its tab list and
@@ -98,7 +103,7 @@ public func registerBrowserActions(
     layout: LayoutStore?,
     settings: @escaping @Sendable () async -> SettingsBrowser,
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
-    removeData: (@Sendable (UUID) async throws -> Void)? = nil
+    removeData: BrowserDataRemover? = nil
 ) async {
     for action in browserActions(panes: panes, layout: layout, settings: settings, orgFiles: orgFiles,
                                  removeData: removeData) {
@@ -113,7 +118,7 @@ func browserActions(
     layout: LayoutStore?,
     settings: @escaping @Sendable () async -> SettingsBrowser,
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
-    removeData: (@Sendable (UUID) async throws -> Void)? = nil
+    removeData: BrowserDataRemover? = nil
 ) -> [Action] {
     var actions: [Action] = []
     let kind = BrowserPaneKind.names[0]
@@ -507,10 +512,11 @@ func browserActions(
             guard let removeData else { throw BrowserActionError.clearOnlyFromTheApp }
             guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
             let id = try files.identifier()
-            // The files first: when the remover returns, the window rebuilds its pages, and none
-            // may restore a tab state from before the clear.
+            // The window drops the store's web views, then deletes the files, then removes the
+            // store: no page left alive can write a tab state after the deletion. Deleted again
+            // after — a no-op when the remover asked — so a remover that never asks still clears.
+            try await removeData(id) { try files.removeEverythingButTheProfile() }
             try files.removeEverythingButTheProfile()
-            try await removeData(id)
             return .object(["cleared": .string(files.org)])
         },
         // Signs out of every site in every project, in production and out of it.

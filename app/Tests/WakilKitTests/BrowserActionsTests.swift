@@ -36,7 +36,7 @@ struct BrowserFixture {
 /// A layout with one browser pane (no tabs yet) and the browser actions over it — `editorFixture`'s
 /// shape. `open` false leaves the canvas empty.
 func browserFixture(startPage: String = "", open: Bool = true, orgFiles: BrowserOrgFiles? = nil,
-                    removeData: (@Sendable (UUID) async throws -> Void)? = nil) async throws -> BrowserFixture {
+                    removeData: BrowserDataRemover? = nil) async throws -> BrowserFixture {
     let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
@@ -311,8 +311,8 @@ private final class Removed: @unchecked Sendable {
 private func clearFixture(removed: Removed?, org: String? = "acme") async throws -> (BrowserFixture, BrowserOrgFiles?) {
     let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
     let files = try org.map { try BrowserOrgFiles(home: home, org: $0) }
-    var remover: (@Sendable (UUID) async throws -> Void)?
-    if let removed { remover = { @Sendable id in removed.add(id) } }
+    var remover: BrowserDataRemover?
+    if let removed { remover = { @Sendable id, _ in removed.add(id) } }
     return (try await browserFixture(orgFiles: files, removeData: remover), files)
 }
 
@@ -391,19 +391,33 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     #expect(await layout.snapshot().panes.count == 2)
 }
 
-/// The files go before the store does, so when the remover returns — the window's last word on a
-/// clear — nothing of the organisation's old tabs is left for a rebuilt page to restore.
-@Test func clearDataDeletesTheFilesBeforeTheStore() async throws {
+/// The window drops the store's web views, then has the files deleted (`deleteFiles`), then
+/// removes the store — so no page left alive can write a tab state after the deletion, and none is
+/// left for a rebuilt page to restore. A remover that never calls `deleteFiles` gets them deleted
+/// anyway once it returns.
+@Test func clearDataHandsTheRemoverTheFileDeletion() async throws {
     let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
     let files = try BrowserOrgFiles(home: home, org: "acme")
     _ = try files.identifier()
     let state = files.stateURL(tab: "t1")
-    try FileManager.default.createDirectory(at: state.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data("{}".utf8).write(to: state)
-    let seen = Removed()
-    let f = try await browserFixture(orgFiles: files, removeData: { @Sendable id in
-        if !FileManager.default.fileExists(atPath: state.path) { seen.add(id) }
+    func writeState() throws {
+        try FileManager.default.createDirectory(at: state.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: state)
+    }
+    try writeState()
+    let steps = Removed()
+    let mark = UUID()
+    let f = try await browserFixture(orgFiles: files, removeData: { @Sendable id, deleteFiles in
+        // The window's views are gone by here: the state is still on disk until it asks.
+        if FileManager.default.fileExists(atPath: state.path) { steps.add(mark) }
+        try deleteFiles()
+        if !FileManager.default.fileExists(atPath: state.path) { steps.add(id) }
     })
     try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
-    #expect(seen.all == [try files.identifier()], "the tab state was already gone when the store was removed")
+    #expect(steps.all == [mark, try files.identifier()], "files deleted when asked, before the store goes")
+
+    try writeState()
+    let lazy = try await browserFixture(orgFiles: files, removeData: { @Sendable _, _ in })
+    try await lazy.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
+    #expect(!FileManager.default.fileExists(atPath: state.path), "deleted even when the remover never asked")
 }

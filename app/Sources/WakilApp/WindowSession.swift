@@ -65,11 +65,13 @@ final class WindowSession {
         let browserTabsBox = BrowserTabsBox()
         let wiring = await WakilWiring.build(
             journalDirectory: journalDirectory, sessionId: sessionId,
-            // `browser_clear_data` deletes the files before calling this, so once it returns —
-            // removed or refused — nothing is left for a rebuilt page to restore.
-            removeBrowserData: { id in
+            // `browser_clear_data`: the store's web views go and none is built on it (beginClear),
+            // then the files are deleted — no page is left to write a tab state after — then the
+            // store, then the panes draw again (endClear, on failure too).
+            removeBrowserData: { id, deleteFiles in
                 await MainActor.run { browserTabsBox.host?.beginClear(onStore: id) }
                 do {
+                    try deleteFiles()
                     try await WKWebsiteDataStore.remove(forIdentifier: id)
                 } catch {
                     await MainActor.run { browserTabsBox.host?.endClear(onStore: id) }
