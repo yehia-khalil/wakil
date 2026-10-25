@@ -1607,6 +1607,29 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* an operator loses resolutions or uncommitted work to a conflict left in place that
     Abort or Undo Apply could not bring back — then a clash goes back to being put back by default.
 
+48. **The browser is WebKit, a profile per organisation; a web view belongs to its place; the page is
+    the second exception to dual-drive; the agent's reach is 3c-ii's.**
+    *(2026-10-25, operator, during the 3c design —
+    `docs/superpowers/specs/2026-10-25-3c-browser-design.md`.)*
+    The browser pane is a `WKWebView` per tab — no new dependency, no second engine. Each
+    organisation gets its own `WKWebsiteDataStore(forIdentifier:)`, its id in
+    `~/.wakil/orgs/<org>/browser/profile.json`, so a site signed in under one organisation is signed
+    out under another (Invariant 4); the store itself is WebKit's, under `~/Library/WebKit/`, and
+    Settings → Browser → Clear deletes it — only the organisation its question named. **A web view
+    belongs to a place**: the window keys it by (place, pane, tab), drops a report from a place not on
+    screen, and keeps tab state per place, since pane and tab ids repeat. **The page is the second
+    exception to dual-drive**, after the editor's text: clicks and typing inside a page are the
+    operator's; tabs, address, navigation, find, zoom and downloads are `browser_*` actions either
+    side can dispatch. A page's own prompts (alert, sign-in, camera) are answered in place by the
+    operator and are not store state. 3c-i gives the agent the pane's actions and `read_pane`
+    (tabs, address, title — never page text); reading and acting inside the page, with a per-site
+    price, is 3c-ii's.
+    *Why:* WebKit is the system's engine, already sandboxed per profile; a profile per organisation
+    is the credential boundary the rest of Wakil keeps; and a page the agent could drive before its
+    price exists would be a write with no gate.
+    *Reverse if:* a site the operator needs will not work in WebKit — then a second engine is argued
+    for, not the profile model.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,

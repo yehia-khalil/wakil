@@ -439,14 +439,14 @@ Three ways to reach anything, all equivalent: the rail / a keystroke / ⌘P or �
 
 ## 11. Panes
 
-Every pane is dual-driven (Invariant 2) except the editor's text surface. Some pane
+Every pane is dual-driven (Invariant 2) except the editor's text surface and the browser's page. Some pane
 *types* hold multiple tabs internally; the app itself has no tab bar.
 
 | Pane | Multi-tab? | Notes |
 |------|-----------|-------|
 | **Editor** | Yes (files, ⌘T) | Native, Monaco-based — see below. The one partial exception to dual-drive. ⌘T opens a scratch tab; files open from ⌘P (Resources) or the left column (⌘B, 3b-ii). Unsaved edits ask before anything drops them. A file in a repository shows gutter marks against the index — a green bar for added lines, amber for changed, a muted triangle where lines were deleted — and a click on one opens the peek: the change's old lines over its new, with ↑ ↓, Revert (an undoable buffer edit) and ×. The Files tree shows a changed file's status letter. |
 | **Git** | No | Folded into the editor (3b-iii, Decision 40): the editor's left column's **Changes** view (⌘⇧G) — one header per root, Staged / Changes / Untracked, status letters in §5's tones — opens read-only inline diff tabs in the editor. No pane of its own. |
-| **Browser** | Yes (⌘T) | Embedded web view; agent can read the active tab. |
+| **Browser** | Yes (⌘T) | WebKit, one profile per organisation (3c-i, Decision 48). The page is the **second exception to dual-drive**: clicks and typing inside it are the operator's alone; everything around it — tabs, address, ‹ ›, reload, find, zoom, downloads — is a `browser_*` action. Tabs are drawn in the rail's language (§4's entries, the active one ticked) as a horizontal strip above the address row; narrow, entries shrink to favicon and ×, then fold into a count menu. Agent reach into the page is 3c-ii's. **Updated 2026-10-25.** |
 | **Terminal** | No | One shell, on one PTY, opened **at a path** — not per-root. A second shell is a second pane, exactly as for the database pane below; §10's canvas is what running two of them is for. **Corrected 2026-09-16** — this row read *"Yes (sessions) · Per-root shells"*, and both halves were wrong. `Terminal.dc.html:127` had forbidden a tab bar all along (§1's first principle names tab bars in what has been removed), and the operator ruled the roots out on the same day: sub-phase 2c-iii. |
 | **Database** | No | The canonical data surface (§8), above it the pane's own query — the database it runs against and the statement, editable, run with Return. A second query is a second pane; §10's canvas is what comparing two of them is for. |
 | **API client** | No | Request/response; consumes values from other panes. |

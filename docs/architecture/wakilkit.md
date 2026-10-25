@@ -127,7 +127,12 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 
 - `BrowserAddress.swift` — `BrowserAddress` (3c-i): the pure rule that turns typed text into a URL or a
   search (`resolve`, with the settings' search engine), `isSecure` (https, file, loopback http) and
-  `displayHost` (host without `www.`, or a file's name). Later tasks extend this section.
+  `displayHost` (host without `www.`, or a file's name), and `footer` — the pane footer's
+  `BrowserFooterLine`: the host, then TLS for https, NOT SECURE for http, the host alone for loopback
+  http (beside `isSecure`, so the address row's padlock and the footer agree), nothing for a blank page.
+- `BrowserDownloadNames.swift` — where a download lands (`browserDownloadDestination`: the suggested
+  name cut to its last component, `name 2.ext` when taken) and the strip's size line
+  (`browserDownloadSize`, decimal units).
 - `BrowserSnapshot.swift` — `BrowserSnapshot` (tabs, `active` id, `find`, `downloads`, the ⌘⇧T
   `closed` stack, `nextTab` for `"t<n>"` ids), `BrowserTab` (with `loaded`, false until its web view has
   fetched, and `command`, the latest `BrowserCommand` for the host to apply), `BrowserFind`,
@@ -146,15 +151,21 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   else the last opened. Each command bumps its tab's `command.seq`; tab changes write the layout's
   saved tabs. Also `BrowserKey`, the keys `WindowModel.browserKey` takes over in a focused browser pane.
   `browser_clear_data` (`.mutate`, operator-only, gated in production and out of it) asks the injected
-  `removeData` to delete the organisation's WebKit store, then removes `tabs/` and `zoom.json`; it
-  refuses without a remover (nothing but the app can) or without an active organisation.
+  `removeData` to delete the organisation's WebKit store, handing it the deletion of `tabs/` and
+  `zoom.json` to run once no web view on the store is left. Its `org` is the organisation the
+  operator's question named; it refuses `The organisation changed; ask again.` when that is no longer
+  the active one, and refuses without a remover (nothing but the app can) or without an active
+  organisation. `BrowserSettingsCache` holds the search engine and start page the actions read,
+  refreshed by `WindowModel.refreshBrowserSettings` at launch and after a save.
 - `BrowserOrgFiles.swift` — `BrowserOrgFiles` (3c-i): one organisation's `~/.wakil/orgs/<org>/browser/`:
   `profile.json` (the id of its `WKWebsiteDataStore(forIdentifier:)`, created on first use, replaced
-  when unreadable), `zoom.json` (zoom per host) and `tabs/` (per-tab state). The organisation is used
+  when unreadable), `zoom.json` (zoom per host) and `tabs/` (per-tab state, named by `stateKey`:
+  a digest of the place, then pane and tab, since ids repeat from place to place). The organisation is used
   as the directory name as Go's `OrgDirFor` does; `init` throws for `/`, `.`, `..` or empty, never
   flattening, so no id can be shared. `WindowModel.browserOrgFiles` is the active organisation's, nil
   while none is active; the registered actions ask for the caller's own. WebKit keeps the store's own
   files under `~/Library/WebKit/`, outside Wakil's reach, so deleting them goes through `removeData`.
+  `BrowserClearDataQuestion` is the Settings confirmation's copy and its Keep it / Delete labels.
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
