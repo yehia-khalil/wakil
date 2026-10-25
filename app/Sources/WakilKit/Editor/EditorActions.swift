@@ -579,6 +579,15 @@ public func registerEditorActions(
         let subject = EditorTabSubject.diff(root: row.root, path: row.path, group: group)
         let status = await gitStatus?.roots ?? []
         let file = editorChangesFile(row, in: status)
+        // 3a-v-b review: a Merge Changes row opens the file itself, where its blocks' actions row is,
+        // as VS Code's does; only a file no longer on disk (both deleted) falls back to the diff.
+        if group == .conflicts, let file, file.kind != "DD",
+           (try? await openFile(pane, path: row.root + "/" + row.path, at: nil, selection: nil,
+                                preview: !pin, action: "editor_changes_select")) != nil {
+            await updateColumn(pane, asDefault: false) { c in c.changesHighlight = row }
+            await persist(pane)
+            return
+        }
         let listed = status.first { $0.root == row.root }.map(editorRootIsKnown) ?? false
         let gone = listed && file == nil
         let flight: Task<Void, Never>? = await panes.updateEditor(paneId: pane, create: true) { s in
@@ -1715,7 +1724,9 @@ public func registerEditorActions(
         name: "editor_changes_select",
         description: "Open one changed file's diff in an editor pane, as a read-only diff tab titled `name (Changes)`, "
             + "`(Staged)` or `(Untracked)`: root (absolute, one of the active project's roots), path (relative to "
-            + "root), group (staged, changed or untracked — a partly staged file is in two). Staged compares HEAD "
+            + "root), group (conflicts, staged, changed or untracked — a partly staged file is in two). A conflicts "
+            + "row opens the file itself, with its blocks' Accept actions, not a diff (a file both sides deleted "
+            + "opens the diff). Staged compares HEAD "
             + "with the index, changed the index with the working tree (a conflicted file HEAD with the working "
             + "tree), untracked nothing with the working tree; a deleted file is compared with nothing. A preview "
             + "tab, replaced by the next one, unless pin is true. A file no longer in that group opens reading "

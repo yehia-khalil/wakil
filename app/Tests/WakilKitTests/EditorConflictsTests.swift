@@ -36,6 +36,17 @@ private func conflictFixture(_ text: String, conflicted: Bool = true) async thro
 }
 
 extension FakeGit {
+    /// Gives `path`'s status row in `root` git's two-letter conflict kind (`DD`, `UU`, …).
+    func mark(root: String, path: String, kind: String) {
+        guard case .object(var o)? = status[root], case .array(let files)? = o["files"] else { return }
+        o["files"] = .array(files.map { f in
+            guard case .object(var r) = f, r["path"] == .string(path) else { return f }
+            r["kind"] = .string(kind)
+            return .object(r)
+        })
+        status[root] = .object(o)
+    }
+
     /// `a.txt` in `/p/api` as one status row of `group`, flagged with markers when asked.
     func set(conflictRow group: String, markers: Bool) {
         status["/p/api"] = .object([
@@ -110,6 +121,31 @@ extension FakeGit {
         #expect(accepted(twoBlocks, blocks[0], .incoming)
             == "top\ntheirs one\nmiddle\n<<<<<<< HEAD\nours two\n=======\ntheirs two\n>>>>>>> feature/search\nend\n")
         #expect(accepted(twoBlocks, blocks[0], .both).hasPrefix("top\nours one\ntheirs one\nmiddle\n<<<<<<< HEAD\n"))
+    }
+
+    // 3a-v-b review: a Merge Changes row opens the file itself, where the actions row is — as VS Code's
+    // does — not a diff of HEAD against it; a second select focuses that tab.
+    @Test func aMergeChangesRowOpensTheFile() async throws {
+        let f = try await editorFixture()
+        await f.git.set(status: "/p/api", files: [("a.txt", "conflicts", "U")])
+        await f.status.refresh()
+        await f.files.put("/p/api/a.txt", twoBlocks)
+        let row: [String: JSONValue] = ["root": .string("/p/api"), "path": .string("a.txt"), "group": .string("conflicts")]
+        try await f.dispatch("editor_changes_select", row)
+        var s = await f.snapshot()
+        #expect(s.tabs.count == 1)
+        #expect(s.tabs[0].subject == .file(path: "/p/api/a.txt", root: "/p/api"))
+        #expect(s.tabs[0].text == twoBlocks)
+        try await f.dispatch("editor_changes_select", row)
+        s = await f.snapshot()
+        #expect(s.tabs.count == 1)
+        // A row whose file is gone (both deleted) still opens its diff.
+        await f.git.set(status: "/p/api", files: [("b.txt", "conflicts", "U")])
+        await f.git.mark(root: "/p/api", path: "b.txt", kind: "DD")
+        await f.status.refresh()
+        try await f.dispatch("editor_changes_select", ["root": .string("/p/api"), "path": .string("b.txt"), "group": .string("conflicts")])
+        s = await f.snapshot()
+        #expect(s.tabs.contains { $0.subject == .diff(root: "/p/api", path: "b.txt", group: .conflicts) })
     }
 
     @Test func acceptAppliesThroughTheReplacePath() async throws {
