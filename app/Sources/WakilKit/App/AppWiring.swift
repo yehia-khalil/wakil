@@ -447,6 +447,20 @@ public struct WakilWiring: Sendable {
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
             gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites)
+        // 3c-i. The settings are read when a tab needs them (a search, a new tab's start page), so a
+        // change in Settings → Browser applies to the next one; a failed read uses the defaults.
+        let browserSettingsRegistry = registry
+        await registerBrowserActions(
+            into: registry, panes: panes, layout: layout,
+            settings: {
+                guard let result = try? await browserSettingsRegistry.dispatch(
+                          name: "ctx_browser_settings", params: .object([:]), origin: .ui,
+                          caller: DispatchCaller(place: Place(organization: "", project: "", environment: ""), session: nil),
+                          confirmation: nil),
+                      let decoded = decodeBrowserSettings(fromResult: result)
+                else { return .defaults }
+                return decoded
+            })
         let commitDrafts = CommitDraftSink()
         await registerCommitDraftAction(into: registry, drafts: commitDrafts)
 

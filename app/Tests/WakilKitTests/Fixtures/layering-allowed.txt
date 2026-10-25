@@ -26,6 +26,7 @@ App -> Terminal
 App -> Visual
 Browser -> Layout
 Browser -> Panes
+Browser -> Registry
 Command -> Api
 Command -> Context
 Command -> Git

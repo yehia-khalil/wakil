@@ -156,6 +156,8 @@ private let keptPerPlace: Set<String> = [
     // The editor's saves in flight, debounced saved-tabs writes and autosave: each acts on a
     // buffer in its own scope, which stays (OrgSwitchTests.anOrgSwitchWithUnsavedTabsAsksNothingAndKeepsThem).
     "editorSaves", "editorTabsWrites", "editorAutosave", "editorAutosaveTimers", "editorAutosaveRuns",
+    // 3c-i: the browser's debounced saved-tabs writes, per pane in its own scope, as the editor's.
+    "browserTabsWrites",
     // The stores themselves: every scope's arrangement, contents and shells.
     "panes", "layout", "terminals",
     // The pool of clients pinned to agent places, and what their `wakil-ctx`s said: the places
@@ -272,6 +274,8 @@ private let orgIndependent: Set<String> = [
     // 3b-i PR 8: the saved-tabs debounce's length (configuration, shortened by tests) and the
     // count of writes it ran (a test seam). Neither describes an organisation.
     "editorTabsDelay", "editorTabsWriteCount", "editorAutosaveDelay", "editorAutosaveCount",
+    // 3c-i: the browser's saved-tabs debounce length and its write count, the same shapes.
+    "browserTabsDelay", "browserTabsWriteCount",
     // 3b-i Task 9: event counts again — a quit prompt resolved to quit, or to stay. The app
     // replies to AppKit when either DIFFERS from the last value it saw.
     "quitApproved", "quitCancelled",

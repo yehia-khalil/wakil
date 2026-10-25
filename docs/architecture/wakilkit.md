@@ -139,9 +139,16 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   `browserRestore` (keeps the saved ids, loads only the active tab), and **the seam** the web view
   reports through: `browserPageDidReport`, `browserFindDidReport`, `browserDownloadDidChange`,
   `browserPageOpenedTab`. The seam never creates a pane and never issues a command.
+- `BrowserActions.swift` — `registerBrowserActions` (3c-i): `browser_open` (opens a pane when none is),
+  `browser_navigate` (the address rule; refuses blank and `javascript:`), back, forward, reload, stop,
+  new/close/reopen/select/move tab, find, find step and close, zoom (the fixed ladder), download cancel
+  and clear, and the operator-only `browser_restore`. `pane` defaults to the focused browser pane,
+  else the last opened. Each command bumps its tab's `command.seq`; tab changes write the layout's
+  saved tabs. Also `BrowserKey`, the keys `WindowModel.browserKey` takes over in a focused browser pane.
 
-Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`), `Panes` (`PaneKind`, `PaneStore`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`.
+Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
+`PaneStore`), `Registry` (`ActionRegistry`, `Action`).
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `WindowModelBrowserTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 

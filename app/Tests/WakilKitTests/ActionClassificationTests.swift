@@ -121,6 +121,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
         operatorOnly == [
             // 2e-iii. An API token travels in `api_set_entry`'s parameters; the rest edit beside it.
             "api_remove_entry", "api_set_entry", "api_update_entry",
+            // 3c-i: the window's own relaunch step for a browser pane's saved tabs.
+            "browser_restore",
             // Provider capacity: the agent may not forge a reading.
             "capacity_record",
             "ctx_add_provider", "ctx_adopt_provider", "ctx_create_environment", "ctx_create_org",
