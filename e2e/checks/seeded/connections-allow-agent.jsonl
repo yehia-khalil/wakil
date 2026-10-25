@@ -12,7 +12,8 @@
 {"expect":{"tree":"contains","text":"The command and its arguments can be seen by the agent."}}
 {"do":{"click":"settings.org.connections.custom.http"}}
 {"expect":{"tree":"contains","text":"The address can be seen by the agent."}}
-{"expect":{"frame":"settings.org.connections.custom.url","minWidth":1}}
+{"do":{"type":{"into":"settings.org.connections.custom.url","text":"https://mcp.initech.test/mcp"}}}
+{"expect":{"tree":"contains","text":"https://mcp.initech.test/mcp"}}
 {"do":{"click":"settings.org.connections.custom.stdio"}}
 {"expect":{"tree":"contains","text":"The command and its arguments can be seen by the agent."}}
 {"do":{"type":{"into":"settings.org.connections.custom.name","text":"Bad Name"}}}
