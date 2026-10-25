@@ -1,14 +1,15 @@
 {"expect":{"tree":"contains","text":"e2e-fixture"}}
 {"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
 {"expect":{"focus":"browser.address"}}
-{"do":{"type":{"into":"browser.address","text":"{pageStub}/a.html"}}}
+{"do":{"type":{"into":"browser.address","text":"{pageStub}/keys.html"}}}
 {"do":{"press":"Return"}}
-{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Keys"}}
 {"expect":{"focus":"browser.page"}}
 {"do":{"hotkey":"cmd+k"}}
 {"expect":{"tree":"contains","text":"RUN A COMMAND"}}
 {"do":{"press":"Escape"}}
 {"expect":{"tree":"absent","text":"RUN A COMMAND"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Keys"}}
 {"expect":{"focus":"browser.page"}}
 {"do":{"hotkey":"cmd+p"}}
 {"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}

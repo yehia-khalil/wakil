@@ -5662,9 +5662,30 @@ public final class WindowModel {
         return true
     }
 
+    /// The place a browser web view belongs to (3c-i): the scope the canvas shows, as the
+    /// work-begun watcher derives it — the place's own canvas, or the organisation's bare one with no
+    /// project. Nil with no organisation. The window keys each web view by it, and every seam call
+    /// below carries the one its web view was made in.
+    public var browserScope: LayoutScope? {
+        guard !organization.isEmpty else { return nil }
+        return projectKey.isEmpty ? bareScope : currentLayoutScope
+    }
+
+    /// Whether `scope` is the place on screen, and its canvas is the one drawn. **A web view keeps
+    /// running while its place is off screen**, and pane and tab ids repeat from place to place
+    /// (`browser-1`, `t1`), so a report from another place would land in this one's pane and its
+    /// saved layout (Invariant 4 across organisations). Such a call is dropped; the window
+    /// re-reports a place's live web views when the place is shown again.
+    private func browserScopeIsShown(_ scope: LayoutScope) async -> Bool {
+        guard !layoutSwapInFlight, scope == browserScope else { return false }
+        return await panes.screenScope == scope
+    }
+
     /// A tab's web view after a navigation event: into the store, the cell re-read, and — when the
-    /// address or title moved — the saved tabs written on the trailing debounce.
-    public func browserPageDidReport(pane: String, tab: String, _ report: BrowserPageReport) async {
+    /// address or title moved — the saved tabs written on the trailing debounce. Dropped when
+    /// `scope` is not the place on screen.
+    public func browserPageDidReport(scope: LayoutScope, pane: String, tab: String, _ report: BrowserPageReport) async {
+        guard await browserScopeIsShown(scope) else { return }
         let before = browser(pane)?.tabs.first { $0.id == tab }
         await panes.browserPageDidReport(paneId: pane, tab: tab, report)
         await refreshBrowser(pane: pane)
@@ -5672,24 +5693,36 @@ public final class WindowModel {
     }
 
     /// The find bar's match count from the page.
-    public func browserFindDidReport(pane: String, current: Int, total: Int) async {
+    public func browserFindDidReport(scope: LayoutScope, pane: String, current: Int, total: Int) async {
+        guard await browserScopeIsShown(scope) else { return }
         await panes.browserFindDidReport(paneId: pane, current: current, total: total)
         await refreshBrowser(pane: pane)
     }
 
     /// A download started or changed.
-    public func browserDownloadDidChange(pane: String, _ download: BrowserDownload) async {
+    public func browserDownloadDidChange(scope: LayoutScope, pane: String, _ download: BrowserDownload) async {
+        guard await browserScopeIsShown(scope) else { return }
         await panes.browserDownloadDidChange(paneId: pane, download)
         await refreshBrowser(pane: pane)
     }
 
     /// A page opened a window: a new tab beside its opener. Answers the new tab's id, or nil when
-    /// the opener is gone.
-    public func browserPageOpenedTab(pane: String, opener: String, url: String) async -> String? {
+    /// the opener is gone or its place is not on screen.
+    public func browserPageOpenedTab(scope: LayoutScope, pane: String, opener: String, url: String) async -> String? {
+        guard await browserScopeIsShown(scope) else { return nil }
         let id = await panes.browserPageOpenedTab(paneId: pane, opener: opener, url: url)
         await refreshBrowser(pane: pane)
         if id != nil { scheduleBrowserTabsWrite(pane: pane) }
         return id
+    }
+
+    /// A page closed its own window (`window.close()`): `browser_close_tab` on its tab, only while
+    /// its place is on screen — elsewhere the same ids name another place's tab. Answers whether it ran.
+    @discardableResult
+    public func browserPageClosed(scope: LayoutScope, pane: String, tab: String) async -> Bool {
+        guard await browserScopeIsShown(scope) else { return false }
+        await dispatchFromSurface("browser_close_tab", .object(["pane": .string(pane), "tab": .string(tab)]))
+        return true
     }
 
     /// How long after the last report a browser pane's saved tabs are written. Tests shorten it.

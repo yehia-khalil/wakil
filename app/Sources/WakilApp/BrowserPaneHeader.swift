@@ -103,7 +103,7 @@ struct BrowserHeader<Address: View>: View {
 struct BrowserTabList: View {
     let snapshot: BrowserSnapshot
     let mode: BrowserTabListMode
-    let favicon: (String) -> URL?
+    let favicon: (String) -> NSImage?
     let dispatch: (String, [String: JSONValue]) -> Void
     @State private var hovered: String?
 
@@ -122,7 +122,7 @@ struct BrowserTabList: View {
     private func row(_ tab: BrowserTab) -> some View {
         let active = tab.id == snapshot.active
         return HStack(spacing: 6) {
-            BrowserFavicon(url: favicon(tab.id))
+            BrowserFavicon(image: favicon(tab.id))
             if mode == .full {
                 Text(browserTabLabel(tab))
                     .font(.system(size: 11))
@@ -167,26 +167,21 @@ struct BrowserTabList: View {
     }
 }
 
-/// The page's own icon when it names one, else a globe. Nothing is fetched to find one.
+/// The page's own icon when it names one as a `data:` URL (decoded by the host, never fetched),
+/// else a globe.
 struct BrowserFavicon: View {
-    let url: URL?
+    let image: NSImage?
 
     var body: some View {
         Group {
-            if let url {
-                AsyncImage(url: url) { image in
-                    image.resizable().interpolation(.high).aspectRatio(contentMode: .fit)
-                } placeholder: { globe }
+            if let image {
+                Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
             } else {
-                globe
+                Image(systemName: "globe")
+                    .font(.system(size: 11))
+                    .foregroundStyle(EditorPaneStyle.text.opacity(0.55))
             }
         }
         .frame(width: 14, height: 14)
-    }
-
-    private var globe: some View {
-        Image(systemName: "globe")
-            .font(.system(size: 11))
-            .foregroundStyle(EditorPaneStyle.text.opacity(0.55))
     }
 }

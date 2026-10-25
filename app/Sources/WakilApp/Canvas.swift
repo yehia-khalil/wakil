@@ -577,12 +577,12 @@ extension WakilWindow {
             case "browser":
                 // 3c-i. Every control is a `browser_*` action with this pane folded in; the web views
                 // are the window's (`BrowserTabHost`), so a rebuild here never reloads a page.
-                if let browserHost {
+                if let browserHost, let scope = model.browserScope {
                     let place = (model.organization, model.project, model.environment)
                     BrowserPane(
                         snapshot: model.browser(pane.id) ?? .empty, pane: pane,
                         width: pane.frame.width + (resizeOffsets[pane.id]?.width ?? 0),
-                        org: model.organization, host: browserHost,
+                        scope: scope, host: browserHost,
                         dispatch: { name, params in
                             var withPane = params
                             withPane["pane"] = .string(pane.id)

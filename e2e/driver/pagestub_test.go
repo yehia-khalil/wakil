@@ -28,6 +28,7 @@ func TestPageStubServesFixturesAndStreamsSlowly(t *testing.T) {
 		"/popup.html": "window.open('b.html'",
 		"/find.html":  "needle",
 		"/alert.html": "alert(",
+		"/keys.html":  "preventDefault",
 	} {
 		resp, err := http.Get(origin + page)
 		if err != nil {

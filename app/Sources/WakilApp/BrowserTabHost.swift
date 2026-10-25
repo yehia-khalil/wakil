@@ -6,11 +6,15 @@ import WebKit
 
 /// The window's browser web views (3c-i), one per tab, alive for the window.
 ///
-/// **Held by the window's session, not by a view**, so a tab switch, a layout change or an
-/// organisation switch that takes the pane off the canvas never reloads a page: SwiftUI rebuilds
-/// the pane and the same web view is put back (`BrowserPageHost`). Keyed by organisation, pane and
-/// tab, because two organisations' panes can carry the same ids and must never share a web view —
-/// each is built on its own organisation's data store (Invariant 4).
+/// **Held by the window's session, not by a view**, so a tab switch, a layout change or a place
+/// switch that takes the pane off the canvas never reloads a page: SwiftUI rebuilds the pane and the
+/// same web view is put back (`BrowserPageHost`).
+///
+/// **A web view belongs to a place.** Keyed by the place's `LayoutScope`, pane and tab: pane and
+/// tab ids repeat from place to place (`browser-1`, `t1`), so a key without the place would hand one
+/// place's page — and its organisation's logins — to another's pane (Invariant 4). Each delegate
+/// carries its scope into every seam call, and the window drops the calls of a place not on screen;
+/// when the place is shown again its pane asks for a fresh report (`reportAll`).
 ///
 /// At most `limit` live web views: the least recently shown is released, its `interactionState`
 /// saved first, and rebuilt from that state when its tab is shown again.
@@ -18,7 +22,7 @@ import WebKit
 @Observable
 final class BrowserTabHost {
     struct Key: Hashable {
-        let org: String
+        let scope: LayoutScope
         let pane: String
         let tab: String
     }
@@ -32,13 +36,15 @@ final class BrowserTabHost {
     @ObservationIgnored private var recency: [Key] = []
     /// The seq of the last command applied per tab; a command applies only above it.
     @ObservationIgnored private var applied: [Key: Int] = [:]
-    /// Pop-ups WebKit has been handed a web view for, waiting for the store to name their tab.
-    @ObservationIgnored private var pendingPopups: [BrowserTabDelegate: BrowserWebView] = [:]
     /// Tabs a page opened (pop-ups): they arrive without taking the keyboard to the address field.
     @ObservationIgnored private(set) var openedByPage: Set<Key> = []
 
-    /// The icon a page names in its `link rel=icon`, per tab, when it names one.
-    private(set) var favicons: [Key: URL] = [:]
+    /// The icon a page names in its `link rel=icon`, per tab — only a `data:` one, decoded here:
+    /// nothing is fetched for it, so no request leaves outside the organisation's own store.
+    private(set) var favicons: [Key: NSImage] = [:]
+    /// Raised when live web views were dropped under panes that may be on screen (clearing an
+    /// organisation's data), so those panes draw again and rebuild their pages.
+    private(set) var rebuilds = 0
 
     init(model: WindowModel) {
         self.model = model
@@ -47,13 +53,13 @@ final class BrowserTabHost {
     // MARK: Web views
 
     /// The tab's web view if it is live, without making one or touching its recency.
-    func existing(org: String, pane: String, tab: String) -> BrowserWebView? {
-        views[Key(org: org, pane: pane, tab: tab)]
+    func existing(scope: LayoutScope, pane: String, tab: String) -> BrowserWebView? {
+        views[Key(scope: scope, pane: pane, tab: tab)]
     }
 
     /// The tab's web view, made with `make` when it has none; it becomes the most recently used.
-    func webView(org: String, pane: String, tab: String, make: () -> BrowserWebView) -> BrowserWebView {
-        let key = Key(org: org, pane: pane, tab: tab)
+    func webView(scope: LayoutScope, pane: String, tab: String, make: () -> BrowserWebView) -> BrowserWebView {
+        let key = Key(scope: scope, pane: pane, tab: tab)
         if let view = views[key] {
             touch(key)
             return view
@@ -66,10 +72,11 @@ final class BrowserTabHost {
     }
 
     /// The tab's web view, built on the active organisation's store when it has none, and — for a
-    /// tab rebuilt after a relaunch or an eviction — restored from its saved state. A restored tab's
-    /// waiting `.load` is skipped: the restore already shows that page, with its ‹ › history.
-    func page(org: String, pane: String, tab: BrowserTab) -> BrowserWebView {
-        let key = Key(org: org, pane: pane, tab: tab.id)
+    /// tab rebuilt after a relaunch, an eviction or a data clear — restored from its saved state,
+    /// else loaded from its address. A restored tab's waiting `.load` is skipped: the restore
+    /// already shows that page, with its ‹ › history.
+    func page(scope: LayoutScope, pane: String, tab: BrowserTab) -> BrowserWebView {
+        let key = Key(scope: scope, pane: pane, tab: tab.id)
         if let view = views[key] {
             touch(key)
             return view
@@ -77,17 +84,17 @@ final class BrowserTabHost {
         // Read now, never kept: a tab built after an organisation switch must get the new
         // organisation's store (`WindowModel.browserOrgFiles`).
         let files = model?.browserOrgFiles
-        return webView(org: org, pane: pane, tab: tab.id) {
+        return webView(scope: scope, pane: pane, tab: tab.id) {
             let view = BrowserWebView(frame: .zero, configuration: Self.configuration(files: files))
             prepare(view)
-            let delegate = BrowserTabDelegate(host: self, org: org, pane: pane, tab: tab.id, files: files)
+            let delegate = BrowserTabDelegate(host: self, scope: scope, pane: pane, tab: tab.id, files: files)
             delegate.attach(to: view)
             delegates[key] = delegate
             let waiting = tab.command.map { $0.seq > applied[key] ?? 0 } ?? false
-            if restore(view, tab: tab.id, files: files) {
+            if restore(view, scope: scope, pane: pane, tab: tab.id, files: files) {
                 if waiting, let command = tab.command, case .load = command.verb { applied[key] = command.seq }
             } else if !tab.url.isEmpty, !waiting {
-                // Rebuilt after an eviction with no state to restore: its address is all it kept.
+                // Rebuilt with no state to restore: its address is all it kept.
                 delegate.requested = tab.url
                 if let url = URL(string: tab.url) { view.load(URLRequest(url: url)) }
             }
@@ -96,7 +103,8 @@ final class BrowserTabHost {
     }
 
     /// A new tab's configuration: the organisation's own store (`WKWebsiteDataStore(forIdentifier:)`),
-    /// Safari's user agent. With no organisation, or a profile that cannot be read, an ephemeral
+    /// Safari's user agent, and a page may open a window (a tab) itself — said here rather than left
+    /// to WebKit's macOS default. With no organisation, or a profile that cannot be read, an ephemeral
     /// store: a page then keeps nothing, and shares nothing with any organisation.
     private static func configuration(files: BrowserOrgFiles?) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
@@ -105,6 +113,7 @@ final class BrowserTabHost {
         } else {
             configuration.websiteDataStore = .nonPersistent()
         }
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         return configuration
     }
 
@@ -116,34 +125,54 @@ final class BrowserTabHost {
         view.setAccessibilityIdentifier("browser.page")
     }
 
-    /// A pop-up's web view, on the configuration WebKit gave (so `window.opener` works). It is
-    /// returned to WebKit at once; the store names its tab beside the opener, and the web view is
-    /// filed under that tab before the pane redraws (the seam runs on the main actor throughout).
-    func adoptPopup(configuration: WKWebViewConfiguration, org: String, pane: String, opener: String,
+    /// A pop-up's web view, on the configuration WebKit gave (so `window.opener` works and the
+    /// pop-up's `window.close()` reaches its tab).
+    ///
+    /// **Filed at once, under the id the store will give it** — the pane's `nextTab`, `t<n>` — so the
+    /// pane can never make a second web view for that tab while the seam is awaited; a view made
+    /// under that key in the meantime is replaced by this one. Should the store answer another id
+    /// (the cell read was behind), the view moves to it; no id, and it is dropped.
+    func adoptPopup(configuration: WKWebViewConfiguration, scope: LayoutScope, pane: String, opener: String,
                     files: BrowserOrgFiles?, url: String) -> BrowserWebView {
         let view = BrowserWebView(frame: .zero, configuration: configuration)
         prepare(view)
-        let delegate = BrowserTabDelegate(host: self, org: org, pane: pane, tab: "", files: files)
+        let delegate = BrowserTabDelegate(host: self, scope: scope, pane: pane, tab: "", files: files)
         delegate.requested = url
         delegate.attach(to: view)
-        pendingPopups[delegate] = view
+        let expected = "t\(model?.browser(pane)?.nextTab ?? 1)"
+        file(view, delegate, under: Key(scope: scope, pane: pane, tab: expected))
         Task { [weak self] in
             guard let self else { return }
-            let id = await self.model?.browserPageOpenedTab(pane: pane, opener: opener, url: url)
-            self.pendingPopups[delegate] = nil
+            let id = await self.model?.browserPageOpenedTab(scope: scope, pane: pane, opener: opener, url: url)
+            let filed = Key(scope: scope, pane: pane, tab: expected)
             guard let id else {
-                delegate.detach()
-                view.stopLoading()
+                if self.views[filed] === view { self.drop(filed, mode: .forget) }
                 return
             }
-            let key = Key(org: org, pane: pane, tab: id)
+            let key = Key(scope: scope, pane: pane, tab: id)
+            if id != expected, self.views[filed] === view {
+                self.views[filed] = nil
+                self.delegates[filed] = nil
+                self.recency.removeAll { $0 == filed }
+                self.openedByPage.remove(filed)
+                self.file(view, delegate, under: key)
+            }
+            // A view the pane made under the tab's key while the seam was awaited gives way.
+            if self.views[key] !== view { self.file(view, delegate, under: key) }
             delegate.tab = id
-            self.delegates[key] = delegate
-            self.openedByPage.insert(key)
-            _ = self.webView(org: org, pane: pane, tab: id) { view }
             delegate.scheduleReport()
         }
         return view
+    }
+
+    /// Puts `view` under `key`, replacing (and dropping) any other view there.
+    private func file(_ view: BrowserWebView, _ delegate: BrowserTabDelegate, under key: Key) {
+        if let other = views[key], other !== view { drop(key, mode: .forget) }
+        views[key] = view
+        delegates[key] = delegate
+        openedByPage.insert(key)
+        touch(key)
+        evictBeyondLimit(keeping: key)
     }
 
     // MARK: Commands
@@ -151,14 +180,14 @@ final class BrowserTabHost {
     /// Applies `command` to the tab's web view when its seq is above the last one applied, and
     /// answers whether it did. `.focusAddress` is the pane's to act on; it is only marked here.
     @discardableResult
-    func apply(_ command: BrowserCommand, org: String, pane: String, tab: BrowserTab) -> Bool {
-        let key = Key(org: org, pane: pane, tab: tab.id)
+    func apply(_ command: BrowserCommand, scope: LayoutScope, pane: String, tab: BrowserTab) -> Bool {
+        let key = Key(scope: scope, pane: pane, tab: tab.id)
         guard command.seq > applied[key] ?? 0 else { return false }
         if case .focusAddress = command.verb {
             applied[key] = command.seq
             return true
         }
-        let view = page(org: org, pane: pane, tab: tab)
+        let view = page(scope: scope, pane: pane, tab: tab)
         // `page` may have restored the tab and so already counted its load.
         guard command.seq > applied[key] ?? 0 else { return false }
         applied[key] = command.seq
@@ -183,16 +212,22 @@ final class BrowserTabHost {
         return true
     }
 
+    /// A place's pane is on screen again: each of its live web views reports, since what they said
+    /// while the place was off screen was dropped.
+    func reportAll(scope: LayoutScope, pane: String) {
+        for (key, delegate) in delegates where key.scope == scope && key.pane == pane { delegate.scheduleReport() }
+    }
+
     // MARK: Keyboard
 
     /// The page takes the keyboard. A web view made this turn may not be in the window yet; it is
     /// waited for, twenty tries a frame apart, as the editor's does.
-    func focusPage(org: String, pane: String, tab: String, tries: Int = 20) {
-        guard let view = existing(org: org, pane: pane, tab: tab) else { return }
+    func focusPage(scope: LayoutScope, pane: String, tab: String, tries: Int = 20) {
+        guard let view = existing(scope: scope, pane: pane, tab: tab) else { return }
         guard let window = view.window else {
             guard tries > 0 else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.focusPage(org: org, pane: pane, tab: tab, tries: tries - 1)
+                self?.focusPage(scope: scope, pane: pane, tab: tab, tries: tries - 1)
             }
             return
         }
@@ -200,8 +235,8 @@ final class BrowserTabHost {
     }
 
     /// The pane gives the keyboard up when one of its web views holds it.
-    func resignKeyboard(org: String, pane: String) {
-        for (key, view) in views where key.org == org && key.pane == pane {
+    func resignKeyboard(scope: LayoutScope, pane: String) {
+        for (key, view) in views where key.scope == scope && key.pane == pane {
             guard let window = view.window, let responder = window.firstResponder as? NSView else { continue }
             if responder === view || responder.isDescendant(of: view) {
                 window.makeFirstResponder(nil)
@@ -212,60 +247,80 @@ final class BrowserTabHost {
 
     // MARK: State
 
-    /// Writes the tab's `interactionState` (its ‹ › history and scroll) to `tabs/<tab>.state`.
-    func saveState(of view: WKWebView, tab: String, files: BrowserOrgFiles?) {
+    /// The tab's state file: named by its place as well as its ids (`BrowserOrgFiles.stateKey`).
+    private func stateURL(_ files: BrowserOrgFiles, scope: LayoutScope, pane: String, tab: String) -> URL {
+        files.stateURL(tab: BrowserOrgFiles.stateKey(scope: scope, pane: pane, tab: tab))
+    }
+
+    /// Writes the tab's `interactionState` (its ‹ › history and scroll).
+    func saveState(of view: WKWebView, scope: LayoutScope, pane: String, tab: String, files: BrowserOrgFiles?) {
         guard !tab.isEmpty, let files, let state = view.interactionState as? Data else { return }
-        let url = files.stateURL(tab: tab)
+        let url = stateURL(files, scope: scope, pane: pane, tab: tab)
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? state.write(to: url, options: .atomic)
     }
 
     /// Restores the tab's saved state into a new web view; true when it put a page back.
-    private func restore(_ view: WKWebView, tab: String, files: BrowserOrgFiles?) -> Bool {
-        guard let files, let data = try? Data(contentsOf: files.stateURL(tab: tab)) else { return false }
+    private func restore(_ view: WKWebView, scope: LayoutScope, pane: String, tab: String, files: BrowserOrgFiles?) -> Bool {
+        guard let files, let data = try? Data(contentsOf: stateURL(files, scope: scope, pane: pane, tab: tab))
+        else { return false }
         view.interactionState = data
         return view.backForwardList.currentItem != nil
     }
 
-    /// The page's own `link rel=icon`, read in an isolated world after it loads. Nothing is
-    /// fetched to find it: a page that names none is drawn with a globe.
-    func readFavicon(of view: WKWebView, org: String, pane: String, tab: String) {
+    /// The page's own `link rel=icon`, read in an isolated world after it loads, kept only when it
+    /// is a `data:` URL — decoded here, never fetched. Any other icon is drawn as a globe.
+    func readFavicon(of view: WKWebView, scope: LayoutScope, pane: String, tab: String) {
         guard !tab.isEmpty else { return }
-        let key = Key(org: org, pane: pane, tab: tab)
+        let key = Key(scope: scope, pane: pane, tab: tab)
         let script = "(() => { const l = document.querySelector('link[rel~=\"icon\" i]'); return l ? l.href : ''; })()"
         view.evaluateJavaScript(script, in: nil, in: .defaultClient) { [weak self] result in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let href = (try? result.get()) as? String
-                let url = href.flatMap { $0.isEmpty ? nil : URL(string: $0) }
-                if self.favicons[key] != url { self.favicons[key] = url }
+                self.favicons[key] = href.flatMap(browserDataIcon)
             }
         }
     }
 
     // MARK: Release
 
-    /// A closed tab: its web view and its saved state go. A later tab never inherits them.
-    func release(org: String, pane: String, tab: String) {
-        let key = Key(org: org, pane: pane, tab: tab)
-        let files = delegates[key]?.files ?? model?.browserHome.flatMap { try? BrowserOrgFiles(home: $0, org: org) }
-        drop(key, saving: false)
-        files?.removeState(tab: tab)
+    /// How a web view leaves the host.
+    private enum Release {
+        /// Evicted for room: its state is saved and its applied seq kept, so it rebuilds as it was.
+        case evict
+        /// Its store is being deleted: nothing saved (the data is going), applied seq kept, so the
+        /// rebuild loads the tab's address and repeats no ‹ › or reload.
+        case discard
+        /// Its tab is gone: nothing kept.
+        case forget
     }
 
-    /// A closed pane: every one of its tabs.
-    func release(org: String, pane: String) {
-        // Evicted tabs too: they have no web view, but a seq and a state file.
-        let tabs = Set(views.keys).union(applied.keys).filter { $0.org == org && $0.pane == pane }
-        for key in tabs { release(org: org, pane: pane, tab: key.tab) }
+    /// A closed tab: its web view and its saved state go. A later tab never inherits them.
+    func release(scope: LayoutScope, pane: String, tab: String) {
+        let key = Key(scope: scope, pane: pane, tab: tab)
+        let files = delegates[key]?.files
+            ?? model?.browserHome.flatMap { try? BrowserOrgFiles(home: $0, org: scope.organization) }
+        drop(key, mode: .forget)
+        files.map { try? FileManager.default.removeItem(at: stateURL($0, scope: scope, pane: pane, tab: tab)) }
+    }
+
+    /// A closed pane: every one of its tabs, the evicted ones' seqs and state files too.
+    func release(scope: LayoutScope, pane: String) {
+        let tabs = Set(views.keys).union(applied.keys).filter { $0.scope == scope && $0.pane == pane }
+        for key in tabs { release(scope: scope, pane: pane, tab: key.tab) }
     }
 
     /// Every web view on the store `identifier`, before that store is deleted: WebKit refuses to
-    /// remove a store a live web view still uses. Their tabs rebuild, on a fresh store, when shown.
+    /// remove a store a live web view still uses. Their panes draw again (`rebuilds`), and each
+    /// shown tab rebuilds on a fresh store and loads its address.
     func releaseAll(onStore identifier: UUID) {
+        var dropped = false
         for (key, view) in views where view.configuration.websiteDataStore.identifier == identifier {
-            drop(key, saving: false)
+            drop(key, mode: .discard)
+            dropped = true
         }
+        if dropped { rebuilds += 1 }
     }
 
     private func touch(_ key: Key) {
@@ -275,27 +330,40 @@ final class BrowserTabHost {
 
     private func evictBeyondLimit(keeping kept: Key) {
         while views.count > Self.limit, let oldest = recency.first(where: { $0 != kept }) {
-            drop(oldest, saving: true)
+            drop(oldest, mode: .evict)
         }
     }
 
-    private func drop(_ key: Key, saving: Bool) {
-        guard let view = views.removeValue(forKey: key) else {
-            if !saving { applied[key] = nil }
-            return
-        }
+    private func drop(_ key: Key, mode: Release) {
+        let view = views.removeValue(forKey: key)
         let delegate = delegates.removeValue(forKey: key)
-        if saving { saveState(of: view, tab: key.tab, files: delegate?.files) }
-        delegate?.detach()
-        view.stopLoading()
-        view.removeFromSuperview()
         recency.removeAll { $0 == key }
-        // An evicted tab keeps its applied seq, so its rebuild never repeats a ‹ or a load it
-        // already did; only a tab that is gone forgets it.
-        if !saving {
+        if let view {
+            if mode == .evict { saveState(of: view, scope: key.scope, pane: key.pane, tab: key.tab, files: delegate?.files) }
+            delegate?.detach()
+            view.stopLoading()
+            view.removeFromSuperview()
+        }
+        if mode == .forget {
             applied[key] = nil
             openedByPage.remove(key)
             favicons[key] = nil
         }
     }
+}
+
+/// The image in a `data:` URL (`data:[<type>][;base64],<payload>`), at most 64 KB of it; nil for
+/// any other URL, or one that does not decode to an image.
+func browserDataIcon(_ href: String) -> NSImage? {
+    guard href.lowercased().hasPrefix("data:"), href.utf8.count <= 64 * 1024,
+          let comma = href.firstIndex(of: ",") else { return nil }
+    let header = href[href.index(href.startIndex, offsetBy: 5)..<comma].lowercased()
+    let payload = String(href[href.index(after: comma)...])
+    let data: Data?
+    if header.hasSuffix(";base64") {
+        data = Data(base64Encoded: payload.removingPercentEncoding ?? payload, options: .ignoreUnknownCharacters)
+    } else {
+        data = payload.removingPercentEncoding.map { Data($0.utf8) }
+    }
+    return data.flatMap(NSImage.init(data:))
 }

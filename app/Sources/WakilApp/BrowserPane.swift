@@ -15,7 +15,8 @@ struct BrowserPane: View {
     let pane: Pane
     /// The pane's width as drawn, which folds and hides the tab list.
     let width: Double
-    let org: String
+    /// The place this pane is in: its web views are filed under it (`BrowserTabHost`).
+    let scope: LayoutScope
     let host: BrowserTabHost
     /// A `browser_*` action on this pane (`pane` already folded in).
     let dispatch: (String, [String: JSONValue]) async -> Void
@@ -32,8 +33,6 @@ struct BrowserPane: View {
     /// What the address field shows: the host while it is not focused, the whole URL — or what is
     /// being typed — while it is.
     @State private var draft = ""
-    /// Set once this view has asked for the pane's first tab, so it is asked for once.
-    @State private var askedForFirstTab = false
 
     private var active: BrowserTab? { snapshot.activeTab }
     private var listMode: BrowserTabListMode { BrowserTabListMode(paneWidth: width) }
@@ -46,24 +45,26 @@ struct BrowserPane: View {
                 if listMode != .hidden {
                     BrowserTabList(
                         snapshot: snapshot, mode: listMode,
-                        favicon: { host.favicons[BrowserTabHost.Key(org: org, pane: pane.id, tab: $0)] },
+                        favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
                         dispatch: send)
                     Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1)
                 }
                 pageArea
             }
         }
-        .task(id: pane.id) { await askForFirstTab() }
         .onAppear {
             draft = unfocusedText(active)
             sync(old: nil, now: snapshot)
+            // What its web views said while this place was off screen was dropped (the seam's
+            // place rule); they say it again now.
+            host.reportAll(scope: scope, pane: pane.id)
             if isFocusedPane { takeKeyboard() }
         }
         .onChange(of: snapshot) { old, now in sync(old: old, now: now) }
         .onChange(of: isFocusedPane) { _, now in
             if now { takeKeyboard() } else {
                 addressFocused = false
-                host.resignKeyboard(org: org, pane: pane.id)
+                host.resignKeyboard(scope: scope, pane: pane.id)
             }
         }
         .onChange(of: keyboardFocusRequests) { _, _ in if isFocusedPane { takeKeyboard() } }
@@ -71,18 +72,19 @@ struct BrowserPane: View {
         .onChange(of: addressFocused) { _, focused in
             if focused {
                 draft = active?.url ?? ""
-                // The whole URL selected, so typing replaces it (⌘L's promise).
-                DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
+                // The whole URL selected, so typing replaces it (⌘L's promise). Next turn, once the
+                // field's editor holds the keyboard — and only if it is still this field's.
+                DispatchQueue.main.async { selectAddress() }
             } else {
                 // Rule 2's stated exception: leaving without Return puts the address back.
                 draft = unfocusedText(active)
             }
         }
         .onDisappear {
-            let pane = pane.id, org = org, host = host, isClosed = isClosed
+            let pane = pane.id, scope = scope, host = host, isClosed = isClosed
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
-                if isClosed() { host.release(org: org, pane: pane) }
+                if isClosed() { host.release(scope: scope, pane: pane) }
             }
         }
         .accessibilityElement(children: .contain)
@@ -124,6 +126,16 @@ struct BrowserPane: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Selects the address field's whole text, in that field's own editor: the window's first
+    /// responder when it is the field editor of an `NSTextField` named `browser.address` and this
+    /// pane's field still has focus. Anything else holding the keyboard by then is left alone.
+    private func selectAddress() {
+        guard addressFocused, let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
+              let field = editor.delegate as? NSTextField, field.accessibilityIdentifier() == "browser.address"
+        else { return }
+        editor.selectAll(nil)
+    }
+
     private func unfocusedText(_ tab: BrowserTab?) -> String {
         guard let tab, !tab.url.isEmpty, let url = URL(string: tab.url) else { return "" }
         if url.scheme?.lowercased() == "about" { return "" }
@@ -158,7 +170,9 @@ struct BrowserPane: View {
     @ViewBuilder private var pageArea: some View {
         ZStack {
             if let tab = active {
-                BrowserPageHost(webView: host.page(org: org, pane: pane.id, tab: tab))
+                // `rebuilds` is read so a data clear that dropped this page draws a new one.
+                let _ = host.rebuilds
+                BrowserPageHost(webView: host.page(scope: scope, pane: pane.id, tab: tab))
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("browser.page")
                 if let failure = tab.failure {
@@ -181,11 +195,11 @@ struct BrowserPane: View {
         // yet, never a reason to drop every web view.
         if let old, !now.tabs.isEmpty {
             let kept = Set(now.tabs.map(\.id))
-            for gone in old.tabs where !kept.contains(gone.id) { host.release(org: org, pane: pane.id, tab: gone.id) }
+            for gone in old.tabs where !kept.contains(gone.id) { host.release(scope: scope, pane: pane.id, tab: gone.id) }
         }
         var wantsAddress = false
         for tab in now.tabs {
-            guard let command = tab.command, host.apply(command, org: org, pane: pane.id, tab: tab) else { continue }
+            guard let command = tab.command, host.apply(command, scope: scope, pane: pane.id, tab: tab) else { continue }
             if case .focusAddress = command.verb, tab.id == now.active { wantsAddress = true }
         }
         let switched = old != nil && old?.active != now.active
@@ -193,7 +207,7 @@ struct BrowserPane: View {
         // page opened, nor one ⌘⇧T brought back: those arrive with a page to read, as in Safari.
         if switched, let id = now.active, let old, !old.tabs.contains(where: { $0.id == id }),
            now.closed.count >= old.closed.count,
-           !host.openedByPage.contains(BrowserTabHost.Key(org: org, pane: pane.id, tab: id)) {
+           !host.openedByPage.contains(BrowserTabHost.Key(scope: scope, pane: pane.id, tab: id)) {
             wantsAddress = true
         }
         if wantsAddress {
@@ -205,14 +219,6 @@ struct BrowserPane: View {
             focusPage()
         }
         if !addressFocused { draft = unfocusedText(now.activeTab) }
-    }
-
-    /// A browser pane arrives with one tab (spec: "It arrives with one tab on the start page"). Asked
-    /// for only when the pane holds none and has none saved for `browser_restore` to bring back.
-    private func askForFirstTab() async {
-        guard !askedForFirstTab, snapshot.tabs.isEmpty, (pane.browserTabs ?? []).isEmpty else { return }
-        askedForFirstTab = true
-        await dispatch("browser_new_tab", [:])
     }
 
     // MARK: Keyboard
@@ -231,7 +237,7 @@ struct BrowserPane: View {
 
     private func focusPage() {
         guard isFocusedPane, isKeyboardOwner, !keyboardHeld(), let tab = active else { return }
-        host.focusPage(org: org, pane: pane.id, tab: tab.id)
+        host.focusPage(scope: scope, pane: pane.id, tab: tab.id)
     }
 
     private func send(_ action: String, _ params: [String: JSONValue]) {

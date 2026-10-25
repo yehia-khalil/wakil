@@ -111,7 +111,8 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
         // A report that moves the address is written on the debounce.
         model.browserTabsDelay = .milliseconds(1)
         let tab = try #require(model.browser(pane)?.active)
-        await model.browserPageDidReport(pane: pane, tab: tab, BrowserPageReport(
+        let scope = try #require(model.browserScope)
+        await model.browserPageDidReport(scope: scope, pane: pane, tab: tab, BrowserPageReport(
             url: "https://c.test/", title: "C", isLoading: false, progress: 1, canGoBack: true,
             canGoForward: false, failure: nil))
         #expect(model.browser(pane)?.activeTab?.url == "https://c.test/", "the cell is re-read")
@@ -123,14 +124,51 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
     @Test func theSeamRefreshesTheCell() async throws {
         let (model, pane, _, _) = try await focusedBrowser()
         await model.dispatchFromSurface("browser_find", .object(["pane": .string(pane), "query": .string("x")]))
-        await model.browserFindDidReport(pane: pane, current: 2, total: 5)
+        let scope = try #require(model.browserScope)
+        await model.browserFindDidReport(scope: scope, pane: pane, current: 2, total: 5)
         #expect(model.browser(pane)?.find?.total == 5)
-        await model.browserDownloadDidChange(pane: pane, BrowserDownload(
+        await model.browserDownloadDidChange(scope: scope, pane: pane, BrowserDownload(
             id: "d1", filename: "f", received: 0, expected: 1, state: .running))
         #expect(model.browser(pane)?.downloads.count == 1)
         let opener = try #require(model.browser(pane)?.active)
-        let id = await model.browserPageOpenedTab(pane: pane, opener: opener, url: "https://p.test/")
+        let id = await model.browserPageOpenedTab(scope: scope, pane: pane, opener: opener, url: "https://p.test/")
         #expect(id != nil && model.browser(pane)?.active == id)
+    }
+
+    /// Pane and tab ids repeat from place to place, so a web view still running in another place
+    /// names this place's `browser-1`/`t1`: what it says must change nothing here.
+    @Test func aReportFromAnotherPlaceChangesNothingInThisOne() async throws {
+        let (model, pane, layout, _) = try await focusedBrowser()
+        model.browserTabsDelay = .milliseconds(1)
+        let scope = try #require(model.browserScope)
+        let tab = try #require(model.browser(pane)?.active)
+        let before = try #require(model.browser(pane))
+        let elsewhere = [
+            LayoutScope(organization: "globex", project: scope.project, environment: scope.environment,
+                        lineageRoot: scope.lineageRoot),
+            LayoutScope(organization: scope.organization, project: scope.project + "-other",
+                        environment: scope.environment, lineageRoot: scope.lineageRoot),
+        ]
+        for other in elsewhere {
+            await model.browserPageDidReport(scope: other, pane: pane, tab: tab, BrowserPageReport(
+                url: "https://mail.test/", title: "Inbox", isLoading: false, progress: 1, canGoBack: true,
+                canGoForward: false, failure: nil))
+            #expect(await model.browserPageOpenedTab(scope: other, pane: pane, opener: tab, url: "https://p.test/") == nil)
+            #expect(await !model.browserPageClosed(scope: other, pane: pane, tab: tab))
+            await model.browserFindDidReport(scope: other, pane: pane, current: 1, total: 9)
+            await model.browserDownloadDidChange(scope: other, pane: pane, BrowserDownload(
+                id: "d1", filename: "f", received: 0, expected: 1, state: .running))
+        }
+        await model.settleBrowserTabsWrite(pane: pane)
+        #expect(model.browser(pane) == before, "the cell is as it was")
+        #expect(await layout.browserTabs(id: pane)?.tabs.map(\.url) == ["https://a.test/"], "and the saved layout")
+        // The same report from this place lands.
+        await model.browserPageDidReport(scope: scope, pane: pane, tab: tab, BrowserPageReport(
+            url: "https://c.test/", title: "C", isLoading: false, progress: 1, canGoBack: true,
+            canGoForward: false, failure: nil))
+        #expect(model.browser(pane)?.activeTab?.url == "https://c.test/")
+        #expect(await model.browserPageClosed(scope: scope, pane: pane, tab: tab))
+        #expect(!model.layoutSnapshot.panes.contains { $0.id == pane }, "its only tab closed, and the pane with it")
     }
 
     @Test func browserKeysDispatchTheirActions() async throws {

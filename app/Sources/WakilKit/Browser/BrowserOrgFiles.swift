@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Why an organisation's browser files cannot be addressed.
@@ -88,6 +89,17 @@ public struct BrowserOrgFiles: Sendable, Equatable {
         all[host] = factor
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(all).write(to: zoomURL, options: .atomic)
+    }
+
+    /// The name a tab's state is kept under (`stateURL(tab:)`): `<scopeKey>.<pane>.<tab>`. Pane and
+    /// tab ids repeat from place to place, and one organisation's directory holds every project's,
+    /// so the place is in the name. `scopeKey` is a stable digest of the project, environment and
+    /// conversation (the organisation is the directory already): the same place always names the
+    /// same file, across launches, and the name stays short whatever the project key is.
+    public static func stateKey(scope: LayoutScope, pane: String, tab: String) -> String {
+        let place = [scope.project, scope.environment, scope.lineageRoot ?? ""].joined(separator: "\u{1F}")
+        let digest = SHA256.hash(data: Data(place.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+        return "\(digest).\(pane).\(tab)"
     }
 
     /// Where tab `tab`'s state is kept (`tabs/<tab-id>.state`); the id is encoded, so it stays a name.

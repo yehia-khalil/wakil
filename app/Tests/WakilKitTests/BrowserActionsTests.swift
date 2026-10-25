@@ -362,3 +362,31 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     #expect(why == "No organisation is active.")
     #expect(removed.all.isEmpty)
 }
+
+/// `pane_open {kind: "browser"}` gives the pane its first tab (spec: it arrives with one tab), the
+/// way a terminal opens with its shell: `browser_new_tab`'s handler, run by `pane_open`.
+@Test func paneOpenGivesABrowserItsFirstTab() async throws {
+    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
+    let layout = LayoutStore()
+    let panes = PaneStore(kinds: PaneKinds.standard)
+    let browser = browserActions(panes: panes, layout: layout, settings: { .defaults })
+    await registerLayoutActions(into: registry, layout: layout, panes: panes,
+                                openBrowserTab: browser.first { $0.name == "browser_new_tab" }?.handler)
+    for action in browser { await registry.register(action) }
+    let opened = try await registry.dispatch(name: "pane_open", params: .object(["kind": .string("browser")]),
+                                             origin: .agent, caller: .test("staging"), confirmation: nil)
+    guard case .object(let o) = opened, case .string(let pane)? = o["id"] else {
+        Issue.record("pane_open answered \(opened)")
+        return
+    }
+    let s = await panes.browserSnapshot(paneId: pane)
+    #expect(s.tabs.count == 1 && s.active == s.tabs[0].id)
+    #expect(s.activeTab?.command?.verb == .focusAddress, "a blank start page: the address field takes the keyboard")
+    #expect(await layout.browserTabs(id: pane)?.tabs.count == 1, "saved with the layout")
+    // Another kind is opened as before.
+    _ = try await registry.dispatch(name: "pane_open", params: .object(["kind": .string("editor")]),
+                                    origin: .agent, caller: .test("staging"), confirmation: nil)
+    #expect(await layout.snapshot().panes.count == 2)
+}

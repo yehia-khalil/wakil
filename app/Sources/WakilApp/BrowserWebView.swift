@@ -13,14 +13,19 @@ final class BrowserWebView: WKWebView {
     /// Esc while the page loads: the tab's `browser_stop` (Rule 4). Answers whether it was used.
     var stopOnEscape: (@MainActor () -> Bool)?
 
-    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, and ⌘⇧W (global constraints).
+    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, and ⌘⇧W (global constraints), **by physical key**
+    /// (`kVK_ANSI_*`), so they are Wakil's on every keyboard layout — a character match fails on a
+    /// non-Latin one (`QueryLineKeys`' note).
     static func isWakilKey(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown, let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
+        guard event.type == .keyDown else { return false }
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if mods == .command { return ["k", "p", "n", "t", "w", "l", ","].contains(key) || ("1"..."9").contains(key) }
-        if mods == [.command, .shift] { return key == "w" }
+        if mods == .command { return commandKeys.contains(event.keyCode) }
+        if mods == [.command, .shift] { return event.keyCode == 13 }   // W
         return false
     }
+
+    /// K P N T W L , and 1–9.
+    private static let commandKeys: Set<UInt16> = [40, 35, 45, 17, 13, 37, 43, 18, 19, 20, 21, 23, 22, 26, 28, 25]
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if Self.isWakilKey(event), NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
@@ -89,7 +94,9 @@ private let urlErrorNames: [Int: String] = [
 @MainActor
 final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     weak var host: BrowserTabHost?
-    let org: String
+    /// The place this tab's web view belongs to: every seam call carries it, and the window drops
+    /// those whose place is not on screen (pane and tab ids repeat from place to place).
+    let scope: LayoutScope
     let pane: String
     /// Empty while a pop-up waits for the store to name its tab (`BrowserTabHost.adoptPopup`).
     var tab: String
@@ -102,9 +109,9 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var reporting: Task<Void, Never>?
     private var reportAgain = false
 
-    init(host: BrowserTabHost, org: String, pane: String, tab: String, files: BrowserOrgFiles?) {
+    init(host: BrowserTabHost, scope: LayoutScope, pane: String, tab: String, files: BrowserOrgFiles?) {
         self.host = host
-        self.org = org
+        self.scope = scope
         self.pane = pane
         self.tab = tab
         self.files = files
@@ -126,7 +133,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             webView.observe(\.isLoading) { view, _ in report(view) },
         ]
         webView.stopOnEscape = { [weak self] in
-            guard let self, !self.tab.isEmpty else { return false }
+            guard let self, !self.tab.isEmpty, self.isShown else { return false }
             self.dispatch("browser_stop")
             return true
         }
@@ -138,8 +145,11 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         reporting?.cancel()
     }
 
+    /// Whether this tab's place is the one on screen, which is the only place its ids mean this tab.
+    var isShown: Bool { host?.model?.browserScope == scope }
+
     private func dispatch(_ action: String, _ extra: [String: JSONValue] = [:]) {
-        guard let model = host?.model, !tab.isEmpty else { return }
+        guard let model = host?.model, !tab.isEmpty, isShown else { return }
         var params = extra
         params["pane"] = .string(pane)
         params["tab"] = .string(tab)
@@ -155,7 +165,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             while let self, self.reportAgain, !Task.isCancelled {
                 self.reportAgain = false
                 guard let model = self.host?.model, !self.tab.isEmpty,
-                      let view = self.host?.existing(org: self.org, pane: self.pane, tab: self.tab) else { break }
+                      let view = self.host?.existing(scope: self.scope, pane: self.pane, tab: self.tab) else { break }
                 let report = BrowserPageReport(
                     // A failed load reads as the address that failed, not the page left showing.
                     url: (self.failure != nil ? self.requested : nil) ?? view.url?.absoluteString
@@ -163,7 +173,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
                     title: view.title ?? "",
                     isLoading: view.isLoading, progress: view.estimatedProgress,
                     canGoBack: view.canGoBack, canGoForward: view.canGoForward, failure: self.failure)
-                await model.browserPageDidReport(pane: self.pane, tab: self.tab, report)
+                await model.browserPageDidReport(scope: self.scope, pane: self.pane, tab: self.tab, report)
             }
             self?.reporting = nil
         }
@@ -180,13 +190,13 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         failure = nil
-        host?.saveState(of: webView, tab: tab, files: files)
+        host?.saveState(of: webView, scope: scope, pane: pane, tab: tab, files: files)
         scheduleReport()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         scheduleReport()
-        host?.readFavicon(of: webView, org: org, pane: pane, tab: tab)
+        host?.readFavicon(of: webView, scope: scope, pane: pane, tab: tab)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -228,7 +238,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     private func openInBackground(_ url: URL) {
-        guard let model = host?.model, !tab.isEmpty else { return }
+        guard let model = host?.model, !tab.isEmpty, isShown else { return }
         let pane = self.pane, opener = self.tab
         Task {
             _ = await model.dispatchFromSurfaceInOrder([
@@ -244,16 +254,20 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// so `window.opener` works and the pop-up's `window.close()` closes the tab.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        guard let host, !tab.isEmpty else { return nil }
+        // A page in a place not on screen opens nothing: its new tab would land in this place's pane
+        // of the same id. Its own pop-up flow sees the window refused, as a blocker does.
+        guard let host, !tab.isEmpty, isShown else { return nil }
         if let url = navigationAction.request.url, opensInBackground(navigationAction) {
             openInBackground(url)
             return nil
         }
-        return host.adoptPopup(configuration: configuration, org: org, pane: pane, opener: tab, files: files,
+        return host.adoptPopup(configuration: configuration, scope: scope, pane: pane, opener: tab, files: files,
                                url: navigationAction.request.url?.absoluteString ?? "")
     }
 
     func webViewDidClose(_ webView: WKWebView) {
-        dispatch("browser_close_tab")
+        guard let model = host?.model, !tab.isEmpty else { return }
+        let scope = self.scope, pane = self.pane, tab = self.tab
+        Task { await model.browserPageClosed(scope: scope, pane: pane, tab: tab) }
     }
 }

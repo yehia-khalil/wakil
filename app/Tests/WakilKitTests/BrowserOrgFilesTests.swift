@@ -78,3 +78,24 @@ private func scratchHome() -> URL { testScratchRoot.appendingPathComponent(UUID(
     try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: profile.path)
     #expect(try files.identifier() == id, "the id survived the failed read")
 }
+
+@Test func aTabsStateIsNamedByItsPlaceNotOnlyItsIds() throws {
+    let staging = LayoutScope(organization: "acme", project: "api", environment: "staging")
+    let key = BrowserOrgFiles.stateKey(scope: staging, pane: "browser-1", tab: "t1")
+    #expect(key == BrowserOrgFiles.stateKey(scope: staging, pane: "browser-1", tab: "t1"), "stable for one place")
+    #expect(key.hasSuffix(".browser-1.t1"))
+    let others = [
+        LayoutScope(organization: "acme", project: "api", environment: "production"),
+        LayoutScope(organization: "acme", project: "web", environment: "staging"),
+        LayoutScope(organization: "acme", project: "api", environment: "staging", lineageRoot: "conv-1"),
+    ]
+    for other in others {
+        #expect(BrowserOrgFiles.stateKey(scope: other, pane: "browser-1", tab: "t1") != key,
+                "another place's browser-1/t1 is another file")
+    }
+    // The organisation is the directory, not part of the name.
+    #expect(BrowserOrgFiles.stateKey(scope: LayoutScope(organization: "globex", project: "api", environment: "staging"),
+                                     pane: "browser-1", tab: "t1") == key)
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "acme")
+    #expect(files.stateURL(tab: key).deletingLastPathComponent().lastPathComponent == "tabs")
+}

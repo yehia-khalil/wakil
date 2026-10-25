@@ -100,6 +100,22 @@ public func registerBrowserActions(
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
     removeData: (@Sendable (UUID) async throws -> Void)? = nil
 ) async {
+    for action in browserActions(panes: panes, layout: layout, settings: settings, orgFiles: orgFiles,
+                                 removeData: removeData) {
+        await registry.register(action)
+    }
+}
+
+/// The browser's actions, unregistered — `terminalActions`' shape, so `pane_open` can run
+/// `browser_new_tab`'s handler for a new browser pane's first tab before the registry holds them.
+func browserActions(
+    panes: PaneStore,
+    layout: LayoutStore?,
+    settings: @escaping @Sendable () async -> SettingsBrowser,
+    orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
+    removeData: (@Sendable (UUID) async throws -> Void)? = nil
+) -> [Action] {
+    var actions: [Action] = []
     let kind = BrowserPaneKind.names[0]
 
     /// The named pane, else the focused browser pane, else the last one opened. With none open,
@@ -181,7 +197,7 @@ public func registerBrowserActions(
     let string: JSONValue = .object(["type": .string("string")])
     let tabSchema: [String: JSONValue] = ["tab": string]
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_open",
         description: "Open url in the browser: a new tab (newTab, default true) in the focused or most "
             + "recently opened browser pane, or in the active tab with newTab false. Opens a browser "
@@ -203,7 +219,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_navigate",
         description: "Go to input in a tab (tab, default the active one), as typing it into the address "
             + "bar: a URL or host loads, anything else searches with the search engine in force.",
@@ -229,13 +245,13 @@ public func registerBrowserActions(
         ("browser_forward", "Go forward one page in a tab (tab, default the active one).", .forward),
         ("browser_stop", "Stop a tab's page loading (tab, default the active one).", .stop),
     ] {
-        await registry.register(Action(
+        actions.append(Action(
             name: name, description: words, kind: .control, audience: .agentReachable,
             schema: schema(tabSchema),
             handler: { params in try await command(params, action: name) { _ in verb } }))
     }
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_reload",
         description: "Reload a tab's page (tab, default the active one). A tab that has not loaded yet loads its address.",
         kind: .control, audience: .agentReachable,
@@ -244,14 +260,14 @@ public func registerBrowserActions(
             try await command(params, action: "browser_reload") { t in t.loaded || t.url.isEmpty ? .reload : .load(t.url) }
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_focus_address",
         description: "Put the keyboard in a tab's address field (tab, default the active one), as ⌘L.",
         kind: .control, audience: .agentReachable,
         schema: schema(tabSchema),
         handler: { params in try await command(params, action: "browser_focus_address") { _ in .focusAddress } }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_new_tab",
         description: "Open a new tab at the end of a browser pane's tabs and select it: url when given, "
             + "else (url left out) the start page; a blank start page leaves the address field focused. Opens a browser "
@@ -268,7 +284,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_close_tab",
         description: "Close a tab (tab, default the active one). The tab to its right is selected, else "
             + "the one to its left; closing the last tab closes the pane. browser_reopen_tab brings it back.",
@@ -298,7 +314,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_reopen_tab",
         description: "Reopen the tab closed most recently in a browser pane, at the end of its tabs, and select it.",
         kind: .control, audience: .agentReachable,
@@ -318,7 +334,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_select_tab",
         description: "Select a tab, by id (tab) or by position (index, 0 first, -1 the last). A tab that "
             + "has not loaded yet loads when selected.",
@@ -344,7 +360,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_move_tab",
         description: "Move a tab to position to (0 first; past the end is the end).",
         kind: .control, audience: .agentReachable,
@@ -366,7 +382,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_find",
         description: "Open the find bar on the active tab's page and look for query (empty opens the bar "
             + "with nothing to find). read_pane's find answers the match count.",
@@ -381,7 +397,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_find_step",
         description: "Move to the next match of the find bar's query (forward true, the default) or the previous one.",
         kind: .control, audience: .agentReachable,
@@ -399,7 +415,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_find_close",
         description: "Close the find bar.",
         kind: .control, audience: .agentReachable,
@@ -410,7 +426,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_zoom",
         description: "Zoom the active tab's page one step in or out, or reset it to 100%. Steps: "
             + browserZoomSteps.map { "\(Int(($0 * 100).rounded()))%" }.joined(separator: ", ") + ".",
@@ -436,7 +452,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_download_cancel",
         description: "Ask a running download to stop (download, its id in read_pane's downloads); its state "
             + "reads cancelled once the page has stopped it. One that already ended is left as it is.",
@@ -454,7 +470,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_downloads_clear",
         description: "Clear the downloads that have ended from the pane's download strip; running ones stay. "
             + "The files stay where they were saved.",
@@ -466,7 +482,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_restore",
         description: "Reopen a browser pane's saved tabs after a relaunch. Only the selected tab loads; "
             + "the rest load when selected.",
@@ -481,7 +497,7 @@ public func registerBrowserActions(
             return await reply(pane)
         }))
 
-    await registry.register(Action(
+    actions.append(Action(
         name: "browser_clear_data",
         description: "Delete the active organisation's browsing data: every site's cookies, logins and storage, "
             + "in every project, and the saved zoom. Asks the operator first. Operator-only.",
@@ -496,6 +512,7 @@ public func registerBrowserActions(
         },
         // Signs out of every site in every project, in production and out of it.
         price: (production: .gate, otherwise: .gate)))
+    return actions
 }
 
 /// `ctx_browser_settings`' reply, or nil when it is not one (`decodeEditorSettings`' twin).
