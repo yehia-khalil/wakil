@@ -987,7 +987,7 @@ private let registeredBeforeThePalette: Set<String> = [
     // 3a-v-b: the conflict blocks in a conflicted file's tab.
     "editor_conflict_accept", "editor_conflict_next", "editor_conflict_previous", "editor_conflict_compare",
     // 3c-i: the browser's actions; browser_restore is the window's own (operator-only).
-    "browser_back", "browser_close_tab", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_forward", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_zoom",
+    "browser_back", "browser_close_tab", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_zoom",
     "api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_render_curl", "api_reopen",
     "api_remove_entry", "api_request", "api_send", "api_set_entry", "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
     // Provider capacity, on purpose: the operator-only record path and the agent's read.
@@ -1041,7 +1041,7 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__editor_conflict_accept", "mcp__wakil__editor_conflict_next", "mcp__wakil__editor_conflict_previous", "mcp__wakil__editor_conflict_compare",
     "mcp__wakil-git", "mcp__wakil-pm", "mcp__wakil-recall",
     // 3c-i: every browser action but browser_restore.
-    "mcp__wakil__browser_back", "mcp__wakil__browser_close_tab", "mcp__wakil__browser_download_cancel", "mcp__wakil__browser_downloads_clear", "mcp__wakil__browser_find", "mcp__wakil__browser_find_close", "mcp__wakil__browser_find_step", "mcp__wakil__browser_forward", "mcp__wakil__browser_move_tab", "mcp__wakil__browser_navigate", "mcp__wakil__browser_new_tab", "mcp__wakil__browser_open", "mcp__wakil__browser_reload", "mcp__wakil__browser_reopen_tab", "mcp__wakil__browser_select_tab", "mcp__wakil__browser_stop", "mcp__wakil__browser_zoom",
+    "mcp__wakil__browser_back", "mcp__wakil__browser_close_tab", "mcp__wakil__browser_download_cancel", "mcp__wakil__browser_downloads_clear", "mcp__wakil__browser_find", "mcp__wakil__browser_find_close", "mcp__wakil__browser_find_step", "mcp__wakil__browser_focus_address", "mcp__wakil__browser_forward", "mcp__wakil__browser_move_tab", "mcp__wakil__browser_navigate", "mcp__wakil__browser_new_tab", "mcp__wakil__browser_open", "mcp__wakil__browser_reload", "mcp__wakil__browser_reopen_tab", "mcp__wakil__browser_select_tab", "mcp__wakil__browser_stop", "mcp__wakil__browser_zoom",
     "mcp__wakil__api_bind", "mcp__wakil__api_cancel", "mcp__wakil__api_fill_from_curl",
     "mcp__wakil__api_open", "mcp__wakil__api_render_curl", "mcp__wakil__api_reopen",
     "mcp__wakil__api_request", "mcp__wakil__api_set_request", "mcp__wakil__api_unbind",

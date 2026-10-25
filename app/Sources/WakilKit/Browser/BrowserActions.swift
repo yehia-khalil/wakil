@@ -239,17 +239,23 @@ public func registerBrowserActions(
         }))
 
     await registry.register(Action(
+        name: "browser_focus_address",
+        description: "Put the keyboard in a tab's address field (tab, default the active one), as ⌘L.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(tabSchema),
+        handler: { params in try await command(params, action: "browser_focus_address") { _ in .focusAddress } }))
+
+    await registry.register(Action(
         name: "browser_new_tab",
         description: "Open a new tab at the end of a browser pane's tabs and select it: url when given, "
-            + "else the start page; a blank start page leaves the address field focused. Opens a browser "
+            + "else (url left out) the start page; a blank start page leaves the address field focused. Opens a browser "
             + "pane when none is open.",
         kind: .control, audience: .agentReachable,
         schema: schema(["url": string]),
         handler: { params in
             var url: String?
-            if let typed = optionalString(params, "url"), !typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                url = try await address(typed)
-            }
+            // A url given is held to the address rule, blank included; leave it out for the start page.
+            if let typed = optionalString(params, "url") { url = try await address(typed) }
             let pane = try await browserPane(params, action: "browser_new_tab", open: true).id
             await addTab(pane, url: url)
             await persist(pane)
@@ -278,7 +284,7 @@ public func registerBrowserActions(
             }
             guard let left else { throw BrowserActionError.noTab(action: "browser_close_tab", tab: tab) }
             if left == 0 {
-                try? await layout?.close(id: pane)
+                try await layout?.close(id: pane)
                 await panes.drop(paneId: pane)
                 return .object(["pane": .string(pane), "closed": .bool(true)])
             }
@@ -426,8 +432,8 @@ public func registerBrowserActions(
 
     await registry.register(Action(
         name: "browser_download_cancel",
-        description: "Cancel a running download (download, its id in read_pane's downloads). One that "
-            + "already ended is left as it is.",
+        description: "Ask a running download to stop (download, its id in read_pane's downloads); its state "
+            + "reads cancelled once the page has stopped it. One that already ended is left as it is.",
         kind: .control, audience: .agentReachable,
         schema: schema(["download": string], required: ["download"]),
         handler: { params in
@@ -435,7 +441,7 @@ public func registerBrowserActions(
             let pane = try await browserPane(params, action: "browser_download_cancel").id
             let ok = await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
                 guard let i = s.downloads.firstIndex(where: { $0.id == id }) else { return false }
-                if s.downloads[i].state == .running { s.downloads[i].state = .cancelled }
+                if s.downloads[i].state == .running { s.downloads[i].cancelRequested = true }
                 return true
             }
             guard ok else { throw BrowserActionError.noDownload(id: id) }

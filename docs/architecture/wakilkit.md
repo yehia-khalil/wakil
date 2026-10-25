@@ -141,7 +141,7 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   `browserPageOpenedTab`. The seam never creates a pane and never issues a command.
 - `BrowserActions.swift` — `registerBrowserActions` (3c-i): `browser_open` (opens a pane when none is),
   `browser_navigate` (the address rule; refuses blank and `javascript:`), back, forward, reload, stop,
-  new/close/reopen/select/move tab, find, find step and close, zoom (the fixed ladder), download cancel
+  new/close/reopen/select/move tab, focus address (⌘L), find, find step and close, zoom (the fixed ladder), download cancel
   and clear, and the operator-only `browser_restore`. `pane` defaults to the focused browser pane,
   else the last opened. Each command bumps its tab's `command.seq`; tab changes write the layout's
   saved tabs. Also `BrowserKey`, the keys `WindowModel.browserKey` takes over in a focused browser pane.

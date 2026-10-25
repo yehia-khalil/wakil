@@ -3,12 +3,11 @@ import Testing
 @testable import WakilKit
 
 /// A window over the layout, editor and browser actions (`editorWindowFull`'s shape, plus the
-/// browser's), its start page blank.
+/// browser's), its start page blank. `journal` is its registry's journal file.
 @MainActor
-private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore) {
-    let registry = ActionRegistry(
-        journalDirectory: testScratchRoot.appendingPathComponent("browser-window-\(UUID().uuidString)"),
-        sessionId: "browser-window")
+private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, journal: URL) {
+    let journalDir = testScratchRoot.appendingPathComponent("browser-window-\(UUID().uuidString)")
+    let registry = ActionRegistry(journalDirectory: journalDir, sessionId: "browser-window")
     let panes = PaneStore()
     let layout = LayoutStore()
     let files = FakeFiles()
@@ -28,23 +27,23 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore) {
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
         gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })
     await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { .defaults })
-    return (model, files, layout)
+    return (model, files, layout, journalDir.appendingPathComponent("browser-window.jsonl"))
 }
 
 @Suite @MainActor struct WindowModelBrowserTests {
     /// A focused browser pane holding one tab on `https://a.test/`.
-    private func focusedBrowser() async throws -> (WindowModel, String, LayoutStore) {
-        let (model, _, layout) = await browserWindow()
+    private func focusedBrowser() async throws -> (WindowModel, String, LayoutStore, URL) {
+        let (model, _, layout, journal) = await browserWindow()
         await model.refreshContext()
         await model.dispatchFromSurface("browser_open", .object(["url": .string("https://a.test/")]))
         await model.refreshLayout()
         let pane = try #require(model.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
         await model.focusPane(id: pane)
-        return (model, pane, layout)
+        return (model, pane, layout, journal)
     }
 
     @Test func keysOutsideABrowserKeepTodaysMeaning() async throws {
-        let (model, files, _) = await browserWindow()
+        let (model, files, _, _) = await browserWindow()
         await model.refreshContext()
         await files.put("/p/api/a.go", "a")
         await model.dispatchFromSurface("editor_open", .object(["path": .string("/p/api/a.go")]))
@@ -60,7 +59,7 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore) {
     }
 
     @Test func cmdTInABrowserOpensATab() async throws {
-        let (model, pane, _) = try await focusedBrowser()
+        let (model, pane, _, _) = try await focusedBrowser()
         await model.newScratch()
         let s = try #require(model.browser(pane))
         #expect(s.tabs.count == 2 && s.active == s.tabs[1].id)
@@ -73,7 +72,7 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore) {
     }
 
     @Test func savedTabsFollowTheStore() async throws {
-        let (model, pane, layout) = try await focusedBrowser()
+        let (model, pane, layout, _) = try await focusedBrowser()
         func saved() async -> [String]? { await layout.browserTabs(id: pane)?.tabs.map(\.url) }
         await model.dispatchFromSurface("browser_new_tab", .object(["pane": .string(pane), "url": .string("https://b.test/")]))
         #expect(await saved() == ["https://a.test/", "https://b.test/"])
@@ -95,7 +94,7 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore) {
     }
 
     @Test func theSeamRefreshesTheCell() async throws {
-        let (model, pane, _) = try await focusedBrowser()
+        let (model, pane, _, _) = try await focusedBrowser()
         await model.dispatchFromSurface("browser_find", .object(["pane": .string(pane), "query": .string("x")]))
         await model.browserFindDidReport(pane: pane, current: 2, total: 5)
         #expect(model.browser(pane)?.find?.total == 5)
@@ -108,7 +107,7 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore) {
     }
 
     @Test func browserKeysDispatchTheirActions() async throws {
-        let (model, pane, _) = try await focusedBrowser()
+        let (model, pane, _, journal) = try await focusedBrowser()
         #expect(await model.browserKey(.zoomIn))
         #expect(model.browser(pane)?.activeTab?.zoom == 1.1)
         #expect(await model.browserKey(.reload))
@@ -116,6 +115,8 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore) {
         let seq = model.browser(pane)?.activeTab?.command?.seq ?? 0
         #expect(await model.browserKey(.focusAddress))
         #expect(model.browser(pane)?.activeTab?.command == BrowserCommand(seq: seq + 1, verb: .focusAddress))
+        let lines = try String(contentsOf: journal, encoding: .utf8).split(separator: "\n")
+        #expect(lines.contains { $0.contains("\"browser_focus_address\"") }, "⌘L went through the action")
         #expect(await model.browserKey(.find))
         #expect(model.browser(pane)?.find?.query == "")
         await model.dispatchFromSurface("browser_new_tab", .object(["pane": .string(pane), "url": .string("https://b.test/")]))

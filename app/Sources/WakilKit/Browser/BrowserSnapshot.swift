@@ -104,13 +104,17 @@ public struct BrowserDownload: Sendable, Equatable, Codable {
     public var state: State
     public var path: String?
     public var failure: String?
+    /// Cancel was asked (`browser_download_cancel`); the host cancels and reports `.cancelled`.
+    /// The state never changes on the ask alone.
+    public var cancelRequested: Bool
 
     public enum State: String, Sendable, Codable { case running, finished, failed, cancelled }
 
     public init(
         id: String, filename: String, received: Int64, expected: Int64, state: State,
-        path: String? = nil, failure: String? = nil
+        path: String? = nil, failure: String? = nil, cancelRequested: Bool = false
     ) {
+        self.cancelRequested = cancelRequested
         self.id = id
         self.filename = filename
         self.received = received

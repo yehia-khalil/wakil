@@ -5603,11 +5603,7 @@ public final class WindowModel {
     }
 
     /// A browser key, acted on when a browser pane is focused; false (nothing done) otherwise, so the
-    /// key keeps its meaning elsewhere. Every key but ⌘L dispatches the browser action for it.
-    ///
-    /// **⌘L is not an action**: putting the keyboard in the address field changes no page, so it is
-    /// the active tab's `.focusAddress` command written straight to the store, as a focus request
-    /// is window state rather than something to journal (`editorColumnFocusRequest`).
+    /// key keeps its meaning elsewhere. Every key dispatches the browser action for it (Invariant 2).
     public func browserKey(_ key: BrowserKey) async -> Bool {
         guard let pane = focusedBrowser else { return false }
         let s = browser(pane) ?? .empty
@@ -5624,11 +5620,8 @@ public final class WindowModel {
             name = "browser_close_tab"
         case .reopenTab: name = "browser_reopen_tab"
         case .focusAddress:
-            await panes.updateBrowser(paneId: pane) { s in
-                if let i = s.tabIndex(nil) { s.tabs[i].issue(.focusAddress) }
-            }
-            await refreshBrowser(pane: pane)
-            return true
+            guard s.activeTab != nil else { return true }
+            name = "browser_focus_address"
         case .reload: name = "browser_reload"
         case .back: name = "browser_back"
         case .forward: name = "browser_forward"

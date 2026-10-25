@@ -65,11 +65,16 @@ extension PaneStore {
     }
 
     /// A download started or changed: replaced in place by id, so the list keeps the order downloads
-    /// began in; a new one is appended.
+    /// began in; a new one is appended. A pending cancel ask is kept while the download still runs;
+    /// a final state clears it.
     public func browserDownloadDidChange(paneId: String, _ download: BrowserDownload) {
         guard holds(BrowserPaneKind.self, paneId) else { return }
         updateBrowser(paneId: paneId) { s in
-            if let i = s.downloads.firstIndex(where: { $0.id == download.id }) { s.downloads[i] = download }
+            if let i = s.downloads.firstIndex(where: { $0.id == download.id }) {
+                var d = download
+                if d.state == .running { d.cancelRequested = d.cancelRequested || s.downloads[i].cancelRequested }
+                s.downloads[i] = d
+            }
             else { s.downloads.append(download) }
         }
     }

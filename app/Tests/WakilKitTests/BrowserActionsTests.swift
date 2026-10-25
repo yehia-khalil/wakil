@@ -86,6 +86,30 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     #expect(await f.snapshot() == before)
 }
 
+@Test func openAndNewTabRefuseAsNavigateDoes() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let before = await f.snapshot()
+    for (name, key) in [("browser_open", "url"), ("browser_new_tab", "url"), ("browser_navigate", "input")] {
+        #expect(await refusal { try await f.dispatch(name, [key: .string("javascript:alert(1)")]) }
+            == "javascript: addresses don't run here — open the page and use Inspect Element.", "\(name)")
+    }
+    for name in ["browser_open", "browser_new_tab"] {
+        #expect(await refusal { try await f.dispatch(name, ["url": .string("  ")]) }
+            == "Type an address or words to search.", "\(name)")
+    }
+    #expect(await f.snapshot() == before)
+    let g = try await browserFixture(open: false)
+    #expect(await refusal { try await g.dispatch("browser_open", ["url": .string("javascript:x")], named: false) } != nil)
+    #expect(await g.layout.snapshot().panes.isEmpty, "a refused open opens no pane")
+}
+
+@Test func focusAddressIsACommand() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let seq = await f.active()?.command?.seq ?? 0
+    try await f.dispatch("browser_focus_address")
+    #expect(await f.active()?.command == BrowserCommand(seq: seq + 1, verb: .focusAddress))
+}
+
 @Test func commandSeqsRiseFromARestoredTab() async throws {
     let f = try await browserFixture()
     await f.layout.setBrowserTabs(id: f.pane, to: [BrowserSavedTab(id: "t3", url: "https://a.test/", title: "A")], active: "t3")
@@ -237,7 +261,18 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     await f.panes.browserDownloadDidChange(paneId: f.pane, BrowserDownload(id: "d1", filename: "a", received: 1, expected: 2, state: .running))
     await f.panes.browserDownloadDidChange(paneId: f.pane, BrowserDownload(id: "d2", filename: "b", received: 2, expected: 2, state: .finished))
     try await f.dispatch("browser_download_cancel", ["download": .string("d1")])
-    #expect(await f.snapshot().downloads.map(\.state) == [.cancelled, .finished])
+    try await f.dispatch("browser_download_cancel", ["download": .string("d2")])
+    var d = await f.snapshot().downloads
+    #expect(d.map(\.state) == [.running, .finished], "the ask alone changes no state")
+    #expect(d.map(\.cancelRequested) == [true, false], "an ended download is left as it is")
+    #expect(await refusal { try await f.dispatch("browser_download_cancel", ["download": .string("nope")]) }
+        == BrowserActionError.noDownload(id: "nope").description)
+    // Progress while the host is stopping it keeps the ask; the host's final report ends it.
+    await f.panes.browserDownloadDidChange(paneId: f.pane, BrowserDownload(id: "d1", filename: "a", received: 2, expected: 2, state: .running))
+    #expect(await f.snapshot().downloads[0].cancelRequested)
+    await f.panes.browserDownloadDidChange(paneId: f.pane, BrowserDownload(id: "d1", filename: "a", received: 2, expected: 2, state: .cancelled))
+    d = await f.snapshot().downloads
+    #expect(d[0].state == .cancelled && !d[0].cancelRequested)
     await f.panes.browserDownloadDidChange(paneId: f.pane, BrowserDownload(id: "d3", filename: "c", received: 0, expected: 2, state: .running))
     try await f.dispatch("browser_downloads_clear")
     #expect(await f.snapshot().downloads.map(\.id) == ["d3"])
