@@ -178,9 +178,20 @@ func gitLines(ctx context.Context, dir string, args ...string) ([]string, error)
 }
 
 // gitListFiles answers git's view of the repository at dir: tracked plus untracked, ignores
-// applied, relative to dir. Its exec-and-split body is now gitLines'.
+// applied, relative to dir. Its exec-and-split body is now gitLines'. A conflicted file is in the
+// index once per stage, and git prints those entries next to each other: it is named once.
 func gitListFiles(ctx context.Context, dir string) ([]string, error) {
-	return gitLines(ctx, dir, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	lines, err := gitLines(ctx, dir, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+	out := lines[:0]
+	for i, l := range lines {
+		if i == 0 || l != lines[i-1] {
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }
 
 // gitListIgnored answers the ignored files of the repository at dir, outside the heavy folders.
