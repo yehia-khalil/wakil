@@ -1,0 +1,14 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"CONNECTIONS"}}
+{"do":{"click":"settings.org.connections.jira"}}
+{"expect":{"frame":"settings.org.connections.jira.email","minWidth":1}}
+{"expect":{"focus":"settings.org.connections.jira.email"}}
+{"do":{"click":"settings.org.connections.jira.back"}}
+{"expect":{"frame":"settings.org.connections.add","minWidth":1}}
+{"do":{"click":"settings.org.connections.add"}}
+{"expect":{"tree":"contains","text":"Add connection"}}
+{"do":{"click":"settings.org.connections.catalog.custom"}}
+{"expect":{"frame":"settings.org.connections.custom.name","minWidth":1}}
+{"expect":{"focus":"settings.org.connections.custom.name"}}
+{"expect":{"tree":"contains","text":"The command and its arguments can be seen by the agent."}}
