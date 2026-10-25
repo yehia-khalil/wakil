@@ -52,6 +52,12 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
         #expect(!model.organization.isEmpty)
         #expect(files.org == model.organization)
         #expect(files.directory.path == home.path + "/.wakil/orgs/\(model.organization)/browser")
+        let first = try files.identifier()
+        model.setOrganizationForTesting("globex")
+        let second = try #require(model.browserOrgFiles)
+        #expect(second.directory.path == home.path + "/.wakil/orgs/globex/browser")
+        #expect(second.directory != files.directory)
+        #expect(try second.identifier() != first, "another organisation never gets this one's store id")
         model.browserHome = nil
         #expect(model.browserOrgFiles == nil, "no home, no files")
     }

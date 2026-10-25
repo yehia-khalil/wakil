@@ -97,7 +97,7 @@ public func registerBrowserActions(
     panes: PaneStore,
     layout: LayoutStore?,
     settings: @escaping @Sendable () async -> SettingsBrowser,
-    orgFiles: @escaping @Sendable () async -> BrowserOrgFiles? = { nil },
+    orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
     removeData: (@Sendable (UUID) async throws -> Void)? = nil
 ) async {
     let kind = BrowserPaneKind.names[0]
@@ -489,7 +489,7 @@ public func registerBrowserActions(
         schema: schema([:]),
         handler: { _ in
             guard let removeData else { throw BrowserActionError.clearOnlyFromTheApp }
-            guard let files = await orgFiles() else { throw BrowserActionError.noOrganisation }
+            guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
             try await removeData(try files.identifier())
             try files.removeEverythingButTheProfile()
             return .object(["cleared": .string(files.org)])

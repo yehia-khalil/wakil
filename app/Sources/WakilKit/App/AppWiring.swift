@@ -470,7 +470,7 @@ public struct WakilWiring: Sendable {
             },
             orgFiles: {
                 let org = await shellContext.current().org
-                return org.isEmpty ? nil : try? BrowserOrgFiles(home: browserHome, org: org)
+                return org.isEmpty ? nil : try BrowserOrgFiles(home: browserHome, org: org)
             },
             removeData: removeBrowserData)
         let commitDrafts = CommitDraftSink()

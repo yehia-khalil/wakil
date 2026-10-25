@@ -54,6 +54,7 @@ private func scratchHome() -> URL { testScratchRoot.appendingPathComponent(UUID(
     let files = try BrowserOrgFiles(home: scratchHome(), org: "acme")
     let url = files.stateURL(tab: "t1")
     #expect(url.deletingLastPathComponent().lastPathComponent == "tabs")
+    #expect(url.lastPathComponent == "t1.state")
     #expect(files.stateURL(tab: "../x").deletingLastPathComponent().lastPathComponent == "tabs")
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data("{}".utf8).write(to: url)
@@ -65,4 +66,15 @@ private func scratchHome() -> URL { testScratchRoot.appendingPathComponent(UUID(
     for bad in ["a/b", "..", ".", "", "/etc"] {
         #expect(throws: BrowserOrgFilesError.self) { try BrowserOrgFiles(home: scratchHome(), org: bad) }
     }
+}
+
+@Test func anUnreadableProfileThrowsAndIsNotOverwritten() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "acme")
+    let id = try files.identifier()
+    let profile = files.directory.appendingPathComponent("profile.json")
+    try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: profile.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: profile.path) }
+    #expect(throws: (any Error).self) { try files.identifier() }
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: profile.path)
+    #expect(try files.identifier() == id, "the id survived the failed read")
 }

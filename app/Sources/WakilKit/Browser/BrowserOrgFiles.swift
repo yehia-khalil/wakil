@@ -29,7 +29,7 @@ public enum BrowserClearDataQuestion {
 ///   `WKWebsiteDataStore(forIdentifier:)`. WebKit keeps the store itself under `~/Library/WebKit/`,
 ///   outside Wakil's reach; this id is the only handle on it.
 /// - `zoom.json`: `{"<host>": <factor>}`, the page zoom per host.
-/// - `tabs/`: per-tab state.
+/// - `tabs/`: per-tab state, `tabs/<tab-id>.state`.
 public struct BrowserOrgFiles: Sendable, Equatable {
     public let home: URL
     public let org: String
@@ -59,11 +59,14 @@ public struct BrowserOrgFiles: Sendable, Equatable {
 
     /// The organisation's store id. Created on first use. A `profile.json` that does not parse is
     /// replaced with a new id: the old store is unreachable without its id, so starting fresh is
-    /// the only outcome.
+    /// the only outcome. Any other read failure (permissions, say) is thrown and the file is left
+    /// alone: overwriting a readable-later id would orphan the organisation's logins.
     public func identifier() throws -> UUID {
-        if let data = try? Data(contentsOf: profileURL),
-           let profile = try? JSONDecoder().decode(Profile.self, from: data) {
-            return profile.identifier
+        do {
+            let data = try Data(contentsOf: profileURL)
+            if let profile = try? JSONDecoder().decode(Profile.self, from: data) { return profile.identifier }
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            // missing: created below
         }
         let profile = Profile(identifier: UUID())
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -87,10 +90,10 @@ public struct BrowserOrgFiles: Sendable, Equatable {
         try JSONEncoder().encode(all).write(to: zoomURL, options: .atomic)
     }
 
-    /// Where tab `tab`'s state is kept (`tabs/<tab>.json`); the id is encoded, so it stays a name.
+    /// Where tab `tab`'s state is kept (`tabs/<tab-id>.state`); the id is encoded, so it stays a name.
     public func stateURL(tab: String) -> URL {
         let name = tab.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "tab"
-        return tabsDirectory.appendingPathComponent("\(name).json")
+        return tabsDirectory.appendingPathComponent("\(name).state")
     }
 
     public func removeState(tab: String) {

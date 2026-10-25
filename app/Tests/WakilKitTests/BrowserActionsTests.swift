@@ -340,7 +340,11 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
             _ = try await f.registry.dispatch(name: "browser_clear_data", params: .object([:]), origin: .ui,
                                               caller: caller, confirmation: nil)
             Issue.record("ran without a confirmation")
-        } catch {}
+        } catch let error as ActionError {
+            #expect(error == .needsConfirmation("browser_clear_data"))
+        } catch {
+            Issue.record("refused for another reason: \(error)")
+        }
     }
     #expect(removed.all.isEmpty)
 }
