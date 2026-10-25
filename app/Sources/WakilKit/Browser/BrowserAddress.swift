@@ -43,6 +43,18 @@ public enum BrowserAddress {
         }
     }
 
+    /// The pane footer's line (`Browser.dc.html`): the page's host, then `TLS` for https and
+    /// `NOT SECURE` for http — except http to a loopback host, which shows the host alone, as the
+    /// address row shows its padlock there (`isSecure`). Nil when the page has no host (blank).
+    public static func footer(_ url: URL) -> BrowserFooterLine? {
+        guard let host = url.host, !host.isEmpty else { return nil }
+        switch url.scheme?.lowercased() {
+        case "https": return BrowserFooterLine(host: host, transport: .tls)
+        case "http": return BrowserFooterLine(host: host, transport: isSecure(url) ? nil : .notSecure)
+        default: return BrowserFooterLine(host: host, transport: nil)
+        }
+    }
+
     /// The host without `www.`, or the file name for a `file:` URL.
     public static func displayHost(_ url: URL) -> String {
         if url.isFileURL { return url.lastPathComponent }
@@ -117,5 +129,16 @@ public enum BrowserAddress {
         return parts.count == 4 && parts.allSatisfy { p in
             !p.isEmpty && p.count <= 3 && p.allSatisfy { $0.isASCII && $0.isNumber } && Int(p)! <= 255
         }
+    }
+}
+
+/// What the browser pane's footer says about a page (`BrowserAddress.footer`).
+public struct BrowserFooterLine: Sendable, Equatable {
+    public enum Transport: Sendable, Equatable { case tls, notSecure }
+    public let host: String
+    public let transport: Transport?
+    public init(host: String, transport: Transport?) {
+        self.host = host
+        self.transport = transport
     }
 }

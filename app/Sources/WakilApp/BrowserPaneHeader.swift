@@ -345,18 +345,13 @@ struct BrowserFavicon: View {
 /// no host (blank, `about:`, `file:`, `data:`).
 struct BrowserFooter: View {
     let host: String
-    let transport: Transport?
+    let transport: BrowserFooterLine.Transport?
 
-    enum Transport: Equatable { case tls, notSecure }
-
+    /// The rule is WakilKit's (`BrowserAddress.footer`); the view only sets it in capitals.
     init?(url: URL) {
-        guard let host = url.host, !host.isEmpty else { return nil }
-        self.host = host.uppercased()
-        switch url.scheme?.lowercased() {
-        case "https": transport = .tls
-        case "http": transport = BrowserAddress.isSecure(url) ? nil : .notSecure
-        default: transport = nil
-        }
+        guard let line = BrowserAddress.footer(url) else { return nil }
+        host = line.host.uppercased()
+        transport = line.transport
     }
 
     var body: some View {

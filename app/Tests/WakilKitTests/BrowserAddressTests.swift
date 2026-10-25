@@ -58,4 +58,15 @@ import Foundation
         #expect(BrowserAddress.displayHost(URL(string: "http://localhost:3000/a")!) == "localhost")
         #expect(BrowserAddress.displayHost(URL(string: "file:///tmp/a.html")!) == "a.html")
     }
+
+    /// The footer's host and transport (Ruling: loopback http shows only the host — the address
+    /// row's padlock is there; NOT SECURE is for http anywhere else).
+    @Test func theFooterNamesTheHostAndHowThePageCame() {
+        #expect(BrowserAddress.footer(URL(string: "http://localhost:3000/a")!) == BrowserFooterLine(host: "localhost", transport: nil))
+        #expect(BrowserAddress.footer(URL(string: "http://127.0.0.1:8080")!) == BrowserFooterLine(host: "127.0.0.1", transport: nil))
+        #expect(BrowserAddress.footer(URL(string: "http://example.com/")!) == BrowserFooterLine(host: "example.com", transport: .notSecure))
+        #expect(BrowserAddress.footer(URL(string: "https://example.com/")!) == BrowserFooterLine(host: "example.com", transport: .tls))
+        #expect(BrowserAddress.footer(URL(string: "about:blank")!) == nil, "a blank page: no footer")
+        #expect(BrowserAddress.footer(URL(string: "file:///tmp/a.html")!) == nil, "no host: no footer")
+    }
 }

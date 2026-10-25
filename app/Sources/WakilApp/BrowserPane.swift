@@ -23,6 +23,11 @@ struct BrowserPane: View {
     let isFocusedPane: Bool
     let isKeyboardOwner: Bool
     let keyboardHeld: () -> Bool
+    /// `isFocusedPane && isKeyboardOwner && !keyboardHeld()` read from the window when asked — what a
+    /// page focus run a turn later checks, rather than this view's values as it was built (Rule 6).
+    let mayTakeKeyboard: @MainActor () -> Bool
+    /// The pane's active tab as the window holds it now.
+    let liveActiveTab: @MainActor () -> String?
     let keyboardFocusRequests: Int
     let keyboardReturns: Int
     /// Whether the pane has been closed (not merely taken off the canvas by a switch), asked a
@@ -150,12 +155,25 @@ struct BrowserPane: View {
                     .focused($addressFocused)
                     .onSubmit { submit() }
                     .onExitCommand {
+                        // As a tab switch does (⌘1): the field lets the keyboard go to the window
+                        // as this applies, so the page takes it a turn later — taken now, it
+                        // would be taken straight back.
                         addressFocused = false
-                        focusPage()
+                        DispatchQueue.main.async { focusPage() }
                     }
                     // The field arrives to be typed in: it takes the keyboard once it is in the
                     // window — asked as it appears, SwiftUI drops the request.
-                    .onAppear { DispatchQueue.main.async { if editingAddress { addressFocused = true } } }
+                    // If the window drops the request (something else took the keyboard first),
+                    // the field never had focus to lose: it goes back to the URL's line.
+                    .onAppear {
+                        DispatchQueue.main.async {
+                            guard editingAddress else { return }
+                            addressFocused = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                if editingAddress, !addressFocused { editingAddress = false }
+                            }
+                        }
+                    }
                     .accessibilityIdentifier("browser.address")
             } else {
                 addressLine
@@ -435,9 +453,11 @@ struct BrowserPane: View {
         beginEditingAddress()
     }
 
+    /// The page takes the keyboard — if, when this runs, the pane is still focused and nothing
+    /// else holds the keyboard. Read live: this is often run a turn after it was asked.
     private func focusPage() {
-        guard isFocusedPane, isKeyboardOwner, !keyboardHeld(), let tab = active else { return }
-        host.focusPage(scope: scope, pane: pane.id, tab: tab.id)
+        guard mayTakeKeyboard(), let tab = liveActiveTab() else { return }
+        host.focusPage(scope: scope, pane: pane.id, tab: tab)
     }
 
     private func send(_ action: String, _ params: [String: JSONValue]) {

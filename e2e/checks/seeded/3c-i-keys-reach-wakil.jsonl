@@ -25,3 +25,5 @@
 {"do":{"hotkey":"cmd+l"}}
 {"expect":{"focus":"browser.address"}}
 {"expect":{"journal":{"contains":"\"action\":\"browser_focus_address\""}}}
+{"do":{"press":"Escape"}}
+{"expect":{"focus":"browser.page"}}

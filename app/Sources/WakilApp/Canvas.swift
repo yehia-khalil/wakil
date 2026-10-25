@@ -591,6 +591,14 @@ extension WakilWindow {
                             model.showOrgPlane || model.organization.isEmpty || model.pending != nil
                             || model.paletteShowing || model.unsavedPrompt != nil || model.closeQuestion != nil),
                         keyboardHeld: { model.composerHoldsKeyboard },
+                        // The same three, read when asked: a deferred page focus acts on the
+                        // window as it is then, not as this view was built (Rule 6).
+                        mayTakeKeyboard: {
+                            model.layoutSnapshot.focusedId == pane.id && !model.composerHoldsKeyboard
+                                && !(model.showOrgPlane || model.organization.isEmpty || model.pending != nil
+                                     || model.paletteShowing || model.unsavedPrompt != nil || model.closeQuestion != nil)
+                        },
+                        liveActiveTab: { model.browser(pane.id)?.active },
                         keyboardFocusRequests: model.keyboardFocusRequests,
                         keyboardReturns: model.keyboardReturns,
                         // Closed, not switched away from: the same canvas drawn, and the pane gone from it.

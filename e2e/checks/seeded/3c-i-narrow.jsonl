@@ -16,6 +16,7 @@
 {"expect":{"frame":"browser.tab.t1","maxWidth":80}}
 {"expect":{"frame":"browser.tab.t1","minWidth":20}}
 {"expect":{"frame":"browser.tabs","inside":"browser.pane"}}
+{"expect":{"frame":"browser.tabs","maxHeight":40}}
 {"expect":{"frame":"browser.tab.t1","inside":"browser.tabs"}}
 {"expect":{"frame":"browser.tab.t2","inside":"browser.tabs"}}
 {"expect":{"frame":"browser.tab.t1","clear":"browser.tab.t2"}}
