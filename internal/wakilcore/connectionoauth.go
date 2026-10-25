@@ -122,7 +122,7 @@ func StartConnectionSignIn(ctx context.Context, org, name string) (string, error
 	if err != nil {
 		return "", err
 	}
-	prm, err := discoverResource(ctx, c.URL)
+	prm, err := discoverResource(ctx, ResolvedConnectionURL(c))
 	if err != nil {
 		return "", err
 	}
@@ -241,7 +241,7 @@ func WaitConnectionSignIn(ctx context.Context, org, name string) (string, error)
 	if err != nil {
 		return "", UserError("could not finish the sign-in to " + name + ": " + err.Error())
 	}
-	account := tokenAccount(ctx, tok, f.issuer, f.conn.URL)
+	account := tokenAccount(ctx, tok, f.issuer, ResolvedConnectionURL(f.conn))
 	stored := f.client
 	if stored.Own {
 		stored.Secret = ""

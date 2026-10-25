@@ -216,6 +216,25 @@ func SetConnectionSecrets(org, name string, values map[string]string) error {
 	return SecretSetFor(org, connectionRef(name), string(raw))
 }
 
+var connectionURLField = regexp.MustCompile(`\{([A-Za-z0-9_]+)\}`)
+
+// ResolvedConnectionURL is the address Wakil dials for c: each {field} in URL replaced by that
+// field's value (Datadog's {site}), and Amplitude's EU address when its region is "eu". A field
+// with no value stays as written, so the dial error shows what is missing. An address the
+// operator typed over the ready-made one is kept.
+func ResolvedConnectionURL(c MCPConnection) string {
+	u := c.URL
+	if c.Kind == "amplitude" && u == amplitudeUSURL && c.Values["region"] == "eu" {
+		u = amplitudeEUURL
+	}
+	return connectionURLField.ReplaceAllStringFunc(u, func(m string) string {
+		if v := c.Values[m[1:len(m)-1]]; v != "" {
+			return v
+		}
+		return m
+	})
+}
+
 // ToolAllowed is whether the gate lets tool through, and whether the operator cannot change that.
 // A destructive tool is locked and never allowed; otherwise the operator's stored switch wins, and
 // with none only a readOnly tool is allowed.

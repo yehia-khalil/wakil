@@ -23,6 +23,12 @@ type ConnectionKind struct {
 	Fields    []ConnectionField `json:"fields"`
 }
 
+// Amplitude's two addresses (see its entry below): ResolvedConnectionURL picks the EU one.
+const (
+	amplitudeUSURL = "https://mcp.amplitude.com/mcp"
+	amplitudeEUURL = "https://mcp.eu.amplitude.com/mcp"
+)
+
 // ConnectionCatalog is the ready-made list. "custom" is not an entry: it is Kind "custom" on a
 // Connection. Jira is not here: it is wakil-pm.
 var ConnectionCatalog = []ConnectionKind{
@@ -41,7 +47,8 @@ var ConnectionCatalog = []ConnectionKind{
 		// Doc: https://docs.datadoghq.com/bits_ai/mcp_server/setup/ — the address is per site;
 		// {site} is the "site" field's value (the page lists one host per site and publishes
 		// the US1 one, https://mcp.datadoghq.com/api/unstable/mcp-server/mcp). Header sign-in
-		// is the documented fallback to OAuth: DD_API_KEY and DD_APPLICATION_KEY.
+		// is the documented fallback to OAuth: the page's config sends the headers DD_API_KEY
+		// and DD_APPLICATION_KEY, each carrying the bare key (checked 2026-10-25).
 		ID: "datadog", Title: "Datadog", Transport: "http", URL: "https://mcp.{site}/api/unstable/mcp-server/mcp", SignIn: "fields",
 		Fields: []ConnectionField{
 			{ID: "site", Label: "Datadog site (for example datadoghq.com)"},
@@ -53,7 +60,7 @@ var ConnectionCatalog = []ConnectionKind{
 		// Doc: https://amplitude.com/docs/amplitude-ai/amplitude-mcp/other-clients — OAuth 2.0 in the
 		// browser, no API-key option. US is https://mcp.amplitude.com/mcp; the EU address,
 		// https://mcp.eu.amplitude.com/mcp, is chosen by the "region" field ("us" or "eu").
-		ID: "amplitude", Title: "Amplitude", Transport: "http", URL: "https://mcp.amplitude.com/mcp", SignIn: "browser",
+		ID: "amplitude", Title: "Amplitude", Transport: "http", URL: amplitudeUSURL, SignIn: "browser",
 		Fields: []ConnectionField{{ID: "region", Label: "Data region (us or eu)"}},
 	},
 	{

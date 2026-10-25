@@ -1,0 +1,603 @@
+package main
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/yehia-khalil/wakil/internal/wakilcore"
+)
+
+// TestMain points the Keychain tool at a stand-in that accepts every write and finds nothing,
+// so no test here can reach the operator's login keychain. A test that wants items to stay
+// (memorySecurity) sets its own over this.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "wakil-connect-security")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	script := filepath.Join(dir, "security")
+	body := "#!/bin/sh\ncase \"$1\" in add-generic-password|delete-generic-password) exit 0;; esac\nexit 44\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Setenv("WAKIL_SECURITY_BINARY", script)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// memorySecurity points the Keychain tool at a script that keeps each item in a file.
+func memorySecurity(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	body := `#!/bin/sh
+d="` + dir + `"
+cmd=$1; shift
+svc=""; val=""; mode=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -s) svc=$2; shift;;
+    -w) if [ "$cmd" = add-generic-password ]; then val=$2; shift; else mode=w; fi;;
+  esac
+  shift
+done
+f="$d/$(printf '%s' "$svc" | tr '/:' '__')"
+case $cmd in
+  add-generic-password) printf '%s' "$val" > "$f"; exit 0;;
+  delete-generic-password) rm -f "$f"; exit 0;;
+  find-generic-password) [ -f "$f" ] || exit 44; if [ "$mode" = w ]; then cat "$f"; echo; fi; exit 0;;
+esac
+exit 1
+`
+	script := filepath.Join(t.TempDir(), "security")
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WAKIL_SECURITY_BINARY", script)
+}
+
+func setupOrg(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "initech")
+	t.Setenv("WAKIL_APPROVAL_SOCKET", "")
+	if err := wakilcore.CreateOrg("initech", wakilcore.Org{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func addConn(t *testing.T, c wakilcore.MCPConnection) {
+	t.Helper()
+	if _, err := wakilcore.AddConnection("initech", c); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func ptr(b bool) *bool { return &b }
+
+// upstreamTools is the fake server's list: one of each hint, and one with no annotations.
+var upstreamTools = []*mcp.Tool{
+	{Name: "read_doc", Description: "Read a document.", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}}},
+	{Name: "list_things", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}, InputSchema: map[string]any{"type": "object"}},
+	{Name: "create_issue", Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(false)},
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{"title": map[string]any{"type": "string"}}}},
+	{Name: "delete_repo", Annotations: &mcp.ToolAnnotations{DestructiveHint: ptr(true)}, InputSchema: map[string]any{"type": "object"}},
+	{Name: "plain", InputSchema: map[string]any{"type": "object"}},
+}
+
+// fakeUpstream is the real server's stand-in: each tool answers "ran <name> <arguments>" and
+// records that it ran.
+type fakeUpstream struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (f *fakeUpstream) ran() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.calls...)
+}
+
+func (f *fakeUpstream) server() *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "fake-upstream", Version: "0.0.0"}, nil)
+	for _, tool := range upstreamTools {
+		s.AddTool(tool, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			f.mu.Lock()
+			f.calls = append(f.calls, req.Params.Name)
+			f.mu.Unlock()
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ran " + req.Params.Name + " " + string(req.Params.Arguments)}}}, nil
+		})
+	}
+	return s
+}
+
+func (f *fakeUpstream) dial(t *testing.T) dialFunc {
+	return func(ctx context.Context, _ string, _ wakilcore.MCPConnection) (mcp.Transport, error) {
+		serverT, clientT := mcp.NewInMemoryTransports()
+		ss, err := f.server().Connect(ctx, serverT, nil)
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { ss.Close() })
+		return clientT, nil
+	}
+}
+
+// fakeSocket is the app's approval socket: it records each request line and answers answer.
+type fakeSocket struct {
+	path string
+	mu   sync.Mutex
+	asks []string
+}
+
+func (s *fakeSocket) requests() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.asks...)
+}
+
+func listenSocket(t *testing.T, answer string) *fakeSocket {
+	t.Helper()
+	// A unix socket path is limited to about a hundred bytes; t.TempDir is too deep.
+	dir, err := os.MkdirTemp("", "wc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	s := &fakeSocket{path: filepath.Join(dir, "a.sock")}
+	l, err := net.Listen("unix", s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			line, _ := bufio.NewReader(c).ReadString('\n')
+			s.mu.Lock()
+			s.asks = append(s.asks, strings.TrimSpace(line))
+			s.mu.Unlock()
+			fmt.Fprintln(c, answer)
+			c.Close()
+		}
+	}()
+	t.Setenv("WAKIL_APPROVAL_SOCKET", s.path)
+	return s
+}
+
+// fronted connects a client to wakil-connect for connection name, fronting up.
+func fronted(t *testing.T, name string, dial dialFunc) (context.Context, *mcp.ClientSession) {
+	t.Helper()
+	ctx := context.Background()
+	srv, closeUpstream := newServer(ctx, "initech", name, os.Getenv("WAKIL_APPROVAL_SOCKET"), dial)
+	t.Cleanup(closeUpstream)
+	serverT, clientT := mcp.NewInMemoryTransports()
+	ss, err := srv.Connect(ctx, serverT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: "0.0.0"}, nil).Connect(ctx, clientT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cs.Close() })
+	return ctx, cs
+}
+
+func call(t *testing.T, ctx context.Context, cs *mcp.ClientSession, tool string, args map[string]any) (string, bool) {
+	t.Helper()
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
+	if err != nil {
+		t.Fatalf("%s: %v", tool, err)
+	}
+	var text []string
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			text = append(text, tc.Text)
+		}
+	}
+	return strings.Join(text, "\n"), res.IsError
+}
+
+func github() wakilcore.MCPConnection {
+	return wakilcore.MCPConnection{Name: "github", Kind: "github", Transport: "http", URL: "https://api.githubcopilot.com/mcp/", SignIn: "token"}
+}
+
+func TestToolsPassThrough(t *testing.T) {
+	setupOrg(t)
+	addConn(t, github())
+	up := &fakeUpstream{}
+	ctx, cs := fronted(t, "github", up.dial(t))
+
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Tools) != len(upstreamTools) {
+		t.Fatalf("tools = %d, want %d", len(res.Tools), len(upstreamTools))
+	}
+	byName := map[string]*mcp.Tool{}
+	for _, tool := range res.Tools {
+		byName[tool.Name] = tool
+	}
+	for _, want := range upstreamTools {
+		got := byName[want.Name]
+		if got == nil {
+			t.Fatalf("%s missing", want.Name)
+		}
+		g, _ := json.Marshal(got)
+		w, _ := json.Marshal(want)
+		var gm, wm map[string]any
+		json.Unmarshal(g, &gm)
+		json.Unmarshal(w, &wm)
+		if !reflect.DeepEqual(gm, wm) {
+			t.Fatalf("%s changed on the way through:\n got %s\nwant %s", want.Name, g, w)
+		}
+	}
+}
+
+func TestAllowedReadOnlyForwardsWithoutAsking(t *testing.T) {
+	setupOrg(t)
+	addConn(t, github())
+	sock := listenSocket(t, `{"decision":"deny","message":"should not be asked"}`)
+	up := &fakeUpstream{}
+	ctx, cs := fronted(t, "github", up.dial(t))
+
+	text, isErr := call(t, ctx, cs, "read_doc", map[string]any{"id": "d-1"})
+	if isErr || !strings.Contains(text, `ran read_doc {"id":"d-1"}`) {
+		t.Fatalf("read_doc = %q (error %v)", text, isErr)
+	}
+	if got := sock.requests(); len(got) != 0 {
+		t.Fatalf("asked %v", got)
+	}
+}
+
+type approval struct {
+	Connection string         `json:"connection"`
+	Tool       string         `json:"tool"`
+	Arguments  map[string]any `json:"arguments"`
+	Allowed    bool           `json:"allowed"`
+	ReadOnly   bool           `json:"readOnly"`
+	Locked     bool           `json:"locked"`
+}
+
+func TestEveryOtherCallAsks(t *testing.T) {
+	setupOrg(t)
+	memorySecurity(t)
+	c := github()
+	c.Allow = map[string]bool{"list_things": false, "create_issue": true}
+	addConn(t, c)
+	if err := wakilcore.SetConnectionSecrets("initech", "github", map[string]string{"token": "ghp-secret-1"}); err != nil {
+		t.Fatal(err)
+	}
+	sock := listenSocket(t, `{"decision":"allow"}`)
+	up := &fakeUpstream{}
+	ctx, cs := fronted(t, "github", up.dial(t))
+
+	cases := []struct {
+		tool string
+		want approval
+	}{
+		{"list_things", approval{Allowed: false, ReadOnly: true, Locked: false}},
+		{"create_issue", approval{Allowed: true, ReadOnly: false, Locked: false}},
+		{"delete_repo", approval{Allowed: false, ReadOnly: false, Locked: true}},
+	}
+	for i, tc := range cases {
+		text, isErr := call(t, ctx, cs, tc.tool, map[string]any{"title": "t-" + tc.tool})
+		if isErr || !strings.Contains(text, "ran "+tc.tool) {
+			t.Fatalf("%s after allow = %q (error %v)", tc.tool, text, isErr)
+		}
+		asks := sock.requests()
+		if len(asks) != i+1 {
+			t.Fatalf("after %s: %d requests, want %d", tc.tool, len(asks), i+1)
+		}
+		line := asks[i]
+		if strings.Contains(line, "ghp-secret-1") {
+			t.Fatalf("the request carried a secret: %s", line)
+		}
+		var got approval
+		if err := json.Unmarshal([]byte(line), &got); err != nil {
+			t.Fatalf("request %q: %v", line, err)
+		}
+		want := tc.want
+		want.Connection, want.Tool, want.Arguments = "github", tc.tool, map[string]any{"title": "t-" + tc.tool}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("request = %+v, want %+v", got, want)
+		}
+	}
+}
+
+func TestDenyReturnsTheMessageAsToolError(t *testing.T) {
+	setupOrg(t)
+	addConn(t, github())
+	listenSocket(t, `{"decision":"deny","message":"Refused by the operator."}`)
+	up := &fakeUpstream{}
+	ctx, cs := fronted(t, "github", up.dial(t))
+
+	text, isErr := call(t, ctx, cs, "create_issue", map[string]any{"title": "x"})
+	if !isErr || !strings.Contains(text, "Refused by the operator.") {
+		t.Fatalf("create_issue = %q (error %v)", text, isErr)
+	}
+	if got := up.ran(); len(got) != 0 {
+		t.Fatalf("a denied call reached the server: %v", got)
+	}
+}
+
+func TestHeadlessRefusesUnticked(t *testing.T) {
+	setupOrg(t)
+	c := github()
+	c.Allow = map[string]bool{"create_issue": true}
+	addConn(t, c)
+	up := &fakeUpstream{}
+	ctx, cs := fronted(t, "github", up.dial(t))
+
+	if text, isErr := call(t, ctx, cs, "create_issue", map[string]any{"title": "x"}); isErr || !strings.Contains(text, "ran create_issue") {
+		t.Fatalf("ticked create_issue = %q (error %v)", text, isErr)
+	}
+	text, isErr := call(t, ctx, cs, "plain", nil)
+	if !isErr || !strings.Contains(text, "Allow agent") || !strings.Contains(text, "github") {
+		t.Fatalf("unticked plain = %q (error %v)", text, isErr)
+	}
+	text, isErr = call(t, ctx, cs, "delete_repo", nil)
+	if !isErr || !strings.Contains(text, "github") {
+		t.Fatalf("locked delete_repo = %q (error %v)", text, isErr)
+	}
+	if got := up.ran(); !reflect.DeepEqual(got, []string{"create_issue"}) {
+		t.Fatalf("ran %v", got)
+	}
+}
+
+func TestUnseenToolFollowsItsHint(t *testing.T) {
+	setupOrg(t)
+	c := github()
+	// What the page saw earlier: read_doc was not there, delete_repo was read-only, plain was
+	// read-only. The live annotations win where there are any; plain has none, so its stored hint holds.
+	c.Hints = map[string]string{"delete_repo": "readOnly", "plain": "readOnly", "create_issue": "readOnly"}
+	addConn(t, c)
+	sock := listenSocket(t, `{"decision":"deny","message":"no"}`)
+	up := &fakeUpstream{}
+	ctx, cs := fronted(t, "github", up.dial(t))
+
+	if text, isErr := call(t, ctx, cs, "read_doc", nil); isErr {
+		t.Fatalf("unseen read-only read_doc = %q", text)
+	}
+	if text, isErr := call(t, ctx, cs, "plain", nil); isErr {
+		t.Fatalf("plain, no live annotations, stored readOnly = %q", text)
+	}
+	if len(sock.requests()) != 0 {
+		t.Fatalf("asked %v", sock.requests())
+	}
+	call(t, ctx, cs, "create_issue", nil)
+	call(t, ctx, cs, "delete_repo", nil)
+	asks := sock.requests()
+	if len(asks) != 2 {
+		t.Fatalf("asks = %v", asks)
+	}
+	var issue, repo approval
+	json.Unmarshal([]byte(asks[0]), &issue)
+	json.Unmarshal([]byte(asks[1]), &repo)
+	if issue.ReadOnly || issue.Allowed || issue.Locked {
+		t.Fatalf("create_issue, now writes = %+v", issue)
+	}
+	if !repo.Locked || repo.Allowed || repo.ReadOnly {
+		t.Fatalf("delete_repo, now destructive = %+v", repo)
+	}
+}
+
+func TestFailsClosedWhenTheSocketCannotAnswer(t *testing.T) {
+	for _, tc := range []struct{ name, answer string }{
+		{"unreachable", ""},
+		{"malformed", `{"decision":`},
+		{"unknown decision", `{"decision":"maybe"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupOrg(t)
+			addConn(t, github())
+			if tc.answer == "" {
+				t.Setenv("WAKIL_APPROVAL_SOCKET", filepath.Join(t.TempDir(), "nobody.sock"))
+			} else {
+				listenSocket(t, tc.answer)
+			}
+			up := &fakeUpstream{}
+			ctx, cs := fronted(t, "github", up.dial(t))
+			text, isErr := call(t, ctx, cs, "create_issue", nil)
+			if !isErr || !strings.Contains(text, "github") {
+				t.Fatalf("create_issue = %q (error %v)", text, isErr)
+			}
+			if got := up.ran(); len(got) != 0 {
+				t.Fatalf("forwarded without an answer: %v", got)
+			}
+		})
+	}
+}
+
+func TestUpstreamDownServesNoToolsAndSaysWhy(t *testing.T) {
+	setupOrg(t)
+	addConn(t, github())
+	down := func(context.Context, string, wakilcore.MCPConnection) (mcp.Transport, error) {
+		return nil, wakilcore.UserError("dial tcp 127.0.0.1:9: connection refused")
+	}
+	for _, name := range []string{"github", "nosuch"} {
+		ctx, cs := fronted(t, name, down)
+		res, err := cs.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Tools) != 0 {
+			t.Fatalf("%s: tools = %v", name, res.Tools)
+		}
+		why := cs.InitializeResult().Instructions
+		if !strings.Contains(why, name) {
+			t.Fatalf("%s: instructions = %q", name, why)
+		}
+		if name == "github" && !strings.Contains(why, "connection refused") {
+			t.Fatalf("instructions = %q", why)
+		}
+	}
+}
+
+// recordingServer is a real streamable HTTP MCP server that keeps the headers of each request.
+func recordingServer(t *testing.T) (*httptest.Server, func() http.Header) {
+	t.Helper()
+	up := &fakeUpstream{}
+	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return up.server() }, nil)
+	var mu sync.Mutex
+	var last http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		last = r.Header.Clone()
+		mu.Unlock()
+		h.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() http.Header {
+		mu.Lock()
+		defer mu.Unlock()
+		return last
+	}
+}
+
+func dialAndList(t *testing.T, name string) {
+	t.Helper()
+	ctx := context.Background()
+	c, ok := wakilcore.ConnectionFor("initech", name)
+	if !ok {
+		t.Fatalf("no %s", name)
+	}
+	tr, err := upstreamTransport(ctx, "initech", c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "t", Version: "0"}, nil).Connect(ctx, tr, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	if _, err := cs.ListTools(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCredentialsInjected(t *testing.T) {
+	t.Run("http token, prefixed as its field says", func(t *testing.T) {
+		setupOrg(t)
+		memorySecurity(t)
+		srv, header := recordingServer(t)
+		c := github()
+		c.URL = srv.URL
+		addConn(t, c)
+		wakilcore.SetConnectionSecrets("initech", "github", map[string]string{"token": "ghp-1"})
+		dialAndList(t, "github")
+		if got := header().Get("Authorization"); got != "Bearer ghp-1" {
+			t.Fatalf("Authorization = %q", got)
+		}
+	})
+	t.Run("http fields, bare headers", func(t *testing.T) {
+		setupOrg(t)
+		memorySecurity(t)
+		srv, header := recordingServer(t)
+		addConn(t, wakilcore.MCPConnection{Name: "datadog", Kind: "datadog", Transport: "http", URL: srv.URL, SignIn: "fields", Values: map[string]string{"site": "datadoghq.eu"}})
+		wakilcore.SetConnectionSecrets("initech", "datadog", map[string]string{"apiKey": "api-1", "appKey": "app-1"})
+		dialAndList(t, "datadog")
+		h := header()
+		if h.Get("DD_API_KEY") != "api-1" || h.Get("DD_APPLICATION_KEY") != "app-1" {
+			t.Fatalf("headers = %v", h)
+		}
+	})
+	t.Run("browser sign-in, bearer token", func(t *testing.T) {
+		setupOrg(t)
+		memorySecurity(t)
+		srv, header := recordingServer(t)
+		addConn(t, wakilcore.MCPConnection{Name: "figma", Kind: "figma", Transport: "http", URL: srv.URL, SignIn: "browser"})
+		wakilcore.SetConnectionSecrets("initech", "figma", map[string]string{"access": "bt-1"})
+		dialAndList(t, "figma")
+		if got := header().Get("Authorization"); got != "Bearer bt-1" {
+			t.Fatalf("Authorization = %q", got)
+		}
+	})
+	t.Run("stdio env", func(t *testing.T) {
+		setupOrg(t)
+		memorySecurity(t)
+		was := wakilcore.ConnectionCatalog
+		wakilcore.ConnectionCatalog = append(append([]wakilcore.ConnectionKind(nil), was...), wakilcore.ConnectionKind{
+			ID: "localwiki", Transport: "stdio", Command: "wiki-mcp", SignIn: "fields",
+			Fields: []wakilcore.ConnectionField{
+				{ID: "space", Label: "Space", Env: "WIKI_SPACE"},
+				{ID: "token", Label: "Token", Secret: true, Env: "WIKI_TOKEN"},
+			},
+		})
+		t.Cleanup(func() { wakilcore.ConnectionCatalog = was })
+		t.Setenv("WAKIL_APPROVAL_SOCKET", "/somewhere/a.sock")
+		addConn(t, wakilcore.MCPConnection{Name: "wiki", Kind: "localwiki", Transport: "stdio", Command: "wiki-mcp", Args: []string{"--serve"}, SignIn: "fields", Values: map[string]string{"space": "eng"}})
+		wakilcore.SetConnectionSecrets("initech", "wiki", map[string]string{"token": "wt-1"})
+		c, _ := wakilcore.ConnectionFor("initech", "wiki")
+		tr, err := upstreamTransport(context.Background(), "initech", c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := tr.(*mcp.CommandTransport).Command
+		env := strings.Join(cmd.Env, "\n")
+		if !strings.Contains(env, "WIKI_TOKEN=wt-1") || !strings.Contains(env, "WIKI_SPACE=eng") {
+			t.Fatalf("env lacks the fields: %v", cmd.Env)
+		}
+		if strings.Contains(env, "WAKIL_APPROVAL_SOCKET") {
+			t.Fatal("the upstream server was handed the approval socket")
+		}
+		if !reflect.DeepEqual(cmd.Args, []string{"wiki-mcp", "--serve"}) {
+			t.Fatalf("args = %v", cmd.Args)
+		}
+	})
+}
+
+func TestCredentialsNeverSentInTheClear(t *testing.T) {
+	setupOrg(t)
+	memorySecurity(t)
+	c := github()
+	c.URL = "http://mcp.example.test/mcp"
+	addConn(t, c)
+	wakilcore.SetConnectionSecrets("initech", "github", map[string]string{"token": "ghp-1"})
+	c, _ = wakilcore.ConnectionFor("initech", "github")
+	_, err := upstreamTransport(context.Background(), "initech", c)
+	if msg, ok := wakilcore.IsUserError(err); !ok || !strings.Contains(msg, "https") || strings.Contains(msg, "ghp-1") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestFrontsARealHTTPServer dials the way main does, so a call made after start-up proves the
+// upstream session outlives the start-up limit's context.
+func TestFrontsARealHTTPServer(t *testing.T) {
+	setupOrg(t)
+	memorySecurity(t)
+	srv, header := recordingServer(t)
+	c := github()
+	c.URL = srv.URL
+	addConn(t, c)
+	wakilcore.SetConnectionSecrets("initech", "github", map[string]string{"token": "ghp-2"})
+	ctx, cs := fronted(t, "github", upstreamTransport)
+	text, isErr := call(t, ctx, cs, "read_doc", map[string]any{"id": "d-2"})
+	if isErr || !strings.Contains(text, "ran read_doc") {
+		t.Fatalf("read_doc = %q (error %v)", text, isErr)
+	}
+	if got := header().Get("Authorization"); got != "Bearer ghp-2" {
+		t.Fatalf("Authorization = %q", got)
+	}
+}

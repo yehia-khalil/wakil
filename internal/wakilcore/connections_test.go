@@ -190,3 +190,29 @@ func TestConnectionNameIsAtMost32Characters(t *testing.T) {
 		t.Fatalf("32-character name refused: %v", err)
 	}
 }
+
+func TestResolvedConnectionURLExpandsFields(t *testing.T) {
+	dd := MCPConnection{Kind: "datadog", URL: "https://mcp.{site}/api/unstable/mcp-server/mcp", Values: map[string]string{"site": "datadoghq.eu"}}
+	if got := ResolvedConnectionURL(dd); got != "https://mcp.datadoghq.eu/api/unstable/mcp-server/mcp" {
+		t.Fatalf("datadog = %q", got)
+	}
+	dd.Values = nil
+	if got := ResolvedConnectionURL(dd); got != dd.URL {
+		t.Fatalf("datadog with no site = %q, want the placeholder left for the error to show", got)
+	}
+}
+
+func TestResolvedConnectionURLPicksAmplitudesRegion(t *testing.T) {
+	amp := MCPConnection{Kind: "amplitude", URL: "https://mcp.amplitude.com/mcp", Values: map[string]string{"region": "eu"}}
+	if got := ResolvedConnectionURL(amp); got != "https://mcp.eu.amplitude.com/mcp" {
+		t.Fatalf("amplitude eu = %q", got)
+	}
+	amp.Values["region"] = "us"
+	if got := ResolvedConnectionURL(amp); got != "https://mcp.amplitude.com/mcp" {
+		t.Fatalf("amplitude us = %q", got)
+	}
+	amp = MCPConnection{Kind: "amplitude", URL: "https://proxy.example.test/mcp", Values: map[string]string{"region": "eu"}}
+	if got := ResolvedConnectionURL(amp); got != "https://proxy.example.test/mcp" {
+		t.Fatalf("an address the operator typed = %q, want it kept", got)
+	}
+}
