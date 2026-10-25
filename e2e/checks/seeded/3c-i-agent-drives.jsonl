@@ -31,7 +31,7 @@
 {"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
 {"dispatch":{"action":"browser_select_tab","params":{"pane":"browser-1","index":-1}}}
 {"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
-{"dispatch":{"action":"browser_move_tab","params":{"pane":"browser-1","tab":"t2","to":0}}}
+{"parity":{"action":"browser_move_tab","params":{"pane":"browser-1","tab":"t2","to":0},"drag":{"from":"browser.tab.t2","to":"browser.tab.t1"},"assert":"read_pane"}}
 {"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t2"}}
 {"expect":{"pane":"browser-1","field":"tabs[1].id","equals":"t1"}}
 {"dispatch":{"action":"browser_close_tab","params":{"pane":"browser-1","tab":"t1"}}}

@@ -236,12 +236,27 @@ struct BrowserTabList: View {
     let dispatch: (String, [String: JSONValue]) -> Void
     @State private var hovered: String?
     @State private var newTabHovered = false
+    /// Each entry's horizontal extent in the strip, by tab id: where a dragged tab would land.
+    @State private var spans: [String: ClosedRange<Double>] = [:]
+    /// A drag's current target (indexes into `snapshot.tabs`), drawn as a line; nil when none.
+    @State private var drop: EditorTabDrop?
 
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: BrowserPaneStyle.tabSpacing) {
-                ForEach(snapshot.tabs, id: \.id) { tab in row(tab) }
+                ForEach(Array(snapshot.tabs.enumerated()), id: \.element.id) { index, tab in row(tab, index: index) }
                 newTab
+            }
+            .coordinateSpace(name: "browser.tabs")
+            .onPreferenceChange(BrowserTabSpansKey.self) { spans = $0 }
+            // Where the dragged tab would land: the tick's colour, on the side away from where it came from.
+            .overlay(alignment: .topLeading) {
+                if let drop {
+                    Rectangle().fill(BrowserPaneStyle.tick)
+                        .frame(width: 2, height: BrowserPaneStyle.tabHeight - 8)
+                        .offset(x: editorTabDropX(drop, spans: orderedSpans) - 1, y: 4)
+                        .allowsHitTesting(false)
+                }
             }
         }
         .scrollIndicators(.never)
@@ -250,7 +265,16 @@ struct BrowserTabList: View {
         .accessibilityIdentifier("browser.tabs")
     }
 
-    private func row(_ tab: BrowserTab) -> some View {
+    private var orderedSpans: [ClosedRange<Double>] { snapshot.tabs.map { spans[$0.id] ?? 0...0 } }
+
+    /// Where a drag from tab `index` that is now at `location` would move it — the editor strip's
+    /// rule (`editorTabDropTarget`): onto a tab takes its place, between two goes between them.
+    private func dropTarget(from index: Int, at location: CGPoint) -> Int? {
+        editorTabDropTarget(from: index, x: location.x, y: location.y, spans: orderedSpans,
+                            height: BrowserPaneStyle.tabHeight)
+    }
+
+    private func row(_ tab: BrowserTab, index: Int) -> some View {
         let active = tab.id == snapshot.active
         let lifted = hovered == tab.id
         return HStack(spacing: BrowserPaneStyle.tabGap) {
@@ -283,7 +307,20 @@ struct BrowserTabList: View {
         .frame(width: mode.entryWidth, height: BrowserPaneStyle.tabHeight, alignment: .leading)
         .background(entryFill(active ? BrowserPaneStyle.tabOnFill : (lifted ? BrowserPaneStyle.tabHoverFill : 0)))
         .animation(.easeOut(duration: BrowserPaneStyle.hoverDuration), value: lifted)
+        .background(GeometryReader { g in
+            let f = g.frame(in: .named("browser.tabs"))
+            Color.clear.preference(key: BrowserTabSpansKey.self, value: [tab.id: Double(f.minX)...Double(f.maxX)])
+        })
         .contentShape(Rectangle())
+        // Drag to reorder (spec: Safari's behaviours kept): 4 pt of movement first, so a click stays
+        // a selection; the drop is `browser_move_tab`, the agent's action (Invariant 2).
+        .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .named("browser.tabs"))
+            .onChanged { g in drop = dropTarget(from: index, at: g.location).map { EditorTabDrop(from: index, to: $0) } }
+            .onEnded { g in
+                defer { drop = nil }
+                guard let to = dropTarget(from: index, at: g.location) else { return }
+                dispatch("browser_move_tab", ["tab": .string(tab.id), "to": .integer(Int64(to))])
+            })
         .onTapGesture { dispatch("browser_select_tab", ["tab": .string(tab.id)]) }
         .onHover { inside in hovered = inside ? tab.id : (hovered == tab.id ? nil : hovered) }
         .help(browserTabLabel(tab))
@@ -378,5 +415,12 @@ extension Text {
             .tracking(BrowserPaneStyle.footerTracking)
             .foregroundStyle(colour)
             .lineLimit(1)
+    }
+}
+
+private struct BrowserTabSpansKey: PreferenceKey {
+    static let defaultValue: [String: ClosedRange<Double>] = [:]
+    static func reduce(value: inout [String: ClosedRange<Double>], nextValue: () -> [String: ClosedRange<Double>]) {
+        value.merge(nextValue()) { _, b in b }
     }
 }
