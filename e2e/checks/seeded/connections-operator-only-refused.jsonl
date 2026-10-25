@@ -1,0 +1,8 @@
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","displayName":"Agent Wrote This"},"refuses":"only the operator can run this"}}
+{"dispatch":{"action":"ctx_connection_add","params":{"org":"e2e-fixture","kind":"figma"},"refuses":"only the operator can run this"}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"expect":{"tree":"contains","text":"E2E Fixture"}}
+{"expect":{"tree":"absent","text":"Agent Wrote This"}}
+{"expect":{"tree":"contains","text":"CONNECTIONS"}}
+{"expect":{"tree":"absent","text":"Figma"}}
