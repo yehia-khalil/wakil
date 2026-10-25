@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/connections-operator-only-refused.jsonl",
   "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
-  "provedAt": "2026-10-25T18:33:05.975325Z",
+  "provedAt": "2026-10-25T18:38:02.792427Z",
   "checkBlob": "fda8fa0bdcf96508b6e50dd0b16115dd94942af0"
 }

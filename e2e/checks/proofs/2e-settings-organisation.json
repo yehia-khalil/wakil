@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/2e-settings-organisation.jsonl",
   "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
-  "provedAt": "2026-10-25T18:33:05.975325Z",
+  "provedAt": "2026-10-25T18:38:02.792427Z",
   "checkBlob": "6d6f6bbbf0478b6d82b0c0b5b0e79366d4bdcfe4"
 }
