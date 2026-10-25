@@ -94,6 +94,7 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		// Connections: the operator's own MCP servers, and the Jira token from the app.
 		"connection_catalog", "connection_add", "connection_update", "connection_remove",
 		"connection_secrets_set", "connection_allow_set", "jira_token_set",
+		"connection_signin_start", "connection_signin_wait", "connection_signout",
 		"set_project_agent_instructions",
 		"set_editor_settings",
 		"set_project_editor_settings",

@@ -1581,6 +1581,28 @@ func TestBrowserConnectionIsSignedInOnlyWithAnAccessToken(t *testing.T) {
 	}
 }
 
+func TestConnectionSignInToolsNeedAFlowAndSignOutKeepsTheApp(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+	callOK(t, ctx, cs, "connection_add", map[string]any{"id": "initech", "kind": "slack"})
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "connection_signin_wait", Arguments: map[string]any{"id": "initech", "name": "slack"}})
+	if err != nil || !res.IsError {
+		t.Fatalf("a wait with no sign-in started: %v %v", err, res)
+	}
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "connection_signin_start", Arguments: map[string]any{"id": "initech", "name": "slack"}})
+	if err != nil || !res.IsError {
+		t.Fatalf("slack started without its app's client id and secret: %v %v", err, res)
+	}
+	callOK(t, ctx, cs, "connection_secrets_set", map[string]any{"id": "initech", "name": "slack", "values": map[string]any{
+		"clientId": "app-1", "clientSecret": "cs-1", "access": "at-1", "refresh": "rt-1", "client": "{}"}})
+	callOK(t, ctx, cs, "connection_signout", map[string]any{"id": "initech", "name": "slack"})
+	got, err := wakilcore.ConnectionSecrets("initech", "slack")
+	if err != nil || len(got) != 2 || got["clientId"] != "app-1" || got["clientSecret"] != "cs-1" {
+		t.Fatalf("after sign-out %v %v", got, err)
+	}
+}
+
 func TestJiraTokenSetStoresOneLine(t *testing.T) {
 	setupProject(t, `"staging":{"databases":[]}`)
 	memorySecurity(t)

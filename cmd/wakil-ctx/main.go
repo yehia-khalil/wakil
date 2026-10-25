@@ -228,6 +228,14 @@ type connectionAllowArgs struct {
 	Allow bool   `json:"allow" jsonschema:"whether the gate lets it through"`
 }
 
+type connectionSignInStartOut struct {
+	URL string `json:"url" jsonschema:"the sign-in page; the app opens it in the browser"`
+}
+
+type connectionSignInWaitOut struct {
+	Account string `json:"account" jsonschema:"who the sign-in is for, as the server reports it, else the server's host"`
+}
+
 type connectionCatalogOut struct {
 	Kinds []wakilcore.ConnectionKind `json:"kinds"`
 }
@@ -1159,6 +1167,32 @@ func newServer() *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "connection_allow_set", Description: "Switch one of a connection's tools on or off at the gate. A destructive tool stays off and is refused."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionAllowArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.SetConnectionAllow(a.ID, a.Name, a.Tool, a.Allow); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_signin_start", Description: "Begin a connection's browser sign-in and answer the page to open; this opens nothing itself. A second start replaces the first. Follow it with connection_signin_wait."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionNameArgs) (*mcp.CallToolResult, connectionSignInStartOut, error) {
+			u, err := wakilcore.StartConnectionSignIn(ctx, a.ID, a.Name)
+			if err != nil {
+				return toolErr(err), connectionSignInStartOut{}, nil
+			}
+			return nil, connectionSignInStartOut{URL: u}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_signin_wait", Description: "Wait for the browser sign-in connection_signin_start began, keep its tokens in the Keychain and answer the account. Cancelling the call ends the sign-in and keeps nothing."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionNameArgs) (*mcp.CallToolResult, connectionSignInWaitOut, error) {
+			account, err := wakilcore.WaitConnectionSignIn(ctx, a.ID, a.Name)
+			if err != nil {
+				return toolErr(err), connectionSignInWaitOut{}, nil
+			}
+			return nil, connectionSignInWaitOut{Account: account}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_signout", Description: "Forget a connection's browser sign-in tokens, keeping your own app's client id and secret."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionNameArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.SignOutConnection(a.ID, a.Name); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil
