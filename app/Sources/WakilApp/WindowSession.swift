@@ -68,7 +68,16 @@ final class WindowSession {
         // screen beside the socket's own (`initializeMeta`), which is how the e2e harness picks
         // its channel.
         let screen = ScreenPlace()
+        let bundleIdentifier = Bundle.main.bundleIdentifier
         let agentSocketFactory: AgentSocketFactory = { path, caller in
+            // The e2e harness's operator channel, only in the staged e2e fixture
+            // (`startHarnessSocket`; nil and nothing bound in any other build). Started BEFORE the
+            // agent socket, so a harness that sees the agent socket already finds this one beside it.
+            // One that would not start leaves the session as it is: the harness, finding none,
+            // refuses the operator-only steps by name.
+            let harness = try? await startHarnessSocket(
+                bundleIdentifier: bundleIdentifier, agentSocket: path,
+                surface: surface, caller: caller, screen: { await screen.shown })
             // The registry *and* the pane store the window itself draws
             // from, as one value: `read_pane` answers the agent from the
             // same `PaneStore` `WindowModel.refreshPanes` reads, so what the
@@ -76,7 +85,12 @@ final class WindowSession {
             // The gate judges the session's own place, whatever the screen shows.
             let server = MCPSocketServer(
                 surface: surface, socketPath: path, caller: caller, screen: { await screen.shown })
-            try await server.start()
+            do {
+                try await server.start()
+            } catch {
+                await harness?.stop()
+                throw error
+            }
             // The conversation's approval socket, beside its agent socket and stopped with it
             // (`approvalSocketPath`): `wakil-connect` asks it before a gated connection call, and
             // its answer is the permission plane's (`ConnectionApprovalServer`). One that would
@@ -94,10 +108,10 @@ final class WindowSession {
                 })
             do {
                 try await approval.start()
-                return AgentSockets(mcp: server, approval: approval, startFailure: nil)
+                return AgentSockets(mcp: server, approval: approval, harness: harness, startFailure: nil)
             } catch {
                 return AgentSockets(
-                    mcp: server, approval: nil,
+                    mcp: server, approval: nil, harness: harness,
                     startFailure: approvalSocketFailure(path: approvalSocketPath(forAgentSocket: path), error: error))
             }
         }
@@ -512,15 +526,17 @@ private final class ScreenPlace {
     }
 }
 
-/// One conversation's sockets: its agent socket and, when it started, its approval socket.
-/// Stopped together — the approval socket first, so a call still asking is told its
-/// conversation ended.
+/// One conversation's sockets: its agent socket and, when it started, its approval socket, and
+/// in the e2e fixture only, the harness's operator channel. Stopped together — the approval
+/// socket first, so a call still asking is told its conversation ended.
 private struct AgentSockets: AgentSocket {
     let mcp: MCPSocketServer
     let approval: ConnectionApprovalServer?
+    let harness: MCPSocketServer?
     let startFailure: String?
     func stop() async {
         await approval?.stop()
+        await harness?.stop()
         await mcp.stop()
     }
 }

@@ -370,10 +370,12 @@ Tests: `LayoutStoreTests`, `LayoutActionsTests`, `LayoutPersistenceTests`, `Pane
 - `Shim.swift` — `runShim`: copies bytes between stdio and the socket; parses nothing.
 - `PermissionPrompt.swift` — `approve_tool_use` (`permissionPromptToolName`), `permissionDecision`,
   `operatorOnlyActions`.
+- `HarnessChannel.swift` — `MCPChannel` (`agent`, `harness`), `startHarnessSocket`: the e2e
+  fixture's operator channel, opened only under `dev.wakil.e2e`; operator-only actions, origin `.debug`.
 - `JSONRPC.swift`, `ConfirmationDescription.swift`.
 
 Uses: `Gate`, `Layout`, `Panes`, `Registry`.
-Tests: `MCPClientTests`, `MCPServerTests`, `JSONRPCTests`, `PermissionPromptTests`, `ShimTests`.
+Tests: `MCPClientTests`, `MCPServerTests`, `HarnessChannelTests`, `JSONRPCTests`, `PermissionPromptTests`, `ShimTests`.
 
 ### Panes/ — what each pane shows
 

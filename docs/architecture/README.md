@@ -74,6 +74,11 @@ flowchart LR
   `<dir>/<session id>-approval.sock` (`ConnectionApprovalServer`, `Gate/ConnectionApproval.swift`).
   `wakil-connect` asks it before a gated call. It can only ask: a call it cannot allow outright
   parks on the confirmation broker for the operator, and it never approves by itself.
+- **The e2e harness socket.** Only the staged e2e fixture (bundle id `dev.wakil.e2e`) opens a
+  third socket beside each agent socket, `<dir>/<session id>-e2e.sock`, mode 0600
+  (`startHarnessSocket`, `MCP/HarnessChannel.swift`). It serves only the operator-only actions,
+  dispatched with origin `.debug`, so the harness can drive them; the agent socket keeps refusing
+  them. No agent's `--mcp-config` or environment names it. A production Wakil never opens it.
 - **`ctx_config_tree_for`** (`StandardActions.swift`) reads a named organization's config tree for a
   launch's connections. It is operator-only, never the agent's; `ctx_config_tree` stays the active
   organization's.

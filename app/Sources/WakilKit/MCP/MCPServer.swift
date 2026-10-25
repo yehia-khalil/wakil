@@ -131,7 +131,8 @@ public func handle(
     _ message: JSONRPCMessage,
     surface: MCPSurface,
     caller: @Sendable () async -> DispatchCaller,
-    screen: (@Sendable () async -> ScreenShown?)? = nil
+    screen: (@Sendable () async -> ScreenShown?)? = nil,
+    channel: MCPChannel = .agent
 ) async -> JSONRPCMessage? {
     guard let id = message.id else {
         return nil
@@ -160,6 +161,13 @@ public func handle(
                 place: own.place, screen: shown?.place,
                 conversation: own.conversation, screenConversation: shown?.conversation),
         ]))
+
+    case "tools/list" where channel == .harness:
+        let tools = await surface.registry.all().filter(isOperatorOnly).map(toolListEntry)
+        return JSONRPCMessage(id: id, result: .object(["tools": .array(tools)]))
+
+    case "tools/call" where channel == .harness:
+        return await handleHarnessToolsCall(id: id, params: message.params, surface: surface, caller: caller)
 
     case "tools/list":
         var tools = await surface.registry.all().map(toolListEntry)
@@ -250,7 +258,7 @@ func initializeMeta(
 /// that asks the second question, and it is deliberately not emitted here:
 /// `ActionKind` does not answer it, `Action.price` does, and a hint invented
 /// from the kind would be a guess wearing the protocol's clothes.
-private func toolListEntry(_ descriptor: ActionDescriptor) -> JSONValue {
+func toolListEntry(_ descriptor: ActionDescriptor) -> JSONValue {
     .object([
         "name": .string(descriptor.name),
         "description": .string(descriptor.description),
@@ -1022,7 +1030,7 @@ private func settingsPaneSnapshotJSON(
 /// error code, so a caller (or a test) can tell "no such action" apart from
 /// "this action exists but was refused" without parsing the message string —
 /// mirroring the same distinction `ActionError`'s own doc comment draws.
-private func jsonRPCError(for error: ActionError) -> JSONRPCError {
+func jsonRPCError(for error: ActionError) -> JSONRPCError {
     switch error {
     case .unknown(let name):
         return JSONRPCError(code: -32601, message: "Unknown action: \(name)")
@@ -1055,6 +1063,8 @@ public actor MCPSocketServer {
     private let caller: @Sendable () async -> DispatchCaller
     /// What the window shows, for `initialize`'s `_meta` (`initializeMeta`).
     private let screen: (@Sendable () async -> ScreenShown?)?
+    /// Which channel this socket is: the agent's, or the e2e harness's (`MCPChannel`).
+    private let channel: MCPChannel
 
     private var listenFD: Int32 = -1
     private var acceptThread: Thread?
@@ -1073,12 +1083,14 @@ public actor MCPSocketServer {
         surface: MCPSurface,
         socketPath: String,
         caller: @escaping @Sendable () async -> DispatchCaller,
-        screen: (@Sendable () async -> ScreenShown?)? = nil
+        screen: (@Sendable () async -> ScreenShown?)? = nil,
+        channel: MCPChannel = .agent
     ) {
         self.surface = surface
         self.socketPath = socketPath
         self.caller = caller
         self.screen = screen
+        self.channel = channel
     }
 
     public func start() async throws {
@@ -1118,6 +1130,14 @@ public actor MCPSocketServer {
             close(fd)
             throw MCPTransportError.posixFailure(call: "bind", path: socketPath, errnoValue: failedErrno)
         }
+        // The harness socket is 0600, like the approval socket: bound owner-only above, so nobody
+        // else could connect in between.
+        if channel == .harness, chmod(socketPath, 0o600) != 0 {
+            let failedErrno = errno
+            close(fd)
+            unlink(socketPath)
+            throw MCPTransportError.posixFailure(call: "chmod", path: socketPath, errnoValue: failedErrno)
+        }
 
         guard listen(fd, 16) == 0 else {
             let failedErrno = errno
@@ -1142,6 +1162,7 @@ public actor MCPSocketServer {
         let surface = self.surface
         let caller = self.caller
         let screen = self.screen
+        let channel = self.channel
         let thread = Thread {
             while true {
                 let clientFD = accept(fd, nil, nil)
@@ -1153,7 +1174,7 @@ public actor MCPSocketServer {
                     return
                 }
                 disableSIGPIPE(onSocket: clientFD)
-                let connection = Connection(fd: clientFD, surface: surface, caller: caller, screen: screen)
+                let connection = Connection(fd: clientFD, surface: surface, caller: caller, screen: screen, channel: channel)
                 Task { await connection.run() }
             }
         }
@@ -1238,17 +1259,19 @@ private actor Connection {
     private let surface: MCPSurface
     private let caller: @Sendable () async -> DispatchCaller
     private let screen: (@Sendable () async -> ScreenShown?)?
+    private let channel: MCPChannel
     private var reader = FrameReader()
     private var poisoned = false
 
     init(
         fd: Int32, surface: MCPSurface, caller: @escaping @Sendable () async -> DispatchCaller,
-        screen: (@Sendable () async -> ScreenShown?)?
+        screen: (@Sendable () async -> ScreenShown?)?, channel: MCPChannel
     ) {
         self.fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         self.surface = surface
         self.caller = caller
         self.screen = screen
+        self.channel = channel
     }
 
     func run() {
@@ -1326,7 +1349,7 @@ private actor Connection {
             // 120 seconds, and the environment the gate judges on the way
             // out must be the one that is active *then*. See `handle`'s doc
             // comment.
-            guard let reply = await handle(message, surface: surface, caller: caller, screen: screen)
+            guard let reply = await handle(message, surface: surface, caller: caller, screen: screen, channel: channel)
             else { continue }
             if let frame = try? encodeFrame(reply) {
                 try? fh.write(contentsOf: frame)
