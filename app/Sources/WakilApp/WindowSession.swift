@@ -66,13 +66,15 @@ final class WindowSession {
         let wiring = await WakilWiring.build(
             journalDirectory: journalDirectory, sessionId: sessionId,
             // `browser_clear_data`: the store's web views go and none is built on it (beginClear),
-            // then the files are deleted — no page is left to write a tab state after — then the
-            // store, then the panes draw again (endClear, on failure too).
+            // then the store is removed, then its files — no page is left to write a tab state
+            // after, and a store that will not go deletes nothing — then the panes draw again
+            // (endClear, on failure too).
             removeBrowserData: { id, deleteFiles in
                 await MainActor.run { browserTabsBox.host?.beginClear(onStore: id) }
                 do {
-                    try deleteFiles()
-                    try await removeWebsiteDataStore(id)
+                    // The store first, then its files: a store that will not go deletes nothing.
+                    try await browserRemoveStoreThenFiles(
+                        id, removeStore: { try await removeWebsiteDataStore($0) }, deleteFiles: deleteFiles)
                 } catch {
                     await MainActor.run { browserTabsBox.host?.endClear(onStore: id) }
                     throw error

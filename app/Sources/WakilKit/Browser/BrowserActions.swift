@@ -90,9 +90,20 @@ extension BrowserSnapshot {
 }
 
 /// Deletes an organisation's WebKit store by id (`browser_clear_data`), which only the app can. It
-/// is handed `deleteFiles` — the organisation's tab states and zoom — to call once no web view on the
-/// store is left to write one, and before the store goes.
+/// is handed `deleteFiles` — the organisation's tab states and zoom — to call once the store is gone
+/// (`browserRemoveStoreThenFiles`), with no web view left on it to write one.
 public typealias BrowserDataRemover = @Sendable (_ store: UUID, _ deleteFiles: @Sendable () throws -> Void) async throws -> Void
+
+/// The clear's order (Task 10 fix round 1 ruling): the store first, then the files. A store that
+/// will not go deletes nothing — cookies and zoom stay together — and its error is thrown as it came.
+public func browserRemoveStoreThenFiles(
+    _ store: UUID,
+    removeStore: (UUID) async throws -> Void,
+    deleteFiles: () throws -> Void
+) async throws {
+    try await removeStore(store)
+    try deleteFiles()
+}
 
 /// Registers the browser pane's actions (3c-i).
 ///
@@ -528,9 +539,10 @@ func browserActions(
                 throw BrowserActionError.organisationChanged
             }
             let id = try files.identifier()
-            // The window drops the store's web views, then deletes the files, then removes the
-            // store: no page left alive can write a tab state after the deletion. Deleted only
-            // there — a second deletion after the remover could take a rebuilt page's new state.
+            // The window drops the store's web views, then removes the store, then deletes the
+            // files (`browserRemoveStoreThenFiles`): no page is left alive to write a tab state,
+            // and a store that will not go leaves everything. Deleted only there — a second
+            // deletion after the remover could take a rebuilt page's new state.
             try await removeData(id) { try files.removeEverythingButTheProfile() }
             return .object(["cleared": .string(files.org)])
         },

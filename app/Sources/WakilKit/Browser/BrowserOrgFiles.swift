@@ -19,6 +19,10 @@ public enum BrowserClearDataQuestion {
     public static func text(org: String) -> String {
         "Delete \(org)'s browsing data? Every site signs you out, in every project."
     }
+    /// The receipt after Delete: the organisation the question named (`asked`), else the current one.
+    public static func receipt(asked: String?, current: String) -> String {
+        "Deleted \(asked ?? current)'s browsing data."
+    }
     public static let keepLabel = "Keep it"
     public static let deleteLabel = "Delete"
 }

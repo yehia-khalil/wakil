@@ -312,8 +312,8 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
     let files = try org.map { try BrowserOrgFiles(home: home, org: $0) }
     var remover: BrowserDataRemover?
-    // As the window's remover does: the files when it is asked to, then the store.
-    if let removed { remover = { @Sendable id, deleteFiles in try deleteFiles(); removed.add(id) } }
+    // As the window's remover does: the store, then the files it is handed.
+    if let removed { remover = { @Sendable id, deleteFiles in removed.add(id); try deleteFiles() } }
     return (try await browserFixture(orgFiles: files, removeData: remover), files)
 }
 
@@ -375,7 +375,9 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     #expect(why == "The organisation changed; ask again.")
     #expect(removed.all.isEmpty, "nothing deleted")
     let unnamed = await refusal { try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm") }
-    #expect(unnamed != nil, "an unnamed organisation is refused too")
+    // The registry does not hold params to the schema, so this reaches the handler's own guard:
+    // a yes that names no organisation is not a yes for the active one.
+    #expect(unnamed == "The organisation changed; ask again.", "an unnamed organisation is refused by the guard")
     #expect(removed.all.isEmpty)
 }
 
@@ -407,10 +409,10 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     #expect(await layout.snapshot().panes.count == 2)
 }
 
-/// The window drops the store's web views, then has the files deleted (`deleteFiles`), then
-/// removes the store — so no page left alive can write a tab state after the deletion, and none is
-/// left for a rebuilt page to restore. Nothing is deleted after the remover returns: a page rebuilt
-/// by then may have written its new state.
+/// The action deletes the files only when the remover asks (`deleteFiles`) — the window does once
+/// the store's web views are gone and the store with them (`browserRemoveStoreThenFiles`), so no
+/// page left alive can write a tab state after. Nothing is deleted after the remover returns: a page
+/// rebuilt by then may have written its new state.
 @Test func clearDataHandsTheRemoverTheFileDeletion() async throws {
     let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
     let files = try BrowserOrgFiles(home: home, org: "acme")
@@ -430,7 +432,7 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
         if !FileManager.default.fileExists(atPath: state.path) { steps.add(id) }
     })
     try await f.dispatch("browser_clear_data", ["org": .string("acme")], named: false, origin: .ui, confirmation: "confirm")
-    #expect(steps.all == [mark, try files.identifier()], "files deleted when asked, before the store goes")
+    #expect(steps.all == [mark, try files.identifier()], "files deleted when the remover asks, and only then")
 
     // A page rebuilt once the store is gone writes its new state; the action deletes nothing after
     // the remover, so that state stays (Task 7's carry: the files go once, in the remover's order).
@@ -468,4 +470,38 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     try await f.dispatch("browser_zoom", ["step": .string("in")])
     #expect(await f.active()?.zoom == 1.1)
     #expect(!FileManager.default.fileExists(atPath: files.directory.appendingPathComponent("zoom.json").path))
+}
+
+/// Task 10 fix round 1: the receipt after Delete names the organisation the question named, not the
+/// one active when it is drawn (a clear can take two seconds; the org can change meanwhile).
+@Test func theClearReceiptNamesTheOrganisationTheQuestionAsked() {
+    #expect(BrowserClearDataQuestion.receipt(asked: "Acme", current: "Globex") == "Deleted Acme's browsing data.")
+    #expect(BrowserClearDataQuestion.receipt(asked: nil, current: "Globex") == "Deleted Globex's browsing data.")
+}
+
+/// Fix round 1 ruling: a clear removes the WebKit store first, then the organisation's tab states
+/// and zoom. A store removal that fails deletes nothing, and its error comes back whole.
+@Test func aClearRemovesTheStoreFirstAndThenTheFiles() async throws {
+    let steps = Removed()
+    let store = UUID(), files = UUID()
+    try await browserRemoveStoreThenFiles(store, removeStore: { steps.add($0) }, deleteFiles: { steps.add(files) })
+    #expect(steps.all == [store, files])
+}
+
+private struct StoreInUse: Error, CustomStringConvertible {
+    var description: String { #"Error Domain=WKWebSiteDataStore Code=1 "Data store is in use""# }
+}
+
+@Test func aStoreThatWillNotGoDeletesNothingAndSaysWhyWhole() async throws {
+    let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let files = try BrowserOrgFiles(home: home, org: "acme")
+    try files.setZoom(1.5, host: "a.test")
+    let f = try await browserFixture(orgFiles: files, removeData: { @Sendable id, deleteFiles in
+        try await browserRemoveStoreThenFiles(id, removeStore: { _ in throw StoreInUse() }, deleteFiles: deleteFiles)
+    })
+    let why = await refusal {
+        try await f.dispatch("browser_clear_data", ["org": .string("acme")], named: false, origin: .ui, confirmation: "confirm")
+    }
+    #expect(why == #"Error Domain=WKWebSiteDataStore Code=1 "Data store is in use""#)
+    #expect(files.zoom(host: "a.test") == 1.5, "the store stayed, so its files stay too")
 }

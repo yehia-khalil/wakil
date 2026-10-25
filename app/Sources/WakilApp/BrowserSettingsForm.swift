@@ -152,7 +152,7 @@ struct BrowserSettingsForm: View {
                 .padding(.top, 4)
             }
             if cleared {
-                Text("Deleted \(organisation)'s browsing data.")
+                Text(BrowserClearDataQuestion.receipt(asked: asked?.name, current: organisation))
                     .font(.system(size: SettingsScale.body))
                     .foregroundStyle(coolWhite.opacity(0.62))
                     .accessibilityIdentifier("settings.browser.clear.done")
