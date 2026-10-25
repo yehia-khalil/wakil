@@ -96,7 +96,7 @@ private func gitRoot(_ name: String, _ files: [GitFileRow]) -> GitRootState {
     @Test func newPaneRowsComeFromPaneKinds() async {
         let rows = newPaneEntries(kinds: Pane.kinds)
         #expect(Set(rows.map(\.id)) == Set(Pane.kinds.subtracting([Pane.settingsKind]).map { "newpane:\($0)" }))
-        #expect(rows.map(\.title) == ["New Database pane", "New Terminal", "New API client", "New Editor pane"])
+        #expect(rows.map(\.title) == ["New Database pane", "New Terminal", "New API client", "New Editor pane", "New Browser pane"])
         let db = rows.first { $0.id == "newpane:db" }
         #expect(db?.kindLabel == "db")
         #expect(db?.group == .newPane)

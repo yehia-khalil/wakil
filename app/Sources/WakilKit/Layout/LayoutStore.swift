@@ -469,6 +469,25 @@ public actor LayoutStore {
         byScope[scope]?.panes.first(where: { $0.id == id })?.editorTabs
     }
 
+    /// The browser pane `id`'s saved tabs and selected tab (3c-i). A no-op when unchanged.
+    public func setBrowserTabs(id: String, to tabs: [BrowserSavedTab], active: String?) {
+        guard var current = byScope[scope],
+            let index = current.panes.firstIndex(where: { $0.id == id }),
+            current.panes[index].browserTabs != tabs || current.panes[index].browserActiveTab != active
+        else { return }
+        current.panes[index].browserTabs = tabs
+        current.panes[index].browserActiveTab = active
+        byScope[scope] = current
+    }
+
+    /// `nil` when the pane is missing or has no saved tabs.
+    public func browserTabs(id: String) -> (tabs: [BrowserSavedTab], active: String?)? {
+        guard let pane = byScope[scope]?.panes.first(where: { $0.id == id }),
+            let tabs = pane.browserTabs
+        else { return nil }
+        return (tabs, pane.browserActiveTab)
+    }
+
     /// The editor pane `id`'s column (3b-ii), and the window's default for a new pane: what the
     /// operator last left any editor pane in, without its open folders. A no-op when unchanged.
     /// `asDefault` false keeps the default as it is: a restore puts back a column, it does not leave one.
