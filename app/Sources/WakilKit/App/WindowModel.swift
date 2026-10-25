@@ -798,6 +798,16 @@ public final class WindowModel {
     public var connectionsUnavailable: String?
     /// How long a launch waits to learn its organisation's connections before starting without them.
     var agentConnectionsReadTimeout: Duration = .seconds(2)
+    /// Settings → Connections: how a connection is checked — `wakil-connect --list` for the
+    /// organisation (`WakilConnectLister`), set by the app; a test hands in its own answer.
+    public var connectionLister: @Sendable (_ org: String, _ name: String) async -> ConnectionListing = { _, _ in
+        .error("\(wakilConnectBinaryName): not found, so connections cannot be checked")
+    }
+    /// Opens a browser sign-in's page; the app sets it to the default browser.
+    public var openURL: @MainActor (URL) -> Void = { _ in }
+    /// Who each browser sign-in was for, as its wait answered, by `org/name` — the tree keeps only
+    /// that one is stored, so a later read says "Signed in" without the account.
+    public internal(set) var connectionAccounts: [String: String] = [:]
     public let backgroundFetchInterval: Duration = .seconds(300)
     var backgroundFetchSleep: @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     var backgroundFetchTask: Task<Void, Never>?

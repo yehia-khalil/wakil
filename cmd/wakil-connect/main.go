@@ -3,6 +3,10 @@
 // call (gate.go). It is the only way the agent reaches a connection.
 //
 //	wakil-connect --connection <name>
+//	wakil-connect --list --connection <name>
+//
+// --list dials the server the same way, prints {"tools":[{name,hint}]} or {"error":...} and exits
+// 0 or 1; it never serves and never asks the app (Settings → Connections checks with it).
 //
 // The organisation is WAKIL_ORG, as for every Wakil binary; the app's approval socket is
 // WAKIL_APPROVAL_SOCKET, absent when no app is running to ask.
@@ -149,10 +153,19 @@ func serve(ctx context.Context, name, socket string, dial dialFunc, t mcp.Transp
 
 func main() {
 	name := flag.String("connection", "", "the organization's connection to front")
+	listOnly := flag.Bool("list", false, "print the connection's tools and their hints, then exit")
 	flag.Parse()
 	if *name == "" {
 		fmt.Fprintln(os.Stderr, "wakil-connect: --connection <name> is required")
 		os.Exit(2)
+	}
+	if *listOnly {
+		org, err := wakilcore.CurrentOrg()
+		if err != nil {
+			_ = json.NewEncoder(os.Stdout).Encode(listOut{Error: errText(err)})
+			os.Exit(1)
+		}
+		os.Exit(list(context.Background(), org, *name, upstreamTransport, os.Stdout))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	err := serve(ctx, *name, os.Getenv("WAKIL_APPROVAL_SOCKET"), upstreamTransport, &mcp.StdioTransport{})

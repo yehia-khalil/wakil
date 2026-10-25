@@ -82,6 +82,8 @@ struct SettingsPane: View {
     var removeLocalProvider: (String) async -> String? = { _ in nil }
     /// 3a-iii: the organisation's git accounts.
     var git = GitAccountActions()
+    /// Connections: the organisation's own MCP servers, and the Jira entry (its site and token).
+    var connections = ConnectionActions()
     /// Each quick-task provider's last error whole and which have answered, by id; the provider
     /// code completion goes to; and why the configuration could not be read.
     var quickTaskStatus: () async -> QuickTaskStatus = { QuickTaskStatus() }
@@ -976,8 +978,12 @@ struct SettingsPane: View {
                 organisationEditor(.defaultProvider, label: "Default", in: tree)
                 speechRow(tree: tree)
             }
-            SettingsSection("Jira") {
-                organisationEditor(.jiraBase, label: "Site", in: tree)
+            // Connections: the Jira entry (its site moved here from its own section) and the
+            // organisation's own MCP servers, each with its page.
+            SettingsSection("Connections") {
+                ConnectionsBlock(org: tree.org, actions: connections,
+                                 jiraSite: AnyView(organisationEditor(.jiraBase, label: "Site", in: tree)))
+                    .padding(.vertical, 6)
             }
             // 3a-ii: who commits from the Changes view.
             SettingsSection("Git") {

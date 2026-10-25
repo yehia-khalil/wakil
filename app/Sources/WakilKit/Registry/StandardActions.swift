@@ -1170,6 +1170,73 @@ public func registerStandardActions(
             secretParams: Set(secrets)))
     }
 
+    // Connections: an organisation's own MCP servers, their sign-ins and their Allow agent
+    // switches. Operator-only like the git accounts above (Decision 30, Invariant 4): they choose
+    // which account an organisation's agents reach a service as, and which of its tools run
+    // unasked. The secrets travel in `ctx_connection_secrets_set`'s `values` and
+    // `ctx_jira_token_set`'s `token`, marked so the journal redacts them. Params are forwarded as
+    // given (some are objects, lists or a switch), each required one checked present.
+    let str: JSONValue = .object(["type": .string("string")])
+    let strings: JSONValue = .object(["type": .string("array"), "items": str])
+    let stringMap: JSONValue = .object(["type": .string("object"), "additionalProperties": str])
+    let flag: JSONValue = .object(["type": .string("boolean")])
+    let named: [String: JSONValue] = ["id": str, "name": str]
+    for (name, tool, description, properties, required, secrets) in [
+        ("ctx_connection_catalog", "connection_catalog",
+         "The ready-made connections an organisation can add. Operator-only.", [String: JSONValue](), [String](), [String]()),
+        ("ctx_connection_add", "connection_add",
+         "Add one of an organisation's own MCP servers behind Wakil's gate. Operator-only.",
+         ["id": str, "kind": str, "name": str, "transport": str, "url": str, "command": str, "args": strings,
+          "signIn": str, "values": stringMap], ["id", "kind"], []),
+        ("ctx_connection_update", "connection_update",
+         "Change a connection's name, address, command, arguments, non-secret values or recorded tool hints. Operator-only.",
+         ["id": str, "name": str, "newName": str, "url": str, "command": str, "args": strings,
+          "values": stringMap, "hints": stringMap], ["id", "name"], []),
+        ("ctx_connection_remove", "connection_remove",
+         "Forget an organisation's connection, with its Keychain item. Operator-only.", named, ["id", "name"], []),
+        ("ctx_connection_secrets_set", "connection_secrets_set",
+         "Keep a connection's secret values in the Keychain. Operator-only.",
+         ["id": str, "name": str, "values": stringMap], ["id", "name", "values"], ["values"]),
+        ("ctx_connection_allow_set", "connection_allow_set",
+         "Switch one of a connection's tools on or off at the gate. Operator-only.",
+         ["id": str, "name": str, "tool": str, "allow": flag], ["id", "name", "tool", "allow"], []),
+        ("ctx_connection_signin_start", "connection_signin_start",
+         "Begin a connection's browser sign-in; answers the page to open. Operator-only.", named, ["id", "name"], []),
+        ("ctx_connection_signin_wait", "connection_signin_wait",
+         "Wait for a connection's browser sign-in to finish; cancelling ends it. Operator-only.", named, ["id", "name"], []),
+        ("ctx_connection_signout", "connection_signout",
+         "Forget a connection's browser sign-in tokens. Operator-only.", named, ["id", "name"], []),
+        ("ctx_jira_token_set", "jira_token_set",
+         "Keep an organisation's Jira email and API token in the Keychain. Operator-only.",
+         ["id": str, "email": str, "token": str], ["id", "email", "token"], ["token"]),
+    ] {
+        await registry.register(Action(
+            name: name,
+            description: description,
+            kind: name == "ctx_connection_catalog" ? .read : .control,
+            audience: .operatorOnly,
+            schema: .object([
+                "type": .string("object"),
+                "properties": .object(properties),
+                "required": .array(required.map { .string($0) }),
+            ]),
+            handler: { params in
+                guard let context else { throw StandardActionError.missingClient(action: name, role: "context") }
+                var given: [String: JSONValue] = [:]
+                if case .object(let o) = params { given = o }
+                for key in required where given[key] == nil || given[key] == .null {
+                    throw StandardActionError.missingParam(action: name, param: key)
+                }
+                let arguments = given.filter { properties[$0.key] != nil }
+                // A browser sign-in waits for the operator in the browser; Go ends it after ten
+                // minutes, and a Cancel ends it sooner (the call's cancellation).
+                let timeout = name == "ctx_connection_signin_wait" ? 11 * 60 : MCPClient.readReplyTimeout
+                return try await callChecked(
+                    context, tool: tool, arguments: .object(arguments), action: name, timeout: timeout)
+            },
+            secretParams: Set(secrets)))
+    }
+
     await registry.register(Action(
         name: "ctx_create_project",
         description: "Add a project: create its file under a folder and register it. Operator-only.",

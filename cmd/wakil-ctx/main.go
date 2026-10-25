@@ -212,6 +212,7 @@ type connectionUpdateArgs struct {
 	Command *string           `json:"command,omitempty" jsonschema:"optional program; omit to leave unchanged"`
 	Args    *[]string         `json:"args,omitempty" jsonschema:"optional arguments, the whole list; omit to leave unchanged"`
 	Values  map[string]string `json:"values,omitempty" jsonschema:"non-secret field values to set; an empty value clears that field"`
+	Hints   map[string]string `json:"hints,omitempty" jsonschema:"the server's word on each tool as it lists them now (readOnly, writes, destructive or empty), the whole list; omit to leave unchanged"`
 }
 
 type connectionNameArgs struct {
@@ -1111,7 +1112,7 @@ func newServer() *mcp.Server {
 			return nil, connectionAddOut{Name: added.Name}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "connection_update", Description: "Change a connection's name, address, command, arguments or non-secret field values, leaving the rest as it is. A rename moves its Keychain item. A secret field is refused here: it goes through connection_secrets_set."},
+	mcp.AddTool(s, &mcp.Tool{Name: "connection_update", Description: "Change a connection's name, address, command, arguments, non-secret field values or recorded tool hints, leaving the rest as it is. A rename moves its Keychain item. A secret field is refused here: it goes through connection_secrets_set."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a connectionUpdateArgs) (*mcp.CallToolResult, empty, error) {
 			c, ok := wakilcore.ConnectionFor(a.ID, a.Name)
 			if !ok {
@@ -1132,6 +1133,12 @@ func newServer() *mcp.Server {
 				}
 				if a.Args != nil {
 					c.Args = *a.Args
+				}
+				if a.Hints != nil {
+					c.Hints = map[string]string{}
+					for k, v := range a.Hints {
+						c.Hints[k] = v
+					}
 				}
 				for k, v := range a.Values {
 					if v == "" {

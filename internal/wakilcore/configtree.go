@@ -49,20 +49,23 @@ type ConfigTreeConnectionField struct {
 
 // ConfigTreeConnection is one connection as the tree draws it. Values holds only the non-secret
 // field values; SignedIn is whether its Keychain item holds a sign-in (for browser sign-in, an
-// access token).
+// access token). SecretKeys names the keys its Keychain item holds (a field id, env:<NAME>,
+// header:<Name>), sorted, so the pane can say which are stored — the names only.
 type ConfigTreeConnection struct {
-	Name      string                      `json:"name"`
-	Kind      string                      `json:"kind"`
-	Title     string                      `json:"title"`
-	Transport string                      `json:"transport"`
-	URL       string                      `json:"url"`
-	Command   string                      `json:"command"`
-	SignIn    string                      `json:"signIn"`
-	Values    map[string]string           `json:"values"`
-	Fields    []ConfigTreeConnectionField `json:"fields"`
-	Allow     map[string]bool             `json:"allow"`
-	Hints     map[string]string           `json:"hints"`
-	SignedIn  bool                        `json:"signedIn"`
+	Name       string                      `json:"name"`
+	Kind       string                      `json:"kind"`
+	Title      string                      `json:"title"`
+	Transport  string                      `json:"transport"`
+	URL        string                      `json:"url"`
+	Command    string                      `json:"command"`
+	Args       []string                    `json:"args"`
+	SignIn     string                      `json:"signIn"`
+	Values     map[string]string           `json:"values"`
+	Fields     []ConfigTreeConnectionField `json:"fields"`
+	Allow      map[string]bool             `json:"allow"`
+	Hints      map[string]string           `json:"hints"`
+	SignedIn   bool                        `json:"signedIn"`
+	SecretKeys []string                    `json:"secretKeys"`
 }
 
 // configTreeConnections draws org's connections. Nothing here returns a secret: SignedIn is a
@@ -72,7 +75,7 @@ func configTreeConnections(org string, conns []MCPConnection) []ConfigTreeConnec
 	for _, c := range conns {
 		row := ConfigTreeConnection{
 			Name: c.Name, Kind: c.Kind, Title: c.Kind, Transport: c.Transport, URL: c.URL,
-			Command: c.Command, SignIn: c.SignIn,
+			Command: c.Command, Args: append([]string{}, c.Args...), SignIn: c.SignIn,
 			Values: map[string]string{}, Fields: []ConfigTreeConnectionField{},
 			Allow: map[string]bool{}, Hints: map[string]string{},
 		}
@@ -91,7 +94,13 @@ func configTreeConnections(org string, conns []MCPConnection) []ConfigTreeConnec
 				row.Fields = append(row.Fields, ConfigTreeConnectionField{ID: f.ID, Label: f.Label, Secret: f.Secret})
 			}
 		}
-		row.SignedIn = connectionSignedIn(org, c)
+		// One Keychain read per connection serves both.
+		secrets, err := ConnectionSecrets(org, c.Name)
+		if err != nil {
+			secrets = map[string]string{}
+		}
+		row.SignedIn = connectionSignedIn(c, secrets)
+		row.SecretKeys = connectionSecretKeys(secrets)
 		out = append(out, row)
 	}
 	return out
@@ -107,14 +116,23 @@ func connectionKindOf(id string) (ConnectionKind, bool) {
 	return ConnectionKind{}, false
 }
 
+// connectionSecretKeys is the names of the keys holding a value in a connection's Keychain item,
+// sorted.
+func connectionSecretKeys(secrets map[string]string) []string {
+	keys := []string{}
+	for k, v := range secrets {
+		if v != "" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // connectionSignedIn is whether the connection's Keychain item is there and says something: any
 // stored secret, or for browser sign-in an access token. A sign-in of none is never signed in.
-func connectionSignedIn(org string, c MCPConnection) bool {
+func connectionSignedIn(c MCPConnection, secrets map[string]string) bool {
 	if c.SignIn == "none" {
-		return false
-	}
-	secrets, err := ConnectionSecrets(org, c.Name)
-	if err != nil {
 		return false
 	}
 	if c.SignIn == "browser" {

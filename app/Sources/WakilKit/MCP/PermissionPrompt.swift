@@ -129,6 +129,11 @@ public let operatorOnlyActions: Set<String> = [
     "ctx_git_account_test", "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
     // 3a-iii-b (Decision 45): what the agent is told is the operator's to write.
     "ctx_set_project_agent_instructions",
+    // Connections: which account an organisation's agents reach a service as, its secrets, and
+    // which of its tools run unasked are the operator's (Invariant 4; Invariant 6's earning).
+    "ctx_connection_catalog", "ctx_connection_add", "ctx_connection_update", "ctx_connection_remove",
+    "ctx_connection_secrets_set", "ctx_connection_allow_set", "ctx_connection_signin_start",
+    "ctx_connection_signin_wait", "ctx_connection_signout", "ctx_jira_token_set",
     // 2c-iii. The seventh member, and the one whose reason is NOT that the
     // agent could move a boundary by calling it — it is that the shell in
     // a terminal pane carries the active organisation, project and
@@ -272,6 +277,14 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator adds and removes an organisation's git accounts: "
             + "they decide which account pushes and hold its secrets. Ask the operator "
             + "to do it in Settings → Organisation → Git (\u{2318},)."
+    case "ctx_connection_catalog", "ctx_connection_add", "ctx_connection_update", "ctx_connection_remove",
+         "ctx_connection_secrets_set", "ctx_connection_allow_set", "ctx_connection_signin_start",
+         "ctx_connection_signin_wait", "ctx_connection_signout", "ctx_jira_token_set":
+        return "\(toolName): only the operator adds, signs in and switches an organisation's "
+            + "connections: they decide which account a service is reached as, hold its secrets, and "
+            + "choose which of its tools run without asking. You may READ them: ctx_config_tree "
+            + "answers each connection and its switches, never a secret. Ask the operator to do it "
+            + "in Settings → Organisation → Connections (\u{2318},)."
     case "ctx_list_orgs", "ctx_list_machine_providers", "ctx_list_accounts", "ctx_config_tree_for":
         return "\(toolName): this session is scoped to one organisation. Enumerating every "
             + "organisation and config dir on this machine is not something a session scoped "

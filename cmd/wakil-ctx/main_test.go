@@ -1652,3 +1652,27 @@ func TestConfigTreeReadsTheNamedOrganisation(t *testing.T) {
 		t.Fatalf("id=umbrella read %q with %d connections", tree.Org.ID, len(tree.Org.Connections))
 	}
 }
+
+// TestConnectionUpdateRecordsHints: Settings records what wakil-connect --list read, the whole
+// map, so a tool the server dropped goes; the tree then names the stored secret keys (never their
+// values) and a custom server's arguments.
+func TestConnectionUpdateRecordsHints(t *testing.T) {
+	setupProject(t, `"staging":{"databases":[]}`)
+	memorySecurity(t)
+	ctx, cs := lifecycleClient(t)
+	callOK(t, ctx, cs, "connection_add", map[string]any{"id": "initech", "kind": "custom", "name": "wiki", "transport": "stdio", "command": "wiki-mcp", "args": []string{"--serve"}})
+	callOK(t, ctx, cs, "connection_update", map[string]any{"id": "initech", "name": "wiki", "hints": map[string]any{"old_tool": "readOnly"}})
+	callOK(t, ctx, cs, "connection_update", map[string]any{"id": "initech", "name": "wiki", "hints": map[string]any{"read_page": "readOnly", "drop_page": "destructive", "plain": ""}})
+	callOK(t, ctx, cs, "connection_secrets_set", map[string]any{"id": "initech", "name": "wiki", "values": map[string]any{"env:WIKI_TOKEN": "w-1"}})
+	tree, raw := treeOf(t, ctx, cs)
+	c := tree.Org.Connections[0]
+	if len(c.Hints) != 3 || c.Hints["read_page"] != "readOnly" || c.Hints["drop_page"] != "destructive" || c.Hints["old_tool"] != "" {
+		t.Fatalf("hints %v", c.Hints)
+	}
+	if len(c.Args) != 1 || c.Args[0] != "--serve" || len(c.SecretKeys) != 1 || c.SecretKeys[0] != "env:WIKI_TOKEN" {
+		t.Fatalf("args %v keys %v", c.Args, c.SecretKeys)
+	}
+	if strings.Contains(raw, "w-1") {
+		t.Fatalf("a secret value reached the tree: %s", raw)
+	}
+}

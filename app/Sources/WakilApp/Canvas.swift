@@ -619,6 +619,27 @@ extension WakilWindow {
                         devicePoll: { provider, host, code in await model.gitDevicePoll(provider: provider, host: host, deviceCode: code) },
                         ghLogins: { await model.gitGhLogins() },
                         ghImport: { host, user in await model.gitGhImport(host: host, user: user) }),
+                    connections: ConnectionActions(
+                        catalog: { await model.connectionCatalog() },
+                        add: { org, kind, name, transport, url, command, args in
+                            await model.addConnection(org: org, kind: kind, name: name, transport: transport,
+                                                      url: url, command: command, args: args)
+                        },
+                        update: { org, name, newName, url, command, args, values in
+                            await model.updateConnection(org: org, name: name, newName: newName, url: url,
+                                                         command: command, args: args, values: values)
+                        },
+                        remove: { org, name in await model.removeConnection(org: org, name: name) },
+                        setSecrets: { org, name, values in await model.setConnectionSecrets(org: org, name: name, values: values) },
+                        setAllow: { org, name, tool, allow in
+                            await model.setConnectionAllow(org: org, name: name, tool: tool, allow: allow)
+                        },
+                        allowReadOnly: { org, name in await model.allowReadOnlyTools(org: org, name: name) },
+                        check: { org, name in await model.checkConnection(org: org, name: name) },
+                        signIn: { org, name in await model.signIn(org: org, name: name) },
+                        signOut: { org, name in await model.signOut(org: org, name: name) },
+                        account: { org, name in model.connectionAccounts["\(org)/\(name)"] },
+                        setJiraToken: { org, email, token in await model.setJiraToken(org: org, email: email, token: token) }),
                     quickTaskStatus: { await model.quickTaskStatus() },
                     accounts: model.accounts,
                     capacity: model.capacity.readings,

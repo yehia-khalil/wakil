@@ -155,6 +155,8 @@ final class WindowSession {
         // mint writes the credential that lookup later reads.
         let mintFactory: (@Sendable (String) -> any ProviderMinting)?
         var connectionsUnavailable: String?
+        // Settings → Connections checks each connection with the same binary (`--list`).
+        var connectURL: URL?
         do {
             guard let wakilExecutable = WakilWiring.binaryURL(
                 named: "wakil", executableDirectory: executableDirectory, environment: environment)
@@ -207,6 +209,7 @@ final class WindowSession {
             if let url = WakilWiring.binaryURL(
                 named: wakilConnectBinaryName, executableDirectory: executableDirectory, environment: environment) {
                 mutableBinaries[wakilConnectBinaryName] = url
+                connectURL = url
             } else {
                 connectionsUnavailable = "\(wakilConnectBinaryName): not found, so the agent has no connections this session"
             }
@@ -444,6 +447,12 @@ final class WindowSession {
         // open, never captured: see `ActiveShellContext`.
         wiring.useActiveContext(of: model)
         model.connectionsUnavailable = connectionsUnavailable
+        if let connectURL {
+            let lister = WakilConnectLister(executable: connectURL)
+            model.connectionLister = { org, name in await lister.list(org: org, name: name) }
+        }
+        // A connection's browser sign-in opens its page in the default browser.
+        model.openURL = { NSWorkspace.shared.open($0) }
         // 3a-ii-b. `editor_changes_draft_message` reaches this window's ✨ through the sink.
         await wiring.commitDrafts.bind { [weak model] root in
             guard let model else { throw CancellationError() }
