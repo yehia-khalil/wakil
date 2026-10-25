@@ -513,10 +513,9 @@ func browserActions(
             guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
             let id = try files.identifier()
             // The window drops the store's web views, then deletes the files, then removes the
-            // store: no page left alive can write a tab state after the deletion. Deleted again
-            // after — a no-op when the remover asked — so a remover that never asks still clears.
+            // store: no page left alive can write a tab state after the deletion. Deleted only
+            // there — a second deletion after the remover could take a rebuilt page's new state.
             try await removeData(id) { try files.removeEverythingButTheProfile() }
-            try files.removeEverythingButTheProfile()
             return .object(["cleared": .string(files.org)])
         },
         // Signs out of every site in every project, in production and out of it.

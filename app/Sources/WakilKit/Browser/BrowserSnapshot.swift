@@ -134,11 +134,16 @@ public struct BrowserPageReport: Sendable, Equatable {
     public var canGoBack: Bool
     public var canGoForward: Bool
     public var failure: String?
+    /// The page zoom the web view took on arriving at a host (its remembered `zoom.json` factor);
+    /// nil leaves the tab's zoom as it is. Only a host change names one, so a report read before a
+    /// `browser_zoom` applied never undoes it.
+    public var zoom: Double?
 
     public init(
         url: String, title: String, isLoading: Bool, progress: Double, canGoBack: Bool,
-        canGoForward: Bool, failure: String?
+        canGoForward: Bool, failure: String?, zoom: Double? = nil
     ) {
+        self.zoom = zoom
         self.url = url
         self.title = title
         self.isLoading = isLoading

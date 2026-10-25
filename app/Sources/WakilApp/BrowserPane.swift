@@ -30,6 +30,11 @@ struct BrowserPane: View {
     let isClosed: @MainActor () -> Bool
 
     @FocusState private var addressFocused: Bool
+    @FocusState private var findFocused: Bool
+    /// What the find field shows; each change is a `browser_find`.
+    @State private var findDraft = ""
+    /// The find field's sends, one after another, so a burst of keystrokes lands in typing order.
+    @State private var findSends: Task<Void, Never>?
     /// What the address field shows: the host while it is not focused, the whole URL — or what is
     /// being typed — while it is.
     @State private var draft = ""
@@ -49,7 +54,14 @@ struct BrowserPane: View {
                         dispatch: send)
                     Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1)
                 }
-                pageArea
+                VStack(spacing: 0) {
+                    if let find = snapshot.find { findBar(find) }
+                    pageArea
+                }
+            }
+            if !snapshot.downloads.isEmpty {
+                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
             }
         }
         .onAppear {
@@ -181,8 +193,18 @@ struct BrowserPane: View {
                 } else {
                     Color(nsColor: .textBackgroundColor)
                 }
-                if let failure = tab.failure {
+                let key = BrowserTabHost.Key(scope: scope, pane: pane.id, tab: tab.id)
+                if let certificate = host.certificates[key] {
+                    BrowserCertificatePage(text: certificate) { host.visitAnyway(key: key) }
+                } else if host.crashed.contains(key) {
+                    BrowserCrashPage { send("browser_reload", ["tab": .string(tab.id)]) }
+                } else if let failure = tab.failure {
                     BrowserLoadError(text: failure) { send("browser_reload", ["tab": .string(tab.id)]) }
+                }
+                // The page's own question, over this tab's page only; switching tabs keeps it.
+                if let prompt = host.prompts[key]?.first {
+                    BrowserPromptCard(prompt: prompt) { answer in host.answer(prompt, answer, key: key) }
+                        .id(prompt.id)
                 }
             } else {
                 Color(nsColor: .textBackgroundColor)
@@ -190,6 +212,85 @@ struct BrowserPane: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+    }
+
+    // MARK: The find bar
+
+    /// Above the page on ⌘F: the field, `2 of 3`, ↑ ↓ and ×. Each keystroke is a `browser_find`;
+    /// Return and ⇧Return step; Esc closes it and gives the page the keyboard.
+    private func findBar(_ find: BrowserFind) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.5))
+            TextField("Find in page", text: $findDraft)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.9))
+                .focused($findFocused)
+                .onSubmit {
+                    let back = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
+                    sendInOrder("browser_find_step", ["forward": .bool(!back)])
+                }
+                .onExitCommand { closeFind() }
+                .onChange(of: findDraft) { _, typed in
+                    if typed != snapshot.find?.query { sendInOrder("browser_find", ["query": .string(typed)]) }
+                }
+                .accessibilityIdentifier("browser.find.field")
+            Text(find.query.isEmpty ? "" : find.total == 0 ? "No matches" : "\(find.current) of \(find.total)")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.55))
+                .accessibilityIdentifier("browser.find.count")
+            findButton("chevron.up", "browser.find.previous", "Previous Match", enabled: find.total > 0) {
+                send("browser_find_step", ["forward": .bool(false)])
+            }
+            findButton("chevron.down", "browser.find.next", "Next Match", enabled: find.total > 0) {
+                send("browser_find_step", ["forward": .bool(true)])
+            }
+            findButton("xmark", "browser.find.close", "Close Find", enabled: true) { closeFind() }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .background(EditorPaneStyle.slab)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("browser.find")
+    }
+
+    private func findButton(_ symbol: String, _ id: String, _ label: String, enabled: Bool,
+                            _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
+                .frame(width: 18, height: 18).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(EditorPaneStyle.text.opacity(enabled ? 0.8 : 0.25))
+        .disabled(!enabled)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
+    }
+
+    private func sendInOrder(_ action: String, _ params: [String: JSONValue]) {
+        let previous = findSends
+        findSends = Task {
+            await previous?.value
+            await dispatch(action, params)
+        }
+    }
+
+    private func closeFind() {
+        findFocused = false
+        let previous = findSends
+        Task {
+            await previous?.value
+            await dispatch("browser_find_close", [:])
+            focusPage()
+        }
+    }
+
+    private func focusFind() {
+        guard isFocusedPane, isKeyboardOwner, !keyboardHeld() else { return }
+        findFocused = true
     }
 
     // MARK: Store → web views
@@ -225,6 +326,25 @@ struct BrowserPane: View {
             focusPage()
         }
         if !addressFocused { draft = unfocusedText(now.activeTab) }
+        syncFind(old: old, now: now)
+        // `browser_download_cancel` asked: the host stops each, and reports it once WebKit has.
+        host.cancelRequested(now.downloads, scope: scope, pane: pane.id)
+    }
+
+    /// The find bar's state to the active tab's page, and the keyboard: ⌘F (a `browser_find` —
+    /// the store resets its count) puts it in the field; closing gives it back to the page.
+    private func syncFind(old: BrowserSnapshot?, now: BrowserSnapshot) {
+        host.applyFind(now.find, scope: scope, pane: pane.id, tab: now.active)
+        guard let find = now.find else {
+            if old?.find != nil, findFocused {
+                findFocused = false
+                focusPage()
+            }
+            return
+        }
+        if !findFocused, findDraft != find.query { findDraft = find.query }
+        let asked = old?.find == nil || (old?.find?.seq != find.seq && find.current == 0 && find.total == 0)
+        if asked, !findFocused { focusFind() }
     }
 
     // MARK: Keyboard

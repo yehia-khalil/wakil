@@ -51,6 +51,51 @@ final class BrowserTabHost {
     /// Stores being deleted (a data clear): no web view is built on one until the clear is done.
     @ObservationIgnored private var clearing: Set<UUID> = []
 
+    /// The pages' own questions waiting for an answer, oldest first, per tab and place
+    /// (`BrowserPrompt`): drawn over that tab's page only. Not store state (spec call 5).
+    private(set) var prompts: [Key: [BrowserPrompt]] = [:]
+    /// The certificate page's text, per tab whose page's certificate was not trusted.
+    private(set) var certificates: [Key: String] = [:]
+    /// Tabs whose web content process ended: the crash page is drawn until the tab reloads.
+    private(set) var crashed: Set<Key> = []
+    /// Hosts the operator chose Visit Anyway for, per organisation, for the window's life.
+    @ObservationIgnored private var certificateAllowed: Set<OrgHost> = []
+    /// Camera / microphone answers, per place, host and device, for the window's life.
+    @ObservationIgnored private var mediaAnswers: [MediaKey: Bool] = [:]
+    /// The system open panel a page's file input raised, per tab, so a dropped view cancels it.
+    @ObservationIgnored private var openPanels: [Key: NSOpenPanel] = [:]
+    /// Every download this window started, by id; each reports into its own place's pane.
+    @ObservationIgnored private var downloads: [String: BrowserDownloadTracker] = [:]
+    @ObservationIgnored private var nextDownload = 1
+    /// Per pane (`Key` with an empty tab): the find last run, the find wanted next, and whether one
+    /// is running — finds run one at a time, the newest wanted next.
+    @ObservationIgnored private var findsRun: [Key: FindRun] = [:]
+    @ObservationIgnored private var findsWanted: [Key: (BrowserFind?, String?)] = [:]
+    @ObservationIgnored private var findsBusy: Set<Key> = []
+
+    struct OrgHost: Hashable {
+        let org: String
+        let host: String
+    }
+
+    struct MediaKey: Hashable {
+        let scope: LayoutScope
+        let host: String
+        let type: Int
+    }
+
+    private struct FindRun {
+        let seq: Int
+        let query: String
+        let tab: String
+        var current = 0
+        var total = 0
+    }
+
+    /// Where Wakil's find script runs: its own world, so the page's script cannot see, call or
+    /// spoof it (as the agent's page driver will, 3c-ii).
+    static let findWorld = WKContentWorld.world(name: "wakil.find")
+
     init(model: WindowModel) {
         self.model = model
     }
@@ -95,6 +140,7 @@ final class BrowserTabHost {
         return webView(scope: scope, pane: pane, tab: tab.id) {
             let view = BrowserWebView(frame: .zero, configuration: Self.configuration(files: files))
             prepare(view)
+            view.pageZoom = tab.zoom
             let delegate = BrowserTabDelegate(host: self, scope: scope, pane: pane, tab: tab.id, files: files)
             delegate.attach(to: view)
             delegates[key] = delegate
@@ -226,6 +272,7 @@ final class BrowserTabHost {
         case .back: view.goBack()
         case .forward: view.goForward()
         case .reload:
+            crashed.remove(key)
             // A page that failed has nothing to reload: Try Again asks for the address again.
             if delegate?.failure != nil, let address = delegate?.requested, let url = URL(string: address) {
                 view.load(URLRequest(url: url))
@@ -233,7 +280,13 @@ final class BrowserTabHost {
                 view.reload()
             }
         case .stop: view.stopLoading()
-        case .zoom(let factor): view.pageZoom = factor
+        case .zoom(let factor):
+            view.pageZoom = factor
+            // `browser_zoom` changed the store; the host keeps it for the page's host (zoom.json).
+            if let site = view.url.flatMap(browserZoomHost) {
+                delegate?.zoomHost = site
+                try? delegate?.files?.setZoom(factor, host: site)
+            }
         case .focusAddress: break
         }
         return true
@@ -242,7 +295,16 @@ final class BrowserTabHost {
     /// A place's pane is on screen again: each of its live web views reports, since what they said
     /// while the place was off screen was dropped.
     func reportAll(scope: LayoutScope, pane: String) {
-        for (key, delegate) in delegates where key.scope == scope && key.pane == pane { delegate.scheduleReport() }
+        for (key, delegate) in delegates where key.scope == scope && key.pane == pane {
+            delegate.reportZoomAgain()
+            delegate.scheduleReport()
+        }
+        // A download keeps running while its place is off screen; what it said then was dropped.
+        for tracker in downloads.values where tracker.scope == scope && tracker.pane == pane { tracker.scheduleReport() }
+        // So was the find bar's count.
+        if let run = findsRun[Key(scope: scope, pane: pane, tab: "")] {
+            reportFind(scope: scope, pane: pane, current: run.current, total: run.total)
+        }
     }
 
     // MARK: Keyboard
@@ -310,6 +372,229 @@ final class BrowserTabHost {
         }
     }
 
+    // MARK: The page's questions
+
+    /// A page's question for its tab, drawn over that tab's page until answered. A tab not named
+    /// yet (a pop-up waiting for its id) has no page drawn to ask over: the question is dismissed.
+    func present(_ prompt: BrowserPrompt, scope: LayoutScope, pane: String, tab: String) {
+        guard !tab.isEmpty, views[Key(scope: scope, pane: pane, tab: tab)] != nil else {
+            prompt.answer(.withdrawn)
+            return
+        }
+        prompts[Key(scope: scope, pane: pane, tab: tab), default: []].append(prompt)
+    }
+
+    /// The operator answered the tab's question: WebKit hears it, and the next one, if any, shows.
+    func answer(_ prompt: BrowserPrompt, _ answer: BrowserPrompt.Answer, key: Key) {
+        prompts[key]?.removeAll { $0 === prompt }
+        if prompts[key]?.isEmpty == true { prompts[key] = nil }
+        prompt.answer(answer)
+    }
+
+    /// Answers every question the tab's page left open, as Cancel would, and closes its open panel.
+    private func dismissPrompts(_ key: Key) {
+        let open = prompts.removeValue(forKey: key) ?? []
+        open.forEach { $0.answer(.withdrawn) }
+        // Its sheet's own handler answers the page (nil: nothing chosen).
+        openPanels.removeValue(forKey: key)?.cancel(nil)
+    }
+
+    /// A camera / microphone request: answered at once when this place's operator already answered
+    /// that host and device this session, else asked over the page and the answer kept.
+    func requestMedia(host site: String, type: WKMediaCaptureType, scope: LayoutScope, pane: String, tab: String,
+                      decide: @escaping @MainActor (WKPermissionDecision) -> Void) {
+        let mediaKey = MediaKey(scope: scope, host: site, type: type.rawValue)
+        if let known = mediaAnswers[mediaKey] { return decide(known ? .grant : .deny) }
+        let prompt = BrowserPrompt(kind: .media(browserMediaQuestion(host: site, type: type)), origin: site) { [weak self] answer in
+            switch answer {
+            case .accept:
+                self?.mediaAnswers[mediaKey] = true
+                decide(.grant)
+            case .withdrawn:
+                // Its page went before the operator answered: denied, and nothing kept.
+                decide(.deny)
+            default:
+                self?.mediaAnswers[mediaKey] = false
+                decide(.deny)
+            }
+        }
+        present(prompt, scope: scope, pane: pane, tab: tab)
+    }
+
+    /// A page's file input: the system open panel, as a sheet on the window (the system's own, and
+    /// the one window-modal surface the browser raises). A page with no window — its place is off
+    /// screen — gets nothing chosen.
+    func runOpenPanel(_ parameters: WKOpenPanelParameters, for view: WKWebView, scope: LayoutScope, pane: String,
+                      tab: String, completion: @escaping @MainActor ([URL]?) -> Void) {
+        let key = Key(scope: scope, pane: pane, tab: tab)
+        guard !tab.isEmpty, let window = view.window, openPanels[key] == nil else { return completion(nil) }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.canChooseFiles = true
+        openPanels[key] = panel
+        panel.beginSheetModal(for: window) { [weak self] response in
+            MainActor.assumeIsolated {
+                if self?.openPanels[key] === panel { self?.openPanels[key] = nil }
+                completion(response == .OK ? panel.urls : nil)
+            }
+        }
+    }
+
+    // MARK: Certificate and crash pages
+
+    /// Whether the operator chose Visit Anyway for this organisation and host this session.
+    func certificateIsAllowed(org: String, host site: String) -> Bool {
+        certificateAllowed.contains(OrgHost(org: org, host: site))
+    }
+
+    /// The tab's page was refused for its certificate: the certificate page replaces it.
+    func showCertificate(_ text: String, key: Key) {
+        certificates[key] = text
+    }
+
+    func clearPageMarks(_ key: Key) {
+        if certificates[key] != nil { certificates[key] = nil }
+        if crashed.contains(key) { crashed.remove(key) }
+    }
+
+    /// The operator's Visit Anyway: the host is trusted for this organisation until the window
+    /// closes, and the page asked for again. Never an action — the agent cannot reach it.
+    func visitAnyway(key: Key) {
+        guard let delegate = delegates[key], let view = views[key],
+              let address = delegate.requested, let url = URL(string: address), let site = url.host?.lowercased()
+        else { return }
+        certificateAllowed.insert(OrgHost(org: key.scope.organization, host: site))
+        certificates[key] = nil
+        view.load(URLRequest(url: url))
+    }
+
+    /// The tab's web content process ended: its questions are answered (their page is gone) and
+    /// the crash page drawn until the tab reloads.
+    func pageCrashed(key: Key) {
+        guard views[key] != nil else { return }
+        dismissPrompts(key)
+        crashed.insert(key)
+    }
+
+    // MARK: Downloads
+
+    /// A navigation became a download: tracked under a new id, reporting into its tab's pane.
+    func track(_ download: WKDownload, scope: LayoutScope, pane: String) {
+        let id = "d\(nextDownload)"
+        nextDownload += 1
+        let folder = (model?.browserHome ?? FileManager.default.homeDirectoryForCurrentUser)
+            .appendingPathComponent("Downloads", isDirectory: true)
+        let tracker = BrowserDownloadTracker(id: id, download: download, scope: scope, pane: pane, folder: folder, host: self)
+        downloads[id] = tracker
+    }
+
+    /// The store asked for these downloads to stop (`browser_download_cancel`): each is cancelled,
+    /// and reports `.cancelled` once WebKit has stopped it.
+    func cancelRequested(_ wanted: [BrowserDownload], scope: LayoutScope, pane: String) {
+        for d in wanted where d.cancelRequested && d.state == .running {
+            guard let tracker = downloads[d.id], tracker.scope == scope, tracker.pane == pane else { continue }
+            tracker.cancel()
+        }
+    }
+
+    // MARK: Find
+
+    /// The find bar's state for the pane's active tab: run when its `seq` is new or the tab
+    /// changed, and its match count reported. Finds run one at a time; a burst (typing) runs the
+    /// newest when the one running ends. `nil` — the bar closed — clears the highlight.
+    func applyFind(_ find: BrowserFind?, scope: LayoutScope, pane: String, tab: String?) {
+        let paneKey = Key(scope: scope, pane: pane, tab: "")
+        if let find, let run = findsRun[paneKey], find.seq <= run.seq, run.tab == tab { return }
+        if find == nil, findsRun[paneKey] == nil, findsWanted[paneKey] == nil { return }
+        findsWanted[paneKey] = (find, tab)
+        guard !findsBusy.contains(paneKey) else { return }
+        findsBusy.insert(paneKey)
+        Task { [weak self] in
+            while let self, let wanted = self.findsWanted.removeValue(forKey: paneKey) {
+                await self.runFind(wanted.0, tab: wanted.1, paneKey: paneKey)
+            }
+            self?.findsBusy.remove(paneKey)
+        }
+    }
+
+    private func runFind(_ find: BrowserFind?, tab: String?, paneKey: Key) async {
+        let last = findsRun[paneKey]
+        guard let find, let tab, let view = existing(scope: paneKey.scope, pane: paneKey.pane, tab: tab) else {
+            if let last, let view = existing(scope: paneKey.scope, pane: paneKey.pane, tab: last.tab) {
+                await Self.clearSelection(in: view)
+            }
+            findsRun[paneKey] = nil
+            return
+        }
+        if let last, find.seq <= last.seq, last.tab == tab { return }
+        var run = FindRun(seq: find.seq, query: find.query, tab: tab)
+        // A new query (or tab), or a find the store reset (`browser_find`): count, then the first
+        // match. Otherwise a step from the match the store last heard of.
+        let isNew = last == nil || last?.query != find.query || last?.tab != tab || find.total == 0
+        if last?.tab != tab, let last, let old = existing(scope: paneKey.scope, pane: paneKey.pane, tab: last.tab) {
+            await Self.clearSelection(in: old)
+        }
+        if find.query.isEmpty {
+            await Self.clearSelection(in: view)
+        } else if isNew {
+            await Self.clearSelection(in: view)
+            run.total = await Self.count(find.query, in: view)
+            if run.total > 0, await Self.find(find.query, in: view, backwards: false) { run.current = 1 }
+        } else if await Self.find(find.query, in: view, backwards: !find.forward) {
+            let total = find.total, at = find.current
+            run.total = total
+            run.current = find.forward ? at % total + 1 : (at - 2 + total) % total + 1
+        } else {
+            run.total = await Self.count(find.query, in: view)
+        }
+        findsRun[paneKey] = run
+        reportFind(scope: paneKey.scope, pane: paneKey.pane, current: run.current, total: run.total)
+    }
+
+    private func reportFind(scope: LayoutScope, pane: String, current: Int, total: Int) {
+        guard let model else { return }
+        Task { await model.browserFindDidReport(scope: scope, pane: pane, current: current, total: total) }
+    }
+
+    /// The page's matches for `query`, counted by Wakil's script in its own world: what the page
+    /// shows as text, case folded as WebKit's find folds it.
+    private static func count(_ query: String, in view: WKWebView) async -> Int {
+        let body = """
+            const q = query.toLowerCase();
+            const text = (document.body ? document.body.innerText : '').toLowerCase();
+            let n = 0, i = 0;
+            while (q && (i = text.indexOf(q, i)) !== -1) { n++; i += q.length; }
+            return n;
+            """
+        return await withCheckedContinuation { continuation in
+            view.callAsyncJavaScript(body, arguments: ["query": query], in: nil, in: findWorld) { result in
+                let n = ((try? result.get()) as? NSNumber)?.intValue ?? 0
+                continuation.resume(returning: n)
+            }
+        }
+    }
+
+    /// WebKit's own find, which selects and scrolls to the match; wraps at either end.
+    private static func find(_ query: String, in view: WKWebView, backwards: Bool) async -> Bool {
+        let configuration = WKFindConfiguration()
+        configuration.backwards = backwards
+        configuration.wraps = true
+        configuration.caseSensitive = false
+        return await withCheckedContinuation { continuation in
+            view.find(query, configuration: configuration) { result in
+                continuation.resume(returning: result.matchFound)
+            }
+        }
+    }
+
+    private static func clearSelection(in view: WKWebView) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            view.callAsyncJavaScript("window.getSelection()?.removeAllRanges();", arguments: [:], in: nil,
+                                     in: findWorld) { _ in continuation.resume() }
+        }
+    }
+
     // MARK: Release
 
     /// How a web view leaves the host.
@@ -336,6 +621,9 @@ final class BrowserTabHost {
     func release(scope: LayoutScope, pane: String) {
         let tabs = Set(views.keys).union(applied.keys).filter { $0.scope == scope && $0.pane == pane }
         for key in tabs { release(scope: scope, pane: pane, tab: key.tab) }
+        let paneKey = Key(scope: scope, pane: pane, tab: "")
+        findsRun[paneKey] = nil
+        findsWanted[paneKey] = nil
     }
 
     /// A data clear begins: every web view on the store `identifier` goes — WebKit refuses to remove
@@ -370,6 +658,11 @@ final class BrowserTabHost {
         let view = views.removeValue(forKey: key)
         let delegate = delegates.removeValue(forKey: key)
         recency.removeAll { $0 == key }
+        pendingPopups.remove(key)
+        // WebKit asserts on a handler never called: every question the page left open is answered.
+        dismissPrompts(key)
+        certificates[key] = nil
+        crashed.remove(key)
         if let view {
             if mode == .evict { saveState(of: view, scope: key.scope, pane: key.pane, tab: key.tab, files: delegate?.files) }
             delegate?.detach()
@@ -398,4 +691,120 @@ func browserDataIcon(_ href: String) -> NSImage? {
         data = payload.removingPercentEncoding.map { Data($0.utf8) }
     }
     return data.flatMap(NSImage.init(data:))
+}
+
+/// The host a page's zoom is kept under in `zoom.json`: the URL's host, lowercased; nil for a page
+/// with none (`about:blank`, a `data:` page), whose zoom is not kept.
+func browserZoomHost(_ url: URL) -> String? {
+    guard let host = url.host?.lowercased(), !host.isEmpty else { return nil }
+    return host
+}
+
+/// One download (3c-i): WebKit's `WKDownload`, saved to `~/Downloads` under a name Finder would
+/// give, its progress reported into its tab's pane through the seam (`browserDownloadDidChange`),
+/// one report in flight at a time, each read when it is sent.
+///
+/// **The state ends only on WebKit's word**: Cancel asks (`cancel`), and `.cancelled` is reported
+/// once WebKit has stopped it. A download keeps running while its place is off screen; what it says
+/// then is dropped, and it says it again when the place is shown (`BrowserTabHost.reportAll`).
+@MainActor
+final class BrowserDownloadTracker: NSObject, WKDownloadDelegate {
+    let id: String
+    let scope: LayoutScope
+    let pane: String
+    private let download: WKDownload
+    private let folder: URL
+    private weak var host: BrowserTabHost?
+    private var filename = ""
+    private var destination: URL?
+    private var state: BrowserDownload.State = .running
+    private var failure: String?
+    private var observation: NSKeyValueObservation?
+    private var reporting: Task<Void, Never>?
+    private var reportAgain = false
+    private var cancelling = false
+
+    init(id: String, download: WKDownload, scope: LayoutScope, pane: String, folder: URL, host: BrowserTabHost) {
+        self.id = id
+        self.download = download
+        self.scope = scope
+        self.pane = pane
+        self.folder = folder
+        self.host = host
+        super.init()
+        filename = download.originalRequest?.url?.lastPathComponent ?? "download"
+        download.delegate = self
+        observation = download.progress.observe(\.completedUnitCount) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.scheduleReport() }
+        }
+    }
+
+    private var snapshot: BrowserDownload {
+        let progress = download.progress
+        return BrowserDownload(
+            id: id, filename: filename, received: max(0, progress.completedUnitCount),
+            expected: progress.totalUnitCount, state: state,
+            path: state == .finished ? destination?.path : nil, failure: failure)
+    }
+
+    func scheduleReport() {
+        reportAgain = true
+        guard reporting == nil else { return }
+        reporting = Task { [weak self] in
+            while let self, self.reportAgain {
+                self.reportAgain = false
+                guard let model = self.host?.model else { break }
+                await model.browserDownloadDidChange(scope: self.scope, pane: self.pane, self.snapshot)
+            }
+            self?.reporting = nil
+        }
+    }
+
+    /// Cancel was asked: WebKit stops it, then it reports `.cancelled`. Asked once, however many
+    /// times the store's ask is seen.
+    func cancel() {
+        guard state == .running, !cancelling else { return }
+        cancelling = true
+        download.cancel { [weak self] _ in
+            MainActor.assumeIsolated { self?.end(.cancelled, failure: nil) }
+        }
+    }
+
+    private func end(_ final: BrowserDownload.State, failure: String?) {
+        guard state == .running else { return }
+        state = final
+        self.failure = failure
+        observation?.invalidate()
+        observation = nil
+        // What a stopped download wrote is not the file: it goes, so `~/Downloads` holds no half file.
+        if final != .finished, let destination { try? FileManager.default.removeItem(at: destination) }
+        scheduleReport()
+    }
+
+    // MARK: WKDownloadDelegate
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
+                  completionHandler: @escaping @MainActor (URL?) -> Void) {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = browserDownloadDestination(in: folder, suggested: suggestedFilename) {
+            FileManager.default.fileExists(atPath: $0.path)
+        }
+        filename = url.lastPathComponent
+        destination = url
+        completionHandler(url)
+        scheduleReport()
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        end(.finished, failure: nil)
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain, ns.code == NSURLErrorCancelled {
+            end(.cancelled, failure: nil)
+        } else {
+            end(.failed, failure: ns.localizedDescription)
+        }
+    }
 }

@@ -176,3 +176,17 @@ private let readPaneKeys: Set<String> = [
     let f = await store.browserSnapshot(paneId: pane).find
     #expect(f?.current == 1 && f?.total == 2 && f?.query == "a")
 }
+
+/// 3c-i Task 8: a page that arrives on a host with a remembered zoom says so, and the store keeps it,
+/// so `read_pane`'s zoom and the next ⌘+ start from what the page shows. A report that names no zoom
+/// leaves the tab's alone (a report read before a `browser_zoom` applied must not undo it).
+@Test func aReportCarriesTheHostsZoomOnlyWhenItNamesOne() async {
+    let store = await browserStore()
+    var withZoom = report("https://a.test/")
+    withZoom.zoom = 1.25
+    await store.browserPageDidReport(paneId: pane, tab: "t1", withZoom)
+    #expect(await store.browserSnapshot(paneId: pane).tabs[0].zoom == 1.25)
+    await store.browserPageDidReport(paneId: pane, tab: "t1", report("https://a.test/"))
+    #expect(await store.browserSnapshot(paneId: pane).tabs[0].zoom == 1.25)
+    #expect(await store.browserSnapshot(paneId: pane).tabs[0].command == nil)
+}

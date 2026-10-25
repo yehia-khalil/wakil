@@ -38,7 +38,8 @@ extension PaneStore {
     // MARK: - The seam: what a tab's web view reports. Never creates a pane; never issues a command.
 
     /// A tab's page state after a navigation event. A tab that is gone, or a pane that holds no
-    /// browser, drops it. Marks the tab loaded; leaves `command`, `active` and tab order alone.
+    /// browser, drops it. Marks the tab loaded; takes the zoom only when the report names one;
+    /// leaves `command`, `active` and tab order alone.
     public func browserPageDidReport(paneId: String, tab: String, _ report: BrowserPageReport) {
         guard holds(BrowserPaneKind.self, paneId) else { return }
         updateBrowser(paneId: paneId) { s in
@@ -50,6 +51,7 @@ extension PaneStore {
             s.tabs[i].canGoBack = report.canGoBack
             s.tabs[i].canGoForward = report.canGoForward
             s.tabs[i].failure = report.failure
+            if let zoom = report.zoom { s.tabs[i].zoom = zoom }
             s.tabs[i].loaded = true
         }
     }

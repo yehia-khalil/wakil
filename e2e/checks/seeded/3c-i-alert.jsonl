@@ -1,0 +1,18 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"type":{"into":"browser.address","text":"{pageStub}/alert.html"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Hello from the page"}}
+{"do":{"click":"browser.address"}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"tree":"absent","text":"Hello from the page"}}
+{"do":{"hotkey":"cmd+1"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"expect":{"tree":"contains","text":"Hello from the page"}}
+{"do":{"click":"browser.prompt.ok"}}
+{"expect":{"tree":"absent","text":"Hello from the page"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Alert"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}

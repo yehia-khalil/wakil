@@ -105,6 +105,12 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The address last asked for, which a failed first load has no `url` to report.
     var requested: String?
     private(set) var failure: String?
+    /// The host whose remembered zoom the page took (`zoom.json`); a page arriving on another host
+    /// takes that one's.
+    var zoomHost: String?
+    /// The zoom the next report tells the store: set only when the page took a host's zoom, so a
+    /// report read before a `browser_zoom` applied never undoes it.
+    private var pendingZoom: Double?
     private var observations: [NSKeyValueObservation] = []
     private var reporting: Task<Void, Never>?
     private var reportAgain = false
@@ -145,6 +151,14 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         reporting?.cancel()
     }
 
+    private var key: BrowserTabHost.Key { BrowserTabHost.Key(scope: scope, pane: pane, tab: tab) }
+
+    /// The place is shown again: the zoom the page took is said again, with the rest of its report.
+    func reportZoomAgain() {
+        guard zoomHost != nil, let view = host?.existing(scope: scope, pane: pane, tab: tab) else { return }
+        pendingZoom = view.pageZoom
+    }
+
     /// Whether this tab's place is the one on screen, which is the only place its ids mean this tab.
     var isShown: Bool { host?.model?.browserScope == scope }
 
@@ -166,13 +180,15 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
                 self.reportAgain = false
                 guard let model = self.host?.model, !self.tab.isEmpty,
                       let view = self.host?.existing(scope: self.scope, pane: self.pane, tab: self.tab) else { break }
+                let zoom = self.pendingZoom
+                self.pendingZoom = nil
                 let report = BrowserPageReport(
                     // A failed load reads as the address that failed, not the page left showing.
                     url: (self.failure != nil ? self.requested : nil) ?? view.url?.absoluteString
                         ?? self.requested ?? "",
                     title: view.title ?? "",
                     isLoading: view.isLoading, progress: view.estimatedProgress,
-                    canGoBack: view.canGoBack, canGoForward: view.canGoForward, failure: self.failure)
+                    canGoBack: view.canGoBack, canGoForward: view.canGoForward, failure: self.failure, zoom: zoom)
                 await model.browserPageDidReport(scope: self.scope, pane: self.pane, tab: self.tab, report)
             }
             self?.reporting = nil
@@ -183,6 +199,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         failure = nil
+        if !tab.isEmpty { host?.clearPageMarks(key) }
         // A link, ‹ › or a redirect is the address now: what a failure names, and Try Again asks for.
         if let url = webView.url?.absoluteString { requested = url }
         scheduleReport()
@@ -191,6 +208,13 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         failure = nil
         host?.saveState(of: webView, scope: scope, pane: pane, tab: tab, files: files)
+        // A page on another host takes that host's remembered zoom, and the store hears it.
+        if let site = webView.url.flatMap(browserZoomHost), site != zoomHost {
+            zoomHost = site
+            let factor = files?.zoom(host: site) ?? 1.0
+            if webView.pageZoom != factor { webView.pageZoom = factor }
+            pendingZoom = factor
+        }
         scheduleReport()
     }
 
@@ -208,6 +232,11 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     private func failed(_ error: Error, _ webView: WKWebView) {
+        // A refused certificate shows its own page, not the load error under it.
+        if !tab.isEmpty, host?.certificates[key] != nil {
+            scheduleReport()
+            return
+        }
         guard let text = browserLoadFailure(error, url: requested.flatMap(URL.init(string:)) ?? webView.url) else {
             scheduleReport()
             return
@@ -218,6 +247,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        // A link with `download`: saved, not shown.
+        if navigationAction.shouldPerformDownload { return decisionHandler(.download) }
         guard let url = navigationAction.request.url else { return decisionHandler(.allow) }
         // Rule 7: a scheme a page cannot show is the Mac's (`mailto:` opens Mail).
         if let scheme = url.scheme?.lowercased(),
@@ -230,6 +261,74 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             return decisionHandler(.cancel)
         }
         decisionHandler(.allow)
+    }
+
+    /// A response the page cannot show, or one the server says is an attachment, is a download.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+        let disposition = (navigationResponse.response as? HTTPURLResponse)?
+            .value(forHTTPHeaderField: "Content-Disposition")?.lowercased() ?? ""
+        if !navigationResponse.canShowMIMEType || disposition.hasPrefix("attachment") {
+            return decisionHandler(.download)
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        host?.track(download, scope: scope, pane: pane)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        host?.track(download, scope: scope, pane: pane)
+    }
+
+    /// Server trust and HTTP sign-in. A certificate the system does not trust is refused and the
+    /// certificate page shown, unless the operator chose Visit Anyway for this organisation and
+    /// host this session. Basic and digest sign-in is asked over the page; the credential is the
+    /// system's, kept for the session (`.forSession`). Anything else is WebKit's default.
+    func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
+                 completionHandler: @escaping @MainActor (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let space = challenge.protectionSpace
+        let site = space.host.lowercased()
+        switch space.authenticationMethod {
+        case NSURLAuthenticationMethodServerTrust:
+            guard let trust = space.serverTrust else { return completionHandler(.performDefaultHandling, nil) }
+            // Evaluated off the main thread (it may reach the network); answered back on it.
+            SecTrustEvaluateAsyncWithError(trust, .main) { [weak self] trust, trusted, error in
+                MainActor.assumeIsolated {
+                    guard let self, !trusted else { return completionHandler(.performDefaultHandling, nil) }
+                    if self.host?.certificateIsAllowed(org: self.scope.organization, host: site) == true {
+                        return completionHandler(.useCredential, URLCredential(trust: trust))
+                    }
+                    // Only the page's own host gets the page; another host's resource is refused quietly.
+                    let pageHost = (self.requested.flatMap(URL.init(string:)) ?? webView.url)?.host?.lowercased()
+                    if !self.tab.isEmpty, pageHost == site {
+                        let reason = error.map { ($0 as Error).localizedDescription } ?? "the system does not trust it"
+                        self.host?.showCertificate("\(site)'s certificate isn't trusted — \(reason)", key: self.key)
+                    }
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                }
+            }
+        case NSURLAuthenticationMethodHTTPBasic, NSURLAuthenticationMethodHTTPDigest:
+            guard let host, !tab.isEmpty else { return completionHandler(.cancelAuthenticationChallenge, nil) }
+            let prompt = BrowserPrompt(kind: .signIn(host: site, realm: space.realm ?? ""), origin: site) { answer in
+                if case .credential(let user, let password) = answer {
+                    completionHandler(.useCredential, URLCredential(user: user, password: password, persistence: .forSession))
+                } else {
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                }
+            }
+            host.present(prompt, scope: scope, pane: pane, tab: tab)
+        default:
+            completionHandler(.performDefaultHandling, nil)
+        }
+    }
+
+    /// The page's process ended: the crash page, until the tab reloads.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard !tab.isEmpty else { return }
+        host?.pageCrashed(key: key)
+        scheduleReport()
     }
 
     /// ⌘-click and middle-click: a new tab behind this one.
@@ -263,6 +362,62 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         }
         return host.adoptPopup(configuration: configuration, scope: scope, pane: pane, opener: tab, files: files,
                                url: navigationAction.request.url?.absoluteString ?? "")
+    }
+
+    // MARK: The page's questions
+
+    /// The asking page's host, shown over its question.
+    private func origin(_ frame: WKFrameInfo, _ webView: WKWebView) -> String {
+        let origin = frame.securityOrigin
+        if !origin.host.isEmpty { return origin.host }
+        return webView.url.map(BrowserAddress.displayHost) ?? "This page"
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor () -> Void) {
+        ask(.alert(message), frame, webView) { _ in completionHandler() }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor (Bool) -> Void) {
+        ask(.confirm(message), frame, webView) { answer in
+            if case .accept = answer { completionHandler(true) } else { completionHandler(false) }
+        }
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor (String?) -> Void) {
+        ask(.text(prompt, defaultText: defaultText ?? ""), frame, webView) { answer in
+            if case .text(let text) = answer { completionHandler(text) } else { completionHandler(nil) }
+        }
+    }
+
+    private func ask(_ kind: BrowserPrompt.Kind, _ frame: WKFrameInfo, _ webView: WKWebView,
+                     reply: @escaping (BrowserPrompt.Answer) -> Void) {
+        let prompt = BrowserPrompt(kind: kind, origin: origin(frame, webView), reply: reply)
+        guard let host else { return prompt.answer(.withdrawn) }
+        host.present(prompt, scope: scope, pane: pane, tab: tab)
+    }
+
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+                 decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
+        guard let host, !tab.isEmpty else { return decisionHandler(.deny) }
+        let site = origin.host.isEmpty ? (webView.url.map(BrowserAddress.displayHost) ?? "This page") : origin.host
+        host.requestMedia(host: site, type: type, scope: scope, pane: pane, tab: tab, decide: decisionHandler)
+    }
+
+    /// Location is denied to every page, silently (no usage string is in the bundle).
+    @available(macOS 27.0, *)
+    func webView(_ webView: WKWebView, requestGeolocationPermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
+        decisionHandler(.deny)
+    }
+
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor ([URL]?) -> Void) {
+        guard let host else { return completionHandler(nil) }
+        host.runOpenPanel(parameters, for: webView, scope: scope, pane: pane, tab: tab, completion: completionHandler)
     }
 
     func webViewDidClose(_ webView: WKWebView) {

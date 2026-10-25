@@ -1,0 +1,15 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"type":{"into":"browser.address","text":"{pageStub}/big.bin"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"browser-1","field":"downloads[0].filename","equals":"big.bin"}}
+{"expect":{"pane":"browser-1","field":"downloads[0].state","equals":"running"}}
+{"expect":{"pane":"browser-1","field":"downloads[0].expected","equals":"10485760"}}
+{"expect":{"tree":"contains","text":"of 10.5 MB"}}
+{"do":{"click":"browser.download.d1.cancel"}}
+{"expect":{"pane":"browser-1","field":"downloads[0].state","equals":"cancelled"}}
+{"expect":{"tree":"contains","text":"Cancelled"}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_download_cancel\""}}}
+{"do":{"click":"browser.downloads.clear"}}
+{"expect":{"pane":"browser-1","field":"downloads[0]","present":false}}

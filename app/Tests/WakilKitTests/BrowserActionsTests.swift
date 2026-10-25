@@ -312,7 +312,8 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
     let files = try org.map { try BrowserOrgFiles(home: home, org: $0) }
     var remover: BrowserDataRemover?
-    if let removed { remover = { @Sendable id, _ in removed.add(id) } }
+    // As the window's remover does: the files when it is asked to, then the store.
+    if let removed { remover = { @Sendable id, deleteFiles in try deleteFiles(); removed.add(id) } }
     return (try await browserFixture(orgFiles: files, removeData: remover), files)
 }
 
@@ -393,8 +394,8 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
 
 /// The window drops the store's web views, then has the files deleted (`deleteFiles`), then
 /// removes the store — so no page left alive can write a tab state after the deletion, and none is
-/// left for a rebuilt page to restore. A remover that never calls `deleteFiles` gets them deleted
-/// anyway once it returns.
+/// left for a rebuilt page to restore. Nothing is deleted after the remover returns: a page rebuilt
+/// by then may have written its new state.
 @Test func clearDataHandsTheRemoverTheFileDeletion() async throws {
     let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
     let files = try BrowserOrgFiles(home: home, org: "acme")
@@ -416,8 +417,13 @@ private func clearFixture(removed: Removed?, org: String? = "acme") async throws
     try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
     #expect(steps.all == [mark, try files.identifier()], "files deleted when asked, before the store goes")
 
-    try writeState()
-    let lazy = try await browserFixture(orgFiles: files, removeData: { @Sendable _, _ in })
-    try await lazy.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
-    #expect(!FileManager.default.fileExists(atPath: state.path), "deleted even when the remover never asked")
+    // A page rebuilt once the store is gone writes its new state; the action deletes nothing after
+    // the remover, so that state stays (Task 7's carry: the files go once, in the remover's order).
+    let rebuilt = try await browserFixture(orgFiles: files, removeData: { @Sendable _, deleteFiles in
+        try deleteFiles()
+        try FileManager.default.createDirectory(at: state.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: state)
+    })
+    try await rebuilt.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
+    #expect(FileManager.default.fileExists(atPath: state.path), "a rebuilt page's state is not deleted after the remover")
 }
