@@ -123,6 +123,8 @@ public let operatorOnlyActions: Set<String> = [
     // 3c-i. Putting back a browser pane's saved tabs is the window's own relaunch step; the
     // agent opens and selects tabs through the browser actions instead.
     "browser_restore",
+    // 3c-i. Deleting an organisation's browsing data signs it out of every site, in every project.
+    "browser_clear_data",
     // 3b-viii (Decision 42). Which model reads the operator's code is the operator's choice.
     "ctx_set_local_provider",
     // 3a-iii (Decision 44). Which account pushes for an organisation, and its secrets, are the
@@ -331,6 +333,9 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the window puts back a browser pane's saved tabs, when it "
             + "reopens. You may open, select and reopen tabs: browser_open, browser_select_tab "
             + "and browser_reopen_tab."
+    case "browser_clear_data":
+        return "\(toolName): only the operator deletes an organisation's browsing data. It signs "
+            + "every site out, in every project. Ask the operator to do it from the browser's menu."
     case "ctx_set_browser_settings":
         return "\(toolName): only the operator changes the browser's search engine and start "
             + "page. You may READ them: ctx_browser_settings answers the settings in force. "

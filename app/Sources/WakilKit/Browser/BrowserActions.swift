@@ -16,6 +16,8 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     case findClosed
     case noDownload(id: String)
     case unknownZoomStep(String)
+    case noOrganisation
+    case clearOnlyFromTheApp
 
     public var description: String {
         switch self {
@@ -29,6 +31,8 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .findClosed: "browser_find_step: the find bar is closed; open it with browser_find (⌘F)"
         case .noDownload(let id): "browser_download_cancel: this pane has no download \(id)"
         case .unknownZoomStep(let step): "browser_zoom: step is in, out or reset, not \(step)"
+        case .noOrganisation: "No organisation is active."
+        case .clearOnlyFromTheApp: "Browsing data can only be cleared from the app."
         }
     }
 }
@@ -92,7 +96,9 @@ public func registerBrowserActions(
     into registry: ActionRegistry,
     panes: PaneStore,
     layout: LayoutStore?,
-    settings: @escaping @Sendable () async -> SettingsBrowser
+    settings: @escaping @Sendable () async -> SettingsBrowser,
+    orgFiles: @escaping @Sendable () async -> BrowserOrgFiles? = { nil },
+    removeData: (@Sendable (UUID) async throws -> Void)? = nil
 ) async {
     let kind = BrowserPaneKind.names[0]
 
@@ -474,6 +480,22 @@ public func registerBrowserActions(
             }
             return await reply(pane)
         }))
+
+    await registry.register(Action(
+        name: "browser_clear_data",
+        description: "Delete the active organisation's browsing data: every site's cookies, logins and storage, "
+            + "in every project, and the saved zoom. Asks the operator first. Operator-only.",
+        kind: .mutate, audience: .operatorOnly,
+        schema: schema([:]),
+        handler: { _ in
+            guard let removeData else { throw BrowserActionError.clearOnlyFromTheApp }
+            guard let files = await orgFiles() else { throw BrowserActionError.noOrganisation }
+            try await removeData(try files.identifier())
+            try files.removeEverythingButTheProfile()
+            return .object(["cleared": .string(files.org)])
+        },
+        // Signs out of every site in every project, in production and out of it.
+        price: (production: .gate, otherwise: .gate)))
 }
 
 /// `ctx_browser_settings`' reply, or nil when it is not one (`decodeEditorSettings`' twin).

@@ -23,11 +23,11 @@ struct BrowserFixture {
     /// Dispatches `name`, naming the fixture's pane unless `params` names one or `named` is false.
     @discardableResult
     func dispatch(_ name: String, _ params: [String: JSONValue] = [:], named: Bool = true,
-                  origin: ActionOrigin = .agent) async throws -> JSONValue {
+                  origin: ActionOrigin = .agent, confirmation: String? = nil) async throws -> JSONValue {
         var p = params
         if named, p["pane"] == nil { p["pane"] = .string(pane) }
         return try await registry.dispatch(name: name, params: .object(p), origin: origin,
-                                           caller: .test("staging"), confirmation: nil)
+                                           caller: .test("staging"), confirmation: confirmation)
     }
     func snapshot() async -> BrowserSnapshot { await panes.browserSnapshot(paneId: pane) }
     func active() async -> BrowserTab? { await snapshot().activeTab }
@@ -35,7 +35,8 @@ struct BrowserFixture {
 
 /// A layout with one browser pane (no tabs yet) and the browser actions over it — `editorFixture`'s
 /// shape. `open` false leaves the canvas empty.
-func browserFixture(startPage: String = "", open: Bool = true) async throws -> BrowserFixture {
+func browserFixture(startPage: String = "", open: Bool = true, orgFiles: BrowserOrgFiles? = nil,
+                    removeData: (@Sendable (UUID) async throws -> Void)? = nil) async throws -> BrowserFixture {
     let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
@@ -43,7 +44,8 @@ func browserFixture(startPage: String = "", open: Bool = true) async throws -> B
     let pane = open ? await layout.open(kind: "browser", title: "Browser").id : ""
     let panes = PaneStore(kinds: PaneKinds.standard)
     let settings = BrowserSettingsBox(SettingsBrowser(searchEngine: "google", startPage: startPage))
-    await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { settings.current })
+    await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { settings.current },
+                                 orgFiles: { orgFiles }, removeData: removeData)
     return BrowserFixture(registry: registry, panes: panes, layout: layout, settings: settings, pane: pane)
 }
 
@@ -293,6 +295,66 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     let f = try await browserFixture()
     let all = await f.registry.all()
     #expect(all.first { $0.name == "browser_restore" }?.audience == .operatorOnly)
-    #expect(all.filter { $0.name.hasPrefix("browser_") && $0.name != "browser_restore" }
+    #expect(all.filter { $0.name.hasPrefix("browser_") && $0.name != "browser_restore" && $0.name != "browser_clear_data" }
         .allSatisfy { $0.audience == .agentReachable && $0.kind == .control })
+}
+
+// MARK: browser_clear_data
+
+private final class Removed: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids: [UUID] = []
+    func add(_ id: UUID) { lock.withLock { ids.append(id) } }
+    var all: [UUID] { lock.withLock { ids } }
+}
+
+private func clearFixture(removed: Removed?, org: String? = "acme") async throws -> (BrowserFixture, BrowserOrgFiles?) {
+    let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let files = try org.map { try BrowserOrgFiles(home: home, org: $0) }
+    var remover: (@Sendable (UUID) async throws -> Void)?
+    if let removed { remover = { @Sendable id in removed.add(id) } }
+    return (try await browserFixture(orgFiles: files, removeData: remover), files)
+}
+
+@Test func clearDataRemovesTheStoreAndTheFilesButKeepsTheIdentifier() async throws {
+    let removed = Removed()
+    let (f, maybe) = try await clearFixture(removed: removed)
+    let files = try #require(maybe)
+    let id = try files.identifier()
+    try files.setZoom(1.5, host: "a.test")
+    let state = files.stateURL(tab: "t1")
+    try FileManager.default.createDirectory(at: state.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: state)
+    try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm")
+    #expect(removed.all == [id])
+    #expect(!FileManager.default.fileExists(atPath: state.deletingLastPathComponent().path))
+    #expect(files.zoom(host: "a.test") == 1.0)
+    #expect(try files.identifier() == id)
+}
+
+@Test func clearDataAsksFirstInEveryEnvironment() async throws {
+    let removed = Removed()
+    let (f, _) = try await clearFixture(removed: removed)
+    for caller in [DispatchCaller.test("staging"), .test("production")] {
+        do {
+            _ = try await f.registry.dispatch(name: "browser_clear_data", params: .object([:]), origin: .ui,
+                                              caller: caller, confirmation: nil)
+            Issue.record("ran without a confirmation")
+        } catch {}
+    }
+    #expect(removed.all.isEmpty)
+}
+
+@Test func clearDataIsRefusedWhereNothingCanRemoveTheStore() async throws {
+    let (f, _) = try await clearFixture(removed: nil)
+    let why = await refusal { try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm") }
+    #expect(why == "Browsing data can only be cleared from the app.")
+}
+
+@Test func clearDataIsRefusedWithNoOrganisation() async throws {
+    let removed = Removed()
+    let (f, _) = try await clearFixture(removed: removed, org: nil)
+    let why = await refusal { try await f.dispatch("browser_clear_data", named: false, origin: .ui, confirmation: "confirm") }
+    #expect(why == "No organisation is active.")
+    #expect(removed.all.isEmpty)
 }

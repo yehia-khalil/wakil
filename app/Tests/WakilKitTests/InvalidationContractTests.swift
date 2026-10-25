@@ -166,6 +166,8 @@ private let keptPerPlace: Set<String> = [
 ]
 
 private let orgIndependent: Set<String> = [
+    // 3c-i: the home directory the browser files sit under; the organisation is read from `organization` per use.
+    "browserHome",
     // 3a-iii-a: the fetch loop runs for whatever roots the window has; its interval, sleep and the
     // app's activity are no organisation's.
     "backgroundFetchInterval", "backgroundFetchSleep", "backgroundFetchTask", "appActive",

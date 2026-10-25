@@ -303,7 +303,10 @@ public struct WakilWiring: Sendable {
         journalDirectory: URL,
         sessionId: String,
         executableDirectory: URL = WakilWiring.defaultExecutableDirectory(),
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        // 3c-i. Deletes a WebKit data store by id. Only the app can (`WKWebsiteDataStore` is
+        // WebKit's); nil leaves `browser_clear_data` refusing, as `--dispatch` and tests want.
+        removeBrowserData: (@Sendable (UUID) async throws -> Void)? = nil
     ) async -> WakilWiring {
         var diagnostics: [String] = []
         // `environment["WAKIL_PROVIDER"]` here, not a live pick: every
@@ -450,6 +453,10 @@ public struct WakilWiring: Sendable {
         // 3c-i. The settings are read when a tab needs them (a search, a new tab's start page), so a
         // change in Settings → Browser applies to the next one; a failed read uses the defaults.
         let browserSettingsRegistry = registry
+        // The organisation's browser files are asked live, for the caller's own organisation (the
+        // shell context follows the window, an agent's place stays its own): one organisation's id
+        // never reaches another's web view (Invariant 4). Nothing while no organisation is active.
+        let browserHome = URL(fileURLWithPath: environment["HOME"] ?? NSHomeDirectory())
         await registerBrowserActions(
             into: registry, panes: panes, layout: layout,
             settings: {
@@ -460,7 +467,12 @@ public struct WakilWiring: Sendable {
                       let decoded = decodeBrowserSettings(fromResult: result)
                 else { return .defaults }
                 return decoded
-            })
+            },
+            orgFiles: {
+                let org = await shellContext.current().org
+                return org.isEmpty ? nil : try? BrowserOrgFiles(home: browserHome, org: org)
+            },
+            removeData: removeBrowserData)
         let commitDrafts = CommitDraftSink()
         await registerCommitDraftAction(into: registry, drafts: commitDrafts)
 

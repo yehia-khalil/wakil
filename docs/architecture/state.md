@@ -14,6 +14,7 @@ both the Swift side and Go read the `HOME` variable, so an overridden `HOME` mov
 | Provider (account) records | `~/.wakil/orgs/<org>/providers/<id>.json` | Go: `provider.go`, `adopt.go`, `unlink.go` |
 | Session lineage (which session was forked from which) | `~/.wakil/orgs/<org>/sessions.json` | Go: `sessions_lineage.go` (`record_session_parent`) |
 | A project's configuration (roots, scopes, environments, databases, API entries, editor tabs) | the project's `project.json`, by convention `.wakil/project.json` inside the project | the operator; Go `projectwrite.go` (`set_database_dsn`, `remove_database`) and `editorsettings.go` (`set_project_editor_settings`, the `editor` key) |
+| Browser profile id (`profile.json`: the organisation's WebKit data-store id), zoom per host (`zoom.json`), per-tab state (`tabs/`) | `~/.wakil/orgs/<org>/browser/`. The store itself (cookies, logins) is WebKit's, under `~/Library/WebKit/`, outside Wakil's reach; Clear Data removes it through the id | Swift: `BrowserOrgFiles` |
 | Pane arrangement per project | `~/.wakil/layouts/<org>/<project>.json` | Swift: `LayoutPersistence` |
 | Pane arrangement per conversation | `~/.wakil/layouts/<org>/conversations/<lineageRoot>/<project>.json` | Swift: `LayoutPersistence` |
 | Action journal (append-only, one line per dispatch) | `~/.wakil/journal/<sessionId>.jsonl` | Swift: `ActionRegistry` (`JournalEntry`) |

@@ -42,6 +42,27 @@ private func browserWindow() async -> (WindowModel, FakeFiles, LayoutStore, jour
         return (model, pane, layout, journal)
     }
 
+    @Test func theWindowHandsOutTheActiveOrganisationsFilesOnly() async throws {
+        let (model, _, _, _) = await browserWindow()
+        let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
+        model.browserHome = home
+        await model.refreshContext()
+        // Before an organisation is active there is nothing to hand out.
+        let files = try #require(model.browserOrgFiles)
+        #expect(!model.organization.isEmpty)
+        #expect(files.org == model.organization)
+        #expect(files.directory.path == home.path + "/.wakil/orgs/\(model.organization)/browser")
+        model.browserHome = nil
+        #expect(model.browserOrgFiles == nil, "no home, no files")
+    }
+
+    @Test func noOrganisationYetMeansNoFiles() async {
+        let (model, _, _, _) = await browserWindow()
+        model.browserHome = testScratchRoot
+        #expect(model.organization.isEmpty)
+        #expect(model.browserOrgFiles == nil)
+    }
+
     @Test func keysOutsideABrowserKeepTodaysMeaning() async throws {
         let (model, files, _, _) = await browserWindow()
         await model.refreshContext()

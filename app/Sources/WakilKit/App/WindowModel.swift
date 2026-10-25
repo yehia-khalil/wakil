@@ -29,6 +29,17 @@ public final class WindowModel {
     /// `refreshContext()` has answered — `environmentLabel` is what the view
     /// draws, and it says so rather than showing a blank.
     public private(set) var organization = ""
+    /// The home directory `~/.wakil` lives under; set by the app when it builds the window
+    /// (`WindowSession.start`), so an overridden `HOME` moves it with everything else.
+    public var browserHome: URL?
+    /// The active organisation's browser files (`~/.wakil/orgs/<org>/browser/`): the profile id and
+    /// zoom a browser tab's web view is built from. Nil while no organisation is active, or when
+    /// the window has no home. Read per use, never kept: a tab built after an organisation switch
+    /// must get the new organisation's id (Invariant 4).
+    public var browserOrgFiles: BrowserOrgFiles? {
+        guard let browserHome, !organization.isEmpty else { return nil }
+        return try? BrowserOrgFiles(home: browserHome, org: organization)
+    }
     /// `project.json`'s name, for drawing. Never what a pin carries — that is `projectKey`.
     public private(set) var project = ""
     /// The active project's registry key (`ContextStore.ActiveContext.projectKey`), which

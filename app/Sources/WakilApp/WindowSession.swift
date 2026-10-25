@@ -407,6 +407,8 @@ final class WindowSession {
             guard let model else { throw CancellationError() }
             return try await model.changesDraftMessage(root: root)
         }
+        // The browser's per-organisation files live under the same `home`; Task 7's tabs ask for them.
+        model.browserHome = URL(fileURLWithPath: home)
         screen.model = model
         let composer = ComposerModel(window: model, speech: wiring.speech)
 

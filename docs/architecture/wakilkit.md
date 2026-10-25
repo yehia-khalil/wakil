@@ -145,6 +145,16 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   and clear, and the operator-only `browser_restore`. `pane` defaults to the focused browser pane,
   else the last opened. Each command bumps its tab's `command.seq`; tab changes write the layout's
   saved tabs. Also `BrowserKey`, the keys `WindowModel.browserKey` takes over in a focused browser pane.
+  `browser_clear_data` (`.mutate`, operator-only, gated in production and out of it) asks the injected
+  `removeData` to delete the organisation's WebKit store, then removes `tabs/` and `zoom.json`; it
+  refuses without a remover (nothing but the app can) or without an active organisation.
+- `BrowserOrgFiles.swift` — `BrowserOrgFiles` (3c-i): one organisation's `~/.wakil/orgs/<org>/browser/`:
+  `profile.json` (the id of its `WKWebsiteDataStore(forIdentifier:)`, created on first use, replaced
+  when unreadable), `zoom.json` (zoom per host) and `tabs/` (per-tab state). The organisation is used
+  as the directory name as Go's `OrgDirFor` does; `init` throws for `/`, `.`, `..` or empty, never
+  flattening, so no id can be shared. `WindowModel.browserOrgFiles` is the active organisation's, nil
+  while none is active; the registered actions ask for the caller's own. WebKit keeps the store's own
+  files under `~/Library/WebKit/`, outside Wakil's reach, so deleting them goes through `removeData`.
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
