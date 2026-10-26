@@ -879,6 +879,20 @@ private struct FailingLookupForWiringTests: ProviderCredentialsLookup {
     #expect(empty["WAKIL_ANTHROPIC_BASE_URL"] == nil)
 }
 
+/// The e2e GitHub stub reaches the window's wakil-ticket only through this: set, it is forwarded;
+/// unset or empty, it is absent and the child calls GitHub's own API.
+@Test func childEnvironmentForwardsTheGitHubAPI() {
+    let env = WakilWiring.childProcessEnvironment(
+        from: ["HOME": "/h", "PATH": "/p", "WAKIL_GITHUB_API": "http://127.0.0.1:4646/graphql"],
+        org: "initech", provider: "main")
+    #expect(env["WAKIL_GITHUB_API"] == "http://127.0.0.1:4646/graphql")
+    let without = WakilWiring.childProcessEnvironment(from: ["HOME": "/h", "PATH": "/p"], org: "initech", provider: "main")
+    #expect(without["WAKIL_GITHUB_API"] == nil)
+    let empty = WakilWiring.childProcessEnvironment(
+        from: ["HOME": "/h", "PATH": "/p", "WAKIL_GITHUB_API": ""], org: "initech", provider: "main")
+    #expect(empty["WAKIL_GITHUB_API"] == nil)
+}
+
 /// Background agents, 2 of 4: an agent's dispatch reaches a client pinned to its own place,
 /// through the registry `build` itself assembled. **The guard against a `register*` call in
 /// `build` being handed a window client instead of a routed one**: every unit test of the router

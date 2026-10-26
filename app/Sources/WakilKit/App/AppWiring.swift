@@ -764,6 +764,11 @@ public struct WakilWiring: Sendable {
         if let base = environment["WAKIL_ANTHROPIC_BASE_URL"], !base.isEmpty {
             childEnvironment["WAKIL_ANTHROPIC_BASE_URL"] = base
         }
+        // The same for wakil-ticket's GitHub endpoint: only tests and e2e set it, to keep pull
+        // request reads and replies on a stub.
+        if let api = environment["WAKIL_GITHUB_API"], !api.isEmpty {
+            childEnvironment["WAKIL_GITHUB_API"] = api
+        }
         return childEnvironment
     }
 
