@@ -42,12 +42,16 @@ type historyResult struct {
 	Commits []wakilcore.GitCommit `json:"commits"`
 }
 type blameArg struct {
-	Root string  `json:"root" jsonschema:"absolute path of one of the active project's roots"`
-	Path string  `json:"path" jsonschema:"file path relative to the root"`
-	Text *string `json:"text,omitempty" jsonschema:"the file's unsaved text, blamed in place of the file on disk"`
+	Root   string  `json:"root" jsonschema:"absolute path of one of the active project's roots"`
+	Path   string  `json:"path" jsonschema:"file path relative to the root"`
+	Text   *string `json:"text,omitempty" jsonschema:"the file's unsaved text, blamed in place of the file on disk"`
+	Pushed bool    `json:"pushed,omitempty" jsonschema:"also mark each line whose commit a remote-tracking branch holds (pushed true)"`
 }
 type blameResult struct {
 	Lines []wakilcore.GitBlameLine `json:"lines"`
+}
+type originResult struct {
+	URL string `json:"url"`
 }
 
 // runner confines every call to a root the active project declares.
@@ -307,17 +311,28 @@ func newServer() *mcp.Server {
 			}
 			return nil, historyResult{Commits: h}, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "git_blame", Description: "Read-only. Who last changed each line of one file: line, commit id, author, date, subject. A line not yet committed has an all-zero id. With text, that text is blamed in place of the file on disk."},
+	mcp.AddTool(s, &mcp.Tool{Name: "git_blame", Description: "Read-only. Who last changed each line of one file: line, commit id, author, date, subject. A line not yet committed has an all-zero id. With text, that text is blamed in place of the file on disk. With pushed, each line whose commit a remote-tracking branch holds says pushed true."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a blameArg) (*mcp.CallToolResult, blameResult, error) {
 			g, fail := runner(a.Root)
 			if fail != nil {
 				return fail, blameResult{}, nil
 			}
 			b, err := wakilcore.ReadBlame(ctx, g, a.Path, a.Text)
+			if err == nil && a.Pushed {
+				err = wakilcore.MarkPushed(ctx, g, b)
+			}
 			if err != nil {
 				return mcpx.ToolErr("wakil-git", err), blameResult{}, nil
 			}
 			return nil, blameResult{Lines: b}, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "git_origin", Description: "Read-only. One root's origin remote URL as its config records it, with any credentials taken out; url is empty when the root has no origin."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, originResult, error) {
+			g, fail := runner(a.Root)
+			if fail != nil {
+				return fail, originResult{}, nil
+			}
+			return nil, originResult{URL: wakilcore.ReadOrigin(ctx, g)}, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "git_stashes", Description: "Read-only. One root's stashes, newest first: index, id, message, the branch it was made on, date, and the files it holds (untracked ones included)."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a statusArg) (*mcp.CallToolResult, stashesResult, error) {

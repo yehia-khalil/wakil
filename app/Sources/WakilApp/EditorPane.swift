@@ -77,6 +77,8 @@ struct EditorPane: View {
     var inlineBlame: Bool = false
     var blameFor: (String, String, String?) async -> [GitBlameInfo]? = { _, _, _ in nil }
     var openCommitDiff: (String, GitCommitRef) -> Void = { _, _ in }
+    /// 3c-i: the hover's Open on GitHub, the commit's page (`WakilLinks.open`).
+    var openLink: (String) -> Void = { _ in }
     var timeline = EditorTimelineControls()
     let ghostSchema: () async -> GhostScope
     let ghostSuggest: (InfillRequest, Int) async -> String?
@@ -211,6 +213,7 @@ struct EditorPane: View {
             host.ghostSuggest = ghostSuggest
             host.blameFor = blameFor
             host.blameOpen = openCommitDiff
+            host.blameWeb = openLink
             host.ghostCancel = ghostCancel
             host.keyboardHeld = keyboardHeld
             // Handed in first, so `start` applies the newest snapshot, never this one if a newer
@@ -875,6 +878,7 @@ final class EditorHost {
     /// cursor move (R1).
     @ObservationIgnored var blameFor: ((String, String, String?) async -> [GitBlameInfo]?)?
     @ObservationIgnored var blameOpen: ((String, GitCommitRef) -> Void)?
+    @ObservationIgnored var blameWeb: ((String) -> Void)?
     @ObservationIgnored private var blameOn = false
     @ObservationIgnored private var blames = EditorBlameCache()
     @ObservationIgnored private var blameTask: Task<Void, Never>?
@@ -971,6 +975,9 @@ final class EditorHost {
             if op == "copy" {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(id, forType: .string)
+            } else if op == "web" {
+                // 3c-i: the commit's page, which editor_blame set only for a pushed commit on a known host.
+                if let page = self.blames.commit(key: key, id: id)?.web { self.blameWeb?(page.url) }
             } else {
                 // Under the file's name at that commit, and the one before it across a rename (3a-v-a walk).
                 let current = String(path.dropFirst(root.count + 1))

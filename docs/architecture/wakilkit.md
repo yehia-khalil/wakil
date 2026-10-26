@@ -151,7 +151,12 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   `browser_navigate` (the address rule; refuses blank and `javascript:`), back, forward, reload, stop,
   new/close/reopen/select/move tab, focus address (⌘L), find, find step and close, zoom (the fixed ladder), download cancel
   and clear, and the operator-only `browser_restore`. `pane` defaults to the focused browser pane,
-  else the last opened. Each command bumps its tab's `command.seq`; tab changes write the layout's
+  else the one most recently focused (`LayoutStore.recentlyFocused`, in memory only), else the last
+  opened: the spec's call 11, where a link from elsewhere in Wakil opens. That link's one path is
+  `WindowModel.openLinkInWakil` (`App/WindowModel+Links.swift`, `browser_open` with `newTab`); the
+  app's `WakilLinks.open` sends it there, or to the system browser while ⌥ is held. 3c-i routes the
+  blame hover's Open on GitHub through it; 3c-iii routes the terminal's, the editor's and an API entry's
+  links. Each command bumps its tab's `command.seq`; tab changes write the layout's
   saved tabs. Also `BrowserKey`, the keys `WindowModel.browserKey` takes over in a focused browser pane.
   `browser_clear_data` (`.mutate`, operator-only, gated in production and out of it) asks the injected
   `removeData` to delete the organisation's WebKit store, handing it the deletion of `tabs/` and
@@ -333,10 +338,18 @@ status and what reads it. A saved Git pane loads as an editor pane on Changes
   window's `GitStatus` (so only while an editor pane keeps it).
 - `GitWatcher.swift` — `RootWatcher` (protocol), `FSEventsRootWatcher`; `GitRootWatcher.swift` —
   `GitRootWatcher`, which the window tells which roots to watch.
+- `GitHistory.swift` — a file's history and blame as `editor_timeline` and `editor_blame` read them
+  (3a-v-a): `GitCommitInfo`, `GitBlameInfo`, `EditorBlameCache`, the blame text and its hover
+  (`editorBlameHover`: Open Changes · Copy Commit ID, and 3c-i's Open on GitHub / GitLab / Bitbucket
+  when the line carries `web`). `gitRemoteWebRepository` and `gitCommitWebPage` map an `origin`
+  (scp-like, `ssh://` or `https://`, credentials and `.git` dropped) on github.com, gitlab.com
+  (subgroups kept) or bitbucket.org to the commit's page; any other host is nil. `editor_blame`
+  reads the root's origin once (`git_origin`, kept in `GitOriginCache`) and, for such a root, asks
+  `git_blame` with `pushed` and sets `web` only on lines whose commit a remote-tracking branch holds.
 
 Uses: `Context`, `Identifiers`, `MCP`, `Registry`.
 Tests: `GitStatusTests`, `GitPaneLinesTests`, `GitRootWatcherTests`, `GitSourceTests`,
-`GitWatcherTests`, with `GitTestSupport.swift`.
+`GitWatcherTests`, `GitHistoryTests`, `GitCommitWebTests`, with `GitTestSupport.swift`.
 
 ### Harness/ — driving the agent
 

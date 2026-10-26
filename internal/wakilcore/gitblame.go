@@ -20,6 +20,9 @@ type GitBlameLine struct {
 	// a rename lies between them — the two sides of the commit's diff (3a-v-a walk, step 8).
 	Path       string `json:"path"`
 	ParentPath string `json:"parentPath,omitempty"`
+	// Pushed: the commit is on a remote-tracking branch, so its host has a page for it (3c-i's
+	// Open on GitHub). Set only when MarkPushed was asked for.
+	Pushed bool `json:"pushed,omitempty"`
 }
 
 // BlameDeadline bounds one blame: it is decoration, and a huge file must not hold a git process.
@@ -44,6 +47,82 @@ func ReadBlame(ctx context.Context, g *GitRunner, path string, text *string) ([]
 		return nil, err
 	}
 	return parseBlamePorcelain(out), nil
+}
+
+// MarkPushed sets Pushed on each committed line whose commit a remote-tracking branch holds. One
+// `rev-list <ids> --not --remotes` answers every line at once: what it lists is not on any remote,
+// and a pushed commit stops the walk at once, so the cost is the unpushed commits, not the history.
+// With no remote-tracking refs at all nothing is pushed and rev-list does not run.
+func MarkPushed(ctx context.Context, g *GitRunner, lines []GitBlameLine) error {
+	ids, seen := []string{}, map[string]bool{}
+	for _, l := range lines {
+		if !seen[l.ID] && len(l.ID) == 40 && strings.Trim(l.ID, "0") != "" && isHex(l.ID) {
+			seen[l.ID] = true
+			ids = append(ids, l.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, BlameDeadline)
+	defer cancel()
+	refs, err := g.Run(ctx, "for-each-ref", "--format=%(refname)", "refs/remotes")
+	if err != nil || len(bytes.TrimSpace(refs)) == 0 {
+		return err
+	}
+	out, err := g.Run(ctx, "rev-list", append(ids, "--not", "--remotes", "--")...)
+	if err != nil {
+		return err
+	}
+	unpushed := map[string]bool{}
+	for _, id := range strings.Fields(string(out)) {
+		unpushed[id] = true
+	}
+	for i := range lines {
+		lines[i].Pushed = seen[lines[i].ID] && !unpushed[lines[i].ID]
+	}
+	return nil
+}
+
+func isHex(s string) bool {
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			return false
+		}
+	}
+	return true
+}
+
+// ReadOrigin is the root's `origin` URL with any credentials (`user:token@`) taken out, or "" when
+// there is none: what the blame hover maps to the host's commit page. Read from config, so no
+// `remote` subcommand is allowed in.
+func ReadOrigin(ctx context.Context, g *GitRunner) string {
+	return StripRemoteCredentials(g.ConfigValue(ctx, "remote.origin.url"))
+}
+
+// StripRemoteCredentials drops the password of a URL remote's user info (`https://x:tok@host/…` →
+// `https://host/…`, `ssh://git:pw@host/…` → `ssh://git@host/…`); an https user name goes too, since
+// it is often the token itself. An scp-like remote has no password and is left as it is.
+func StripRemoteCredentials(raw string) string {
+	raw = strings.TrimSpace(raw)
+	scheme, rest, ok := strings.Cut(raw, "://")
+	if !ok {
+		return raw
+	}
+	end := strings.IndexAny(rest, "/?#")
+	if end < 0 {
+		end = len(rest)
+	}
+	at := strings.LastIndex(rest[:end], "@")
+	if at < 0 {
+		return raw
+	}
+	user := rest[:at]
+	if strings.EqualFold(scheme, "ssh") {
+		name, _, _ := strings.Cut(user, ":")
+		return scheme + "://" + name + "@" + rest[at+1:]
+	}
+	return scheme + "://" + rest[at+1:]
 }
 
 // parseBlamePorcelain reads `blame --porcelain`: a header `<id> <orig> <final> [<count>]` per line,

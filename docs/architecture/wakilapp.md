@@ -57,6 +57,11 @@ pane's terminal tick writes only that pane's cell and invalidates only views rea
 only that view depends on `paneView`'s call site in `Canvas.swift` (unchanged, untested).
 `PaneSnapshotCellTests` pins the write.
 
+**A link the operator clicks elsewhere in Wakil** goes through `WakilLinks.open` (`WakilLinks.swift`):
+`WindowModel.openLinkInWakil` (`browser_open`, a new tab in the place's browser pane), or the system
+browser while ⌥ is held, read from `NSEvent.modifierFlags` at the click's message. 3c-i's one caller
+is the blame hover's Open on GitHub (`EditorPane`'s `openLink`).
+
 **The browser pane does not own its pages.** `BrowserTabHost` (`BrowserTabHost.swift`), held by
 `WindowSession` for the life of the window, keeps one `WKWebView` per tab **keyed by place** —
 `(LayoutScope, pane, tab)` — so a tab switch, a resize or a place switch rebuilds the SwiftUI view and

@@ -460,7 +460,7 @@
       }));
     };
     // 3a-v-a: inline blame. Swift fetches and picks the line; the page draws one annotation per model,
-    // after the line's text, and its hover's two links post back which commit was asked about.
+    // after the line's text, and its hover's links post back which commit was asked about.
     const blames = {};  // key -> { ids, id }
     window.wakilSetBlame = function (key, line, text, hover, id) {
       const m = models[key]; if (!m) return;
@@ -475,7 +475,8 @@
       }
       blames[key] = { ids: m.deltaDecorations((blames[key] || {}).ids || [], list), id: id || '' };
     };
-    ['open', 'copy'].forEach(function (op) {
+    // 3c-i: `web`, the hover's Open on GitHub (GitLab, Bitbucket), shown only when Swift found the page.
+    ['open', 'copy', 'web'].forEach(function (op) {
       monaco.editor.registerCommand('wakil.blame.' + op, function () {
         const b = current && blames[current];
         if (b && b.id) post({ type: 'blame', key: current, op: op, id: b.id });

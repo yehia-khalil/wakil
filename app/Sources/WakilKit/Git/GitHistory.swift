@@ -30,14 +30,85 @@ public struct GitBlameInfo: Sendable, Equatable, Codable {
     /// them: the commit's two sides for Open Changes (3a-v-a walk, step 8).
     public var path: String?
     public var parentPath: String?
+    /// 3c-i: the commit is on a remote-tracking branch (`git_blame` asked with `pushed`).
+    public var pushed: Bool?
+    /// 3c-i: the commit's page on its host, set by `editor_blame` only for a pushed commit of a root
+    /// whose `origin` is on GitHub, GitLab or Bitbucket: the hover's Open on GitHub.
+    public var web: GitCommitWebPage?
 
     public init(line: Int, id: String, author: String, date: String, subject: String,
-                path: String? = nil, parentPath: String? = nil) {
+                path: String? = nil, parentPath: String? = nil, pushed: Bool? = nil, web: GitCommitWebPage? = nil) {
         (self.line, self.id, self.author, self.date, self.subject) = (line, id, author, date, subject)
-        (self.path, self.parentPath) = (path, parentPath)
+        (self.path, self.parentPath, self.pushed, self.web) = (path, parentPath, pushed, web)
     }
 
     public var uncommitted: Bool { id.allSatisfy { $0 == "0" } }
+}
+
+/// A commit's page on the web (3c-i): `host` names the site for the hover's link (`GitHub`).
+public struct GitCommitWebPage: Sendable, Equatable, Codable {
+    public var host: String
+    public var url: String
+
+    public init(host: String, url: String) { (self.host, self.url) = (host, url) }
+}
+
+/// The hosts a commit has a web page on (3c-i). The same three `GitProvider` names for accounts
+/// (`Panes/GitAccountSetup.swift`); kept here so `Git/` does not reach into `Panes/`.
+public enum GitWebHost: String, Sendable, CaseIterable {
+    case github = "github.com", gitlab = "gitlab.com", bitbucket = "bitbucket.org"
+
+    public var title: String {
+        switch self {
+        case .github: "GitHub"
+        case .gitlab: "GitLab"
+        case .bitbucket: "Bitbucket"
+        }
+    }
+}
+
+/// The repository a git remote names on GitHub, GitLab or Bitbucket: the host and its path
+/// (`owner/repo`; on GitLab a group's subgroups too). The remote may be scp-like
+/// (`git@github.com:owner/repo.git`), `ssh://` or `https://`; credentials, a port, a trailing `/`
+/// and `.git` are dropped. Nil for any other host or form (an ssh alias, a self-hosted GitLab,
+/// a file remote): no page is offered rather than a wrong one.
+public func gitRemoteWebRepository(_ remote: String) -> (host: GitWebHost, path: String)? {
+    let raw = remote.trimmingCharacters(in: .whitespacesAndNewlines)
+    var host: String, path: String
+    if let r = raw.range(of: "://") {
+        let scheme = raw[..<r.lowerBound].lowercased()
+        guard scheme == "https" || scheme == "ssh", let u = URLComponents(string: raw), let h = u.host else { return nil }
+        (host, path) = (h, u.path)
+    } else {
+        // scp-like: [user@]host:path, with no slash before the colon.
+        guard let colon = raw.firstIndex(of: ":"), !raw[..<colon].contains("/") else { return nil }
+        let left = raw[..<colon]
+        host = String(left.split(separator: "@", omittingEmptySubsequences: false).last ?? left)
+        path = String(raw[raw.index(after: colon)...])
+    }
+    guard let site = GitWebHost(rawValue: host.lowercased()) else { return nil }
+    var parts = path.split(separator: "/").map(String.init)
+    if let last = parts.last, last.lowercased().hasSuffix(".git") { parts[parts.count - 1] = String(last.dropLast(4)) }
+    guard parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return nil }
+    switch site {
+    case .gitlab: guard parts.count >= 2 else { return nil }
+    case .github, .bitbucket: guard parts.count == 2 else { return nil }
+    }
+    return (site, parts.joined(separator: "/"))
+}
+
+/// `commit`'s page on the host `remote` is on, or nil when it is not GitHub, GitLab or Bitbucket
+/// (`gitRemoteWebRepository`) or `commit` is not a commit id.
+public func gitCommitWebPage(remote: String, commit: String) -> GitCommitWebPage? {
+    guard let (site, path) = gitRemoteWebRepository(remote),
+          commit.count >= 7, commit.allSatisfy(\.isHexDigit), !commit.allSatisfy({ $0 == "0" }) else { return nil }
+    let id = commit.lowercased()
+    let url: String = switch site {
+    case .github: "https://\(site.rawValue)/\(path)/commit/\(id)"
+    case .gitlab: "https://\(site.rawValue)/\(path)/-/commit/\(id)"
+    case .bitbucket: "https://\(site.rawValue)/\(path)/commits/\(id)"
+    }
+    return GitCommitWebPage(host: site.title, url: url)
 }
 
 /// The commit a diff tab shows one file's change in: `path` is the file's name at that commit,
@@ -205,8 +276,9 @@ public struct EditorBlameCache: Sendable {
 }
 
 /// The blame annotation's hover, as Monaco markdown: the subject, who and when, the short id, and the
-/// two actions (the page's `wakil.blame.open` and `wakil.blame.copy` commands). Nil for a line not yet
-/// committed: there is no commit to show.
+/// actions (the page's `wakil.blame.open` and `wakil.blame.copy` commands, and 3c-i's
+/// `wakil.blame.web` when the commit has a page on its host). Nil for a line not yet committed: there
+/// is no commit to show.
 public func editorBlameHover(_ b: GitBlameInfo, now: Date = Date()) -> String? {
     guard !b.uncommitted else { return nil }
     func escaped(_ s: String) -> String {
@@ -216,4 +288,5 @@ public func editorBlameHover(_ b: GitBlameInfo, now: Date = Date()) -> String? {
     }
     return "**\(escaped(b.subject))**\n\n\(escaped(b.author)) · \(editorRelativeAge(b.date, now: now)) · `\(b.id.prefix(7))`"
         + "\n\n[Open Changes](command:wakil.blame.open) · [Copy Commit ID](command:wakil.blame.copy)"
+        + (b.web.map { " · [Open on \(escaped($0.host))](command:wakil.blame.web)" } ?? "")
 }
