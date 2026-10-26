@@ -113,7 +113,7 @@ Waiting on you), `ticket_record` (read one), `ticket_record_write`, `ticket_link
 |---|---|---|
 | Branch, commits, trailers, remote | local git, `wakilcore.GitRunner` | already Wakil's, free |
 | PRs, review threads, checks, requested reviewers, stack | **GitHub's GraphQL API with the organization's git account token** for the remote's host (`GitAccountFor`, Keychain `git-<host>-token`) | the account already exists per organization and per host (3a-iii); a Sign in carries scope `repo`, which reads PRs and replies to threads; `git_account_test` already calls GitHub's API with it |
-| — when that account is SSH | the organization's **GitHub connection's** token (`conn:<name>`), sent to the API directly | same organization, same Keychain prefix; no new sign-in |
+| — when that account is SSH | the **same git account's API access**: an SSH GitHub account gains an optional **API access** row (Sign in, or an access token) stored at its own `git-<host>-token`; git keeps pushing over SSH | one account, one credential path for all three methods; no connection secret is ever read |
 | — when neither exists | nothing; the partiality line above | — |
 | PM status, assignee, title | `wakilcore.JiraClient.GetIssue` with the org's Jira site and `jira:<org>` token, as `wakil-pm` does | no second Jira path; scoped to the org's PM project keys, not only the active project's |
 
@@ -361,9 +361,6 @@ at narrow widths.
 
 ### After the builder check (2026-10-26, my calls)
 
-- **The connection fallback reads a token-kind GitHub connection only.** A browser-signed
-  connection's token is not read for GraphQL; the view says "Sign in to GitHub with a token in
-  Settings → Organisation" and shows the branch's local state.
 - **A thread whose PR head is not in the local repo** is drawn at its raw line with "line may
   differ" — no fetch, no contents API; placement stays local git.
 - **"Waiting on" in the header** is derived from the PRs (requested reviewers, open threads
@@ -379,6 +376,11 @@ at narrow widths.
   own branch with no flag; piece 3 stacks on it and both merge as one.
 
 ## Decided by the operator (2026-10-26)
+
+- **No GitHub-connection fallback.** The view reads GitHub only through the organisation's git
+  account, and works with every method it has: Sign in, access token, or SSH (with the SSH
+  account's API access row). An SSH account without API access shows "Add API access to the
+  GitHub account in Settings → Organisation → Git" and the branch's local state.
 
 - **⌥↓/⌥↑ step threads only while focus is in a review box or the Ticket column**; in the text
   they stay Monaco's Move Line Down / Up.
