@@ -137,6 +137,23 @@ Jira, scoped to the active project's Jira project key (`cmd/wakil-pm/main.go`). 
 
 Tools: `my_issues`, `search_issues`, `get_issue`.
 
+### wakil-ticket
+
+The Ticket view's capability (`cmd/wakil-ticket/main.go` registers, `branch.go` assembles).
+**Window-owned** (`wakilOwnedClients`, pinned per place), never in `agentFacingServers`: the agent
+reaches it only through registry actions. Logic in `internal/wakilcore`: `ticketrecord.go` (the
+record and its log), `ticketlink.go` (keys, links, long-lived branches), `githubreview.go` (GitHub's
+GraphQL API with the organization's git account for the remote's host, never `gh`).
+
+Tools: `ticket_branch` (one root's branch: tickets with their sources and records, PRs with threads
+and checks, the stack one step each way, and each unread source whole in `partial`),
+`ticket_in_flight` (the organization's tickets in flight and Waiting on you, each with its state in
+words), `ticket_record`, `ticket_record_write`, `ticket_link`, `review_reply`, `review_resolve`.
+
+**The four writes refuse unless `WAKIL_IN_WINDOW` is exactly `1`** (`InWakilWindow`), as
+`wakil-http`'s `send` does. A read's GitHub and Jira calls share one 20 s budget; one source failing
+leaves the others shown.
+
 ### wakil-recall
 
 Cited search across every source bound to the active project (Jira only today)

@@ -145,10 +145,19 @@ const githubUnresolveMutation = `mutation($id: ID!) {
   unresolveReviewThread(input: {threadId: $id}) { thread { id isResolved } }
 }`
 
+// githubMyPRsQuery's authored PRs carry each thread's last comment and the last commit's checks
+// (one page of each): what Waiting on you needs, in the same search.
 const githubMyPRsQuery = `query($authored: String!, $requested: String!) {
-  authored: search(query: $authored, type: ISSUE, first: 50) { nodes { ...pr } }
+  authored: search(query: $authored, type: ISSUE, first: 50) { nodes { ...pr ...waiting } }
   requested: search(query: $requested, type: ISSUE, first: 50) { nodes { ...pr } }
-}` + githubPRFields
+}
+fragment waiting on PullRequest {
+  commits(last: 1) { nodes { commit { statusCheckRollup { id
+    contexts(first: 100) { pageInfo { hasNextPage endCursor } nodes { ...context } } } } } }
+  reviewThreads(first: 100) { pageInfo { hasNextPage endCursor } nodes {
+    id path line originalLine isOutdated isResolved resolvedBy { login }
+    comments(last: 1) { nodes { author { login } body createdAt } } } }
+}` + githubPRFields + githubContextFields
 
 type ghLogin struct {
 	Login string `json:"login"`
@@ -474,7 +483,11 @@ func (c *GitHubClient) SetThreadResolved(ctx context.Context, threadID string, r
 }
 
 // MyOpenPRs searches the open PRs the token's user wrote, and those waiting on their review,
-// in owners' repositories only. No owners, no search.
+// in owners' repositories only. No owners, no search. An authored PR's Threads hold only each
+// thread's last comment, and its Checks one page; neither is paged further.
+//
+// The owners go into one search as repeated `org:` qualifiers, which GitHub ORs. If that ever
+// stops holding, the fallback is one search per owner.
 func (c *GitHubClient) MyOpenPRs(ctx context.Context, owners []string) (authored, reviewRequested []PullRequest, err error) {
 	if len(owners) == 0 {
 		return nil, nil, nil
@@ -499,16 +512,28 @@ func (c *GitHubClient) MyOpenPRs(ctx context.Context, owners []string) (authored
 	if err != nil && !errors.As(err, &ge) {
 		return nil, nil, err
 	}
-	prs := func(nodes []ghPR) []PullRequest {
+	prs := func(nodes []ghPR, waiting bool) []PullRequest {
 		var out []PullRequest
 		for _, p := range nodes {
-			if p.Number != 0 {
-				out = append(out, p.pullRequest())
+			if p.Number == 0 {
+				continue
 			}
+			pr := p.pullRequest()
+			if waiting {
+				for _, t := range p.ReviewThreads.Nodes {
+					pr.Threads = append(pr.Threads, t.reviewThread())
+				}
+				if len(p.Commits.Nodes) > 0 && p.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
+					for _, n := range p.Commits.Nodes[0].Commit.StatusCheckRollup.Contexts.Nodes {
+						pr.Checks = append(pr.Checks, n.checkRun())
+					}
+				}
+			}
+			out = append(out, pr)
 		}
 		return out
 	}
-	return prs(data.Authored.Nodes), prs(data.Requested.Nodes), err
+	return prs(data.Authored.Nodes, true), prs(data.Requested.Nodes, false), err
 }
 
 var errGitHubRedirect = errors.New("GitHub response tried to redirect; refusing to follow")

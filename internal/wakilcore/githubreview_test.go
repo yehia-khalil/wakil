@@ -474,3 +474,33 @@ func TestBranchPRsReadsTheParentPRInTheSameQuery(t *testing.T) {
 		t.Errorf("a PR with no open parent has one: %+v", heads[1].Parent)
 	}
 }
+
+// Waiting on you needs, for each of the viewer's own PRs, who spoke last in each thread and
+// whether a check fails: the one search carries both, so no PR is read twice.
+func TestMyOpenPRsCarryLastCommentsAndChecks(t *testing.T) {
+	f := &fakeGraphQL{}
+	c := f.serve(t, func(r gqlRequest) (int, string) {
+		pr := prNode(212, "ini-142-login", "main", []any{threadNode("T_1", 88)}, false,
+			[]any{checkRun("unit", "COMPLETED", "FAILURE", "")}, false)
+		return 200, mustJSON(t, map[string]any{"data": map[string]any{
+			"authored":  map[string]any{"nodes": []any{pr}},
+			"requested": map[string]any{"nodes": []any{}},
+		}})
+	})
+	authored, _, err := c.MyOpenPRs(context.Background(), []string{"initech"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := f.requests[0].Query
+	for _, want := range []string{"reviewThreads(first: 100)", "comments(last: 1)", "statusCheckRollup", "contexts(first: 100)"} {
+		if !strings.Contains(q, want) {
+			t.Errorf("search lacks %q", want)
+		}
+	}
+	if len(authored) != 1 || len(authored[0].Threads) != 1 || authored[0].Threads[0].Comments[0].Author != "milton" {
+		t.Fatalf("authored = %+v", authored)
+	}
+	if len(authored[0].Checks) != 1 || authored[0].Checks[0].State != "failure" {
+		t.Errorf("checks = %+v", authored[0].Checks)
+	}
+}
