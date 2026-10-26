@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/connections-browser-signout-parity.jsonl",
+  "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
+  "provedAt": "2026-10-26T01:13:12.879055Z",
+  "checkBlob": "cc69f0e52453591dd8e86cbbdf87677d2a7d3c68"
+}

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/connections-check-cancel.jsonl",
+  "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
+  "provedAt": "2026-10-26T01:13:12.879055Z",
+  "checkBlob": "016c69ab68fcdb7a3e83315097e453c503f7bd81"
+}
