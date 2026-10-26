@@ -1,5 +1,7 @@
 {"dispatch":{"action":"ctx_connection_add","params":{"id":"e2e-fixture","kind":"custom","name":"portal","transport":"http","url":"http://127.0.0.1:9/mcp","signIn":"browser"}}}
 {"dispatch":{"action":"ctx_connection_secrets_set","params":{"id":"e2e-fixture","name":"portal","values":{"access":"e2e-fake-access","header:X-E2E-Tenant":"e2e-fake-tenant"}}}}
+{"dispatch":{"action":"ctx_connection_add","params":{"id":"e2e-fixture","kind":"custom","name":"portal-two","transport":"http","url":"http://127.0.0.1:9/mcp","signIn":"browser"}}}
+{"dispatch":{"action":"ctx_connection_secrets_set","params":{"id":"e2e-fixture","name":"portal-two","values":{"access":"e2e-fake-access-two"}}}}
 {"do":{"hotkey":"cmd+,"}}
 {"do":{"click":"settings.tree.organisation"}}
 {"do":{"click":"settings.org.connections.portal"}}
@@ -14,3 +16,10 @@
 {"expect":{"frame":"settings.org.connections.portal.signin","minWidth":1}}
 {"dispatch":{"action":"ctx_connection_signin_start","params":{"id":"e2e-fixture","name":"portal"},"refuses":"could not read portal's sign-in details"}}
 {"dispatch":{"action":"ctx_connection_signin_wait","params":{"id":"e2e-fixture","name":"portal"},"refuses":"no sign-in to portal is in progress"}}
+{"do":{"click":"settings.org.connections.portal.back"}}
+{"do":{"click":"settings.org.connections.portal-two"}}
+{"expect":{"frame":"settings.org.connections.portal-two.signout","minWidth":1}}
+{"expect":{"tree":"contains","text":"Signed in"}}
+{"dispatch":{"action":"ctx_connection_signout","params":{"id":"e2e-fixture","name":"portal-two"}}}
+{"expect":{"frame":"settings.org.connections.portal-two.signin","minWidth":1}}
+{"expect":{"tree":"absent","text":"Signed in"}}
