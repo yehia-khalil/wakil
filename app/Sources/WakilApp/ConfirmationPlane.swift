@@ -170,7 +170,8 @@ struct ConfirmationPlane: View {
         // plane takes it.
         .background(PlaneWindowReader { window in
             keyboardReturn.capture(in: window)
-            takeKeyboard()
+            // A turn later: this can run inside SwiftUI's update, where a focus change is dropped.
+            DispatchQueue.main.async { takeKeyboard() }
         })
         // One proposal straight after another keeps this view: the next one takes the keyboard too.
         .onChange(of: pending.id) { _, _ in takeKeyboard() }

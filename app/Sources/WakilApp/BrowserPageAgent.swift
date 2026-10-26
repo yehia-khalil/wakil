@@ -50,7 +50,7 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
             return (view.url?.absoluteString, view.isLoading)
         }
         let text = try await call(scope: scope, pane: pane, tab: tab, "globalThis.wakil.act(spec)",
-                                  ["spec": Self.spec(act)])
+                                  ["spec": Self.spec(act)], timeout: Self.actNoAnswerReason)
         let answer = try decode(ActAnswer.self, text)
         if answer.stale == true { throw BrowserPageDriverError.stale }
         if let reason = answer.failed {
@@ -131,6 +131,10 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
     static let callTimeout: TimeInterval = 10
     static let noAnswerReason = "the page did not answer within 10 s — try again, or read the page again "
         + "(browser_read_page)."
+    /// An act that timed out may still land (a page's own alert holds its script until the operator
+    /// answers it): the agent reads before it acts again, never simply retries.
+    static let actNoAnswerReason = "the page did not answer within 10 s — the act may still land; read the page "
+        + "(browser_read_page) before acting again."
 
     /// A continuation resumed by whichever answers first, the page or the timeout.
     @MainActor
@@ -147,7 +151,8 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
 
     /// Runs `expression` in the tab's page, in `wakil.agent`, with `arguments` as values (never source).
     private func call(scope: LayoutScope?, pane: String, tab: String, _ expression: String,
-                      _ arguments: [String: any Sendable]) async throws -> String {
+                      _ arguments: [String: any Sendable],
+                      timeout timeoutReason: String = BrowserPageAgent.noAnswerReason) async throws -> String {
         try await MainActor.run { _ = try self.liveView(scope: scope, pane: pane, tab: tab) }
         let body = BrowserAgentScript.body(expression)
         let result: Result<String, BrowserPageDriverError> = await withCheckedContinuation { continuation in
@@ -165,7 +170,7 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
                 }
                 Task { @MainActor in
                     try? await Task.sleep(for: .seconds(Self.callTimeout))
-                    once.answer(.failure(.failed(Self.noAnswerReason)))
+                    once.answer(.failure(.failed(timeoutReason)))
                 }
             }
         }

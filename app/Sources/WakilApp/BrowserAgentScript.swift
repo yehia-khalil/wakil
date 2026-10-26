@@ -174,6 +174,33 @@ enum BrowserAgentScript {
             return el && el.isConnected ? el : null;
           }
 
+          const SILENT = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'IFRAME', 'FRAME', 'OBJECT']);
+          const INLINE = new Set(['inline', 'inline-block', 'inline-flex', 'inline-grid', 'contents', 'ruby']);
+
+          // What the page shows as text, as innerText reads it in outline: the rendered text nodes in
+          // document order, a line break around each block and at each <br>, and no text from an
+          // element in `skip` (or anything under it).
+          function pageText(skip) {
+            const parts = [];
+            function walk(node, shown) {
+              for (const child of node.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) { if (shown) parts.push(child.data); continue; }
+                if (child.nodeType !== Node.ELEMENT_NODE || skip.has(child) || SILENT.has(child.tagName)) continue;
+                if (child.tagName === 'BR') { parts.push('\n'); continue; }
+                const style = getComputedStyle(child);
+                if (style.display === 'none') continue;
+                const block = !INLINE.has(style.display);
+                if (block) parts.push('\n');
+                // Computed visibility is inherited, and a child may show itself again.
+                walk(child, style.visibility !== 'hidden');
+                if (block) parts.push('\n');
+              }
+            }
+            if (document.body) walk(document.body, getComputedStyle(document.body).visibility !== 'hidden');
+            return parts.join('').split('\n').map(line => line.replace(/[ \t\u00a0]+/g, ' ').trim())
+              .join('\n').replace(/\n{3,}/g, '\n\n').trim();
+          }
+
           function read(firstRef) {
             // The store asks from the next ref it has not seen; a ref this document already gave out
             // would name two elements, so such a read is the page-changed refusal (it reads again).
@@ -191,16 +218,11 @@ enum BrowserAgentScript {
             });
             if (elements.length) issued = n - 1;
             refs = next;
-            // The operator's fields keep their text out of the page's text too: an input's value is
-            // never in it, but a contenteditable's or a textarea's own text is.
-            let text = document.body ? String(document.body.innerText) : '';
-            found.forEach((el, i) => {
-              if (wakilYours(elements[i]) === null) return;
-              for (const own of [el.innerText, el.textContent, el.value]) {
-                const words = String(own == null ? '' : own).trim();
-                if (words) text = text.split(words).join('');
-              }
-            });
+            // The operator's fields keep their text out of the page's text too. The text is built by
+            // walking the page and skipping those fields where they stand — never by removing their
+            // words from the whole text, which would tell their words by where they went missing.
+            const theirs = new Set(found.filter((el, i) => wakilYours(elements[i]) !== null));
+            const text = pageText(theirs);
             return {
               url: String(location.href), title: String(document.title), text,
               elements, framesSkipped: frames.count,

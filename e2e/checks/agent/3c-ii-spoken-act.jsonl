@@ -15,6 +15,9 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"Let the agent use 127.0.0.1:"}}
 {"expect":{"tree":"absent","text":"typed into \"Guest name\""}}
+{"do":{"click":"confirmation.allow"}}
+{"expect":{"tree":"contains","text":"Let the agent use 127.0.0.1:"}}
+{"expect":{"tree":"absent","text":"typed into"}}
 {"do":{"type":{"into":"confirmation.field","text":"confirm"}}}
 {"do":{"click":"confirmation.allow"}}
 {"expect":{"tree":"contains","text":"typed into \"Guest name\""}}
