@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,7 +19,9 @@ import (
 // for the remote's host, never `gh` and never a connection.
 type GitHubClient struct {
 	Endpoint, Token string
-	http            *http.Client
+	// http is built once, on first use: a branch read calls the client from two goroutines.
+	httpOnce sync.Once
+	http     *http.Client
 }
 
 // githubCallTimeout bounds every call: under the window's 20 s read timeout, so GitHub's own
@@ -624,13 +627,13 @@ func (c *GitHubClient) MyOpenPRs(ctx context.Context, owners []string) (authored
 var errGitHubRedirect = errors.New("GitHub response tried to redirect; refusing to follow")
 
 func (c *GitHubClient) client() *http.Client {
-	if c.http == nil {
+	c.httpOnce.Do(func() {
 		c.http = &http.Client{
 			Timeout: githubCallTimeout,
 			// A redirect could carry the token to another host; GitHub's API never needs one.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return errGitHubRedirect },
 		}
-	}
+	})
 	return c.http
 }
 
