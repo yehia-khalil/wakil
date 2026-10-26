@@ -210,3 +210,15 @@ The view, per the spec's *What the operator gets* 1–3 and the mockups' wording
 ---
 
 After Task 8: the whole-branch review, then **Cover** (the e2e auditor, `docs/agents/e2e.md`) and **Walk** (`docs/wakil/phase-connections-acceptance.md`, written in Cover).
+
+### Task 9: A connection change reaches the open conversations (spec amendment 2026-10-26)
+
+**Files:** find them — the harness launch (`app/Sources/WakilKit/Harness/ClaudeCodeCLIHarness.swift`, its fork-resume), the window's conversation/session model (`WindowModel`, `WindowSession.swift`'s `harnessFactory`), `AgentConnectionsBox`, the approval socket (`app/Sources/WakilKit/Gate/ConnectionApproval.swift`), the Settings connection writes (`WindowModel+Connections.swift`).
+
+**Interfaces:**
+- Consumes: Task 6's per-launch MCP config and `AgentConnectionsBox`; Task 5's decision rule; Task 7's writes.
+- Produces: a per-conversation "connections changed since launch" mark set when an org's connection list or a server field changes (not an allow tick); at the next send, a conversation so marked and idle ends its agent and fork-resumes with the current config, then sends the message; the approval socket refuses a call whose connection is gone (journal outcome `connection-removed`).
+
+- [ ] **Step 1:** Tests: `addingAConnectionRestartsAnIdleConversationAtItsNextMessage` (the relaunch's MCP config names it; the transcript is kept); `removingAConnectionRefusesItsCallsAtOnce`; `aConversationMidTurnRestartsOnlyAfterTheTurn`; `anAllowTickRestartsNothing`; `anotherOrganisationsChangeRestartsNothing`; `noChangeNoRestart`.
+- [ ] **Step 2:** → FAIL. **Step 3:** implement. **Step 4:** → PASS; `make app-test`, `go test ./...`.
+- [ ] **Step 5: Commit** `connections: a connection added or removed reaches the open conversations at their next message`.
