@@ -67,10 +67,12 @@ Every choice the spec left open, decided here. Each is marked **Planner's call**
     **and again just before typing** (`describe`), and the act carries that descriptor so the script refuses
     if the field's type, autocomplete, name or id changed in between. It covers `browser_type` and
     `browser_select`. Clicking such a field (to focus it) is allowed.
-13. **The site question is typed**, like every plane (Invariant 7, as the spec's Voice paragraph says): the
-    neutral-edged plane `Let the agent use <site>?` keeps the `type confirm` field, and **Allow for this
-    conversation** is enabled only after `confirm`. **Don't Allow** is Esc. A production act uses today's
-    red plane with `PRODUCTION` in its corner whatever the active environment.
+13. **The site question is clicked; typed only when spoken** (operator, 2026-10-26). The neutral-edged
+    plane `Let the agent use <site>?` has **Allow for this conversation** enabled at once, with no field,
+    when the request came from typing. When it came by voice, the plane keeps the `type confirm` field and
+    Allow is enabled only after `confirm` (Invariant 7). **Don't Allow** is Esc. A production act uses
+    today's red plane with `PRODUCTION` in its corner, typed `confirm` as today, whatever the active
+    environment.
 14. **Reading back is `browser_read_page`.** An act's reply carries the tab's URL, title, loading state and
     whether it navigated, never page text, so page text reaches the agent only through the one action that
     marks it untrusted.
@@ -581,8 +583,9 @@ Every choice the spec left open, decided here. Each is marked **Planner's call**
   and never selects the tab (Rule 6).
 - Identifiers: `browser.siteTag` (the chip), `browser.tab.<id>.tag` (the dot), `browser.agentAllowed` (the
   mark), `browser.agentAllowed.revoke` (its ×). The plane: `confirmation.field`, `confirmation.cancel`,
-  `confirmation.run`, and for the site variant `confirmation.deny` and `confirmation.allow` (enabled only when
-  the field reads `confirm`). After an answer the keyboard returns to what held it before the plane (Rule 6).
+  `confirmation.run`, and for the site variant `confirmation.deny` and `confirmation.allow` (enabled at once
+  for a typed request, which shows no field and gives Allow the keyboard; for a spoken one, enabled only when
+  `confirmation.field` reads `confirm` — Ruling 13). After an answer the keyboard returns to what held it before the plane (Rule 6).
 
 - [ ] **Step 1:** `make build && make app-bundle` compile clean.
 - [ ] **Step 2: Write the checks** (run in Task 12):
@@ -598,7 +601,7 @@ Every choice the spec left open, decided here. Each is marked **Planner's call**
     `expect.frame browser.siteTag inside browser.pane` and `clear browser.address`.
   - `3c-ii-act-allowed.jsonl`: open form, dispatch read; composer `fill the guest name` → tree contains
     `Let the agent use 127.0.0.1:` and `It can click, type and submit there until this conversation ends.`;
-    `expect.focus confirmation.field`; type `confirm`; click `confirmation.allow` → tree contains `typed the
+    tree absent `confirmation.field`; click `confirmation.allow` → tree contains `typed the
     guest name` and `typed into "Guest name"`, `agent allowed`; `expect.focus window.composer`; `choose two
     nights` → `chose two nights`, tree absent `Let the agent use`; `type the card number` → `that field is
     yours to fill`; `confirm the booking` → pane title `Booked: Ada Lovelace, 2 nights`; click
