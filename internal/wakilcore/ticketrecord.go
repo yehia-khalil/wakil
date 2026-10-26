@@ -114,7 +114,9 @@ func ReadTicketRecord(org, key string) (TicketRecord, error) {
 func readTicketFile(path, key string) (TicketRecord, error) {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return TicketRecord{Key: key}, nil
+		r := TicketRecord{Key: key}
+		r.normalize()
+		return r, nil
 	}
 	if err != nil {
 		return TicketRecord{}, err
@@ -124,7 +126,24 @@ func readTicketFile(path, key string) (TicketRecord, error) {
 		return TicketRecord{}, fmt.Errorf("ticket record %s is not readable: %w", path, err)
 	}
 	r.Key = key
+	r.normalize()
 	return r, nil
+}
+
+// normalize makes every list an empty slice rather than nil, so it is written as [] and a
+// Swift [T] decode never meets null.
+func (r *TicketRecord) normalize() {
+	if r.Branches == nil {
+		r.Branches = []TicketBranchRef{}
+	}
+	if r.PRs == nil {
+		r.PRs = []TicketPRRef{}
+	}
+	for _, l := range []*[]TicketLine{&r.Decisions, &r.NotDone, &r.WaitingOn, &r.Verified, &r.Rulings} {
+		if *l == nil {
+			*l = []TicketLine{}
+		}
+	}
 }
 
 // withTicketLock runs fn holding the ticket's file lock.
@@ -161,6 +180,7 @@ func appendTicketLog(logPath string, entry map[string]any) error {
 }
 
 func writeTicketRecord(path string, r TicketRecord) error {
+	r.normalize()
 	b, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err

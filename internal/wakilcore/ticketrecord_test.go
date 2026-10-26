@@ -230,3 +230,33 @@ func TestBadKeyRefused(t *testing.T) {
 		t.Fatal("path key accepted")
 	}
 }
+
+func TestEmptyListsAreWrittenAsArrays(t *testing.T) {
+	localOrg(t)
+	addDecision(t, "use sessions")
+	b, _ := os.ReadFile(filepath.Join(ticketDir(t), "INI-142.json"))
+	if strings.Contains(string(b), "null") {
+		t.Fatalf("record has null: %s", b)
+	}
+	for _, f := range []string{`"branches": []`, `"prs": []`, `"notDone": []`, `"waitingOn": []`, `"verified": []`, `"rulings": []`} {
+		if !strings.Contains(string(b), f) {
+			t.Fatalf("missing %s in %s", f, b)
+		}
+	}
+}
+
+func TestNullListsOnDiskReadAsEmptySlices(t *testing.T) {
+	localOrg(t)
+	os.MkdirAll(ticketDir(t), 0o755)
+	os.WriteFile(filepath.Join(ticketDir(t), "INI-142.json"), []byte(`{"key":"INI-142","branches":null,"prs":null,"decisions":null,"notDone":null,"waitingOn":null,"verified":null,"rulings":null}`), 0o644)
+	r, err := ReadTicketRecord("initech", "INI-142")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Branches == nil || r.PRs == nil || r.Decisions == nil || r.NotDone == nil || r.WaitingOn == nil || r.Verified == nil || r.Rulings == nil {
+		t.Fatalf("nil list: %+v", r)
+	}
+	if e, _ := ReadTicketRecord("initech", "INI-143"); e.Decisions == nil {
+		t.Fatal("absent record has nil lists")
+	}
+}
