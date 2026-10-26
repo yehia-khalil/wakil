@@ -359,6 +359,25 @@ at narrow widths.
 - **my call:** outdated threads are listed, not drawn; a locally edited line draws at the nearest
   surviving line.
 
+### After the builder check (2026-10-26, my calls)
+
+- **The connection fallback reads a token-kind GitHub connection only.** A browser-signed
+  connection's token is not read for GraphQL; the view says "Sign in to GitHub with a token in
+  Settings → Organisation" and shows the branch's local state.
+- **A thread whose PR head is not in the local repo** is drawn at its raw line with "line may
+  differ" — no fetch, no contents API; placement stays local git.
+- **"Waiting on" in the header** is derived from the PRs (requested reviewers, open threads
+  waiting on the operator) and lists the record's own `waitingOn` lines after them; an exact
+  duplicate is shown once. Nothing is precedence-ranked.
+- **`by`** comes from the dispatch's existing `ActionOrigin` (`ui` → operator, `agent` → agent,
+  `debug` → Wakil); a spoken turn is the agent origin with the conversation's spoken flag. If the
+  registry does not pass origin to `wakil-ticket`, adding it is the plan's first task.
+- **Forks are out of scope.** `ticket_branch` reads the branch's upstream remote's repository
+  (else `origin`); a PR whose head lives in a fork is not matched. The `links.json` key is
+  `<host>/<owner>/<repo>:<branch>`.
+- **Pieces 2 and 3 merge together** (the umbrella's call). Piece 2 is built and reviewed on its
+  own branch with no flag; piece 3 stacks on it and both merge as one.
+
 ## Open questions
 
 1. **⌥↓ is Monaco's Move Line Down.** The umbrella's box says "⌥↓ next". This design takes ⌥↓/⌥↑
