@@ -131,6 +131,10 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   field's padlock says under the pointer: the host and TLS for https, plain HTTP for http (Not
   Secure except to a loopback host, beside `isSecure`, so the glyph and its words agree), and the
   certificate's reason when it was not trusted; nothing for a blank page.
+- `BrowserSiteConsent.swift` — `BrowserSite` (3c-ii): which site a page is (`key`: host and any non-default
+  port, `www.` kept; `label` for display), `BrowserSites` (the org's production sites and the active
+  environment's tags, `www.` forgiven; unread means every site is production) and `browserActPrice`:
+  production always gates, elsewhere only an agent on a site not allowed for the conversation does.
 - `BrowserFocusRetry.swift` — `browserRetryFocus`: a page focus that waits for its web view to
   join the window asks again before every try whether the pane may still take the keyboard and the
   tab is still the active one, and gives up quietly when not (Rule 6).
