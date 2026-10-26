@@ -33,6 +33,11 @@ struct BrowserPane: View {
     /// Whether the pane has been closed (not merely taken off the canvas by a switch), asked a
     /// moment after it leaves the screen: a closed pane's web views are released.
     let isClosed: @MainActor () -> Bool
+    /// 3c-ii: the organisation's sites (the tags), the sites the on-screen conversation let the agent
+    /// use (the mark), and the mark's ×.
+    let sites: BrowserSites
+    let agentAllowed: Set<String>
+    let revokeSite: (String) -> Void
 
     @FocusState private var addressFocused: Bool
     @FocusState private var findFocused: Bool
@@ -59,7 +64,10 @@ struct BrowserPane: View {
             // the page edge to edge to the pane's border (the canvas pads no browser pane). The
             // find bar and the downloads take a row of their own, each across a hairline.
             tabStrip
-            BrowserHeader(tab: active, dispatch: send) { addressField }
+            BrowserHeader(tab: active, dispatch: send) {
+                addressField
+                siteMarks
+            }
             PaneHairline()
             if let find = snapshot.find {
                 findBar(find)
@@ -131,12 +139,26 @@ struct BrowserPane: View {
                 BrowserTabList(
                     snapshot: snapshot, mode: listMode,
                     favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
-                    dispatch: send)
+                    sites: sites, dispatch: send)
                 BrowserTabCount(tabs: snapshot.tabs, listMode: listMode, dispatch: send)
                     .padding(.leading, BrowserPaneStyle.gap)
             } else {
                 BrowserTabCount(tabs: snapshot.tabs, listMode: listMode, dispatch: send)
                 Spacer(minLength: 0)
+            }
+        }
+    }
+
+    // MARK: The site's tag and the agent's allowance (3c-ii)
+
+    /// At the address row's right, outside the field: the active tab's tag (ruling 4) and, while the
+    /// on-screen conversation may act on its site, `agent allowed` with its ×. Fixed size, so the
+    /// address field is what gives way in a narrow pane.
+    @ViewBuilder private var siteMarks: some View {
+        if let tab = active {
+            if let tag = sites.tag(tab.url) { BrowserSiteTagChip(tag: tag) }
+            if let site = BrowserSite.key(tab.url), agentAllowed.contains(site) {
+                BrowserAgentAllowedMark(site: site) { revokeSite(site) }
             }
         }
     }

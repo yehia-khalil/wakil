@@ -278,6 +278,9 @@ browser.download.<…>	one download's row (.contain, 3c-i). Read, not pressed �
 browser.download.<…>.name	a Text (3c-i): the download's file name. Read, not pressed — 3c-i-download.jsonl reads it as downloads[0].filename (big.bin).
 browser.download.<…>.status	a Text (3c-i): the size line or the ended state. Read, not pressed — 3c-i-download.jsonl asserts "of 10.5 MB" and "Cancelled".
 browser.page	the tab's web view (3c-i, Decision 48). Clicks and typing inside a page are the operator's and walk-only: the harness presses Wakil's own controls by identifier, and a page's links and fields carry none (runbook rows 1, 3 and 5 click in pages). Its focus is read, not pressed — 3c-i-keys-reach-wakil.jsonl asserts expect.focus browser.page after Return, ⌘K, ⌘P, ⌘1 and Escape, and a key typed there reaches the page. 3c-i-narrow.jsonl holds it edge to edge at 700 × 400 (at least 696 wide and 320 tall).
+browser.siteTag	a Text (3c-ii, ruling 4): the active tab's tag, `In <environment>` or `Production`. Read, not pressed — 3c-ii-tags.jsonl asserts both words as the tab changes, and holds the chip inside browser.pane and clear of browser.address at 1000 × 888 with two panes.
+browser.tab.<…>.tag	a tagged tab's 6 pt dot in the strip (3c-ii, ruling 4), in the tag's colour and with no words of its own. Read, not pressed — 3c-ii-tags.jsonl holds t1's and t2's inside browser.tabs; its colour is walk-only (runbook row 1).
+browser.agentAllowed	the `agent allowed` mark's container (.contain, 3c-ii): its words and its ×. Read, not pressed — 3c-ii-act-allowed.jsonl asserts the words after Allow and their absence after the × (browser.agentAllowed.revoke, pressed there), and holds the mark inside browser.pane.
 settings.browser.clear.question	a Text (3c-i, Rule 1): `Delete <org>'s browsing data? …`. Read, not pressed — 3c-i-settings.jsonl asserts it before Keep it and before Delete.
 settings.browser.clear.done	a Text (3c-i): `Deleted <org>'s browsing data.`. Read, not pressed — 3c-i-settings.jsonl asserts it after Delete.
 settings.browser.startPage.refusal	a Text (3c-i, Rule 8): the start page's refusal. Read, not pressed — 3c-i-settings.jsonl asserts `start page "not a url" is not an http or https URL — …`.
@@ -362,3 +365,28 @@ browser.prompt.allow	the camera / microphone prompt's Allow (3c-i): drawn only w
 browser.prompt.deny	the camera / microphone prompt's Don't Allow (3c-i): browser.prompt.allow's case. Walk-only: runbook row 8.
 browser.prompt.open	Open on a page's app link (3c-i, final review I4): pressing it hands the link to the app macOS names for it (Mail, Zoom) — the act's whole effect leaves the window (settings.org.git.account.add.openKeys' case). The question and its Cancel are 3c-i-app-link.jsonl's; Open is walk-only (runbook §3).
 browser_print	its dispatch and its parity (3c-i, final review I6): its whole effect is the system's print panel, a sheet of AppKit's controls that no step kind drives (a page's file chooser's case). The ⌘K row Print page is 3c-i-app-link.jsonl's; printing is runbook row 9.
+#
+# ---- 3c-ii: the agent's reach into the page ----------------------------------
+#
+# What no check can show, each with its reason and where the walk covers it.
+# None names a Wakil surface an entry could excuse (an entry that excuses
+# nothing fails the gate), so each is recorded here as a comment:
+#   - what a real site's page does with Wakil's page script: framework-controlled
+#     fields (React and the like, which see the act only through real input
+#     events), open shadow roots and cross-origin frames. The fixture pages are
+#     plain HTML with none of these. Runbook rows 2-3.
+#   - the 1 s idle wait: no arm types into the page while a scripted act waits
+#     on it — a do step and the stub's call run one after the other, never
+#     together — so the wait, and the refusal after 10 s of continuous input,
+#     cannot be raised. The wait's arithmetic is WakilKit's browserIdleWait.
+#     Runbook row 9.
+#   - colour: the site question's neutral edge (against the production plane's
+#     red) and the amber untrusted row in the thread. No step kind reads a
+#     colour; the words of both are 3c-ii-act-allowed.jsonl's and
+#     3c-ii-production.jsonl's. Runbook rows 1 and 2.
+#   - a spoken act: the site question asked of a request made by voice keeps
+#     the type confirm field and enables Allow only on the word (Invariant 7).
+#     The stub's turns are typed, and a voice turn needs a microphone and speech
+#     engine no launch has; the rule is WakilKit's siteQuestionWantsTyping and
+#     allowPendingSite (aSpokenTurnsSiteQuestionWantsTyping,
+#     onlyATypedRequestsSiteQuestionIsAllowedByAClick). Runbook row 6.

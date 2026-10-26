@@ -333,7 +333,7 @@ private struct ReachBackend: ToolCaller {
 @MainActor
 private func reachWindow(
     _ sessions: Sessions, trees: CallCount = CallCount(), context: (any ToolCaller)? = nil,
-    gate: ReachGate? = nil
+    gate: ReachGate? = nil, confirmations: ConfirmationBroker = ConfirmationBroker()
 ) async -> (WindowModel, PaneStore) {
     let dir = testScratchRoot.appendingPathComponent("browser-reach-\(UUID().uuidString)")
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -350,7 +350,7 @@ private func reachWindow(
         context: context.map { ContextStore(client: $0) },
         harnessFactory: { place, _, socketPath in sessions.harness(place, socketPath) },
         resumes: ResumeBroker(), rootPath: "/tmp", providerId: "test-provider",
-        lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForTesting() },
+        lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForTesting() }, confirmations: confirmations,
         agentSocketFactory: sessions.socketFactory, environment: "staging")
     model.setOrganizationForTesting(reachOrg)
     model.seedForTesting(providerId: "test-provider", rootPath: "/tmp", thoughts: 0,
@@ -510,6 +510,47 @@ private func reachWindow(
         #expect(model.siteQuestionWantsTyping(ask(agent.id)), "spoken: typed confirm")
         #expect(model.siteQuestionWantsTyping(ask(nil)), "unknown asks for typing")
         #expect(model.siteQuestionWantsTyping(ask("no-such-conversation")), "unknown asks for typing")
+        await model.shutdown()
+    }
+
+    /// Ruling 13: a typed request's site question is answered by a click on Allow; a spoken one's only
+    /// by typing confirm (Invariant 7), and a production act or any other change never by a click.
+    @Test func onlyATypedRequestsSiteQuestionIsAllowedByAClick() async throws {
+        let broker = ConfirmationBroker(timeout: .seconds(60))
+        let (model, _) = await reachWindow(Sessions(), confirmations: broker)
+        func park(_ ask: PendingAsk, _ conversation: String) async -> (PendingMutation, Task<ConfirmationDecision, Never>) {
+            let proposal = PendingMutation(
+                action: "browser_click", params: .object([:]), database: nil, statement: "click \"Confirm\"",
+                affectsEveryRow: false, origin: .agent, place: reachPlace, conversation: conversation, ask: ask)
+            let parked = Task { await broker.request(proposal) }
+            for _ in 0..<2000 where model.pending?.id != proposal.id { await Task.yield() }
+            return (proposal, parked)
+        }
+
+        // A click that did not answer leaves the proposal to the Cancel after it.
+        func clickThenCancel(_ ask: PendingAsk, _ conversation: String) async -> ConfirmationDecision {
+            let (proposal, parked) = await park(ask, conversation)
+            #expect(model.pending?.id == proposal.id)
+            await model.allowPendingSite()
+            await model.cancelPending()
+            return await parked.value
+        }
+
+        #expect(await model.send("typed", via: .typed))
+        let agent = try #require(model.currentAgent)
+        #expect(await clickThenCancel(.productionSite("api.initech.com"), agent.id) == .cancelled,
+                "a production act is never answered by a click")
+        #expect(await clickThenCancel(.change, agent.id) == .cancelled, "nor is any other change")
+        #expect(await clickThenCancel(.site("staging.initech.dev"), agent.id) == .approved,
+                "typed: Allow answers the site question")
+
+        agent.turnInFlight = false
+        #expect(await model.send("spoken", via: .voice))
+        #expect(await clickThenCancel(.site("staging.initech.dev"), agent.id) == .cancelled,
+                "spoken: a click does not answer it")
+        let (_, spoken) = await park(.site("staging.initech.dev"), agent.id)
+        await model.confirmPending(typed: "confirm")
+        #expect(await spoken.value == .approved, "spoken: typed confirm does")
         await model.shutdown()
     }
 

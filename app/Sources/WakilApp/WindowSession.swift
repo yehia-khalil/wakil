@@ -63,6 +63,9 @@ final class WindowSession {
         // can: WebKit refuses while a web view still uses it, so those are released first (their
         // tabs rebuild when shown). The host exists once the model does; set below.
         let browserTabsBox = BrowserTabsBox()
+        // 3c-ii. The agent reads and acts in a tab's page through the window's web views, which exist
+        // once the model does: the driver is made here and given the host below, as the box is.
+        let browserPageAgent = BrowserPageAgent()
         let wiring = await WakilWiring.build(
             journalDirectory: journalDirectory, sessionId: sessionId,
             // `browser_clear_data`: the store's web views go and none is built on it (beginClear),
@@ -80,7 +83,8 @@ final class WindowSession {
                     throw error
                 }
                 await MainActor.run { browserTabsBox.host?.endClear(onStore: id) }
-            })
+            },
+            browserPageDriver: browserPageAgent)
         notes.append(contentsOf: wiring.diagnostics)
 
         // Each agent session has a socket of its own (background agents 3 of 4, Task 4), at
@@ -446,6 +450,7 @@ final class WindowSession {
         model.browserHome = URL(fileURLWithPath: home)
         let browserTabs = BrowserTabHost(model: model)
         browserTabsBox.host = browserTabs
+        browserPageAgent.host = browserTabs
         // A place's new name carries its pages with it (final review I1), as `terminals.rehome`.
         model.onBrowserRehome = { [weak browserTabs] from, to in browserTabs?.rehome(from: from, to: to) }
         screen.model = model

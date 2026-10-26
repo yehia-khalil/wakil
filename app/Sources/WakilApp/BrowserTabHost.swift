@@ -122,6 +122,15 @@ final class BrowserTabHost {
         views[Key(scope: scope, pane: pane, tab: tab)]
     }
 
+    /// 3c-ii: the tab's live web view for the agent's page driver (`BrowserPageAgent`) — never one
+    /// made for it (that would load a page unasked), never a pop-up's placeholder, and its recency
+    /// untouched. A place drawn a moment under its old name (`rehome`) answers under the new one.
+    func liveView(scope: LayoutScope, pane: String, tab: String) -> BrowserWebView? {
+        let key = Key(scope: renamed[scope] ?? scope, pane: pane, tab: tab)
+        guard !pendingPopups.contains(key) else { return nil }
+        return views[key]
+    }
+
     /// The tab's web view, made with `make` when it has none; it becomes the most recently used.
     func webView(scope: LayoutScope, pane: String, tab: String, make: () -> BrowserWebView) -> BrowserWebView {
         let key = Key(scope: scope, pane: pane, tab: tab)
@@ -195,6 +204,9 @@ final class BrowserTabHost {
             configuration.websiteDataStore = .nonPersistent()
         }
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        // 3c-ii: the agent's page script, in its own world, as each main-frame document ends. A
+        // pop-up's configuration is WebKit's copy of its opener's, so it carries the script too.
+        configuration.userContentController.addUserScript(BrowserAgentScript.userScript())
         // `isInspectable` only lets Safari's Develop menu attach; the page's own right-click
         // **Inspect Element** needs WebKit's developer extras, which have no public setter.
         configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")

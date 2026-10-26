@@ -32,7 +32,22 @@ final class BrowserWebView: WKWebView {
         return super.performKeyEquivalent(with: event)
     }
 
+    /// When the operator last pressed a key, clicked or scrolled in this page (3c-ii): the agent's
+    /// acts wait until it is a quiet second old (`browserIdleWait`), so none lands under their hands.
+    private(set) var lastOperatorInput: Date?
+
+    override func mouseDown(with event: NSEvent) {
+        lastOperatorInput = Date()
+        super.mouseDown(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        lastOperatorInput = Date()
+        super.scrollWheel(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
+        lastOperatorInput = Date()
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if event.keyCode == 53, mods.isEmpty, isLoading, stopOnEscape?() == true { return }
         super.keyDown(with: event)

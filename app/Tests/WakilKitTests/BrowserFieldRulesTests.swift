@@ -1,4 +1,5 @@
 import Foundation
+import JavaScriptCore
 import Testing
 @testable import WakilKit
 
@@ -10,8 +11,8 @@ private func field(type: String = "", autocomplete: String = "", name: String = 
                    name: name, id: id, placeholder: placeholder)
 }
 
-@Test func theNeverListOverEachFieldShape() {
-    let table: [(String, BrowserElement, BrowserFieldReason?)] = [
+/// Every field shape the never-list is pinned over: Swift's rule and the page script's must agree on each.
+private let neverListTable: [(String, BrowserElement, BrowserFieldReason?)] = [
         ("type=password", field(type: "password"), .password),
         ("current-password under type=text", field(type: "text", autocomplete: "section-a current-password"), .password),
         ("new-password", field(autocomplete: "new-password"), .password),
@@ -47,8 +48,10 @@ private func field(type: String = "", autocomplete: String = "", name: String = 
         ("SMS code", field(label: "SMS code"), .oneTimeCode),
         ("Login code", field(label: "Login code"), .oneTimeCode),
         ("Verification token", field(label: "Verification token"), .oneTimeCode),
-    ]
-    for (what, e, want) in table {
+]
+
+@Test func theNeverListOverEachFieldShape() {
+    for (what, e, want) in neverListTable {
         #expect(BrowserFieldRules.yours(e) == want, "\(what)")
     }
 }
@@ -58,4 +61,20 @@ private func field(type: String = "", autocomplete: String = "", name: String = 
     #expect(BrowserFieldReason.card.rawValue == "card number")
     #expect(BrowserFieldReason.cardCode.rawValue == "card security code")
     #expect(BrowserFieldReason.oneTimeCode.rawValue == "one-time code")
+}
+
+/// The page script re-checks the never-list on the live element at the act (3c-ii), in JavaScript: the
+/// same rules, generated from Swift's, give the same answer over every row.
+@Test func thePageScriptsNeverListAgreesWithSwiftsOverEachFieldShape() throws {
+    let context = try #require(JSContext())
+    context.evaluateScript(BrowserFieldRules.scriptSource)
+    #expect(context.exception == nil, "\(String(describing: context.exception))")
+    let yours = try #require(context.objectForKeyedSubscript("wakilYours"))
+    for (what, e, want) in neverListTable {
+        let fields: [String: String] = ["type": e.type, "autocomplete": e.autocomplete, "name": e.name,
+                                        "id": e.id, "label": e.label, "placeholder": e.placeholder]
+        let answer = yours.call(withArguments: [fields])
+        let got = answer.flatMap { $0.isNull || $0.isUndefined ? nil : $0.toString() }
+        #expect(got == want?.rawValue, "\(what)")
+    }
 }

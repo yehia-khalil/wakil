@@ -4588,6 +4588,15 @@ public final class WindowModel {
         await confirmations.approve(id: parked.id)
     }
 
+    /// 3c-ii (ruling 13): what the site question's **Allow for this conversation** calls when the
+    /// request was typed — a click, no word. Only a site question (never a production act or any
+    /// other change) and only one `siteQuestionWantsTyping` lets go; a spoken request's waits for
+    /// `confirmPending(typed: "confirm")` (Invariant 7).
+    public func allowPendingSite() async {
+        guard let parked = pending, case .site = parked.ask, !siteQuestionWantsTyping(parked) else { return }
+        await confirmations.approve(id: parked.id)
+    }
+
     /// What Cancel and ESC call. Cancelling is always the safe default.
     public func cancelPending() async {
         guard let parked = pending else { return }

@@ -46,6 +46,11 @@ var Surfaces = []string{
 	// the tab list `browser.tabs` and its rows `browser.tab.<id>`, the page `browser.page`.
 	// Added with the pane, so its first checks can name the address field and the page.
 	"browser",
+	// The confirmation plane's own namespace (3c-ii, ruling C11c), added in the change that first
+	// names its controls: `confirmation.field`, `.cancel`, `.run`, and the site question's `.deny`
+	// and `.allow`. The plane is the window's answer to "may this run", drawn over every pane, so it
+	// is neither `pane` nor any pane kind's.
+	"confirmation",
 	// The data surface's own namespace, added in the change that first names
 	// one of its controls — the row grip, `db.row.<i>.grip` (2c-iv, #308). A
 	// grid row is the db pane's vocabulary, not chrome every kind shares, so
