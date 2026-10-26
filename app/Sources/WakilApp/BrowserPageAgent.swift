@@ -27,6 +27,7 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
     private static let pollInterval: Duration = .milliseconds(50)
 
     func read(scope: LayoutScope?, pane: String, tab: String, firstRef: Int) async throws -> BrowserPageRead {
+        try await waitForPage(scope: scope, pane: pane, tab: tab)
         let text = try await call(scope: scope, pane: pane, tab: tab, "globalThis.wakil.read(firstRef)",
                                   ["firstRef": firstRef])
         let answer = try decode(ReadAnswer.self, text)
@@ -92,6 +93,24 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
             if wait <= 0 { return }
             if Date().timeIntervalSince(start) + wait > Self.busyCeiling { throw BrowserPageDriverError.operatorBusy }
             try await Task.sleep(for: .milliseconds(Int((wait * 1000).rounded(.up))))
+        }
+    }
+
+    /// Before a read: up to 10 s (`settleFinish`, an act's wait) for the page the tab is loading to
+    /// arrive. A web view just made — a restored tab drawn when a new conversation's first turn
+    /// replaces its Landing with the canvas — has no page of its own yet (`url` nil, its document
+    /// `about:blank`) while the tab already reports the address it is loading; a read then would hand
+    /// the agent the empty document under no site. After the wait it reads what the tab shows, and
+    /// the reply says whether it is still loading.
+    private func waitForPage(scope: LayoutScope?, pane: String, tab: String) async throws {
+        let finishBy = Date().addingTimeInterval(Self.settleFinish)
+        while Date() < finishBy {
+            let arrived = try await MainActor.run {
+                let view = try self.liveView(scope: scope, pane: pane, tab: tab)
+                return view.url != nil && !view.isLoading
+            }
+            if arrived { return }
+            try await Task.sleep(for: Self.pollInterval)
         }
     }
 

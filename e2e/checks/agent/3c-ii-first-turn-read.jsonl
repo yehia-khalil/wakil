@@ -15,4 +15,5 @@
 {"expect":{"tree":"contains","text":"read the release notes"}}
 {"expect":{"tree":"contains","text":"1 page · untrusted text from 127.0.0.1:"}}
 {"expect":{"tree":"absent","text":"has not loaded"}}
+{"expect":{"tree":"absent","text":"untrusted text from this page"}}
 {"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
