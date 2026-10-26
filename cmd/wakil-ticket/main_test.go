@@ -521,6 +521,28 @@ func TestTicketBranchNoTicketLooked(t *testing.T) {
 	}
 }
 
+// A ticket picked from In flight reads its own branch, named, while the root stays on another:
+// the branch is read as if it were current, and nothing is checked out.
+func TestTicketBranchReadsANamedBranch(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	git(t, f.repo, "checkout", "-q", "main")
+	f.s.branch = branchReply([]any{prNode(212, "INI-142 keep", "ini-142-login", "main", nil, nil)}, nil)
+	b := call(t, connect(t), "ticket_branch", map[string]any{"root": f.repo, "branch": "ini-142-login"})
+	var got TicketBranch
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Branch != "ini-142-login" || got.LongLived || len(got.Tickets) != 1 || got.Tickets[0].Key != "INI-142" {
+		t.Errorf("named branch = %+v", got)
+	}
+	if len(got.PRs) != 1 || got.PRs[0].Number != 212 {
+		t.Errorf("prs = %+v", got.PRs)
+	}
+	if out, _ := exec.Command("git", "-C", f.repo, "branch", "--show-current").Output(); strings.TrimSpace(string(out)) != "main" {
+		t.Errorf("the root switched to %q", out)
+	}
+}
+
 func TestTicketBranchLongLived(t *testing.T) {
 	f := newFixture(t, "git@github.com:initech/api.git", "main", "")
 	f.s.branch = branchReply(nil, []any{prNode(212, "INI-142 keep", "ini-142-login", "main", nil, nil)})

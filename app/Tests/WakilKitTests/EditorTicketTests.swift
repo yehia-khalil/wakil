@@ -277,7 +277,11 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
     @Test func linkNoteKeepsAnUnfoundKey() {
         #expect(ticketLinkNote(.object(["key": .string("INI-999"), "linked": .bool(true), "notFound": .bool(true),
                                         "message": .string("INI-999 was not found in Jira; the link is kept. 404")]))
-                == "INI-999 was not found in Jira; kept as typed.")
+                == "INI-999 was not found in Jira; kept as typed. 404")
+        // Go's error is appended whole (Rule 8), even when Go words its line another way.
+        #expect(ticketLinkNote(.object(["key": .string("INI-999"), "notFound": .bool(true),
+                                        "message": .string("Jira said: Issue does not exist or you do not have permission to see it.")]))
+                == "INI-999 was not found in Jira; kept as typed. Jira said: Issue does not exist or you do not have permission to see it.")
         #expect(ticketLinkNote(.object(["key": .string("INI-142"), "linked": .bool(true), "notFound": .bool(false),
                                         "message": .string("Jira was not asked whether it knows INI-142; the link is kept. timeout")]))
                 == "Jira was not asked whether it knows INI-142; the link is kept. timeout")

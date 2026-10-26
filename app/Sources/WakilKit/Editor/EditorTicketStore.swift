@@ -39,8 +39,13 @@ public actor EditorTicketStore {
     private var drafts: [String: String] = [:]
     private var sendingThreads: Set<String> = []
     private var inFlightRead: InFlightState?
-    /// Records of tickets shown from In flight (`ticket_show`), by key.
+    /// Records of tickets shown from In flight (`ticket_show`), by key, and why one could not be read.
     private var records: [String: TicketRecordState] = [:]
+    private var recordFailures: [String: String] = [:]
+    /// The branch of a ticket picked from In flight, read by its row's root and branch, by key; and
+    /// why one could not be read. The root's own read and current branch are untouched (Rule 6).
+    private var shownReads: [String: TicketBranchState] = [:]
+    private var shownFailures: [String: String] = [:]
     private var generation = 0
     private var onChange: (@Sendable () async -> Void)?
 
@@ -121,7 +126,7 @@ public actor EditorTicketStore {
                 // and an agent's would route this read through its place's client into the window's
                 // cache (Invariant 4). The window's client reads the window's organisation.
                 let state = try await ActionRegistry.$dispatchCaller.withValue(nil) {
-                    try await Self.readBranch(ticket, root: key.root, limit: limit)
+                    try await Self.readBranch(ticket, root: key.root, branch: nil, limit: limit)
                 }
                 self.store(state, key: key, id: id, generation: gen)
                 return state
@@ -156,14 +161,17 @@ public actor EditorTicketStore {
         await changed()
     }
 
-    /// `ticket_branch` for one root, cancelled past `limit`.
-    private static func readBranch(_ ticket: (any ToolCaller)?, root: String, limit: Duration) async throws -> TicketBranchState {
+    /// `ticket_branch` for one root — its current branch, or `branch` — cancelled past `limit`.
+    private static func readBranch(_ ticket: (any ToolCaller)?, root: String, branch: String?,
+                                   limit: Duration) async throws -> TicketBranchState {
         guard let ticket else {
             throw TicketReadError(description: StandardActionError.missingClient(action: "ticket_branch", role: "ticket").description)
         }
         let content = try await withThrowingTaskGroup(of: [String: JSONValue]?.self) { group in
             group.addTask {
-                try await ticketCall(ticket, "ticket_branch", ["root": .string(root)], timeout: limit.seconds + 5)
+                var args: [String: JSONValue] = ["root": .string(root)]
+                if let branch { args["branch"] = .string(branch) }
+                return try await ticketCall(ticket, "ticket_branch", args, timeout: limit.seconds + 5)
             }
             group.addTask {
                 try await Task.sleep(for: limit)
@@ -207,16 +215,50 @@ public actor EditorTicketStore {
             throw TicketReadError(description: StandardActionError.missingClient(action: "ticket_record", role: "ticket").description)
         }
         let gen = generation
-        let content = try await ActionRegistry.$dispatchCaller.withValue(nil) {
-            try await ticketCall(ticket, "ticket_record", ["key": .string(key)], timeout: MCPClient.readReplyTimeout)
+        do {
+            let content = try await ActionRegistry.$dispatchCaller.withValue(nil) {
+                try await ticketCall(ticket, "ticket_record", ["key": .string(key)], timeout: MCPClient.readReplyTimeout)
+            }
+            let record = try ticketDecode(TicketRecordState.self, content, tool: "ticket_record")
+            if gen == generation {
+                records[key] = record
+                recordFailures[key] = nil
+                await changed()
+            }
+            return record
+        } catch {
+            // Said whole where the record would be (Rule 8), never drawn as an empty record.
+            if gen == generation {
+                recordFailures[key] = String(describing: error)
+                await changed()
+            }
+            throw error
         }
-        let record = try ticketDecode(TicketRecordState.self, content, tool: "ticket_record")
-        if gen == generation {
-            records[key] = record
-            await changed()
-        }
-        return record
     }
+
+    /// Reads the branch of a ticket picked from In flight by its row's root and branch — the
+    /// window's own read, as `start`'s is, past 20 s stopped — kept by the ticket's key. A failure
+    /// is kept, whole, for the view.
+    public func readShown(key: String, root: String, branch: String) async {
+        let (ticket, limit, gen) = (self.ticket, self.readLimit, generation)
+        do {
+            let state = try await ActionRegistry.$dispatchCaller.withValue(nil) {
+                try await Self.readBranch(ticket, root: root, branch: branch, limit: limit)
+            }
+            guard gen == generation else { return }
+            shownReads[key] = state
+            shownFailures[key] = nil
+        } catch {
+            guard gen == generation else { return }
+            shownFailures[key] = String(describing: error)
+        }
+        await changed()
+    }
+
+    /// The branches read for tickets picked from In flight, by key, and why one was not.
+    public func shownBranches() -> [String: TicketBranchState] { shownReads }
+    public func shownBranchFailures() -> [String: String] { shownFailures }
+    public func shownRecordFailures() -> [String: String] { recordFailures }
 
     /// The records read for tickets shown from In flight, by key.
     public func shownRecords() -> [String: TicketRecordState] { records }
@@ -264,8 +306,8 @@ public actor EditorTicketStore {
 
     /// The thread by its id, in any cached read.
     public func thread(_ id: String) -> ReviewThreadState? {
-        for entry in cache.values {
-            for pr in entry.state.prs { if let t = pr.threads.first(where: { $0.id == id }) { return t } }
+        for state in cache.values.map(\.state) + shownReads.values {
+            for pr in state.prs { if let t = pr.threads.first(where: { $0.id == id }) { return t } }
         }
         return nil
     }
@@ -303,6 +345,9 @@ public actor EditorTicketStore {
         sendingThreads = []
         inFlightRead = nil
         records = [:]
+        recordFailures = [:]
+        shownReads = [:]
+        shownFailures = [:]
     }
 }
 

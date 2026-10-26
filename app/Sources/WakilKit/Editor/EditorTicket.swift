@@ -480,10 +480,19 @@ public func ticketLineCaption(_ l: TicketLineState, now: Date = Date()) -> Strin
 }
 
 /// What `ticket_link` answered, as the line under **Link a ticket…**: a key Jira cannot find is
-/// kept and says so (Rule 7); any other message whole; nothing for a link Jira knows.
+/// kept and says so (Rule 7), with Jira's error whole (Rule 8); any other message whole; nothing for
+/// a link Jira knows.
 public func ticketLinkNote(_ reply: JSONValue) -> String? {
     guard case .object(let o) = reply else { return nil }
-    if o["notFound"] == .bool(true), case .string(let key)? = o["key"] { return "\(key) was not found in Jira; kept as typed." }
+    if o["notFound"] == .bool(true), case .string(let key)? = o["key"] {
+        // Go's error, whole (Rule 8), without Go's own words for what this line already says.
+        var detail = ""
+        if case .string(let m)? = o["message"] {
+            let goLine = "\(key) was not found in Jira; the link is kept."
+            detail = (m.hasPrefix(goLine) ? String(m.dropFirst(goLine.count)) : m).trimmingCharacters(in: .whitespaces)
+        }
+        return "\(key) was not found in Jira; kept as typed." + (detail.isEmpty ? "" : " " + detail)
+    }
     if case .string(let m)? = o["message"], !m.isEmpty { return m }
     return nil
 }
@@ -510,11 +519,19 @@ public struct EditorTicketViewState: Sendable, Equatable {
     public var failures: [String: String]
     public var inFlight: InFlightState?
     public var records: [String: TicketRecordState]
+    /// Why a shown ticket's record could not be read, whole, by key.
+    public var recordFailures: [String: String]
+    /// The branch of a ticket picked from In flight, by key, and why one could not be read.
+    public var shownBranches: [String: TicketBranchState]
+    public var shownBranchFailures: [String: String]
 
     public init(roots: [String] = [], branches: [String: TicketBranchState] = [:], reading: Set<String> = [],
-                failures: [String: String] = [:], inFlight: InFlightState? = nil, records: [String: TicketRecordState] = [:]) {
+                failures: [String: String] = [:], inFlight: InFlightState? = nil, records: [String: TicketRecordState] = [:],
+                recordFailures: [String: String] = [:], shownBranches: [String: TicketBranchState] = [:],
+                shownBranchFailures: [String: String] = [:]) {
         self.roots = roots; self.branches = branches; self.reading = reading; self.failures = failures
-        self.inFlight = inFlight; self.records = records
+        self.inFlight = inFlight; self.records = records; self.recordFailures = recordFailures
+        self.shownBranches = shownBranches; self.shownBranchFailures = shownBranchFailures
     }
     public static let empty = EditorTicketViewState()
 

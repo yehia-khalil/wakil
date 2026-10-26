@@ -196,6 +196,56 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         #expect(v.reading.isEmpty)
     }
 
+    /// Fix round 1: a ticket picked from In flight shows the full ticket view — its own branch is
+    /// read by the row's root and branch through the window's client, the root's own read and
+    /// current branch untouched (Rule 6) — and its threads open like the branch's own.
+    @Test func aPickFromInFlightReadsItsBranch() async throws {
+        let f = try await ticketFixture()
+        _ = try await f.store.read(root: "/p/api")
+        await f.ticket.set("ticket_in_flight", .object([
+            "waitingOnYou": .array([]), "partial": .array([]),
+            "inFlight": .array([.object(["key": .string("INI-140"), "title": .string("Deploy"), "status": .string("To Do"),
+                                         "state": .string("#212 · open"), "root": .string("/p/api"),
+                                         "branch": .string("ini-140-deploy"), "pr": .integer(212)])]),
+        ]))
+        _ = try await f.store.inFlight()
+        await f.ticket.set("ticket_record", .object(["key": .string("INI-140")]))
+        let before = await f.ticket.count("ticket_branch")
+        try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("INI-140")], origin: .ui, confirmation: nil)
+        #expect(await f.ticket.count("ticket_branch") == before + 1)
+        #expect(await f.ticket.args("ticket_branch") == ["root": .string("/p/api"), "branch": .string("ini-140-deploy")])
+        var v = await f.editor.panes.editorTicketView()
+        for _ in 0..<1_000 where v.shownBranches["INI-140"] == nil {
+            try await Task.sleep(for: .milliseconds(1))
+            v = await f.editor.panes.editorTicketView()
+        }
+        #expect(v.shownBranches["INI-140"]?.prs.first?.number == 212)
+        // The root's own read is the one it was.
+        #expect(await f.store.lastRead(root: "/p/api") != nil)
+        #expect(v.branches["/p/api"] == (await f.store.branch(root: "/p/api")))
+        #expect(await f.store.thread("T2") != nil)
+
+        // A ticket the branch itself carries (the several pick) reads no other branch.
+        let after = await f.ticket.count("ticket_branch")
+        try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("INI-142")], origin: .ui, confirmation: nil)
+        #expect(await f.ticket.count("ticket_branch") == after)
+    }
+
+    /// Fix round 1: a shown ticket whose record cannot be read says so whole (Rule 8), never an
+    /// empty record.
+    @Test func aFailedRecordReadIsShownWhole() async throws {
+        let f = try await ticketFixture()
+        await f.ticket.fail("ticket_record", "The record could not be read: permission denied")
+        try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("INI-140")], origin: .ui, confirmation: nil)
+        var v = await f.editor.panes.editorTicketView()
+        for _ in 0..<1_000 where v.recordFailures["INI-140"] == nil {
+            try await Task.sleep(for: .milliseconds(1))
+            v = await f.editor.panes.editorTicketView()
+        }
+        #expect(v.recordFailures["INI-140"] == "The record could not be read: permission denied")
+        #expect(v.records["INI-140"] == nil)
+    }
+
     @Test func reviewOpenLeavesTheColumnOnTicket() async throws {
         let f = try await ticketFixture()
         await f.editor.files.put("/p/api/src/auth/token.go", (1...50).map { "line \($0)" }.joined(separator: "\n"))

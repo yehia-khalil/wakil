@@ -214,21 +214,39 @@ struct EditorTicketView: View {
         }
     }
 
-    /// A ticket picked from In flight (or among several): its header, Next and record, with **Back to
-    /// this branch**. The branch never switches.
+    /// A ticket picked from In flight, Waiting on you or among several: the full ticket view —
+    /// header, Next, its pull requests with checks and threads, the record — with **Back to this
+    /// branch**. A ticket this branch carries shows this branch's PRs; one from In flight, its own
+    /// branch's, read by its row's root and branch. The branch never switches (Rule 6).
     @ViewBuilder
     private func shownTicket(_ key: String) -> some View {
-        let ref = branch?.tickets.first { $0.key == key }
+        let carried = branch?.tickets.contains { $0.key == key } ?? false
+        let own: TicketBranchState? = carried ? branch : state.shownBranches[key]
+        let ref = own?.tickets.first { $0.key == key }
         let row = state.inFlightRow(key)
-        let record = state.records[key] ?? ref?.record ?? TicketRecordState(key: key)
+        let record = state.records[key] ?? ref?.record
         Button("← Back to this branch") { Task { await dispatch("ticket_show", ["key": .null]) } }
             .buttonStyle(.plain).foregroundStyle(EditorPaneStyle.violet)
             .accessibilityIdentifier("editor.ticket.back")
-        header(key: key, title: ref?.title ?? row?.title ?? record.seen.title,
-               status: ref?.status ?? row?.status ?? record.seen.status,
-               waiting: ticketWaitingOn(TicketBranchState(root: ""), record: record), linked: false)
-        nextLine(key: key, text: record.next?.text ?? "", labelled: false)
-        self.record(record)
+        header(key: key, title: ref?.title ?? row?.title ?? record?.seen.title ?? "",
+               status: ref?.status ?? row?.status ?? record?.seen.status ?? "",
+               waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record), linked: false)
+        if let record {
+            nextLine(key: key, text: record.next?.text ?? "", labelled: false)
+        }
+        if let own {
+            pullRequests(own)
+        } else if let failure = state.shownBranchFailures[key] {
+            whole(failure, id: "editor.ticket.shownFailure")
+        } else if let row, !row.branch.isEmpty {
+            Text("Reading \(row.branch)…").dimmed().accessibilityIdentifier("editor.ticket.shownReading")
+        }
+        if let record {
+            self.record(record)
+        } else if let failure = state.recordFailures[key] {
+            // A record that could not be read says so, whole (Rule 8) — never drawn as an empty one.
+            whole(failure, id: "editor.ticket.recordFailure")
+        }
     }
 
     // MARK: - The header and Next
@@ -250,10 +268,14 @@ struct EditorTicketView: View {
     }
 
     private func unlinkButton(_ b: TicketBranchState) -> some View {
-        // Unlink asks nothing (Rule 7): it returns the branch to inference.
-        Button("Unlink") { link(b, key: "") }
-            .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.violet)
-            .accessibilityIdentifier("editor.ticket.unlink")
+        VStack(alignment: .leading, spacing: 2) {
+            // Unlink asks nothing (Rule 7): it returns the branch to inference.
+            Button("Unlink") { link(b, key: "") }
+                .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.violet)
+                .accessibilityIdentifier("editor.ticket.unlink")
+            // Its refusal, whole, under it (Rule 8).
+            if let linkNote { whole(linkNote, id: "editor.ticket.unlinkNote") }
+        }
     }
 
     @ViewBuilder

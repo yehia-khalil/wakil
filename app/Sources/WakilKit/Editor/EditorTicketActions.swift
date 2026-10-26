@@ -90,7 +90,10 @@ func registerTicketActions(
         for root in byRoot.keys { if let b = await store.branch(root: root) { branches[root] = b } }
         let view = EditorTicketViewState(roots: rs, branches: branches, reading: await store.readingRoots(),
                                          failures: await store.allFailures(), inFlight: await store.lastInFlight(),
-                                         records: await store.shownRecords())
+                                         records: await store.shownRecords(),
+                                         recordFailures: await store.shownRecordFailures(),
+                                         shownBranches: await store.shownBranches(),
+                                         shownBranchFailures: await store.shownBranchFailures())
         await panes.setEditorTicketMirror(
             EditorTicketMirror(roots: rs, byRoot: byRoot, drafts: drafts.keys.sorted()),
             reviews: EditorReviewsState.Reads(byRoot: reviews, drafts: drafts, sending: await store.allSending()),
@@ -265,9 +268,21 @@ func registerTicketActions(
                 c.view = .ticket
                 c.shown = true
             }
-            // The shown ticket's record, for its header and lists; a failed read leaves the In flight
-            // row's key, title and status shown.
-            if let key { _ = try? await store.readRecord(key: key) }
+            // The shown ticket's record, for its header and lists, and — for a ticket the branch does not
+            // carry — its own branch, read by its In flight row's root and branch, for its pull
+            // requests and threads. Nothing is checked out (Rule 6); a failed read is kept whole for
+            // the view (Rule 8), so the show itself does not fail.
+            if let key {
+                let carried = await followed(pane).asyncFlatMap { await store.branch(root: $0) }?.tickets
+                    .contains { $0.key == key } ?? false
+                let s = await store.lastInFlight()
+                let row = ((s?.waitingOnYou ?? []) + (s?.inFlight ?? [])).first { $0.key == key }
+                async let record: Void = { _ = try? await store.readRecord(key: key) }()
+                if !carried, let row, !row.root.isEmpty, !row.branch.isEmpty {
+                    await store.readShown(key: key, root: row.root, branch: row.branch)
+                }
+                await record
+            }
             return await editor.reply(pane)
         }))
 

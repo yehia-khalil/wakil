@@ -23,6 +23,11 @@ type rootArg struct {
 	Root string `json:"root" jsonschema:"a root of one of the organization's projects"`
 }
 
+type branchReadArg struct {
+	Root   string `json:"root" jsonschema:"a root of one of the organization's projects"`
+	Branch string `json:"branch,omitempty" jsonschema:"a branch to read instead of the root's current one (a ticket picked from In flight); nothing is checked out"`
+}
+
 type keyArg struct {
 	Key string `json:"key" jsonschema:"a ticket key, e.g. INI-142"`
 }
@@ -117,13 +122,13 @@ func assertWindow(tool string) error {
 func newServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "wakil-ticket", Version: "0.1.0"}, nil)
 
-	mcp.AddTool(s, &mcp.Tool{Name: "ticket_branch", Description: "Read-only. One root's branch: its tickets (key, title, PM status, where each was found, the ticket record), its pull requests with review threads and checks, the PRs based on it, the stack one step each way, and every source that could not be read, whole. A detached HEAD reads nothing remote. Writes the read into each ticket's record (seen, branch, PRs)."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, a rootArg) (*mcp.CallToolResult, TicketBranch, error) {
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_branch", Description: "Read-only. One root's branch (its current one, or the branch named): its tickets (key, title, PM status, where each was found, the ticket record), its pull requests with review threads and checks, the PRs based on it, the stack one step each way, and every source that could not be read, whole. A detached HEAD reads nothing remote. Writes the read into each ticket's record (seen, branch, PRs)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a branchReadArg) (*mcp.CallToolResult, TicketBranch, error) {
 			org, err := wakilcore.CurrentOrg()
 			if err != nil {
 				return toolErr(err), TicketBranch{}, nil
 			}
-			out, err := readTicketBranch(ctx, org, a.Root, time.Now())
+			out, err := readTicketBranch(ctx, org, a.Root, a.Branch, time.Now())
 			if err != nil {
 				return toolErr(err), TicketBranch{}, nil
 			}

@@ -187,6 +187,12 @@ type rootRepo struct {
 // openRoot reads the root's branch and its remote: the branch's upstream remote, else origin
 // (forks are out). A root that is not one of the organization's is an error.
 func openRoot(ctx context.Context, org, root string) (*rootRepo, error) {
+	return openRootOn(ctx, org, root, "")
+}
+
+// openRootOn is openRoot reading `branch` as if it were the current one (a ticket picked from In
+// flight); "" is the root's current branch. Nothing is checked out.
+func openRootOn(ctx context.Context, org, root, branch string) (*rootRepo, error) {
 	g, err := wakilcore.NewGitRunner(root, orgRoots(org))
 	if err != nil {
 		return nil, err
@@ -196,6 +202,9 @@ func openRoot(ctx context.Context, org, root string) (*rootRepo, error) {
 		return nil, err
 	}
 	r := &rootRepo{g: g, Root: g.Root, Branch: b.Current, Detached: b.Detached, Local: b.Local, Remote: "origin"}
+	if branch = strings.TrimSpace(branch); branch != "" {
+		r.Branch, r.Detached = branch, ""
+	}
 	if r.Branch != "" {
 		if out, err := g.Run(ctx, "for-each-ref", "--format=%(upstream:remotename)", "refs/heads/"+r.Branch); err == nil {
 			if name := strings.TrimSpace(string(out)); name != "" {
@@ -393,10 +402,10 @@ func sortNotes(n []SourceNote) {
 
 // readTicketBranch is ticket_branch: local git first, then GitHub and Jira concurrently under one
 // 20 s budget (a ticket found only in the PR's text is read from Jira once the PR is in).
-func readTicketBranch(ctx context.Context, org, root string, now time.Time) (TicketBranch, error) {
+func readTicketBranch(ctx context.Context, org, root, branch string, now time.Time) (TicketBranch, error) {
 	ctx, cancel := context.WithTimeout(ctx, readBudget)
 	defer cancel()
-	r, err := openRoot(ctx, org, root)
+	r, err := openRootOn(ctx, org, root, branch)
 	if err != nil {
 		return TicketBranch{}, err
 	}
