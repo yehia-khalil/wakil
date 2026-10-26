@@ -164,6 +164,7 @@ struct ThoughtThread: View {
 
     private func colour(for row: ThoughtRow) -> Color {
         if row.isError { return Color(red: 0.910, green: 0.361, blue: 0.361) }   // #e85c5c
+        if row.isUntrustedNotice { return Color(red: 0.910, green: 0.710, blue: 0.361) }   // amber #e8b55c: the site's text
         if row.id == rows.last?.id { return Color(red: 0.910, green: 0.925, blue: 0.965) }
         if row.label == "you" { return Color(red: 0.910, green: 0.925, blue: 0.965).opacity(0.70) }
         return Color(red: 0.545, green: 0.878, blue: 0.784).opacity(0.45)        // #8be0c8
