@@ -1824,3 +1824,16 @@ so whether it can edit the switches or reach the socket), and `ActionRegistry.di
 operator-only action — `ctx_connection_allow_set`, `ctx_connection_update`, `ctx_config_tree_for` among
 them — when the agent asks. The socket can only ask and never approve; the tick protects against a
 tool being used unasked.
+
+Two routes reach those operator-only actions without being the agent, and both rest on the same
+CLI permission layer, since each needs a shell command or a file edit by the operator's user:
+
+- **The e2e harness socket** (`<session id>-e2e.sock`, `MCP/HarnessChannel.swift`) runs any
+  operator-only action with origin `.debug`. Only an app whose bundle id is `dev.wakil.e2e` opens
+  it, at mode 0600 beside each agent socket. Its path is derived from the agent socket's, so it
+  is not a secret. What protects it is the bundle-id gate and the file mode. That gate is only as
+  strong as the bundle's `Info.plist`, which the user can edit: Wakil.app has no bundle seal, so
+  setting that id makes a real Wakil open the socket on its next launch.
+- **`Wakil --dispatch <file> [--environment <name>]`** (`main.swift`) runs a script of actions
+  with origin `.debug` in every build, production included, against the real `$HOME`. It is the
+  older of the two and needs no relaunch.

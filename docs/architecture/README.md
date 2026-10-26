@@ -78,7 +78,12 @@ flowchart LR
   third socket beside each agent socket, `<dir>/<session id>-e2e.sock`, mode 0600
   (`startHarnessSocket`, `MCP/HarnessChannel.swift`). It serves only the operator-only actions,
   dispatched with origin `.debug`, so the harness can drive them; the agent socket keeps refusing
-  them. No agent's `--mcp-config` or environment names it. A production Wakil never opens it.
+  them. Its path is derived from the agent socket's, so it is not secret, and no agent's
+  `--mcp-config` or environment lists it. What protects it is the bundle-id gate and mode 0600.
+  A shipped Wakil (`dev.wakil.app`) never opens it, unless its `Info.plist` is edited. The threat
+  model is in `docs/wakil/decisions.md`, "a connection's tool, allowed by the operator". If the socket
+  fails to start, the status says so, and the agent socket's `initialize` carries the reason
+  (`wakil/harnessFailure`).
 - **`ctx_config_tree_for`** (`StandardActions.swift`) reads a named organization's config tree for a
   launch's connections. It is operator-only, never the agent's; `ctx_config_tree` stays the active
   organization's.
