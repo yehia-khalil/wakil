@@ -31,6 +31,8 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"scrolled to the back link"}}
 {"expect":{"tree":"contains","text":"scrolled to \"Back to page A\""}}
+{"dispatch":{"action":"browser_scroll","params":{"pane":"browser-1","ref":"e6"}}}
+{"expect":{"focus":"window.composer"}}
 {"do":{"focus":"window.composer"}}
 {"do":{"keys":"press return in the guest name"}}
 {"do":{"press":"Return"}}
