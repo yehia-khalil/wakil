@@ -12,7 +12,7 @@ public enum BrowserFieldReason: String, Sendable {
 /// Judged from the element as read, and again on the live element at the act.
 public enum BrowserFieldRules {
     public static func yours(_ e: BrowserElement) -> BrowserFieldReason? {
-        if e.type.lowercased() == "password" { return .password }
+        if e.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "password" { return .password }
 
         for token in e.autocomplete.lowercased().split(whereSeparator: \.isWhitespace) {
             switch token {
@@ -24,8 +24,10 @@ public enum BrowserFieldRules {
             }
         }
 
+        // camelCase first (otpCode -> otp Code), then lowercase, then - and _ as spaces.
         let texts = [e.name, e.id, e.label, e.placeholder].map {
-            $0.lowercased().replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
+            $0.replacingOccurrences(of: "([a-z0-9])([A-Z])", with: "$1 $2", options: .regularExpression)
+                .lowercased().replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
         }
         for (reason, pattern) in textRules {
             if texts.contains(where: { $0.range(of: pattern, options: .regularExpression) != nil }) { return reason }
@@ -37,6 +39,7 @@ public enum BrowserFieldRules {
         (.password, #"password|passwd|passcode|\bpwd\b"#),
         (.card, #"card ?number|card ?no\b|credit ?card|debit ?card|\bcc ?num(ber)?\b|\bccn\b"#),
         (.cardCode, #"\bcvv2?\b|\bcvc2?\b|\bcsc\b|security ?code|card ?verification"#),
-        (.oneTimeCode, #"\botp\b|one ?time|\b2fa\b|\bmfa\b|\btotp\b|verification ?code|auth(entication)? ?code"#),
+        (.oneTimeCode, #"\botp\b|one ?time|\b2fa\b|\bmfa\b|\btotp\b|verification ?code|auth(entication)? ?code"#
+            + #"|\bpin\b|authenticator|sms ?code|(login|access|sign ?in) ?code|verification ?(token|pin)"#),
     ]
 }
