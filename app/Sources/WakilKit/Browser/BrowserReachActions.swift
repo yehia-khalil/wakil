@@ -299,9 +299,7 @@ func browserReachActions(
                 let scope = ScopeRouting.home
                 guard let driver else { throw BrowserReachError.noDriver(action: name) }
                 let pane = try await paneOf(params, name)
-                let target = try browserActTarget(await panes.browserSnapshot(paneId: pane), params: params,
-                                                  action: name).get()
-                let ref = optionalString(params, "ref") ?? ""
+                let snapshot = await panes.browserSnapshot(paneId: pane)
 
                 // The operator's approval is for what the plane asked (final review I1): the same pane
                 // and tab, the same site, at the same price. A call that names no tab follows the active
@@ -309,15 +307,23 @@ func browserReachActions(
                 // costs a typed confirm, which a site question's Allow never gave. Either is refused as
                 // a page that changed, before anything is read, acted or allowed. A confirmed call that
                 // carries no question has nothing to hold the approval to, and fails closed the same way.
+                // Judged on the tab and its address alone, before the element: on a tab the plane never
+                // asked about, "read the page first" or "use browser_click" would send the agent after a
+                // ref instead of telling it the Allow no longer applies.
                 if confirmed, ActionRegistry.dispatchAsked == nil { throw BrowserReachError.stale(action: name) }
                 if let asked = ActionRegistry.dispatchAsked {
+                    let wanted = optionalString(params, "tab")
+                    guard let i = snapshot.tabIndex(wanted),
+                          asked.target == ProposalTarget(pane: pane, tab: snapshot.tabs[i].id),
+                          let site = BrowserSite.key(snapshot.tabs[i].url)
+                    else { throw BrowserReachError.stale(action: name) }
                     let sites = await panes.browserSitesInScope()
-                    let now: PendingAsk = sites.isProduction(target.site)
-                        ? .productionSite(target.site) : .site(target.site)
-                    guard asked.target == ProposalTarget(pane: pane, tab: target.tab), asked.ask == now else {
-                        throw BrowserReachError.stale(action: name)
-                    }
+                    let now: PendingAsk = sites.isProduction(site) ? .productionSite(site) : .site(site)
+                    guard asked.ask == now else { throw BrowserReachError.stale(action: name) }
                 }
+
+                let target = try browserActTarget(snapshot, params: params, action: name).get()
+                let ref = optionalString(params, "ref") ?? ""
 
                 // The live element, again: a field that became the operator's since the read, or is no
                 // longer the one read, is refused before any consent is spent on it.

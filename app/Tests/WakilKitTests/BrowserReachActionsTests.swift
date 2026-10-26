@@ -456,6 +456,47 @@ private func refs(_ reply: JSONValue) -> [String] {
     #expect(await f.allowed().isEmpty)
 }
 
+/// The active tab moved to a tab the agent never read: the Allow no longer applies, and the refusal
+/// says so — not "read the page first", which would send the agent to read rather than to ask again.
+@Test func anApprovalAfterTheActiveTabMovedToAnUnreadTabSaysThePageChanged() async throws {
+    let f = try await reach()
+    try await f.read()
+    let params: [String: JSONValue] = ["pane": .string(f.pane), "ref": .string("e1"), "text": .string("Ada Lovelace")]
+    let asked = try #require(await f.asked("browser_type", params))
+
+    await f.panes.updateBrowser(paneId: f.pane, create: false) { s in
+        s.tabs.append(BrowserTab(id: "t2", url: "https://staging.initech.dev/other", title: "Other", loaded: true))
+        s.active = "t2"
+    }
+    f.driver.clear()
+    let why = await refusal { try await f.approve("browser_type", params, asked: asked) }
+    #expect(why == "browser_type: the page changed since it was read — read it again (browser_read_page).")
+    #expect(f.driver.calls.isEmpty)
+    #expect(await f.allowed().isEmpty)
+}
+
+/// The active tab moved to a read tab where the same ref is a link: the Allow no longer applies, and
+/// the refusal says so — not "… is a link — use browser_click".
+@Test func anApprovalAfterTheActiveTabMovedToAnotherKindOfElementSaysThePageChanged() async throws {
+    let f = try await reach()
+    try await f.read()
+    let params: [String: JSONValue] = ["pane": .string(f.pane), "ref": .string("e1"), "text": .string("Ada Lovelace")]
+    let asked = try #require(await f.asked("browser_type", params))
+
+    await f.panes.updateBrowser(paneId: f.pane, create: false) { s in
+        s.tabs.append(BrowserTab(id: "t2", url: "https://staging.initech.dev/other", title: "Other", loaded: true))
+        s.active = "t2"
+    }
+    f.driver.page(url: "https://staging.initech.dev/other",
+                  elements: [BrowserElement(ref: "", role: "link", label: "Home")])
+    try await f.read()
+    f.driver.clear()
+    let why = await refusal { try await f.approve("browser_type", params, asked: asked) }
+    #expect(why == "browser_type: the page changed since it was read — read it again (browser_read_page).")
+    #expect(f.driver.calls.isEmpty)
+    #expect(await f.allowed().isEmpty)
+}
+
 /// Final review I1(b): the plane asked a site question; while it waited the site became production.
 /// A click on Allow never runs a production act, which only the typed confirm may.
 @Test func anApprovalAfterTheSiteBecameProductionIsRefused() async throws {
