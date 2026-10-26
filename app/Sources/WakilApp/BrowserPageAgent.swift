@@ -12,7 +12,9 @@ import WebKit
 /// — the refusal that says to select the tab first.
 ///
 /// **It never takes the keyboard and never selects a tab** (Rule 6): it calls no `makeFirstResponder`
-/// and dispatches nothing. A focus the script gives an element is the page's own, inside its web view.
+/// and dispatches nothing, and for the length of an act the web view drops WebKit's own request to
+/// take the keyboard for the element the script focuses. That focus stays the page's, inside its
+/// web view.
 /// It hops to the main actor for every web view call.
 final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
     @MainActor weak var host: BrowserTabHost?
@@ -45,10 +47,14 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
     func act(scope: LayoutScope?, pane: String, tab: String, _ act: BrowserPageAct) async throws -> BrowserActResult {
         try await MainActor.run { _ = try self.liveView(scope: scope, pane: pane, tab: tab) }
         try await waitForQuiet(scope: scope, pane: pane, tab: tab)
-        let before = try await MainActor.run { () throws -> (url: String?, loading: Bool) in
+        // The page cannot take the keyboard from the act's first line to its settled page — a focus
+        // the script gives, or a page it loads that focuses a field (`BrowserWebView.agentActBegan`).
+        let (before, view) = try await MainActor.run { () throws -> ((url: String?, loading: Bool), BrowserWebView) in
             let view = try self.liveView(scope: scope, pane: pane, tab: tab)
-            return (view.url?.absoluteString, view.isLoading)
+            view.agentActBegan()
+            return ((view.url?.absoluteString, view.isLoading), view)
         }
+        defer { Task { @MainActor [weak view] in view?.agentActEnded() } }
         let text = try await call(scope: scope, pane: pane, tab: tab, "globalThis.wakil.act(spec)",
                                   ["spec": Self.spec(act)], timeout: Self.actNoAnswerReason)
         let answer = try decode(ActAnswer.self, text)
