@@ -330,9 +330,11 @@ struct BrowserPane: View {
                 // `rebuilds` is read so a data clear that dropped this page draws a new one.
                 let _ = host.rebuilds
                 if let page = host.page(scope: scope, pane: pane.id, tab: tab) {
+                    // `browser.page` is the web view's own identifier (`BrowserTabHost.prepare`),
+                    // so a focus read and a frame read both resolve to the one element; the web
+                    // view fills this host, so its frame is the page area's.
                     BrowserPageHost(webView: page)
                         .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("browser.page")
                 } else {
                     Color(nsColor: .textBackgroundColor)
                 }

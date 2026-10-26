@@ -205,7 +205,8 @@ final class BrowserTabHost {
         view.isInspectable = true
         view.allowsBackForwardNavigationGestures = true
         view.allowsMagnification = false
-        // The page's own element, so a focus read names it (`BrowserPane` names its container too).
+        // The page's own element, and the only one with this name: a focus read and a frame
+        // read both resolve to it.
         view.setAccessibilityIdentifier("browser.page")
     }
 
