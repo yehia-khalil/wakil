@@ -45,6 +45,15 @@ import Testing
                        "https://gitlab.com/solo", "https://github.com/acme/../app"] {
             #expect(gitCommitWebPage(remote: remote, commit: sha) == nil, "\(remote)")
         }
+        // Fix round M2: only [A-Za-z0-9._-] in a segment, and no lone `-` on GitLab.
+        for remote in ["https://github.com/acme/app%3Fx", "https://github.com/acme/app%23x", "https://github.com/acme/a%20b",
+                       "git@github.com:acme/app#x.git", "git@github.com:acme/a b.git", "git@bitbucket.org:team/app?x",
+                       "https://gitlab.com/g/-/app", "git@gitlab.com:g/-.git", "https://gitlab.com/g/%2D/app",
+                       "git@github.com:acme/ap%70.git"] {
+            #expect(gitCommitWebPage(remote: remote, commit: sha) == nil, "\(remote)")
+        }
+        #expect(gitCommitWebPage(remote: "git@gitlab.com:my-group/sub_1/app.v2.git", commit: sha)?.url
+                == "https://gitlab.com/my-group/sub_1/app.v2/-/commit/\(sha)")
         #expect(gitCommitWebPage(remote: "git@github.com:acme/app.git", commit: String(repeating: "0", count: 40)) == nil)
         #expect(gitCommitWebPage(remote: "git@github.com:acme/app.git", commit: "not-a-sha") == nil)
     }
@@ -81,6 +90,23 @@ import Testing
         guard case .object(let o) = reply, case .array(let lines)? = o["lines"] else { Issue.record("no lines"); return }
         #expect(lines.allSatisfy { if case .object(let l) = $0 { l["web"] == nil } else { false } })
         #expect(await git.calls == ["git_origin", "git_blame"])
+    }
+
+    // Fix round M5: the cached origin is read again when the root's status moves, as the blame is.
+    @Test func theOriginIsReadAgainWhenTheRootsStatusMoves() async {
+        let cache = GitOriginCache()
+        let reads = Counter()
+        let read: @Sendable () async -> String? = { await reads.bump(); return "git@github.com:a/b.git" }
+        _ = await cache.origin("/p", mark: "m1", read: read)
+        _ = await cache.origin("/p", mark: "m1", read: read)
+        #expect(await reads.n == 1)
+        _ = await cache.origin("/p", mark: "m2", read: read)
+        #expect(await reads.n == 2)
+        let root = GitRootState(root: "/p", name: "p", branch: "main", detached: "", ahead: 1, behind: 0, files: [],
+                                error: nil, loading: false, upstream: "origin/main")
+        var moved = root
+        moved.ahead = 2
+        #expect(editorBlameRefreshMark(root) != editorBlameRefreshMark(moved))
     }
 
     private func blameRegistry(_ git: BlameWebGit) async throws -> ActionRegistry {
@@ -123,4 +149,9 @@ private actor BlameWebGit: ToolCaller {
             return ok([:])
         }
     }
+}
+
+private actor Counter {
+    var n = 0
+    func bump() { n += 1 }
 }

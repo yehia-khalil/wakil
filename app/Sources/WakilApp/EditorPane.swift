@@ -77,8 +77,8 @@ struct EditorPane: View {
     var inlineBlame: Bool = false
     var blameFor: (String, String, String?) async -> [GitBlameInfo]? = { _, _, _ in nil }
     var openCommitDiff: (String, GitCommitRef) -> Void = { _, _ in }
-    /// 3c-i: the hover's Open on GitHub, the commit's page (`WakilLinks.open`).
-    var openLink: (String) -> Void = { _ in }
+    /// 3c-i: the hover's Open on GitHub, the commit's page, and whether ⌥ was held (`WakilLinks.open`).
+    var openLink: (String, Bool) -> Void = { _, _ in }
     var timeline = EditorTimelineControls()
     let ghostSchema: () async -> GhostScope
     let ghostSuggest: (InfillRequest, Int) async -> String?
@@ -167,7 +167,7 @@ struct EditorPane: View {
         .onChange(of: inlineBlame, initial: true) { _, on in
             host.setBlameEnabled(on)
         }
-        .onChange(of: gitRoots.map { "\($0.root)|\($0.branch)|\($0.detached)|\($0.ahead)|\($0.files.count)" }) { _, _ in
+        .onChange(of: gitRoots.map(editorBlameRefreshMark)) { _, _ in
             host.refreshBlame()
         }
         // 3a-v-b: which files are conflicted decides which tabs show their blocks.
@@ -878,7 +878,7 @@ final class EditorHost {
     /// cursor move (R1).
     @ObservationIgnored var blameFor: ((String, String, String?) async -> [GitBlameInfo]?)?
     @ObservationIgnored var blameOpen: ((String, GitCommitRef) -> Void)?
-    @ObservationIgnored var blameWeb: ((String) -> Void)?
+    @ObservationIgnored var blameWeb: ((String, Bool) -> Void)?
     @ObservationIgnored private var blameOn = false
     @ObservationIgnored private var blames = EditorBlameCache()
     @ObservationIgnored private var blameTask: Task<Void, Never>?
@@ -970,14 +970,14 @@ final class EditorHost {
         made.onKey = { [weak self] key in self?.onKey?(key) }
         made.onPeek = { [weak self] _, op in self?.peekPressed?(op) }
         made.onRanges = { [weak self] _, op, selections in self?.rangesPressed?(op, selections) }
-        made.onBlame = { [weak self] key, op, id in
+        made.onBlame = { [weak self] key, op, id, alt in
             guard let self, case .file(let path, let root)? = self.subjects[key], path.hasPrefix(root + "/") else { return }
             if op == "copy" {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(id, forType: .string)
             } else if op == "web" {
                 // 3c-i: the commit's page, which editor_blame set only for a pushed commit on a known host.
-                if let page = self.blames.commit(key: key, id: id)?.web { self.blameWeb?(page.url) }
+                if let page = self.blames.commit(key: key, id: id)?.web { self.blameWeb?(page.url, alt) }
             } else {
                 // Under the file's name at that commit, and the one before it across a rename (3a-v-a walk).
                 let current = String(path.dropFirst(root.count + 1))

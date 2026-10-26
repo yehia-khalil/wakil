@@ -493,7 +493,7 @@ extension WakilWindow {
                     openCommitDiff: { root, ref in
                         Task { await model.editorOpenCommitDiff(root: root, path: ref.path, commit: ref.id, parentPath: ref.parentPath) }
                     },
-                    openLink: { url in WakilLinks.open(url, model: model) },
+                    openLink: { url, alt in WakilLinks.open(url, systemBrowser: alt, model: model) },
                     timeline: EditorTimelineControls(
                         load: { root, path, skip in await model.editorTimeline(root: root, path: path, skip: skip) },
                         openCommit: { root, ref in

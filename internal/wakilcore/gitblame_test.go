@@ -151,9 +151,7 @@ func TestMarkPushedNamesTheCommitsARemoteHolds(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := MarkPushed(context.Background(), w.runner(), b); err != nil {
-			t.Fatal(err)
-		}
+		MarkPushed(context.Background(), w.runner(), b)
 		return b
 	}
 	b := mark()
@@ -164,7 +162,7 @@ func TestMarkPushedNamesTheCommitsARemoteHolds(t *testing.T) {
 	if b := mark(); !b[3].Pushed || b[4].Pushed {
 		t.Fatalf("after the push: %+v", b)
 	}
-	// No remote-tracking ref at all: nothing is pushed, and rev-list is not asked.
+	// No origin ref at all: nothing is pushed, and rev-list is not asked.
 	git("update-ref", "-d", "refs/remotes/origin/main")
 	git("update-ref", "-d", "refs/remotes/origin/HEAD")
 	for _, l := range mark() {
@@ -195,9 +193,67 @@ func TestStripRemoteCredentials(t *testing.T) {
 		"git@github.com:a/b.git":                        "git@github.com:a/b.git",
 		"https://github.com/a/b@c.git":                  "https://github.com/a/b@c.git",
 		" https://github.com/a/b \n":                    "https://github.com/a/b",
+		// Fix round M3: user info holding an unencoded /, ? or #, and an scp-like user:secret@.
+		"https://u:ab/cd@github.com/a/b.git": "https://github.com/a/b.git",
+		"https://u:ab?cd@github.com/a/b.git": "https://github.com/a/b.git",
+		"https://u:ab#cd@github.com/a/b.git": "https://github.com/a/b.git",
+		"https://u:a/b@c@gitlab.com/g/p.git": "https://gitlab.com/g/p.git",
+		"https://tok/x@bitbucket.org/t/a":    "https://bitbucket.org/t/a",
+		"ssh://git:p/w@github.com/a/b.git":   "ssh://github.com/a/b.git",
+		"https://u:p@w@github.com/a/b.git":   "https://github.com/a/b.git",
+		"u:tok@github.com:a/b.git":           "github.com:a/b.git",
+		"git:tok@github.com:a/b.git":         "github.com:a/b.git",
+		"https://u:ab/cd@nohost/a":           "",
+		"https://github.com:443/a/b@c.git":   "https://github.com:443/a/b@c.git",
 	} {
 		if got := StripRemoteCredentials(in); got != want {
 			t.Errorf("%q → %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Fix round I1, I2: a pushed check that fails or runs out of time marks nothing, and the blame stands.
+func TestAFailedPushedCheckMarksNothing(t *testing.T) {
+	_, w, _ := branchFixture(t)
+	b, err := ReadBlame(context.Background(), w.runner(), "a.txt", nil)
+	if err != nil || len(b) == 0 {
+		t.Fatalf("blame = %+v err %v", b, err)
+	}
+	// An id git does not hold: rev-list exits 128 ("bad object").
+	bogus := append([]GitBlameLine{{Line: 9, ID: strings.Repeat("de", 20)}}, b...)
+	MarkPushed(context.Background(), w.runner(), bogus)
+	for _, l := range bogus {
+		if l.Pushed {
+			t.Fatalf("a failed rev-list marked %+v", l)
+		}
+	}
+	// Past the deadline (here, before it starts).
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	MarkPushed(ctx, w.runner(), b)
+	for _, l := range b {
+		if l.Pushed {
+			t.Fatalf("a cancelled check marked %+v", l)
+		}
+	}
+	MarkPushed(context.Background(), w.runner(), b)
+	if !b[0].Pushed {
+		t.Fatalf("the same lines, checked in time: %+v", b[0])
+	}
+}
+
+// Fix round M4: a commit only on another remote is not pushed — the link points at origin's page.
+func TestACommitOnlyOnAnotherRemoteIsNotPushed(t *testing.T) {
+	work, w, git := branchFixture(t)
+	writeIn(t, work, "a.txt", "one\ntwo\nthree\nfour\n")
+	git("commit", "-qam", "four")
+	git("update-ref", "refs/remotes/upstream/main", "HEAD")
+	b, err := ReadBlame(context.Background(), w.runner(), "a.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	MarkPushed(context.Background(), w.runner(), b)
+	if !b[0].Pushed || b[3].Pushed {
+		t.Fatalf("blame = %+v", b)
 	}
 }

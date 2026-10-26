@@ -126,14 +126,17 @@ private func filesTool(_ files: any ToolCaller, _ name: String, _ args: [String:
 }
 
 /// Each root's `origin` URL as `git_origin` read it, once per root (3c-i): blame runs on every cursor
-/// line, and the remote it is mapped against does not move with it. A read that failed is not kept.
+/// line, and the remote it is mapped against does not move with it. Read again when the root's status
+/// moves (`mark`, `editorBlameRefreshMark` — the signal the editor fetches its blame again on), so a
+/// `git remote set-url` is seen by the next commit, checkout or change. A read that failed is not kept.
 actor GitOriginCache {
-    private var byRoot: [String: String] = [:]
+    private var byRoot: [String: (mark: String, url: String)] = [:]
 
-    func origin(_ root: String, read: @Sendable () async -> String?) async -> String? {
-        if let known = byRoot[root] { return known }
+    func origin(_ root: String, mark: String, read: @Sendable () async -> String?) async -> String? {
+        if let known = byRoot[root], known.mark == mark { return known.url }
+        byRoot[root] = nil
         guard let url = await read() else { return nil }
-        byRoot[root] = url
+        byRoot[root] = (mark, url)
         return url
     }
 }
@@ -1707,7 +1710,9 @@ public func registerEditorActions(
             else if let t = sub.tab, case .file = t.subject, t.dirty { args["text"] = .string(t.text) }
             // 3c-i: the commit's web page, only where one exists: a known host, and the commit pushed.
             let root = sub.root
-            let remote = await origins.origin(root) {
+            let states = await gitStatus?.roots ?? []
+            let mark = states.first(where: { $0.root == root }).map(editorBlameRefreshMark) ?? ""
+            let remote = await origins.origin(root, mark: mark) {
                 guard case .ok(let o)? = try? await filesTool(git, "git_origin", ["root": .string(root)]) else { return nil }
                 return optionalString(.object(o), "url") ?? ""
             } ?? ""

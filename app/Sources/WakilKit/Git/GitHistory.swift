@@ -89,9 +89,13 @@ public func gitRemoteWebRepository(_ remote: String) -> (host: GitWebHost, path:
     guard let site = GitWebHost(rawValue: host.lowercased()) else { return nil }
     var parts = path.split(separator: "/").map(String.init)
     if let last = parts.last, last.lowercased().hasSuffix(".git") { parts[parts.count - 1] = String(last.dropLast(4)) }
-    guard parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return nil }
+    // Each segment as the three hosts allow a name: letters, digits, `.`, `_`, `-` — so no `?`, `#`, `%`
+    // or space (a percent-decoded https path can hold them) ever reaches the page's URL.
+    let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+    guard parts.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." && $0.allSatisfy(allowed.contains) }) else { return nil }
     switch site {
-    case .gitlab: guard parts.count >= 2 else { return nil }
+    // A lone `-` is GitLab's route separator (`/-/commit/`), never a group or project.
+    case .gitlab: guard parts.count >= 2, !parts.contains("-") else { return nil }
     case .github, .bitbucket: guard parts.count == 2 else { return nil }
     }
     return (site, parts.joined(separator: "/"))
@@ -273,6 +277,13 @@ public struct EditorBlameCache: Sendable {
         fetchedFor[key] = nil
         inFlight[key] = nil
     }
+}
+
+/// What a root's blame is fetched again on when it changes: its branch, detached head, ahead count and
+/// changed-file count (a commit, a checkout, a pull). The editor's landed blames and `editor_blame`'s
+/// cached `origin` both follow it.
+public func editorBlameRefreshMark(_ r: GitRootState) -> String {
+    "\(r.root)|\(r.branch)|\(r.detached)|\(r.ahead)|\(r.files.count)"
 }
 
 /// The blame annotation's hover, as Monaco markdown: the subject, who and when, the short id, and the

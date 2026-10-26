@@ -21,7 +21,7 @@ type GitBlameLine struct {
 	Path       string `json:"path"`
 	ParentPath string `json:"parentPath,omitempty"`
 	// Pushed: the commit is on a remote-tracking branch, so its host has a page for it (3c-i's
-	// Open on GitHub). Set only when MarkPushed was asked for.
+	// Open on GitHub): on one of origin's. Set only when MarkPushed was asked for.
 	Pushed bool `json:"pushed,omitempty"`
 }
 
@@ -49,11 +49,18 @@ func ReadBlame(ctx context.Context, g *GitRunner, path string, text *string) ([]
 	return parseBlamePorcelain(out), nil
 }
 
-// MarkPushed sets Pushed on each committed line whose commit a remote-tracking branch holds. One
-// `rev-list <ids> --not --remotes` answers every line at once: what it lists is not on any remote,
-// and a pushed commit stops the walk at once, so the cost is the unpushed commits, not the history.
-// With no remote-tracking refs at all nothing is pushed and rev-list does not run.
-func MarkPushed(ctx context.Context, g *GitRunner, lines []GitBlameLine) error {
+// PushedDeadline bounds MarkPushed on its own, apart from the blame's BlameDeadline: the check only
+// decides whether the hover offers a link, so a slow one gives up and offers none.
+var PushedDeadline = time.Second
+
+// MarkPushed sets Pushed on each committed line whose commit one of origin's remote-tracking branches
+// holds (the link points at origin's page, so a commit only on another remote gets none). One
+// `rev-list <ids> --not --remotes=origin` answers every line at once: what it lists is not on origin.
+// Its cost is the walk down from origin's tips until each id is reached from one — for an old file
+// close to the whole history, which a commit-graph shortens — so it has PushedDeadline of its own.
+// **It never fails the blame:** with no origin refs, past the deadline, or on any git error (an id
+// git does not hold), every line is left not pushed, and the hover simply offers no link.
+func MarkPushed(ctx context.Context, g *GitRunner, lines []GitBlameLine) {
 	ids, seen := []string{}, map[string]bool{}
 	for _, l := range lines {
 		if !seen[l.ID] && len(l.ID) == 40 && strings.Trim(l.ID, "0") != "" && isHex(l.ID) {
@@ -62,17 +69,17 @@ func MarkPushed(ctx context.Context, g *GitRunner, lines []GitBlameLine) error {
 		}
 	}
 	if len(ids) == 0 {
-		return nil
+		return
 	}
-	ctx, cancel := context.WithTimeout(ctx, BlameDeadline)
+	ctx, cancel := context.WithTimeout(ctx, PushedDeadline)
 	defer cancel()
-	refs, err := g.Run(ctx, "for-each-ref", "--format=%(refname)", "refs/remotes")
+	refs, err := g.Run(ctx, "for-each-ref", "--format=%(refname)", "refs/remotes/origin")
 	if err != nil || len(bytes.TrimSpace(refs)) == 0 {
-		return err
+		return
 	}
-	out, err := g.Run(ctx, "rev-list", append(ids, "--not", "--remotes", "--")...)
+	out, err := g.Run(ctx, "rev-list", append(ids, "--not", "--remotes=origin", "--")...)
 	if err != nil {
-		return err
+		return
 	}
 	unpushed := map[string]bool{}
 	for _, id := range strings.Fields(string(out)) {
@@ -81,7 +88,6 @@ func MarkPushed(ctx context.Context, g *GitRunner, lines []GitBlameLine) error {
 	for i := range lines {
 		lines[i].Pushed = seen[lines[i].ID] && !unpushed[lines[i].ID]
 	}
-	return nil
 }
 
 func isHex(s string) bool {
@@ -100,22 +106,66 @@ func ReadOrigin(ctx context.Context, g *GitRunner) string {
 	return StripRemoteCredentials(g.ConfigValue(ctx, "remote.origin.url"))
 }
 
-// StripRemoteCredentials drops the password of a URL remote's user info (`https://x:tok@host/…` →
-// `https://host/…`, `ssh://git:pw@host/…` → `ssh://git@host/…`); an https user name goes too, since
-// it is often the token itself. An scp-like remote has no password and is left as it is.
+// StripRemoteCredentials takes the credentials out of a remote's URL. A URL remote loses its user info
+// whole (`https://x:tok@host/…` → `https://host/…`), except that an ssh user is kept without its password
+// (`ssh://git:pw@host/…` → `ssh://git@host/…`); the user info ends at the LAST `@` before the host, so a
+// token holding an unencoded `/`, `?` or `#` goes too (`https://u:ab/cd@host/…` → `https://host/…`: an
+// authority that is not a dotted host with a numeric port, and an `@` after it, is user info). One
+// with no dotted host after any `@` answers "": no origin, rather than one that may carry a token.
+// An scp-like remote keeps `user@`, and loses a `user:secret@` (`u:tok@host:path` → `host:path`).
 func StripRemoteCredentials(raw string) string {
 	raw = strings.TrimSpace(raw)
 	scheme, rest, ok := strings.Cut(raw, "://")
 	if !ok {
+		head := raw
+		if i := strings.Index(head, "/"); i >= 0 {
+			head = head[:i]
+		}
+		if at := strings.LastIndex(head, "@"); at >= 0 && strings.Contains(head[:at], ":") {
+			return raw[at+1:]
+		}
 		return raw
 	}
-	end := strings.IndexAny(rest, "/?#")
-	if end < 0 {
-		end = len(rest)
+	authorityEnd := strings.IndexAny(rest, "/?#")
+	if authorityEnd < 0 {
+		authorityEnd = len(rest)
 	}
-	at := strings.LastIndex(rest[:end], "@")
+	authority := rest[:authorityEnd]
+	at := strings.LastIndex(authority, "@")
 	if at < 0 {
-		return raw
+		host, port, hasPort := strings.Cut(authority, ":")
+		if !strings.Contains(rest[authorityEnd:], "@") || (strings.Contains(host, ".") && (!hasPort || isDigits(port))) {
+			return raw // no `@` at all, or a real host whose path holds one
+		}
+		// User info holding an unencoded `/`, `?` or `#`: the host is what follows the first `@` that
+		// is followed by a dotted host. Its user name cannot be trusted either, so all of it goes.
+		for i := authorityEnd; i < len(rest); i++ {
+			if rest[i] != '@' {
+				continue
+			}
+			end := strings.IndexAny(rest[i+1:], "/?#")
+			if end < 0 {
+				end = len(rest) - i - 1
+			}
+			candidate, _, _ := strings.Cut(rest[i+1:i+1+end], ":")
+			if strings.Contains(candidate, ".") && !strings.Contains(candidate, "@") {
+				return scheme + "://" + rest[i+1:]
+			}
+		}
+		return ""
+	}
+	// The user info runs to the last `@` before the host's first `/` (`?`, `#`) that follows it.
+	for {
+		next := strings.IndexAny(rest[at+1:], "/?#")
+		hostEnd := len(rest)
+		if next >= 0 {
+			hostEnd = at + 1 + next
+		}
+		more := strings.LastIndex(rest[:hostEnd], "@")
+		if more == at {
+			break
+		}
+		at = more
 	}
 	user := rest[:at]
 	if strings.EqualFold(scheme, "ssh") {
@@ -123,6 +173,15 @@ func StripRemoteCredentials(raw string) string {
 		return scheme + "://" + name + "@" + rest[at+1:]
 	}
 	return scheme + "://" + rest[at+1:]
+}
+
+func isDigits(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // parseBlamePorcelain reads `blame --porcelain`: a header `<id> <orig> <final> [<count>]` per line,
