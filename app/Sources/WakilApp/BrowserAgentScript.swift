@@ -178,12 +178,22 @@ enum BrowserAgentScript {
           const INLINE = new Set(['inline', 'inline-block', 'inline-flex', 'inline-grid', 'contents', 'ruby']);
 
           // What the page shows as text, as innerText reads it in outline: the rendered text nodes in
-          // document order, a line break around each block and at each <br>, and no text from an
+          // document order, open shadow roots and slots followed as they are drawn, a line break around each block and at each <br>, and no text from an
           // element in `skip` (or anything under it).
           function pageText(skip) {
             const parts = [];
+            // What an element renders: an open shadow root's nodes in place of its light children
+            // (unslotted ones are not drawn), and at a slot the nodes assigned to it, else its own.
+            function rendered(node) {
+              if (node.shadowRoot) return node.shadowRoot.childNodes;
+              if (node.tagName === 'SLOT') {
+                const assigned = node.assignedNodes({ flatten: true });
+                return assigned.length ? assigned : node.childNodes;
+              }
+              return node.childNodes;
+            }
             function walk(node, shown) {
-              for (const child of node.childNodes) {
+              for (const child of rendered(node)) {
                 if (child.nodeType === Node.TEXT_NODE) { if (shown) parts.push(child.data); continue; }
                 if (child.nodeType !== Node.ELEMENT_NODE || skip.has(child) || SILENT.has(child.tagName)) continue;
                 if (child.tagName === 'BR') { parts.push('\n'); continue; }
