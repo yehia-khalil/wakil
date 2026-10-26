@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1674,5 +1676,73 @@ func TestConnectionUpdateRecordsHints(t *testing.T) {
 	}
 	if strings.Contains(raw, "w-1") {
 		t.Fatalf("a secret value reached the tree: %s", raw)
+	}
+}
+
+// stubGitHubDevice answers GitHub's device token endpoint with an approval, so no test reaches the
+// network.
+type stubGitHubDevice struct{}
+
+func (stubGitHubDevice) RoundTrip(r *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Request: r,
+		Body: io.NopCloser(strings.NewReader(`{"access_token":"tok-device"}`)),
+	}, nil
+}
+
+func TestDevicePollAPIAccessDoesNotRewriteMethod(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("WAKIL_ORG", "")
+	memorySecurity(t)
+	if err := wakilcore.CreateOrg("initech", wakilcore.Org{}); err != nil {
+		t.Fatal(err)
+	}
+	wakilcore.AddGitAccount("initech", wakilcore.GitAccount{Host: "github.com", Provider: "github", Method: "ssh", KeyPath: "/k/id", User: "dev-initech"})
+	old := http.DefaultTransport
+	http.DefaultTransport = stubGitHubDevice{}
+	t.Cleanup(func() { http.DefaultTransport = old })
+	ctx, cs := lifecycleClient(t)
+
+	out := callOK(t, ctx, cs, "git_device_poll", map[string]any{
+		"id": "initech", "provider": "github", "host": "github.com", "deviceCode": "dc", "apiAccess": true})
+	if out["done"] != true {
+		t.Fatalf("poll = %v", out)
+	}
+	a, _ := wakilcore.GitAccountFor("initech", "github.com")
+	if a.Method != "ssh" || a.APIAccess != "signin" || a.KeyPath != "/k/id" || a.User != "dev-initech" {
+		t.Fatalf("account = %+v", a)
+	}
+	if tok, err := wakilcore.GitHubTokenFor("initech", "github.com"); err != nil || tok != "tok-device" {
+		t.Fatalf("token %q %v", tok, err)
+	}
+
+	// Without apiAccess a Sign in still replaces the account, as before.
+	callOK(t, ctx, cs, "git_device_poll", map[string]any{"id": "initech", "provider": "github", "host": "github.com", "deviceCode": "dc"})
+	if a, _ := wakilcore.GitAccountFor("initech", "github.com"); a.Method != "signin" || a.APIAccess != "" {
+		t.Fatalf("account = %+v", a)
+	}
+}
+
+func TestGitAPIAccessToolsRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "")
+	memorySecurity(t)
+	if err := wakilcore.CreateOrg("initech", wakilcore.Org{}); err != nil {
+		t.Fatal(err)
+	}
+	wakilcore.AddGitAccount("initech", wakilcore.GitAccount{Host: "github.com", Provider: "github", Method: "ssh", KeyPath: "/k/id"})
+	ctx, cs := lifecycleClient(t)
+	callOK(t, ctx, cs, "git_api_access_token_set", map[string]any{"id": "initech", "host": "github.com", "token": "ghp-x"})
+	if a, _ := wakilcore.GitAccountFor("initech", "github.com"); a.Method != "ssh" || a.APIAccess != "token" {
+		t.Fatalf("account = %+v", a)
+	}
+	callOK(t, ctx, cs, "git_api_access_remove", map[string]any{"id": "initech", "host": "github.com"})
+	if a, _ := wakilcore.GitAccountFor("initech", "github.com"); a.Method != "ssh" || a.APIAccess != "" {
+		t.Fatalf("account = %+v", a)
+	}
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "git_api_access_test", Arguments: map[string]any{"id": "initech", "host": "github.com"}})
+	if err != nil || !res.IsError {
+		t.Fatalf("a test with no API access must be refused: %v %v", err, res)
 	}
 }
