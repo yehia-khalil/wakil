@@ -83,6 +83,29 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
                                                         "body": .string("Thanks, fixed.")])
     }
 
+    /// GitHub posted the reply and answered errors beside it: the reply is posted (the draft goes, so a
+    /// second Send cannot post it twice), and the errors are kept whole for the thread's box.
+    @Test func replyPostedBesideErrorsIsPostedAndKeepsTheErrors() async throws {
+        let f = try await ticketFixture()
+        try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": .string("Thanks, fixed.")])
+        let comment: JSONValue = .object(["author": .string("peter"), "body": .string("Thanks, fixed."),
+                                          "createdAt": .string("2026-10-26T09:00:00Z")])
+        await f.ticket.set("review_reply", .object([
+            "comment": comment,
+            "errors": .array([.string("Could not notify subscribers"), .string("Rate limit nearly spent")]),
+        ]))
+        let out = try await f.dispatch("review_reply_send", replyParams)
+        guard case .object(let o) = out else { Issue.record("reply \(out)"); return }
+        #expect(o["comment"] == comment)
+        #expect(await f.store.draft(thread: "T2") == nil)
+        #expect(await f.store.answer(thread: "T2")
+            == "Posted. GitHub also answered: Could not notify subscribers; Rate limit nearly spent")
+
+        await f.ticket.set("review_reply", .object(["comment": comment, "errors": .array([])]))
+        try await f.dispatch("review_reply_send", replyParams)
+        #expect(await f.store.answer(thread: "T2") == nil)
+    }
+
     @Test(.timeLimit(.minutes(1))) func replyCannotBeSentTwice() async throws {
         let f = try await ticketFixture()
         await f.ticket.setSlowReply(true)

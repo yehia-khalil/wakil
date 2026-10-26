@@ -59,6 +59,8 @@ public struct ReviewBox: Sendable, Equatable, Encodable {
     public let resolvedBy: String?
     public let draft: String?
     public let sending: Bool
+    /// What GitHub answered beside the reply it posted here, whole.
+    public let answer: String?
 }
 
 /// When a comment was written, as a box shows it: "24 Oct 09:00", local time; the text GitHub gave
@@ -79,7 +81,7 @@ func reviewTime(_ iso: String) -> String {
 /// `viewer` says "you".
 public func reviewBoxes(threads: [ReviewThreadState], path: String, root: String,
                         headTexts: [String: String], buffer: String, drafts: [String: String],
-                        sending: Set<String>, viewer: String = "") -> [ReviewBox] {
+                        sending: Set<String>, answers: [String: String] = [:], viewer: String = "") -> [ReviewBox] {
     let mine = threads.filter { $0.root == root }
     let open = reviewOpenThreads([PullRequestState(number: 0, threads: mine)])
     var seen: Set<String> = []
@@ -92,7 +94,7 @@ public func reviewBoxes(threads: [ReviewThreadState], path: String, root: String
             text: first?.body ?? "",
             replies: t.comments.dropFirst().map { ReviewCommentState(author: $0.author, body: $0.body, createdAt: reviewTime($0.createdAt)) },
             position: t.resolved ? "" : reviewPosition(open, id: t.id), resolved: t.resolved, resolvedBy: t.resolved ? who : nil,
-            draft: drafts[t.id], sending: sending.contains(t.id))
+            draft: drafts[t.id], sending: sending.contains(t.id), answer: answers[t.id])
     }
     return boxes.enumerated().sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }.map(\.element)
 }
@@ -122,8 +124,11 @@ public struct EditorReviewsState: Sendable, Equatable {
         public var byRoot: [String: Root]
         public var drafts: [String: String]
         public var sending: Set<String>
-        public init(byRoot: [String: Root] = [:], drafts: [String: String] = [:], sending: Set<String> = []) {
-            self.byRoot = byRoot; self.drafts = drafts; self.sending = sending
+        /// What GitHub answered beside a reply it posted, by thread.
+        public var answers: [String: String]
+        public init(byRoot: [String: Root] = [:], drafts: [String: String] = [:], sending: Set<String> = [],
+                    answers: [String: String] = [:]) {
+            self.byRoot = byRoot; self.drafts = drafts; self.sending = sending; self.answers = answers
         }
     }
     public var reads: Reads
@@ -186,7 +191,7 @@ public func editorReviewBoxes(_ tab: EditorTab, buffer: String? = nil, _ reviews
     for (h, text) in reviews.heads where h.root == f.root && h.path == f.rel { heads[h.sha] = text }
     return reviewBoxes(threads: root?.threads ?? [], path: f.path, root: f.root, headTexts: heads,
                        buffer: buffer ?? tab.text, drafts: reviews.reads.drafts, sending: reviews.reads.sending,
-                       viewer: root?.viewer ?? "")
+                       answers: reviews.reads.answers, viewer: root?.viewer ?? "")
 }
 
 /// The thread whose box is on the tab's cursor line, as placed (`read_pane`'s `cursorThread`, and

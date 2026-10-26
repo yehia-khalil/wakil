@@ -459,21 +459,29 @@ func graphQLErrorOrNil(messages []string) error {
 	return &GraphQLError{Messages: messages}
 }
 
-// ReplyToThread adds body, verbatim, as a reply in the review thread.
+// ReplyToThread adds body, verbatim, as a reply in the review thread. When GitHub answers the
+// posted comment beside `errors`, both come back: the comment, and the errors as a *GraphQLError.
+// The reply is posted then, and a second Send would post it twice. A *GraphQLError comes back only
+// beside a comment; errors with none are a plain error, the reply not posted.
 func (c *GitHubClient) ReplyToThread(ctx context.Context, threadID, body string) (ReviewComment, error) {
 	var data struct {
 		Reply *struct {
 			Comment ghComment `json:"comment"`
 		} `json:"addPullRequestReviewThreadReply"`
 	}
-	if err := c.do(ctx, githubReplyMutation, map[string]any{"id": threadID, "body": body}, &data); err != nil {
+	err := c.do(ctx, githubReplyMutation, map[string]any{"id": threadID, "body": body}, &data)
+	var ge *GraphQLError
+	if err != nil && !errors.As(err, &ge) {
 		return ReviewComment{}, err
 	}
 	if data.Reply == nil {
+		if err != nil {
+			return ReviewComment{}, UserError(err.Error())
+		}
 		return ReviewComment{}, UserError("GitHub answered the reply with no comment")
 	}
 	cm := data.Reply.Comment
-	return ReviewComment{Author: loginOf(cm.Author), Body: cm.Body, CreatedAt: cm.CreatedAt}, nil
+	return ReviewComment{Author: loginOf(cm.Author), Body: cm.Body, CreatedAt: cm.CreatedAt}, err
 }
 
 const githubThreadQuery = `query($id: ID!) {

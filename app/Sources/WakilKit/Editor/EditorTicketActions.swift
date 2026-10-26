@@ -96,7 +96,8 @@ func registerTicketActions(
                                          shownBranchFailures: await store.shownBranchFailures())
         await panes.setEditorTicketMirror(
             EditorTicketMirror(roots: rs, byRoot: byRoot, drafts: drafts.keys.sorted()),
-            reviews: EditorReviewsState.Reads(byRoot: reviews, drafts: drafts, sending: await store.allSending()),
+            reviews: EditorReviewsState.Reads(byRoot: reviews, drafts: drafts, sending: await store.allSending(),
+                                              answers: await store.allAnswers()),
             view: view)
     }
     await store.setOnChange { await mirror() }
@@ -450,6 +451,7 @@ func registerTicketActions(
             guard await store.beginSend(thread: thread) else {
                 throw TicketActionError(description: "\(action): a reply to this thread is already being sent")
             }
+            await store.setAnswer(thread: thread, text: nil)
             await mirror()
             let out: [String: JSONValue]
             do {
@@ -462,6 +464,13 @@ func registerTicketActions(
             }
             await store.endSend(thread: thread)
             await store.setDraft(thread: thread, text: nil)
+            // GitHub's errors beside the posted comment: posted all the same, the errors shown whole.
+            var said: [String] = []
+            if case .array(let errs)? = out["errors"] {
+                for case .string(let e) in errs { said.append(e) }
+            }
+            await store.setAnswer(thread: thread,
+                                  text: said.isEmpty ? nil : "Posted. GitHub also answered: " + said.joined(separator: "; "))
             await mirror()
             await store.invalidate(root: root)
             return .object(out)

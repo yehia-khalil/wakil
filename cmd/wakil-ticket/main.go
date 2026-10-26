@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strconv"
 	"strings"
@@ -82,6 +83,9 @@ type linkResult struct {
 
 type replyResult struct {
 	Comment Comment `json:"comment"`
+	// Errors are GitHub's errors answered beside the posted comment, each whole; the reply is
+	// posted all the same.
+	Errors []string `json:"errors"`
 }
 
 // threadResult is a review thread as GitHub describes it by its id: the place the confirmation
@@ -202,10 +206,14 @@ func newServer() *mcp.Server {
 				return toolErr(err), replyResult{}, nil
 			}
 			c, err := gh.ReplyToThread(ctx, a.Thread, a.Body)
-			if err != nil {
+			errs := []string{}
+			var ge *wakilcore.GraphQLError
+			if errors.As(err, &ge) {
+				errs = append(errs, ge.Messages...)
+			} else if err != nil {
 				return toolErr(err), replyResult{}, nil
 			}
-			return nil, replyResult{Comment: comment(c)}, nil
+			return nil, replyResult{Comment: comment(c), Errors: errs}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "review_resolve", Description: "Writes to GitHub. Resolves or unresolves a review thread with the organization's GitHub account for the root's remote. Only from the Wakil window."},

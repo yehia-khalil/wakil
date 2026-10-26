@@ -85,6 +85,17 @@ private func thread(_ id: String, _ path: String, _ line: Int, sha: String = "ab
         #expect(boxes[1].draft == nil && boxes[1].sending)
     }
 
+    /// GitHub's errors beside a reply it posted are drawn on the thread's box, whole.
+    @Test func boxCarriesWhatGitHubAnsweredBesideAPostedReply() {
+        let head = text(lines(60))
+        let threads = [thread("T1", "a.go", 41), thread("T2", "a.go", 44)]
+        let said = "Posted. GitHub also answered: Could not notify subscribers"
+        let boxes = reviewBoxes(threads: threads, path: "/p/api/a.go", root: "/p/api", headTexts: ["abc": head],
+                                buffer: head, drafts: [:], sending: [], answers: ["T1": said])
+        #expect(boxes[0].answer == said)
+        #expect(boxes[1].answer == nil)
+    }
+
     @Test func boxTextIsTheCommentVerbatim() throws {
         let body = "<img src=x onerror=alert(1)>"
         let t = thread("T1", "a.go", 2, comments: [

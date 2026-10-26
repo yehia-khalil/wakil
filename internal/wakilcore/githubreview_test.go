@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -316,6 +317,32 @@ func TestReplySendsTheBodyVerbatim(t *testing.T) {
 	}
 	if got.Author != "peter" || got.Body != body || got.CreatedAt != "2026-10-26T09:00:00Z" {
 		t.Errorf("comment = %+v", got)
+	}
+}
+
+func TestReplyPostedBesideErrorsKeepsTheComment(t *testing.T) {
+	f := &fakeGraphQL{}
+	c := f.serve(t, func(r gqlRequest) (int, string) {
+		return 200, mustJSON(t, map[string]any{
+			"data": map[string]any{"addPullRequestReviewThreadReply": map[string]any{"comment": map[string]any{
+				"author": map[string]any{"login": "peter"}, "body": "Fixed", "createdAt": "2026-10-26T09:00:00Z"}}},
+			"errors": []any{map[string]any{"message": "Could not notify subscribers"}},
+		})
+	})
+	got, err := c.ReplyToThread(context.Background(), "T_1", "Fixed")
+	var ge *GraphQLError
+	if !errors.As(err, &ge) || !reflect.DeepEqual(ge.Messages, []string{"Could not notify subscribers"}) {
+		t.Fatalf("err = %v, want the GraphQL errors whole", err)
+	}
+	if got.Author != "peter" || got.Body != "Fixed" {
+		t.Errorf("the posted comment is dropped: %+v", got)
+	}
+	c = f.serve(t, func(r gqlRequest) (int, string) {
+		return 200, `{"data":{"addPullRequestReviewThreadReply":null},"errors":[{"message":"Thread is locked"}]}`
+	})
+	_, err = c.ReplyToThread(context.Background(), "T_1", "Fixed")
+	if err == nil || errors.As(err, &ge) || err.Error() != "GitHub: Thread is locked" {
+		t.Errorf("errors with no comment: err = %#v, want a plain error, not posted", err)
 	}
 }
 

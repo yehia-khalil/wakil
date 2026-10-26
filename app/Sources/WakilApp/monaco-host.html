@@ -776,6 +776,7 @@
           node.appendChild(r);
         });
       }
+      if (b.answer) node.appendChild(reviewEl('div', 'wakil-review-note', b.answer));
       const drafting = reviewOpen[b.thread] || b.draft != null || reviewLive[b.thread] !== undefined;
       let field = null;
       if (drafting) {

@@ -39,6 +39,8 @@ type stubs struct {
 	branch func(gqlRequest) (int, string)
 	// search answers MyOpenPRs' query.
 	search func(gqlRequest) (int, string)
+	// replyErrors are GraphQL errors answered beside the posted reply.
+	replyErrors []string
 	// jiraDown makes every Jira search answer 502; jiraHung makes it never answer.
 	jiraDown bool
 	jiraHung bool
@@ -180,8 +182,16 @@ func (f *fixture) serveGitHub() {
 			}
 		case strings.Contains(req.Query, "addPullRequestReviewThreadReply"):
 			b, _ := req.Variables["body"].(string)
-			body = mustJSON(map[string]any{"data": map[string]any{"addPullRequestReviewThreadReply": map[string]any{
-				"comment": map[string]any{"author": map[string]any{"login": "peter"}, "body": b, "createdAt": "2026-10-26T09:00:00Z"}}}})
+			answer := map[string]any{"data": map[string]any{"addPullRequestReviewThreadReply": map[string]any{
+				"comment": map[string]any{"author": map[string]any{"login": "peter"}, "body": b, "createdAt": "2026-10-26T09:00:00Z"}}}}
+			if len(s.replyErrors) > 0 {
+				var errs []any
+				for _, m := range s.replyErrors {
+					errs = append(errs, map[string]any{"message": m})
+				}
+				answer["errors"] = errs
+			}
+			body = mustJSON(answer)
 		case strings.Contains(req.Query, "resolveReviewThread"), strings.Contains(req.Query, "unresolveReviewThread"):
 			body = `{"data":{"resolveReviewThread":{"thread":{"id":"T_1","isResolved":true}}}}`
 		case strings.Contains(req.Query, "node(id: $id)"):
@@ -618,6 +628,30 @@ func TestReviewReplyPostsToTheStub(t *testing.T) {
 	req := f.s.gql[0]
 	if !strings.Contains(req.Query, "addPullRequestReviewThreadReply") || req.Variables["id"] != "T_1" || req.Variables["body"] != out.Comment.Body {
 		t.Errorf("request = %+v", req)
+	}
+}
+
+func TestReviewReplyPostedBesideErrorsAnswersTheCommentAndTheErrors(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	f.s.replyErrors = []string{"Could not notify subscribers", "Rate limit nearly spent"}
+	b := call(t, connect(t), "review_reply", map[string]any{"root": f.repo, "thread": "T_1", "body": "Fixed in 4f1c"})
+	var out replyResult
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Comment.Author != "peter" || out.Comment.Body != "Fixed in 4f1c" {
+		t.Errorf("comment = %+v", out.Comment)
+	}
+	if !reflect.DeepEqual(out.Errors, []string{"Could not notify subscribers", "Rate limit nearly spent"}) {
+		t.Errorf("errors = %#v", out.Errors)
+	}
+	f.s.replyErrors = nil
+	var plain map[string]any
+	if err := json.Unmarshal(call(t, connect(t), "review_reply", map[string]any{"root": f.repo, "thread": "T_1", "body": "clean"}), &plain); err != nil {
+		t.Fatal(err)
+	}
+	if errs, ok := plain["errors"].([]any); !ok || len(errs) != 0 {
+		t.Errorf("a clean post answers errors %#v, want []", plain["errors"])
 	}
 }
 

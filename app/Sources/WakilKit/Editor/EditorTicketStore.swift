@@ -38,6 +38,8 @@ public actor EditorTicketStore {
     private var failures: [String: String] = [:]
     private var drafts: [String: String] = [:]
     private var sendingThreads: Set<String> = []
+    /// What GitHub answered beside a reply it posted, by thread, whole: the reply is posted all the same.
+    private var answers: [String: String] = [:]
     private var inFlightRead: InFlightState?
     /// Records of tickets shown from In flight (`ticket_show`), by key, and why one could not be read.
     private var records: [String: TicketRecordState] = [:]
@@ -357,6 +359,13 @@ public actor EditorTicketStore {
 
     func endSend(thread: String) { sendingThreads.remove(thread) }
 
+    public func answer(thread: String) -> String? { answers[thread] }
+
+    public func allAnswers() -> [String: String] { answers }
+
+    /// Keeps what GitHub answered beside the thread's posted reply; nil drops it.
+    func setAnswer(thread: String, text: String?) { answers[thread] = text }
+
     /// An org switch: the outgoing organisation's reads, drafts and flights go, and anything still
     /// running lands on a newer generation and is dropped.
     public func reset() {
@@ -368,6 +377,7 @@ public actor EditorTicketStore {
         failures = [:]
         drafts = [:]
         sendingThreads = []
+        answers = [:]
         inFlightRead = nil
         records = [:]
         recordFailures = [:]
