@@ -843,3 +843,100 @@ func loadSeededOrg(t *testing.T, fixture Fixture, org string) wakilcore.Org {
 	}
 	return *o
 }
+
+// TestBrowserSitesSeedOnlyForItsChecks — with BrowserSites, staging gains `pages` (the stub's
+// origin) and `e2e-live` is registered, never active, whose `live` environment loads as production
+// with a `site` entry on localhost; without it the seed is the default one.
+func TestBrowserSitesSeedOnlyForItsChecks(t *testing.T) {
+	const stub = "http://127.0.0.1:4321"
+	read := func(fixture Fixture, seeded Seeded) (map[string]wakilcore.ProjectEntry, wakilcore.Project) {
+		t.Setenv("HOME", fixture.Home)
+		t.Setenv("WAKIL_ORG", seeded.Org)
+		registry, err := wakilcore.LoadRegistry()
+		if err != nil {
+			t.Fatal(err)
+		}
+		active := registry[seeded.Project]
+		project, err := wakilcore.LoadProject(active.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return registry, *project
+	}
+
+	plainFixture, plainSeeded := seedInto(t, DefaultSeed())
+	registry, project := read(plainFixture, plainSeeded)
+	if _, there := registry[LiveProjectName]; there {
+		t.Error("the default seed registers e2e-live")
+	}
+	if got := len(project.Environments["staging"].API); got != 2 {
+		t.Errorf("the default staging declares %d api entries, want 2 (no stall origin here)", got)
+	}
+
+	spec := DefaultSeed()
+	spec.BrowserSites, spec.PageStub = true, stub
+	fixture, seeded := seedInto(t, spec)
+	registry, project = read(fixture, seeded)
+	var pages *wakilcore.ApiConfig
+	for _, entry := range project.Environments["staging"].API {
+		if entry.Name == "pages" {
+			entry := entry
+			pages = &entry
+		}
+	}
+	if pages == nil || pages.BaseURL != stub {
+		t.Errorf("staging's pages entry = %+v, want the stub origin %s", pages, stub)
+	}
+	if got := len(project.Environments["staging"].API); got != 3 {
+		t.Errorf("staging declares %d api entries, want the default 2 and pages", got)
+	}
+	entry, ok := registry[LiveProjectName]
+	if !ok {
+		t.Fatal("e2e-live is not in the registry")
+	}
+	liveP, err := wakilcore.LoadProject(entry.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := *liveP
+	env, ok := live.Environments["live"]
+	if !ok || !wakilcore.EnvironmentIsProduction("live", env) {
+		t.Errorf("e2e-live's live environment = %+v, want one that loads as production", env)
+	}
+	if len(env.API) != 1 || env.API[0].Name != "site" || env.API[0].BaseURL != "http://localhost:4321" {
+		t.Errorf("e2e-live's api = %+v, want site on http://localhost:4321", env.API)
+	}
+	if live.Org != seeded.Org {
+		t.Errorf("e2e-live's org = %q, want %q", live.Org, seeded.Org)
+	}
+	active, err := wakilcore.ReadActive()
+	if err != nil || !strings.Contains(active.Project, seeded.Project) || strings.Contains(active.Project, LiveProjectName) {
+		t.Errorf("the active project = %q, %v; e2e-live must never be active", active.Project, err)
+	}
+
+	for _, name := range []string{"3c-ii-tags.jsonl", "3c-ii-production.jsonl"} {
+		if !WantsBrowserSites([]Check{{Name: name}}) {
+			t.Errorf("WantsBrowserSites(%s) = false", name)
+		}
+	}
+	for _, name := range []string{"3c-ii-other.jsonl", "3c-i-browser.jsonl", "3c-ii-tags"} {
+		if WantsBrowserSites([]Check{{Name: name}}) {
+			t.Errorf("WantsBrowserSites(%s) = true; only the tags and production checks get the sites", name)
+		}
+	}
+
+	bad := DefaultSeed()
+	bad.BrowserSites = true
+	if _, err := Seed(mustFixture(t), bad); err == nil {
+		t.Error("BrowserSites without a page stub origin must be refused")
+	}
+}
+
+func mustFixture(t *testing.T) Fixture {
+	t.Helper()
+	fixture, err := NewFixture(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fixture
+}

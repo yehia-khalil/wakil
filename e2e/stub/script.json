@@ -1,6 +1,31 @@
 {
   "rules": [
     {
+      "match": "fill the guest name",
+      "call": { "action": "browser_type", "echo": true, "params": { "pane": "browser-1", "ref": "e1", "text": "Ada Lovelace" } },
+      "reply": "typed the guest name"
+    },
+    {
+      "match": "choose two nights",
+      "call": { "action": "browser_select", "echo": true, "params": { "pane": "browser-1", "ref": "e2", "option": "Two nights" } },
+      "reply": "chose two nights"
+    },
+    {
+      "match": "type the card number",
+      "call": { "action": "browser_type", "echo": true, "params": { "pane": "browser-1", "ref": "e3", "text": "4242 4242 4242 4242" } },
+      "reply": "typed the card number"
+    },
+    {
+      "match": "confirm the booking",
+      "call": { "action": "browser_click", "echo": true, "params": { "pane": "browser-1", "ref": "e5" } },
+      "reply": "confirmed the booking"
+    },
+    {
+      "match": "click confirm on the live form",
+      "call": { "action": "browser_click", "echo": true, "params": { "pane": "browser-1", "ref": "e5" } },
+      "reply": "clicked confirm on the live form"
+    },
+    {
       "match": "start the held agent in staging",
       "hold": "wakil-e2e-release-staging",
       "call": { "action": "api_open", "params": { "entry": "billing" } },

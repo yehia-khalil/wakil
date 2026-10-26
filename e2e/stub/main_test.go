@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/yehia-khalil/wakil/e2e/driver"
@@ -72,7 +75,7 @@ func stubFixture(t *testing.T) (configDir, projDir string) {
 
 // runStub runs one stub session in dir, as the window launches it: argv,
 // then the operator's prompts as stream-json user frames on stdin.
-func runStub(t *testing.T, dir string, args []string, prompts ...string) {
+func runStub(t *testing.T, dir string, args []string, prompts ...string) string {
 	t.Helper()
 	t.Chdir(dir)
 	in, err := os.CreateTemp(t.TempDir(), "stdin")
@@ -99,6 +102,11 @@ func runStub(t *testing.T, dir string, args []string, prompts ...string) {
 	if err := run(args, in, out); err != nil {
 		t.Fatalf("the stub failed: %v", err)
 	}
+	written, err := os.ReadFile(out.Name())
+	if err != nil {
+		t.Fatalf("reading the stub's output: %v", err)
+	}
+	return string(written)
 }
 
 // The window's agent session: `--session-id` and an `--mcp-config` naming a
@@ -142,5 +150,167 @@ func TestTheStubWritesATranscriptListSessionsReads(t *testing.T) {
 	}
 	if list.Skipped != 0 {
 		t.Errorf("Skipped = %d: the transcript could not be confirmed as this project's", list.Skipped)
+	}
+}
+
+// fakeWindow answers the stub's MCP calls on a unix socket: `initialize` with an empty result,
+// and every `tools/call` with the text it is given, as an error when refuse is set. It records
+// the actions it was asked for. Returns the socket's path.
+func fakeWindow(t *testing.T, text string, refuse bool) (string, *[]string) {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "w")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	path := filepath.Join(dir, "s")
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var calls []string
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				reader := bufio.NewReader(conn)
+				for {
+					line, err := reader.ReadBytes('\n')
+					if err != nil {
+						return
+					}
+					var request struct {
+						ID     int    `json:"id"`
+						Method string `json:"method"`
+						Params struct {
+							Name string `json:"name"`
+						} `json:"params"`
+					}
+					if json.Unmarshal(line, &request) != nil {
+						return
+					}
+					result := map[string]interface{}{"serverInfo": map[string]interface{}{"name": "fake"}}
+					if request.Method == "tools/call" {
+						calls = append(calls, request.Params.Name)
+						result = map[string]interface{}{
+							"content": []interface{}{map[string]interface{}{"type": "text", "text": text}},
+							"isError": refuse,
+						}
+					}
+					reply, _ := json.Marshal(map[string]interface{}{"jsonrpc": "2.0", "id": request.ID, "result": result})
+					conn.Write(append(reply, '\n'))
+				}
+			}()
+		}
+	}()
+	return path, &calls
+}
+
+func argsFor(session, socket string) []string {
+	return []string{
+		"-p", "--session-id", session,
+		"--mcp-config", `{"mcpServers":{"wakil":{"command":"wakil","args":["--mcp-shim","--socket","` + socket + `"]}}}`,
+	}
+}
+
+// frames decodes the stub's stdout, one JSON object a line.
+func frames(t *testing.T, out string) []map[string]interface{} {
+	t.Helper()
+	var all []map[string]interface{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		var frame map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &frame); err != nil {
+			t.Fatalf("a frame is not JSON: %q", line)
+		}
+		all = append(all, frame)
+	}
+	return all
+}
+
+// block returns the first content block of a frame's message.
+func block(frame map[string]interface{}) map[string]interface{} {
+	content, _ := frame["message"].(map[string]interface{})["content"].([]interface{})
+	if len(content) == 0 {
+		return nil
+	}
+	first, _ := content[0].(map[string]interface{})
+	return first
+}
+
+// TestAnEchoedCallWritesToolUseAndResult — a rule with `echo` puts the call in the stream as a
+// real agent's turn would: the `tool_use` before the call, the `tool_result` (the call's content,
+// verbatim) after it, and `is_error` on a refusal.
+func TestAnEchoedCallWritesToolUseAndResult(t *testing.T) {
+	_, projDir := stubFixture(t)
+
+	socket, calls := fakeWindow(t, "typed into \"Guest name\"", false)
+	out := frames(t, runStub(t, projDir, argsFor("echo-ok", socket), "fill the guest name"))
+	// system/init, tool_use, tool_result, the reply, the result.
+	if len(out) != 5 {
+		t.Fatalf("got %d frames, want 5: %v", len(out), out)
+	}
+	use := block(out[1])
+	if out[1]["type"] != "assistant" || use["type"] != "tool_use" || use["name"] != "mcp__wakil__browser_type" {
+		t.Errorf("frame 2 = %v, want an assistant tool_use of mcp__wakil__browser_type", out[1])
+	}
+	input, _ := use["input"].(map[string]interface{})
+	if input["ref"] != "e1" || input["text"] != "Ada Lovelace" || input["pane"] != "browser-1" {
+		t.Errorf("the tool_use input = %v, want the rule's params", input)
+	}
+	result := block(out[2])
+	if out[2]["type"] != "user" || result["type"] != "tool_result" || result["tool_use_id"] != use["id"] {
+		t.Errorf("frame 3 = %v, want a user tool_result for %v", out[2], use["id"])
+	}
+	if _, flagged := result["is_error"]; flagged {
+		t.Errorf("a call that ran carries is_error: %v", result)
+	}
+	content, _ := result["content"].([]interface{})
+	if len(content) != 1 || content[0].(map[string]interface{})["text"] != "typed into \"Guest name\"" {
+		t.Errorf("the tool_result's content = %v, want the call's text verbatim", content)
+	}
+	if out[3]["type"] != "assistant" || block(out[3])["text"] != "typed the guest name" {
+		t.Errorf("frame 4 = %v, want the reply after the result", out[3])
+	}
+	if len(*calls) != 1 || (*calls)[0] != "browser_type" {
+		t.Errorf("the window was asked for %v, want one browser_type", *calls)
+	}
+
+	refusedSocket, _ := fakeWindow(t, "browser_click: read the page first (browser_read_page) — refs come from the last read.", true)
+	refused := frames(t, runStub(t, projDir, argsFor("echo-no", refusedSocket), "confirm the booking"))
+	if len(refused) != 4 {
+		t.Fatalf("got %d frames for a refusal, want 4 (init, tool_use, tool_result, result): %v", len(refused), refused)
+	}
+	refusal := block(refused[2])
+	if refusal["is_error"] != true {
+		t.Errorf("a refused call's tool_result = %v, want is_error true", refusal)
+	}
+	text := refusal["content"].([]interface{})[0].(map[string]interface{})["text"]
+	if text != "browser_click: read the page first (browser_read_page) — refs come from the last read." {
+		t.Errorf("the refusal's content = %q, want the window's text without the driver's prefix", text)
+	}
+	if refused[3]["is_error"] != true || !strings.HasPrefix(refused[3]["result"].(string), "browser_click was refused: ") {
+		t.Errorf("the turn's result = %v, want the existing `<action> was refused: …`", refused[3])
+	}
+}
+
+// TestACallWithoutEchoWritesNoToolFrames — every rule written before the browser's still calls the
+// window and says nothing of it: no tool_use, no tool_result.
+func TestACallWithoutEchoWritesNoToolFrames(t *testing.T) {
+	_, projDir := stubFixture(t)
+	socket, calls := fakeWindow(t, "opened", false)
+	out := runStub(t, projDir, argsFor("echo-off", socket), "start the second agent in qa")
+	if len(*calls) != 1 {
+		t.Fatalf("the window was asked %d times, want 1", len(*calls))
+	}
+	if strings.Contains(out, "tool_use") || strings.Contains(out, "tool_result") {
+		t.Errorf("a call without echo wrote tool frames:\n%s", out)
+	}
+	if got := len(frames(t, out)); got != 3 {
+		t.Errorf("got %d frames, want 3 (init, reply, result)", got)
 	}
 }

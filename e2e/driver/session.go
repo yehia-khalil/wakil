@@ -203,6 +203,9 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		spec.GitHook = WantsGitHook(checks)
 		// 3a-iii's last clone folder, for the clone check's launch only (SeedSpec.CloneFolder).
 		spec.CloneFolder = WantsCloneFolder(checks)
+		// 3c-ii's staging site and production project, for the tags and production checks only.
+		spec.BrowserSites = WantsBrowserSites(checks)
+		spec.PageStub = pageStub
 		seeded, err = Seed(fixture, spec)
 		if err != nil {
 			return Result{}, err
@@ -336,19 +339,20 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 
 	settle := settleFor(s.Settle, s.Agent.SeedsAnAgent())
 	runner := &Runner{
-		Orca:        s.Orca,
-		Resolver:    s.Resolver,
-		Channel:     client,
-		PID:         instance.PID,
-		FixtureRoot: fixture.Root,
-		ChatStub:    chatStub,
-		PageStub:    pageStub,
-		Processes:   PS{},
-		Journal:     FileJournal{Home: fixture.Home},
-		Evidence:    evidence,
-		Settle:      settle,
-		Quarantined: s.Quarantined,
-		Input:       s.Resolver.WatchInput,
+		Orca:         s.Orca,
+		Resolver:     s.Resolver,
+		Channel:      client,
+		PID:          instance.PID,
+		FixtureRoot:  fixture.Root,
+		ChatStub:     chatStub,
+		PageStub:     pageStub,
+		PageStubLive: PageStubLive(pageStub),
+		Processes:    PS{},
+		Journal:      FileJournal{Home: fixture.Home},
+		Evidence:     evidence,
+		Settle:       settle,
+		Quarantined:  s.Quarantined,
+		Input:        s.Resolver.WatchInput,
 	}
 	result = runner.Run(checks)
 	// **The scripted agent's log is read before teardown, always.** The

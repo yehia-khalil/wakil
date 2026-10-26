@@ -242,9 +242,27 @@ func answer(writer *bufio.Writer, script driver.AgentScript, socket, prompt stri
 			return "", fmt.Errorf("the window's MCP socket refused the handshake: %w", err)
 		}
 		if rule.Call != nil {
-			if _, err := client.Call(rule.Call.Action, rule.Call.Params); err != nil {
+			var echo *echoedCall
+			if rule.Call.Echo {
+				echo = &echoedCall{writer: writer, id: fmt.Sprintf("toolu_e2e_%d", time.Now().UnixNano())}
+				if err := echo.use(rule.Call); err != nil {
+					return "", err
+				}
+			}
+			result, err := client.Call(rule.Call.Action, rule.Call.Params)
+			if err != nil {
+				if echo != nil {
+					if werr := echo.result(strings.TrimPrefix(err.Error(), refusedPrefix), true); werr != nil {
+						return "", werr
+					}
+				}
 				text := fmt.Sprintf("%s was refused: %v", rule.Call.Action, err)
 				return text, emitResult(writer, true, text)
+			}
+			if echo != nil {
+				if err := echo.result(result.Text, false); err != nil {
+					return "", err
+				}
 			}
 		}
 		if rule.Read != nil {
@@ -410,5 +428,48 @@ func emit(writer *bufio.Writer, frame map[string]interface{}) error {
 func emitResult(writer *bufio.Writer, isError bool, text string) error {
 	return emit(writer, map[string]interface{}{
 		"type": "result", "subtype": "success", "is_error": isError, "result": text,
+	})
+}
+
+// refusedPrefix is what ParseToolResult puts before a refusal's text; the echoed result carries
+// the text alone, as the window handed it over.
+const refusedPrefix = "the action was refused: "
+
+// echoedCall writes an action's `tool_use` and `tool_result` into the stream, as a real agent's
+// turn carries them, so the thread has the rows a browser tool produces (AgentCall.Echo).
+type echoedCall struct {
+	writer *bufio.Writer
+	id     string
+}
+
+// use is the assistant's `tool_use`, named as the MCP server names its tools: `mcp__wakil__<action>`.
+func (e *echoedCall) use(call *driver.AgentCall) error {
+	input := call.Params
+	if input == nil {
+		input = map[string]interface{}{}
+	}
+	return emit(e.writer, map[string]interface{}{
+		"type": "assistant",
+		"message": map[string]interface{}{
+			"role": "assistant",
+			"content": []interface{}{map[string]interface{}{
+				"type": "tool_use", "id": e.id, "name": "mcp__wakil__" + call.Action, "input": input,
+			}},
+		},
+	})
+}
+
+// result is the user's `tool_result` for it: the call's text content, flagged on a refusal.
+func (e *echoedCall) result(text string, isError bool) error {
+	block := map[string]interface{}{
+		"type": "tool_result", "tool_use_id": e.id,
+		"content": []interface{}{map[string]interface{}{"type": "text", "text": text}},
+	}
+	if isError {
+		block["is_error"] = true
+	}
+	return emit(e.writer, map[string]interface{}{
+		"type":    "user",
+		"message": map[string]interface{}{"role": "user", "content": []interface{}{block}},
 	})
 }
