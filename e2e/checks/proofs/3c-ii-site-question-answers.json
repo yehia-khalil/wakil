@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/3c-ii-site-question-answers.jsonl",
+  "baseCommit": "5feb2f5e5892308cc712bebd2ac05ddeccec792a",
+  "provedAt": "2026-10-26T19:00:23.185368Z",
+  "checkBlob": "732d57fd8d620dbf79e9958c53a4e7753f89df83"
+}
