@@ -385,6 +385,12 @@ at narrow widths.
 - **⌥↓/⌥↑ step threads only while focus is in a review box or the Ticket column**; in the text
   they stay Monaco's Move Line Down / Up.
 
-## Open questions
+### Plan pre-flight (2026-10-26, my calls)
+
+- The record may carry `seen.url`, `edited` and an id on each `next` line beyond the shape above.
+- A PR stack is followed one step each way (the PR this branch is based on, and PRs based on it).
+- Record writes take a file lock per ticket, since the operator's and an agent's writes run in
+  different processes.
+
 
 1. Open question 15 (PM transition reversibility) is untouched here; it applies to piece 5's Move.
