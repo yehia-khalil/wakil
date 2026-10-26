@@ -1,6 +1,16 @@
 {
   "rules": [
     {
+      "match": "press return in the guest name",
+      "call": { "action": "browser_press", "echo": true, "params": { "pane": "browser-1", "ref": "e1", "key": "Return" } },
+      "reply": "pressed return in the guest name"
+    },
+    {
+      "match": "scroll to the back link",
+      "call": { "action": "browser_scroll", "echo": true, "params": { "pane": "browser-1", "ref": "e6" } },
+      "reply": "scrolled to the back link"
+    },
+    {
       "match": "fill the guest name",
       "call": { "action": "browser_type", "echo": true, "params": { "pane": "browser-1", "ref": "e1", "text": "Ada Lovelace" } },
       "reply": "typed the guest name"

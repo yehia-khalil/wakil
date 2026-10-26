@@ -165,10 +165,13 @@ struct ConfirmationPlane: View {
         // Fires when this view is inserted into the hierarchy — i.e. when
         // the plane appears, since `Canvas.swift` only ever includes it
         // conditionally (`if let pending = model.pending`).
-        .onAppear {
-            keyboardReturn.capture()
+        // The plane's own window, not the key one: an agent may ask while Wakil is in the background,
+        // and the keyboard to keep and to take is this window's. What held it is read before the
+        // plane takes it.
+        .background(PlaneWindowReader { window in
+            keyboardReturn.capture(in: window)
             takeKeyboard()
-        }
+        })
         // One proposal straight after another keeps this view: the next one takes the keyboard too.
         .onChange(of: pending.id) { _, _ in takeKeyboard() }
         .onDisappear { keyboardReturn.restore() }
@@ -194,8 +197,7 @@ final class PlaneKeyboardReturn {
     private(set) weak var window: NSWindow?
     private weak var responder: NSResponder?
 
-    func capture() {
-        guard let window = NSApp.keyWindow else { return }
+    func capture(in window: NSWindow) {
         self.window = window
         var held = window.firstResponder
         if let editor = held as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSView { held = field }
@@ -211,6 +213,30 @@ final class PlaneKeyboardReturn {
                 || ((now as? NSTextView)?.isFieldEditor == true && ((now as? NSTextView)?.delegate as? NSView)?.window == nil)
             guard free else { return }
             window.makeFirstResponder(view)
+        }
+    }
+}
+
+/// Tells `found` the window the plane is drawn in, once, as soon as it has one.
+private struct PlaneWindowReader: NSViewRepresentable {
+    let found: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.found = found
+        return view
+    }
+
+    func updateNSView(_ view: ReaderView, context: Context) {}
+
+    final class ReaderView: NSView {
+        var found: ((NSWindow) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window, let found else { return }
+            self.found = nil
+            found(window)
         }
     }
 }

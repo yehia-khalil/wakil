@@ -127,6 +127,24 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
     static let scriptStoppedReason = "Wakil's page script could not finish there — read the page again "
         + "(browser_read_page)."
 
+    /// How long a call waits for the page to answer before it is refused.
+    static let callTimeout: TimeInterval = 10
+    static let noAnswerReason = "the page did not answer within 10 s — try again, or read the page again "
+        + "(browser_read_page)."
+
+    /// A continuation resumed by whichever answers first, the page or the timeout.
+    @MainActor
+    private final class AnswerOnce {
+        private var continuation: CheckedContinuation<Result<String, BrowserPageDriverError>, Never>?
+        init(_ continuation: CheckedContinuation<Result<String, BrowserPageDriverError>, Never>) {
+            self.continuation = continuation
+        }
+        func answer(_ result: Result<String, BrowserPageDriverError>) {
+            continuation?.resume(returning: result)
+            continuation = nil
+        }
+    }
+
     /// Runs `expression` in the tab's page, in `wakil.agent`, with `arguments` as values (never source).
     private func call(scope: LayoutScope?, pane: String, tab: String, _ expression: String,
                       _ arguments: [String: any Sendable]) async throws -> String {
@@ -134,14 +152,20 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
         let body = BrowserAgentScript.body(expression)
         let result: Result<String, BrowserPageDriverError> = await withCheckedContinuation { continuation in
             Task { @MainActor in
+                // Answered once: by the page, or by the timeout when its web process does not answer.
+                let once = AnswerOnce(continuation)
                 guard let view = try? self.liveView(scope: scope, pane: pane, tab: tab) else {
-                    return continuation.resume(returning: .failure(.notLoaded))
+                    return once.answer(.failure(.notLoaded))
                 }
                 view.callAsyncJavaScript(body, arguments: arguments, in: nil, in: BrowserAgentScript.world) { result in
                     switch result {
-                    case .success(let value as String): continuation.resume(returning: .success(value))
-                    case .success, .failure: continuation.resume(returning: .failure(.failed(Self.scriptStoppedReason)))
+                    case .success(let value as String): once.answer(.success(value))
+                    case .success, .failure: once.answer(.failure(.failed(Self.scriptStoppedReason)))
                     }
+                }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(Self.callTimeout))
+                    once.answer(.failure(.failed(Self.noAnswerReason)))
                 }
             }
         }

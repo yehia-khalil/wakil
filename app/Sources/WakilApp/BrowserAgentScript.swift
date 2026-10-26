@@ -22,12 +22,12 @@ import WebKit
 ///   `title`, `name`, its text, a button's value — whitespace collapsed — **with `aria-label` and
 ///   `title` folded in** when the label came from elsewhere, so the never-list sees them.
 /// - A never-list field's value never leaves the page (`wakilYours`, generated from
-///   `BrowserFieldRules`).
+///   `BrowserFieldRules`), nor its own text through the page's text.
 /// - `describe(ref)`: the live element, as a read describes it.
 /// - `act(spec)`: refuses a gone element (`stale`), one whose type, autocomplete, name or id is
 ///   not the read's (`expect`), and — for type, select and press — **a field that is the operator's
 ///   now (the never-list again, on the live element)**. A press never changes a field's value: it
-///   focuses the element and sends the key's events; Return submits the element's form.
+///   focuses the element and sends the key's events; Return submits the form of a text input.
 /// - A `failed` reason is Wakil's own fixed sentence, never page text.
 enum BrowserAgentScript {
     @MainActor static let world = WKContentWorld.world(name: "wakil.agent")
@@ -191,9 +191,18 @@ enum BrowserAgentScript {
             });
             if (elements.length) issued = n - 1;
             refs = next;
+            // The operator's fields keep their text out of the page's text too: an input's value is
+            // never in it, but a contenteditable's or a textarea's own text is.
+            let text = document.body ? String(document.body.innerText) : '';
+            found.forEach((el, i) => {
+              if (wakilYours(elements[i]) === null) return;
+              for (const own of [el.innerText, el.textContent, el.value]) {
+                const words = String(own == null ? '' : own).trim();
+                if (words) text = text.split(words).join('');
+              }
+            });
             return {
-              url: String(location.href), title: String(document.title),
-              text: document.body ? String(document.body.innerText) : '',
+              url: String(location.href), title: String(document.title), text,
               elements, framesSkipped: frames.count,
             };
           }
@@ -266,7 +275,10 @@ enum BrowserAgentScript {
             if (down.defaultPrevented) return;
             // Synthetic keys change no field's value (a press never does); these two do what a
             // page's own Return and Tab do without touching one.
-            if (key === 'Return' && el.form && typeof el.form.requestSubmit === 'function') el.form.requestSubmit();
+            // Return submits only from a text input in a form, as a page's own Return does there; on
+            // a textarea, a button or a link it would do something else, so it does nothing more.
+            if (key === 'Return' && el.tagName === 'INPUT' && roleOf(el) === 'textbox' && el.form
+                && typeof el.form.requestSubmit === 'function') el.form.requestSubmit();
             if (key === 'Tab') { const next = nextFocusable(el); if (next) next.focus(); }
           }
 

@@ -9,8 +9,10 @@
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"click \"Confirm\" on localhost:"}}
 {"expect":{"tree":"contains","text":"PRODUCTION"}}
+{"expect":{"tree":"contains","text":"type confirm"}}
 {"do":{"click":"confirmation.cancel"}}
 {"expect":{"tree":"contains","text":"requires confirmation"}}
+{"expect":{"focus":"window.composer"}}
 {"expect":{"tree":"absent","text":"click \"Confirm\" on localhost:"}}
 {"do":{"focus":"window.composer"}}
 {"do":{"keys":"click confirm on the live form"}}
@@ -19,4 +21,5 @@
 {"do":{"type":{"into":"confirmation.field","text":"confirm"}}}
 {"do":{"click":"confirmation.run"}}
 {"expect":{"pane":"browser-1","field":"title","equals":"Booked: no name, 1 night"}}
+{"expect":{"focus":"window.composer"}}
 {"expect":{"tree":"absent","text":"agent allowed"}}
