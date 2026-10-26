@@ -330,6 +330,22 @@ window.closeConversation.message	a Text (conversations, Rule 1): the prompt's qu
 #     account, and a check signing in leaves a real credential behind (#254's
 #     rule). The pop-up-as-a-tab mechanics are 3c-i-tabs.jsonl's popup.html.
 #     Runbook row 5.
+#
+# The final review's fixes add four more, each a relaunch or a place's new name
+# — one check is one launch, and the seeded launch opens its first pane inside
+# a conversation, so no page loads before a canvas is adopted:
+#   - a page kept, not reloaded, when a conversation takes the canvas or the
+#     project or environment is renamed (I1): WakilKit's
+#     aConversationTakingTheCanvasRehomesTheBrowser and
+#     aRenamedProjectRehomesTheBrowser pin the call and the state files' move.
+#     Runbook row 4.
+#   - a new tab never showing an earlier pane's page after a relaunch (I2):
+#     WakilKit's onlyARestoredTabIsMarkedAsFromTheSavedLayout and
+#     aClosedPaneTakesEveryTabsStateAndOnlyItsOwn. Runbook row 4.
+#   - a tab's scroll and same-page moves kept across a quit (I8). Runbook row 4.
+#   - a failed download's line shown whole (I5): the fixture's downloads do not
+#     fail, and the accessibility text is whole whether or not it is cut on
+#     screen. Runbook §3.
 browser.certificate	a Text (3c-i): `<host>'s certificate isn't trusted — <reason>`. Drawn only over an https page whose certificate WebKit refuses, and the page stub is loopback http; walk-only (runbook §3, self-signed.badssl.com).
 browser.visitAnyway	Visit Anyway (3c-i, operator only, for the session): drawn only on the certificate page (browser.certificate's case); walk-only.
 browser.crashed	a Text (3c-i): `This page stopped.`. Drawn only after WebKit's web content process for the tab ends, and nothing a check can do crashes it; walk-only (runbook §3).
@@ -339,3 +355,5 @@ browser.prompt.password	an HTTP sign-in's password (3c-i): browser.prompt.user's
 browser.download.<…>.show	Show in Finder (3c-i): drawn only on a finished download, and pressing it reveals the file in Finder — the act's whole effect leaves the window (settings.org.git.account.add.openKeys' case). The fixture's big.bin takes minutes by design; a real download is the runbook's row 7.
 browser.prompt.allow	the camera / microphone prompt's Allow (3c-i): drawn only when a page asks for a camera or microphone, and macOS first asks the operator itself (TCC), a system dialog no step kind answers; a fixture camera would also have to exist. Walk-only: runbook row 8.
 browser.prompt.deny	the camera / microphone prompt's Don't Allow (3c-i): browser.prompt.allow's case. Walk-only: runbook row 8.
+browser.prompt.open	Open on a page's app link (3c-i, final review I4): pressing it hands the link to the app macOS names for it (Mail, Zoom) — the act's whole effect leaves the window (settings.org.git.account.add.openKeys' case). The question and its Cancel are 3c-i-app-link.jsonl's; Open is walk-only (runbook §3).
+browser_print	its dispatch and its parity (3c-i, final review I6): its whole effect is the system's print panel, a sheet of AppKit's controls that no step kind drives (a page's file chooser's case). The ⌘K row Print page is 3c-i-app-link.jsonl's; printing is runbook row 9.

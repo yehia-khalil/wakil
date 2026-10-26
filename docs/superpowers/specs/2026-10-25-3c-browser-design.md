@@ -70,7 +70,9 @@ without a trip out. What this design keeps:
    Prohibited list in Wakil's own agent rules — the agent never types a password — stands.)
 4. **One pane holds many tabs; a second browser pane is a second set of tabs.** As §11 says and the
    mockup draws: tabs in the rail's language, a vertical list along the pane's top-left, not Chrome's
-   trapezoids. ⌘T, ⌘W and ⌘1–9 act on the browser's tabs **only while a browser pane is focused**; in
+   trapezoids. *(Superseded by the horizontal strip, design pass 2026-10-25: the tabs run across the
+   pane's top as `Browser.dc.html` draws them — design language §11 and the 3c-i ledger's ruling. Do
+   not rebuild the vertical list.)* ⌘T, ⌘W and ⌘1–9 act on the browser's tabs **only while a browser pane is focused**; in
    other panes they keep today's meaning (⌘T a scratch tab in the editor, ⌘W close tab or pane). ⌘W on
    the last tab closes the pane, as the editor does.
 5. **Clicking inside the page is the second exception to dual-drive**, after the editor's text surface.

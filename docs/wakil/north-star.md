@@ -272,7 +272,7 @@ live app; *accepted* means it was marked met without one.
 | **3a-iv** | Branches and stash — the branch picker in the context line, stash, pop, apply | **2026-10-23**, walked | 3a-iii |
 | **3a-v** | Conflicts, history and blame — accept current or incoming, the Timeline, inline blame | — | 3a-ii |
 | **3c** | Browser | — | — |
-| **3c-i** | Pane, tabs, a profile per organisation | **2026-10-25**, not walked | — |
+| **3c-i** | Pane, tabs, a profile per organisation | — | — |
 | **3c-ii** | Agent reach | — | 3c-i |
 | **3c-iii** | History, bookmarks, links | — | 3c-i |
 | **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |

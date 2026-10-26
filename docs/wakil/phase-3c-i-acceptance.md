@@ -37,13 +37,13 @@ this Mac. Do them in order: each starts where the one before left off.
 | 1 | Wakil | ⌘K → **New Browser pane**. Type `github.com`, Return. Click **Sign in**, then ⌘[ and ⌘] | The pane opens with one blank tab and the address field focused. `https://github.com/` loads: the strip's tab shows GitHub's title and favicon, the address row the whole URL with a padlock, the footer `GITHUB.COM · TLS`. ⌘[ goes back to the home page and ⌘] forward to the sign-in page, ‹ and › greying at each end | |
 | 2 | Wakil | ⌘T, type `example.com`, Return. ⌘W, then ⌘⇧T. ⌘1, then ⌘9. Drag the second tab onto the first | ⌘T opens a tab with the address field focused. ⌘W closes it and the GitHub tab is shown; ⌘⇧T brings `example.com` back with its page, not a blank tab. ⌘1 selects the first tab, ⌘9 the last. The drag shows a line where the tab will land and moves it there; the order stays | |
 | 3 | Wakil | On the GitHub tab, sign in to GitHub. ⌘⇧O → switch to **B**, open a browser pane there and go to `github.com`. ⌘⇧O → back to **A** | In **A** you are signed in. In **B** GitHub shows **Sign in**: no cookie crossed. Back in **A**, the pane and its tabs are where you left them and you are still signed in, with no reload | |
-| 4 | Wakil | Quit Wakil (⌘Q) and launch it again as in §0. Select the GitHub tab, press ‹ | Both tabs come back in their order, the selected one loaded, the other loading only when selected. ‹ goes back through the pages visited before the quit | |
+| 4 | Wakil | Scroll the GitHub page halfway down. Quit Wakil (⌘Q) and launch it again as in §0. Before anything else, ⌘K → **New Terminal** (this starts a conversation). Select the GitHub tab, press ‹. Then ⌘T, close the browser pane, and open a new one from ⌘K | Both tabs come back in their order, the selected one loaded, the other loading only when selected. Opening the terminal reloads no page: the GitHub tab is still scrolled halfway. ‹ goes back through the pages visited before the quit. The new browser pane opens on a blank tab, never on a page from the pane you closed | |
 | 5 | Wakil | Go to `vercel.com/login` → **Continue with GitHub** (or any site whose GitHub sign-in opens a pop-up) and authorise | The pop-up opens as a new tab in the same pane, already signed in to GitHub from row 3; when GitHub finishes, that tab closes itself and the first tab is signed in to the site | |
 | 6 | Wakil | On `github.com`, ⌘F, type `the`, ⌘G, ⌘⇧G, Escape. ⌘+ twice; then open `example.com` in the other tab; back to GitHub | The find bar shows `1 of N` and moves through the matches, highlighted in the page; Escape closes it and the page has the keyboard. ⌘+ zooms GitHub to 125%; `example.com` stays at 100%; GitHub is still 125% when you come back, and after a relaunch | |
 | 7 | Wakil, then Terminal | Go to `https://proof.ovh.net/files/1Gb.dat`. When the strip shows it, press its **Cancel**. Then `ls -l ~/Downloads/1Gb.dat*` | A download strip appears under the page: `1Gb.dat`, a size line counting up (`… of … MB` or `GB`) and **Cancel**. Cancel stops it and the row says so; Terminal shows no finished `1Gb.dat` | |
 | 8 | Wakil | Go to `https://webrtc.github.io/samples/src/content/getusermedia/gum/` → **Open camera**. Press **Don't Allow**; reload and **Open camera** again → **Allow** | In the pane, over the page: `webrtc.github.io wants to use your camera` with **Allow** and **Don't Allow** (macOS asks once first, naming Wakil). Don't Allow: the page reports an error. Allow: the camera shows in the page | |
-| 9 | Wakil | Right-click on the GitHub page → **Inspect Element** | Web Inspector opens, docked to the page, showing the element you right-clicked. Close it and the page keeps the keyboard | |
-| 10 | Wakil | In **A**: ⌘, → **Browser** → **Clear this organisation's browsing data…** → **Keep it**; again → **Delete**. Back on the GitHub tab, ⌘R | The question names **A**: `Delete <A>'s browsing data? Every site signs you out, in every project.` with **Keep it** and **Delete**; Keep it changes nothing. After Delete GitHub shows **Sign in**, and GitHub's zoom is back to 100%. ⌘⇧O to **B** and back: nothing in **B** changed | |
+| 9 | Wakil | Right-click on the GitHub page → **Inspect Element**. Close it, then ⌘K → **Print page** → **Cancel**. Go to `https://zoom.us/test` → **Launch Meeting** (or any page with a `mailto:` link, clicked) → **Cancel**; click it again → **Open** | Web Inspector opens, docked to the page, showing the element you right-clicked; closed, the page keeps the keyboard. Print page shows the system's print panel with the page in its preview. The link asks over the page, `Open in <app>?` with **Open** and **Cancel**: Cancel opens nothing; Open opens the app | |
+| 10 | Wakil, then Terminal | In **A**: ⌘, → **Browser** → **Clear this organisation's browsing data…** → **Keep it**; again → **Delete**. Back on the GitHub tab, ⌘R. Then in Terminal, `./bin/wakil org create walk-rm`, in Wakil ⌘⇧O → **walk-rm**, open a browser pane, quit Wakil, and run `./bin/wakil org rm walk-rm` in the worktree root | The question names **A**: `Delete <A>'s browsing data? Every site signs you out, in every project.` with **Keep it** and **Delete**; Keep it changes nothing. After Delete GitHub shows **Sign in**, and GitHub's zoom is back to 100%. ⌘⇧O to **B** and back: nothing in **B** changed. `org rm` prints `removed org "walk-rm"` and a second line naming WebKit's store, its id and Settings → Browser | |
 
 ## 2. Known and not fixed
 
@@ -55,6 +55,15 @@ this Mac. Do them in order: each starts where the one before left off.
   (no network fetch, Invariant 4).
 - A load that times out (rather than being refused) shows its error only after WebKit's own
   timeout, a minute or more.
+- **A page's `beforeunload` question is not shown**: leaving a page with an unsent form leaves it
+  without asking. `WKWebView` has no public hook for it — `WKUIDelegate` offers alert, confirm and
+  prompt only; the before-unload panel exists only in the legacy `WebView` and WebKit's private API,
+  which Wakil does not use. The spec's Interaction rule 1 is not met here until WebKit offers one.
+- `wakil org rm` cannot delete the organisation's WebKit store (only the app can, by its id, and the
+  id goes with the folder): it names the store it leaves and says to clear it in Settings → Browser
+  first.
+- The pages' own question in a pane you are not in waits shown, without the keyboard: click it (or
+  move to its pane) to answer it from the keys.
 
 ## 3. Residue: what the walk cannot establish
 
@@ -65,6 +74,10 @@ What no check reaches and no row above walks — try them at will:
 - An untrusted certificate (`<host>'s certificate isn't trusted — <reason>` with **Visit Anyway**),
   e.g. `https://self-signed.badssl.com/`.
 - A crashed page (`This page stopped.` with **Reload**): WebKit gives no way to crash one on purpose.
+- A download that fails (unplug the network mid-download): its row shows the whole reason, which
+  wraps and can be selected and copied.
+- A link to an app the Mac has no app for (`foo-nothing:x`): the tab says `No app on this Mac opens
+  foo-nothing: links.` with **OK**.
 - Clicks and typing inside a page: the page is the operator's (Decision 48), and the harness
   drives only Wakil's own controls.
 

@@ -1615,7 +1615,11 @@ Each entry: the call, why, and what would change our mind.
     organisation gets its own `WKWebsiteDataStore(forIdentifier:)`, its id in
     `~/.wakil/orgs/<org>/browser/profile.json`, so a site signed in under one organisation is signed
     out under another (Invariant 4); the store itself is WebKit's, under `~/Library/WebKit/`, and
-    Settings → Browser → Clear deletes it — only the organisation its question named. **A web view
+    Settings → Browser → Clear deletes it — only the organisation its question named. `wakil org rm`
+    cannot (Go has no WebKit, and the id goes with the folder): it names the store it leaves behind
+    as residue and says to clear it in Settings first, as it leaves the Keychain. A link to an app
+    (`mailto:`, `zoommtg:`) is asked about in place before macOS opens it, and `browser_open` takes
+    web pages and files only. **A web view
     belongs to a place**: the window keys it by (place, pane, tab), drops a report from a place not on
     screen, and keeps tab state per place, since pane and tab ids repeat. **The page is the second
     exception to dual-drive**, after the editor's text: clicks and typing inside a page are the
