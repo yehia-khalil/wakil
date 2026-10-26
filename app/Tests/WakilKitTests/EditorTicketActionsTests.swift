@@ -254,6 +254,44 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         #expect(await f.ticket.count("ticket_branch") == after)
     }
 
+    /// Two In flight rows carry one key on different branches: picking the second by its root and
+    /// branch reads and shows the second's branch, never the first's; the key alone picks the first.
+    @Test func aPickedRowShowsItsOwnBranch() async throws {
+        let f = try await ticketFixture()
+        _ = try await f.store.read(root: "/p/api")
+        func row(_ branch: String, pr: Int) -> JSONValue {
+            .object(["key": .string("INI-140"), "title": .string("Deploy"), "status": .string("To Do"),
+                     "state": .string("#\(pr) · open"), "root": .string("/p/api"), "branch": .string(branch), "pr": .integer(Int64(pr))])
+        }
+        await f.ticket.set("ticket_in_flight", .object([
+            "waitingOnYou": .array([]), "partial": .array([]),
+            "inFlight": .array([row("ini-140-deploy", pr: 212), row("ini-140-hotfix", pr: 213)]),
+        ]))
+        _ = try await f.store.inFlight()
+        await f.ticket.set("ticket_record", .object(["key": .string("INI-140")]))
+        await f.ticket.set("ticket_branch", ticketBranchJSON(branch: "ini-140-hotfix"))
+        try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("INI-140"),
+                                             "root": .string("/p/api"), "branch": .string("ini-140-hotfix")],
+                             origin: .ui, confirmation: nil)
+        #expect(await f.ticket.args("ticket_branch") == ["root": .string("/p/api"), "branch": .string("ini-140-hotfix")])
+        let c = await f.editor.snapshot().column
+        #expect(c?.ticketShown == "INI-140")
+        #expect(c?.ticketShownAt == TicketShownAt(root: "/p/api", branch: "ini-140-hotfix"))
+        #expect(await f.store.shownBranches()["INI-140"]?.branch == "ini-140-hotfix")
+        let v = await f.editor.panes.editorTicketView()
+        #expect(v.inFlightRow("INI-140", at: c?.ticketShownAt)?.branch == "ini-140-hotfix")
+        #expect(v.inFlightRow("INI-140", at: c?.ticketShownAt)?.pr == 213)
+        let read = await f.editor.panes.readPane(paneId: f.editor.pane, kind: "editor")
+        guard case .object(let o) = read, case .object(let col)? = o["column"] else { Issue.record("no column"); return }
+        #expect(col["ticket_shown_at"] == .object(["root": .string("/p/api"), "branch": .string("ini-140-hotfix")]))
+
+        // The key alone (the several pick, an agent naming a key) picks the first row, as before.
+        await f.ticket.set("ticket_branch", ticketBranchJSON(branch: "ini-140-deploy"))
+        try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("INI-140")], origin: .ui, confirmation: nil)
+        #expect(await f.ticket.args("ticket_branch") == ["root": .string("/p/api"), "branch": .string("ini-140-deploy")])
+        #expect(await f.editor.snapshot().column?.ticketShownAt == TicketShownAt(root: "/p/api", branch: "ini-140-deploy"))
+    }
+
     /// Fix round 2: the fixture with INI-140 picked from In flight, its branch (`ini-140-deploy`, the
     /// same PR and threads, keyed INI-140) read beside the root's own.
     private func pickedFixture() async throws -> TicketFixture {

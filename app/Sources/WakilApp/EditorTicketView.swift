@@ -203,7 +203,10 @@ struct EditorTicketView: View {
             Text(title).sectionTitle()
             if rows.isEmpty { Text("None").dimmed() }
             ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
-                Button { Task { await dispatch("ticket_show", ["key": .string(r.key)]) } } label: {
+                Button {
+                    // The row's own root and branch: two rows can carry one key.
+                    Task { await dispatch("ticket_show", ["key": .string(r.key), "root": .string(r.root), "branch": .string(r.branch)]) }
+                } label: {
                     HStack(spacing: Space.s) {
                         Text(r.key).bold()
                         Text(r.title).lineLimit(1)
@@ -226,10 +229,14 @@ struct EditorTicketView: View {
     /// branch's, read by its row's root and branch. The branch never switches (Rule 6).
     @ViewBuilder
     private func shownTicket(_ key: String) -> some View {
-        let carried = branch?.tickets.contains { $0.key == key } ?? false
-        let own: TicketBranchState? = carried ? branch : state.shownBranches[key]
+        let at = column.ticketShownAt
+        let carried = (branch?.tickets.contains { $0.key == key } ?? false)
+            && (at == nil || (at?.root == root && at?.branch == branch?.branch))
+        // A picked row's branch, only once the read of that row's branch has landed.
+        let shown = state.shownBranches[key].flatMap { b in at == nil || b.branch == at?.branch ? b : nil }
+        let own: TicketBranchState? = carried ? branch : shown
         let ref = own?.tickets.first { $0.key == key }
-        let row = state.inFlightRow(key)
+        let row = state.inFlightRow(key, at: at)
         let shownRecord = ticketShownRecord(state, key: key, ref: ref)
         let record: TicketRecordState? = if case .record(let r) = shownRecord { r } else { nil }
         Button("← Back to this branch") { Task { await dispatch("ticket_show", ["key": .null]) } }

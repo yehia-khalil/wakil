@@ -538,10 +538,13 @@ public struct EditorTicketViewState: Sendable, Equatable {
     }
     public static let empty = EditorTicketViewState()
 
-    /// The In flight or Waiting on you row of `key`, for a ticket shown from it.
-    public func inFlightRow(_ key: String) -> InFlightRowState? {
+    /// The In flight or Waiting on you row of `key`, for a ticket shown from it: the one at `at`'s
+    /// root and branch when given (two rows can carry one key), else the first.
+    public func inFlightRow(_ key: String, at: TicketShownAt? = nil) -> InFlightRowState? {
         guard let s = inFlight else { return nil }
-        return (s.waitingOnYou + s.inFlight).first { $0.key == key }
+        let rows = (s.waitingOnYou + s.inFlight).filter { $0.key == key }
+        guard let at else { return rows.first }
+        return rows.first { $0.root == at.root && $0.branch == at.branch }
     }
 }
 

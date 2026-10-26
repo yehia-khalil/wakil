@@ -263,14 +263,29 @@ func registerTicketActions(
     await registry.register(Action(
         name: "ticket_show",
         description: "Show a ticket in an editor pane's Ticket view by key (a row of In flight), or null for the "
-            + "branch's own. The branch never switches. Shows the column on Ticket.",
+            + "branch's own. root and branch pick the In flight or Waiting on you row a key is on, since two "
+            + "branches can carry one ticket; without them the key's first row. The branch never switches. "
+            + "Shows the column on Ticket.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["pane": string, "key": .object(["type": .array([.string("string"), .string("null")])])]),
+        schema: schema(["pane": string, "key": .object(["type": .array([.string("string"), .string("null")])]),
+                        "root": string, "branch": string]),
         handler: { params in
             let pane = try await editor.pane(params, "ticket_show")
             let key = optionalString(params, "key").flatMap { $0.isEmpty ? nil : $0.uppercased() }
+            // A row named by its root and branch; either alone names no row and is ignored (Rule 7).
+            var named: TicketShownAt?
+            if key != nil, optionalString(params, "root")?.isEmpty == false,
+               let b = optionalString(params, "branch"), !b.isEmpty {
+                named = TicketShownAt(root: try await projectRoot(params, "ticket_show"), branch: b)
+            }
+            let s = await store.lastInFlight()
+            let rows = ((s?.waitingOnYou ?? []) + (s?.inFlight ?? [])).filter { $0.key == key }
+            let row = named.map { at in rows.first { $0.root == at.root && $0.branch == at.branch } } ?? rows.first
+            // Where the shown ticket's branch is read: the named row's, else the key's first row's.
+            let at = named ?? row.flatMap { r in r.root.isEmpty || r.branch.isEmpty ? nil : TicketShownAt(root: r.root, branch: r.branch) }
             _ = await editor.updateColumn(pane) { c in
                 c.ticketShown = key
+                c.ticketShownAt = key == nil ? nil : at
                 c.view = .ticket
                 c.shown = true
             }
@@ -279,13 +294,14 @@ func registerTicketActions(
             // requests and threads. Nothing is checked out (Rule 6); a failed read is kept whole for
             // the view (Rule 8), so the show itself does not fail.
             if let key {
-                let carried = await followed(pane).asyncFlatMap { await store.branch(root: $0) }?.tickets
-                    .contains { $0.key == key } ?? false
-                let s = await store.lastInFlight()
-                let row = ((s?.waitingOnYou ?? []) + (s?.inFlight ?? [])).first { $0.key == key }
+                // The followed root's own read carries it — unless a row on another branch was named.
+                let followedRoot = await followed(pane)
+                let own = await followedRoot.asyncFlatMap { await store.branch(root: $0) }
+                let carried = (own?.tickets.contains { $0.key == key } ?? false)
+                    && (named == nil || (named?.root == followedRoot && named?.branch == own?.branch))
                 async let record: Void = { _ = try? await store.readRecord(key: key) }()
-                if !carried, let row, !row.root.isEmpty, !row.branch.isEmpty {
-                    await store.readShown(key: key, root: row.root, branch: row.branch)
+                if !carried, let at {
+                    await store.readShown(key: key, root: at.root, branch: at.branch)
                 }
                 await record
             }

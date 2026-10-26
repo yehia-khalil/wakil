@@ -406,6 +406,9 @@ public struct EditorColumnState: Sendable, Equatable, Codable {
     /// The Ticket view's ticket picked from In flight (`ticket_show`), nil for the branch's own: the
     /// window's life, never saved — not in `CodingKeys`.
     public var ticketShown: String?
+    /// The In flight or Waiting on you row `ticketShown` was picked from — its root and branch, since
+    /// two rows can carry one key — nil for a key picked alone. Never saved, as `ticketShown`.
+    public var ticketShownAt: TicketShownAt?
     public static let initial = EditorColumnState(shown: false, view: .files, width: 240, open: [])
     public init(shown: Bool, view: EditorColumnView, width: Double, open: [String],
                 changesClosed: Set<String> = [], changesHighlight: EditorChangesRow? = nil) {
@@ -429,6 +432,13 @@ public struct EditorColumnState: Sendable, Equatable, Codable {
         changesClosed = (try? c.decodeIfPresent(Set<String>.self, forKey: .changesClosed)) ?? []
         changesHighlight = (try? c.decodeIfPresent(EditorChangesRow.self, forKey: .changesHighlight)) ?? nil
     }
+}
+
+/// Where a ticket shown from In flight is read: its row's root and branch.
+public struct TicketShownAt: Sendable, Equatable, Hashable {
+    public let root: String
+    public let branch: String
+    public init(root: String, branch: String) { self.root = root; self.branch = branch }
 }
 
 /// Where the canvas draws a pane: its frame, moved by a live drag only while
