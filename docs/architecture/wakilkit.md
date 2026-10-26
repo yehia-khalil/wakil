@@ -127,9 +127,10 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 
 - `BrowserAddress.swift` — `BrowserAddress` (3c-i): the pure rule that turns typed text into a URL or a
   search (`resolve`, with the settings' search engine), `isSecure` (https, file, loopback http) and
-  `displayHost` (host without `www.`, or a file's name), and `footer` — the pane footer's
-  `BrowserFooterLine`: the host, then TLS for https, NOT SECURE for http, the host alone for loopback
-  http (beside `isSecure`, so the address row's padlock and the footer agree), nothing for a blank page.
+  `displayHost` (host without `www.`, or a file's name), and `lockDetail` — what the address
+  field's padlock says under the pointer: the host and TLS for https, plain HTTP for http (Not
+  Secure except to a loopback host, beside `isSecure`, so the glyph and its words agree), and the
+  certificate's reason when it was not trusted; nothing for a blank page.
 - `BrowserFocusRetry.swift` — `browserRetryFocus`: a page focus that waits for its web view to
   join the window asks again before every try whether the pane may still take the keyboard and the
   tab is still the active one, and gives up quietly when not (Rule 6).

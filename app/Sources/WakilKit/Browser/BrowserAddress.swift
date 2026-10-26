@@ -55,16 +55,30 @@ public enum BrowserAddress {
         }
     }
 
-    /// The pane footer's line (`Browser.dc.html`): the page's host, then `TLS` for https and
-    /// `NOT SECURE` for http — except http to a loopback host, which shows the host alone, as the
-    /// address row shows its padlock there (`isSecure`). Nil when the page has no host (blank).
-    public static func footer(_ url: URL) -> BrowserFooterLine? {
-        guard let host = url.host, !host.isEmpty else { return nil }
-        switch url.scheme?.lowercased() {
-        case "https": return BrowserFooterLine(host: host, transport: .tls)
-        case "http": return BrowserFooterLine(host: host, transport: isSecure(url) ? nil : .notSecure)
-        default: return BrowserFooterLine(host: host, transport: nil)
+    /// What the address field's padlock says under the pointer (3c-i; the footer's host and
+    /// transport moved into the field): the page's host and how it came — TLS for https (WebKit's
+    /// `serverTrust` names no protocol version, so none is given), plain HTTP for http, which is
+    /// Not Secure except to a loopback host (`isSecure`) — and, when the certificate was not
+    /// trusted, why. Nil where the field draws no padlock: a blank or `about:` page.
+    public static func lockDetail(_ url: URL, certificate: String? = nil) -> String? {
+        let scheme = url.scheme?.lowercased() ?? ""
+        if scheme.isEmpty || scheme == "about" { return nil }
+        let host = url.host ?? ""
+        let line: String
+        switch scheme {
+        case "https":
+            line = "\(host) over TLS." + (certificate == nil ? " The certificate is trusted." : "")
+        case "http" where isSecure(url):
+            line = "\(host) over plain HTTP — a loopback address, so nothing leaves this Mac."
+        case "http":
+            line = "Not Secure: \(host) over plain HTTP — anyone on the network can read or change it."
+        case "file":
+            line = "A file on this Mac."
+        default:
+            line = "Not Secure: a \(scheme): page."
         }
+        guard let certificate, !certificate.isEmpty else { return line }
+        return line + "\n" + certificate
     }
 
     /// The host without `www.`, or the file name for a `file:` URL.
@@ -141,16 +155,5 @@ public enum BrowserAddress {
         return parts.count == 4 && parts.allSatisfy { p in
             !p.isEmpty && p.count <= 3 && p.allSatisfy { $0.isASCII && $0.isNumber } && Int(p)! <= 255
         }
-    }
-}
-
-/// What the browser pane's footer says about a page (`BrowserAddress.footer`).
-public struct BrowserFooterLine: Sendable, Equatable {
-    public enum Transport: Sendable, Equatable { case tls, notSecure }
-    public let host: String
-    public let transport: Transport?
-    public init(host: String, transport: Transport?) {
-        self.host = host
-        self.transport = transport
     }
 }

@@ -9,8 +9,8 @@
 {"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
 {"expect":{"focus":"browser.page"}}
 {"expect":{"tree":"contains","text":"Page A"}}
-{"expect":{"frame":"browser.footer","inside":"browser.pane"}}
-{"expect":{"frame":"browser.footer.host","inside":"browser.footer"}}
+{"expect":{"frame":"browser.addressField","inside":"browser.pane"}}
+{"expect":{"frame":"browser.lock","inside":"browser.addressField"}}
 {"do":{"hotkey":"cmd+l"}}
 {"expect":{"focus":"browser.address"}}
 {"do":{"keys":"{pageStub}/b.html"}}

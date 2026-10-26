@@ -36,6 +36,9 @@
 {"expect":{"frame":"browser.address","inside":"browser.pane"}}
 {"expect":{"frame":"browser.address","minWidth":120}}
 {"dispatch":{"action":"pane_resize","params":{"id":"browser-1","width":700,"height":400}}}
+{"expect":{"frame":"browser.page","minWidth":696}}
+{"expect":{"frame":"browser.page","minHeight":320}}
+{"expect":{"frame":"browser.addressField","maxHeight":28}}
 {"expect":{"frame":"browser.tab.t1","minWidth":150}}
 {"expect":{"frame":"browser.tabs","maxHeight":40}}
 {"expect":{"frame":"browser.tab.t1","inside":"browser.tabs"}}

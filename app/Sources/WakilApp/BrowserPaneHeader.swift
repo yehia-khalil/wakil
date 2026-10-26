@@ -43,14 +43,30 @@ enum BrowserPaneStyle {
 
     // MARK: The tab list — `.tab`, drawn in the rail's language
 
-    /// `.tab { height: 30px; padding: 0 11px 0 9px; gap: 9px; border-radius: 5px }`.
-    static let tabHeight: CGFloat = 30
+    /// The pane's two header rows, the tab strip and the address row: 32 pt each (the compact
+    /// chrome, 2026-10-26 — `Browser.dc.html`'s 30 px entries in their own 38 pt row, and a 48 pt
+    /// address row, gave the page 230 pt less than the pane).
+    static let rowHeight: CGFloat = 32
+    /// Each header row's inset from the pane's edge, and the room above and below a row the
+    /// downloads take.
+    static let rowInset: CGFloat = 8
+    static let rowPadding: CGFloat = 4
+    /// The slab's corner (`Canvas.paneView`'s 10): the page's bottom corners, edge to edge.
+    static let paneRadius: CGFloat = 10
+    /// The pane's own glyph at the strip's left, in the label's place, and the room after it.
+    static let paneGlyph: CGFloat = 12
+    static let glyphTrailing: CGFloat = 4
+    /// One entry, inside the 32 pt strip: `.tab { padding: 0 11px 0 9px; gap: 9px; border-radius: 5px }`.
+    static let tabHeight: CGFloat = 26
     static let tabLeading: CGFloat = 9
     static let tabTrailing: CGFloat = 11
     static let tabGap: CGFloat = 9
     static let tabRadius: CGFloat = 5
-    /// Whitespace between entries, never a rule: the strip's `gap: 4px`.
-    static let tabSpacing: CGFloat = 4
+    /// Between entries: a 1 px hairline (`hairline`) of `separatorHeight`, `separatorGap` either
+    /// side — drawn only between two entries at rest, so the raised chip and a lifted entry
+    /// carry no rule against them.
+    static let separatorHeight: CGFloat = 14
+    static let separatorGap: CGFloat = 2
     /// A whole entry's width (the mockup's 188–232 px, one width so entries do not jump), and a
     /// folded one's: 9 + tick 2 + 9 + favicon 12 + 9 + × 16 + 11.
     static let tabWidth: CGFloat = 200
@@ -58,8 +74,9 @@ enum BrowserPaneStyle {
     /// The trailing ＋ entry, `.tab { padding: 0 10px }` round a 13 px plus.
     static let newTabPadding: CGFloat = 10
     static let newTabGlyph: CGFloat = 12
-    /// `.tab.on { background: rgba(232,236,246,0.06) }` — the editor strip's active tab's lift.
-    static let tabOnFill: Double = 0.06
+    /// The active entry is a raised chip: `.tab.on`'s lift stepped up to 0.08, and the border
+    /// token's edge (`edge`) round it.
+    static let tabOnFill: Double = 0.08
     /// `.tab:hover`: the rail's row lift (`Rail.dc.html` state 3).
     static let tabHoverFill = RailTreatment.rowHoverTint
     /// `.tab .ttl` at 12 px, 0.62 at rest and the full cool white on the active tab.
@@ -77,24 +94,30 @@ enum BrowserPaneStyle {
     /// `.act`'s hover fade, the rail's row duration.
     static let hoverDuration = RailTreatment.rowHoverDuration
 
-    /// The pane's label inline at the strip's left: `.micro { padding: 0 10px 0 4px }`.
-    static let labelLeading: CGFloat = 4
-    static let labelTrailing: CGFloat = 10
-
     // MARK: The header and the page
 
-    /// The address line's inset: the settings form's `.field` padding, so the URL does not move
-    /// when the field's box appears round it.
+    /// The address field: the settings form's `.field` inset and radius, 24 pt high so the
+    /// address row is 32, its fill the form field's 0.05, and while it is edited an edge in the
+    /// tick's colour.
     static let fieldInsetX: CGFloat = 9
-    static let fieldInsetY: CGFloat = 6
-    /// The footer's micro labels: `gap: 16px`, and the mono line's `letter-spacing: 1.2px`.
-    static let footerSpacing: CGFloat = 16
-    static let footerTracking: CGFloat = 1.2
+    static let fieldHeight: CGFloat = 24
+    static let fieldRadius: CGFloat = 5
+    static let fieldFill: Double = 0.05
+    static let fieldEditingEdge: Double = 0.6
+    /// **The border token**: cool white at 0.14 — the settings form's field edge and the prompt
+    /// card's (`promptEdge`). The address field's 1 px edge, the active tab chip's, and the
+    /// browser pane's own border.
+    static let edge: Double = 0.14
+    /// **The hairline**: cool white at 0.08, the editor's rule between the Changes view's roots
+    /// and under its timeline. Between tabs and under the header.
+    static let hairline: Double = 0.08
+    /// NOT SECURE: the micro label's mono line, `letter-spacing: 1.2px`.
+    static let monoTracking: CGFloat = 1.2
+    /// Between the padlock and NOT SECURE, and between them and the URL.
+    static let lockGap: CGFloat = 5
 
-    /// Between the header row, the find bar, the list, the page and the downloads: whitespace.
+    /// Between controls in a row.
     static let gap: CGFloat = 8
-    /// `.page { border-radius: 6px }`: the page's container. The page itself is never styled.
-    static let pageRadius: CGFloat = 6
     /// ‹ › ↻ ×'s hit square and glyph (`ChangesIconButtonStyle` draws them).
     static let controlSize: CGFloat = 22
     static let controlGlyph: CGFloat = 11
@@ -152,11 +175,9 @@ extension View {
     }
 }
 
-/// The header row: ‹ › ↻ (× while loading), the address field, and the tab count.
+/// The address row, 32 pt: ‹ › ↻ (× while loading) and the address field.
 struct BrowserHeader<Address: View>: View {
     let tab: BrowserTab?
-    let tabs: [BrowserTab]
-    let listMode: BrowserTabListMode
     let dispatch: (String, [String: JSONValue]) -> Void
     @ViewBuilder let address: () -> Address
 
@@ -178,9 +199,9 @@ struct BrowserHeader<Address: View>: View {
                 }
             }
             address()
-            count
         }
-        .padding(.bottom, BrowserPaneStyle.gap)
+        .padding(.horizontal, BrowserPaneStyle.rowInset)
+        .frame(height: BrowserPaneStyle.rowHeight)
     }
 
     /// Drawn as the editor column's row actions are (`ChangesIconButtonStyle`): a rounded fill under
@@ -200,35 +221,60 @@ struct BrowserHeader<Address: View>: View {
         .accessibilityLabel(label)
         .accessibilityIdentifier(id)
     }
+}
 
-    /// The number of tabs, as a micro-label; with the list hidden, the list itself, as a menu.
-    @ViewBuilder private var count: some View {
-        let text = Text("\(tabs.count)")
-            .monospacedDigit()
-            .browserMicro()
-            .frame(minWidth: 18, minHeight: 18)
+/// The number of tabs, as a micro-label at the strip's right; with the list hidden, the ⌄ menu
+/// of the tabs, its count beside the chevron.
+struct BrowserTabCount: View {
+    let tabs: [BrowserTab]
+    let listMode: BrowserTabListMode
+    let dispatch: (String, [String: JSONValue]) -> Void
+
+    var body: some View {
+        let count = Text("\(tabs.count)").monospacedDigit().browserMicro()
         if listMode == .hidden {
             Menu {
                 ForEach(Array(tabs.enumerated()), id: \.element.id) { _, t in
                     Button(browserTabLabel(t)) { dispatch("browser_select_tab", ["tab": .string(t.id)]) }
                 }
-            } label: { text }
+            } label: {
+                HStack(spacing: 3) {
+                    count
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: BrowserPaneStyle.closeGlyph, weight: .semibold))
+                        .foregroundStyle(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
+                }
+                .frame(minWidth: 18, minHeight: 18)
+            }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .help("Tabs")
+            .accessibilityLabel("\(tabs.count) tabs")
             .accessibilityIdentifier("browser.tabMenu")
         } else {
-            text
+            count
+                .frame(minWidth: 18, minHeight: 18)
                 .accessibilityLabel("\(tabs.count) tabs")
                 .accessibilityIdentifier("browser.tabCount")
         }
     }
 }
 
+/// A 1 px rule in the hairline token, across the pane: under the header, and either side of a
+/// row the find bar or the downloads take.
+struct BrowserHairline: View {
+    var body: some View {
+        Rectangle().fill(BrowserPaneStyle.text.opacity(BrowserPaneStyle.hairline))
+            .frame(height: 1)
+            .accessibilityHidden(true)
+    }
+}
+
 /// The tab strip (`Browser.dc.html`'s `.tab`, in the rail's language): a row of fixed-width
-/// entries, no tab shapes and no rules, whitespace between them; tick, favicon, title, × on hover;
-/// the active entry lifted and carrying the rail's tick (`LuminousTick`); a trailing ＋ (⌘T's
-/// `browser_new_tab`). Folded, an entry is its favicon and ×; more entries than fit scroll sideways.
+/// entries, a 1 px hairline between two at rest; tick, favicon, title, × on hover; the active
+/// entry a raised chip — a lift and the border token's edge — carrying the rail's tick
+/// (`LuminousTick`); a trailing ＋ (⌘T's `browser_new_tab`). Folded, an entry is its favicon and ×; more entries than fit scroll sideways.
 struct BrowserTabList: View {
     let snapshot: BrowserSnapshot
     let mode: BrowserTabListMode
@@ -243,8 +289,11 @@ struct BrowserTabList: View {
 
     var body: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: BrowserPaneStyle.tabSpacing) {
-                ForEach(Array(snapshot.tabs.enumerated()), id: \.element.id) { index, tab in row(tab, index: index) }
+            HStack(spacing: 0) {
+                ForEach(Array(snapshot.tabs.enumerated()), id: \.element.id) { index, tab in
+                    row(tab, index: index)
+                    separator(after: index)
+                }
                 newTab
             }
             .coordinateSpace(name: "browser.tabs")
@@ -266,6 +315,22 @@ struct BrowserTabList: View {
     }
 
     private var orderedSpans: [ClosedRange<Double>] { snapshot.tabs.map { spans[$0.id] ?? 0...0 } }
+
+    /// The hairline after entry `index` (before the next entry or the ＋), clear where either side
+    /// is the raised chip or lifted under the pointer.
+    private func separator(after index: Int) -> some View {
+        let tabs = snapshot.tabs
+        let left = tabs[index].id
+        let right = index + 1 < tabs.count ? tabs[index + 1].id : nil
+        let quiet = [left, right].contains { $0 != nil && ($0 == snapshot.active || $0 == hovered) }
+            || (right == nil && newTabHovered)
+        return Rectangle()
+            .fill(BrowserPaneStyle.text.opacity(quiet ? 0 : BrowserPaneStyle.hairline))
+            .frame(width: 1, height: BrowserPaneStyle.separatorHeight)
+            .padding(.horizontal, BrowserPaneStyle.separatorGap)
+            .animation(.easeOut(duration: BrowserPaneStyle.hoverDuration), value: quiet)
+            .accessibilityHidden(true)
+    }
 
     /// Where a drag from tab `index` that is now at `location` would move it — the editor strip's
     /// rule (`editorTabDropTarget`): onto a tab takes its place, between two goes between them.
@@ -306,6 +371,12 @@ struct BrowserTabList: View {
         .padding(.trailing, BrowserPaneStyle.tabTrailing)
         .frame(width: mode.entryWidth, height: BrowserPaneStyle.tabHeight, alignment: .leading)
         .background(entryFill(active ? BrowserPaneStyle.tabOnFill : (lifted ? BrowserPaneStyle.tabHoverFill : 0)))
+        .overlay {
+            if active {
+                RoundedRectangle(cornerRadius: BrowserPaneStyle.tabRadius, style: .continuous)
+                    .strokeBorder(BrowserPaneStyle.text.opacity(BrowserPaneStyle.edge), lineWidth: 1)
+            }
+        }
         .animation(.easeOut(duration: BrowserPaneStyle.hoverDuration), value: lifted)
         .background(GeometryReader { g in
             let f = g.frame(in: .named("browser.tabs"))
@@ -375,44 +446,11 @@ struct BrowserFavicon: View {
     }
 }
 
-/// The row under the page (`Browser.dc.html`'s last line), in micro labels: the page's host,
-/// uppercase, and how it arrived — `TLS` for https (WebKit's `serverTrust` names no protocol
-/// version, so none is shown), `NOT SECURE` in amber where the address row says Not Secure. A
-/// loopback `http` page — which the padlock calls secure — has its host alone. Nil for a page with
-/// no host (blank, `about:`, `file:`, `data:`).
-struct BrowserFooter: View {
-    let host: String
-    let transport: BrowserFooterLine.Transport?
-
-    /// The rule is WakilKit's (`BrowserAddress.footer`); the view only sets it in capitals.
-    init?(url: URL) {
-        guard let line = BrowserAddress.footer(url) else { return nil }
-        host = line.host.uppercased()
-        transport = line.transport
-    }
-
-    var body: some View {
-        HStack(spacing: BrowserPaneStyle.footerSpacing) {
-            Text(host).browserFooterMicro(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
-                .accessibilityIdentifier("browser.footer.host")
-            switch transport {
-            case .tls: Text("TLS").browserFooterMicro(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
-            case .notSecure: Text("NOT SECURE").browserFooterMicro(BrowserPaneStyle.amber)
-            case nil: EmptyView()
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, BrowserPaneStyle.fieldInsetX)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("browser.footer")
-    }
-}
-
 extension Text {
-    /// `.mono.micro { letter-spacing: 1.2px }`: the footer's host and transport.
-    func browserFooterMicro(_ colour: Color) -> some View {
+    /// `.mono.micro { letter-spacing: 1.2px }`: NOT SECURE in the address field.
+    func browserMonoMicro(_ colour: Color) -> some View {
         font(.system(size: SettingsScale.micro, weight: .medium, design: .monospaced))
-            .tracking(BrowserPaneStyle.footerTracking)
+            .tracking(BrowserPaneStyle.monoTracking)
             .foregroundStyle(colour)
             .lineLimit(1)
     }

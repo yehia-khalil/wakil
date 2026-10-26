@@ -48,7 +48,7 @@ With none of them, `WakilApplication.main()` opens the window.
 | `api` | `ApiPane` (`ApiPane*.swift`, `ApiFieldEditor.swift`, `ApiTokenView.swift`, `ApiPaneFlow.swift`) | `api(_:)` |
 | `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`) | `editor(_:)`, `gitRoots`, `editorSaveAsRequest`, the unsaved prompt |
 | `settings` (`Pane.settingsKind`) | `SettingsPane` (`SettingsPane.swift`, `SettingsForm.swift`) | `settings`, `accounts`, the login state |
-| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — the tab strip, address row and footer — `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache` |
+| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — the tab strip and the address row — `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache` |
 | anything else | a "no view for a … pane" line | — |
 
 `terminal(_:)`, `api(_:)` and `editor(_:)` each read one pane's `PaneSnapshotCell`, so one

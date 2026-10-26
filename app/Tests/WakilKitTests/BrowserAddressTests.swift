@@ -59,14 +59,23 @@ import Foundation
         #expect(BrowserAddress.displayHost(URL(string: "file:///tmp/a.html")!) == "a.html")
     }
 
-    /// The footer's host and transport (Ruling: loopback http shows only the host — the address
-    /// row's padlock is there; NOT SECURE is for http anywhere else).
-    @Test func theFooterNamesTheHostAndHowThePageCame() {
-        #expect(BrowserAddress.footer(URL(string: "http://localhost:3000/a")!) == BrowserFooterLine(host: "localhost", transport: nil))
-        #expect(BrowserAddress.footer(URL(string: "http://127.0.0.1:8080")!) == BrowserFooterLine(host: "127.0.0.1", transport: nil))
-        #expect(BrowserAddress.footer(URL(string: "http://example.com/")!) == BrowserFooterLine(host: "example.com", transport: .notSecure))
-        #expect(BrowserAddress.footer(URL(string: "https://example.com/")!) == BrowserFooterLine(host: "example.com", transport: .tls))
-        #expect(BrowserAddress.footer(URL(string: "about:blank")!) == nil, "a blank page: no footer")
-        #expect(BrowserAddress.footer(URL(string: "file:///tmp/a.html")!) == nil, "no host: no footer")
+    /// The padlock's hover (the footer's host and transport, moved into the address field): the
+    /// host and how the page came — loopback http is not called Not Secure, as the padlock is drawn
+    /// there; http anywhere else is — and the certificate's reason when it was not trusted.
+    @Test func theLockNamesTheHostAndHowThePageCame() {
+        let https = BrowserAddress.lockDetail(URL(string: "https://example.com/")!)
+        #expect(https == "example.com over TLS. The certificate is trusted.")
+        let loopback = BrowserAddress.lockDetail(URL(string: "http://localhost:3000/a")!)
+        #expect(loopback?.hasPrefix("localhost over plain HTTP") == true)
+        #expect(loopback?.contains("Not Secure") == false)
+        #expect(BrowserAddress.lockDetail(URL(string: "http://127.0.0.1:8080")!)?.contains("Not Secure") == false)
+        #expect(BrowserAddress.lockDetail(URL(string: "http://example.com/")!)?.hasPrefix("Not Secure: example.com over plain HTTP") == true)
+        #expect(BrowserAddress.lockDetail(URL(string: "file:///tmp/a.html")!) == "A file on this Mac.")
+        #expect(BrowserAddress.lockDetail(URL(string: "about:blank")!) == nil, "a blank page: no padlock")
+        let refused = BrowserAddress.lockDetail(
+            URL(string: "https://self-signed.example/")!,
+            certificate: "self-signed.example's certificate isn't trusted — it is self-signed")
+        #expect(refused == "self-signed.example over TLS.\nself-signed.example's certificate isn't trusted — it is self-signed",
+                "the reason, whole, and no claim that the certificate is trusted")
     }
 }

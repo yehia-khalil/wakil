@@ -55,39 +55,30 @@ struct BrowserPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // `Browser.dc.html`'s order: the tab strip, the address row beneath it, then the page.
-            // Whitespace between them all — no rules.
-            // The pane's label inline at the left of the strip: one row (the canvas draws no title
-            // over this pane).
-            HStack(spacing: BrowserPaneStyle.tabSpacing) {
-                PaneTitle(title: pane.title)
-                    .fixedSize()
-                    .padding(.leading, BrowserPaneStyle.labelLeading)
-                    .padding(.trailing, BrowserPaneStyle.labelTrailing)
-                if listMode != .hidden {
-                    BrowserTabList(
-                        snapshot: snapshot, mode: listMode,
-                        favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
-                        dispatch: send)
-                } else {
-                    Spacer(minLength: 0)
-                }
+            // Two 32 pt rows — the tab strip, then ‹ › ↻ and the address field — a hairline, and
+            // the page edge to edge to the pane's border (the canvas pads no browser pane). The
+            // find bar and the downloads take a row of their own, each across a hairline.
+            tabStrip
+            BrowserHeader(tab: active, dispatch: send) { addressField }
+            BrowserHairline()
+            if let find = snapshot.find {
+                findBar(find)
+                    .padding(.horizontal, BrowserPaneStyle.rowInset)
+                    .frame(height: BrowserPaneStyle.rowHeight)
+                BrowserHairline()
             }
-            .frame(minHeight: BrowserPaneStyle.tabHeight)
-            .padding(.bottom, BrowserPaneStyle.gap)
-            BrowserHeader(tab: active, tabs: snapshot.tabs, listMode: listMode, dispatch: send) { addressField }
-            progressLine
-            VStack(spacing: BrowserPaneStyle.gap) {
-                if let find = snapshot.find { findBar(find) }
-                pageArea
-                    .clipShape(RoundedRectangle(cornerRadius: BrowserPaneStyle.pageRadius, style: .continuous))
-            }
+            pageArea
+                .overlay(alignment: .top) { progressLine }
+                // The page's bottom corners are the pane's, unless the downloads sit under it.
+                .clipShape(UnevenRoundedRectangle(
+                    bottomLeadingRadius: snapshot.downloads.isEmpty ? BrowserPaneStyle.paneRadius : 0,
+                    bottomTrailingRadius: snapshot.downloads.isEmpty ? BrowserPaneStyle.paneRadius : 0,
+                    style: .continuous))
             if !snapshot.downloads.isEmpty {
+                BrowserHairline()
                 BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
-                    .padding(.top, BrowserPaneStyle.gap)
-            }
-            if let url = active.flatMap({ URL(string: $0.url) }), let footer = BrowserFooter(url: url) {
-                footer.padding(.top, BrowserPaneStyle.gap)
+                    .padding(.horizontal, BrowserPaneStyle.rowInset)
+                    .padding(.vertical, BrowserPaneStyle.rowPadding)
             }
         }
         .onAppear {
@@ -130,26 +121,44 @@ struct BrowserPane: View {
         .accessibilityIdentifier("browser.pane")
     }
 
+    // MARK: The tab strip
+
+    /// The first row: the browser glyph (the pane's label, as its help and its accessibility
+    /// name), then the tabs and their count; too narrow for the list, the ⌄ menu holds both.
+    private var tabStrip: some View {
+        HStack(spacing: 0) {
+            Image(systemName: "safari")
+                .font(.system(size: BrowserPaneStyle.paneGlyph))
+                .foregroundStyle(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
+                .frame(width: BrowserPaneStyle.controlSize, height: BrowserPaneStyle.controlSize)
+                .padding(.trailing, BrowserPaneStyle.glyphTrailing)
+                .help("Browser")
+                .accessibilityLabel("Browser")
+            if listMode != .hidden {
+                BrowserTabList(
+                    snapshot: snapshot, mode: listMode,
+                    favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
+                    dispatch: send)
+                BrowserTabCount(tabs: snapshot.tabs, listMode: listMode, dispatch: send)
+                    .padding(.leading, BrowserPaneStyle.gap)
+            } else {
+                BrowserTabCount(tabs: snapshot.tabs, listMode: listMode, dispatch: send)
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, BrowserPaneStyle.rowInset)
+        .frame(height: BrowserPaneStyle.rowHeight)
+    }
+
     // MARK: The address field
 
-    /// `Browser.dc.html`'s address row: the tab's whole URL as a monospaced line, with the padlock
-    /// or Not Secure beside it; pressed (or ⌘L), it is the editable field — the API pane's
-    /// `.fieldBox` — until the field lets go. Both carry `browser.address`.
+    /// The address field, always drawn as a field: rounded, the border token's 1 px edge, the
+    /// padlock (or NOT SECURE) inside it at its left, and the tab's whole URL in mono. A click
+    /// anywhere on it, or ⌘L, edits it with the whole URL selected; the edge takes the tick's
+    /// colour while it is edited. The URL's line and the editor both carry `browser.address`.
     @ViewBuilder private var addressField: some View {
-        let row = HStack(spacing: 5) {
-            if !editingAddress, let url = active.flatMap({ URL(string: $0.url) }), !(active?.url.isEmpty ?? true),
-               url.scheme?.lowercased() != "about" {
-                let secure = BrowserAddress.isSecure(url)
-                Image(systemName: secure ? "lock.fill" : "lock.open")
-                    .font(.system(size: BrowserPaneStyle.lockSize))
-                    .foregroundStyle(secure ? BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity) : BrowserPaneStyle.amber)
-                    .accessibilityLabel(secure ? "Secure" : "Not Secure")
-                if !secure {
-                    Text("Not Secure")
-                        .font(.system(size: BrowserPaneStyle.metaSize))
-                        .foregroundStyle(BrowserPaneStyle.amber)
-                }
-            }
+        HStack(spacing: BrowserPaneStyle.lockGap) {
+            lock
             if editingAddress {
                 TextField("Search or enter address", text: $draft)
                     .textFieldStyle(.plain)
@@ -182,13 +191,55 @@ struct BrowserPane: View {
                 addressLine
             }
         }
-        if editingAddress {
-            row.fieldBox(maxWidth: .infinity)
-        } else {
-            // The field's own inset, so the text does not move when the box appears round it.
-            row.padding(.horizontal, BrowserPaneStyle.fieldInsetX).padding(.vertical, BrowserPaneStyle.fieldInsetY)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, BrowserPaneStyle.fieldInsetX)
+        .frame(maxWidth: .infinity, minHeight: BrowserPaneStyle.fieldHeight,
+               maxHeight: BrowserPaneStyle.fieldHeight, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: BrowserPaneStyle.fieldRadius, style: .continuous)
+                .fill(BrowserPaneStyle.text.opacity(BrowserPaneStyle.fieldFill)))
+        .overlay(
+            RoundedRectangle(cornerRadius: BrowserPaneStyle.fieldRadius, style: .continuous)
+                .strokeBorder(
+                    editingAddress ? BrowserPaneStyle.tick.opacity(BrowserPaneStyle.fieldEditingEdge)
+                        : BrowserPaneStyle.text.opacity(BrowserPaneStyle.edge),
+                    lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture { beginEditingAddress() }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("browser.addressField")
+    }
+
+    /// The padlock, or the open lock and NOT SECURE, at the field's left: the page's host and how
+    /// it came under the pointer — and, for a certificate the system did not trust, why
+    /// (`BrowserAddress.lockDetail`). Nothing for a blank or `about:` page.
+    @ViewBuilder private var lock: some View {
+        if let tab = active, !tab.url.isEmpty, let url = URL(string: tab.url),
+           let detail = BrowserAddress.lockDetail(url, certificate: certificateLine(tab, url)) {
+            let secure = BrowserAddress.isSecure(url)
+            HStack(spacing: BrowserPaneStyle.lockGap) {
+                Image(systemName: secure ? "lock.fill" : "lock.open")
+                    .font(.system(size: BrowserPaneStyle.lockSize))
+                    .foregroundStyle(secure ? BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity) : BrowserPaneStyle.amber)
+                if !secure { Text("NOT SECURE").browserMonoMicro(BrowserPaneStyle.amber) }
+            }
+            .fixedSize()
+            .contentShape(Rectangle())
+            .help(detail)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(secure ? "Secure" : "Not Secure")
+            .accessibilityHint(detail)
+            .accessibilityIdentifier("browser.lock")
         }
+    }
+
+    /// Why the tab's certificate was not trusted: the certificate page's own line while it is
+    /// shown, or — once the operator chose Visit Anyway for this host — that choice.
+    private func certificateLine(_ tab: BrowserTab, _ url: URL) -> String? {
+        let key = BrowserTabHost.Key(scope: scope, pane: pane.id, tab: tab.id)
+        if let text = host.certificates[key] { return text }
+        guard url.scheme?.lowercased() == "https", let site = url.host?.lowercased(),
+              host.certificateIsAllowed(org: scope.organization, host: site) else { return nil }
+        return "\(site)'s certificate isn't trusted — you chose Visit Anyway for it until the window closes."
     }
 
     /// The URL as a line: what the field opens holding. A blank tab shows the field's placeholder.
@@ -269,6 +320,7 @@ struct BrowserPane: View {
                 .animation(.easeOut(duration: 0.2), value: active?.progress)
         }
         .frame(height: 2)
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
