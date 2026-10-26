@@ -87,8 +87,41 @@ func TestRunnerSendsAHandlersRefusalOfAnOperatorOnlyActionOverTheOperatorChannel
 	if err := got.Err(); err != nil {
 		t.Fatalf("want a pass, got %v", err)
 	}
-	if len(agent.calls) != 0 && strings.Contains(callsOf(agent), "ctx_update_org") {
+	if len(operator.calls) != 1 || !strings.HasPrefix(operator.calls[0], "ctx_update_org ") {
+		t.Errorf("the handler's refusal did not come from the operator channel: %s", callsOf(&operator.fakeChannel))
+	}
+	if strings.Contains(callsOf(agent), "ctx_update_org") {
 		t.Errorf("the handler's refusal went to the agent socket: %s", callsOf(agent))
+	}
+}
+
+// **Routing reads what the step expects, not one spelling of it** (review M5). A `refuses` that
+// the operator-only refusal would satisfy — the sentence, a part of it, or the sentence within a
+// longer one — asserts what an agent meets, so it goes over the agent socket whatever its wording.
+func TestRunnerSendsAnyWordingOfTheOperatorOnlyRefusalOverTheAgentSocket(t *testing.T) {
+	for _, refuses := range []string{
+		"only the operator can run this",
+		"only the operator",
+		"ctx_update_org: only the operator can run this",
+	} {
+		t.Run(refuses, func(t *testing.T) {
+			agent := &fakeChannel{errs: map[string]error{
+				"ctx_update_org": fmt.Errorf("tools/call: -32007: ctx_update_org: only the operator can run this"),
+			}}
+			operator := newOperator("ctx_update_org")
+			runner, _ := newRunner(t, stateJSON, agent)
+			runner.Operator = operator
+
+			got := runner.Run([]Check{mustParse(t, "r",
+				`{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture"},"refuses":"`+refuses+`"}}`)})
+
+			if err := got.Err(); err != nil {
+				t.Fatalf("want a pass, got %v", err)
+			}
+			if len(operator.calls) != 0 {
+				t.Errorf("the refusal step reached the operator channel: %s", callsOf(&operator.fakeChannel))
+			}
+		})
 	}
 }
 

@@ -713,15 +713,26 @@ func describeFrontmost() string {
 
 // channelFor is the channel a dispatch of action goes over. **An action the app serves on its
 // operator socket goes there** — the operator's channel for the operator's actions — unless the
-// step expects the operator-only refusal: that asserts what an agent meets, so it is the agent
-// socket's. Everything else stays on the agent socket, so a check asserting agent-origin
-// behaviour (journal origin, gated writes parking) means what it meant. Chosen once, before the
-// call: a refusal on either channel fails the step and is never retried on the other.
+// step expects the operator-only refusal (expectsOperatorOnlyRefusal): that asserts what an agent
+// meets, so it is the agent socket's. Everything else stays on the agent socket, so a check
+// asserting agent-origin behaviour (journal origin, gated writes parking) means what it meant.
+// Chosen once, before the call: a refusal on either channel fails the step and is never retried
+// on the other.
 func (r *Runner) channelFor(action, refuses string) Channel {
-	if r.Operator != nil && r.Operator.Serves(action) && !strings.Contains(refuses, OperatorOnlyRefusal) {
+	if r.Operator != nil && r.Operator.Serves(action) && !expectsOperatorOnlyRefusal(refuses) {
 		return r.Operator
 	}
 	return r.Channel
+}
+
+// expectsOperatorOnlyRefusal is whether a step's `refuses` is the operator-only refusal, however
+// it is worded: the refusal a dispatch compares by containment (`dispatch`), so any part of
+// OperatorOnlyRefusal ("only the operator"), or a longer text holding it whole. A part of the
+// sentence would otherwise be routed to the operator channel, where the action RUNS, and the step
+// would fail as "expected to be refused, and it ran" — loud, but blaming the wrong thing. A
+// handler's own refusal shares no such text with it, so it still reaches the operator channel.
+func expectsOperatorOnlyRefusal(refuses string) bool {
+	return refuses != "" && (strings.Contains(refuses, OperatorOnlyRefusal) || strings.Contains(OperatorOnlyRefusal, refuses))
 }
 
 // dispatch sends one action over its channel (channelFor) and re-reads.
