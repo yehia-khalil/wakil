@@ -370,6 +370,24 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         #expect(await f.editor.snapshot().column == before)
     }
 
+    /// B1: a thread whose file is already open reuses its tab — the read hands back the root as the
+    /// window knows it, so the tab's path and the thread's match — and its box is placed.
+    @Test func reviewOpenOnAnOpenFileReusesItsTab() async throws {
+        let f = try await ticketFixture()
+        let head = (1...50).map { "line \($0)" }
+        await f.editor.files.put("/p/api/src/auth/token.go", head.joined(separator: "\n"))
+        await f.editor.git.set(show: "/p/api|src/auth/token.go|commit:abc123", head.joined(separator: "\n"))
+        let state = try await f.store.read(root: "/p/api")
+        #expect(state.root == "/p/api")
+        #expect(state.prs.flatMap(\.threads).allSatisfy { $0.root == "/p/api" })
+        try await f.dispatch("editor_open", ["pane": .string(f.editor.pane), "path": .string("/p/api/src/auth/token.go")])
+        try await f.dispatch("review_open", ["pane": .string(f.editor.pane), "thread": .string("T2")])
+        try await f.dispatch("review_open", ["pane": .string(f.editor.pane), "thread": .string("T2")], origin: .ui, confirmation: nil)
+        let s = await f.editor.snapshot()
+        #expect(s.tabs.filter { $0.path == "/p/api/src/auth/token.go" }.count == 1)
+        #expect(s.active.map { s.tabs[$0].cursor.line } == 41)
+    }
+
     /// Task 7: a thread opens at its box's line — GitHub's line mapped through the head commit's
     /// text to the buffer — and the box under the cursor is `read_pane`'s `cursorThread` and where
     /// `review_step` steps from.

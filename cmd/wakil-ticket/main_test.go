@@ -553,6 +553,26 @@ func TestTicketBranchReadsANamedBranch(t *testing.T) {
 	}
 }
 
+// A root given through a symlink comes back as given: the window keeps its roots as written and
+// compares them by string (Link a ticket…, a thread row's tab), so a resolved root is not one of its own.
+func TestTicketBranchRootComesBackAsGiven(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	link := filepath.Join(t.TempDir(), "api-link")
+	if err := os.Symlink(f.repo, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range []string{f.repo, link} {
+		b := call(t, connect(t), "ticket_branch", map[string]any{"root": root})
+		var got TicketBranch
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Root != root {
+			t.Errorf("root = %q, want %q as given", got.Root, root)
+		}
+	}
+}
+
 func TestTicketBranchLongLived(t *testing.T) {
 	f := newFixture(t, "git@github.com:initech/api.git", "main", "")
 	f.s.branch = branchReply(nil, []any{prNode(212, "INI-142 keep", "ini-142-login", "main", nil, nil)})
@@ -682,7 +702,9 @@ func TestInFlightBranchesAndMyPRs(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatal(err)
 	}
-	real, _ := filepath.EvalSymlinks(f.repo)
+	// Rows carry the root as the project names it, never with its symlinks resolved: the window
+	// matches them against its own roots (macOS's temp dir is under the /var -> /private/var link).
+	real := f.repo
 	wantInFlight := []InFlightRow{
 		{Key: "INI-142", Title: "Sign-in keeps the last organization", Status: "In Progress", State: "#212 · open", Root: real, Branch: "ini-142-login", PR: 212},
 		{Key: "INI-150", Title: "Cache the org list", Status: "In Progress", State: "local branch", Root: real, Branch: "ini-150-cache"},

@@ -173,7 +173,9 @@ func sortStrings(s []string) {
 // requests are not read from the remote (empty when its host may be GitHub's): the remote is
 // missing, unreadable or not GitHub.
 type rootRepo struct {
-	g                *wakilcore.GitRunner
+	g *wakilcore.GitRunner
+	// Root is the root as the caller named it, never with its symlinks resolved (g.Root is): the
+	// window keeps its roots as written and matches what it is handed back by string.
 	Root             string
 	Branch, Detached string
 	Local            []wakilcore.GitBranch
@@ -201,7 +203,7 @@ func openRootOn(ctx context.Context, org, root, branch string) (*rootRepo, error
 	if err != nil {
 		return nil, err
 	}
-	r := &rootRepo{g: g, Root: g.Root, Branch: b.Current, Detached: b.Detached, Local: b.Local, Remote: "origin"}
+	r := &rootRepo{g: g, Root: root, Branch: b.Current, Detached: b.Detached, Local: b.Local, Remote: "origin"}
 	if branch = strings.TrimSpace(branch); branch != "" {
 		r.Branch, r.Detached = branch, ""
 	}
