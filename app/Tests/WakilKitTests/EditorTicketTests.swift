@@ -92,6 +92,23 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(ticketFollowedRoot(front: nil, roots: []) == nil)
     }
 
+    /// Enter then leaving the field commits once: the record has not echoed the text yet.
+    @Test func aFieldCommitsOncePerEdit() {
+        var c = TicketFieldCommits()
+        #expect(c.commit("  Ship the token fix ", value: "old") == "Ship the token fix")
+        #expect(c.commit("Ship the token fix", value: "old") == nil)
+        // Typing again is a new edit, even back to the same text.
+        c.edited()
+        #expect(c.commit("Ship the token fix", value: "old") == "Ship the token fix")
+        // The field's own value is never committed back.
+        var d = TicketFieldCommits()
+        #expect(d.commit("old", value: "old") == nil)
+        // An add field (value "") sends its line once.
+        var a = TicketFieldCommits()
+        #expect(a.commit("INI-142", value: "") == "INI-142")
+        #expect(a.commit("INI-142", value: "") == nil)
+    }
+
     @Test func staleAfterSixtySeconds() {
         let t = Date(timeIntervalSince1970: 1000)
         #expect(ticketStale(lastRead: nil, now: t))

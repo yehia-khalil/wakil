@@ -551,3 +551,22 @@ public func ticketFollowedRoot(tab: EditorTab?, roots: [String]) -> String? {
     }
     return ticketFollowedRoot(front: front, roots: roots)
 }
+
+/// What a Ticket view field commits: once per edit. Enter commits, and leaving the field then would
+/// commit the same text again before the record echoes it, writing a second entry into the
+/// append-only log (or a second link). The text last sent is kept until the operator types again.
+public struct TicketFieldCommits: Sendable, Equatable {
+    private var sent: String?
+    public init() {}
+
+    /// The operator typed: the next Enter or leave is a new edit.
+    public mutating func edited() { sent = nil }
+
+    /// The text to commit for `text` against the field's shown `value`, nil when nothing is new.
+    public mutating func commit(_ text: String, value: String) -> String? {
+        let now = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard now != (sent ?? value) else { return nil }
+        sent = now
+        return now
+    }
+}

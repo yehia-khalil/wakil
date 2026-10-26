@@ -550,12 +550,14 @@ private struct TicketField: View {
     let commit: (String) -> Void
 
     @State private var text = ""
+    @State private var commits = TicketFieldCommits()
 
     var body: some View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
             .focused(focus, equals: id)
             .onSubmit { send(leaving: false) }
+            .onChange(of: text) { commits.edited() }
             .onAppear {
                 text = value
                 if arrivesFocused { Task { @MainActor in focus.wrappedValue = id } }
@@ -567,9 +569,9 @@ private struct TicketField: View {
             .accessibilityIdentifier(id)
     }
 
+    /// Once per edit: Enter then leaving sends the text once (`TicketFieldCommits`).
     private func send(leaving: Bool) {
-        let now = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if now != value { commit(now) }
+        if let now = commits.commit(text, value: value) { commit(now) }
         if leaving { left() }
     }
 }
