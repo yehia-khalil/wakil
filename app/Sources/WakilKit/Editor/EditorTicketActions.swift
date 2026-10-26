@@ -124,6 +124,33 @@ func registerTicketActions(
         if state.longLived { _ = try? await store.inFlight() }
         return state
     }
+    /// Where a review thread is, as GitHub says: the plane names a reply's or a resolve's place
+    /// from this, never from the caller's params (Invariants 6 and 7). The operator's own write may
+    /// take a thread the window has already read; an agent's is always asked of GitHub, through its
+    /// own place's client.
+    struct ThreadPlace { let repo: String; let number: Int; let path: String; let line: Int }
+    @Sendable func threadPlace(root: String, thread: String, action: String) async throws -> ThreadPlace {
+        if !pinned(), let t = await store.thread(thread), t.root == root {
+            return ThreadPlace(repo: ticketRepoName(t.repo), number: t.number, path: t.path, line: t.line)
+        }
+        let out = try await call("review_thread", ["root": .string(root), "thread": .string(thread)], action: action)
+        guard case .string(let repo)? = out["repo"], let number = out["number"]?.intValue else {
+            throw TicketActionError(description: "\(action): GitHub did not say where review thread \(thread) is; nothing was asked")
+        }
+        let path: String = if case .string(let p)? = out["path"] { p } else { "" }
+        return ThreadPlace(repo: repo, number: number, path: path, line: out["line"]?.intValue ?? 0)
+    }
+    /// Refuses when the caller named another PR than the thread's own.
+    @Sendable func checkNamed(_ params: JSONValue, _ t: ThreadPlace, thread: String, action: String) throws {
+        guard case .object(let o) = params else { return }
+        let repo = optionalString(params, "repo").map(ticketRepoName)
+        let pr = o["pr"]?.intValue
+        if (repo != nil && repo != t.repo) || (pr != nil && pr != t.number) {
+            throw TicketActionError(description: "\(action): review thread \(thread) is on \(t.repo)#\(t.number) · "
+                + "\(t.path):\(t.line), not on \(repo ?? t.repo)#\(pr.map(String.init) ?? "?") as named; nothing was asked or posted")
+        }
+    }
+
     func schema(_ properties: [String: JSONValue], required: [String] = []) -> JSONValue {
         .object(["type": .string("object"), "properties": .object(properties),
                  "required": .array(required.map { .string($0) })])
@@ -255,7 +282,9 @@ func registerTicketActions(
             args["by"] = .string(ticketBy(origin))
             if origin == .agent, let c = ActionRegistry.dispatchCaller?.conversation { args["conversation"] = .string(c) }
             let out = try await call("ticket_record_write", args, action: action, timeout: MCPClient.mutationReplyTimeout)
-            if let record = try? ticketDecode(TicketRecordState.self, out, tool: "ticket_record_write") {
+            // An agent session's write went through its own place's client: the window's cache keeps
+            // the window's organisation, and takes the line on its next read (Invariant 4).
+            if !pinned(), let record = try? ticketDecode(TicketRecordState.self, out, tool: "ticket_record_write") {
                 await store.setRecord(record)
             }
             return .object(out)
@@ -370,7 +399,16 @@ func registerTicketActions(
             await store.invalidate(root: root)
             return .object(out)
         },
-        price: (production: .gate, otherwise: .gate)))
+        price: (production: .gate, otherwise: .gate),
+        describe: { params in
+            let action = "review_reply_send"
+            let root = try await projectRoot(params, action)
+            let thread = try param(params, "thread", action)
+            let body = try param(params, "body", action)
+            let t = try await threadPlace(root: root, thread: thread, action: action)
+            try checkNamed(params, t, thread: thread, action: action)
+            return reviewReplyStatement(repo: t.repo, pr: t.number, path: t.path, line: t.line, body: body)
+        }))
 
     await registry.register(Action(
         name: "review_resolve",
@@ -394,7 +432,17 @@ func registerTicketActions(
             await store.invalidate(root: root)
             return .object(out)
         },
-        price: (production: .allow, otherwise: .allow), agentPrice: .gate))
+        price: (production: .allow, otherwise: .allow), agentPrice: .gate,
+        describe: { params in
+            let action = "review_resolve"
+            let root = try await projectRoot(params, action)
+            let thread = try param(params, "thread", action)
+            let t = try await threadPlace(root: root, thread: thread, action: action)
+            try checkNamed(params, t, thread: thread, action: action)
+            guard case .object(let o) = params else { return "" }
+            let verb = o["resolved"] == .bool(false) ? "unresolve" : "resolve"
+            return "\(verb) the review thread at \(t.path):\(t.line) on \(t.repo)#\(t.number) in \((root as NSString).lastPathComponent)"
+        }))
 }
 
 private extension Duration {

@@ -473,6 +473,91 @@ func (c *GitHubClient) ReplyToThread(ctx context.Context, threadID, body string)
 	return ReviewComment{Author: loginOf(cm.Author), Body: cm.Body, CreatedAt: cm.CreatedAt}, nil
 }
 
+const githubThreadQuery = `query($id: ID!) {
+  node(id: $id) { __typename ... on PullRequestReviewThread {
+    id path line originalLine isResolved isOutdated
+    pullRequest { number repository { nameWithOwner } }
+    comments(first: 1) { nodes { author { login } body } }
+  } }
+}`
+
+// ThreadSummary is a review thread as GitHub describes it by its node id alone: where it is (the
+// repository as owner/name, the PR, the file and line) and who opened it with what first words.
+// The confirmation plane names the place from this, not from what the caller says.
+type ThreadSummary struct {
+	ID         string
+	Repo       string
+	Number     int
+	Path       string
+	Line       int
+	Resolved   bool
+	Outdated   bool
+	Author     string
+	FirstWords string
+}
+
+// firstWords is text's first 40 characters, cut at a word, with "…" when there was more.
+func firstWords(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	r := []rune(text)
+	if len(r) <= 40 {
+		return text
+	}
+	cut := 40
+	if r[cut] != ' ' {
+		for cut > 0 && r[cut-1] != ' ' {
+			cut--
+		}
+		if cut == 0 {
+			cut = 40
+		}
+	}
+	return strings.TrimRight(string(r[:cut]), " ") + "…"
+}
+
+// ReviewThread describes the review thread threadID from GitHub: one node(id:) query.
+func (c *GitHubClient) ReviewThread(ctx context.Context, threadID string) (ThreadSummary, error) {
+	var data struct {
+		Node *struct {
+			Typename     string `json:"__typename"`
+			ID           string `json:"id"`
+			Path         string `json:"path"`
+			Line         *int   `json:"line"`
+			OriginalLine *int   `json:"originalLine"`
+			IsResolved   bool   `json:"isResolved"`
+			IsOutdated   bool   `json:"isOutdated"`
+			PullRequest  struct {
+				Number     int `json:"number"`
+				Repository struct {
+					NameWithOwner string `json:"nameWithOwner"`
+				} `json:"repository"`
+			} `json:"pullRequest"`
+			Comments struct {
+				Nodes []ghComment `json:"nodes"`
+			} `json:"comments"`
+		} `json:"node"`
+	}
+	if err := c.do(ctx, githubThreadQuery, map[string]any{"id": threadID}, &data); err != nil {
+		return ThreadSummary{}, err
+	}
+	n := data.Node
+	if n == nil || n.Typename != "PullRequestReviewThread" {
+		return ThreadSummary{}, UserError("GitHub knows no review thread " + threadID)
+	}
+	out := ThreadSummary{ID: n.ID, Repo: n.PullRequest.Repository.NameWithOwner, Number: n.PullRequest.Number,
+		Path: n.Path, Resolved: n.IsResolved, Outdated: n.IsOutdated}
+	if n.Line != nil {
+		out.Line = *n.Line
+	} else if n.OriginalLine != nil {
+		out.Line = *n.OriginalLine
+	}
+	if len(n.Comments.Nodes) > 0 {
+		out.Author = loginOf(n.Comments.Nodes[0].Author)
+		out.FirstWords = firstWords(n.Comments.Nodes[0].Body)
+	}
+	return out, nil
+}
+
 // SetThreadResolved resolves or unresolves the review thread.
 func (c *GitHubClient) SetThreadResolved(ctx context.Context, threadID string, resolved bool) error {
 	mutation := githubUnresolveMutation

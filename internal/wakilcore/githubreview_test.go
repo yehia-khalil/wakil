@@ -504,3 +504,42 @@ func TestMyOpenPRsCarryLastCommentsAndChecks(t *testing.T) {
 		t.Errorf("checks = %+v", authored[0].Checks)
 	}
 }
+
+func TestReviewThreadDescribesTheThreadByItsID(t *testing.T) {
+	f := &fakeGraphQL{}
+	c := f.serve(t, func(r gqlRequest) (int, string) {
+		if r.Variables["id"] != "T_9" {
+			return 200, `{"data":{"node":null}}`
+		}
+		return 200, mustJSON(t, map[string]any{"data": map[string]any{"node": map[string]any{
+			"__typename": "PullRequestReviewThread", "id": "T_9", "path": "src/auth/token.go", "line": 41,
+			"isResolved": false, "isOutdated": false,
+			"pullRequest": map[string]any{"number": 212, "repository": map[string]any{"nameWithOwner": "initech/api"}},
+			"comments":    map[string]any{"nodes": []any{map[string]any{"author": map[string]any{"login": "peter"}, "body": "Nit: the error should name the host, and the port too"}}},
+		}}})
+	})
+	got, err := c.ReviewThread(context.Background(), "T_9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "T_9" || got.Repo != "initech/api" || got.Number != 212 || got.Path != "src/auth/token.go" || got.Line != 41 ||
+		got.Resolved || got.Author != "peter" || got.FirstWords != "Nit: the error should name the host, and…" {
+		t.Errorf("thread = %+v", got)
+	}
+	if !strings.Contains(f.requests[0].Query, "node(id: $id)") {
+		t.Errorf("query = %s", f.requests[0].Query)
+	}
+	if _, err := c.ReviewThread(context.Background(), "T_missing"); err == nil || !strings.Contains(err.Error(), "T_missing") {
+		t.Errorf("an unknown id answered %v", err)
+	}
+}
+
+func TestReviewThreadErrorKeepsNoToken(t *testing.T) {
+	f := &fakeGraphQL{}
+	var c *GitHubClient
+	c = f.serve(t, func(gqlRequest) (int, string) { return 403, `{"message":"no, bearer ` + c.Token + `"}` })
+	_, err := c.ReviewThread(context.Background(), "T_9")
+	if err == nil || strings.Contains(err.Error(), c.Token) || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("err = %v", err)
+	}
+}

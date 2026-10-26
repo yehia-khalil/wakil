@@ -7149,13 +7149,22 @@ public final class WindowModel {
     /// everyone else — one confirmation flow, read two ways at its edges
     /// rather than implemented twice.
     private func parkAndAwait(_ name: String, _ params: JSONValue) async -> MutationDispatchOutcome {
-        // A gated write with no SQL or request of its own (the Ticket view's reply) is described in a
-        // sentence, as the agent's side describes it (`MCPServer.parkForConfirmation`).
-        let own = stringParam(params, "statement")
-        guard let statement = own ?? confirmationDescription(action: name, params: params), !statement.isEmpty else {
+        // One order with the agent's side (`ActionRegistry.planeStatement`): the action's own
+        // description first, the caller's `statement` only when there is none.
+        let words: (text: String, own: Bool)?
+        do {
+            words = try await registry.planeStatement(
+                name: name, params: params, origin: .ui, caller: DispatchCaller(place: place, session: nil))
+        } catch {
+            status = statusDescribingFailure(name, error)
+            return .refused(status)
+        }
+        guard let words, !words.text.isEmpty else {
             status = "\(name): no statement to confirm — nothing ran"
             return .refused(status)
         }
+        let statement = words.text
+        let own: String? = words.own ? words.text : nil
         let proposal = PendingMutation(
             action: name, params: params,
             database: stringParam(params, "database"),

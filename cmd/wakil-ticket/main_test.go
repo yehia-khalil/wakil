@@ -184,6 +184,15 @@ func (f *fixture) serveGitHub() {
 				"comment": map[string]any{"author": map[string]any{"login": "peter"}, "body": b, "createdAt": "2026-10-26T09:00:00Z"}}}})
 		case strings.Contains(req.Query, "resolveReviewThread"), strings.Contains(req.Query, "unresolveReviewThread"):
 			body = `{"data":{"resolveReviewThread":{"thread":{"id":"T_1","isResolved":true}}}}`
+		case strings.Contains(req.Query, "node(id: $id)"):
+			body = `{"data":{"node":null}}`
+			if req.Variables["id"] == "T_1" {
+				body = mustJSON(map[string]any{"data": map[string]any{"node": map[string]any{
+					"__typename": "PullRequestReviewThread", "id": "T_1", "path": "src/auth/token.go", "line": 41,
+					"isResolved": false, "isOutdated": false,
+					"pullRequest": map[string]any{"number": 212, "repository": map[string]any{"nameWithOwner": "initech/api"}},
+					"comments":    map[string]any{"nodes": []any{map[string]any{"author": map[string]any{"login": "reviewer"}, "body": "Nit: name the host"}}}}}})
+			}
 		case strings.Contains(req.Query, "viewer { login }"):
 			body = `{"data":{"viewer":{"login":"peter"}}}`
 		}
@@ -792,5 +801,26 @@ func TestTicketRecordConcurrentEditsOfOneLineKeepBoth(t *testing.T) {
 		if d := r.Decisions[0]; d.Text != "t1" || d.Why != "w1" {
 			t.Fatalf("round %d: line = %+v, want both edits", round, d)
 		}
+	}
+}
+
+// review_thread reads only, so it answers outside the window too: the plane asks it before anything is
+// posted.
+func TestReviewThreadDescribesTheThreadFromGitHub(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	t.Setenv("WAKIL_IN_WINDOW", "")
+	cs := connect(t)
+	b := call(t, cs, "review_thread", map[string]any{"root": f.repo, "thread": "T_1"})
+	var out threadResult
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	want := threadResult{ID: "T_1", Repo: "initech/api", Number: 212, Path: "src/auth/token.go", Line: 41,
+		Author: "reviewer", FirstWords: "Nit: name the host"}
+	if out != want {
+		t.Errorf("thread = %+v", out)
+	}
+	if msg := callErr(t, cs, "review_thread", map[string]any{"root": f.repo, "thread": "T_gone"}); !strings.Contains(msg, "T_gone") {
+		t.Errorf("unknown thread: %q", msg)
 	}
 }

@@ -783,12 +783,24 @@ private func parkForConfirmation(
     // An action that has its own sentence keeps it even when the arguments carry a `statement` too:
     // the Ticket view's reply is described from its body, so a stray `statement` cannot put other
     // words on the plane than the ones posted.
-    let described = isMutation ? confirmationDescription(action: name, params: arguments) : nil
-    let ownStatement = isMutation && described == nil ? stringArgument(arguments, "statement") : nil
-    let statement = described ?? ownStatement
-        ?? (isMutation ? ""
-            : (confirmationDescription(action: name, params: arguments)
-                ?? describeProposal(action: name, arguments: arguments)))
+    // A mutation's words come from `ActionRegistry.planeStatement`, the window's order too: the
+    // action's own description first, a caller's `statement` only when there is none.
+    var ownStatement: String?
+    let statement: String
+    if isMutation {
+        let words: (text: String, own: Bool)?
+        do {
+            words = try await surface.registry.planeStatement(
+                name: name, params: arguments, origin: .agent, caller: await caller())
+        } catch {
+            return JSONRPCMessage(id: id, error: JSONRPCError(code: -32602, message: "\(error)"))
+        }
+        statement = words?.text ?? ""
+        ownStatement = words?.own == true ? words?.text : nil
+    } else {
+        statement = confirmationDescription(action: name, params: arguments)
+            ?? describeProposal(action: name, arguments: arguments)
+    }
     guard !statement.isEmpty else {
         return JSONRPCMessage(id: id, error: JSONRPCError(
             code: -32602,

@@ -79,6 +79,25 @@ type replyResult struct {
 	Comment Comment `json:"comment"`
 }
 
+// threadResult is a review thread as GitHub describes it by its id: the place the confirmation
+// plane names for a reply or a resolve, never the caller's word for it.
+type threadResult struct {
+	ID         string `json:"id"`
+	Repo       string `json:"repo" jsonschema:"owner/name"`
+	Number     int    `json:"number"`
+	Path       string `json:"path"`
+	Line       int    `json:"line"`
+	Resolved   bool   `json:"resolved"`
+	Outdated   bool   `json:"outdated"`
+	Author     string `json:"author"`
+	FirstWords string `json:"firstWords"`
+}
+
+type threadArg struct {
+	Root   string `json:"root" jsonschema:"the root whose remote's GitHub account reads the thread"`
+	Thread string `json:"thread" jsonschema:"the review thread's GitHub node id"`
+}
+
 type resolveResult struct {
 	Thread   string `json:"thread"`
 	Resolved bool   `json:"resolved"`
@@ -197,6 +216,20 @@ func newServer() *mcp.Server {
 				return toolErr(err), resolveResult{}, nil
 			}
 			return nil, resolveResult{Thread: a.Thread, Resolved: a.Resolved}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "review_thread", Description: "Read-only. A review thread as GitHub describes it by its node id, with the organization's GitHub account for the root's remote: its repository (owner/name), pull request, file and line, whether it is resolved, and who opened it with what first words. The window names a reply's or a resolve's place from this before it asks the operator."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a threadArg) (*mcp.CallToolResult, threadResult, error) {
+			gh, err := githubForRoot(ctx, a.Root, a.Thread)
+			if err != nil {
+				return toolErr(err), threadResult{}, nil
+			}
+			t, err := gh.ReviewThread(ctx, a.Thread)
+			if err != nil {
+				return toolErr(err), threadResult{}, nil
+			}
+			return nil, threadResult{ID: t.ID, Repo: t.Repo, Number: t.Number, Path: t.Path, Line: t.Line,
+				Resolved: t.Resolved, Outdated: t.Outdated, Author: t.Author, FirstWords: t.FirstWords}, nil
 		})
 
 	return s

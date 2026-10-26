@@ -6,7 +6,7 @@ import (
 	"github.com/yehia-khalil/wakil/internal/mcpx/mcpxtest"
 )
 
-// TestOutputSchemasAreObjects pins that each of wakil-ticket's seven tools advertises an
+// TestOutputSchemasAreObjects pins that each of wakil-ticket's eight tools advertises an
 // object-typed outputSchema. See mcpxtest.AssertObjectOutputSchemas.
 func TestOutputSchemasAreObjects(t *testing.T) {
 	mcpxtest.AssertObjectOutputSchemas(t, newServer(), []string{
@@ -17,5 +17,6 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		"ticket_link",
 		"review_reply",
 		"review_resolve",
+		"review_thread",
 	})
 }

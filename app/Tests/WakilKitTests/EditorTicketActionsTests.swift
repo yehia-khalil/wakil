@@ -116,6 +116,7 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         let confirmations = ConfirmationBroker()
         let model = WindowModel.forTesting(scratchRoot: testScratchRoot, confirmations: confirmations)
         let ticket = FakeTicket()
+        await describes(ticket)
         let store = EditorTicketStore(ticket: ticket)
         await registerTicketActions(
             into: model.registryForTesting, store: store, panes: PaneStore(kinds: PaneKinds.standard), layout: nil,
@@ -247,4 +248,130 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
     #expect(o["branch"] == .string("ini-142-login"))
     #expect(await f.store.branch(root: "/p/api") == nil)
     #expect(await f.ticket.count("ticket_branch") == 1)
+}
+
+// MARK: Fix round 1 — the plane names the thread GitHub says it is
+
+/// `review_thread`'s answer: T2 is on initech/api#212 at src/auth/token.go:41 (or `pr`).
+private func describes(_ ticket: FakeTicket, pr: Int = 212) async {
+    await ticket.set("review_thread", .object([
+        "id": .string("T2"), "repo": .string("initech/api"), "number": .integer(Int64(pr)),
+        "path": .string("src/auth/token.go"), "line": .integer(41), "resolved": .bool(false), "outdated": .bool(false),
+        "author": .string("reviewer"), "firstWords": .string("Nit: the error should name the host"),
+    ]))
+}
+
+private actor FinishedFlag {
+    var done = false
+    func set() { done = true }
+}
+
+private let agentInSession = DispatchCaller.test("staging", session: "s1", conversation: "c1")
+
+/// An agent's tools/call, parked: the proposal the plane would show, then cancelled.
+private func parkedByTheAgent(_ registry: ActionRegistry, _ name: String, _ args: [String: JSONValue]) async throws
+    -> (proposal: PendingMutation?, reply: JSONRPCMessage?) {
+    let confirmations = ConfirmationBroker()
+    let surface = MCPSurface(registry: registry, panes: PaneStore(), layout: LayoutStore(), confirmations: confirmations)
+    let finished = FinishedFlag()
+    let call = Task {
+        let r = await handle(JSONRPCMessage(id: .number(1), method: "tools/call",
+                                            params: .object(["name": .string(name), "arguments": .object(args)])),
+                             surface: surface, caller: { agentInSession })
+        await finished.set()
+        return r
+    }
+    while !(await finished.done) {
+        if let p = await confirmations.all().values.first {
+            await confirmations.cancel(id: p.id)
+            return (p, await call.value)
+        }
+        try await Task.sleep(for: .milliseconds(1))
+    }
+    return (nil, await call.value)
+}
+
+@Test(.timeLimit(.minutes(1))) func anAgentReplyToAThreadOfAnotherPRIsRefused() async throws {
+    let f = try await ticketFixture()
+    await describes(f.ticket, pr: 215)
+    let (proposal, reply) = try await parkedByTheAgent(f.editor.registry, "review_reply_send", replyParams)
+    #expect(proposal == nil, "parked: \(String(describing: proposal?.statement))")
+    #expect("\(String(describing: reply?.error))".contains("initech/api#215"))
+    #expect(await f.ticket.count("review_reply") == 0)
+    #expect(await f.ticket.count("review_thread") == 1)
+}
+
+@Test(.timeLimit(.minutes(1))) func anAgentsPlaneNamesTheThreadGitHubDescribes() async throws {
+    let f = try await ticketFixture()
+    await describes(f.ticket)
+    // The caller's path and line, and a stray statement, never reach the plane: GitHub's do.
+    var args = replyParams
+    args["path"] = .string("README.md")
+    args["line"] = .integer(1)
+    args["statement"] = .string("harmless")
+    let reply = try await parkedByTheAgent(f.editor.registry, "review_reply_send", args)
+    #expect(reply.proposal?.statement == "Reply on initech/api#212 · src/auth/token.go:41\n\nThanks, fixed.")
+
+    let resolve = try await parkedByTheAgent(f.editor.registry, "review_resolve",
+                                             ["root": .string("/p/api"), "thread": .string("T2"), "resolved": .bool(true),
+                                              "statement": .string("harmless")])
+    #expect(resolve.proposal?.statement == "resolve the review thread at src/auth/token.go:41 on initech/api#212 in api")
+    #expect(await f.ticket.count("review_reply") == 0)
+    #expect(await f.ticket.count("review_resolve") == 0)
+}
+
+/// Important 3: one order on both sides — Wakil's own description first, a caller's statement only
+/// for an action with none. A gated git write carrying a stray statement shows its description.
+@Test(.timeLimit(.minutes(1))) func anAgentsStrayStatementNeverReplacesTheDescription() async throws {
+    let f = try await ticketFixture()
+    let (proposal, _) = try await parkedByTheAgent(f.editor.registry, "editor_changes_branch_delete",
+                                                   ["root": .string("/p/api"), "branch": .string("old"),
+                                                    "statement": .string("harmless")])
+    #expect(proposal?.statement == "delete branch old in api")
+}
+
+@Test(.timeLimit(.minutes(1))) @MainActor func theOperatorsStrayStatementNeverReplacesTheDescription() async throws {
+    let confirmations = ConfirmationBroker()
+    let model = WindowModel.forTesting(scratchRoot: testScratchRoot, confirmations: confirmations)
+    let ticket = FakeTicket()
+    await describes(ticket)
+    await registerTicketActions(
+        into: model.registryForTesting, store: EditorTicketStore(ticket: ticket), panes: PaneStore(kinds: PaneKinds.standard),
+        layout: nil,
+        editor: EditorTicketHooks(pane: { _, _ in "editor-1" }, reply: { _ in .null },
+                                  updateColumn: { _, _ in .initial }, openFile: { _, _, _ in }),
+        roots: { ["/p/api"] })
+    var args = replyParams
+    args["statement"] = .string("harmless")
+    let send = Task { @MainActor in await model.dispatchFromSurface("review_reply_send", .object(args)) }
+    var parked: PendingMutation?
+    for _ in 0..<2_000 where parked == nil {
+        parked = await confirmations.all().values.first
+        if parked == nil { try await Task.sleep(for: .milliseconds(1)) }
+    }
+    #expect(parked?.statement == "Reply on initech/api#212 · src/auth/token.go:41\n\nThanks, fixed.")
+    if let parked { await confirmations.cancel(id: parked.id) }
+    await send.value
+}
+
+/// Important 2: an agent's record write goes to its own place's client; the window's cache keeps
+/// the window's organisation and re-reads on its next trigger.
+@Test func aPinnedAgentsRecordWriteStaysOutOfTheWindowsCache() async throws {
+    let f = try await ticketFixture()
+    _ = try await f.store.read(root: "/p/api")
+    await f.ticket.set("ticket_record_write", .object([
+        "key": .string("INI-142"), "next": .object(["id": .string("x1"), "text": .string("from another org"),
+                                                    "by": .string("agent"), "at": .string("2026-10-26T10:00:00Z")]),
+    ]))
+    try await f.dispatch("ticket_record_update", ["key": .string("INI-142"), "section": .string("next"), "op": .string("set"),
+                                                  "text": .string("from another org")],
+                         caller: agentInSession, confirmation: nil)
+    #expect(await f.ticket.count("ticket_record_write") == 1)
+    #expect(await f.store.branch(root: "/p/api")?.tickets.first?.record.next == nil)
+
+    // The operator's own write is the window's, and lands in its cache.
+    try await f.dispatch("ticket_record_update", ["key": .string("INI-142"), "section": .string("next"), "op": .string("set"),
+                                                  "text": .string("from another org")],
+                         origin: .ui, confirmation: nil)
+    #expect(await f.store.branch(root: "/p/api")?.tickets.first?.record.next?.text == "from another org")
 }
