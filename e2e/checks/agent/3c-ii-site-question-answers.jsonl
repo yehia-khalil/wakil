@@ -1,0 +1,29 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/form.html","newTab":false}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"dispatch":{"action":"browser_read_page","params":{"pane":"browser-1"}}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"fill the guest name"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Let the agent use 127.0.0.1:"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"contains","text":"did not allow the agent on 127.0.0.1:"}}
+{"expect":{"tree":"absent","text":"Let the agent use"}}
+{"expect":{"tree":"absent","text":"agent allowed"}}
+{"expect":{"focus":"window.composer"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"fill the guest name"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Let the agent use 127.0.0.1:"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/form.html"}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"dispatch":{"action":"browser_read_page","params":{"pane":"browser-1"}}}
+{"do":{"click":"confirmation.allow"}}
+{"expect":{"tree":"contains","text":"the page changed since it was read"}}
+{"expect":{"tree":"absent","text":"Let the agent use"}}
+{"expect":{"tree":"absent","text":"typed into \"Guest name\""}}
+{"expect":{"tree":"absent","text":"agent allowed"}}
+{"expect":{"focus":"window.composer"}}

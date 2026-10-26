@@ -1,6 +1,11 @@
 {
   "rules": [
     {
+      "match": "read this page",
+      "call": { "action": "browser_read_page", "echo": true, "params": { "pane": "browser-1" } },
+      "reply": "read the release notes"
+    },
+    {
       "match": "press return in the guest name",
       "call": { "action": "browser_press", "echo": true, "params": { "pane": "browser-1", "ref": "e1", "key": "Return" } },
       "reply": "pressed return in the guest name"

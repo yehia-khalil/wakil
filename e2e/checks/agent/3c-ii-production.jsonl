@@ -10,6 +10,7 @@
 {"expect":{"tree":"contains","text":"click \"Confirm\" on localhost:"}}
 {"expect":{"tree":"contains","text":"PRODUCTION"}}
 {"expect":{"tree":"contains","text":"type confirm"}}
+{"expect":{"focus":"confirmation.field"}}
 {"do":{"click":"confirmation.cancel"}}
 {"expect":{"tree":"contains","text":"requires confirmation"}}
 {"expect":{"focus":"window.composer"}}
@@ -18,6 +19,7 @@
 {"do":{"keys":"click confirm on the live form"}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"click \"Confirm\" on localhost:"}}
+{"expect":{"focus":"confirmation.field"}}
 {"do":{"type":{"into":"confirmation.field","text":"confirm"}}}
 {"do":{"click":"confirmation.run"}}
 {"expect":{"pane":"browser-1","field":"title","equals":"Booked: no name, 1 night"}}
