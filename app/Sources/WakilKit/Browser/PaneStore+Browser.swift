@@ -45,6 +45,8 @@ extension PaneStore {
         guard holds(BrowserPaneKind.self, paneId) else { return }
         updateBrowser(paneId: paneId) { s in
             guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else { return }
+            // A new address is a new page: the agent's read of the old one no longer applies.
+            if s.tabs[i].url != report.url { s.tabs[i].lastRead = nil }
             s.tabs[i].url = report.url
             s.tabs[i].title = report.title
             s.tabs[i].isLoading = report.isLoading
@@ -94,6 +96,74 @@ extension PaneStore {
             s.tabs.insert(BrowserTab(id: id, url: url, title: "", loaded: true), at: i + 1)
             s.active = id
             return id
+        }
+    }
+
+    // MARK: - 3c-ii: the organisation's sites, each tab's read and the per-conversation allow-list
+
+    public func browserSetSites(org: String, _ sites: BrowserSites) {
+        var shared = kindState(BrowserPaneKind.self)
+        shared.sites[org] = sites
+        setKindState(BrowserPaneKind.self, shared)
+    }
+
+    /// `.unread` when never set: every site then counts as production.
+    public func browserSites(org: String) -> BrowserSites {
+        kindState(BrowserPaneKind.self).sites[org] ?? .unread
+    }
+
+    /// Site keys (`BrowserSite.key`) the conversation allowed. Callers never pass a raw host.
+    public func browserAllowed(conversation: String) -> Set<String> {
+        kindState(BrowserPaneKind.self).allowed[conversation] ?? []
+    }
+
+    public func browserAllow(site: String, conversation: String) {
+        var shared = kindState(BrowserPaneKind.self)
+        shared.allowed[conversation, default: []].insert(site)
+        setKindState(BrowserPaneKind.self, shared)
+    }
+
+    public func browserRevoke(site: String, conversation: String) {
+        var shared = kindState(BrowserPaneKind.self)
+        guard shared.allowed[conversation]?.contains(site) == true else { return }
+        shared.allowed[conversation]?.remove(site)
+        if shared.allowed[conversation]?.isEmpty == true { shared.allowed[conversation] = nil }
+        setKindState(BrowserPaneKind.self, shared)
+    }
+
+    /// The conversation ended: forgets its sites and no other's.
+    public func browserForget(conversation: String) {
+        var shared = kindState(BrowserPaneKind.self)
+        guard shared.allowed[conversation] != nil else { return }
+        shared.allowed[conversation] = nil
+        setKindState(BrowserPaneKind.self, shared)
+    }
+
+    /// Keeps the elements the agent was given refs for. False when the tab is gone. Raises
+    /// `refsIssued` past the highest `e<n>` given, so a ref is never reused in a tab.
+    @discardableResult
+    public func browserRecordRead(paneId: String, tab: String, url: String, site: String,
+                                  elements: [BrowserElement]) -> Bool {
+        guard holds(BrowserPaneKind.self, paneId) else { return false }
+        return updateBrowser(paneId: paneId) { s -> Bool in
+            guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else { return false }
+            var byRef: [String: BrowserElement] = [:]
+            var highest = s.tabs[i].refsIssued
+            for e in elements {
+                byRef[e.ref] = e
+                if e.ref.hasPrefix("e"), let n = Int(e.ref.dropFirst()) { highest = max(highest, n) }
+            }
+            s.tabs[i].lastRead = BrowserReadStamp(url: url, site: site, elements: byRef)
+            s.tabs[i].refsIssued = highest
+            return true
+        }
+    }
+
+    public func browserDropRead(paneId: String, tab: String) {
+        guard holds(BrowserPaneKind.self, paneId) else { return }
+        updateBrowser(paneId: paneId) { s in
+            guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else { return }
+            s.tabs[i].lastRead = nil
         }
     }
 }
