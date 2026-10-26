@@ -156,6 +156,9 @@ func RemoveGitAPIAccess(org, host string) error {
 	if !ok {
 		return UserError("no git account for " + host + " in " + org)
 	}
+	if a.Method != "ssh" || a.Provider != "github" {
+		return UserError("API access belongs to an ssh GitHub account; " + host + "'s account signs in with " + a.Method)
+	}
 	if err := SecretDelete(org, gitTokenRef(host)); err != nil {
 		return err
 	}

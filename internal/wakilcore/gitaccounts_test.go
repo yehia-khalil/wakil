@@ -281,3 +281,23 @@ func TestConfigTreeCarriesAPIAccessNotToken(t *testing.T) {
 		t.Fatalf("tree = %s", raw)
 	}
 }
+
+func TestRemoveGitAPIAccessRefusesAccountsThatAreNotSSHGitHub(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	for _, a := range []GitAccount{
+		{Host: "github.com", Provider: "github", Method: "token"},
+		{Host: "github.com", Provider: "github", Method: "signin"},
+		{Host: "gitlab.com", Provider: "gitlab", Method: "ssh", KeyPath: "/k/id"},
+	} {
+		AddGitAccount("initech", a)
+		SetGitToken("initech", a.Host, "tok-keep")
+		err := RemoveGitAPIAccess("initech", a.Host)
+		if _, ok := IsUserError(err); !ok {
+			t.Errorf("%s/%s: err = %v, want a UserError", a.Provider, a.Method, err)
+		}
+		if v, _ := SecretGetFor("initech", gitTokenRef(a.Host)); v != "tok-keep" {
+			t.Errorf("%s/%s: the account's credential was deleted", a.Provider, a.Method)
+		}
+	}
+}
