@@ -788,7 +788,9 @@ private let confirmationBusyCode = -32005
 ///
 /// The re-dispatch passes `arguments` unchanged rather than rebuilding them
 /// from the parked projection: the operator confirmed a specific statement,
-/// and anything reconstructed could differ from what they read.
+/// and anything reconstructed could differ from what they read. The action's own proposal travels
+/// with it (`asked`), so an action whose arguments resolve against live state (a browser act that
+/// names no tab) can refuse an approval that would now land somewhere other than what was asked.
 ///
 /// **`caller` is re-read after the park, never captured across it.**
 /// The gate must judge the environment as it stands at the moment of
@@ -888,7 +890,7 @@ private func parkForConfirmation(
         do {
             let result = try await surface.registry.dispatch(
                 name: name, params: arguments, origin: .agent,
-                caller: judged, confirmation: "confirm")
+                caller: judged, confirmation: "confirm", asked: own)
             return JSONRPCMessage(id: id, result: toolResultEnvelope(result))
         } catch let error as ActionError {
             return JSONRPCMessage(id: id, error: jsonRPCError(for: error))

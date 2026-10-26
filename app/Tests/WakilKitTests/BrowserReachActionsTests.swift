@@ -122,6 +122,18 @@ private struct ReachFixture {
         driver.page(url: url)
     }
 
+    /// What the plane asks for this call, as the agent's park records it.
+    func asked(_ name: String, _ params: [String: JSONValue]) async -> ActionProposal? {
+        await registry.proposal(name: name, params: .object(params), caller: agent())
+    }
+
+    /// The operator's Allow: the confirmed re-dispatch, carrying what the plane asked (`asked`).
+    @discardableResult
+    func approve(_ name: String, _ params: [String: JSONValue], asked: ActionProposal?) async throws -> JSONValue {
+        try await registry.dispatch(name: name, params: .object(params), origin: .agent, caller: agent(),
+                                    confirmation: "confirm", asked: asked)
+    }
+
     func allowed(_ conversation: String = "c1") async -> Set<String> {
         await panes.browserAllowed(conversation: conversation)
     }
@@ -286,14 +298,16 @@ private func refs(_ reply: JSONValue) -> [String] {
         params: .object(["pane": .string(f.pane), "ref": .string("e1"), "text": .string("Ada Lovelace")]),
         caller: f.agent())
     #expect(typed == ActionProposal(statement: "type \"Ada Lovelace\" into \"Guest name\"",
-                                    ask: .site("staging.initech.dev")))
+                                    ask: .site("staging.initech.dev"),
+                                    target: ProposalTarget(pane: f.pane, tab: "t1")))
 
     let p = try await reach(production)
     try await p.read()
     let clicked = await p.registry.proposal(
         name: "browser_click", params: .object(["pane": .string(p.pane), "ref": .string("e2")]), caller: p.agent())
     #expect(clicked == ActionProposal(statement: "click \"Delete booking\" on api.initech.com",
-                                      ask: .productionSite("api.initech.com")))
+                                      ask: .productionSite("api.initech.com"),
+                                      target: ProposalTarget(pane: p.pane, tab: "t1")))
 
     // A ref the read never gave has no proposal.
     #expect(await p.registry.proposal(
@@ -407,6 +421,66 @@ private func refs(_ reply: JSONValue) -> [String] {
     #expect(why == "browser_type: the page changed since it was read — read it again (browser_read_page).")
     #expect(f.driver.calls.isEmpty)
     #expect(await f.allowed().isEmpty)
+}
+
+/// Final review I1(a): the call names no tab, so it lands on whichever tab is active. The plane asked
+/// about t1's site; while it waits the active tab becomes t2 on another site, read, with the same ref.
+/// The Allow is for what was asked, so nothing runs on t2 and its site is never added.
+@Test func anApprovalAfterTheActiveTabChangedIsRefused() async throws {
+    let f = try await reach()
+    try await f.read()
+    let params: [String: JSONValue] = ["pane": .string(f.pane), "ref": .string("e1"), "text": .string("Ada Lovelace")]
+    await #expect(throws: ActionError.needsConfirmation("browser_type")) {
+        try await f.dispatch("browser_type", params)
+    }
+    let asked = try #require(await f.asked("browser_type", params))
+    #expect(asked.ask == .site("staging.initech.dev"))
+
+    await f.panes.updateBrowser(paneId: f.pane, create: false) { s in
+        s.tabs.append(BrowserTab(id: "t2", url: "https://example.com/", title: "Example", loaded: true))
+        s.active = "t2"
+    }
+    f.driver.page(url: "https://example.com/")
+    try await f.read()
+    f.driver.clear()
+    let why = await refusal { try await f.approve("browser_type", params, asked: asked) }
+    #expect(why == "browser_type: the page changed since it was read — read it again (browser_read_page).")
+    #expect(f.driver.calls.isEmpty)
+    #expect(await f.allowed().isEmpty)
+}
+
+/// Final review I1(b): the plane asked a site question; while it waited the site became production.
+/// A click on Allow never runs a production act, which only the typed confirm may.
+@Test func anApprovalAfterTheSiteBecameProductionIsRefused() async throws {
+    let f = try await reach()
+    try await f.read()
+    let params: [String: JSONValue] = ["pane": .string(f.pane), "ref": .string("e2")]
+    await #expect(throws: ActionError.needsConfirmation("browser_click")) {
+        try await f.dispatch("browser_click", params)
+    }
+    let asked = try #require(await f.asked("browser_click", params))
+    #expect(asked.ask == .site("staging.initech.dev"))
+
+    await f.panes.browserSetSites(org: await f.panes.activeScope.organization, BrowserSites(
+        environment: ["staging.initech.dev": "staging"], production: ["api.initech.com", "staging.initech.dev"],
+        read: true))
+    f.driver.clear()
+    let why = await refusal { try await f.approve("browser_click", params, asked: asked) }
+    #expect(why == "browser_click: the page changed since it was read — read it again (browser_read_page).")
+    #expect(f.driver.calls.isEmpty)
+    #expect(await f.allowed().isEmpty)
+}
+
+/// The Allow for what was asked, with nothing changed, runs and allows the site.
+@Test func anApprovalOfWhatWasAskedRuns() async throws {
+    let f = try await reach()
+    try await f.read()
+    let params: [String: JSONValue] = ["pane": .string(f.pane), "ref": .string("e1"), "text": .string("Ada Lovelace")]
+    let asked = try #require(await f.asked("browser_type", params))
+    let reply = object(try await f.approve("browser_type", params, asked: asked))
+    #expect(reply["thread"] == .string("typed into \"Guest name\""))
+    #expect(f.driver.acts.count == 1)
+    #expect(await f.allowed() == ["staging.initech.dev"])
 }
 
 @Test func aStaleRefFromTheScriptDropsTheRead() async throws {

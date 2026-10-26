@@ -303,6 +303,20 @@ func browserReachActions(
                                                   action: name).get()
                 let ref = optionalString(params, "ref") ?? ""
 
+                // The operator's approval is for what the plane asked (final review I1): the same pane
+                // and tab, the same site, at the same price. A call that names no tab follows the active
+                // one, which may have moved while the plane was up; a site that became production since
+                // costs a typed confirm, which a site question's Allow never gave. Either is refused as
+                // a page that changed, before anything is read, acted or allowed.
+                if let asked = ActionRegistry.dispatchAsked {
+                    let sites = await panes.browserSitesInScope()
+                    let now: PendingAsk = sites.isProduction(target.site)
+                        ? .productionSite(target.site) : .site(target.site)
+                    guard asked.target == ProposalTarget(pane: pane, tab: target.tab), asked.ask == now else {
+                        throw BrowserReachError.stale(action: name)
+                    }
+                }
+
                 // The live element, again: a field that became the operator's since the read, or is no
                 // longer the one read, is refused before any consent is spent on it.
                 if name == "browser_type" || name == "browser_select" || name == "browser_press" {
@@ -376,7 +390,8 @@ func browserReachActions(
                                          params: params)
                 return ActionProposal(
                     statement: browserStatement(act, target.element, site: target.site, production: production),
-                    ask: production ? .productionSite(target.site) : .site(target.site))
+                    ask: production ? .productionSite(target.site) : .site(target.site),
+                    target: ProposalTarget(pane: pane, tab: target.tab))
             }))
     }
 

@@ -252,7 +252,8 @@ public actor ActionRegistry {
         params: JSONValue,
         origin: ActionOrigin,
         caller: DispatchCaller,
-        confirmation: String?
+        confirmation: String?,
+        asked: ActionProposal? = nil
     ) async throws -> JSONValue {
         guard let action = actions[name] else {
             try appendJournalEntry(action: name, params: params, origin: origin,
@@ -321,8 +322,10 @@ public actor ActionRegistry {
             // shows when the handler's later writes land. Already read if the call was priced.
             if callPrice == nil { home = await self.home(of: caller) }
             let result = try await ActionRegistry.$dispatchConfirmedGate.withValue(decision == .gate) {
-                try await bindingDispatch(origin: origin, caller: caller, home: home) {
-                    try await action.handler(params)
+                try await ActionRegistry.$dispatchAsked.withValue(asked) {
+                    try await bindingDispatch(origin: origin, caller: caller, home: home) {
+                        try await action.handler(params)
+                    }
                 }
             }
             try appendJournalEntry(action: name, params: params, origin: origin,
@@ -795,6 +798,12 @@ extension ActionRegistry {
     /// (its site already allowed) never adds one, so a revoke landing between the price and the
     /// handler is never undone. False outside `dispatch`, the refusing side.
     @TaskLocal static var dispatchConfirmedGate = false
+
+    /// 3c-ii (final review I1): what the plane asked when this dispatch is the operator's approval of a
+    /// parked proposal — the proposal the park raised, target and question included. A browser act
+    /// refuses as page-changed when its target, site or price no longer match it. Nil outside an
+    /// approved re-dispatch.
+    @TaskLocal static var dispatchAsked: ActionProposal?
 }
 
 private extension String {

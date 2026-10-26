@@ -265,15 +265,31 @@ public enum PendingAsk: Sendable, Equatable {
     case productionSite(String)
 }
 
-/// 3c-ii: an action's own description of one call for the confirmation plane — the statement it reads
-/// and the question it asks (`Action.proposal`).
+/// 3c-ii: where a proposal's call lands — the pane and tab it resolved to when the plane was raised.
+/// A call that names no tab lands on whichever is active, so the approval is held to this one.
+public struct ProposalTarget: Sendable, Equatable {
+    public var pane: String
+    public var tab: String
+
+    public init(pane: String, tab: String) {
+        self.pane = pane
+        self.tab = tab
+    }
+}
+
+/// 3c-ii: an action's own description of one call for the confirmation plane — the statement it reads,
+/// the question it asks and, for a browser act, the target it names (`Action.proposal`). The agent's
+/// park hands it back to the approved re-dispatch (`ActionRegistry.dispatchAsked`), so the handler can
+/// refuse an approval whose target, site or price is no longer the one asked about (final review I1).
 public struct ActionProposal: Sendable, Equatable {
     public var statement: String
     public var ask: PendingAsk
+    public var target: ProposalTarget?
 
-    public init(statement: String, ask: PendingAsk) {
+    public init(statement: String, ask: PendingAsk, target: ProposalTarget? = nil) {
         self.statement = statement
         self.ask = ask
+        self.target = target
     }
 }
 
