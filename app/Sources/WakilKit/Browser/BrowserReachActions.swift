@@ -307,7 +307,9 @@ func browserReachActions(
                 // and tab, the same site, at the same price. A call that names no tab follows the active
                 // one, which may have moved while the plane was up; a site that became production since
                 // costs a typed confirm, which a site question's Allow never gave. Either is refused as
-                // a page that changed, before anything is read, acted or allowed.
+                // a page that changed, before anything is read, acted or allowed. A confirmed call that
+                // carries no question has nothing to hold the approval to, and fails closed the same way.
+                if confirmed, ActionRegistry.dispatchAsked == nil { throw BrowserReachError.stale(action: name) }
                 if let asked = ActionRegistry.dispatchAsked {
                     let sites = await panes.browserSitesInScope()
                     let now: PendingAsk = sites.isProduction(target.site)

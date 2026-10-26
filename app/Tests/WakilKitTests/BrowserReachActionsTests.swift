@@ -104,12 +104,13 @@ private struct ReachFixture {
 
     @discardableResult
     func dispatch(_ name: String, _ params: [String: JSONValue] = [:], origin: ActionOrigin = .agent,
-                  conversation: String = "c1", confirm: Bool = false) async throws -> JSONValue {
+                  conversation: String = "c1", confirm: Bool = false,
+                  asked: ActionProposal? = nil) async throws -> JSONValue {
         var p = params
         if p["pane"] == nil { p["pane"] = .string(pane) }
         let caller: DispatchCaller = origin == .agent ? agent(conversation) : .test("staging")
         return try await registry.dispatch(name: name, params: .object(p), origin: origin, caller: caller,
-                                           confirmation: confirm ? "confirm" : nil)
+                                           confirmation: confirm ? "confirm" : nil, asked: asked)
     }
 
     @discardableResult func read() async throws -> JSONValue { try await dispatch("browser_read_page") }
@@ -123,8 +124,10 @@ private struct ReachFixture {
     }
 
     /// What the plane asks for this call, as the agent's park records it.
-    func asked(_ name: String, _ params: [String: JSONValue]) async -> ActionProposal? {
-        await registry.proposal(name: name, params: .object(params), caller: agent())
+    func asked(_ name: String, _ params: [String: JSONValue], conversation: String = "c1") async -> ActionProposal? {
+        var p = params
+        if p["pane"] == nil { p["pane"] = .string(pane) }
+        return await registry.proposal(name: name, params: .object(p), caller: agent(conversation))
     }
 
     /// The operator's Allow: the confirmed re-dispatch, carrying what the plane asked (`asked`).
@@ -254,7 +257,8 @@ private func refs(_ reply: JSONValue) -> [String] {
     #expect(f.driver.calls.isEmpty)
     #expect(await f.allowed().isEmpty)
 
-    let reply = object(try await f.dispatch("browser_type", params, confirm: true))
+    let reply = object(try await f.dispatch("browser_type", params, confirm: true,
+                                            asked: await f.asked("browser_type", params)))
     #expect(await f.allowed() == ["staging.initech.dev"])
     #expect(f.driver.acts == [.type(ref: "e1", text: "Ada Lovelace", expect: { var e = guestName; e.ref = "e1"; return e }())])
     #expect(reply["thread"] == .string("typed into \"Guest name\""))
@@ -278,13 +282,14 @@ private func refs(_ reply: JSONValue) -> [String] {
         await #expect(throws: ActionError.needsConfirmation("browser_click")) {
             try await f.dispatch("browser_click", params)
         }
-        try await f.dispatch("browser_click", params, confirm: true)
+        try await f.dispatch("browser_click", params, confirm: true, asked: await f.asked("browser_click", params))
     }
     // Confirmed in another conversation: still never added.
     await #expect(throws: ActionError.needsConfirmation("browser_click")) {
         try await f.dispatch("browser_click", params, conversation: "c2")
     }
-    try await f.dispatch("browser_click", params, conversation: "c2", confirm: true)
+    try await f.dispatch("browser_click", params, conversation: "c2", confirm: true,
+                         asked: await f.asked("browser_click", params, conversation: "c2"))
     #expect(await f.allowed("c2").isEmpty)
     #expect(await f.allowed("c1") == ["api.initech.com"])
     #expect(f.driver.acts.count == 3)
@@ -365,7 +370,8 @@ private func refs(_ reply: JSONValue) -> [String] {
     swapped.type = "password"
     f.driver.describeAs("e1", swapped)
     let why = await refusal {
-        try await f.dispatch("browser_type", ["ref": .string("e1"), "text": .string("x")], confirm: true)
+        let params: [String: JSONValue] = ["ref": .string("e1"), "text": .string("x")]
+        try await f.dispatch("browser_type", params, confirm: true, asked: await f.asked("browser_type", params))
     }
     #expect(why == "browser_type: that field is yours to fill — \"Guest name\" is a password field, and the "
         + "agent never types into one (Invariant 6)." + quotedIsUntrusted)
@@ -413,11 +419,12 @@ private func refs(_ reply: JSONValue) -> [String] {
     await #expect(throws: ActionError.needsConfirmation("browser_type")) {
         try await f.dispatch("browser_type", params)
     }
+    let asked = await f.asked("browser_type", params)
     // While the plane waits, the tab moves to another site and the agent reads it.
     await f.navigate(to: "https://example.com/")
     try await f.read()
     f.driver.clear()
-    let why = await refusal { try await f.dispatch("browser_type", params, confirm: true) }
+    let why = await refusal { try await f.dispatch("browser_type", params, confirm: true, asked: asked) }
     #expect(why == "browser_type: the page changed since it was read — read it again (browser_read_page).")
     #expect(f.driver.calls.isEmpty)
     #expect(await f.allowed().isEmpty)
@@ -483,6 +490,19 @@ private func refs(_ reply: JSONValue) -> [String] {
     #expect(await f.allowed() == ["staging.initech.dev"])
 }
 
+/// Fail closed: a confirmed act that carries no question the plane asked has nothing to hold the
+/// approval to, so it is refused as a changed page before anything is read, acted or allowed.
+@Test func aConfirmedActThatNamesNoQuestionIsRefused() async throws {
+    let f = try await reach()
+    try await f.read()
+    f.driver.clear()
+    let params: [String: JSONValue] = ["ref": .string("e1"), "text": .string("Ada Lovelace")]
+    let why = await refusal { try await f.dispatch("browser_type", params, confirm: true) }
+    #expect(why == "browser_type: the page changed since it was read — read it again (browser_read_page).")
+    #expect(f.driver.calls.isEmpty)
+    #expect(await f.allowed().isEmpty)
+}
+
 @Test func aStaleRefFromTheScriptDropsTheRead() async throws {
     let f = try await reach()
     try await f.read()
@@ -531,7 +551,7 @@ private func refs(_ reply: JSONValue) -> [String] {
     // A confirmed call adds the site before it acts; a revoke while it acts stays a revoke.
     f.driver.onDescribe {}
     f.driver.onAct { await panes.browserRevoke(site: "staging.initech.dev", conversation: "c1") }
-    try await f.dispatch("browser_type", params, confirm: true)
+    try await f.dispatch("browser_type", params, confirm: true, asked: await f.asked("browser_type", params))
     #expect(f.driver.acts.count == 1)
     #expect(await f.allowed().isEmpty)
 }
