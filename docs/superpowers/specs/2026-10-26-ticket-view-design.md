@@ -378,9 +378,11 @@ at narrow widths.
 - **Pieces 2 and 3 merge together** (the umbrella's call). Piece 2 is built and reviewed on its
   own branch with no flag; piece 3 stacks on it and both merge as one.
 
+## Decided by the operator (2026-10-26)
+
+- **⌥↓/⌥↑ step threads only while focus is in a review box or the Ticket column**; in the text
+  they stay Monaco's Move Line Down / Up.
+
 ## Open questions
 
-1. **⌥↓ is Monaco's Move Line Down.** The umbrella's box says "⌥↓ next". This design takes ⌥↓/⌥↑
-   for threads only while focus is in a review box or the Ticket column, and leaves Move Line Down
-   in the text. Should ⌥↓ step threads from the text too, giving up Move Line Down?
-2. Open question 15 (PM transition reversibility) is untouched here; it applies to piece 5's Move.
+1. Open question 15 (PM transition reversibility) is untouched here; it applies to piece 5's Move.
