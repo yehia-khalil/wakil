@@ -191,3 +191,29 @@ func TestPageStubLiveTokenExpands(t *testing.T) {
 		t.Errorf("without a stub the token must stay literal, got %q", got)
 	}
 }
+
+// TestPageStubServesTheFormSlowly — /slow-form.html is form.html after SlowFormDelay, never
+// cached, so a tab that loads it again (a restored tab) is still loading for that long.
+func TestPageStubServesTheFormSlowly(t *testing.T) {
+	origin, stop, err := StartPageStub(filepath.Join(repoRoot(t), PageFixtures))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	start := time.Now()
+	resp, err := http.Get(origin + "/slow-form.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if took := time.Since(start); took < SlowFormDelay {
+		t.Errorf("/slow-form.html answered after %v, before %v", took, SlowFormDelay)
+	}
+	if !strings.Contains(string(body), "<title>Booking form</title>") {
+		t.Errorf("/slow-form.html is not the booking form: %.80q", body)
+	}
+	if cc := resp.Header.Get("cache-control"); cc != "no-store" {
+		t.Errorf("/slow-form.html cache-control = %q, want no-store", cc)
+	}
+}

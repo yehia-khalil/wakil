@@ -22,6 +22,11 @@ const (
 	BigBinRate = 64 * 1024
 )
 
+// SlowFormDelay is how long `/slow-form.html` holds form.html back. Longer than the scripted
+// agent takes to start and call, so a read made as a new conversation's first turn lands while
+// the restored tab is still loading it (3c-ii), every run rather than when the race falls that way.
+const SlowFormDelay = 3 * time.Second
+
 // bigBinTick is how often a slice of BigBinRate goes out. Small slices keep
 // the rate even within a second, so "at most 64 KB in half a second" holds.
 const bigBinTick = 125 * time.Millisecond
@@ -33,6 +38,7 @@ const bigBinTick = 125 * time.Millisecond
 // `/big.bin` is not a file: it streams BigBinSize zero bytes at BigBinRate,
 // with a Content-Length, so a download has a known total and a progress.
 // `/stall.html` is not one either: it sends its head and never finishes.
+// `/slow-form.html` is form.html after SlowFormDelay, never cached.
 func StartPageStub(dir string) (string, func(), error) {
 	// Absolute and checked now: a relative http.Dir resolves at each request,
 	// and a missing folder would answer every page 404 rather than fail here.
@@ -83,6 +89,16 @@ func StartPageStub(dir string) (string, func(), error) {
 			flusher.Flush()
 		}
 		<-r.Context().Done()
+	})
+	// form.html, held back SlowFormDelay and never cached, so every load of it takes that long.
+	mux.HandleFunc("/slow-form.html", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(SlowFormDelay):
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("cache-control", "no-store")
+		http.ServeFile(w, r, filepath.Join(dir, "form.html"))
 	})
 	mux.Handle("/", http.FileServer(http.Dir(dir)))
 	srv := &http.Server{Handler: mux}

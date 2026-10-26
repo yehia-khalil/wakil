@@ -1,5 +1,5 @@
 {"expect":{"tree":"contains","text":"e2e-fixture"}}
-{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/form.html","newTab":false}}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/slow-form.html","newTab":false}}}
 {"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
 {"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
 {"do":{"focus":"window.composer"}}
