@@ -297,6 +297,18 @@ private func reachTree() -> JSONValue {
     ])])
 }
 
+/// Holds `ctx_config_tree` open until released, so a test can switch organisation mid-read.
+private actor ReachGate {
+    private var entered = false
+    private var open = false
+    func enter() async {
+        entered = true
+        while !open { try? await Task.sleep(nanoseconds: 1_000_000) }
+    }
+    func waitUntilEntered() async { while !entered { try? await Task.sleep(nanoseconds: 1_000_000) } }
+    func release() { open = true }
+}
+
 private final class CallCount: @unchecked Sendable {
     private let lock = NSLock()
     private var n = 0
@@ -320,7 +332,8 @@ private struct ReachBackend: ToolCaller {
 /// A window with browser actions and a counted `ctx_config_tree`, running agents on `sessions`.
 @MainActor
 private func reachWindow(
-    _ sessions: Sessions, trees: CallCount = CallCount(), context: (any ToolCaller)? = nil
+    _ sessions: Sessions, trees: CallCount = CallCount(), context: (any ToolCaller)? = nil,
+    gate: ReachGate? = nil
 ) async -> (WindowModel, PaneStore) {
     let dir = testScratchRoot.appendingPathComponent("browser-reach-\(UUID().uuidString)")
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -331,7 +344,7 @@ private func reachWindow(
     await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { .defaults })
     await registry.register(Action(
         name: "ctx_config_tree", description: "", kind: .read, audience: .agentReachable,
-        schema: .object(["type": .string("object")]), handler: { _ in trees.bump(); return reachTree() }))
+        schema: .object(["type": .string("object")]), handler: { _ in trees.bump(); await gate?.enter(); return reachTree() }))
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: nil,
         context: context.map { ContextStore(client: $0) },
@@ -434,7 +447,50 @@ private func reachWindow(
         await model.setOrganization("globex")
         await model.refreshBrowserSites()
         #expect(await panes.browserSites(org: "globex").read, "read for the org now open")
-        #expect(await panes.browserSites(org: reachOrg).read, "the old org's copy is its own")
+        #expect(await panes.browserSites(org: reachOrg) == .unread, "the outgoing org's copy was cleared")
+    }
+
+    @Test func anOrgSwitchAndReturnNeverPricesFromTheOldList() async {
+        let (model, panes) = await reachWindow(Sessions())
+        await model.refreshBrowserSites()
+        #expect(await panes.browserSites(org: reachOrg).read)
+        await model.setOrganization("globex")
+        await model.setOrganization(reachOrg)
+        #expect(await panes.browserSites(org: reachOrg) == .unread, "A -> B -> A: unread until re-read")
+        #expect(model.browserSites == .unread)
+    }
+
+    @Test func aSettingsReadInFlightDuringAnOrgSwitchInstallsNothingForTheNewOrg() async throws {
+        let gate = ReachGate()
+        let (model, panes) = await reachWindow(Sessions(), gate: gate)
+        let read = Task { await model.refreshSettings() }
+        await gate.waitUntilEntered()
+        await model.setOrganization("globex")
+        await gate.release()
+        await read.value
+        #expect(model.browserSites == .unread, "the outgoing org's tree is not the new org's sites")
+        #expect(await panes.browserSites(org: "globex") == .unread)
+        #expect(await panes.browserSites(org: reachOrg) == .unread)
+    }
+
+    @Test func aResumeClearsWhichToolUsesWereBrowserTools() async throws {
+        let sessions = Sessions()
+        let (model, _) = await reachWindow(sessions)
+        await model.registryForTesting.register(Action(
+            name: "session_read", description: "", kind: .read, audience: .agentReachable,
+            schema: .object(["type": .string("object")]),
+            handler: { _ in .object(["structuredContent": .object([
+                "cwd": .string("/tmp"), "provider": .string("test-provider"), "entries": .array([])])]) }))
+        await model.registryForTesting.register(Action(
+            name: "session_record_parent", description: "", kind: .control, audience: .operatorOnly,
+            schema: .object(["type": .string("object")]), handler: { _ in .object([:]) }))
+        #expect(await model.send("go"))
+        let agent = try #require(model.currentAgent)
+        agent.toolNames["t1"] = "browser_read"
+        agent.turnInFlight = false
+        await model.resume(sessionId: "past-1", in: agent.place, conversation: agent.id)
+        #expect(agent.toolNames.isEmpty, "\(model.status)")
+        await model.shutdown()
     }
 
     @Test func aSpokenTurnsSiteQuestionWantsTyping() async throws {

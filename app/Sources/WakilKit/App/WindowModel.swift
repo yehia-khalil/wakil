@@ -2301,6 +2301,9 @@ public final class WindowModel {
         // prices as production until the incoming org's tree is read.
         browserSites = .unread
         browserAllowedOnScreen = []
+        // The store's copy for the outgoing org goes too: coming back before a re-read must not
+        // price from a list that may be stale (`organization` still names the outgoing org here).
+        if !organization.isEmpty { await panes.browserSetSites(org: organization, .unread) }
         // The account table carries `mine`, which is a statement about
         // WHICH organisation the operator is standing in — false for
         // every row the moment that changes, and silently wrong until the
@@ -2945,6 +2948,7 @@ public final class WindowModel {
     /// freshly created organisation genuinely has no projects, and a read
     /// that never answered has learned nothing about whether it does.
     public func refreshSettings() async {
+        let asked = browserSitesKey
         do {
             let result = try await registry.dispatch(
                 name: "ctx_config_tree", params: .object([:]), origin: .ui,
@@ -2955,7 +2959,7 @@ public final class WindowModel {
             }
             settings = tree
             settingsFailure = nil
-            await applyBrowserSites(from: tree)
+            await applyBrowserSites(from: tree, asked: asked)
             publishAgentInstructions(tree)
             // The tree first, so the pane fills at once; finding `claude` (a login-shell lookup)
             // is for the account table below, and waits until the tree is drawn.
@@ -9654,22 +9658,29 @@ public final class WindowModel {
     /// an org, project or environment switch (`refreshContext`); a settings refresh applies the tree
     /// it already read instead (`applyBrowserSites`), with no second dispatch.
     func refreshBrowserSites() async {
-        let org = organization
-        guard !org.isEmpty,
+        let asked = browserSitesKey
+        guard !asked.org.isEmpty,
               let result = try? await registry.dispatch(
                 name: "ctx_config_tree", params: .object([:]), origin: .ui,
                 caller: DispatchCaller(place: place, session: nil), confirmation: nil),
               let tree = decodeSettingsTree(fromResult: result) else { return }
         // A switch that landed while the tree was in flight: this tree is the outgoing org's.
-        guard organization == org else { return }
+        guard browserSitesKey == asked else { return }
         settings = tree
-        await applyBrowserSites(from: tree)
+        await applyBrowserSites(from: tree, asked: asked)
     }
+
+    /// What `BrowserSites.from` reads besides the tree. A tree read for one key is applied only
+    /// while the window still holds it (Invariant 4): another org's sites never land under this one.
+    private var browserSitesKey: BrowserSitesKey {
+        BrowserSitesKey(org: organization, project: project, environment: environment)
+    }
+    private struct BrowserSitesKey: Equatable { var org: String; var project: String; var environment: String }
 
     /// Installs the sites `tree` yields for the active project and environment, in the window and
     /// the store (the agent's price reads the store). Nothing when no organisation is open.
-    private func applyBrowserSites(from tree: SettingsTree) async {
-        guard !organization.isEmpty else { return }
+    private func applyBrowserSites(from tree: SettingsTree, asked: BrowserSitesKey) async {
+        guard !organization.isEmpty, browserSitesKey == asked else { return }
         let sites = BrowserSites.from(tree: tree, project: project, environment: environment)
         browserSites = sites
         await panes.browserSetSites(org: organization, sites)
