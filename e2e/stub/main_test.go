@@ -293,8 +293,9 @@ func TestAnEchoedCallWritesToolUseAndResult(t *testing.T) {
 	if text != "browser_click: read the page first (browser_read_page) — refs come from the last read." {
 		t.Errorf("the refusal's content = %q, want the window's text without the driver's prefix", text)
 	}
-	if refused[3]["is_error"] != true || !strings.HasPrefix(refused[3]["result"].(string), "browser_click was refused: ") {
-		t.Errorf("the turn's result = %v, want the existing `<action> was refused: …`", refused[3])
+	if refused[3]["is_error"] != true ||
+		refused[3]["result"] != "browser_click was refused: read the page first (browser_read_page) — refs come from the last read." {
+		t.Errorf("the turn's result = %v, want `<action> was refused: <the window's reason>`", refused[3])
 	}
 }
 

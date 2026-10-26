@@ -157,6 +157,27 @@ func TestMCPSurfacesAJSONRPCError(t *testing.T) {
 	}
 }
 
+// What the window said, without the driver's envelope: the scripted agent reports a refusal in
+// these words, and a thread row is read only so far, so `tools/call: -32002: ` must not lead it.
+func TestRefusalTextIsTheWindowsOwnWords(t *testing.T) {
+	client := dialFake(t, func(method string, id int) string {
+		return `{"jsonrpc":"2.0","id":` + itoa(id) +
+			`,"error":{"code":-32002,"message":"browser_type: the operator did not allow the agent on 127.0.0.1:5"}}`
+	})
+	_, err := client.Call("browser_type", nil)
+	if err == nil {
+		t.Fatal("a JSON-RPC error was not surfaced")
+	}
+	if got := driver.RefusalText(err); got != "browser_type: the operator did not allow the agent on 127.0.0.1:5" {
+		t.Errorf("a JSON-RPC refusal reads %q, want the message alone", got)
+	}
+	_, err = driver.ParseToolResult(json.RawMessage(
+		`{"content":[{"type":"text","text":"no such pane \"db-9\""}],"isError":true}`))
+	if got := driver.RefusalText(err); got != `no such pane "db-9"` {
+		t.Errorf("an isError refusal reads %q, want its text alone", got)
+	}
+}
+
 // --- a stand-in server speaking the same wire ---------------------------
 
 func reply(id int, result string) string {

@@ -251,12 +251,16 @@ func answer(writer *bufio.Writer, script driver.AgentScript, socket, prompt stri
 			}
 			result, err := client.Call(rule.Call.Action, rule.Call.Params)
 			if err != nil {
+				said := driver.RefusalText(err)
 				if echo != nil {
-					if werr := echo.result(strings.TrimPrefix(err.Error(), refusedPrefix), true); werr != nil {
+					if werr := echo.result(said, true); werr != nil {
 						return "", werr
 					}
 				}
-				text := fmt.Sprintf("%s was refused: %v", rule.Call.Action, err)
+				// The window's reason, not the driver's envelope nor the window's own `<action>: `
+				// again: the thread row reads it within what a check can read of a row.
+				text := fmt.Sprintf("%s was refused: %s", rule.Call.Action,
+					strings.TrimPrefix(said, rule.Call.Action+": "))
 				return text, emitResult(writer, true, text)
 			}
 			if echo != nil {
@@ -431,9 +435,6 @@ func emitResult(writer *bufio.Writer, isError bool, text string) error {
 	})
 }
 
-// refusedPrefix is what ParseToolResult puts before a refusal's text; the echoed result carries
-// the text alone, as the window handed it over.
-const refusedPrefix = "the action was refused: "
 
 // echoedCall writes an action's `tool_use` and `tool_result` into the stream, as a real agent's
 // turn carries them, so the thread has the rows a browser tool produces (AgentCall.Echo).
