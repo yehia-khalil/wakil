@@ -1,0 +1,55 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"echo ready"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"ready"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"ticket"}}
+{"expect":{"tree":"contains","text":"Log in with a token"}}
+{"expect":{"tree":"absent","text":"Tokens live in the Keychain"}}
+{"do":{"click":"editor.ticket.fold"}}
+{"expect":{"tree":"contains","text":"Tokens live in the Keychain"}}
+{"expect":{"tree":"contains","text":"Invariant 4"}}
+{"expect":{"tree":"contains","text":"you · 1 day ago"}}
+{"do":{"click":"editor.ticket.add:notDone"}}
+{"expect":{"focus":"editor.ticket.new:notDone"}}
+{"do":{"type":{"into":"editor.ticket.new:notDone","text":"Wire the token refresh"}}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"tree":"contains","text":"Wire the token refresh"}}
+{"expect":{"tree":"contains","text":"you · just now"}}
+{"do":{"type":{"into":"editor.ticket.line:decisions:d1","text":"Tokens live in the Keychain, never in a file"}}}
+{"do":{"type":{"into":"editor.ticket.line:decisions:d1:why","text":"Invariant 4, the org boundary"}}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"tree":"contains","text":"Tokens live in the Keychain, never in a file"}}
+{"expect":{"tree":"contains","text":"Invariant 4, the org boundary"}}
+{"do":{"click":"editor.ticket.remove:notDone:n1"}}
+{"expect":{"tree":"absent","text":"Wire the token refresh"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"plutil -extract notDone raw -o - ~/.wakil/orgs/e2e-fixture/tickets/INI-142.json"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"0"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"plutil -extract decisions.0.text raw -o - ~/.wakil/orgs/e2e-fixture/tickets/INI-142.json"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"Tokens live in the Keychain, never in a file"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"plutil -extract decisions.0.why raw -o - ~/.wakil/orgs/e2e-fixture/tickets/INI-142.json"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"Invariant 4, the org boundary"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"plutil -extract decisions.0.by raw -o - ~/.wakil/orgs/e2e-fixture/tickets/INI-142.json"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"operator"}}

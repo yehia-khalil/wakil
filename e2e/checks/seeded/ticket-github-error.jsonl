@@ -1,0 +1,24 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git -C ../e2e-api checkout -q ini-150-broken && git -C ../e2e-api branch --show-current"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"ini-150-broken"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"ticket"}}
+{"expect":{"pane":"editor-2","field":"ticket.marked","equals":"INI-150"}}
+{"expect":{"tree":"contains","text":"GitHub: Something went wrong while executing your query. Please include `E2E:1` when reporting this issue."}}
+{"expect":{"tree":"contains","text":"no Jira site configured for org \"e2e-fixture\""}}
+{"expect":{"pane":"editor-2","field":"ticket.prs[0]","present":false}}
+{"dispatch":{"action":"review_step","params":{"pane":"editor-2","delta":1},"refuses":"review_step: the branch has no open review threads"}}

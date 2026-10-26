@@ -1,0 +1,25 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"chmod 555 ~/.wakil/orgs/e2e-fixture/tickets && echo locked"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"locked"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"ticket"}}
+{"expect":{"tree":"contains","text":"Log in with a token"}}
+{"do":{"focus":"editor.ticket.next"}}
+{"do":{"type":{"into":"editor.ticket.next","text":"Ask umbrella about the token scope"}}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"tree":"contains","text":"permission denied"}}
+{"expect":{"tree":"contains","text":"Ask umbrella about the token scope"}}

@@ -1,0 +1,35 @@
+{"dispatch":{"action":"ctx_git_token_set","params":{"id":"e2e-fixture","host":"github.com","token":"e2e-github-token"}}}
+{"dispatch":{"action":"ctx_git_account_add","params":{"id":"e2e-fixture","host":"github.com","provider":"github","method":"token"}}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"do":{"type":{"into":"palette.query","text":"e2e-git"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.project:e2e-git"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
+{"do":{"click":"landing.row.open:terminal"}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"keys":"git -C ../e2e-api checkout -q feature-login && git -C ../e2e-api branch --show-current"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output[0]","equals":"feature-login"}}
+{"dispatch":{"action":"editor_open","params":{"path":"{fixtureRoot}/e2e-api/app.txt"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].path","contains":"app.txt"}}
+{"do":{"hotkey":"cmd+b"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"files"}}
+{"do":{"click":"editor.column.ticket"}}
+{"expect":{"pane":"editor-2","field":"column.view","equals":"ticket"}}
+{"expect":{"pane":"editor-2","field":"ticket.branch","equals":"feature-login"}}
+{"expect":{"tree":"contains","text":"No ticket found for feature-login"}}
+{"expect":{"tree":"contains","text":"Looked in the branch name"}}
+{"do":{"click":"editor.ticket.link"}}
+{"expect":{"focus":"editor.ticket.linkField"}}
+{"do":{"focus":"editor.ticket.linkField"}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"frame":"editor.ticket.link","inside":"editor.ticket"}}
+{"expect":{"pane":"editor-2","field":"ticket.marked","equals":"null"}}
+{"dispatch":{"action":"ticket_link","params":{"root":"{fixtureRoot}/e2e-api","key":"login please"},"refuses":"ticket key \"LOGIN PLEASE\" is not a key like INI-142"}}
+{"dispatch":{"action":"ticket_link","params":{"root":"{fixtureRoot}/e2e-api","key":"INI-142"}}}
+{"expect":{"pane":"editor-2","field":"ticket.marked","equals":"INI-142"}}
+{"expect":{"tree":"contains","text":"Log in with a token"}}
+{"dispatch":{"action":"ticket_link","params":{"root":"{fixtureRoot}/e2e-api","key":""}}}
+{"expect":{"pane":"editor-2","field":"ticket.marked","equals":"null"}}
+{"expect":{"tree":"contains","text":"No ticket found for feature-login"}}
