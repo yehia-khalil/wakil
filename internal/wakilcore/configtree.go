@@ -95,6 +95,10 @@ type ConfigTreeDatabase struct {
 // `Databases` and `API`, not a project (`config.go`).
 type ConfigTreeEnvironment struct {
 	Name string `json:"name"`
+	// Production is `EnvironmentIsProduction(name, env)` — the explicit flag,
+	// else the name — never the raw `*bool`, so every reader of the tree
+	// prices a production host the way the rest of Wakil does. Read-only.
+	Production bool `json:"production"`
 	// Databases is never nil, so an environment with none marshals to []
 	// rather than null. An environment that declares no databases and one
 	// that could not be read are different facts and must not share a
@@ -316,7 +320,8 @@ func configTreeProject(name, path string, project *Project) ConfigTreeProject {
 			api = []ApiConfig{}
 		}
 		out.Environments = append(out.Environments, ConfigTreeEnvironment{
-			Name: environmentName, Databases: databases, API: api,
+			Name: environmentName, Production: EnvironmentIsProduction(environmentName, environment),
+			Databases: databases, API: api,
 		})
 	}
 	return out

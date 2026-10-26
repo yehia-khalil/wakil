@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -403,5 +404,56 @@ func TestConfigTreeCarriesTheOrgGitIdentity(t *testing.T) {
 	}
 	if tree.Org.GitName != name || tree.Org.GitEmail != email {
 		t.Fatalf("%+v", tree.Org)
+	}
+}
+
+// TestConfigTreeEnvironmentsCarryProduction pins that the tree states which
+// environments are production from EnvironmentIsProduction — the explicit flag
+// wins, the name `production` is production when no flag is set — never the
+// raw *bool, so the agent's per-site price cannot drift from the rest.
+func TestConfigTreeEnvironmentsCarryProduction(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("WAKIL_ORG", "acme")
+	if err := CreateOrg("acme", Org{DisplayName: "Acme"}); err != nil {
+		t.Fatal(err)
+	}
+	writeProjectFixture(t, "acme", "orders", Project{
+		Name: "orders",
+		Org:  "acme",
+		Environments: map[string]Environment{
+			"live":       {Production: boolp(true)},
+			"production": {},
+			"prod":       {},
+			"unflagged":  {Production: boolp(false)},
+		},
+	})
+	writeProjectFixture(t, "acme", "billing", Project{
+		Name: "billing",
+		Org:  "acme",
+		Environments: map[string]Environment{
+			"production": {Production: boolp(false)},
+		},
+	})
+
+	tree, err := LoadConfigTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, p := range tree.Projects {
+		for _, e := range p.Environments {
+			got[p.Name+"/"+e.Name] = e.Production
+		}
+	}
+	want := map[string]bool{
+		"orders/live": true, "orders/production": true, "orders/prod": false, "orders/unflagged": false,
+		"billing/production": false,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("production flags = %v, want %v", got, want)
+	}
+	b, err := json.Marshal(tree.Projects[0].Environments[0])
+	if err != nil || !json.Valid(b) || !strings.Contains(string(b), `"production":`) {
+		t.Fatalf("wire form lacks production: %s (%v)", b, err)
 	}
 }
