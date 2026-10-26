@@ -366,17 +366,20 @@ public func reviewPosition(_ threads: [ReviewThreadState], id: String) -> String
 // MARK: - The view's rows (Task 8): the view draws these and decides nothing
 
 /// Which of the spec's cases the Ticket view shows (*What the operator gets* 1 and 5).
-public enum TicketViewCase: Equatable { case ticket, several, noTicket(branch: String), longLived, loading, error(String) }
+/// `loading` is a read in flight; `unread` is no read and none running — a root the window did not
+/// read (not a repository), or a first read cancelled — which ↻ reads.
+public enum TicketViewCase: Equatable { case ticket, several, noTicket(branch: String), longLived, loading, unread, error(String) }
 
 /// The case for a root's read. A key picked from In flight (`shown`) overrides the branch. One
 /// ticket is the branch's own only when it is marked: a ticket only the stack carries is never the
 /// branch's, so it shows the several layout, unmarked. A failed re-read keeps the last read on screen
-/// (Rule 8); with no read yet, the failure is the case.
-public func ticketViewCase(_ b: TicketBranchState?, shown: String?, failure: String? = nil) -> TicketViewCase {
+/// (Rule 8); with no read yet, the failure is the case, and "reading" only while one runs.
+public func ticketViewCase(_ b: TicketBranchState?, shown: String?, failure: String? = nil,
+                           reading: Bool = false) -> TicketViewCase {
     if let shown, !shown.isEmpty { return .ticket }
     guard let b else {
         if let failure, !failure.isEmpty { return .error(failure) }
-        return .loading
+        return reading ? .loading : .unread
     }
     if b.longLived { return .longLived }
     if b.tickets.isEmpty { return .noTicket(branch: b.branch) }
@@ -540,6 +543,25 @@ public struct EditorTicketViewState: Sendable, Equatable {
         guard let s = inFlight else { return nil }
         return (s.waitingOnYou + s.inFlight).first { $0.key == key }
     }
+}
+
+/// What a ticket shown from In flight draws for its record: the record read for it (`ticket_record`),
+/// else why that read failed, whole (Rule 8) — never the branch read's stand-in for a record it
+/// could not read either — else the branch's own record of it; `none` before anything is read.
+public enum TicketShownRecord: Equatable { case record(TicketRecordState), failure(String), none }
+
+public func ticketShownRecord(_ state: EditorTicketViewState, key: String, ref: TicketRefState?) -> TicketShownRecord {
+    if let r = state.records[key] { return .record(r) }
+    if let f = state.recordFailures[key], !f.isEmpty { return .failure(f) }
+    if let r = ref?.record { return .record(r) }
+    return .none
+}
+
+/// An In flight or Waiting on you row's name, for its accessibility identifier: `<key>:<root>:<branch>`,
+/// the root by its last component. A key alone is not one row — two branches can carry one ticket —
+/// and the root's last component, unlike its path, is the same on every run.
+public func ticketInFlightRowName(_ r: InFlightRowState) -> String {
+    "\(r.key):\((r.root as NSString).lastPathComponent):\(r.branch)"
 }
 
 /// The root a pane's Ticket view follows from its front tab: the tab's root, else the project's first.

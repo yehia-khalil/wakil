@@ -40,7 +40,9 @@ struct EditorTicketView: View {
     private var branch: TicketBranchState? { root.flatMap { state.branches[$0] } }
     private var reading: Bool { root.map { state.reading.contains($0) } ?? false }
     private var failure: String? { root.flatMap { state.failures[$0] } }
-    private var viewCase: TicketViewCase { ticketViewCase(branch, shown: column.ticketShown, failure: failure) }
+    private var viewCase: TicketViewCase {
+        ticketViewCase(branch, shown: column.ticketShown, failure: failure, reading: reading)
+    }
 
     var body: some View {
         ScrollView(.vertical) {
@@ -48,8 +50,12 @@ struct EditorTicketView: View {
                 topLine
                 switch viewCase {
                 case .loading:
-                    Text(root == nil ? "No project roots to read" : "Reading the ticket…").dimmed()
+                    Text("Reading the ticket…").dimmed()
                         .accessibilityIdentifier("editor.ticket.loading")
+                case .unread:
+                    // Nothing is reading (Rule 8): a root not read, or a first read cancelled.
+                    Text(root == nil ? "No project roots to read" : "Not read. ↻ reads the ticket.").dimmed()
+                        .accessibilityIdentifier("editor.ticket.unread")
                 case .error(let message):
                     whole(message, id: "editor.ticket.error")
                 case .ticket:
@@ -209,7 +215,7 @@ struct EditorTicketView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("editor.ticket.\(id):\(r.key)")
+                .accessibilityIdentifier("editor.ticket.\(id):\(ticketInFlightRowName(r))")
             }
         }
     }
@@ -224,12 +230,13 @@ struct EditorTicketView: View {
         let own: TicketBranchState? = carried ? branch : state.shownBranches[key]
         let ref = own?.tickets.first { $0.key == key }
         let row = state.inFlightRow(key)
-        let record = state.records[key] ?? ref?.record
+        let shownRecord = ticketShownRecord(state, key: key, ref: ref)
+        let record: TicketRecordState? = if case .record(let r) = shownRecord { r } else { nil }
         Button("← Back to this branch") { Task { await dispatch("ticket_show", ["key": .null]) } }
             .buttonStyle(.plain).foregroundStyle(EditorPaneStyle.violet)
             .accessibilityIdentifier("editor.ticket.back")
-        header(key: key, title: ref?.title ?? row?.title ?? record?.seen.title ?? "",
-               status: ref?.status ?? row?.status ?? record?.seen.status ?? "",
+        header(key: key, title: [ref?.title, row?.title, record?.seen.title].compactMap { $0 }.first { !$0.isEmpty } ?? "",
+               status: [ref?.status, row?.status, record?.seen.status].compactMap { $0 }.first { !$0.isEmpty } ?? "",
                waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record), linked: false)
         if let record {
             nextLine(key: key, text: record.next?.text ?? "", labelled: false)
@@ -241,11 +248,12 @@ struct EditorTicketView: View {
         } else if let row, !row.branch.isEmpty {
             Text("Reading \(row.branch)…").dimmed().accessibilityIdentifier("editor.ticket.shownReading")
         }
-        if let record {
-            self.record(record)
-        } else if let failure = state.recordFailures[key] {
+        switch shownRecord {
+        case .record(let r): self.record(r)
+        case .failure(let failure):
             // A record that could not be read says so, whole (Rule 8) — never drawn as an empty one.
             whole(failure, id: "editor.ticket.recordFailure")
+        case .none: EmptyView()
         }
     }
 

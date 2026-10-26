@@ -200,7 +200,11 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         b.tickets = []
         b.branch = "fix-utf-8"
         #expect(ticketViewCase(b, shown: nil) == .noTicket(branch: "fix-utf-8"))
-        #expect(ticketViewCase(nil, shown: nil) == .loading)
+        // Reading only while a read is in flight (Rule 8, B2): a root nothing is reading — never read,
+        // or its first read cancelled — says it is not read, never "Reading the ticket…".
+        #expect(ticketViewCase(nil, shown: nil, reading: true) == .loading)
+        #expect(ticketViewCase(nil, shown: nil) == .unread)
+        #expect(ticketViewCase(nil, shown: nil, failure: "boom", reading: true) == .error("boom"))
         #expect(ticketViewCase(nil, shown: nil, failure: "Read stopped after 20 s. ↻ reads again.")
                 == .error("Read stopped after 20 s. ↻ reads again."))
         // A failed re-read keeps the last read on screen; the failure shows beside it.
@@ -364,5 +368,37 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(await store.branch(root: "/p/api") == nil)
         #expect(await store.allDrafts().isEmpty)
         #expect(!(await store.reading(root: "/p/api")))
+    }
+
+    // MARK: Cover fixes
+
+    /// B3: a ticket picked from In flight whose record cannot be read shows the failure whole, never
+    /// the branch read's empty stand-in for it; a record that was read wins over both.
+    @Test func shownRecordFailureIsShownNotAnEmptyRecord() {
+        let stand = TicketRecordState(key: "INI-142")
+        let ref = TicketRefState(key: "INI-142", record: stand, error: "open INI-142.json: permission denied")
+        var v = EditorTicketViewState(recordFailures: ["INI-142": "The record could not be read: permission denied"])
+        #expect(ticketShownRecord(v, key: "INI-142", ref: ref) == .failure("The record could not be read: permission denied"))
+        // No record read yet and none failed: the branch's own record stands.
+        v.recordFailures = [:]
+        #expect(ticketShownRecord(v, key: "INI-142", ref: ref) == .record(stand))
+        #expect(ticketShownRecord(v, key: "INI-142", ref: nil) == .none)
+        let read = TicketRecordState(key: "INI-142", next: TicketLineState(text: "ask Milton"))
+        v.records = ["INI-142": read]
+        v.recordFailures = ["INI-142": "stale"]
+        #expect(ticketShownRecord(v, key: "INI-142", ref: ref) == .record(read))
+    }
+
+    /// B4: In flight and Waiting on you rows are named by key, root and branch, so two branches
+    /// carrying one key are two names; the root is its last component, stable across runs.
+    @Test func inFlightRowNamesAreUniqueAndStable() {
+        let a = InFlightRowState(key: "INI-142", root: "/var/folders/x/e2e-api", branch: "ini-142-login")
+        let b = InFlightRowState(key: "INI-142", root: "/var/folders/x/e2e-api", branch: "ini-170-ini-142-both")
+        let c = InFlightRowState(key: "INI-142", root: "/var/folders/x/e2e-web", branch: "ini-142-login")
+        let unkeyed = InFlightRowState(key: "", root: "/p/api", branch: "build-speed", pr: 301)
+        #expect(ticketInFlightRowName(a) == "INI-142:e2e-api:ini-142-login")
+        #expect(ticketInFlightRowName(unkeyed) == ":api:build-speed")
+        #expect(Set([a, b, c].map(ticketInFlightRowName)).count == 3)
+        #expect(ticketInFlightRowName(a) == ticketInFlightRowName(a))
     }
 }
