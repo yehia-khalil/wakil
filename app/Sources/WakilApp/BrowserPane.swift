@@ -94,7 +94,9 @@ struct BrowserPane: View {
             // What its web views said while this place was off screen was dropped (the seam's
             // place rule); they say it again now.
             host.reportAll(scope: scope, pane: pane.id)
-            if isFocusedPane { takeKeyboard() }
+            // A pane drawn again under its place's new name was on screen all along: the keyboard
+            // stays where the operator had it (Rule 6).
+            if !host.appearsRenamed(scope: scope, pane: pane.id), isFocusedPane { takeKeyboard() }
         }
         .onChange(of: snapshot) { old, now in sync(old: old, now: now) }
         // A data clear is done: commands held while the store went apply now.

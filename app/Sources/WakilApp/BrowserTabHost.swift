@@ -81,6 +81,11 @@ final class BrowserTabHost {
     /// under the old name is given the page under the new one, never a fresh one. Let go once the
     /// new name is drawn.
     @ObservationIgnored private var renamed: [LayoutScope: LayoutScope] = [:]
+    /// Panes (`Key` with an empty tab) of the drawn place that `rehome` filed under its new name: the
+    /// pane drawn under that name is the one already on screen, not an arrival, so it does not take
+    /// the keyboard again (Rule 6) — the first turn of a conversation renames the canvas while the
+    /// operator is still in the composer. Taken once, by the pane's appearance.
+    @ObservationIgnored private var renamedPanes: Set<Key> = []
 
     struct OrgHost: Hashable {
         let org: String
@@ -321,6 +326,14 @@ final class BrowserTabHost {
         for tracker in downloads.values where tracker.scope == from { tracker.scope = to }
         renamed = renamed.mapValues { $0 == from ? to : $0 }
         renamed[from] = to
+        if let drawn = model?.drawnScope, drawn == from || drawn == to {
+            for key in views.keys where key.scope == to { renamedPanes.insert(Key(scope: to, pane: key.pane, tab: "")) }
+        }
+    }
+
+    /// Whether the pane appearing under `scope` is one `rehome` renamed on screen; answered once.
+    func appearsRenamed(scope: LayoutScope, pane: String) -> Bool {
+        renamedPanes.remove(Key(scope: scope, pane: pane, tab: "")) != nil
     }
 
     /// `scope` is drawn under its own name: no pane is drawn under an old name of it any more.
