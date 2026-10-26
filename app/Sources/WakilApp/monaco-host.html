@@ -599,8 +599,13 @@
     const reviewUnfolded = {}; // thread -> true: its replies shown
     const reviewWas = {};      // thread -> its box last handed in
     let reviewDrawing = false; // a redraw takes the focused field away: that blur is not the operator's
-    let reviewFocusField = null;   // thread whose draft field takes the keyboard when drawn (Reply)
-    let reviewStepUntil = 0;   // a step from a box: until then, the box on the cursor's line takes the keyboard
+    let reviewFocusField = null;   // thread whose draft field takes the keyboard when drawn (Reply, Keep)
+    let reviewFocusKeep = null;    // thread whose "Discard this reply?" takes the keyboard on Keep when drawn
+    const reviewAsking = {};   // thread -> true: Discard pressed on a typed reply, asked in place
+    // ⌥↓ from a box: the box of the thread stepped to takes the keyboard by its id, whenever it is
+    // drawn (wakilFocusReview names it once the step ran). Until then the text is not focused, so a
+    // second ⌥↓ is never Monaco's Move Line Down; a press in the text, or 10 s, ends the wait.
+    let reviewStepping = false, reviewFocusThread = null, reviewWaitTimer = null;
     function inReview(el) { return !!(el && el.closest && el.closest('.wakil-review')); }
     function reviewPost(key, thread, op, extra) {
       const m = { type: 'review', key: key, thread: thread, op: op };
@@ -646,20 +651,32 @@
     function redrawReviews(key) {
       if (key === current && !diffKey) ed.changeViewZones(function (acc) { drawReviewBoxes(acc, key); });
     }
+    function endReviewWait() {
+      reviewStepping = false; reviewFocusThread = null;
+      if (reviewWaitTimer !== null) { clearTimeout(reviewWaitTimer); reviewWaitTimer = null; }
+    }
+    function reviewWaiting() { return reviewStepping || reviewFocusThread !== null; }
     function reviewStep(key, b, delta) {
-      reviewStepUntil = Date.now() + 3000;
+      endReviewWait();
+      reviewStepping = true;
+      reviewWaitTimer = setTimeout(endReviewWait, 10000);
       reviewPost(key, b.thread, 'step', { delta: delta });
     }
-    // The box on the cursor's line takes the keyboard after a step from a box, so ⌥↓ steps on.
+    window.wakilFocusReview = function (thread) {
+      if (!thread) { endReviewWait(); return; }
+      reviewStepping = false;
+      reviewFocusThread = thread;
+      focusStepBox();
+    };
+    // The stepped-to thread's box, once drawn, takes the keyboard.
     function focusStepBox() {
-      if (!reviewStepUntil) return;
-      if (Date.now() > reviewStepUntil) { reviewStepUntil = 0; return; }
-      const p = ed.getPosition();
-      const r = p && reviewRows.find(function (x) { return x.line === p.lineNumber; });
+      if (reviewFocusThread === null) return;
+      const r = reviewRows.find(function (x) { return x.thread === reviewFocusThread; });
       if (!r) return;
-      reviewStepUntil = 0;
+      endReviewWait();
       r.node.focus({ preventScroll: true });
     }
+    ed.onMouseDown(function () { endReviewWait(); });
     // A label with its full and short forms (dataset.full / dataset.short), the full one read aloud.
     function reviewLabel(tag, full, short) {
       const el = reviewEl(tag, '', full);
@@ -675,6 +692,12 @@
         if (el.disabled) return;
         if (!node.contains(document.activeElement)) node.focus({ preventScroll: true });
         run(el);
+      });
+      // Return and Space press a focused control too (Keep arrives focused).
+      el.addEventListener('keydown', function (e) {
+        if ((e.key !== 'Enter' && e.key !== ' ') || e.metaKey || e.altKey || e.ctrlKey) return;
+        e.preventDefault(); e.stopPropagation();
+        if (!el.disabled) run(el);
       });
       return el;
     }
@@ -751,17 +774,37 @@
         });
         node.appendChild(field);
         const row = reviewEl('div', 'wakil-review-actions');
-        const sendButton = reviewButton(node, b.sending ? 'Sending…' : 'Send', b.sending ? 'Sending…' : 'Send', send);
-        sendButton.disabled = !!b.sending;
-        row.appendChild(sendButton);
-        reviewDot(row);
-        const discard = reviewButton(node, 'Discard', 'Discard', function () {
-          delete reviewOpen[b.thread]; delete reviewLive[b.thread];
+        function discardNow() {
+          delete reviewOpen[b.thread]; delete reviewLive[b.thread]; delete reviewAsking[b.thread];
           reviewPost(key, b.thread, 'discard');
           redrawReviews(key);
-        });
-        discard.disabled = !!b.sending;
-        row.appendChild(discard);
+        }
+        if (reviewAsking[b.thread] && !b.sending) {
+          // A typed reply is not thrown away unasked: Discard · Keep, the keyboard on Keep.
+          row.appendChild(reviewEl('span', '', 'Discard this reply?'));
+          row.appendChild(reviewButton(node, 'Discard', 'Discard', discardNow));
+          reviewDot(row);
+          row.appendChild(reviewButton(node, 'Keep', 'Keep', function () {
+            delete reviewAsking[b.thread];
+            reviewFocusField = b.thread;
+            redrawReviews(key);
+          }));
+        } else {
+          const sendButton = reviewButton(node, b.sending ? 'Sending…' : 'Send', b.sending ? 'Sending…' : 'Send', send);
+          sendButton.disabled = !!b.sending;
+          row.appendChild(sendButton);
+          reviewDot(row);
+          const discard = reviewButton(node, 'Discard', 'Discard', function () {
+            const typed = field ? field.value : '';
+            if (!typed.trim()) { discardNow(); return; }   // an empty draft closes without asking
+            reviewLive[b.thread] = typed;
+            reviewAsking[b.thread] = true;
+            reviewFocusKeep = b.thread;
+            redrawReviews(key);
+          });
+          discard.disabled = !!b.sending;
+          row.appendChild(discard);
+        }
         node.appendChild(row);
       }
       function send() {
@@ -825,11 +868,15 @@
         reviewRows.push(r);
       });
       placeReviewBoxes();
-      const want = reviewFocusField;
-      reviewFocusField = null;
+      const want = reviewFocusField, ask = reviewFocusKeep;
+      reviewFocusField = null; reviewFocusKeep = null;
       const kept = keep && reviewRows.find(function (x) { return x.thread === keep.thread; });
       const asked = want && reviewRows.find(function (x) { return x.thread === want; });
-      if (asked && asked.field) {
+      const asking = ask && reviewRows.find(function (x) { return x.thread === ask; });
+      const keepButton = asking && Array.from(asking.node.querySelectorAll('button')).find(function (el) { return el.dataset.full === 'Keep'; });
+      if (keepButton) {
+        keepButton.focus({ preventScroll: true });
+      } else if (asked && asked.field) {
         asked.field.focus({ preventScroll: true });   // Reply's field arrives focused (Rule 3)
       } else if (kept) {
         if (keep.field && kept.field) {
@@ -923,7 +970,11 @@
       [models, basis, marks, blames, conflicts, reviews].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
       if (current === from) current = to;
     };
-    window.wakilFocus = function () { if (diffKey) dme.focus(); else ed.focus(); };
+    window.wakilFocus = function () {
+      if (diffKey) { dme.focus(); return; }
+      if (reviewWaiting()) return;   // a step from a box keeps the keyboard off the text (see reviewStepping)
+      ed.focus();
+    };
     // Monaco's find bar (3b-ii). Its state — query, switches, count, open — goes back to the app on
     // every change, as the cursor's does: the pane's find record and read_pane's `find` read it.
     const findCtl = ed.getContribution('editor.contrib.findController');

@@ -76,6 +76,7 @@ extension PaneStore {
         shared.ticket = .empty
         shared.reviews = .empty
         shared.reviewHeadsPending = []
+        shared.reviewHeadsGeneration += 1
         setKindState(EditorPaneKind.self, shared)
         publishEditorChangeEverywhere()
     }
@@ -97,6 +98,21 @@ extension PaneStore {
     func landEditorReviewHead(_ head: EditorReviewHead, text: String?) {
         var shared = kindState(EditorPaneKind.self)
         guard shared.reviewHeadsPending.remove(head) != nil else { return }
+        shared.reviews.fetched.insert(head)
+        shared.reviews.heads[head] = text
+        setKindState(EditorPaneKind.self, shared)
+        publishEditorChangeEverywhere()
+    }
+
+    /// The generation an action's own head read lands in (`landEditorReviewHead(_:text:generation:)`).
+    func editorReviewHeadsGeneration() -> Int { kindState(EditorPaneKind.self).reviewHeadsGeneration }
+
+    /// A head text an action read itself, whether or not the window was reading it too; dropped when
+    /// an org switch came between.
+    func landEditorReviewHead(_ head: EditorReviewHead, text: String?, generation: Int) {
+        var shared = kindState(EditorPaneKind.self)
+        guard shared.reviewHeadsGeneration == generation else { return }
+        shared.reviewHeadsPending.remove(head)
         shared.reviews.fetched.insert(head)
         shared.reviews.heads[head] = text
         setKindState(EditorPaneKind.self, shared)

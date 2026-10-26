@@ -109,6 +109,8 @@ struct EditorShared: Sendable {
     var reviews: EditorReviewsState = .empty
     /// Head texts being read now (`claimEditorReviewHeads`), so a file's is read once.
     var reviewHeadsPending: Set<EditorReviewHead> = []
+    /// Bumped by an org switch: a head read an action started before it lands on nothing.
+    var reviewHeadsGeneration = 0
 }
 
 extension PaneSnapshot {

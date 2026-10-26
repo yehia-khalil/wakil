@@ -166,6 +166,9 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
     @Test func reviewOpenLeavesTheColumnOnTicket() async throws {
         let f = try await ticketFixture()
         await f.editor.files.put("/p/api/src/auth/token.go", (1...50).map { "line \($0)" }.joined(separator: "\n"))
+        // The PR's head commit is not local: the threads open at GitHub's lines.
+        await f.editor.git.set(showAbsent: "/p/api|src/auth/token.go|commit:abc123")
+        await f.editor.git.set(showAbsent: "/p/api|src/auth/session.go|commit:abc123")
         _ = try await f.store.read(root: "/p/api")
         try await f.dispatch("editor_tree", ["pane": .string(f.editor.pane), "view": .string("ticket")])
         let before = await f.editor.snapshot().column
@@ -212,6 +215,30 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         let step = try await f.dispatch("review_step", ["pane": .string(f.editor.pane), "delta": .integer(-1)])
         guard case .object(let r) = step else { Issue.record("no reply"); return }
         #expect(r["thread"] == .string("T1"))
+    }
+
+    /// Fix round 1: a thread in a file not open yet, edited since the PR's head, opens on its box's
+    /// line — the action reads the head text itself — so ⌥↓'s next press finds the box.
+    @Test func aThreadInAFileNotOpenYetOpensAtItsPlacedLine() async throws {
+        let f = try await ticketFixture()
+        let head = (1...50).map { "line \($0)" }
+        await f.editor.files.put("/p/api/src/auth/token.go", (["new a", "new b", "new c"] + head).joined(separator: "\n"))
+        await f.editor.git.set(show: "/p/api|src/auth/token.go|commit:abc123", head.joined(separator: "\n"))
+        _ = try await f.store.read(root: "/p/api")
+        let deadline = Date().addingTimeInterval(2)
+        while await f.editor.panes.editorReviews().reads.byRoot["/p/api"] == nil {
+            guard Date() < deadline else { Issue.record("the reads never reached the panes"); return }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        let step = try await f.dispatch("review_step", ["pane": .string(f.editor.pane), "delta": .integer(1),
+                                                        "from": .string("T1")])
+        guard case .object(let r) = step else { Issue.record("no reply"); return }
+        #expect(r["thread"] == .string("T2"))
+        let s = await f.editor.snapshot()
+        #expect(s.active.map { s.tabs[$0].path } == "/p/api/src/auth/token.go")
+        #expect(s.active.map { s.tabs[$0].cursor.line } == 44)
+        let h = EditorReviewHead(root: "/p/api", path: "src/auth/token.go", sha: "abc123")
+        #expect(await f.editor.panes.editorReviews().fetched.contains(h))
     }
 
     @Test func readPaneListsDraftsWithoutText() async throws {

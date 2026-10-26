@@ -202,6 +202,17 @@ public func editorReviewLine(_ t: ReviewThreadState, tab: EditorTab?, _ reviews:
     tab.flatMap { editorReviewBoxes($0, reviews) }?.first { $0.thread == t.id }?.line ?? max(1, t.line)
 }
 
+/// A file's text at a PR's head commit (`git_show` rev `commit:<sha>`); nil when git cannot show it
+/// there — the commit is not local, the file is not in it, or it is binary or cut at the cap.
+func editorReadReviewHead(_ git: any ToolCaller, _ h: EditorReviewHead) async -> String? {
+    let args: JSONValue = .object(["root": .string(h.root), "path": .string(h.path), "rev": .string("commit:\(h.sha)")])
+    guard case .object(let o)? = try? await git.callTool(name: "git_show", arguments: args, timeout: MCPClient.readReplyTimeout),
+          o["isError"] != .bool(true), case .object(let c)? = o["structuredContent"],
+          c["binary"] != .bool(true), c["truncated"] != .bool(true), c["absent"] != .bool(true),
+          case .string(let text)? = c["text"] else { return nil }
+    return text
+}
+
 /// Sends the shown tab's review boxes when they differ from what `sent` says the page holds for
 /// that key: only for a file tab, placed against `buffer` (the text the page holds, typing
 /// included). A diff or scratch tab is sent nothing, and a file whose head texts are still being

@@ -4618,6 +4618,14 @@ public final class WindowModel {
         await dispatchFromSurfaceRan(name, params)
     }
 
+    /// `dispatchFromSurface`, answering the action's reply (nil when it did not run; its refusal is
+    /// in `status`): a review box's ⌥↓ hands the keyboard to the box of the thread it stepped to.
+    public func dispatchFromSurfaceReply(_ name: String, _ params: JSONValue) async -> JSONValue? {
+        let result = await dispatch(name, params)
+        await refreshPanes()
+        return result
+    }
+
     /// Several surface calls, **each awaited before the next begins**, in the order given —
     /// Send's "commit the pending body, then send" (2c-iv Amendment 8c), so the send cannot race
     /// the write it depends on.

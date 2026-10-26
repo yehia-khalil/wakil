@@ -2317,6 +2317,13 @@ public func registerEditorActions(
                 openFile: { pane, path, line in
                     try await openFile(pane, path: path, at: EditorPosition(line: line, column: 1), selection: nil,
                                        preview: false, action: "review_open")
+                },
+                readHeads: { heads in
+                    guard let git = gitStatus?.git else { return }
+                    let gen = await panes.editorReviewHeadsGeneration()
+                    for h in heads {
+                        await panes.landEditorReviewHead(h, text: await editorReadReviewHead(git, h), generation: gen)
+                    }
                 }),
             roots: roots)
     }

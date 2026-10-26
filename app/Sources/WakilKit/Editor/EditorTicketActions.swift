@@ -13,6 +13,9 @@ struct EditorTicketHooks: Sendable {
     let updateColumn: @Sendable (String, @escaping @Sendable (inout EditorColumnState) -> Void) async -> EditorColumnState
     /// Opens `path` in `pane` at `line` (`editor_open`'s body), the column untouched.
     let openFile: @Sendable (_ pane: String, _ path: String, _ line: Int) async throws -> Void
+    /// Reads these head texts into the panes' review state now (`git_show` rev `commit:<sha>`), so a
+    /// thread's box can be placed before its file opens at it.
+    var readHeads: @Sendable ([EditorReviewHead]) async -> Void = { _ in }
 }
 
 /// The Ticket view's readable state, kept store-wide for every editor pane (Invariant 3):
@@ -117,6 +120,20 @@ func registerTicketActions(
         let path = t.root + "/" + t.path
         let tab = await panes.editorSnapshot(paneId: pane).tabs.first { $0.path == path && $0.diffState == nil }
         return editorReviewLine(t, tab: tab, await panes.editorReviews())
+    }
+    /// Opens a thread's file at its box: a file not placed yet (not open, or its head text not read)
+    /// has its head text read here, and the cursor moved onto the box once it is placed — so the
+    /// box ⌥↓ steps to is on the cursor's line, never a line the box is not on.
+    @Sendable func openThread(_ t: ReviewThreadState, pane: String) async throws {
+        let path = t.root + "/" + t.path
+        try await editor.openFile(pane, path, await placedLine(t, pane: pane))
+        guard let tab = await panes.editorSnapshot(paneId: pane).tabs.first(where: { $0.path == path && $0.diffState == nil })
+        else { return }
+        let wanted = editorReviewHeadsWanted(tab, await panes.editorReviews())
+        guard !wanted.isEmpty else { return }
+        await editor.readHeads(wanted)
+        let line = await placedLine(t, pane: pane)
+        if line != tab.cursor.line { try await editor.openFile(pane, path, line) }
     }
     /// Whether an agent session made the running dispatch: its reads go through its own place's
     /// client and answer it alone, never the window's cache, which holds the window's organisation.
@@ -314,7 +331,7 @@ func registerTicketActions(
                 throw TicketActionError(description: "review_open: no review thread \(id) in the ticket reads; ticket_refresh reads them again")
             }
             let pane = try await editor.pane(params, "review_open")
-            try await editor.openFile(pane, t.root + "/" + t.path, await placedLine(t, pane: pane))
+            try await openThread(t, pane: pane)
             return await editor.reply(pane)
         }))
 
@@ -340,7 +357,7 @@ func registerTicketActions(
             guard let t = reviewStep(threads, from: from, delta: delta) else {
                 throw TicketActionError(description: "review_step: the branch has no open review threads")
             }
-            try await editor.openFile(pane, t.root + "/" + t.path, await placedLine(t, pane: pane))
+            try await openThread(t, pane: pane)
             guard case .object(var reply) = await editor.reply(pane) else { return .null }
             reply["thread"] = .string(t.id)
             reply["position"] = .string(reviewPosition(threads, id: t.id))

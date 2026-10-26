@@ -575,7 +575,12 @@ extension WakilWindow {
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
                     unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) },
                     // Ticket view: the review boxes in the file.
-                    reviews: model.editorReviews)
+                    reviews: model.editorReviews,
+                    dispatchReply: { name, params in
+                        var withPane = params
+                        withPane["pane"] = .string(pane.id)
+                        return await model.dispatchFromSurfaceReply(name, .object(withPane))
+                    })
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw
                 // its kind — the rule `Pane.kinds` has always stated.

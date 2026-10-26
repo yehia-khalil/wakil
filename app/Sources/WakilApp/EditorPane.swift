@@ -91,6 +91,9 @@ struct EditorPane: View {
     let unstageRanges: ([EditorLineSpan]) async -> Void
     /// Ticket view: what the review boxes draw from (`WindowModel.editorReviews`).
     var reviews: EditorReviewsState = .empty
+    /// `dispatch`, answering the action's reply (nil when it did not run): `review_step` names the
+    /// thread it stepped to.
+    var dispatchReply: (String, [String: JSONValue]) async -> JSONValue? = { _, _ in nil }
 
     @State private var host = EditorHost()
     /// Compare, open: the path and the disk text it shows against the buffer.
@@ -646,7 +649,12 @@ struct EditorPane: View {
                                                   "resolved": .bool(op == "resolve")])
                 host.resendReviews()
             case "step":
-                await dispatch("review_step", ["delta": .integer(Int64(delta ?? 1)), "from": .string(thread)])
+                // The keyboard goes to the box of the thread stepped to, by its id, whenever that box is
+                // drawn; a step that did not run gives it back (nil).
+                let reply = await dispatchReply("review_step", ["delta": .integer(Int64(delta ?? 1)), "from": .string(thread)])
+                var to: String?
+                if case .object(let o)? = reply, case .string(let t)? = o["thread"] { to = t }
+                host.renderer?.focusReview(thread: to)
             default: break
             }
         }

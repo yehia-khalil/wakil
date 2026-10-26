@@ -54,18 +54,8 @@ extension WindowModel {
         }
         guard !wanted.isEmpty else { return }
         for head in await claimReviewHeads(wanted) {
-            Task { [self] in await landReviewHead(head, text: await Self.reviewHeadText(git, head)) }
+            Task { [self] in await landReviewHead(head, text: await editorReadReviewHead(git, head)) }
         }
-    }
-
-    /// The file's text at the head commit; nil when git cannot show it there.
-    private static func reviewHeadText(_ git: any ToolCaller, _ h: EditorReviewHead) async -> String? {
-        let args: JSONValue = .object(["root": .string(h.root), "path": .string(h.path), "rev": .string("commit:\(h.sha)")])
-        guard case .object(let o)? = try? await git.callTool(name: "git_show", arguments: args, timeout: MCPClient.readReplyTimeout),
-              o["isError"] != .bool(true), case .object(let c)? = o["structuredContent"],
-              c["binary"] != .bool(true), c["truncated"] != .bool(true), c["absent"] != .bool(true),
-              case .string(let text)? = c["text"] else { return nil }
-        return text
     }
 
     /// One read of `root`, joined to one in flight; the default branch reads In flight too. A
