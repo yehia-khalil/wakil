@@ -244,13 +244,18 @@ func registerTicketActions(
                 await mirror()
                 return await editor.reply(pane)
             }
+            // A ticket picked from In flight is read again with it: its branch is the view's too.
+            let shown = await panes.editorSnapshot(paneId: pane).column?.ticketShown
+            let picked = Task { if let shown { await store.refreshShown(key: shown) } }
             do {
                 _ = try await read(root)
             } catch {
+                await picked.value
                 // A read stopped by ↻'s Cancel (Rule 4) failed nothing: the store keeps no failure for
                 // it. Any other failure is kept, whole, and answered.
                 if await store.failure(root: root) != nil { throw error }
             }
+            await picked.value
             return await editor.reply(pane)
         }))
 

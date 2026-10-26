@@ -46,6 +46,8 @@ public actor EditorTicketStore {
     /// why one could not be read. The root's own read and current branch are untouched (Rule 6).
     private var shownReads: [String: TicketBranchState] = [:]
     private var shownFailures: [String: String] = [:]
+    /// Where each picked ticket's branch is read from, so a resolve, a push or ↻ reads it again.
+    private var shownWhere: [String: (root: String, branch: String)] = [:]
     private var generation = 0
     private var onChange: (@Sendable () async -> Void)?
 
@@ -110,6 +112,8 @@ public actor EditorTicketStore {
     /// in flight is stale, so it is replaced by a new one, which this does not wait for. A root
     /// nothing has read yet is left alone: nothing shows it.
     public func invalidate(root: String) async {
+        // A picked ticket's branch on that root is stale with it: read again, not waited for.
+        for (key, at) in shownWhere where at.root == root { Task { await self.refreshShown(key: key) } }
         guard cache.keys.contains(where: { $0.root == root }) || flights.keys.contains(where: { $0.root == root }) else { return }
         cancel(root: root)
         _ = start(ReadKey(root: root, branch: current[root] ?? ""))
@@ -241,6 +245,7 @@ public actor EditorTicketStore {
     /// is kept, whole, for the view.
     public func readShown(key: String, root: String, branch: String) async {
         let (ticket, limit, gen) = (self.ticket, self.readLimit, generation)
+        shownWhere[key] = (root, branch)
         do {
             let state = try await ActionRegistry.$dispatchCaller.withValue(nil) {
                 try await Self.readBranch(ticket, root: root, branch: branch, limit: limit)
@@ -253,6 +258,12 @@ public actor EditorTicketStore {
             shownFailures[key] = String(describing: error)
         }
         await changed()
+    }
+
+    /// Reads a picked ticket's branch again (↻, a resolve, a push, a reply); nothing for a key not picked.
+    public func refreshShown(key: String) async {
+        guard let at = shownWhere[key] else { return }
+        await readShown(key: key, root: at.root, branch: at.branch)
     }
 
     /// The branches read for tickets picked from In flight, by key, and why one was not.
@@ -273,35 +284,49 @@ public actor EditorTicketStore {
 
     /// A record line was written: every cached read showing that ticket takes the new record, so
     /// the view needs no new read of GitHub for it.
+    /// A picked ticket's branch takes it too.
     public func setRecord(_ record: TicketRecordState) async {
         if records[record.key] != nil { records[record.key] = record }
+        for (key, entry) in cache { if let s = Self.with(record, entry.state) { cache[key] = (s, entry.at) } }
+        for (key, state) in shownReads { if let s = Self.with(record, state) { shownReads[key] = s } }
+        await changed()
+    }
+
+    /// A thread was resolved or unresolved: the cached read, and a picked ticket's branch, say so at
+    /// once, `by` the branch's viewer.
+    public func setResolved(thread: String, resolved: Bool) async {
         for (key, entry) in cache {
-            var s = entry.state
-            var hit = false
-            for i in s.tickets.indices where s.tickets[i].key == record.key {
-                s.tickets[i].record = record
-                hit = true
-            }
-            if hit { cache[key] = (s, entry.at) }
+            if let s = Self.with(thread: thread, resolved: resolved, entry.state) { cache[key] = (s, entry.at) }
+        }
+        for (key, state) in shownReads {
+            if let s = Self.with(thread: thread, resolved: resolved, state) { shownReads[key] = s }
         }
         await changed()
     }
 
-    /// A thread was resolved or unresolved: the cached read says so at once, `by` the branch's viewer.
-    public func setResolved(thread: String, resolved: Bool) async {
-        for (key, entry) in cache {
-            var s = entry.state
-            var hit = false
-            for p in s.prs.indices {
-                for t in s.prs[p].threads.indices where s.prs[p].threads[t].id == thread {
-                    s.prs[p].threads[t].resolved = resolved
-                    s.prs[p].threads[t].resolvedBy = resolved ? (s.viewer.isEmpty ? nil : s.viewer) : nil
-                    hit = true
-                }
-            }
-            if hit { cache[key] = (s, entry.at) }
+    /// The read with the ticket's record replaced; nil when it does not carry the ticket.
+    private static func with(_ record: TicketRecordState, _ state: TicketBranchState) -> TicketBranchState? {
+        var s = state
+        var hit = false
+        for i in s.tickets.indices where s.tickets[i].key == record.key {
+            s.tickets[i].record = record
+            hit = true
         }
-        await changed()
+        return hit ? s : nil
+    }
+
+    /// The read with the thread resolved or not; nil when it does not hold the thread.
+    private static func with(thread: String, resolved: Bool, _ state: TicketBranchState) -> TicketBranchState? {
+        var s = state
+        var hit = false
+        for p in s.prs.indices {
+            for t in s.prs[p].threads.indices where s.prs[p].threads[t].id == thread {
+                s.prs[p].threads[t].resolved = resolved
+                s.prs[p].threads[t].resolvedBy = resolved ? (s.viewer.isEmpty ? nil : s.viewer) : nil
+                hit = true
+            }
+        }
+        return hit ? s : nil
     }
 
     /// The thread by its id, in any cached read.
@@ -348,6 +373,7 @@ public actor EditorTicketStore {
         recordFailures = [:]
         shownReads = [:]
         shownFailures = [:]
+        shownWhere = [:]
     }
 }
 

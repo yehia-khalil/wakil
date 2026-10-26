@@ -231,6 +231,82 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         #expect(await f.ticket.count("ticket_branch") == after)
     }
 
+    /// Fix round 2: the fixture with INI-140 picked from In flight, its branch (`ini-140-deploy`, the
+    /// same PR and threads, keyed INI-140) read beside the root's own.
+    private func pickedFixture() async throws -> TicketFixture {
+        let f = try await ticketFixture()
+        _ = try await f.store.read(root: "/p/api")
+        await f.ticket.set("ticket_in_flight", .object([
+            "waitingOnYou": .array([]), "partial": .array([]),
+            "inFlight": .array([.object(["key": .string("INI-140"), "title": .string("Deploy"), "status": .string("To Do"),
+                                         "state": .string("#212 · open"), "root": .string("/p/api"),
+                                         "branch": .string("ini-140-deploy"), "pr": .integer(212)])]),
+        ]))
+        _ = try await f.store.inFlight()
+        await f.ticket.set("ticket_record", .object(["key": .string("INI-140")]))
+        await f.ticket.set("ticket_branch", try pickedBranchJSON(resolved: false))
+        try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("INI-140")], origin: .ui, confirmation: nil)
+        #expect(await f.store.shownBranches()["INI-140"] != nil)
+        return f
+    }
+
+    /// `ticketBranchJSON` as INI-140's branch, its thread T2 resolved or not.
+    private func pickedBranchJSON(resolved: Bool) throws -> JSONValue {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        var text = String(decoding: try encoder.encode(ticketBranchJSON(branch: "ini-140-deploy")), as: UTF8.self)
+            .replacingOccurrences(of: "INI-142", with: "INI-140")
+        if resolved {
+            let open = #""id":"T2","line":41,"outdated":false,"path":"src/auth/token.go","resolved":false"#
+            precondition(text.contains(open), "the fixture's T2 is not where this rewrite looks")
+            text = text.replacingOccurrences(of: open, with: open.replacingOccurrences(of: #""resolved":false"#, with: #""resolved":true"#))
+        }
+        return try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
+    }
+
+    /// How many reads of the picked branch `ini-140-deploy` wakil-ticket was asked for.
+    private func pickedReads(_ f: TicketFixture) async -> Int {
+        await f.ticket.calls.filter { c in
+            guard c.name == "ticket_branch", case .object(let o) = c.args else { return false }
+            return o["branch"] == .string("ini-140-deploy")
+        }.count
+    }
+
+    private func shownThread(_ f: TicketFixture, _ id: String) async -> ReviewThreadState? {
+        await f.store.shownBranches()["INI-140"]?.prs.flatMap(\.threads).first { $0.id == id }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func aResolveFromAPickedViewUpdatesItsThread() async throws {
+        let f = try await pickedFixture()
+        #expect(await shownThread(f, "T2")?.resolved == false)
+        // GitHub now says T2 is resolved; the picked view says so at once, and after its re-read.
+        await f.ticket.set("ticket_branch", try pickedBranchJSON(resolved: true))
+        try await f.dispatch("review_resolve", ["root": .string("/p/api"), "thread": .string("T2"), "resolved": .bool(true)],
+                             origin: .ui, confirmation: nil)
+        #expect(await shownThread(f, "T2")?.resolved == true)
+        // A resolve re-reads the root, and the picked view on it with it.
+        for _ in 0..<1_000 where await pickedReads(f) < 2 { try await Task.sleep(for: .milliseconds(1)) }
+        #expect(await pickedReads(f) == 2)
+        #expect(await shownThread(f, "T2")?.resolved == true)
+    }
+
+    @Test func aRecordWriteUpdatesThePickedTicketsRecord() async throws {
+        let f = try await pickedFixture()
+        await f.ticket.set("ticket_record_write", .object(["key": .string("INI-140"), "next": .object(["text": .string("ship it")])]))
+        try await f.dispatch("ticket_record_update", ["key": .string("INI-140"), "section": .string("next"), "op": .string("set"),
+                                                      "text": .string("ship it")], origin: .ui, confirmation: nil)
+        let shown = await f.store.shownBranches()["INI-140"]?.tickets.first { $0.key == "INI-140" }
+        #expect(shown?.record.next?.text == "ship it")
+        #expect(await f.store.shownRecords()["INI-140"]?.next?.text == "ship it")
+    }
+
+    @Test func refreshRereadsThePickedView() async throws {
+        let f = try await pickedFixture()
+        let before = await pickedReads(f)
+        try await f.dispatch("ticket_refresh", ["pane": .string(f.editor.pane)], origin: .ui, confirmation: nil)
+        #expect(await pickedReads(f) == before + 1)
+    }
+
     /// Fix round 1: a shown ticket whose record cannot be read says so whole (Rule 8), never an
     /// empty record.
     @Test func aFailedRecordReadIsShownWhole() async throws {
