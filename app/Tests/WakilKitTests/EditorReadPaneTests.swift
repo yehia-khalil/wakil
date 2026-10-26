@@ -39,7 +39,8 @@ import Testing
         "column": .null,
         // The Ticket view follows the front file's root; nothing read of it yet.
         "ticket": .object(["root": .string("/p/api"), "branch": .null, "tickets": .array([]), "marked": .null,
-                           "prs": .array([]), "drafts": .array([]), "reading": .bool(false), "error": .null]),
+                           "prs": .array([]), "drafts": .array([]), "reading": .bool(false), "error": .null,
+                           "cursorThread": .null]),
         "find": .null,
         "search": .object(["query": .string(""), "case": .bool(false), "word": .bool(false), "regex": .bool(false),
                            "in_flight": .bool(false), "truncated": .bool(false), "files_truncated": .bool(false), "skipped_large": .array([]),

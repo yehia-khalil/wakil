@@ -185,6 +185,35 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         #expect(await f.editor.snapshot().column == before)
     }
 
+    /// Task 7: a thread opens at its box's line — GitHub's line mapped through the head commit's
+    /// text to the buffer — and the box under the cursor is `read_pane`'s `cursorThread` and where
+    /// `review_step` steps from.
+    @Test func aThreadOpensAtItsPlacedLineAndTheCursorNamesIt() async throws {
+        let f = try await ticketFixture()
+        let head = (1...50).map { "line \($0)" }
+        await f.editor.files.put("/p/api/src/auth/token.go", (["new a", "new b", "new c"] + head).joined(separator: "\n"))
+        _ = try await f.store.read(root: "/p/api")
+        while await f.editor.panes.editorReviews().reads.byRoot["/p/api"] == nil { try await Task.sleep(for: .milliseconds(1)) }
+        let h = EditorReviewHead(root: "/p/api", path: "src/auth/token.go", sha: "abc123")
+        #expect(await f.editor.panes.claimEditorReviewHeads([h, h]) == [h])
+        #expect(await f.editor.panes.claimEditorReviewHeads([h]).isEmpty)   // read once
+        await f.editor.panes.landEditorReviewHead(h, text: head.joined(separator: "\n"))
+        try await f.dispatch("editor_open", ["pane": .string(f.editor.pane), "path": .string("/p/api/src/auth/token.go")])
+
+        try await f.dispatch("review_open", ["pane": .string(f.editor.pane), "thread": .string("T2")])
+        let s = await f.editor.snapshot()
+        #expect(s.active.map { s.tabs[$0].cursor.line } == 44)
+        let read = await f.editor.panes.readPane(paneId: f.editor.pane, kind: "editor")
+        guard case .object(let o) = read, case .object(let t)? = o["ticket"] else { Issue.record("no ticket key"); return }
+        #expect(t["cursorThread"] == .string("T2"))
+
+        // Back one from the box under the cursor (T2) is T1; from no thread it would be the last, T2.
+        await f.editor.files.put("/p/api/src/auth/session.go", (1...100).map { "line \($0)" }.joined(separator: "\n"))
+        let step = try await f.dispatch("review_step", ["pane": .string(f.editor.pane), "delta": .integer(-1)])
+        guard case .object(let r) = step else { Issue.record("no reply"); return }
+        #expect(r["thread"] == .string("T1"))
+    }
+
     @Test func readPaneListsDraftsWithoutText() async throws {
         let f = try await ticketFixture()
         _ = try await f.store.read(root: "/p/api")

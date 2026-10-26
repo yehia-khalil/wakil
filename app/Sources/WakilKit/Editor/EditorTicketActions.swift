@@ -73,15 +73,19 @@ func registerTicketActions(
     @Sendable func mirror() async {
         let rs = await roots()
         var byRoot: [String: EditorTicketMirror.Root] = [:]
+        var reviews: [String: EditorReviewsState.Root] = [:]
         for root in Set(rs).union(await store.roots()) {
             let b = await store.branch(root: root)
             byRoot[root] = EditorTicketMirror.Root(
                 branch: b?.branch, tickets: b?.tickets.map(\.key) ?? [], marked: b?.tickets.first(where: \.marked)?.key,
                 prs: b?.prs.map { .init(number: $0.number, state: $0.state, openThreads: reviewOpenThreads([$0]).count) } ?? [],
                 reading: await store.reading(root: root), error: await store.failure(root: root))
+            if let b { reviews[root] = .init(viewer: b.viewer, threads: b.prs.flatMap(\.threads)) }
         }
-        let drafts = await store.allDrafts().keys.sorted()
-        await panes.setEditorTicketMirror(EditorTicketMirror(roots: rs, byRoot: byRoot, drafts: drafts))
+        let drafts = await store.allDrafts()
+        await panes.setEditorTicketMirror(
+            EditorTicketMirror(roots: rs, byRoot: byRoot, drafts: drafts.keys.sorted()),
+            reviews: EditorReviewsState.Reads(byRoot: reviews, drafts: drafts, sending: await store.allSending()))
     }
     await store.setOnChange { await mirror() }
 
@@ -106,6 +110,13 @@ func registerTicketActions(
         } catch let e as TicketReadError {
             throw StandardActionError.serverError(action: action, message: e.description)
         }
+    }
+    /// The line a thread's file opens at in `pane`: its box's, when the file is open there and placed;
+    /// GitHub's otherwise.
+    @Sendable func placedLine(_ t: ReviewThreadState, pane: String) async -> Int {
+        let path = t.root + "/" + t.path
+        let tab = await panes.editorSnapshot(paneId: pane).tabs.first { $0.path == path && $0.diffState == nil }
+        return editorReviewLine(t, tab: tab, await panes.editorReviews())
     }
     /// Whether an agent session made the running dispatch: its reads go through its own place's
     /// client and answer it alone, never the window's cache, which holds the window's organisation.
@@ -303,7 +314,7 @@ func registerTicketActions(
                 throw TicketActionError(description: "review_open: no review thread \(id) in the ticket reads; ticket_refresh reads them again")
             }
             let pane = try await editor.pane(params, "review_open")
-            try await editor.openFile(pane, t.root + "/" + t.path, max(1, t.line))
+            try await editor.openFile(pane, t.root + "/" + t.path, await placedLine(t, pane: pane))
             return await editor.reply(pane)
         }))
 
@@ -322,15 +333,14 @@ func registerTicketActions(
             let threads = await followed(pane).asyncFlatMap { await store.branch(root: $0) }.map { reviewOpenThreads($0.prs) } ?? []
             var from = optionalString(params, "from")
             if from == nil {
+                // The thread whose box is on the cursor's line, as placed.
                 let s = await panes.editorSnapshot(paneId: pane)
-                if let i = s.active, i < s.tabs.count, case .file(let path, _) = s.tabs[i].subject {
-                    from = threads.first { $0.root + "/" + $0.path == path && $0.line == s.tabs[i].cursor.line }?.id
-                }
+                from = editorCursorThread(s.active.flatMap { $0 < s.tabs.count ? s.tabs[$0] : nil }, await panes.editorReviews())
             }
             guard let t = reviewStep(threads, from: from, delta: delta) else {
                 throw TicketActionError(description: "review_step: the branch has no open review threads")
             }
-            try await editor.openFile(pane, t.root + "/" + t.path, max(1, t.line))
+            try await editor.openFile(pane, t.root + "/" + t.path, await placedLine(t, pane: pane))
             guard case .object(var reply) = await editor.reply(pane) else { return .null }
             reply["thread"] = .string(t.id)
             reply["position"] = .string(reviewPosition(threads, id: t.id))

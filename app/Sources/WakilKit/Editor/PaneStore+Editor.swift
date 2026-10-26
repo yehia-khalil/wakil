@@ -54,12 +54,56 @@ extension PaneStore {
         setKindState(EditorPaneKind.self, shared)
     }
 
-    /// The Ticket view's readable state changed: every editor pane on screen redraws.
-    func setEditorTicketMirror(_ mirror: EditorTicketMirror) {
+    /// The Ticket view's readable state, and the threads, drafts and sends the review boxes draw,
+    /// changed: every editor pane on screen redraws. Head texts no read thread needs go.
+    func setEditorTicketMirror(_ mirror: EditorTicketMirror, reviews: EditorReviewsState.Reads? = nil) {
         var shared = kindState(EditorPaneKind.self)
-        guard shared.ticket != mirror else { return }
+        let was = (shared.ticket, shared.reviews)
         shared.ticket = mirror
+        if let reviews {
+            shared.reviews.reads = reviews
+            shared.reviews.pruneHeads()
+        }
+        guard was != (shared.ticket, shared.reviews) else { return }
         setKindState(EditorPaneKind.self, shared)
+        publishEditorChangeEverywhere()
+    }
+
+    /// An org switch: the readable state, the review boxes' reads and head texts, and any head
+    /// still being read (it lands on nothing) go.
+    func resetEditorTicket() {
+        var shared = kindState(EditorPaneKind.self)
+        shared.ticket = .empty
+        shared.reviews = .empty
+        shared.reviewHeadsPending = []
+        setKindState(EditorPaneKind.self, shared)
+        publishEditorChangeEverywhere()
+    }
+
+    /// What the editor panes draw review boxes from.
+    public func editorReviews() -> EditorReviewsState { kindState(EditorPaneKind.self).reviews }
+
+    /// Of `wanted`, the head texts not read nor being read, each marked as being read: the caller
+    /// reads them and lands each with `landEditorReviewHead`.
+    func claimEditorReviewHeads(_ wanted: [EditorReviewHead]) -> [EditorReviewHead] {
+        var shared = kindState(EditorPaneKind.self)
+        let out = wanted.filter { !shared.reviews.fetched.contains($0) && shared.reviewHeadsPending.insert($0).inserted }
+        if !out.isEmpty { setKindState(EditorPaneKind.self, shared) }
+        return out
+    }
+
+    /// A head text read (nil: the commit is not local, or the file is not in it). Dropped when it is
+    /// no longer being read — an org switch came between.
+    func landEditorReviewHead(_ head: EditorReviewHead, text: String?) {
+        var shared = kindState(EditorPaneKind.self)
+        guard shared.reviewHeadsPending.remove(head) != nil else { return }
+        shared.reviews.fetched.insert(head)
+        shared.reviews.heads[head] = text
+        setKindState(EditorPaneKind.self, shared)
+        publishEditorChangeEverywhere()
+    }
+
+    private func publishEditorChangeEverywhere() {
         for entry in everyScope(EditorPaneKind.self) where entry.active { publishEditorChange(entry.paneId) }
     }
 

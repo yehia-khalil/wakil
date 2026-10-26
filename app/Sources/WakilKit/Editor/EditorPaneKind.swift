@@ -70,7 +70,13 @@ enum EditorPaneKind: PaneKind {
         ]) } ?? .null
         // The Ticket view (Invariant 3): the root this pane follows, its branch, tickets and PRs, and
         // which review threads have a draft — never a draft's text.
-        o["ticket"] = store.kindState(EditorPaneKind.self).ticket.json(front: editorFrontRoot(s))
+        let shared = store.kindState(EditorPaneKind.self)
+        o["ticket"] = shared.ticket.json(front: editorFrontRoot(s))
+        // The thread whose review box is on the cursor's line, as placed in the front file.
+        if case .object(var t) = o["ticket"] {
+            t["cursorThread"] = editorCursorThread(tab, shared.reviews).map { .string($0) } ?? .null
+            o["ticket"] = .object(t)
+        }
         let f = s.findReport.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.number(Double(r.count)), r.shown) }
             ?? s.find.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.null, true) }
         o["find"] = f.map { q, c, w, r, count, shown in .object([
@@ -98,6 +104,11 @@ struct EditorShared: Sendable {
     var changeSubscribers: [UUID: AsyncStream<String>.Continuation] = [:]
     /// The Ticket view's readable state, for every editor pane (`registerTicketActions`).
     var ticket: EditorTicketMirror = .empty
+    /// What the panes draw review boxes from (`EditorReviewsState`); never in `read_pane` but for
+    /// the thread under the cursor.
+    var reviews: EditorReviewsState = .empty
+    /// Head texts being read now (`claimEditorReviewHeads`), so a file's is read once.
+    var reviewHeadsPending: Set<EditorReviewHead> = []
 }
 
 extension PaneSnapshot {

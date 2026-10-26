@@ -36,6 +36,10 @@ import Foundation
     func captureKeys(_ keys: [String])
     /// Show `peek` under its hunk in `key`'s model as a view zone, or remove it (nil). One per pane.
     func showPeek(key: String, _ peek: EditorPeekView?)
+    /// Ticket view: `key`'s review boxes, each under its placed line over a view zone; an empty list
+    /// clears them. The page keeps them per model and draws them while that file tab is shown
+    /// (`editorShowReviews` decides what is sent).
+    func setReviews(key: String, boxes: [ReviewBox])
 }
 
 /// What the renderer was last told, per tab key.

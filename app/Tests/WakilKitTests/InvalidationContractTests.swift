@@ -103,6 +103,9 @@ private let orgDerived: Set<String> = [
     // 3b-ii PR 7: the trees' mirror of the file list — the outgoing project's listings. Emptied
     // (WindowModelEditorTests.anOrgSwitchEmptiesTheTreesAndTheirList).
     "editorFiles",
+    // Ticket view: the review boxes' threads, drafts and head texts — the outgoing org's reads.
+    // Emptied, with the panes' own copy (`resetEditorTicket`).
+    "editorReviews",
     // 3b-iii PR 1: the window's mirror of the git status, the outgoing org's roots. Reset in the
     // same place as `gitStatus` (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
     "gitRoots",

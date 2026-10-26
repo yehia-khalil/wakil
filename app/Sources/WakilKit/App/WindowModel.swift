@@ -828,6 +828,9 @@ public final class WindowModel {
     public private(set) var gitRoots: [GitRootState] = []
     /// What the trees draw: listings, loaded heavy folders, loads in flight. Mirrored on refreshPanes.
     public private(set) var editorFiles: EditorFileListsState = .empty
+    /// Ticket view: what the editor panes draw review boxes from — the read threads, drafts, sends
+    /// and head texts (`EditorReviewsState`). Mirrored on refreshPanes; the outgoing org's go on a switch.
+    public internal(set) var editorReviews: EditorReviewsState = .empty
     /// The provider this window's session currently runs under, from
     /// `wakil-ctx`'s `get_context` (`ActiveContext.activeProvider`) at
     /// window-open. A session found under another provider cannot be
@@ -2352,7 +2355,8 @@ public final class WindowModel {
         gitRoots = []
         // The Ticket view: the outgoing org's reads, drafts and flights, and what the panes read of them.
         await ticket?.reset()
-        await panes.setEditorTicketMirror(.empty)
+        await panes.resetEditorTicket()
+        editorReviews = .empty
         ticketBranches = [:]
         // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
         // A write still running is NOT cancelled: a commit finishes, hooks and all, in the repository it
@@ -4578,6 +4582,9 @@ public final class WindowModel {
             paneCells = paneCells.filter { open.contains($0.key) }
         }
         await mirrorEditorFiles()
+        let reviews = await panes.editorReviews()
+        if reviews != editorReviews { editorReviews = reviews }
+        await readReviewHeads()
     }
 
     /// Copies the file lists' state into `editorFiles`, for the trees.
@@ -5070,6 +5077,11 @@ public final class WindowModel {
     /// and the editor panes take what it found. Without a status there is no git to show.
     /// An editor pane's snapshot, for the window's own extensions (`WindowModel+Ticket`).
     func editorSnapshot(pane: String) async -> EditorSnapshot { await panes.editorSnapshot(paneId: pane) }
+    /// The panes' review head texts, claimed and landed for `readReviewHeads` (`WindowModel+Ticket`).
+    func claimReviewHeads(_ wanted: [EditorReviewHead]) async -> [EditorReviewHead] { await panes.claimEditorReviewHeads(wanted) }
+    nonisolated func landReviewHead(_ head: EditorReviewHead, text: String?) async {
+        await panes.landEditorReviewHead(head, text: text)
+    }
 
     private func readStatus(only root: String?) async {
         guard let gitStatus else { return }

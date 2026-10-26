@@ -257,6 +257,12 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
   `review_open`, `review_step`, `review_reply_draft`, `review_reply_send` (*gate* for every channel) and
   `review_resolve` (*gate* for the agent); and `EditorTicketMirror`, the `ticket` key of the editor's
   `read_pane` (draft text never in it).
+- `EditorReviewPlacement.swift` — review threads drawn in the file: `reviewPlacement` (GitHub's line
+  mapped through `editorHunks` from the PR's head commit's text to the buffer; "line changed since",
+  "line may differ"), `ReviewBox` and `reviewBoxes`, `EditorReviewsState` (what the panes draw from:
+  the reads, drafts, sends and head texts, store-wide in `EditorShared`), `editorCursorThread`
+  (`read_pane`'s `cursorThread`, where `review_step` steps from) and `editorShowReviews`, which decides
+  what reaches `EditorRenderer.setReviews` for the shown file tab.
 - `EditorAutosave.swift` — `editorAutosaveEligible` (a file, dirty, in sync with disk, writable, not saving),
   `EditorAutosaveStep`, and `EditorAutosave`, the per-pane memory that says which tabs to arm or save; the
   window keeps the timers.
@@ -268,8 +274,9 @@ Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadP
 `EditorRefreshTests`, `EditorRendererTests`, `WindowModelEditorTests`, `EditorTreeTests`,
 `EditorTreeActionsTests`, `EditorSearchTests`, `EditorSearchActionsTests`, `EditorChangesTests`,
 `EditorChangesActionsTests`, `EditorDiffTabsTests`, `EditorDiffBannerTests`, `EditorTicketTests`,
-`EditorTicketActionsTests`. The window's own ticket reads (a root's branch changing, Wakil coming
-back after 60 s) are `App/WindowModel+Ticket.swift`.
+`EditorTicketActionsTests`, `EditorReviewPlacementTests`. The window's own ticket reads (a root's
+branch changing, Wakil coming back after 60 s) and the review boxes' head texts (`git_show` rev
+`commit:<sha>`, once each) are `App/WindowModel+Ticket.swift`.
 
 ### Gate/ — the write gate and confirmations
 

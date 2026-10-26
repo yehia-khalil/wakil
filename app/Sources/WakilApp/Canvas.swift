@@ -573,7 +573,9 @@ extension WakilWindow {
                             undoApply: { await model.changesStashUndoApply(root: $0) })),
                     stageHunk: { await model.changesStageHunk() },
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
-                    unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) })
+                    unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) },
+                    // Ticket view: the review boxes in the file.
+                    reviews: model.editorReviews)
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw
                 // its kind — the rule `Pane.kinds` has always stated.
