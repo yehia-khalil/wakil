@@ -22,7 +22,7 @@ video, they are a developer, and they keep work, local testing, study and home b
      Loose tabs stay with their place, as in 3c-i. That split is my recommendation; the operator
      accepted it implicitly when they turned to accounts.
    - Groups are named, coloured and collapsible. You make your own (work, local testing, studying,
-     home), and each organisation can have its own: Personal, initech and Umbrella each keep their own
+     home), and each organisation can have its own: a personal organisation and each work organisation keep their own
      study groups.
    - **A pull-request group fills itself**, one per organisation, from that organisation's GitHub
      account. It holds the PRs you opened and the ones your review is requested on, adds and drops
