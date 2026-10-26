@@ -232,6 +232,40 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     #expect(after.tabs.count == 2 && after.activeTab?.url == "https://c.test/")
 }
 
+/// The 3c spec's call 11, the rule a link from elsewhere in Wakil opens by: a new tab in the focused
+/// browser pane, else the one most recently focused (not merely the last opened), else a new pane.
+@Test func browserOpenPicksTheFocusedThenTheMostRecentlyFocusedBrowserPane() async throws {
+    let f = try await browserFixture()
+    let first = f.pane
+    let second = await f.layout.open(kind: "browser", title: "Browser").id
+    let editor = await f.layout.open(kind: "editor", title: "Editor").id
+    func tabs(_ pane: String) async -> Int { await f.panes.browserSnapshot(paneId: pane).tabs.count }
+
+    try await f.layout.focus(id: first)
+    try await f.dispatch("browser_open", ["url": .string("https://a.test/")], named: false)
+    #expect(await tabs(first) == 1)
+    #expect(await tabs(second) == 0)
+
+    // The editor holds focus: the browser pane focused last takes the link, though another was opened after it.
+    try await f.layout.focus(id: editor)
+    try await f.dispatch("browser_open", ["url": .string("https://b.test/")], named: false)
+    #expect(await tabs(first) == 2)
+    #expect(await tabs(second) == 0)
+    #expect(await f.layout.snapshot().focusedId == editor)
+
+    try await f.layout.focus(id: second)
+    try await f.layout.focus(id: editor)
+    try await f.dispatch("browser_open", ["url": .string("https://c.test/")], named: false)
+    #expect(await tabs(first) == 2)
+    #expect(await tabs(second) == 1)
+
+    // The most recent one closed: the other browser pane, not a new one.
+    try await f.layout.close(id: second)
+    try await f.dispatch("browser_open", ["url": .string("https://d.test/")], named: false)
+    #expect(await tabs(first) == 3)
+    #expect(await f.layout.snapshot().panes.filter { $0.kind == "browser" }.count == 1)
+}
+
 @Test func actionsOtherThanOpenRefuseWithNoBrowserPane() async throws {
     let f = try await browserFixture(open: false)
     let why = await refusal { try await f.dispatch("browser_reload", named: false) }

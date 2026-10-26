@@ -252,6 +252,10 @@ public actor LayoutStore {
     private var scope: LayoutScope { ScopeRouting.home ?? screen }
     private var byScope: [LayoutScope: LayoutSnapshot]
     private var nextPaneNumber: Int
+    /// Per scope, the panes in the order they last took focus, most recent last: what "the most
+    /// recently used browser pane" reads (3c browser spec, call 11). In memory only, like
+    /// `focusRequests`: it describes what happened, not an arrangement, so it is never saved.
+    private var focusOrder: [LayoutScope: [String]] = [:]
 
     /// How many times anything has asked for a pane to be focused, counting
     /// the requests that named the pane already focused.
@@ -371,7 +375,22 @@ public actor LayoutStore {
         current.panes.append(pane)
         current.focusedId = id
         byScope[scope] = current
+        noteFocused(id)
         return pane
+    }
+
+    /// The current scope's open panes, the one that took focus most recently first. A pane that has
+    /// not taken focus since the arrangement was loaded is not listed.
+    public func recentlyFocused() -> [String] {
+        let open = Set(snapshot().panes.map(\.id))
+        return (focusOrder[scope] ?? []).reversed().filter { open.contains($0) }
+    }
+
+    private func noteFocused(_ id: String) {
+        var order = focusOrder[scope] ?? []
+        order.removeAll { $0 == id }
+        order.append(id)
+        focusOrder[scope] = order
     }
 
     /// Opens the settings pane, or focuses the one already open.
@@ -532,6 +551,7 @@ public actor LayoutStore {
     public func focus(id: String) throws {
         var current = try requirePane(id)
         current.focusedId = id
+        noteFocused(id)
         // **Raised before the pane is even known to exist? No — after.**
         // `requirePane` throws for an unknown id, and a refused focus is not
         // a request anything should answer: a view that took the keyboard on
@@ -799,6 +819,7 @@ public actor LayoutStore {
         current.maximizedId = id
         current.focusedId = id
         byScope[scope] = current
+        noteFocused(id)
     }
 
     /// Puts the maximized pane back to the frame it held before
@@ -861,6 +882,7 @@ public actor LayoutStore {
         let carried = byScope[outgoing] ?? LayoutSnapshot()
         byScope[outgoing] = nil
         byScope[scope] = carried
+        focusOrder[scope] = focusOrder.removeValue(forKey: outgoing)
         screen = scope
     }
 

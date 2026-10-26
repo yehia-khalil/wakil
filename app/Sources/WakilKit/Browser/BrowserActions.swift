@@ -116,8 +116,8 @@ public func browserRemoveStoreThenFiles(
 /// **One path for the operator and the agent** (Invariant 2): the pane's header, its tab list and
 /// the window's keys dispatch these. A tab's web view reports back through the seam
 /// (`PaneStore.browserPageDidReport`), never through an action. Each answers the pane's
-/// `read_pane` plus its `pane` id. `pane` defaults to the focused browser pane, else the most
-/// recently opened one; `tab` to the active tab.
+/// `read_pane` plus its `pane` id. `pane` defaults to the focused browser pane, else the one most
+/// recently focused, else the last opened; `tab` to the active tab.
 public func registerBrowserActions(
     into registry: ActionRegistry,
     panes: PaneStore,
@@ -144,8 +144,9 @@ func browserActions(
     var actions: [Action] = []
     let kind = BrowserPaneKind.names[0]
 
-    /// The named pane, else the focused browser pane, else the last one opened. With none open,
-    /// `open` opens one (`browser_open`, `browser_new_tab`); otherwise this refuses.
+    /// The named pane, else the focused browser pane, else the one most recently focused, else the
+    /// last one opened (the 3c spec's call 11: where a link from elsewhere in Wakil opens). With none
+    /// open, `open` opens one (`browser_open`, `browser_new_tab`); otherwise this refuses.
     @Sendable func browserPane(_ params: JSONValue, action: String, open: Bool = false) async throws -> (id: String, opened: Bool) {
         if let pane = optionalString(params, "pane"), !pane.isEmpty {
             try await requireOpenPane(pane, action: action, layout: layout)
@@ -158,6 +159,9 @@ func browserActions(
         let snap = await layout.snapshot()
         let browsers = snap.panes.filter { $0.kind == kind }
         if let focused = snap.focusedId, browsers.contains(where: { $0.id == focused }) { return (focused, false) }
+        if let recent = await layout.recentlyFocused().first(where: { id in browsers.contains { $0.id == id } }) {
+            return (recent, false)
+        }
         if let last = browsers.last { return (last.id, false) }
         guard open else { throw BrowserActionError.noBrowserPane }
         return (await layout.open(kind: kind, title: Pane.defaultTitle(kind: kind)).id, true)
@@ -225,8 +229,8 @@ func browserActions(
 
     actions.append(Action(
         name: "browser_open",
-        description: "Open url in the browser: a new tab (newTab, default true) in the focused or most "
-            + "recently opened browser pane, or in the active tab with newTab false. Opens a browser "
+        description: "Open url in the browser: a new tab (newTab, default true) in the focused browser "
+            + "pane, else the one most recently focused, else the last opened, or in its active tab with newTab false. Opens a browser "
             + "pane when none is open. url follows the address bar's rule: a host or URL loads, words search.",
         kind: .control, audience: .agentReachable,
         schema: schema(["url": string, "newTab": .object(["type": .string("boolean")])], required: ["url"]),
