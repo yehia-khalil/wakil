@@ -1,0 +1,9 @@
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.organisation"}}
+{"do":{"click":"settings.org.connections.jira"}}
+{"expect":{"tree":"contains","text":"No site yet."}}
+{"do":{"type":{"into":"settings.org.connections.jira.email","text":"e2e@initech.test"}}}
+{"do":{"type":{"into":"settings.org.connections.jira.token","text":"e2e-fake-token"}}}
+{"parity":{"action":"ctx_jira_token_set","params":{"id":"e2e-fixture","email":"e2e@initech.test","token":"e2e-fake-token"},"click":"settings.org.connections.jira.store","assert":"tree"}}
+{"expect":{"tree":"contains","text":"•••••••• stored in Keychain"}}
+{"expect":{"journal":{"contains":"\"action\":\"ctx_jira_token_set\""}}}
