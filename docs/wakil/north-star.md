@@ -106,7 +106,7 @@ Rules no phase may break.
    | Switch, create, rename, delete branches; stash, apply, pop, drop — local git inside the roots | wakil-git | 2026-10-23 |
    | Merge, rebase, continue, skip, abort, resolve — local git inside the roots | wakil-git | 2026-10-24 |
    | A connection's tool the operator allowed | wakil-connect | 2026-10-25 |
-| Reply to a review thread; resolve and unresolve one | wakil-ticket | 2026-10-26 |
+   | Reply to a review thread; resolve and unresolve one | wakil-ticket | 2026-10-26 |
 
    **Still refused:** schema mutation (every DDL verb, `TRUNCATE` explicitly), Mongo
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`

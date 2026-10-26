@@ -17,7 +17,7 @@ both the Swift side and Go read the `HOME` variable, so an overridden `HOME` mov
 | Pane arrangement per project | `~/.wakil/layouts/<org>/<project>.json` | Swift: `LayoutPersistence` |
 | Pane arrangement per conversation | `~/.wakil/layouts/<org>/conversations/<lineageRoot>/<project>.json` | Swift: `LayoutPersistence` |
 | Action journal (append-only, one line per dispatch) | `~/.wakil/journal/<sessionId>.jsonl` | Swift: `ActionRegistry` (`JournalEntry`) |
-| A ticket's record (next, decisions, not done, waiting on, verified, rulings; empty lists as `[]`) and its log (append-only, the old line written before each change) | `~/.wakil/orgs/<org>/tickets/<KEY>.json`, `<KEY>.log.jsonl` (a `.lock` beside each, taken per key) | Go: `ticketrecord.go` (`wakil-ticket` `ticket_record_write`, `ticket_branch`'s seen/branch/PR fields) |
+| A ticket's record (next, decisions, not done, waiting on, verified, rulings; empty lists as `[]`) and its log (append-only, the old line written before each change) | `~/.wakil/orgs/<org>/tickets/<KEY>.json`, `<KEY>.log.jsonl` (`<KEY>.json.lock` beside each, taken per key) | Go: `ticketrecord.go` (`wakil-ticket` `ticket_record_write`, `ticket_branch`'s seen/branch/PR fields) |
 | Ticket links made in Wakil, keyed `<host>/<owner>/<repo>:<branch>` | `~/.wakil/orgs/<org>/tickets/links.json` | Go: `ticketlink.go` (`ticket_link`) |
 | Code-identifier cache | `~/.wakil/vocabulary/` | Swift: `CodeSource` |
 | Agent transcripts | `<provider configDir>/projects/…` | the `claude` CLI; read by Go `sessions.go`, `transcript.go` |
