@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/agent/3c-ii-first-turn-read.jsonl",
   "baseCommit": "5feb2f5e5892308cc712bebd2ac05ddeccec792a",
-  "provedAt": "2026-10-26T21:31:04.685223Z",
-  "checkBlob": "9f56d811549a8f4bad53a0b5047a7e8bcdb55a04"
+  "provedAt": "2026-10-26T22:55:24.942931Z",
+  "checkBlob": "633b993577938485a8f80f960ed248dccc24b5e8"
 }
