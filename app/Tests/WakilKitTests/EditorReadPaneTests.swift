@@ -37,6 +37,9 @@ import Testing
         "visible_text": .string("l2 edited\nl3"),
         "selected_text": .string("l2"),
         "column": .null,
+        // The Ticket view follows the front file's root; nothing read of it yet.
+        "ticket": .object(["root": .string("/p/api"), "branch": .null, "tickets": .array([]), "marked": .null,
+                           "prs": .array([]), "drafts": .array([]), "reading": .bool(false), "error": .null]),
         "find": .null,
         "search": .object(["query": .string(""), "case": .bool(false), "word": .bool(false), "regex": .bool(false),
                            "in_flight": .bool(false), "truncated": .bool(false), "files_truncated": .bool(false), "skipped_large": .array([]),
@@ -50,7 +53,7 @@ import Testing
     let pane = await layout.open(kind: "editor", title: "Editor").id
     let read = await PaneStore(kinds: PaneKinds.standard).readPane(paneId: pane, kind: "editor")
     guard case .object(let o) = read else { Issue.record("not an object"); return }
-    for key in ["active", "tabs", "cursor", "selection", "visible_range", "peek", "visible_text", "selected_text", "column", "find", "search"] {
+    for key in ["active", "tabs", "cursor", "selection", "visible_range", "peek", "visible_text", "selected_text", "column", "ticket", "find", "search"] {
         #expect(o[key] != nil, "missing \(key)")
     }
     #expect(o["tabs"] == .array([]) && o["active"] == .null)

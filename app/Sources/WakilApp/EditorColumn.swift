@@ -137,6 +137,9 @@ struct EditorColumn: View {
                     }
                 case .search: searchView
                 case .changes: changesView
+                // The Ticket view itself is the next step's (EditorTicketView); until then the
+                // column shows nothing for it.
+                case .ticket: Spacer()
                 }
             }
             .frame(width: dragWidth ?? editorColumnWidth(column.width, paneWidth: paneWidth))
@@ -184,6 +187,7 @@ struct EditorColumn: View {
             case .search: queryFocused = true
             case .changes: changesFocused = true
             case .files: treeFocused = true
+            case .ticket: break
             }
         }
     }

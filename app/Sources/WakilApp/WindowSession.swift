@@ -449,6 +449,8 @@ final class WindowSession {
             fileLists: wiring.fileLists,
             // 3b-iii. The status the actions read; no default, for `rootWatcher`'s reason.
             gitStatus: wiring.gitStatus,
+            // Ticket view: the store the ticket actions were registered with.
+            ticket: wiring.ticketStore,
             // The palette reads tables, API entries and changed files straight from these
             // clients, drawing no pane. No default, for `rootWatcher`'s reason. ⌘P's files come
             // from the same list as the trees, so the two never disagree.

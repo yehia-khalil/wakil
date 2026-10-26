@@ -54,6 +54,15 @@ extension PaneStore {
         setKindState(EditorPaneKind.self, shared)
     }
 
+    /// The Ticket view's readable state changed: every editor pane on screen redraws.
+    func setEditorTicketMirror(_ mirror: EditorTicketMirror) {
+        var shared = kindState(EditorPaneKind.self)
+        guard shared.ticket != mirror else { return }
+        shared.ticket = mirror
+        setKindState(EditorPaneKind.self, shared)
+        for entry in everyScope(EditorPaneKind.self) where entry.active { publishEditorChange(entry.paneId) }
+    }
+
     private func publishEditorChange(_ paneId: String) {
         for continuation in kindState(EditorPaneKind.self).changeSubscribers.values { continuation.yield(paneId) }
     }

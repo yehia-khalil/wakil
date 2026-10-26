@@ -441,7 +441,13 @@ private let readPaneToolListEntry = JSONValue.object([
         + "moves it, editor_peek_close closes it). A tab's "
         + "preview is true while it is a preview tab, one a click replaces. column is the "
         + "side column — shown, view (which view it holds), width, and open, the folders "
-        + "expanded in the tree — or null. find is the active tab's find — query and its "
+        + "expanded in the tree; ticket_shown, the ticket picked from In flight — or null. "
+        + "ticket is the Ticket view's state for the root the pane follows (its front file's "
+        + "root, else the project's first) — root, branch, tickets (keys), marked (the one "
+        + "the branch is for), prs (number, state, openThreads), drafts (the review threads "
+        + "with a reply draft; never the draft's text), reading while a read runs, and error, "
+        + "the last read's failure whole — or null with no root. "
+        + "find is the active tab's find — query and its "
         + "switches case, word and regex, count of matches (null until counted) and "
         + "shown — or null when no find is open. search is the project search — query and "
         + "its switches case, word and regex; in_flight while it runs; truncated when it "
@@ -774,9 +780,13 @@ private func parkForConfirmation(
     // description.
     // A mutation's own statement (SQL, an HTTP request) when it has one; a git write the agent price
     // gates (3a-iv) has none, and is described in a sentence instead.
-    let ownStatement = isMutation ? stringArgument(arguments, "statement") : nil
-    let statement = ownStatement
-        ?? (isMutation ? (confirmationDescription(action: name, params: arguments) ?? "")
+    // An action that has its own sentence keeps it even when the arguments carry a `statement` too:
+    // the Ticket view's reply is described from its body, so a stray `statement` cannot put other
+    // words on the plane than the ones posted.
+    let described = isMutation ? confirmationDescription(action: name, params: arguments) : nil
+    let ownStatement = isMutation && described == nil ? stringArgument(arguments, "statement") : nil
+    let statement = described ?? ownStatement
+        ?? (isMutation ? ""
             : (confirmationDescription(action: name, params: arguments)
                 ?? describeProposal(action: name, arguments: arguments)))
     guard !statement.isEmpty else {

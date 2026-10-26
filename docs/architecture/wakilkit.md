@@ -243,6 +243,20 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
 - `EditorSettings.swift` — `EditorViewOptions` (what Monaco is told: font size, word wrap, tab size, insert
   spaces), `EditorSettings` (the app-wide and project tiers as `ctx_editor_settings` answers them, `appError`
   included), and `decodeEditorSettings`.
+- `EditorTicket.swift` (Ticket view) — the Swift mirrors of `wakil-ticket`'s output (`TicketBranchState`,
+  `TicketRefState`, `PullRequestState`, `ReviewThreadState` stamped with its PR's number, head commit,
+  repo and root, `ReviewCommentState`, `TicketRecordState`, `TicketLineState`, `InFlightState`,
+  `SourceNoteState`) and the view's pure decisions: `ticketBy` (who wrote a record line, from the
+  dispatch's origin), `ticketFollowedRoot`, `ticketStale` (60 s), `ticketWaitingOn`, `ticketNext`,
+  `ticketFoldLine`, `reviewOpenThreads`, `reviewStep`, `reviewPosition` and the reply's plane statement.
+- `EditorTicketStore.swift` — `EditorTicketStore`, the window's ticket reads per (root, branch): one in
+  flight per pair, cancelled past 20 s, dropped by generation after an org switch (`reset`), with the
+  review drafts and the sends in flight beside them.
+- `EditorTicketActions.swift` — `registerTicketActions`, called from `registerEditorActions`:
+  `ticket_read`, `ticket_refresh`, `ticket_show`, `ticket_in_flight`, `ticket_link`, `ticket_record_update`,
+  `review_open`, `review_step`, `review_reply_draft`, `review_reply_send` (*gate* for every channel) and
+  `review_resolve` (*gate* for the agent); and `EditorTicketMirror`, the `ticket` key of the editor's
+  `read_pane` (draft text never in it).
 - `EditorAutosave.swift` — `editorAutosaveEligible` (a file, dirty, in sync with disk, writable, not saving),
   `EditorAutosaveStep`, and `EditorAutosave`, the per-pane memory that says which tabs to arm or save; the
   window keeps the timers.
@@ -253,7 +267,9 @@ Uses `Panes/`, `Layout/`, `Core/`, `Registry/`, `MCP/`, `Context/` and `Git/` (`
 Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadPaneTests`,
 `EditorRefreshTests`, `EditorRendererTests`, `WindowModelEditorTests`, `EditorTreeTests`,
 `EditorTreeActionsTests`, `EditorSearchTests`, `EditorSearchActionsTests`, `EditorChangesTests`,
-`EditorChangesActionsTests`, `EditorDiffTabsTests`, `EditorDiffBannerTests`.
+`EditorChangesActionsTests`, `EditorDiffTabsTests`, `EditorDiffBannerTests`, `EditorTicketTests`,
+`EditorTicketActionsTests`. The window's own ticket reads (a root's branch changing, Wakil coming
+back after 60 s) are `App/WindowModel+Ticket.swift`.
 
 ### Gate/ — the write gate and confirmations
 

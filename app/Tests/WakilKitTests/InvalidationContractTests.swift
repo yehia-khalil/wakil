@@ -34,6 +34,8 @@ private let orgDerived: Set<String> = [
     // 3a-v-b: the outgoing org's roots' stash clashes (R4, mirrored from the status, which resets) and the
     // operations whose prepared message already filled a box.
     "changesClashes", "changesFilledFrom",
+    // Ticket view: the branch each of the outgoing org's roots was on; `invalidateForOrgChange` empties it.
+    "ticketBranches",
     "project", "projectKey", "environment", "environmentProduction",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
@@ -365,6 +367,9 @@ private let orgDerivedBehindAReference: Set<String> = [
     // 3b-iii PR 1: one for the window's life (the wiring's), its CONTENTS the status of the screen's
     // roots. `invalidateForOrgChange` resets it (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
     "gitStatus",
+    // Ticket view: one store for the window's life (the wiring's), its CONTENTS the outgoing org's
+    // reads, drafts and flights. `invalidateForOrgChange` resets it (EditorTicketTests.aReadFromTheOldOrgIsDropped).
+    "ticket",
     // 2e (#202). `providerLoginSession` is exactly the shape this third
     // bucket was created for: the reference is stable — every login goes
     // through the one session this window owns — while its CONTENTS are

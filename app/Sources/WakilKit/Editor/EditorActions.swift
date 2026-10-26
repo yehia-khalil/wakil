@@ -272,9 +272,11 @@ public func registerEditorActions(
     fileLists: EditorFileLists?,
     gitStatus: GitStatus?,
     roots: @escaping @Sendable () async -> [String],
-    gitWrites: GitWriteFlights = GitWriteFlights()
+    gitWrites: GitWriteFlights = GitWriteFlights(),
+    ticket: EditorTicketStore? = nil
 ) async {
-    await registerEditorChangesWrites(into: registry, gitStatus: gitStatus, panes: panes, layout: layout, writes: gitWrites)
+    await registerEditorChangesWrites(into: registry, gitStatus: gitStatus, panes: panes, layout: layout, writes: gitWrites,
+                                      ticket: ticket)
     @Sendable func requireFiles(_ action: String) throws -> any ToolCaller {
         guard let files else { throw StandardActionError.missingClient(action: action, role: "files") }
         return files
@@ -1489,13 +1491,13 @@ public func registerEditorActions(
 
     await registry.register(Action(
         name: "editor_tree",
-        description: "Show or hide an editor pane's left column (shown), switch its view (files, search or changes — the project's git changes), "
+        description: "Show or hide an editor pane's left column (shown), switch its view (files, search, changes — the project's git changes — or ticket: the branch's ticket, pull requests and review threads), "
             + "or set its width (points; clamped by the view). With no pane, the focused or first editor pane, or "
             + "a new one. A pane that never set its column starts from the one last left in any editor pane. "
             + "Shown on files, it lists every root.",
         kind: .control, audience: .agentReachable,
         schema: schema(["shown": .object(["type": .string("boolean")]),
-                        "view": .object(["type": .string("string"), "enum": .array([.string("files"), .string("search"), .string("changes")])]),
+                        "view": .object(["type": .string("string"), "enum": .array([.string("files"), .string("search"), .string("changes"), .string("ticket")])]),
                         "width": .object(["type": .string("number")])]),
         handler: { params in
             let pane = try await editorPane(params, action: "editor_tree")
@@ -2302,6 +2304,22 @@ public func registerEditorActions(
             return .object(o)
         },
         price: (production: .allow, otherwise: .allow)))
+
+    // The Ticket view (piece 2 of Ticket work): its actions borrow the editor's pane, reply, column
+    // and open, so a thread opens in the file with the column left where it was.
+    if let ticket {
+        await registerTicketActions(
+            into: registry, store: ticket, panes: panes, layout: layout,
+            editor: EditorTicketHooks(
+                pane: { params, action in try await editorPane(params, action: action) },
+                reply: { pane in await reply(pane) },
+                updateColumn: { pane, change in await updateColumn(pane, change) },
+                openFile: { pane, path, line in
+                    try await openFile(pane, path: path, at: EditorPosition(line: line, column: 1), selection: nil,
+                                       preview: false, action: "review_open")
+                }),
+            roots: roots)
+    }
 }
 
 /// One pane's column writes at a time (final review I2): each runs after the one before it for the

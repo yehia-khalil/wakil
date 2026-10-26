@@ -66,7 +66,11 @@ enum EditorPaneKind: PaneKind {
                 .object(["root": .string(g.root), "group": .string(g.group)]) }),
             "changes_highlight": c.changesHighlight.map { h in
                 .object(["root": .string(h.root), "path": .string(h.path), "group": .string(h.group)]) } ?? .null,
+            "ticket_shown": c.ticketShown.map { .string($0) } ?? .null,
         ]) } ?? .null
+        // The Ticket view (Invariant 3): the root this pane follows, its branch, tickets and PRs, and
+        // which review threads have a draft — never a draft's text.
+        o["ticket"] = store.kindState(EditorPaneKind.self).ticket.json(front: editorFrontRoot(s))
         let f = s.findReport.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.number(Double(r.count)), r.shown) }
             ?? s.find.map { r in (r.query, r.caseSensitive, r.wholeWord, r.regex, JSONValue.null, true) }
         o["find"] = f.map { q, c, w, r, count, shown in .object([
@@ -92,6 +96,8 @@ enum EditorPaneKind: PaneKind {
 /// (`PaneStore.editorChanges()`).
 struct EditorShared: Sendable {
     var changeSubscribers: [UUID: AsyncStream<String>.Continuation] = [:]
+    /// The Ticket view's readable state, for every editor pane (`registerTicketActions`).
+    var ticket: EditorTicketMirror = .empty
 }
 
 extension PaneSnapshot {

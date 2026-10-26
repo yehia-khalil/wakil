@@ -271,9 +271,11 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "pane_open", "pane_resize", "pane_restore", "pane_scroll_clear",
              "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
              "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
+             "review_open", "review_reply_draft", "review_reply_send", "review_resolve", "review_step",
              "session_close", "session_get", "session_list", "session_new", "session_read",
              "session_record_parent", "session_resume", "session_set_provider", "session_switch", "settings_open", "term_open",
-             "term_propose", "term_run", "term_scroll"])
+             "term_propose", "term_run", "term_scroll",
+             "ticket_in_flight", "ticket_link", "ticket_read", "ticket_record_update", "ticket_refresh", "ticket_show"])
     #expect(wiring.contextClient == nil)
     #expect(wiring.databaseClient == nil)
     // #185 made `wakil-http` the third Wakil-owned client, so three
@@ -599,12 +601,12 @@ private func listedProjectNames(_ registry: ActionRegistry) async throws -> Set<
     let declared = declaredClientProperties(of: wiring)
     // Sanity: reflection must actually be finding them, or this test
     // passes by seeing nothing.
-    #expect(declared == ["contextClient", "databaseClient", "filesClient", "gitClient", "httpClient"],
+    #expect(declared == ["contextClient", "databaseClient", "filesClient", "gitClient", "httpClient", "ticketClient"],
             "WakilWiring's MCPClient properties are \(declared)")
     #expect(wiring.wakilOwnedClients.count == declared.count,
             "a client is declared on WakilWiring and missing from wakilOwnedClients, so an org switch would leave it pointed at the outgoing org and shutdown would orphan it")
     #expect(Set(wiring.wakilOwnedClients.map(\.name))
-            == ["wakil-ctx", "wakil-db", "wakil-files", "wakil-git", "wakil-http"])
+            == ["wakil-ctx", "wakil-db", "wakil-files", "wakil-git", "wakil-http", "wakil-ticket"])
 }
 
 /// Every `MCPClient?` stored property of `wiring`, by name, sorted.
@@ -659,7 +661,7 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
 /// distinguishes a client that came back from one that was never stopped.
 @Test func everyWakilOwnedClientIsANewProcessAfterAnOrgSwitch() async throws {
     let binDir = repoRoot().appendingPathComponent("bin")
-    for name in ["wakil-ctx", "wakil-db", "wakil-files", "wakil-git", "wakil-http"] {
+    for name in ["wakil-ctx", "wakil-db", "wakil-files", "wakil-git", "wakil-http", "wakil-ticket"] {
         try #require(
             FileManager.default.isExecutableFile(atPath: binDir.appendingPathComponent(name).path),
             "run `make build` first — \(name) missing")
@@ -685,8 +687,8 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
     // it could not tell a type match from the nil quirk it was written to
     // avoid.
     #expect(declaredClientProperties(of: wiring)
-            == ["contextClient", "databaseClient", "filesClient", "gitClient", "httpClient"])
-    #expect(wiring.wakilOwnedClients.count == 5)
+            == ["contextClient", "databaseClient", "filesClient", "gitClient", "httpClient", "ticketClient"])
+    #expect(wiring.wakilOwnedClients.count == 6)
 
     var before: [String: Int32] = [:]
     for (name, client) in wiring.wakilOwnedClients {
@@ -694,7 +696,7 @@ private func shutdownSynchronously(_ wiring: WakilWiring) {
         #expect(pid != nil, "\(name) did not start: \(wiring.diagnostics)")
         before[name] = pid
     }
-    #expect(before.count == 5, "every Wakil-owned client starts eagerly")
+    #expect(before.count == 6, "every Wakil-owned client starts eagerly")
 
     let diagnostics = await wiring.switchOrg(to: orgB)
     #expect(diagnostics.isEmpty, "\(diagnostics)")
@@ -1020,6 +1022,8 @@ private struct FailingLookupForWiringTests: ProviderCredentialsLookup {
             "pane": .string(editor.id), "root": .string("/tmp"), "path": .string("x"), "group": .string("changed"),
         ])),
         (.files, "files_search", .object(["query": .string("needle")])),
+        // Ticket view: wakil-ticket is reached through the registry's ticket actions only.
+        (.ticket, "ticket_in_flight", .object([:])),
     ]
     for (role, action, params) in calls {
         _ = try? await wiring.registry.dispatch(

@@ -48,6 +48,20 @@ public func confirmationDescription(action: String, params: JSONValue) -> String
     case "editor_changes_stash_undo_apply":
         guard case .object(let o) = params else { return nil }
         return "undo the stash apply that clashed in \(rootName(o)); the files it touched go back to HEAD"
+    // The Ticket view: a reply is published to other people, so the plane shows where it goes and its
+    // exact text; the agent's resolve says which thread.
+    case "review_reply_send":
+        guard case .object(let o) = params, case .string(let repo)? = o["repo"], let pr = o["pr"]?.intValue,
+              case .string(let body)? = o["body"] else { return nil }
+        let path: String? = if case .string(let p)? = o["path"] { p } else { nil }
+        return reviewReplyStatement(repo: repo, pr: pr, path: path, line: o["line"]?.intValue, body: body)
+    case "review_resolve":
+        guard case .object(let o) = params, case .string(let thread)? = o["thread"] else { return nil }
+        let verb = o["resolved"] == .bool(false) ? "unresolve" : "resolve"
+        var place = "review thread \(thread)"
+        if case .string(let path)? = o["path"] { place = "the review thread at \(path)" + (o["line"]?.intValue.map { ":\($0)" } ?? "") }
+        if case .string(let repo)? = o["repo"], let pr = o["pr"]?.intValue { place += " on \(ticketRepoName(repo))#\(pr)" }
+        return "\(verb) \(place) in \(rootName(o))"
     default:
         return nil
     }
@@ -57,4 +71,17 @@ public func confirmationDescription(action: String, params: JSONValue) -> String
 private func rootName(_ o: [String: JSONValue]) -> String {
     guard case .string(let root)? = o["root"] else { return "this root" }
     return (root as NSString).lastPathComponent
+}
+
+/// `initech/api` from `github.com/initech/api`: how the plane names a repository.
+public func ticketRepoName(_ repo: String) -> String {
+    let parts = repo.split(separator: "/")
+    return parts.count == 3 ? parts.dropFirst().joined(separator: "/") : repo
+}
+
+/// The plane's statement for `review_reply_send`: where the reply goes, then its exact text.
+public func reviewReplyStatement(repo: String, pr: Int, path: String?, line: Int?, body: String) -> String {
+    var head = "Reply on \(ticketRepoName(repo))#\(pr)"
+    if let path, !path.isEmpty { head += " · \(path)" + (line.map { ":\($0)" } ?? "") }
+    return head + "\n\n" + body
 }

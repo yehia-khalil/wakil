@@ -987,6 +987,9 @@ private let registeredBeforeThePalette: Set<String> = [
     "editor_open", "editor_open_file", "editor_new_scratch", "editor_focus_tab", "editor_close", "editor_goto", "editor_select", "editor_set_language", "editor_replace_range", "editor_save", "editor_reload", "editor_restore", "editor_replace", "editor_replace_undo",
     // 3a-v-b: the conflict blocks in a conflicted file's tab.
     "editor_conflict_accept", "editor_conflict_next", "editor_conflict_previous", "editor_conflict_compare",
+    // Ticket view: the ticket reads and record, and the review threads, all agent-reachable.
+    "ticket_read", "ticket_refresh", "ticket_show", "ticket_in_flight", "ticket_link", "ticket_record_update",
+    "review_open", "review_step", "review_reply_draft", "review_reply_send", "review_resolve",
     "api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_render_curl", "api_reopen",
     "api_remove_entry", "api_request", "api_send", "api_set_entry", "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
     // Provider capacity, on purpose: the operator-only record path and the agent's read.
@@ -1039,6 +1042,10 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__editor_find", "mcp__wakil__editor_search", "mcp__wakil__files_search",
     "mcp__wakil__editor_open", "mcp__wakil__editor_open_file", "mcp__wakil__editor_new_scratch", "mcp__wakil__editor_focus_tab", "mcp__wakil__editor_close", "mcp__wakil__editor_goto", "mcp__wakil__editor_select", "mcp__wakil__editor_set_language", "mcp__wakil__editor_replace_range", "mcp__wakil__editor_reload", "mcp__wakil__editor_restore",
     "mcp__wakil__editor_conflict_accept", "mcp__wakil__editor_conflict_next", "mcp__wakil__editor_conflict_previous", "mcp__wakil__editor_conflict_compare",
+    // Ticket view: the reads and controls; ticket_link, ticket_record_update, review_reply_send and
+    // review_resolve are mutations, reached through the gate.
+    "mcp__wakil__ticket_read", "mcp__wakil__ticket_refresh", "mcp__wakil__ticket_show", "mcp__wakil__ticket_in_flight",
+    "mcp__wakil__review_open", "mcp__wakil__review_step", "mcp__wakil__review_reply_draft",
     "mcp__wakil-git", "mcp__wakil-pm", "mcp__wakil-recall",
     "mcp__wakil__api_bind", "mcp__wakil__api_cancel", "mcp__wakil__api_fill_from_curl",
     "mcp__wakil__api_open", "mcp__wakil__api_render_curl", "mcp__wakil__api_reopen",
