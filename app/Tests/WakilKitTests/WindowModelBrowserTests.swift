@@ -273,3 +273,199 @@ private final class LockedFlag: @unchecked Sendable {
     func set() { lock.withLock { stored = true } }
     var value: Bool { lock.withLock { stored } }
 }
+
+// MARK: - 3c-ii Task 9: the window keeps the sites in step and forgets a closed conversation's list
+
+private let reachOrg = "initech"
+private let reachPlace = Place(organization: reachOrg, project: "shop", environment: "staging")
+
+/// A `ctx_config_tree` answer: the project `shop` with `staging` and `qa`, and `ops`' production `live`.
+private func reachTree() -> JSONValue {
+    func env(_ name: String, _ url: String, production: Bool? = nil) -> JSONValue {
+        var o: [String: JSONValue] = ["name": .string(name), "api": .array([.object(["baseUrl": .string(url)])])]
+        if let production { o["production"] = .bool(production) }
+        return .object(o)
+    }
+    return .object(["structuredContent": .object([
+        "org": .object(["id": .string(reachOrg)]),
+        "projects": .array([
+            .object(["name": .string("shop"), "environments": .array([
+                env("staging", "https://staging.initech.dev"), env("qa", "https://qa.initech.dev")])]),
+            .object(["name": .string("ops"), "environments": .array([
+                env("live", "https://api.initech.com", production: true)])]),
+        ]),
+    ])])
+}
+
+private final class CallCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func bump() { lock.withLock { n += 1 } }
+    var value: Int { lock.withLock { n } }
+}
+
+private struct ReachBackend: ToolCaller {
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        switch name {
+        case "get_context":
+            return .object(["structuredContent": .object([
+                "Org": .string(reachOrg), "Project": .string("shop"), "Environment": .string("staging"),
+                "RootPaths": .array([]), "ActiveProvider": .string("")])])
+        default:
+            return .object(["structuredContent": .object([:])])
+        }
+    }
+}
+
+/// A window with browser actions and a counted `ctx_config_tree`, running agents on `sessions`.
+@MainActor
+private func reachWindow(
+    _ sessions: Sessions, trees: CallCount = CallCount(), context: (any ToolCaller)? = nil
+) async -> (WindowModel, PaneStore) {
+    let dir = testScratchRoot.appendingPathComponent("browser-reach-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "browser-reach")
+    let panes = PaneStore()
+    let layout = LayoutStore()
+    await registerLayoutActions(into: registry, layout: layout, panes: panes)
+    await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { .defaults })
+    await registry.register(Action(
+        name: "ctx_config_tree", description: "", kind: .read, audience: .agentReachable,
+        schema: .object(["type": .string("object")]), handler: { _ in trees.bump(); return reachTree() }))
+    let model = WindowModel(
+        registry: registry, panes: panes, layout: layout, persistence: nil,
+        context: context.map { ContextStore(client: $0) },
+        harnessFactory: { place, _, socketPath in sessions.harness(place, socketPath) },
+        resumes: ResumeBroker(), rootPath: "/tmp", providerId: "test-provider",
+        lookupFactory: { _ in AlwaysSucceedsCredentialsLookupForTesting() },
+        agentSocketFactory: sessions.socketFactory, environment: "staging")
+    model.setOrganizationForTesting(reachOrg)
+    model.seedForTesting(providerId: "test-provider", rootPath: "/tmp", thoughts: 0,
+                         project: "shop", environment: "staging")
+    return (model, panes)
+}
+
+@Suite @MainActor struct WindowModelBrowserReachTests {
+    @Test func sitesFollowTheConfigTree() async {
+        let (model, panes) = await reachWindow(Sessions())
+        #expect(model.browserSites == .unread)
+        await model.refreshBrowserSites()
+        #expect(model.browserSites.read)
+        #expect(model.browserSites.isProduction("api.initech.com"), "another project's live is production")
+        #expect(!model.browserSites.isProduction("staging.initech.dev"))
+        #expect(model.browserSites.tag("https://staging.initech.dev/x") == .environment("staging"))
+        #expect(await panes.browserSites(org: reachOrg) == model.browserSites)
+        #expect(model.settings != nil, "the tree it read is the settings too")
+    }
+
+    @Test func aSwitchRecomputesTheEnvironmentTag() async {
+        let (model, _) = await reachWindow(Sessions())
+        await model.refreshBrowserSites()
+        #expect(model.browserSites.tag("https://staging.initech.dev/") == .environment("staging"))
+        model.seedForTesting(providerId: "test-provider", rootPath: "/tmp", thoughts: 0,
+                             project: "shop", environment: "qa")
+        await model.refreshBrowserSites()
+        #expect(model.browserSites.tag("https://staging.initech.dev/") == nil, "staging's tag is gone")
+        #expect(model.browserSites.tag("https://qa.initech.dev/") == .environment("qa"))
+    }
+
+    @Test func launchAndSettingsRefreshReadTheSites() async {
+        let trees = CallCount()
+        let (model, _) = await reachWindow(Sessions(), trees: trees, context: ReachBackend())
+        await model.refreshContext()
+        #expect(model.browserSites.read, "launch reads the sites")
+        let afterLaunch = trees.value
+        await model.refreshSettings()
+        #expect(trees.value == afterLaunch + 1, "a settings refresh reads the tree once, for both")
+        #expect(model.browserSites.read)
+    }
+
+    @Test func closingAConversationForgetsOnlyItsSites() async throws {
+        let sessions = Sessions()
+        let (model, panes) = await reachWindow(sessions)
+        #expect(await model.send("first"))
+        let first = try #require(model.currentAgent)
+        await model.newConversation()
+        #expect(await model.send("second"))
+        let second = try #require(model.currentAgent)
+        #expect(first.id != second.id)
+        await panes.browserAllow(site: "staging.initech.dev", conversation: first.id)
+        await panes.browserAllow(site: "staging.initech.dev", conversation: second.id)
+
+        await model.closeConversation(first.id)
+        // A turn is in flight, so it asks; the answer closes it.
+        await model.answerCloseQuestion(close: true)
+
+        #expect(model.conversation(id: first.id) == nil)
+        #expect(await panes.browserAllowed(conversation: first.id).isEmpty)
+        #expect(await panes.browserAllowed(conversation: second.id) == ["staging.initech.dev"])
+        await model.shutdown()
+    }
+
+    @Test func revokeTakesTheSiteOffTheScreensConversation() async throws {
+        let (model, panes) = await reachWindow(Sessions())
+        #expect(await model.send("go"))
+        let agent = try #require(model.currentAgent)
+        await panes.browserAllow(site: "staging.initech.dev", conversation: agent.id)
+        await panes.browserAllow(site: "qa.initech.dev", conversation: agent.id)
+        await model.refreshPanes()
+        #expect(model.browserAllowedOnScreen == ["staging.initech.dev", "qa.initech.dev"])
+
+        await model.revokeBrowserSite("staging.initech.dev")
+
+        #expect(await panes.browserAllowed(conversation: agent.id) == ["qa.initech.dev"])
+        #expect(model.browserAllowedOnScreen == ["qa.initech.dev"])
+        await model.shutdown()
+    }
+
+    @Test func anOrgSwitchResetsTheSites() async {
+        let (model, panes) = await reachWindow(Sessions())
+        await model.refreshBrowserSites()
+        #expect(model.browserSites.read)
+        await model.setOrganization("globex")
+        #expect(model.browserSites == .unread, "unread until the new org's tree is read")
+        #expect(model.browserAllowedOnScreen.isEmpty)
+        #expect(await panes.browserSites(org: "globex") == .unread)
+    }
+
+    @Test func aReadAfterASwitchFillsOnlyTheOrgNowOpen() async {
+        let (model, panes) = await reachWindow(Sessions())
+        await model.refreshBrowserSites()
+        await model.setOrganization("globex")
+        await model.refreshBrowserSites()
+        #expect(await panes.browserSites(org: "globex").read, "read for the org now open")
+        #expect(await panes.browserSites(org: reachOrg).read, "the old org's copy is its own")
+    }
+
+    @Test func aSpokenTurnsSiteQuestionWantsTyping() async throws {
+        let (model, _) = await reachWindow(Sessions())
+        func ask(_ conversation: String?) -> PendingMutation {
+            PendingMutation(action: "browser_click", params: .object([:]), database: nil, statement: "",
+                            affectsEveryRow: false, origin: .agent, place: reachPlace,
+                            conversation: conversation, ask: .site("staging.initech.dev"))
+        }
+        #expect(await model.send("typed", via: .typed))
+        let agent = try #require(model.currentAgent)
+        #expect(agent.lastTurnSource == .typed)
+        #expect(!model.siteQuestionWantsTyping(ask(agent.id)), "typed: a click answers")
+        agent.turnInFlight = false
+        #expect(await model.send("spoken", via: .voice))
+        #expect(agent.lastTurnSource == .voice)
+        #expect(model.siteQuestionWantsTyping(ask(agent.id)), "spoken: typed confirm")
+        #expect(model.siteQuestionWantsTyping(ask(nil)), "unknown asks for typing")
+        #expect(model.siteQuestionWantsTyping(ask("no-such-conversation")), "unknown asks for typing")
+        await model.shutdown()
+    }
+
+    @Test func aFreshSessionForgetsWhichToolUsesWereBrowserTools() async throws {
+        let sessions = Sessions()
+        let (model, _) = await reachWindow(sessions)
+        #expect(await model.send("go"))
+        let agent = try #require(model.currentAgent)
+        agent.toolNames["t1"] = "browser_read"
+        agent.turnInFlight = false
+        await model.setProvider("other")
+        #expect(agent.toolNames.isEmpty, "the thread was cleared, so were its tool names")
+        await model.shutdown()
+    }
+}

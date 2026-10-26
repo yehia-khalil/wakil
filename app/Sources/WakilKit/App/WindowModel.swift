@@ -420,6 +420,15 @@ public final class WindowModel {
     /// affordable during the map.
     public private(set) var settings: SettingsTree?
 
+    /// 3c-ii: which sites are production and which belong to the active environment, from the
+    /// organisation's config tree. `.unread` until read — every site then counts as production.
+    /// Org-derived: `invalidateForOrgChange` resets it.
+    public private(set) var browserSites: BrowserSites = .unread
+
+    /// 3c-ii: the site keys (`BrowserSite.key`) the on-screen conversation let the agent use,
+    /// re-read from the store in `refreshPanes`. Empty with no conversation on screen.
+    public private(set) var browserAllowedOnScreen: Set<String> = []
+
     /// Every account on this machine, as the settings pane's flat table
     /// draws it — or `nil` when it has not been read yet or the read
     /// failed.
@@ -2140,6 +2149,8 @@ public final class WindowModel {
             // 3b-v: the tabs follow the project, so the settings in force are read with it.
             await refreshEditorSettings()
             await refreshBrowserSettings()
+            // 3c-ii: launch, and an org, project or environment switch, all end here.
+            await refreshBrowserSites()
             // Capacity is read once the providers and the org are known,
             // so the hairlines are not empty until a turn ends or
             // Settings opens. Launch and an org switch both come here, so
@@ -2286,6 +2297,10 @@ public final class WindowModel {
         settings = nil
         settingsFailure = nil
         editorSettings = .defaults
+        // 3c-ii: the sites describe the outgoing organisation's environments; unread, every site
+        // prices as production until the incoming org's tree is read.
+        browserSites = .unread
+        browserAllowedOnScreen = []
         // The account table carries `mine`, which is a statement about
         // WHICH organisation the operator is standing in — false for
         // every row the moment that changes, and silently wrong until the
@@ -2940,6 +2955,7 @@ public final class WindowModel {
             }
             settings = tree
             settingsFailure = nil
+            await applyBrowserSites(from: tree)
             publishAgentInstructions(tree)
             // The tree first, so the pane fills at once; finding `claude` (a login-shell lookup)
             // is for the account table below, and waits until the tree is drawn.
@@ -4609,6 +4625,11 @@ public final class WindowModel {
         }
         tables = next
         editables = nextEditables
+        if let id = currentAgent?.id {
+            browserAllowedOnScreen = await panes.browserAllowed(conversation: id)
+        } else {
+            browserAllowedOnScreen = []
+        }
         gitRoots = await gitStatus?.roots ?? []
         await changesFollowStatus()
         // The dictionary itself changes only when a pane opens or closes.
@@ -7880,6 +7901,8 @@ public final class WindowModel {
             // either suspension, `append` clears what is already there,
             // and nothing re-sets it once `send` returns.
             agent.turnInFlight = true
+            // 3c-ii: how this turn was asked, for the site question's price (ruling 13).
+            agent.lastTurnSource = source
             refreshChipProduction(of: agent)
             // 2d-ii: the operator's own turn is a row, so what was actually
             // sent — a misheard sentence included — stays on screen.
@@ -8160,6 +8183,7 @@ public final class WindowModel {
         await stopSession(of: agent)
 
         agent.thoughts = rebuiltThread(thread, parent: parent, for: agent)
+        agent.toolNames = [:]
         agent.turnInFlight = false
 
         // Closed while the fork started: the fork is stopped, and nothing else is done.
@@ -8440,6 +8464,7 @@ public final class WindowModel {
         // belonging to another provider. So `resumingFrom` is nil above,
         // and the thread is cleared rather than rebuilt.
         agent.thoughts = []
+        agent.toolNames = [:]
         // Just the two names, no "account changed:" prefix. With the row's
         // own label reading `SESSION` beside it, the prefix said "account"
         // a second time in a row that is four words long — and the arrow
@@ -8868,6 +8893,8 @@ public final class WindowModel {
         }
         conversations[agent.id] = nil
         conversationOrder.removeAll { $0 == agent.id }
+        // 3c-ii: the sites it allowed die with it, and no other conversation's.
+        await panes.browserForget(conversation: agent.id)
         if shown, placeRemoved {
             screenConversations[place] = nil
         } else if shown {
@@ -9621,6 +9648,48 @@ public final class WindowModel {
     /// (interaction rule 8).
     public func appendSpeechFailure(_ message: String) {
         agent(for: place).appendRow(label: "speech", detail: message, isError: true)
+    }
+
+    /// 3c-ii: reads the config tree once and refreshes the sites from it. Called at launch and after
+    /// an org, project or environment switch (`refreshContext`); a settings refresh applies the tree
+    /// it already read instead (`applyBrowserSites`), with no second dispatch.
+    func refreshBrowserSites() async {
+        let org = organization
+        guard !org.isEmpty,
+              let result = try? await registry.dispatch(
+                name: "ctx_config_tree", params: .object([:]), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil),
+              let tree = decodeSettingsTree(fromResult: result) else { return }
+        // A switch that landed while the tree was in flight: this tree is the outgoing org's.
+        guard organization == org else { return }
+        settings = tree
+        await applyBrowserSites(from: tree)
+    }
+
+    /// Installs the sites `tree` yields for the active project and environment, in the window and
+    /// the store (the agent's price reads the store). Nothing when no organisation is open.
+    private func applyBrowserSites(from tree: SettingsTree) async {
+        guard !organization.isEmpty else { return }
+        let sites = BrowserSites.from(tree: tree, project: project, environment: environment)
+        browserSites = sites
+        await panes.browserSetSites(org: organization, sites)
+    }
+
+    /// The × on a site the agent was allowed: takes it off the on-screen conversation's list, so
+    /// its next act there asks again. One path with the agent's tool (Invariant 2).
+    public func revokeBrowserSite(_ site: String) async {
+        guard let conversation = currentAgent?.id else { return }
+        _ = await dispatch("browser_revoke_site", .object([
+            "site": .string(site), "conversation": .string(conversation)]))
+        await refreshPanes()
+    }
+
+    /// 3c-ii (ruling 13): whether the site question `pending` asks must be answered by typing
+    /// `confirm`. A typed request answers with a click; a spoken one types; unknown fails toward
+    /// typing (Invariant 7).
+    public func siteQuestionWantsTyping(_ pending: PendingMutation) -> Bool {
+        guard let id = pending.conversation, let agent = conversations[id] else { return true }
+        return agent.lastTurnSource != .typed
     }
 
     /// The active organisation's speech engine id, `""` when unset. Reads
