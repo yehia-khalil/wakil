@@ -357,7 +357,7 @@ public actor LayoutStore {
     /// was opened (walk-defects B2) rather than only the title derived
     /// from it.
     @discardableResult
-    public func open(kind: String, title: String, terminalPath: String? = nil) -> Pane {
+    public func open(kind: String, title: String, terminalPath: String? = nil, focus: Bool = true) -> Pane {
         var current = snapshot()
         let id = "\(kind)-\(nextPaneNumber)"
         nextPaneNumber += 1
@@ -373,9 +373,11 @@ public actor LayoutStore {
             terminalPath: terminalPath)
 
         current.panes.append(pane)
-        current.focusedId = id
+        // 3c-i (spec call 11, Rule 6): a link from another surface opens its pane with `focus` false,
+        // so the pane the operator was in keeps focus. The new pane is in no focus order yet.
+        if focus { current.focusedId = id }
         byScope[scope] = current
-        noteFocused(id)
+        if focus { noteFocused(id) }
         return pane
     }
 
@@ -384,6 +386,18 @@ public actor LayoutStore {
     public func recentlyFocused() -> [String] {
         let open = Set(snapshot().panes.map(\.id))
         return (focusOrder[scope] ?? []).reversed().filter { open.contains($0) }
+    }
+
+    /// The pane of `kind` an action that names none acts on, read in one call so the arrangement and
+    /// the focus order are of one moment and one scope: the focused pane if it is of `kind`, else the
+    /// one of `kind` most recently focused, else the last of `kind` opened. Nil when none is open.
+    /// `browserPane`'s rule (3c spec, call 11).
+    public func preferredPane(kind: String) -> String? {
+        let snap = snapshot()
+        let ofKind = snap.panes.filter { $0.kind == kind }.map(\.id)
+        if let focused = snap.focusedId, ofKind.contains(focused) { return focused }
+        if let recent = recentlyFocused().first(where: ofKind.contains) { return recent }
+        return ofKind.last
     }
 
     private func noteFocused(_ id: String) {
@@ -916,6 +930,7 @@ public actor LayoutStore {
     /// back knowing where to put it again.
     public func load(_ snapshot: LayoutSnapshot, for scope: LayoutScope) {
         byScope[scope] = snapshot
+        focusOrder[scope] = nil  // a restored arrangement starts with no focus history
         // Keep ids unique against whatever was restored: a persisted
         // `db-7` must not be handed out again this session.
         for pane in snapshot.panes {

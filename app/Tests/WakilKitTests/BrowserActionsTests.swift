@@ -266,6 +266,49 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     #expect(await f.layout.snapshot().panes.filter { $0.kind == "browser" }.count == 1)
 }
 
+/// Fix round I3: the rule itself, in one LayoutStore call — focused, else most recently focused, else
+/// last opened — for any kind; and a reload with no pane named follows it as browser_open does.
+@Test func thePreferredPaneIsTheFocusedThenTheMostRecentlyFocusedThenTheLastOpened() async throws {
+    let layout = LayoutStore()
+    #expect(await layout.preferredPane(kind: "browser") == nil)
+    let a = await layout.open(kind: "browser", title: "Browser").id
+    let b = await layout.open(kind: "browser", title: "Browser").id
+    let e = await layout.open(kind: "editor", title: "Editor").id
+    #expect(await layout.preferredPane(kind: "browser") == b)   // b took focus last when it opened
+    try await layout.focus(id: a)
+    #expect(await layout.preferredPane(kind: "browser") == a)   // focused
+    try await layout.focus(id: e)
+    #expect(await layout.preferredPane(kind: "browser") == a)   // most recently focused
+    #expect(await layout.preferredPane(kind: "editor") == e)
+    // A restored arrangement has no focus history: the last opened.
+    await layout.load(await layout.snapshot(), for: .initial)
+    try await layout.focus(id: e)
+    #expect(await layout.preferredPane(kind: "browser") == b)
+    // A pane opened without focus (a link from another surface) is in no focus order and moves no focus.
+    let c = await layout.open(kind: "browser", title: "Browser", focus: false).id
+    #expect(await layout.snapshot().focusedId == e)
+    #expect(await layout.preferredPane(kind: "browser") == c)
+}
+
+/// Fix round M7 (Rule 6): browser_open with keepFocus — openLinkInWakil's — opens a needed pane without
+/// taking focus; without it (the agent's, the palette's) the new pane is focused as before.
+@Test func browserOpenWithKeepFocusOpensAPaneWithoutTakingFocus() async throws {
+    let f = try await browserFixture(open: false)
+    let editor = await f.layout.open(kind: "editor", title: "Editor").id
+    try await f.dispatch("browser_open", ["url": .string("https://a.test/"), "keepFocus": .bool(true)], named: false)
+    let snap = await f.layout.snapshot()
+    let browser = try #require(snap.panes.first { $0.kind == "browser" }).id
+    #expect(snap.focusedId == editor)
+    #expect(await f.panes.browserSnapshot(paneId: browser).tabs.count == 1)
+    try await f.dispatch("browser_open", ["url": .string("https://b.test/"), "keepFocus": .bool(true)], named: false)
+    #expect(await f.layout.snapshot().focusedId == editor)
+    #expect(await f.panes.browserSnapshot(paneId: browser).tabs.count == 2)
+    try await f.layout.close(id: browser)
+    try await f.dispatch("browser_open", ["url": .string("https://c.test/")], named: false)
+    let after = await f.layout.snapshot()
+    #expect(after.focusedId != editor && after.panes.first { $0.id == after.focusedId }?.kind == "browser")
+}
+
 @Test func actionsOtherThanOpenRefuseWithNoBrowserPane() async throws {
     let f = try await browserFixture(open: false)
     let why = await refusal { try await f.dispatch("browser_reload", named: false) }

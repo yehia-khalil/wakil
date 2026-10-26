@@ -151,10 +151,11 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   `browser_navigate` (the address rule; refuses blank and `javascript:`), back, forward, reload, stop,
   new/close/reopen/select/move tab, focus address (⌘L), find, find step and close, zoom (the fixed ladder), download cancel
   and clear, and the operator-only `browser_restore`. `pane` defaults to the focused browser pane,
-  else the one most recently focused (`LayoutStore.recentlyFocused`, in memory only), else the last
-  opened: the spec's call 11, where a link from elsewhere in Wakil opens. That link's one path is
-  `WindowModel.openLinkInWakil` (`App/WindowModel+Links.swift`, `browser_open` with `newTab`); the
-  app's `WakilLinks.open` sends it there, or to the system browser while ⌥ is held. 3c-i routes the
+  else the one most recently focused, else the last opened (`LayoutStore.preferredPane`, one call over
+  the arrangement and its in-memory focus order): the spec's call 11, where a link from elsewhere in
+  Wakil opens. That link's one path is `WindowModel.openLinkInWakil` (`App/WindowModel+Links.swift`,
+  `browser_open` with `newTab` and `keepFocus`, so a pane it has to open does not take focus, Rule 6);
+  the app's `WakilLinks.open` sends it there, or to the system browser on ⌥-click. 3c-i routes the
   blame hover's Open on GitHub through it; 3c-iii routes the terminal's, the editor's and an API entry's
   links. Each command bumps its tab's `command.seq`; tab changes write the layout's
   saved tabs. Also `BrowserKey`, the keys `WindowModel.browserKey` takes over in a focused browser pane.
@@ -344,8 +345,10 @@ status and what reads it. A saved Git pane loads as an editor pane on Changes
   when the line carries `web`). `gitRemoteWebRepository` and `gitCommitWebPage` map an `origin`
   (scp-like, `ssh://` or `https://`, credentials and `.git` dropped) on github.com, gitlab.com
   (subgroups kept) or bitbucket.org to the commit's page; any other host is nil. `editor_blame`
-  reads the root's origin once (`git_origin`, kept in `GitOriginCache`) and, for such a root, asks
-  `git_blame` with `pushed` and sets `web` only on lines whose commit a remote-tracking branch holds.
+  reads the root's origin once (`git_origin`, kept in `GitOriginCache` until the root's
+  `editorBlameRefreshMark` moves, the signal the editor refetches blame on) and, for such a root, asks
+  `git_blame` with `pushed` and sets `web` only on lines whose commit one of origin's branches holds.
+  A remote path segment outside `[A-Za-z0-9._-]` (or a lone `-` on GitLab) gives no page.
 
 Uses: `Context`, `Identifiers`, `MCP`, `Registry`.
 Tests: `GitStatusTests`, `GitPaneLinesTests`, `GitRootWatcherTests`, `GitSourceTests`,

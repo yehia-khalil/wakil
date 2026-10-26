@@ -147,7 +147,8 @@ func browserActions(
     /// The named pane, else the focused browser pane, else the one most recently focused, else the
     /// last one opened (the 3c spec's call 11: where a link from elsewhere in Wakil opens). With none
     /// open, `open` opens one (`browser_open`, `browser_new_tab`); otherwise this refuses.
-    @Sendable func browserPane(_ params: JSONValue, action: String, open: Bool = false) async throws -> (id: String, opened: Bool) {
+    @Sendable func browserPane(_ params: JSONValue, action: String, open: Bool = false,
+                               focus: Bool = true) async throws -> (id: String, opened: Bool) {
         if let pane = optionalString(params, "pane"), !pane.isEmpty {
             try await requireOpenPane(pane, action: action, layout: layout)
             if let p = await layout?.snapshot().panes.first(where: { $0.id == pane }), p.kind != kind {
@@ -156,15 +157,9 @@ func browserActions(
             return (pane, false)
         }
         guard let layout else { throw StandardActionError.missingParam(action: action, param: "pane") }
-        let snap = await layout.snapshot()
-        let browsers = snap.panes.filter { $0.kind == kind }
-        if let focused = snap.focusedId, browsers.contains(where: { $0.id == focused }) { return (focused, false) }
-        if let recent = await layout.recentlyFocused().first(where: { id in browsers.contains { $0.id == id } }) {
-            return (recent, false)
-        }
-        if let last = browsers.last { return (last.id, false) }
+        if let pane = await layout.preferredPane(kind: kind) { return (pane, false) }
         guard open else { throw BrowserActionError.noBrowserPane }
-        return (await layout.open(kind: kind, title: Pane.defaultTitle(kind: kind)).id, true)
+        return (await layout.open(kind: kind, title: Pane.defaultTitle(kind: kind), focus: focus).id, true)
     }
 
     @Sendable func reply(_ pane: String) async -> JSONValue {
@@ -231,15 +226,17 @@ func browserActions(
         name: "browser_open",
         description: "Open url in the browser: a new tab (newTab, default true) in the focused browser "
             + "pane, else the one most recently focused, else the last opened, or in its active tab with newTab false. Opens a browser "
-            + "pane when none is open. url follows the address bar's rule: a host or URL loads, words search.",
+            + "pane when none is open; keepFocus true leaves focus where it is even then (a link from another surface). url follows the address bar's rule: a host or URL loads, words search.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["url": string, "newTab": .object(["type": .string("boolean")])], required: ["url"]),
+        schema: schema(["url": string, "newTab": .object(["type": .string("boolean")]),
+                        "keepFocus": .object(["type": .string("boolean")])], required: ["url"]),
         handler: { params in
             let url = try await address(try requireString(params, "url", action: "browser_open"))
             let scheme = URL(string: url)?.scheme?.lowercased() ?? ""
             guard ["http", "https", "file"].contains(scheme) else { throw BrowserActionError.notAWebPage(scheme: scheme) }
             let newTab: Bool = { if case .object(let o) = params, case .bool(let b)? = o["newTab"] { b } else { true } }()
-            let pane = try await browserPane(params, action: "browser_open", open: true).id
+            let keepFocus: Bool = { if case .object(let o) = params, case .bool(let b)? = o["keepFocus"] { b } else { false } }()
+            let pane = try await browserPane(params, action: "browser_open", open: true, focus: !keepFocus).id
             let loaded = newTab ? false : await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
                 guard let i = s.tabIndex(nil) else { return false }
                 s.tabs[i].url = url

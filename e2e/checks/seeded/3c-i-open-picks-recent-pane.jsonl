@@ -1,0 +1,21 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-2","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-2","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"browser-1"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"editor"}}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"focus":"window.composer"}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[1].url","contains":"/b.html"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].title","equals":"Page B"}}
+{"expect":{"pane":"browser-2","field":"tabs[1]","present":false}}
+{"expect":{"focus":"window.composer"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"browser-2"}}}
+{"dispatch":{"action":"pane_focus","params":{"id":"editor-1"}}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-2","field":"tabs[1].url","contains":"/b.html"}}
+{"expect":{"pane":"browser-1","field":"tabs[2]","present":false}}
