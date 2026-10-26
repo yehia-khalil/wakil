@@ -21,7 +21,7 @@ type TicketMatch struct{ Key, Source string }
 type PRHeadBase struct{ Head, Base string }
 
 var ticketKeyInTextRE = regexp.MustCompile(`(?i)\b([A-Z][A-Z0-9_]*)-(\d+)\b`)
-var ticketTrailerRE = regexp.MustCompile(`(?im)^\s*Ticket:\s*(.*)$`)
+var ticketTrailerRE = regexp.MustCompile(`(?im)^[ \t]*Ticket:[ \t]*(.*)$`)
 
 // OrgProjectKeys is every project's scopes.pm.projectKey in the organisation, uppercase and
 // unique. A project that cannot be read, or has no PM scope, adds nothing.

@@ -44,6 +44,13 @@ func TestSeveralKeysFromOneSource(t *testing.T) {
 	}
 }
 
+func TestABareTicketLineTakesNoKeyFromTheNextLine(t *testing.T) {
+	got := TrailerKeys([]string{"x\n\nTicket:\nINI-7 is mentioned here", "y\n  Ticket:   \n\nINI-8"}, iniKeys)
+	if len(got) != 0 {
+		t.Fatalf("got %v, want no keys", got)
+	}
+}
+
 func TestOrgProjectKeysAreTheOrgsOwn(t *testing.T) {
 	localOrg(t)
 	dir := t.TempDir()
