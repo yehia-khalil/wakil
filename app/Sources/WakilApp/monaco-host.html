@@ -478,8 +478,10 @@
     // 3c-i: `web`, the hover's Open on GitHub (GitLab, Bitbucket), shown only when Swift found the page.
     // A command link hands its command no event, so ⌥ is read from the pointer press that clicked it:
     // a capture-phase mousedown runs before Monaco's own link handling. `alt` goes with `web` only.
+    // Any key press clears it, so a link opened from the keyboard never inherits an earlier ⌥-click.
     let pressAlt = false;
     window.addEventListener('mousedown', function (e) { pressAlt = e.altKey; }, true);
+    window.addEventListener('keydown', function () { pressAlt = false; }, true);
     ['open', 'copy', 'web'].forEach(function (op) {
       monaco.editor.registerCommand('wakil.blame.' + op, function () {
         const b = current && blames[current];

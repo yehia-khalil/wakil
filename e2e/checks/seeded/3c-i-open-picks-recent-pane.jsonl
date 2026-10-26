@@ -15,7 +15,7 @@
 {"expect":{"pane":"browser-2","field":"tabs[1]","present":false}}
 {"expect":{"focus":"window.composer"}}
 {"dispatch":{"action":"pane_focus","params":{"id":"browser-2"}}}
-{"dispatch":{"action":"pane_focus","params":{"id":"editor-1"}}}
+{"dispatch":{"action":"pane_focus","params":{"id":"editor-3"}}}
 {"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/b.html"}}}
 {"expect":{"pane":"browser-2","field":"tabs[1].url","contains":"/b.html"}}
 {"expect":{"pane":"browser-1","field":"tabs[2]","present":false}}
