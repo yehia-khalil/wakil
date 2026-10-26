@@ -195,6 +195,9 @@ final class BrowserTabHost {
             configuration.websiteDataStore = .nonPersistent()
         }
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        // `isInspectable` only lets Safari's Develop menu attach; the page's own right-click
+        // **Inspect Element** needs WebKit's developer extras, which have no public setter.
+        configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
         return configuration
     }
 
