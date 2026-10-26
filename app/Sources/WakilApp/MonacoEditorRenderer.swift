@@ -191,9 +191,13 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     }
 
     /// Ticket view: after ⌥↓ from a box, the box of `thread` takes the keyboard when it is drawn
-    /// (now, or once its file's boxes arrive); nil ends the wait. Meanwhile the text is not focused,
-    /// so a second ⌥↓ is never Monaco's Move Line Down.
-    func focusReview(thread: String?) { run("wakilFocusReview(\(thread.map(Self.jsString) ?? "null"))") }
+    /// (now, or once its file's boxes arrive); nil ends the wait and gives the text the keyboard.
+    /// Meanwhile the text is not focused, so a second ⌥↓ is never Monaco's Move Line Down.
+    /// `key` is the file tab the thread opened in: drawn without its box, the wait ends soon and the
+    /// text has the keyboard back, as it does at once for nil.
+    func focusReview(thread: String?, key: String?) {
+        run("wakilFocusReview(\(thread.map(Self.jsString) ?? "null"),\(key.map(Self.jsString) ?? "null"))")
+    }
 
     /// The settings' options (3b-v). Queued until the page is ready, like every other call.
     func setOptions(_ o: EditorViewOptions) {

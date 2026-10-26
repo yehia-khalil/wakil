@@ -605,7 +605,7 @@
     // ⌥↓ from a box: the box of the thread stepped to takes the keyboard by its id, whenever it is
     // drawn (wakilFocusReview names it once the step ran). Until then the text is not focused, so a
     // second ⌥↓ is never Monaco's Move Line Down; a press in the text, or 10 s, ends the wait.
-    let reviewStepping = false, reviewFocusThread = null, reviewWaitTimer = null;
+    let reviewStepping = false, reviewFocusThread = null, reviewFocusKey = null, reviewWaitTimer = null;
     function inReview(el) { return !!(el && el.closest && el.closest('.wakil-review')); }
     function reviewPost(key, thread, op, extra) {
       const m = { type: 'review', key: key, thread: thread, op: op };
@@ -651,32 +651,47 @@
     function redrawReviews(key) {
       if (key === current && !diffKey) ed.changeViewZones(function (acc) { drawReviewBoxes(acc, key); });
     }
-    function endReviewWait() {
-      reviewStepping = false; reviewFocusThread = null;
+    // Ends the wait. `refocus`: no box took the keyboard (the step did not run, its box never drew),
+    // so the text gets it back — unless something on the page already holds it.
+    function endReviewWait(refocus) {
+      reviewStepping = false; reviewFocusThread = null; reviewFocusKey = null;
       if (reviewWaitTimer !== null) { clearTimeout(reviewWaitTimer); reviewWaitTimer = null; }
+      if (!refocus || diffKey || !current) return;
+      const a = document.activeElement;
+      if (!a || a === document.body || !document.contains(a)) ed.focus();
+    }
+    function reviewWaitFor(ms) {
+      if (reviewWaitTimer !== null) clearTimeout(reviewWaitTimer);
+      reviewWaitTimer = setTimeout(function () { endReviewWait(true); }, ms);
     }
     function reviewWaiting() { return reviewStepping || reviewFocusThread !== null; }
     function reviewStep(key, b, delta) {
-      endReviewWait();
+      endReviewWait(false);
       reviewStepping = true;
-      reviewWaitTimer = setTimeout(endReviewWait, 10000);
+      reviewWaitFor(10000);
       reviewPost(key, b.thread, 'step', { delta: delta });
     }
-    window.wakilFocusReview = function (thread) {
-      if (!thread) { endReviewWait(); return; }
+    // The step ran and opened `thread` in the file tab `key`; null: it did not run.
+    window.wakilFocusReview = function (thread, key) {
+      if (!thread) { endReviewWait(true); return; }
       reviewStepping = false;
       reviewFocusThread = thread;
+      reviewFocusKey = key || null;
       focusStepBox();
     };
-    // The stepped-to thread's box, once drawn, takes the keyboard.
+    // The stepped-to thread's box, once drawn, takes the keyboard. Its file drawn without it (its
+    // boxes may still be on their way, placed) shortens the wait to a second, then the text has it.
     function focusStepBox() {
       if (reviewFocusThread === null) return;
       const r = reviewRows.find(function (x) { return x.thread === reviewFocusThread; });
-      if (!r) return;
-      endReviewWait();
-      r.node.focus({ preventScroll: true });
+      if (r) {
+        endReviewWait(false);
+        r.node.focus({ preventScroll: true });
+        return;
+      }
+      if (reviewFocusKey !== null && reviewFocusKey === current && reviews[current] !== undefined) reviewWaitFor(1000);
     }
-    ed.onMouseDown(function () { endReviewWait(); });
+    ed.onMouseDown(function () { endReviewWait(false); });
     // A label with its full and short forms (dataset.full / dataset.short), the full one read aloud.
     function reviewLabel(tag, full, short) {
       const el = reviewEl(tag, '', full);

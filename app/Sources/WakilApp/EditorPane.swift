@@ -654,7 +654,9 @@ struct EditorPane: View {
                 let reply = await dispatchReply("review_step", ["delta": .integer(Int64(delta ?? 1)), "from": .string(thread)])
                 var to: String?
                 if case .object(let o)? = reply, case .string(let t)? = o["thread"] { to = t }
-                host.renderer?.focusReview(thread: to)
+                let key = to.flatMap { host.reviews.thread($0) }
+                    .map { editorTabKey(.file(path: $0.root + "/" + $0.path, root: $0.root)) }
+                host.renderer?.focusReview(thread: to, key: key)
             default: break
             }
         }
