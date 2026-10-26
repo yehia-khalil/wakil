@@ -1339,3 +1339,16 @@ private func actCall(_ arguments: JSONValue) -> JSONRPCMessage {
     await broker.cancel(id: parked!.id)
     #expect(await reply?.error?.message == "test_act requires confirmation")
 }
+
+/// The gate priced the call `.gate`, but by the park the action can no longer say what it would do —
+/// its page moved on. Nothing parks, and the agent is told to read again (Task 5's carry to Task 7).
+@Test func aDeclaredProposalThatAnswersNilSaysThePageChanged() async throws {
+    let (surface, broker, registry) = await proposingSurface { _ in nil }
+    let reply = await handle(
+        actCall(.object(["ref": .string("e1")])), surface: surface,
+        caller: { .test("staging", conversation: "conv") })
+    #expect(await broker.all().isEmpty)
+    #expect(reply?.error?.message
+        == "test_act: the page changed since it was read — read it again (browser_read_page).")
+    #expect(try await registry.journalEntries().map(\.outcome) == ["gated"])
+}

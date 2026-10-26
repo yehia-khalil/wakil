@@ -277,6 +277,13 @@ public struct ActionProposal: Sendable, Equatable {
     }
 }
 
+/// 3c-ii: the refusal for a call whose action describes its own proposals but no longer can — a
+/// browser act whose page changed since it was read. `BrowserReachError.stale` and the agent's park
+/// (`parkForConfirmation`) both say it, in these words.
+func pageChangedRefusal(action: String) -> String {
+    "\(action): the page changed since it was read — read it again (browser_read_page)."
+}
+
 /// The non-executable half of a registered `Action`: everything about it
 /// except the handler. This is what `ActionRegistry.all()` returns, and
 /// deliberately all it returns — it has no `handler` member at all, so

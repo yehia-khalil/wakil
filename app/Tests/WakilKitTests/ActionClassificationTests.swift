@@ -127,6 +127,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "browser_print",
             // 3c-i: the window's own relaunch step for a browser pane's saved tabs.
             "browser_restore",
+            // 3c-ii: which sites the agent may act on is the operator's consent.
+            "browser_revoke_site",
             // Provider capacity: the agent may not forge a reading.
             "capacity_record",
             "ctx_add_provider", "ctx_adopt_provider", "ctx_create_environment", "ctx_create_org",

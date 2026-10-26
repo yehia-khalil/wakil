@@ -847,6 +847,13 @@ private func parkForConfirmation(
     // read in the parker's own canvas (ruling C5b). Without one, nothing below changes.
     let parker = await caller()
     let own = await surface.registry.proposal(name: name, params: arguments, caller: parker)
+    // An action that describes its own proposals and now cannot (a browser act whose page moved on
+    // between the gate's price and this park) parks nothing: the agent is told to read again,
+    // rather than asked for a statement it never sends.
+    if own == nil, await surface.registry.declaresProposal(name: name) {
+        return JSONRPCMessage(id: id, error: JSONRPCError(
+            code: -32603, message: pageChangedRefusal(action: name)))
+    }
     let ownStatement = own == nil && isMutation ? stringArgument(arguments, "statement") : nil
     let statement = own?.statement ?? ownStatement
         ?? (isMutation ? (confirmationDescription(action: name, params: arguments) ?? "")

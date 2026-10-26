@@ -289,7 +289,7 @@ public actor ActionRegistry {
             price = (priced, priced)
             agentPrice = nil
         }
-        switch writeGate(
+        let decision = writeGate(
             environment: caller.place.environment,
             kind: action.kind,
             origin: origin,
@@ -297,7 +297,7 @@ public actor ActionRegistry {
             price: price,
             agentPrice: agentPrice,
             production: production)
-        {
+        switch decision {
         case .block:
             try appendJournalEntry(action: name, params: params, origin: origin,
                                    caller: caller, outcome: "blocked",
@@ -320,8 +320,10 @@ public actor ActionRegistry {
             // The caller's own canvas, else the one on screen now — never whatever the screen
             // shows when the handler's later writes land. Already read if the call was priced.
             if callPrice == nil { home = await self.home(of: caller) }
-            let result = try await bindingDispatch(origin: origin, caller: caller, home: home) {
-                try await action.handler(params)
+            let result = try await ActionRegistry.$dispatchConfirmedGate.withValue(decision == .gate) {
+                try await bindingDispatch(origin: origin, caller: caller, home: home) {
+                    try await action.handler(params)
+                }
             }
             try appendJournalEntry(action: name, params: params, origin: origin,
                                    caller: caller, outcome: "ok",
@@ -359,6 +361,9 @@ public actor ActionRegistry {
             }
         }
     }
+
+    /// Whether `name` describes its own proposals (`Action.proposal`).
+    public func declaresProposal(name: String) -> Bool { actions[name]?.proposal != nil }
 
     /// 3c-ii: `name`'s own description of this call for the confirmation plane, or nil when the
     /// action has none (or does not exist). Run under the task-locals and canvas `dispatch` would
@@ -777,6 +782,12 @@ extension ActionRegistry {
     /// the same place and session as the dispatch line it follows. `nil` outside
     /// `dispatch`, where no caller is known.
     @TaskLocal static var dispatchCaller: DispatchCaller?
+
+    /// 3c-ii: true while the running handler's dispatch was priced `.gate` and confirmed — the one
+    /// case a browser act may add its site to the conversation's allow-list. A call priced `.allow`
+    /// (its site already allowed) never adds one, so a revoke landing between the price and the
+    /// handler is never undone. False outside `dispatch`, the refusing side.
+    @TaskLocal static var dispatchConfirmedGate = false
 }
 
 private extension String {
