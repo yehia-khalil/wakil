@@ -310,11 +310,12 @@ extension WakilWindow {
     // from `WakilWindow`, where there is no canvas to put a pane on. Same
     // slab, same title bar, one definition — see `settingsPaneOverlay`.
     func paneView(_ model: WindowModel, _ pane: Pane) -> some View {
-        // The browser's page runs edge to edge (2026-10-26): no inset round it, its own header in
-        // place of the title, and the resize handle over its corner rather than a row under it.
-        let edgeToEdge = pane.kind == "browser"
+        // The compact chrome (2026-10-26): the editor's, the terminal's and the browser's content
+        // runs edge to edge — no inset round it, the kind's own 32 pt header in place of the title,
+        // and the resize handle over its corner rather than a row under it (`PaneKind.edgeToEdge`).
+        let edgeToEdge = pane.edgeToEdge
         return VStack(alignment: .leading, spacing: edgeToEdge ? 0 : 8) {
-            // The browser draws its label itself, as the glyph at the left of its tab strip.
+            // An edge-to-edge kind draws its label itself, as the glyph at the left of its header.
             if !edgeToEdge { PaneTitle(title: pane.title) }
 
             // **The first `switch pane.kind` in the codebase.** Since 2b-i
@@ -843,11 +844,9 @@ private extension UnsavedPrompt {
     }
 }
 
-/// A pane's title as the canvas draws it over every slab: §6's micro-label, uppercase-tracked
-/// 9 pt. One definition — the browser pane puts the same label inline in its tab row.
-/// A pane whose content meets its border (the browser's): the content clipped to the slab's
-/// corners, the border token's 1 px edge over it so the pane's outline holds against any page,
-/// and the resize handle on a chip in the bottom-right corner, over the page.
+/// A pane whose content meets its border (the editor's, the terminal's, the browser's): the content
+/// clipped to the slab's corners, the border token's 1 px edge over it so the pane's outline holds
+/// against any page, and the resize handle on a chip in the bottom-right corner, over the content.
 private struct EdgeToEdgePane<Resize: Gesture>: ViewModifier {
     let on: Bool
     let resize: Resize
@@ -855,18 +854,18 @@ private struct EdgeToEdgePane<Resize: Gesture>: ViewModifier {
     func body(content: Content) -> some View {
         if on {
             content
-                .clipShape(RoundedRectangle(cornerRadius: BrowserPaneStyle.paneRadius, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: PaneStripStyle.paneRadius, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: BrowserPaneStyle.paneRadius, style: .continuous)
-                        .strokeBorder(BrowserPaneStyle.text.opacity(BrowserPaneStyle.edge), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: PaneStripStyle.paneRadius, style: .continuous)
+                        .strokeBorder(PaneStripStyle.text.opacity(PaneStripStyle.edge), lineWidth: 1)
                         .allowsHitTesting(false)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     Text("resize")
                         .font(.system(size: SettingsScale.micro))
-                        .foregroundStyle(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
+                        .foregroundStyle(PaneStripStyle.text.opacity(RailTreatment.kindOpacity))
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(BrowserPaneStyle.slab.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
+                        .background(PaneStripStyle.slab.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
                         .padding(6)
                         .gesture(resize)
                 }
@@ -876,6 +875,9 @@ private struct EdgeToEdgePane<Resize: Gesture>: ViewModifier {
     }
 }
 
+/// A pane's title as the canvas draws it over every inset slab: §6's micro-label, uppercase-tracked
+/// 9 pt. An edge-to-edge pane names itself with its glyph instead; the terminal's header keeps
+/// this label beside it.
 struct PaneTitle: View {
     let title: String
 

@@ -168,12 +168,20 @@ struct TerminalPane: View {
     @FocusState private var searchFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // The compact chrome (2026-10-26): one 32 pt header row and a hairline, ⌘F's row under it
+        // while it is open, then the shell's surface to the pane's border with a 6 pt gutter inside
+        // it, so its text never meets the border (the canvas pads no terminal pane).
+        VStack(alignment: .leading, spacing: 0) {
             header()
+            PaneHairline()
             if searchOpen {
                 searchBar()
+                    .padding(.horizontal, PaneStripStyle.rowInset)
+                    .frame(height: PaneStripStyle.rowHeight)
+                PaneHairline()
             }
             content()
+                .padding([.horizontal, .top], PaneStripStyle.gutter)
             footer()
         }
         .focusable()
@@ -249,6 +257,22 @@ struct TerminalPane: View {
     /// nothing here re-parses one.
     @ViewBuilder
     private func header() -> some View {
+        // The terminal glyph in the label's place, the pane's own title beside it — a terminal pane
+        // is named for where it opened — then the live line and the controls, all in one row.
+        PaneStripRow(glyph: "terminal", name: "Terminal") {
+            HStack(spacing: 8) {
+                PaneTitle(title: pane.title)
+                    .lineLimit(1)
+                    .fixedSize()
+                headerLine()
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("pane.\(pane.id).header")
+        }
+    }
+
+    @ViewBuilder
+    private func headerLine() -> some View {
         HStack(spacing: 8) {
             Text(headerCwd)
                 .font(.system(size: 11, design: .monospaced))
@@ -257,14 +281,18 @@ struct TerminalPane: View {
                 .truncationMode(.head)
             Text("·")
                 .foregroundStyle(Self.text.opacity(0.25))
+            // One line each, so a narrow pane truncates the row rather than stacking it.
             Text(headerShell)
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(Self.text.opacity(0.45))
+                .lineLimit(1)
             Text("·")
                 .foregroundStyle(Self.text.opacity(0.25))
             Text("\(snapshot.cols)×\(snapshot.rows)")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(Self.text.opacity(0.45))
+                .lineLimit(1)
+                .fixedSize()
             // Walk-defects B2: a pane restored after `clearForOrgSwitch`
             // comes back with `snapshot.shell.isEmpty` — the operator's
             // "dead pane" — and nothing before this let them start a new
@@ -304,6 +332,8 @@ struct TerminalPane: View {
             } label: {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Self.text.opacity(searchOpen ? 0.85 : 0.45))
+                    .frame(width: PaneStripStyle.glyphBox, height: PaneStripStyle.glyphBox)
+                    .contentShape(Rectangle())
             }
             // The glyph is the whole control, so without a spoken name this
             // button is unreachable by VoiceOver as well as by a check.
@@ -389,6 +419,8 @@ struct TerminalPane: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("pane.\(pane.id).screen")
             .onPreferenceChange(ParkedStripHeightKey.self) { height in
                 parkedStripHeight = height
             }
@@ -626,7 +658,14 @@ struct TerminalPane: View {
             }
             Spacer()
         }
+        // Its own row under the surface, inside the gutter; the resize handle sits over the corner
+        // to its right.
+        .padding(.horizontal, PaneStripStyle.gutter + 2)
+        .frame(height: Self.footerHeight)
     }
+
+    /// The footer's row: its 9 pt line with room above and below.
+    private static let footerHeight: CGFloat = 20
 
     // MARK: - Keystrokes
 

@@ -44,12 +44,21 @@ With none of them, `WakilApplication.main()` opens the window.
 | `pane.kind` | View | Reads from `WindowModel` |
 |---|---|---|
 | `db` | `DBPane` (`DBPane.swift`, with `DataSurface.swift` and `QueryLineEditor.swift`) | `table(_:)`, `editable(paneId:)`, query-line state |
-| `terminal` | `TerminalPane` (`TerminalPane.swift`) | `terminal(_:)` |
+| `terminal` | `TerminalPane` (`TerminalPane.swift`; its header row is `PaneStripRow`) | `terminal(_:)` |
 | `api` | `ApiPane` (`ApiPane*.swift`, `ApiFieldEditor.swift`, `ApiTokenView.swift`, `ApiPaneFlow.swift`) | `api(_:)` |
-| `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`) | `editor(_:)`, `gitRoots`, `editorSaveAsRequest`, the unsaved prompt |
+| `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`; its tabs are the shared `PaneTabStrip`) | `editor(_:)`, `gitRoots`, `editorSaveAsRequest`, the unsaved prompt |
 | `settings` (`Pane.settingsKind`) | `SettingsPane` (`SettingsPane.swift`, `SettingsForm.swift`) | `settings`, `accounts`, the login state |
-| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — the tab strip and the address row — `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache` |
+| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — its tabs on the shared `PaneTabStrip`, and the address row — `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache` |
 | anything else | a "no view for a … pane" line | — |
+
+**Edge to edge** (2026-10-26, `PaneKind.edgeToEdge`, read as `Pane.edgeToEdge`): the editor, the
+terminal and the browser draw to the slab's border. `paneView` drops the inset, `PaneTitle` and the
+resize row for them, and `EdgeToEdgePane` clips the content to the slab's corners, draws the border
+token's 1 px edge and puts the resize handle on a chip over the bottom-right corner. Their first row
+is the compact chrome in `PaneTabStrip.swift`: `PaneStripStyle` (the 32 pt row, the border token and
+the hairline, the tab entry's numbers), `PaneStripRow` and `PaneGlyph` (the kind's glyph in the
+title's place), `PaneHairline`, and `PaneTabStrip` — the tab strip the browser and the editor share,
+its overflow worked out by `TabStripLayout` (WakilKit).
 
 `terminal(_:)`, `api(_:)` and `editor(_:)` each read one pane's `PaneSnapshotCell`, so one
 pane's terminal tick writes only that pane's cell and invalidates only views reading it

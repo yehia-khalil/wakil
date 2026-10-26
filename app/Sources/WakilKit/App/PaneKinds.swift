@@ -23,6 +23,12 @@ enum PaneKinds {
     }
 }
 
+extension Pane {
+    /// Whether the canvas draws this pane's content to its border (`PaneKind.edgeToEdge`): the
+    /// editor, the terminal and the browser. A kind this build does not know is inset.
+    public var edgeToEdge: Bool { PaneKinds.kind(named: kind)?.edgeToEdge ?? false }
+}
+
 extension DataSurfacePaneKind: PaneRestorable {
     /// D12: a refetch that failed must not leave the pane looking empty, so its refusal is recorded.
     static func restoreStep(for pane: Pane) -> PaneRestoreStep? {

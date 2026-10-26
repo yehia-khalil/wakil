@@ -5,6 +5,8 @@ import Foundation
 /// back through `PaneStore.browserPageDidReport`.
 enum BrowserPaneKind: PaneKind {
     static let names = ["browser"]
+    /// Edge to edge: the page runs to the slab's border (3c-i, the compact chrome of 2026-10-26).
+    static let edgeToEdge = true
     static var emptyContents: BrowserSnapshot { .empty }
     static var emptyShared: Void { () }
     static var emptySnapshot: BrowserSnapshot? { .empty }
