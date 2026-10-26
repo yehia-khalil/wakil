@@ -381,6 +381,12 @@ browser_print	its dispatch and its parity (3c-i, final review I6): its whole eff
 #     and which may come to the front as a page's pop-up does. No fixture form
 #     links out that way, and whether the new tab takes the front is the
 #     pop-up's behaviour, not the driver's (the driver selects no tab). Walk-only.
+#   - a page that moves focus while the agent types (a focus trap, a step that
+#     jumps to a password or code field): the script checks the focused
+#     element, through open shadow roots, is still the target before the text
+#     goes in, else refuses as a changed page and types nothing (final review
+#     I2). No fixture page moves focus on its own; the refusal was proven once
+#     in an offscreen WKWebView whose focus handlers jump to a password field.
 #   - the 1 s idle wait: no arm types into the page while a scripted act waits
 #     on it — a do step and the stub's call run one after the other, never
 #     together — so the wait, and the refusal after 10 s of continuous input,

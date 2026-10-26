@@ -26,7 +26,8 @@ import WebKit
 /// - `describe(ref)`: the live element, as a read describes it.
 /// - `act(spec)`: refuses a gone element (`stale`), one whose type, autocomplete, name or id is
 ///   not the read's (`expect`), and — for type, select and press — **a field that is the operator's
-///   now (the never-list again, on the live element)**. A press never changes a field's value: it
+///   now (the never-list again, on the live element)**. A type whose focus a page handler moved off
+///   the target before the text went in is refused as stale, and nothing is typed. A press never changes a field's value: it
 ///   focuses the element and sends the key's events; Return submits the form of a text input.
 /// - A `failed` reason is Wakil's own fixed sentence, never page text.
 enum BrowserAgentScript {
@@ -251,6 +252,16 @@ enum BrowserAgentScript {
 
           function fire(el, type) { el.dispatchEvent(new Event(type, { bubbles: true })); }
 
+          // The element that has focus, followed into open shadow roots: what insertText types into.
+          function focused() {
+            let at = document.activeElement;
+            while (at && at.shadowRoot && at.shadowRoot.activeElement) at = at.shadowRoot.activeElement;
+            return at;
+          }
+
+          // Types `text` into `el`, or answers false and types nothing when focus is not on `el` when
+          // the text would go in: a page's focus or select handler can move it (a focus trap, a step
+          // that jumps to a password or code field), and insertText types wherever focus is.
           function typeInto(el, text) {
             el.focus({ preventScroll: false });
             if (el.isContentEditable) {
@@ -259,15 +270,17 @@ enum BrowserAgentScript {
               const selection = getSelection();
               selection.removeAllRanges();
               selection.addRange(range);
+              if (focused() !== el) return false;
               let done = false;
               try { done = document.execCommand('insertText', false, text); } catch (_) { done = false; }
               if (!done || String(el.innerText).replace(/\n$/, '') !== text) {
                 el.textContent = text;
                 fire(el, 'input');
               }
-              return;
+              return true;
             }
             try { el.select(); } catch (_) {}
+            if (focused() !== el) return false;
             let done = false;
             try { done = document.execCommand('insertText', false, text); } catch (_) { done = false; }
             if (!done || String(el.value) !== text) {
@@ -275,6 +288,7 @@ enum BrowserAgentScript {
               fire(el, 'input');
             }
             fire(el, 'change');
+            return true;
           }
 
           function choose(el, option) {
@@ -336,7 +350,7 @@ enum BrowserAgentScript {
                 && wakilYours(now) !== null) return { failed: YOURS_NOW };
             switch (spec.kind) {
               case 'click': click(el); break;
-              case 'type': typeInto(el, String(spec.text)); break;
+              case 'type': if (!typeInto(el, String(spec.text))) return { stale: true }; break;
               case 'select': if (!choose(el, spec.option)) return { stale: true }; break;
               case 'press':
                 if (!Object.prototype.hasOwnProperty.call(KEYS, spec.key)) return { stale: true };
