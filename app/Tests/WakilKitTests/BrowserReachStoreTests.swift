@@ -100,3 +100,15 @@ private func report(_ url: String, title: String = "Page") -> BrowserPageReport 
     #expect(await s.browserSites(org: "initech") == a)
     #expect(await s.browserSites(org: "other") == .unread)
 }
+
+@Test func aReadWhoseRefsAnotherReadIssuedIsRefused() async {
+    let s = await store()
+    #expect(await s.browserRecordRead(paneId: pane, tab: "t1", url: "https://example.com/", site: "example.com",
+                                      elements: [el("e1", "Delete")], firstRef: 1, highestRef: 5))
+    // Began at e1 too, before the first was recorded: refused, and the first read stands.
+    #expect(await s.browserRecordRead(paneId: pane, tab: "t1", url: "https://example.com/", site: "example.com",
+                                      elements: [el("e1", "Cancel")], firstRef: 1) == false)
+    let tab = await s.browserSnapshot(paneId: pane).tabs[0]
+    #expect(tab.lastRead?.elements["e1"]?.label == "Delete")
+    #expect(tab.refsIssued == 5)
+}

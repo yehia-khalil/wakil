@@ -139,16 +139,20 @@ extension PaneStore {
         setKindState(BrowserPaneKind.self, shared)
     }
 
-    /// Keeps the elements the agent was given refs for. False when the tab is gone. Raises
-    /// `refsIssued` past the highest `e<n>` given, so a ref is never reused in a tab.
+    /// Keeps the elements the agent was given refs for. False when the tab is gone, or when the read
+    /// began at `firstRef` and another read of the tab has since issued that ref (two reads overlapped:
+    /// a ref must pin one element). Raises `refsIssued` past the highest `e<n>` given, and past
+    /// `highestRef` — refs the script issued that the cap left out — so a ref is never reused in a tab.
     @discardableResult
     public func browserRecordRead(paneId: String, tab: String, url: String, site: String,
-                                  elements: [BrowserElement]) -> Bool {
+                                  elements: [BrowserElement], firstRef: Int? = nil,
+                                  highestRef: Int? = nil) -> Bool {
         guard holds(BrowserPaneKind.self, paneId) else { return false }
         return updateBrowser(paneId: paneId) { s -> Bool in
             guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else { return false }
+            if let firstRef, firstRef <= s.tabs[i].refsIssued { return false }
             var byRef: [String: BrowserElement] = [:]
-            var highest = s.tabs[i].refsIssued
+            var highest = max(s.tabs[i].refsIssued, highestRef ?? 0)
             for e in elements {
                 byRef[e.ref] = e
                 if e.ref.hasPrefix("e"), let n = Int(e.ref.dropFirst()) { highest = max(highest, n) }

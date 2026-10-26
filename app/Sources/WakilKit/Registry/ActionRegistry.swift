@@ -330,6 +330,13 @@ public actor ActionRegistry {
                                    secretParams: action.secretParams)
             publishDispatch(name)
             return result
+        } catch ActionError.needsConfirmation(let gated) where gated == name {
+            // 3c-ii: a handler found the consent it was priced on gone (a browser act whose site was
+            // revoked since the price) and asks for the confirmation the call now costs: a gate.
+            try appendJournalEntry(action: name, params: params, origin: origin,
+                                   caller: caller, outcome: "gated",
+                                   secretParams: action.secretParams)
+            throw ActionError.needsConfirmation(name)
         } catch {
             try appendJournalEntry(action: name, params: params, origin: origin,
                                    caller: caller, outcome: "error",
