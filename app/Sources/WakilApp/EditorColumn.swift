@@ -2,7 +2,7 @@ import AppKit
 import WakilKit
 import SwiftUI
 
-/// The editor's left column (3b-ii): Files, Search or Changes (3b-iii). It decides nothing — rows, steps, selection and
+/// The editor's left column (3b-ii): Files, Search, Changes (3b-iii) or Ticket (`EditorTicketView`). It decides nothing — rows, steps, selection and
 /// width come from WakilKit's tested functions; every change is an `editor_*` action through `dispatch`.
 /// Its own state is the query being typed, the type-ahead prefix and the live drag width. The selected
 /// row and result are the pane's (`EditorPane`), so they outlive the column being hidden (Rule 6).
@@ -42,6 +42,11 @@ struct EditorColumn: View {
     /// 3a-v-a: the Timeline's reads and opens, and the tab it follows (the pane's active one, R2).
     var timeline = EditorTimelineControls()
     var timelineTab: EditorTab?
+    /// Ticket view: what it draws (`WindowModel.editorTicket`), the review boxes as placed (⌥↓ steps
+    /// from the one on the cursor), and `dispatch` answering its reply or throwing its refusal.
+    var ticket: EditorTicketViewState = .empty
+    var reviews: EditorReviewsState = .empty
+    var dispatchReply: (String, [String: JSONValue]) async throws -> JSONValue = { _, _ in .null }
 
     @State private var dragWidth: Double?
     /// 3a-iv: the root whose branch picker is open from its header.
@@ -62,6 +67,9 @@ struct EditorColumn: View {
     @FocusState private var treeFocused: Bool
     @FocusState private var resultsFocused: Bool
     @FocusState private var changesFocused: Bool
+    @FocusState private var ticketFocused: Bool
+    /// A field of the Ticket view (Next, a record line, Link a ticket) holds the keyboard.
+    @State private var ticketFieldHasKeyboard = false
     @State private var replaceText = ""
     @State private var replaceDebounce = EditorDebounce(delay: .milliseconds(250))
     /// The field's text this column last sent (or took from the store), as `sent` is for the query.
@@ -137,9 +145,10 @@ struct EditorColumn: View {
                     }
                 case .search: searchView
                 case .changes: changesView
-                // The Ticket view itself is the next step's (EditorTicketView); until then the
-                // column shows nothing for it.
-                case .ticket: Spacer()
+                case .ticket:
+                    EditorTicketView(state: ticket, column: column, tab: timelineTab, reviews: reviews,
+                                     dispatch: dispatch, dispatchReply: dispatchReply, focused: $ticketFocused,
+                                     fieldHasKeyboard: $ticketFieldHasKeyboard, browsed: $browsed)
                 }
             }
             .frame(width: dragWidth ?? editorColumnWidth(column.width, paneWidth: paneWidth))
@@ -153,7 +162,8 @@ struct EditorColumn: View {
         .onAppear { takeWantedKeyboard(dropOther: true); takeReveal(rows) }
         .onChange(of: column.view) { _, _ in takeWantedKeyboard(dropOther: true) }
         .onChange(of: focusWanted) { _, _ in takeWantedKeyboard(dropOther: false) }
-        .onChange(of: queryFocused || treeFocused || resultsFocused || changesFocused || messageFocused != nil) { _, now in
+        .onChange(of: queryFocused || treeFocused || resultsFocused || changesFocused || messageFocused != nil
+                  || ticketFocused || ticketFieldHasKeyboard) { _, now in
             hasKeyboard = now
         }
         .onChange(of: messageFocused) { _, root in watchMessageKeys(root) }
@@ -187,7 +197,7 @@ struct EditorColumn: View {
             case .search: queryFocused = true
             case .changes: changesFocused = true
             case .files: treeFocused = true
-            case .ticket: break
+            case .ticket: ticketFocused = true
             }
         }
     }
@@ -212,6 +222,12 @@ struct EditorColumn: View {
             }
                 .buttonStyle(.plain).opacity(column.view == .changes ? 1 : 0.5)
                 .accessibilityIdentifier("editor.column.changes")
+            Button("Ticket") {
+                focusWanted = .ticket
+                Task { await dispatch("editor_tree", ["view": .string("ticket"), "shown": .bool(true)]) }
+            }
+                .buttonStyle(.plain).opacity(column.view == .ticket ? 1 : 0.5)
+                .accessibilityIdentifier("editor.column.ticket")
             Spacer()
             if column.view == .files {
                 Button(action: reveal) { Image(systemName: "scope").font(.system(size: 11)) }

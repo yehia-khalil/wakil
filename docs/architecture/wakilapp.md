@@ -46,7 +46,7 @@ With none of them, `WakilApplication.main()` opens the window.
 | `db` | `DBPane` (`DBPane.swift`, with `DataSurface.swift` and `QueryLineEditor.swift`) | `table(_:)`, `editable(paneId:)`, query-line state |
 | `terminal` | `TerminalPane` (`TerminalPane.swift`) | `terminal(_:)` |
 | `api` | `ApiPane` (`ApiPane*.swift`, `ApiFieldEditor.swift`, `ApiTokenView.swift`, `ApiPaneFlow.swift`) | `api(_:)` |
-| `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`) | `editor(_:)`, `gitRoots`, `editorReviews` (the review boxes in the file), `editorSaveAsRequest`, the unsaved prompt |
+| `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `EditorTicketView.swift` (the column's Ticket view), `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`) | `editor(_:)`, `gitRoots`, `editorReviews` (the review boxes in the file), `editorTicket` (the Ticket view), `editorSaveAsRequest`, the unsaved prompt |
 | `settings` (`Pane.settingsKind`) | `SettingsPane` (`SettingsPane.swift`, `SettingsForm.swift`) | `settings`, `accounts`, the login state |
 | anything else | a "no view for a … pane" line | — |
 

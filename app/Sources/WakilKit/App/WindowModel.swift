@@ -831,6 +831,9 @@ public final class WindowModel {
     /// Ticket view: what the editor panes draw review boxes from — the read threads, drafts, sends
     /// and head texts (`EditorReviewsState`). Mirrored on refreshPanes; the outgoing org's go on a switch.
     public internal(set) var editorReviews: EditorReviewsState = .empty
+    /// Ticket view: what the editor panes' Ticket views draw (`EditorTicketViewState`). Mirrored on
+    /// refreshPanes; the outgoing org's go on a switch.
+    public internal(set) var editorTicket: EditorTicketViewState = .empty
     /// The provider this window's session currently runs under, from
     /// `wakil-ctx`'s `get_context` (`ActiveContext.activeProvider`) at
     /// window-open. A session found under another provider cannot be
@@ -2357,6 +2360,7 @@ public final class WindowModel {
         await ticket?.reset()
         await panes.resetEditorTicket()
         editorReviews = .empty
+        editorTicket = .empty
         ticketBranches = [:]
         // 3a-ii: the Changes view's drafts, history, errors and identity are the outgoing org's roots'.
         // A write still running is NOT cancelled: a commit finishes, hooks and all, in the repository it
@@ -4584,6 +4588,8 @@ public final class WindowModel {
         await mirrorEditorFiles()
         let reviews = await panes.editorReviews()
         if reviews != editorReviews { editorReviews = reviews }
+        let ticketView = await panes.editorTicketView()
+        if ticketView != editorTicket { editorTicket = ticketView }
         await readReviewHeads()
     }
 

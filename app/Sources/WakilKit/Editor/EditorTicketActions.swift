@@ -86,9 +86,15 @@ func registerTicketActions(
             if let b { reviews[root] = .init(viewer: b.viewer, threads: b.prs.flatMap(\.threads)) }
         }
         let drafts = await store.allDrafts()
+        var branches: [String: TicketBranchState] = [:]
+        for root in byRoot.keys { if let b = await store.branch(root: root) { branches[root] = b } }
+        let view = EditorTicketViewState(roots: rs, branches: branches, reading: await store.readingRoots(),
+                                         failures: await store.allFailures(), inFlight: await store.lastInFlight(),
+                                         records: await store.shownRecords())
         await panes.setEditorTicketMirror(
             EditorTicketMirror(roots: rs, byRoot: byRoot, drafts: drafts.keys.sorted()),
-            reviews: EditorReviewsState.Reads(byRoot: reviews, drafts: drafts, sending: await store.allSending()))
+            reviews: EditorReviewsState.Reads(byRoot: reviews, drafts: drafts, sending: await store.allSending()),
+            view: view)
     }
     await store.setOnChange { await mirror() }
 
@@ -223,13 +229,24 @@ func registerTicketActions(
         name: "ticket_refresh",
         description: "Read the Ticket view's branch again now: the root the editor pane follows (its front file's "
             + "root, else the project's first). A read already running is joined, never fired twice; one past 20 s "
-            + "is stopped and says so. With no pane, the focused or first editor pane.",
+            + "is stopped and says so. cancel true stops the read running instead (↻'s Cancel). With no pane, the "
+            + "focused or first editor pane.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["pane": string]),
+        schema: schema(["pane": string, "cancel": boolean]),
         handler: { params in
             let pane = try await editor.pane(params, "ticket_refresh")
-            if let root = await followed(pane) {
+            guard let root = await followed(pane) else { return await editor.reply(pane) }
+            if case .object(let o) = params, o["cancel"] == .bool(true) {
+                await store.cancel(root: root)
+                await mirror()
+                return await editor.reply(pane)
+            }
+            do {
                 _ = try await read(root)
+            } catch {
+                // A read stopped by ↻'s Cancel (Rule 4) failed nothing: the store keeps no failure for
+                // it. Any other failure is kept, whole, and answered.
+                if await store.failure(root: root) != nil { throw error }
             }
             return await editor.reply(pane)
         }))
@@ -248,6 +265,9 @@ func registerTicketActions(
                 c.view = .ticket
                 c.shown = true
             }
+            // The shown ticket's record, for its header and lists; a failed read leaves the In flight
+            // row's key, title and status shown.
+            if let key { _ = try? await store.readRecord(key: key) }
             return await editor.reply(pane)
         }))
 

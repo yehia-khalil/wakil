@@ -163,6 +163,39 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         #expect(await f.editor.snapshot().column?.ticketShown == nil)
     }
 
+    /// Task 8: ↻ becomes Cancel while a read runs (Rule 4): `ticket_refresh {cancel: true}` stops
+    /// the followed root's read, and the ↻ that started it answers, not fails.
+    @Test(.timeLimit(.minutes(1))) func refreshCancelStopsTheReadInFlight() async throws {
+        let f = try await ticketFixture()
+        await f.ticket.setHangBranch(true)
+        let refresh = Task { try await f.dispatch("ticket_refresh", ["pane": .string(f.editor.pane)], origin: .ui, confirmation: nil) }
+        while !(await f.store.reading(root: "/p/api")) { await Task.yield() }
+        try await f.dispatch("ticket_refresh", ["pane": .string(f.editor.pane), "cancel": .bool(true)], origin: .ui, confirmation: nil)
+        #expect(!(await f.store.reading(root: "/p/api")))
+        _ = try await refresh.value
+        #expect(await f.store.failure(root: "/p/api") == nil)
+        #expect(await f.ticket.count("ticket_branch") == 1)
+    }
+
+    /// Task 8: the view draws from one mirror of the store — each root's read, which roots are
+    /// reading, each failure whole, In flight and the records of tickets shown from it.
+    @Test func theViewStateFollowsTheStore() async throws {
+        let f = try await ticketFixture()
+        await f.ticket.set("ticket_record", .object(["key": .string("INI-140"), "next": .object(["text": .string("deploy to QA")])]))
+        _ = try await f.store.read(root: "/p/api")
+        try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("ini-140")], origin: .ui, confirmation: nil)
+        #expect(await f.ticket.args("ticket_record") == ["key": .string("INI-140")])
+        var v = await f.editor.panes.editorTicketView()
+        for _ in 0..<1_000 where v.records["INI-140"] == nil || v.branches["/p/api"] == nil {
+            try await Task.sleep(for: .milliseconds(1))
+            v = await f.editor.panes.editorTicketView()
+        }
+        #expect(v.roots == ["/p/api", "/p/web"])
+        #expect(v.branches["/p/api"]?.branch == "ini-142-login")
+        #expect(v.records["INI-140"]?.next?.text == "deploy to QA")
+        #expect(v.reading.isEmpty)
+    }
+
     @Test func reviewOpenLeavesTheColumnOnTicket() async throws {
         let f = try await ticketFixture()
         await f.editor.files.put("/p/api/src/auth/token.go", (1...50).map { "line \($0)" }.joined(separator: "\n"))

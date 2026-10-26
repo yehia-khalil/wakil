@@ -362,3 +362,175 @@ public func reviewPosition(_ threads: [ReviewThreadState], id: String) -> String
     guard let i = threads.firstIndex(where: { $0.id == id }) else { return "" }
     return "\(i + 1) of \(threads.count)"
 }
+
+// MARK: - The view's rows (Task 8): the view draws these and decides nothing
+
+/// Which of the spec's cases the Ticket view shows (*What the operator gets* 1 and 5).
+public enum TicketViewCase: Equatable { case ticket, several, noTicket(branch: String), longLived, loading, error(String) }
+
+/// The case for a root's read. A key picked from In flight (`shown`) overrides the branch. One
+/// ticket is the branch's own only when it is marked: a ticket only the stack carries is never the
+/// branch's, so it shows the several layout, unmarked. A failed re-read keeps the last read on screen
+/// (Rule 8); with no read yet, the failure is the case.
+public func ticketViewCase(_ b: TicketBranchState?, shown: String?, failure: String? = nil) -> TicketViewCase {
+    if let shown, !shown.isEmpty { return .ticket }
+    guard let b else {
+        if let failure, !failure.isEmpty { return .error(failure) }
+        return .loading
+    }
+    if b.longLived { return .longLived }
+    if b.tickets.isEmpty { return .noTicket(branch: b.branch) }
+    if b.tickets.count == 1, b.tickets[0].marked { return .ticket }
+    return .several
+}
+
+/// A ticket's source in words, for the several layout.
+public func ticketSourceLabel(_ source: String) -> String {
+    switch source {
+    case "wakil": "linked in Wakil"
+    case "branch": "from the branch name"
+    case "pr": "from the PR"
+    case "trailer": "from a commit trailer"
+    case "stack": "from the stack"
+    default: source
+    }
+}
+
+/// Where Wakil looked for a ticket, under "No ticket found": `Looked in the branch name, PR #215's
+/// title and body, 4 commits' trailers`. Nil when Go named nowhere.
+public func ticketLookedLine(_ looked: [String]) -> String? {
+    looked.isEmpty ? nil : "Looked in the " + looked.joined(separator: ", ")
+}
+
+/// A pull request's line: `#212  ini-142-login → main      open · checks 7/9 · 1 failing`.
+/// Checks show only when it has some: passed of all, then the failing.
+public func ticketPRLine(_ pr: PullRequestState) -> String {
+    var state = pr.state.isEmpty ? "open" : pr.state.lowercased()
+    if !pr.checks.isEmpty {
+        let passed = pr.checks.filter { $0.state == "success" }.count
+        state += " · checks \(passed)/\(pr.checks.count)"
+        let failing = ticketFailingChecks(pr).count
+        if failing > 0 { state += " · \(failing) failing" }
+    }
+    return "#\(pr.number)  \(pr.head) → \(pr.base)      \(state)"
+}
+
+/// The checks the PR block lists, each with its `details ↗`.
+public func ticketFailingChecks(_ pr: PullRequestState) -> [TicketCheckState] { pr.checks.filter { $0.state == "failure" } }
+
+/// The threads a PR block lists: every unresolved one, outdated too (its row says so), in file
+/// order, then line order.
+public func ticketColumnThreads(_ pr: PullRequestState) -> [ReviewThreadState] {
+    pr.threads.filter { !$0.resolved }.sorted { ($0.path, $0.line, $0.id) < ($1.path, $1.line, $1.id) }
+}
+
+/// The longest first words of a thread's row.
+public let ticketThreadWordsLimit = 40
+
+/// A thread's row: where it is, the first comment's first words (at most 40 characters, cut at a
+/// word and ended with "…"), and its replies counted — or `outdated` for a thread GitHub calls so.
+public func ticketThreadRow(_ t: ReviewThreadState) -> (place: String, words: String, replies: String?) {
+    let place = t.line > 0 ? "\(t.path):\(t.line)" : t.path
+    let body = (t.comments.first?.body ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    var words = body
+    if body.count > ticketThreadWordsLimit {
+        let head = String(body.prefix(ticketThreadWordsLimit + 1))
+        let cut = head.lastIndex(of: " ").map { String(head[..<$0]) } ?? String(body.prefix(ticketThreadWordsLimit))
+        words = cut + "…"
+    }
+    let n = max(0, t.comments.count - 1)
+    let replies: String? = t.outdated ? "outdated" : n == 0 ? nil : n == 1 ? "1 reply" : "\(n) replies"
+    return (place, words, replies)
+}
+
+/// The sources that could not be read, each message whole (Rule 8), an exact repeat once.
+public func ticketPartialLine(_ notes: [SourceNoteState]) -> [String] {
+    var out: [String] = []
+    for n in notes {
+        let m = n.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !m.isEmpty, !out.contains(m) { out.append(m) }
+    }
+    return out
+}
+
+/// A branch's lines for what could not be read: its sources', then each ticket's own error (a key
+/// Jira does not know, a record not updated) named by its key, a message already said once.
+public func ticketPartialLines(_ b: TicketBranchState) -> [String] {
+    var out = ticketPartialLine(b.partial)
+    for t in b.tickets {
+        guard let e = t.error?.trimmingCharacters(in: .whitespacesAndNewlines), !e.isEmpty, !out.contains(e) else { continue }
+        out.append("\(t.key): \(e)")
+    }
+    return out
+}
+
+/// Who wrote a record line and when: `you · 2 hours ago`, `agent · …`, `Wakil`, and
+/// `edited by agent` when an agent changed the operator's line.
+public func ticketLineCaption(_ l: TicketLineState, now: Date = Date()) -> String {
+    let who = switch l.by {
+    case "operator": "you"
+    case "wakil": "Wakil"
+    default: l.by
+    }
+    var parts = [who].filter { !$0.isEmpty }
+    let when = editorRelativeAge(l.at, now: now)
+    if !when.isEmpty { parts.append(when) }
+    if !l.edited.isEmpty { parts.append("edited by \(l.edited)") }
+    return parts.joined(separator: " · ")
+}
+
+/// What `ticket_link` answered, as the line under **Link a ticket…**: a key Jira cannot find is
+/// kept and says so (Rule 7); any other message whole; nothing for a link Jira knows.
+public func ticketLinkNote(_ reply: JSONValue) -> String? {
+    guard case .object(let o) = reply else { return nil }
+    if o["notFound"] == .bool(true), case .string(let key)? = o["key"] { return "\(key) was not found in Jira; kept as typed." }
+    if case .string(let m)? = o["message"], !m.isEmpty { return m }
+    return nil
+}
+
+/// The ticket **Next:** shows and writes: `ticketNext`'s, labelled when it is another ticket's;
+/// with none, the marked ticket's with no text yet, else the first's, labelled (it is not the
+/// branch's own). Nil with no ticket.
+public func ticketNextTarget(_ b: TicketBranchState) -> (key: String, text: String, labelled: Bool)? {
+    if let n = ticketNext(b) {
+        if let key = n.key { return (key, n.text, true) }
+        if let marked = b.tickets.first(where: \.marked) { return (marked.key, n.text, false) }
+    }
+    guard let t = b.tickets.first(where: \.marked) ?? b.tickets.first else { return nil }
+    return (t.key, t.record.next?.text ?? "", !t.marked)
+}
+
+/// The Ticket view's state for every editor pane, mirrored from `EditorTicketStore`: each root's
+/// last read, which roots are reading, each failure whole, In flight, and the records of tickets
+/// shown from it (`ticket_show`).
+public struct EditorTicketViewState: Sendable, Equatable {
+    public var roots: [String]
+    public var branches: [String: TicketBranchState]
+    public var reading: Set<String>
+    public var failures: [String: String]
+    public var inFlight: InFlightState?
+    public var records: [String: TicketRecordState]
+
+    public init(roots: [String] = [], branches: [String: TicketBranchState] = [:], reading: Set<String> = [],
+                failures: [String: String] = [:], inFlight: InFlightState? = nil, records: [String: TicketRecordState] = [:]) {
+        self.roots = roots; self.branches = branches; self.reading = reading; self.failures = failures
+        self.inFlight = inFlight; self.records = records
+    }
+    public static let empty = EditorTicketViewState()
+
+    /// The In flight or Waiting on you row of `key`, for a ticket shown from it.
+    public func inFlightRow(_ key: String) -> InFlightRowState? {
+        guard let s = inFlight else { return nil }
+        return (s.waitingOnYou + s.inFlight).first { $0.key == key }
+    }
+}
+
+/// The root a pane's Ticket view follows from its front tab: the tab's root, else the project's first.
+public func ticketFollowedRoot(tab: EditorTab?, roots: [String]) -> String? {
+    let front: String? = switch tab?.subject {
+    case .file(_, let root)?: root
+    case .diff(let root, _, _, _)?: root
+    default: nil
+    }
+    return ticketFollowedRoot(front: front, roots: roots)
+}

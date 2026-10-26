@@ -56,15 +56,17 @@ extension PaneStore {
 
     /// The Ticket view's readable state, and the threads, drafts and sends the review boxes draw,
     /// changed: every editor pane on screen redraws. Head texts no read thread needs go.
-    func setEditorTicketMirror(_ mirror: EditorTicketMirror, reviews: EditorReviewsState.Reads? = nil) {
+    func setEditorTicketMirror(_ mirror: EditorTicketMirror, reviews: EditorReviewsState.Reads? = nil,
+                               view: EditorTicketViewState? = nil) {
         var shared = kindState(EditorPaneKind.self)
-        let was = (shared.ticket, shared.reviews)
+        let was = (shared.ticket, shared.reviews, shared.ticketView)
         shared.ticket = mirror
         if let reviews {
             shared.reviews.reads = reviews
             shared.reviews.pruneHeads()
         }
-        guard was != (shared.ticket, shared.reviews) else { return }
+        if let view { shared.ticketView = view }
+        guard was != (shared.ticket, shared.reviews, shared.ticketView) else { return }
         setKindState(EditorPaneKind.self, shared)
         publishEditorChangeEverywhere()
     }
@@ -74,6 +76,7 @@ extension PaneStore {
     func resetEditorTicket() {
         var shared = kindState(EditorPaneKind.self)
         shared.ticket = .empty
+        shared.ticketView = .empty
         shared.reviews = .empty
         shared.reviewHeadsPending = []
         shared.reviewHeadsGeneration += 1
@@ -83,6 +86,9 @@ extension PaneStore {
 
     /// What the editor panes draw review boxes from.
     public func editorReviews() -> EditorReviewsState { kindState(EditorPaneKind.self).reviews }
+
+    /// What the editor panes' Ticket views draw from.
+    public func editorTicketView() -> EditorTicketViewState { kindState(EditorPaneKind.self).ticketView }
 
     /// Of `wanted`, the head texts not read nor being read, each marked as being read: the caller
     /// reads them and lands each with `landEditorReviewHead`.

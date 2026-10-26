@@ -94,6 +94,10 @@ struct EditorPane: View {
     /// `dispatch`, answering the action's reply (nil when it did not run): `review_step` names the
     /// thread it stepped to.
     var dispatchReply: (String, [String: JSONValue]) async -> JSONValue? = { _, _ in nil }
+    /// Ticket view: what the column's Ticket view draws (`WindowModel.editorTicket`), and `dispatch`
+    /// answering its reply or throwing its refusal, for a link's answer and a write's refusal.
+    var ticket: EditorTicketViewState = .empty
+    var dispatchThrowingReply: (String, [String: JSONValue]) async throws -> JSONValue = { _, _ in .null }
 
     @State private var host = EditorHost()
     /// Compare, open: the path and the disk text it shows against the buffer.
@@ -156,7 +160,8 @@ struct EditorPane: View {
                                  selected: $treeSelected, selectedResult: $resultSelected,
                                  focusWanted: $columnFocusWanted, hasKeyboard: $columnHasKeyboard,
                                  pendingReveal: $pendingReveal, browsed: $treeBrowsed,
-                                 changes: changes, timeline: timeline, timelineTab: activeTab)
+                                 changes: changes, timeline: timeline, timelineTab: activeTab,
+                                 ticket: ticket, reviews: reviews, dispatchReply: dispatchThrowingReply)
                 }
                 editorStack
             }

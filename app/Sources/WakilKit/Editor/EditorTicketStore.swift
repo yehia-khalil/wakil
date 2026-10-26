@@ -39,6 +39,8 @@ public actor EditorTicketStore {
     private var drafts: [String: String] = [:]
     private var sendingThreads: Set<String> = []
     private var inFlightRead: InFlightState?
+    /// Records of tickets shown from In flight (`ticket_show`), by key.
+    private var records: [String: TicketRecordState] = [:]
     private var generation = 0
     private var onChange: (@Sendable () async -> Void)?
 
@@ -198,11 +200,39 @@ public actor EditorTicketStore {
     /// The last In flight read, for the view.
     public func lastInFlight() -> InFlightState? { inFlightRead }
 
+    /// Reads one ticket's record, for a ticket shown from In flight: the window's own read, as
+    /// `start`'s is, kept by key for the view.
+    public func readRecord(key: String) async throws -> TicketRecordState {
+        guard let ticket else {
+            throw TicketReadError(description: StandardActionError.missingClient(action: "ticket_record", role: "ticket").description)
+        }
+        let gen = generation
+        let content = try await ActionRegistry.$dispatchCaller.withValue(nil) {
+            try await ticketCall(ticket, "ticket_record", ["key": .string(key)], timeout: MCPClient.readReplyTimeout)
+        }
+        let record = try ticketDecode(TicketRecordState.self, content, tool: "ticket_record")
+        if gen == generation {
+            records[key] = record
+            await changed()
+        }
+        return record
+    }
+
+    /// The records read for tickets shown from In flight, by key.
+    public func shownRecords() -> [String: TicketRecordState] { records }
+
+    /// The roots whose read is running now.
+    public func readingRoots() -> Set<String> { Set(flights.keys.map(\.root)) }
+
+    /// Each root's last failure, whole.
+    public func allFailures() -> [String: String] { failures }
+
     // MARK: Writes the store answers for
 
     /// A record line was written: every cached read showing that ticket takes the new record, so
     /// the view needs no new read of GitHub for it.
     public func setRecord(_ record: TicketRecordState) async {
+        if records[record.key] != nil { records[record.key] = record }
         for (key, entry) in cache {
             var s = entry.state
             var hit = false
@@ -272,6 +302,7 @@ public actor EditorTicketStore {
         drafts = [:]
         sendingThreads = []
         inFlightRead = nil
+        records = [:]
     }
 }
 

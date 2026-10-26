@@ -106,6 +106,9 @@ private let orgDerived: Set<String> = [
     // Ticket view: the review boxes' threads, drafts and head texts — the outgoing org's reads.
     // Emptied, with the panes' own copy (`resetEditorTicket`).
     "editorReviews",
+    // Ticket view: what the Ticket views draw — the outgoing org's reads, In flight and records.
+    // Emptied, with the panes' own copy (`resetEditorTicket`).
+    "editorTicket",
     // 3b-iii PR 1: the window's mirror of the git status, the outgoing org's roots. Reset in the
     // same place as `gitStatus` (WindowModelGitTests.anOrgSwitchEmptiesTheMirror).
     "gitRoots",

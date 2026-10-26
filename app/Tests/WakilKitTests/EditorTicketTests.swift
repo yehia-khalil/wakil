@@ -164,6 +164,139 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(again == b)
     }
 
+    // MARK: The view's rows (Task 8)
+
+    @Test func caseForEachSpecRow() throws {
+        guard case .object(let o) = ticketBranchJSON() else { return }
+        var b = try ticketDecode(TicketBranchState.self, o, tool: "t")
+        #expect(ticketViewCase(b, shown: nil) == .ticket)
+        // A key picked from In flight overrides the branch, whatever the branch is.
+        b.longLived = true
+        #expect(ticketViewCase(b, shown: "INI-140") == .ticket)
+        #expect(ticketViewCase(b, shown: nil) == .longLived)
+        b.longLived = false
+        b.tickets.append(TicketRefState(key: "INI-141", sources: ["stack"]))
+        #expect(ticketViewCase(b, shown: nil) == .several)
+        // A ticket only the stack carries is never the branch's own: not "a ticket", the several layout.
+        b.tickets = [TicketRefState(key: "INI-141", sources: ["stack"])]
+        #expect(ticketViewCase(b, shown: nil) == .several)
+        b.tickets = []
+        b.branch = "fix-utf-8"
+        #expect(ticketViewCase(b, shown: nil) == .noTicket(branch: "fix-utf-8"))
+        #expect(ticketViewCase(nil, shown: nil) == .loading)
+        #expect(ticketViewCase(nil, shown: nil, failure: "Read stopped after 20 s. ↻ reads again.")
+                == .error("Read stopped after 20 s. ↻ reads again."))
+        // A failed re-read keeps the last read on screen; the failure shows beside it.
+        #expect(ticketViewCase(b, shown: nil, failure: "boom") == .noTicket(branch: "fix-utf-8"))
+        #expect(ticketViewCase(nil, shown: "INI-140") == .ticket)
+    }
+
+    @Test func prLineMatchesTheMockup() {
+        let checks = (1...7).map { TicketCheckState(name: "ok \($0)", state: "success") }
+            + [TicketCheckState(name: "unit (Linux)", state: "failure", url: "https://ci.example.com/1"),
+               TicketCheckState(name: "e2e", state: "pending")]
+        let pr = PullRequestState(number: 212, state: "open", head: "ini-142-login", base: "main", checks: checks)
+        #expect(ticketPRLine(pr) == "#212  ini-142-login → main      open · checks 7/9 · 1 failing")
+        #expect(ticketFailingChecks(pr) == [checks[7]])
+        #expect(ticketPRLine(PullRequestState(number: 9, state: "merged", head: "a", base: "main"))
+                == "#9  a → main      merged")
+    }
+
+    @Test func threadRowTruncatesAndCountsReplies() {
+        let long = ReviewThreadState(id: "T1", path: "src/auth/session.go", line: 88, comments: [
+            ReviewCommentState(author: "reviewer", body: "Should this read the org from the token instead of the session?",
+                               createdAt: ""),
+            ReviewCommentState(author: "me", body: "Maybe", createdAt: ""),
+            ReviewCommentState(author: "reviewer", body: "Yes", createdAt: ""),
+        ])
+        let row = ticketThreadRow(long)
+        #expect(row.place == "src/auth/session.go:88")
+        #expect(row.words == "Should this read the org from the token…")
+        #expect(row.words.count <= 41)
+        #expect(row.replies == "2 replies")
+        let short = ReviewThreadState(id: "T2", path: "src/auth/token.go", line: 41, comments: [
+            ReviewCommentState(author: "reviewer", body: "Nit: the error should name the host", createdAt: ""),
+            ReviewCommentState(author: "me", body: "Done", createdAt: ""),
+        ])
+        #expect(ticketThreadRow(short).words == "Nit: the error should name the host")
+        #expect(ticketThreadRow(short).replies == "1 reply")
+        #expect(ticketThreadRow(ReviewThreadState(id: "T3", path: "a.go", line: 0)).replies == nil)
+        #expect(ticketThreadRow(ReviewThreadState(id: "T3", path: "a.go", line: 0)).place == "a.go")
+    }
+
+    @Test func outdatedThreadRowSaysOutdated() {
+        let t = ReviewThreadState(id: "T3", path: "src/old.go", line: 3, outdated: true,
+                                  comments: [ReviewCommentState(author: "r", body: "Why?", createdAt: "")])
+        #expect(ticketThreadRow(t).replies == "outdated")
+        // The column lists every unresolved thread, outdated ones too; resolved ones go.
+        let pr = PullRequestState(number: 1, threads: [t, ReviewThreadState(id: "T4", path: "a.go", line: 1, resolved: true),
+                                                       ReviewThreadState(id: "T5", path: "a.go", line: 9)])
+        #expect(ticketColumnThreads(pr).map(\.id) == ["T5", "T3"])
+    }
+
+    @Test func inFlightStateWords() throws {
+        // Go composes the words; the row shows them as they came.
+        func row(_ key: String, _ state: String) -> JSONValue {
+            .object(["key": .string(key), "title": .string("Sign-in"), "status": .string("In Progress"), "state": .string(state),
+                     "root": .string("/p/api"), "branch": .string("ini-142-login"), "pr": .integer(212)])
+        }
+        let o: [String: JSONValue] = ["waitingOnYou": .array([row("INI-142", "#212 · 2 threads")]),
+                                      "inFlight": .array([row("INI-140", "checks failing")]), "partial": .array([])]
+        let s = try ticketDecode(InFlightState.self, o, tool: "t")
+        #expect(s.waitingOnYou.first?.state == "#212 · 2 threads")
+        #expect(s.inFlight.first?.state == "checks failing")
+    }
+
+    @Test func partialLinesAreWhole() {
+        let ssh = "Pull requests not read: this organization's github.com account signs in with SSH, which reads no pull "
+            + "requests. Add API access to the GitHub account in Settings → Organisation → Git."
+        let notes = [SourceNoteState(source: "github", message: ssh), SourceNoteState(source: "jira", message: "Jira said: 401"),
+                     SourceNoteState(source: "jira", message: "Jira said: 401"), SourceNoteState(source: "git", message: " ")]
+        #expect(ticketPartialLine(notes) == [ssh, "Jira said: 401"])
+        let b = TicketBranchState(root: "/p", tickets: [TicketRefState(key: "INI-142", error: "Jira said: 401"),
+                                                        TicketRefState(key: "INI-999", error: "Jira does not know INI-999")],
+                                  partial: notes)
+        #expect(ticketPartialLines(b) == [ssh, "Jira said: 401", "INI-999: Jira does not know INI-999"])
+    }
+
+    @Test func sourcesAndCaptionsInWords() {
+        #expect(ticketSourceLabel("stack") == "from the stack")
+        #expect(ticketSourceLabel("wakil") == "linked in Wakil")
+        #expect(ticketSourceLabel("branch") == "from the branch name")
+        #expect(ticketLookedLine(["branch name", "PR #215's title and body", "4 commits' trailers"])
+                == "Looked in the branch name, PR #215's title and body, 4 commits' trailers")
+        #expect(ticketLookedLine([]) == nil)
+        let now = ISO8601DateFormatter().date(from: "2026-10-26T12:00:00Z")!
+        #expect(ticketLineCaption(TicketLineState(by: "operator", at: "2026-10-26T10:00:00Z"), now: now) == "you · 2 hours ago")
+        #expect(ticketLineCaption(TicketLineState(by: "agent", at: "2026-10-26T11:59:30Z"), now: now).hasPrefix("agent · "))
+        #expect(ticketLineCaption(TicketLineState(by: "wakil", at: ""), now: now) == "Wakil")
+        #expect(ticketLineCaption(TicketLineState(by: "operator", at: "2026-10-26T10:00:00Z", edited: "agent"), now: now)
+                == "you · 2 hours ago · edited by agent")
+    }
+
+    @Test func linkNoteKeepsAnUnfoundKey() {
+        #expect(ticketLinkNote(.object(["key": .string("INI-999"), "linked": .bool(true), "notFound": .bool(true),
+                                        "message": .string("INI-999 was not found in Jira; the link is kept. 404")]))
+                == "INI-999 was not found in Jira; kept as typed.")
+        #expect(ticketLinkNote(.object(["key": .string("INI-142"), "linked": .bool(true), "notFound": .bool(false),
+                                        "message": .string("Jira was not asked whether it knows INI-142; the link is kept. timeout")]))
+                == "Jira was not asked whether it knows INI-142; the link is kept. timeout")
+        #expect(ticketLinkNote(.object(["key": .string("INI-142"), "linked": .bool(true)])) == nil)
+    }
+
+    @Test func nextFieldWritesTheTicketItShows() {
+        var marked = TicketRefState(key: "INI-142", marked: true)
+        var other = TicketRefState(key: "INI-141"); other.record.next = TicketLineState(text: "deploy", at: "2026-10-26T10:00:00Z")
+        #expect(ticketNextTarget(TicketBranchState(root: "/p", tickets: [marked, other]))?.key == "INI-141")
+        #expect(ticketNextTarget(TicketBranchState(root: "/p", tickets: [marked, other]))?.labelled == true)
+        marked.record.next = TicketLineState(text: "ship")
+        let t = ticketNextTarget(TicketBranchState(root: "/p", tickets: [marked, other]))
+        #expect(t?.key == "INI-142" && t?.text == "ship" && t?.labelled == false)
+        let stackOnly = ticketNextTarget(TicketBranchState(root: "/p", tickets: [TicketRefState(key: "INI-1", sources: ["stack"])]))
+        #expect(stackOnly?.key == "INI-1" && stackOnly?.labelled == true)
+        #expect(ticketNextTarget(TicketBranchState(root: "/p")) == nil)
+    }
+
     // MARK: The store
 
     @Test(.timeLimit(.minutes(1))) func aSecondReadJoinsTheFirst() async throws {

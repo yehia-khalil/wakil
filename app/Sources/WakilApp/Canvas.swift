@@ -580,6 +580,13 @@ extension WakilWindow {
                         var withPane = params
                         withPane["pane"] = .string(pane.id)
                         return await model.dispatchFromSurfaceReply(name, .object(withPane))
+                    },
+                    // Ticket view: the column's Ticket view.
+                    ticket: model.editorTicket,
+                    dispatchThrowingReply: { name, params in
+                        var withPane = params
+                        withPane["pane"] = .string(pane.id)
+                        return try await model.dispatchFromSurfaceThrowing(name, .object(withPane))
                     })
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw

@@ -104,6 +104,8 @@ struct EditorShared: Sendable {
     var changeSubscribers: [UUID: AsyncStream<String>.Continuation] = [:]
     /// The Ticket view's readable state, for every editor pane (`registerTicketActions`).
     var ticket: EditorTicketMirror = .empty
+    /// What the Ticket views draw from (`EditorTicketViewState`); `read_pane` reads `ticket`.
+    var ticketView: EditorTicketViewState = .empty
     /// What the panes draw review boxes from (`EditorReviewsState`); never in `read_pane` but for
     /// the thread under the cursor.
     var reviews: EditorReviewsState = .empty
