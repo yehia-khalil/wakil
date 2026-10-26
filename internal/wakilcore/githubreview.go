@@ -71,6 +71,9 @@ type PullRequest struct {
 	Checks                                               []CheckRun
 	Threads                                              []ReviewThread
 	RequestedReviewers                                   []string
+	// Parent is the open PR whose head is this PR's base — the step down the stack — set on
+	// BranchPRs' heads only, as a summary with no threads or checks.
+	Parent *PullRequest
 }
 
 // GraphQLError is GitHub's `errors` list, every message whole. It can come back beside data.
@@ -100,10 +103,12 @@ fragment context on StatusCheckRollupContext {
 }`
 
 // githubBranchQuery is one BranchPRs read: the PRs whose head is the branch, newest first in
-// every state, and the open PRs whose base is the branch.
+// every state, each with the open PR whose head is its base (its parent); and the open PRs
+// whose base is the branch.
 const githubBranchQuery = `query($owner: String!, $repo: String!, $branch: String!) {
   repository(owner: $owner, name: $repo) {
-    heads: pullRequests(headRefName: $branch, first: 20, orderBy: {field: CREATED_AT, direction: DESC}, states: [OPEN, MERGED, CLOSED]) { nodes { ...full } }
+    heads: pullRequests(headRefName: $branch, first: 20, orderBy: {field: CREATED_AT, direction: DESC}, states: [OPEN, MERGED, CLOSED]) { nodes { ...full
+      baseRef { associatedPullRequests(states: OPEN, first: 5) { nodes { ...pr } } } } }
     bases: pullRequests(baseRefName: $branch, first: 20, states: OPEN) { nodes { ...full } }
   }
 }
@@ -226,6 +231,11 @@ type ghPR struct {
 		} `json:"nodes"`
 	} `json:"commits"`
 	ReviewThreads ghThreads `json:"reviewThreads"`
+	BaseRef       *struct {
+		AssociatedPullRequests struct {
+			Nodes []ghPR `json:"nodes"`
+		} `json:"associatedPullRequests"`
+	} `json:"baseRef"`
 }
 
 func loginOf(l *ghLogin) string {
@@ -308,9 +318,9 @@ func (c *GitHubClient) Viewer(ctx context.Context) (string, error) {
 // longer than one page is paged on that connection alone. A PR whose head is in a fork is not
 // matched — forks are out of scope.
 //
-// The stack is followed one step each way and no further: bases are the PRs based on this
-// branch; the PR this branch is based on is the open PR whose head is heads[0].Base, which the
-// caller reads with one more BranchPRs on that branch.
+// The stack is followed one step each way, in the same query, and no further: bases are the
+// PRs based on this branch, and each head's Parent is the PR it is based on (the open PR whose
+// head is its base; the first one when GitHub lists several).
 //
 // GraphQL errors beside data come back as a *GraphQLError with the data still returned.
 func (c *GitHubClient) BranchPRs(ctx context.Context, owner, repo, branch string) (heads, bases []PullRequest, err error) {
@@ -361,6 +371,15 @@ func (c *GitHubClient) BranchPRs(ctx context.Context, owner, repo, branch string
 // fullPR converts p with its threads and checks, paging either past its first page.
 func (c *GitHubClient) fullPR(ctx context.Context, p ghPR, gqlErrs *[]string) (PullRequest, error) {
 	pr := p.pullRequest()
+	if p.BaseRef != nil {
+		for _, q := range p.BaseRef.AssociatedPullRequests.Nodes {
+			if q.Number != 0 && !q.IsCrossRepository {
+				parent := q.pullRequest()
+				pr.Parent = &parent
+				break
+			}
+		}
+	}
 	threads := p.ReviewThreads
 	for {
 		for _, t := range threads.Nodes {

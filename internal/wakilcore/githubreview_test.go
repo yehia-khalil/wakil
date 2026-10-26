@@ -436,3 +436,41 @@ func TestMyOpenPRsScopedToOwners(t *testing.T) {
 		t.Errorf("no owners searched all of GitHub: %v %v %v", a, q, err)
 	}
 }
+
+func TestBranchPRsReadsTheParentPRInTheSameQuery(t *testing.T) {
+	pr := prNode(216, "ini-143-cover", "ini-142-tps", nil, false, nil, false)
+	parent := prNode(215, "ini-142-tps", "main", nil, false, nil, false)
+	fork := prNode(214, "ini-142-tps", "main", nil, false, nil, false)
+	fork["isCrossRepository"] = true
+	pr["baseRef"] = map[string]any{"associatedPullRequests": map[string]any{"nodes": []any{fork, parent}}}
+	orphan := prNode(190, "ini-143-cover", "main", nil, false, nil, false)
+	orphan["state"] = "CLOSED"
+	orphan["baseRef"] = nil
+	f := &fakeGraphQL{}
+	c := f.serve(t, func(gqlRequest) (int, string) {
+		return 200, mustJSON(t, map[string]any{"data": map[string]any{"repository": map[string]any{
+			"heads": map[string]any{"nodes": []any{pr, orphan}},
+			"bases": map[string]any{"nodes": []any{}},
+		}}})
+	})
+	heads, _, err := c.BranchPRs(context.Background(), "initech", "api", "ini-143-cover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.requests) != 1 {
+		t.Fatalf("requests = %d, want the parent in the one query", len(f.requests))
+	}
+	if q := f.requests[0].Query; !strings.Contains(q, "baseRef") || !strings.Contains(q, "associatedPullRequests(states: OPEN, first: 5)") {
+		t.Errorf("query lacks the parent: %s", q)
+	}
+	p := heads[0].Parent
+	if p == nil || p.Number != 215 || p.Head != "ini-142-tps" || p.Base != "main" || p.State != "blocked" || p.Title == "" || p.URL == "" {
+		t.Fatalf("parent = %+v", p)
+	}
+	if p.Threads != nil || p.Checks != nil || p.Parent != nil {
+		t.Errorf("the parent carries more than its summary: %+v", p)
+	}
+	if heads[1].Parent != nil {
+		t.Errorf("a PR with no open parent has one: %+v", heads[1].Parent)
+	}
+}
