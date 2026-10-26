@@ -657,9 +657,13 @@
       reviewStepping = false; reviewFocusThread = null; reviewFocusKey = null;
       if (reviewWaitTimer !== null) { clearTimeout(reviewWaitTimer); reviewWaitTimer = null; }
       if (!refocus || diffKey || !current) return;
+      // Only while the operator is still on this page: a click in the Ticket column or another pane
+      // took the native focus away, and the text must not pull it back.
       const a = document.activeElement;
-      if (!a || a === document.body || !document.contains(a)) ed.focus();
+      if (document.hasFocus() && (!a || a === document.body || !document.contains(a))) ed.focus();
     }
+    // The page losing the focus ends a step's wait where the operator went: nothing is refocused.
+    window.addEventListener('blur', function () { if (reviewWaiting()) endReviewWait(false); });
     function reviewWaitFor(ms) {
       if (reviewWaitTimer !== null) clearTimeout(reviewWaitTimer);
       reviewWaitTimer = setTimeout(function () { endReviewWait(true); }, ms);
