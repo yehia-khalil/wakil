@@ -206,14 +206,27 @@ final class PlaneKeyboardReturn {
     }
 
     func restore() {
+        // What holds the keyboard as the plane goes: its own field, when it had one. SwiftUI takes
+        // that field out of the window a few turns after the plane disappears, and until then its
+        // editor still holds the keyboard — so it is waited out, twenty tries a frame apart, as
+        // `browserRetryFocus` waits. A field still in the window after that is one the operator
+        // moved to, and it keeps the keyboard.
+        let leaving = (window?.firstResponder as? NSTextView).flatMap { $0.isFieldEditor ? $0.delegate as? NSView : nil }
+        attempt(tries: 20, leaving: leaving)
+    }
+
+    private func attempt(tries: Int, leaving: NSView?) {
         // A turn later: the plane's own field leaves first responder as the plane is taken down.
-        DispatchQueue.main.async { [self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + (tries == 20 ? 0 : 0.05)) { [self] in
             guard let window, let view = responder as? NSView, view.window === window else { return }
             let now = window.firstResponder
-            let free = now == nil || now === window
-                || ((now as? NSTextView)?.isFieldEditor == true && ((now as? NSTextView)?.delegate as? NSView)?.window == nil)
-            guard free else { return }
-            window.makeFirstResponder(view)
+            let holder = (now as? NSTextView).flatMap { $0.isFieldEditor ? $0.delegate as? NSView : nil }
+            let free = now == nil || now === window || ((now as? NSTextView)?.isFieldEditor == true && holder?.window == nil)
+            if free {
+                window.makeFirstResponder(view)
+            } else if let leaving, holder === leaving, leaving !== view, tries > 1 {
+                attempt(tries: tries - 1, leaving: leaving)
+            }
         }
     }
 }
