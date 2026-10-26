@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/3c-i-agent-drives.jsonl",
   "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
-  "provedAt": "2026-10-25T22:34:29.476045Z",
+  "provedAt": "2026-10-26T03:38:16.445541Z",
   "checkBlob": "ef1ecb0152d4b1a86804ab1ace3862a5da9f2150"
 }
