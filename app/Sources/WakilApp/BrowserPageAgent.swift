@@ -49,6 +49,8 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
         try await waitForQuiet(scope: scope, pane: pane, tab: tab)
         // The page cannot take the keyboard from the act's first line to its settled page — a focus
         // the script gives, or a page it loads that focuses a field (`BrowserWebView.agentActBegan`).
+        // The script holds the switch on as well, until it has finished (`call`'s `holdsKeyboard`): an
+        // act that timed out may still focus, and its focus must not take the keyboard either.
         let (before, view) = try await MainActor.run { () throws -> ((url: String?, loading: Bool), BrowserWebView) in
             let view = try self.liveView(scope: scope, pane: pane, tab: tab)
             view.agentActBegan()
@@ -56,7 +58,7 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
         }
         defer { Task { @MainActor [weak view] in view?.agentActEnded() } }
         let text = try await call(scope: scope, pane: pane, tab: tab, "globalThis.wakil.act(spec)",
-                                  ["spec": Self.spec(act)], timeout: Self.actNoAnswerReason)
+                                  ["spec": Self.spec(act)], timeout: Self.actNoAnswerReason, holdsKeyboard: true)
         let answer = try decode(ActAnswer.self, text)
         if answer.stale == true { throw BrowserPageDriverError.stale }
         if let reason = answer.failed {
@@ -156,9 +158,14 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
     }
 
     /// Runs `expression` in the tab's page, in `wakil.agent`, with `arguments` as values (never source).
+    ///
+    /// `holdsKeyboard`: the page cannot take the keyboard until the script has finished — ended by
+    /// the page's own answer, not by the timeout, so a script still running after its 10 s (held by a
+    /// page's alert, or a busy web process) does not take it when it gets to its `focus()` (Rule 6).
     private func call(scope: LayoutScope?, pane: String, tab: String, _ expression: String,
                       _ arguments: [String: any Sendable],
-                      timeout timeoutReason: String = BrowserPageAgent.noAnswerReason) async throws -> String {
+                      timeout timeoutReason: String = BrowserPageAgent.noAnswerReason,
+                      holdsKeyboard: Bool = false) async throws -> String {
         try await MainActor.run { _ = try self.liveView(scope: scope, pane: pane, tab: tab) }
         let body = BrowserAgentScript.body(expression)
         let result: Result<String, BrowserPageDriverError> = await withCheckedContinuation { continuation in
@@ -168,7 +175,10 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
                 guard let view = try? self.liveView(scope: scope, pane: pane, tab: tab) else {
                     return once.answer(.failure(.notLoaded))
                 }
-                view.callAsyncJavaScript(body, arguments: arguments, in: nil, in: BrowserAgentScript.world) { result in
+                if holdsKeyboard { view.agentActBegan() }
+                view.callAsyncJavaScript(body, arguments: arguments, in: nil, in: BrowserAgentScript.world) {
+                    [weak view] result in
+                    if holdsKeyboard { view?.agentActEnded() }
                     switch result {
                     case .success(let value as String): once.answer(.success(value))
                     case .success, .failure: once.answer(.failure(.failed(Self.scriptStoppedReason)))
