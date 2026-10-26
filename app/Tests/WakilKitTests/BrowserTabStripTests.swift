@@ -88,13 +88,43 @@ import Testing
 
     @Test func onlyAnEntryOutOfViewIsScrolledTo() {
         let span = 420.0...520.0
-        #expect(!BrowserTabStrip.needsReveal(span, offset: 300, viewport: 420, margin: 24))
-        #expect(BrowserTabStrip.needsReveal(span, offset: 0, viewport: 420, margin: 24))
-        #expect(BrowserTabStrip.needsReveal(span, offset: 500, viewport: 420, margin: 24))
+        func needs(_ offset: Double, viewport: Double = 420) -> Bool {
+            BrowserTabStrip.needsReveal(span, offset: offset, viewport: viewport, margin: 24, contentWidth: 1045)
+        }
+        #expect(!needs(300))
+        #expect(needs(0))
+        #expect(needs(500))
         // Under the faded edge is not in view.
-        #expect(BrowserTabStrip.needsReveal(span, offset: 110, viewport: 420, margin: 24))
-        #expect(!BrowserTabStrip.needsReveal(span, offset: 130, viewport: 420, margin: 24))
+        #expect(needs(110))
+        #expect(!needs(130))
         // Before the strip has a width, nothing moves.
-        #expect(!BrowserTabStrip.needsReveal(span, offset: 0, viewport: 0, margin: 24))
+        #expect(!needs(0, viewport: 0))
+    }
+
+    @Test func anEntryWhollyOutOfSightIsScrolledTo() {
+        // The fifteenth of fifteen, a new tab, while the strip is still at its start.
+        let s = spans(15) // the last at 1470…1570
+        #expect(BrowserTabStrip.needsReveal(s[14], offset: 0, viewport: 600, margin: 24, contentWidth: 1570))
+        // Centred is past the end, so it is held at the end: 1570 − 600.
+        #expect(BrowserTabStrip.revealOffset(s[14], viewport: 600, contentWidth: 1570) == 970)
+        // There it is in view: the content's end has no fade.
+        #expect(!BrowserTabStrip.needsReveal(s[14], offset: 970, viewport: 600, margin: 24, contentWidth: 1570))
+        // The first from the end: held at 0, and in view there.
+        #expect(BrowserTabStrip.revealOffset(s[0], viewport: 600, contentWidth: 1570) == 0)
+        #expect(!BrowserTabStrip.needsReveal(s[0], offset: 0, viewport: 600, margin: 24, contentWidth: 1570))
+        // A middle one is centred: 735…835 → 785 − 300.
+        #expect(BrowserTabStrip.revealOffset(s[7], viewport: 600, contentWidth: 1570) == 485)
+    }
+
+    @Test func aPageScrollsTheTargetClearOfTheFade() {
+        let s = spans(10)
+        // Right from the start: index 4 (420…520) to the left edge, less the fade.
+        #expect(BrowserTabStrip.pageOffset(.right, spans: s, offset: 0, viewport: 420, margin: 24) == 396)
+        // Left from 420: index 3 (315…415) to the right edge, plus the fade.
+        #expect(BrowserTabStrip.pageOffset(.left, spans: s, offset: 420, viewport: 420, margin: 24) == 19)
+        // Held inside the content, and nothing to do at the ends.
+        #expect(BrowserTabStrip.pageOffset(.right, spans: s, offset: 600, viewport: 420, margin: 24) == 625)
+        #expect(BrowserTabStrip.pageOffset(.right, spans: s, offset: 625, viewport: 420, margin: 24) == nil)
+        #expect(BrowserTabStrip.pageOffset(.left, spans: s, offset: 0, viewport: 420, margin: 24) == nil)
     }
 }

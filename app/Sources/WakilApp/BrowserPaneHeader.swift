@@ -311,13 +311,19 @@ struct BrowserTabList: View {
     @State private var spans: [String: ClosedRange<Double>] = [:]
     /// A drag's current target (indexes into `snapshot.tabs`), drawn as a line; nil when none.
     @State private var drop: EditorTabDrop?
-    /// How far the entries are scrolled, read from the content's frame in the viewport.
+    /// How far the entries are scrolled, as the strip's own scroll view reports it.
     @State private var offset: Double = 0
-    /// The tab to bring into view once its entry has been laid out: set when the active tab
-    /// changes (a click, ⌘1–9, the menu, the agent, a new tab), cleared once it is in view.
+    /// The strip's AppKit scroll view: read for the offset, and scrolled to an offset worked out
+    /// from the entries' spans (`BrowserTabStrip`), so neither waits on SwiftUI's view ids.
+    @State private var scroller = BrowserStripScroller()
+    /// The scrolling area's width as last laid out, for a look taken a turn later.
+    @State private var viewportWidth: Double = 0
+    /// The tab to bring into view: set when the active tab changes (a click, ⌘1–9, the menu, the
+    /// agent, a new tab) and cleared only once it is seen in view — or after `revealTries` looks,
+    /// so a strip that cannot show it does not keep trying.
     @State private var pendingReveal: String?
-
-    private static let viewportSpace = "browser.tabs.viewport"
+    @State private var revealTries = 0
+    private static let maxRevealTries = 8
 
     var body: some View {
         GeometryReader { g in
@@ -343,49 +349,67 @@ struct BrowserTabList: View {
         let viewport = overflows ? available - 2 * Double(BrowserPaneStyle.overflowSlot) : available
         let hidden = overflows
             ? BrowserTabStrip.hidden(spans: orderedSpans, offset: offset, viewport: viewport) : .none
-        return ScrollViewReader { proxy in
-            HStack(spacing: 0) {
-                if overflows {
-                    more(.left, hidden.left, proxy: proxy, viewport: viewport)
-                }
-                ScrollView(.horizontal) {
-                    entries(widths)
-                        // Fewer entries than the strip holds sit at its left, not centred.
-                        .frame(minWidth: CGFloat(max(0, viewport)), alignment: .leading)
-                        .background(GeometryReader { c in
-                            Color.clear.preference(
-                                key: BrowserTabOffsetKey.self,
-                                value: -Double(c.frame(in: .named(Self.viewportSpace)).minX))
-                        })
-                }
-                .scrollIndicators(.never)
-                .coordinateSpace(name: Self.viewportSpace)
-                .onPreferenceChange(BrowserTabOffsetKey.self) { offset = $0 }
-                .mask(fade(left: hidden.left > 0, right: hidden.right > 0))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("browser.tabs")
-                if overflows {
-                    more(.right, hidden.right, proxy: proxy, viewport: viewport)
-                }
-                newTab
+        return HStack(spacing: 0) {
+            if overflows {
+                more(.left, hidden.left)
             }
-            .onAppear { pendingReveal = snapshot.active }
-            .onChange(of: snapshot.active) { _, now in pendingReveal = now }
-            .onChange(of: available) { _, _ in pendingReveal = snapshot.active }
-            .onChange(of: pendingReveal) { _, _ in reveal(proxy, viewport: viewport) }
-            .onChange(of: spans) { _, _ in reveal(proxy, viewport: viewport) }
+            ScrollView(.horizontal) {
+                entries(widths)
+                    // Fewer entries than the strip holds sit at its left, not centred.
+                    .frame(minWidth: CGFloat(max(0, viewport)), alignment: .leading)
+                    .background(BrowserStripScrollProbe(scroller: scroller))
+            }
+            .scrollIndicators(.never)
+            .mask(fade(left: hidden.left > 0, right: hidden.right > 0))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("browser.tabs")
+            if overflows {
+                more(.right, hidden.right)
+            }
+            newTab
         }
+        .onAppear {
+            scroller.onScroll = { offset = $0 }
+            requestReveal(snapshot.active)
+        }
+        .onChange(of: viewport, initial: true) { _, now in viewportWidth = now }
+        .onChange(of: snapshot.active) { _, now in requestReveal(now) }
+        .onChange(of: available) { _, _ in requestReveal(snapshot.active) }
+        .onChange(of: pendingReveal) { _, _ in reveal() }
+        .onChange(of: spans) { _, _ in reveal() }
+        .onChange(of: viewportWidth) { _, _ in reveal() }
     }
 
-    /// Scrolls the pending tab into view once its entry has a place, centred, and only if any of
-    /// it is out of sight — a click on an entry already shown leaves the strip where it was.
-    private func reveal(_ proxy: ScrollViewProxy, viewport: Double) {
-        guard let id = pendingReveal, let span = spans[id] else { return }
-        pendingReveal = nil
-        guard BrowserTabStrip.needsReveal(span, offset: offset, viewport: viewport,
-                                          margin: Double(BrowserPaneStyle.overflowFade)) else { return }
-        withAnimation(.easeOut(duration: BrowserPaneStyle.hoverDuration)) { proxy.scrollTo(id, anchor: .center) }
+    private var contentWidth: Double { max(viewportWidth, orderedSpans.last?.upperBound ?? 0) }
+
+    private func requestReveal(_ id: String?) {
+        revealTries = 0
+        pendingReveal = id
+        reveal()
+    }
+
+    /// Brings the pending tab into view, centred, if any of it is out of sight — a click on an
+    /// entry already shown leaves the strip where it was (Rule 6). A new tab's entry is not laid
+    /// out when it becomes active, and the scroll view's content grows a turn after its span is
+    /// known, so a scroll asked too early lands short: this looks again a moment later, and only
+    /// a look that finds the tab in view (or the last try) lets the request go.
+    private func reveal() {
+        guard let id = pendingReveal, let span = spans[id], viewportWidth > 0 else { return }
+        let now = scroller.offset ?? offset
+        guard BrowserTabStrip.needsReveal(span, offset: now, viewport: viewportWidth,
+                                          margin: Double(BrowserPaneStyle.overflowFade),
+                                          contentWidth: contentWidth) else {
+            pendingReveal = nil
+            return
+        }
+        guard revealTries < Self.maxRevealTries else {
+            pendingReveal = nil
+            return
+        }
+        revealTries += 1
+        scroller.scroll(to: BrowserTabStrip.revealOffset(span, viewport: viewportWidth, contentWidth: contentWidth))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { reveal() }
     }
 
     /// The entries in a row: the scrolling content, in the drag's coordinate space.
@@ -425,8 +449,7 @@ struct BrowserTabList: View {
     /// strip toward them. The slot stays while the strip overflows, empty when nothing is hidden
     /// on its side, so the entries do not move as it comes and goes.
     @ViewBuilder
-    private func more(_ side: BrowserTabStrip.Side, _ count: Int, proxy: ScrollViewProxy,
-                      viewport: Double) -> some View {
+    private func more(_ side: BrowserTabStrip.Side, _ count: Int) -> some View {
         let name = side == .left ? "moreLeft" : "moreRight"
         let words = side == .left ? "to the left" : "to the right"
         ZStack {
@@ -441,13 +464,13 @@ struct BrowserTabList: View {
                 .background(entryFill(moreHovered == side ? BrowserPaneStyle.tabHoverFill : 0))
                 .contentShape(Rectangle())
                 .animation(.easeOut(duration: BrowserPaneStyle.hoverDuration), value: moreHovered)
-                .onTapGesture { page(side, proxy: proxy, viewport: viewport) }
+                .onTapGesture { page(side) }
                 .onHover { inside in moreHovered = inside ? side : (moreHovered == side ? nil : moreHovered) }
                 .help("\(count) more \(count == 1 ? "tab" : "tabs") \(words)")
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("\(count) more \(count == 1 ? "tab" : "tabs") \(words)")
                 .accessibilityAddTraits(.isButton)
-                .accessibilityAction { page(side, proxy: proxy, viewport: viewport) }
+                .accessibilityAction { page(side) }
                 .accessibilityIdentifier("browser.tabs.\(name)")
             }
         }
@@ -461,13 +484,12 @@ struct BrowserTabList: View {
     }
 
     /// A page toward `side`'s hidden entries: the first one not wholly shown brought to the far
-    /// edge (`BrowserTabStrip.pageTarget`).
-    private func page(_ side: BrowserTabStrip.Side, proxy: ScrollViewProxy, viewport: Double) {
-        guard let i = BrowserTabStrip.pageTarget(side, spans: orderedSpans, offset: offset, viewport: viewport),
-              snapshot.tabs.indices.contains(i) else { return }
-        withAnimation(.easeOut(duration: BrowserPaneStyle.hoverDuration)) {
-            proxy.scrollTo(snapshot.tabs[i].id, anchor: side == .right ? .leading : .trailing)
-        }
+    /// edge, clear of its fade (`BrowserTabStrip.pageOffset`).
+    private func page(_ side: BrowserTabStrip.Side) {
+        guard let x = BrowserTabStrip.pageOffset(side, spans: orderedSpans, offset: scroller.offset ?? offset,
+                                                 viewport: viewportWidth,
+                                                 margin: Double(BrowserPaneStyle.overflowFade)) else { return }
+        scroller.scroll(to: x, animated: true)
     }
 
     private var orderedSpans: [ClosedRange<Double>] { snapshot.tabs.map { spans[$0.id] ?? 0...0 } }
@@ -611,15 +633,84 @@ extension Text {
     }
 }
 
-/// How far the strip's entries are scrolled.
-private struct BrowserTabOffsetKey: PreferenceKey {
-    static let defaultValue: Double = 0
-    static func reduce(value: inout Double, nextValue: () -> Double) { value = nextValue() }
-}
-
 private struct BrowserTabSpansKey: PreferenceKey {
     static let defaultValue: [String: ClosedRange<Double>] = [:]
     static func reduce(value: inout [String: ClosedRange<Double>], nextValue: () -> [String: ClosedRange<Double>]) {
         value.merge(nextValue()) { _, b in b }
+    }
+}
+
+/// The tab strip's scroll view, as AppKit has it: SwiftUI's horizontal `ScrollView` is an
+/// `NSScrollView`, and its clip view's bounds are the one offset that is current on every scroll
+/// — wheel, trackpad or our own — and the one that takes an exact x.
+@MainActor final class BrowserStripScroller: NSObject {
+    private weak var scrollView: NSScrollView?
+    /// Told the offset whenever the clip view moves.
+    var onScroll: ((Double) -> Void)?
+
+    /// The current offset, or nil before the scroll view is found.
+    var offset: Double? { scrollView.map { Double($0.contentView.bounds.origin.x) } }
+
+    func attach(_ view: NSScrollView) {
+        guard view !== scrollView else { return }
+        // A selector observer: the centre drops it when this goes, so no deinit is needed.
+        if let old = scrollView {
+            NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: old.contentView)
+        }
+        scrollView = view
+        view.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(clipMoved), name: NSView.boundsDidChangeNotification, object: view.contentView)
+        report()
+    }
+
+    @objc private func clipMoved(_ note: Notification) { report() }
+
+    private func report() { if let offset { onScroll?(offset) } }
+
+    /// Scrolls to `x`, held inside the content by the clip view.
+    func scroll(to x: Double, animated: Bool = false) {
+        guard let view = scrollView else { return }
+        let clip = view.contentView
+        var bounds = clip.bounds
+        bounds.origin.x = CGFloat(x)
+        let origin = clip.constrainBoundsRect(bounds).origin
+        guard origin.x != clip.bounds.origin.x else { return }
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = BrowserPaneStyle.hoverDuration
+                clip.animator().setBoundsOrigin(origin)
+            } completionHandler: { [weak view] in
+                MainActor.assumeIsolated { if let view { view.reflectScrolledClipView(view.contentView) } }
+            }
+        } else {
+            clip.setBoundsOrigin(origin)
+            view.reflectScrolledClipView(clip)
+        }
+    }
+}
+
+/// A zero-size view in the strip's content that hands its enclosing scroll view to the scroller.
+private struct BrowserStripScrollProbe: NSViewRepresentable {
+    let scroller: BrowserStripScroller
+
+    func makeNSView(context: Context) -> ProbeView { ProbeView(scroller: scroller) }
+    func updateNSView(_ view: ProbeView, context: Context) { view.attach() }
+
+    final class ProbeView: NSView {
+        let scroller: BrowserStripScroller
+        init(scroller: BrowserStripScroller) {
+            self.scroller = scroller
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            attach()
+        }
+        func attach() {
+            if let scrollView = enclosingScrollView { scroller.attach(scrollView) }
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }

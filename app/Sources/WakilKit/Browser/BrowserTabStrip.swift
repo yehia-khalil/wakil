@@ -91,13 +91,36 @@ public enum BrowserTabStrip {
     }
 
     /// Whether an entry at `span` needs scrolling to be seen: any part of it outside the strip,
-    /// or under the `margin` the faded edges take. An entry already in view is left where it is,
-    /// so a click on one never moves the strip (Rule 6).
+    /// or under the `margin` a faded edge takes — except at the content's own ends (`contentWidth`
+    /// wide), where no fade can be. An entry already in view is left where it is, so a click on
+    /// one never moves the strip (Rule 6). An entry wholly out of sight always needs it.
     public static func needsReveal(_ span: ClosedRange<Double>, offset: Double, viewport: Double,
-                                   margin: Double) -> Bool {
+                                   margin: Double, contentWidth: Double) -> Bool {
         guard viewport > 0 else { return false }
-        let inner = min(margin, max(0, (viewport - (span.upperBound - span.lowerBound)) / 2))
-        return span.lowerBound < offset + inner - tolerance
-            || span.upperBound > offset + viewport - inner + tolerance
+        let room = max(0, (viewport - (span.upperBound - span.lowerBound)) / 2)
+        let left = min(margin, room, max(0, span.lowerBound))
+        let right = min(margin, room, max(0, contentWidth - span.upperBound))
+        return span.lowerBound < offset + left - tolerance
+            || span.upperBound > offset + viewport - right + tolerance
+    }
+
+    /// The offset that shows an entry at `span` centred, held inside the content (`contentWidth`
+    /// wide, scrolled by no more than its width less the `viewport`).
+    public static func revealOffset(_ span: ClosedRange<Double>, viewport: Double, contentWidth: Double) -> Double {
+        clamp((span.lowerBound + span.upperBound) / 2 - viewport / 2, viewport: viewport, contentWidth: contentWidth)
+    }
+
+    /// The offset a press on `side`'s count scrolls to: `pageTarget`'s entry brought to the far
+    /// edge, clear of that edge's `margin` of fade. nil when nothing is hidden there.
+    public static func pageOffset(_ side: Side, spans: [ClosedRange<Double>], offset: Double, viewport: Double,
+                                  margin: Double) -> Double? {
+        guard let i = pageTarget(side, spans: spans, offset: offset, viewport: viewport) else { return nil }
+        let content = max(viewport, spans.last?.upperBound ?? 0)
+        let x = side == .right ? spans[i].lowerBound - margin : spans[i].upperBound + margin - viewport
+        return clamp(x, viewport: viewport, contentWidth: content)
+    }
+
+    private static func clamp(_ x: Double, viewport: Double, contentWidth: Double) -> Double {
+        min(max(0, x), max(0, contentWidth - viewport))
     }
 }
