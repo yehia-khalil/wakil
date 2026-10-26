@@ -74,6 +74,17 @@ flowchart LR
   `<dir>/<session id>-approval.sock` (`ConnectionApprovalServer`, `Gate/ConnectionApproval.swift`).
   `wakil-connect` asks it before a gated call. It can only ask: a call it cannot allow outright
   parks on the confirmation broker for the operator, and it never approves by itself.
+  `wakil-connect` reads the connection's record from `org.json` at every call. When the connection
+  is gone, it tells the socket (`"removed": true`) and refuses the call. The app refuses too when
+  its own list (`AgentConnectionsBox.stillHas`) no longer has the connection, and journals the
+  refusal `connection-removed`.
+- **A connection change restarts the open conversations.** `AgentConnectionsBox` keeps a revision
+  per organization. It moves when a connection is added, removed or renamed, when a server field
+  changes, or when a sign-in changes. It does not move for an Allow agent tick. Each session
+  records the revision it launched at. At a conversation's next message, if the agent is between
+  turns (`WindowModel.connectionsRestartDue`), `send` fork-resumes it through `resume`, so the new
+  launch's config has the current connections. Then the message goes to the new agent. A
+  conversation mid-turn, or with a call on the plane, restarts at the first message after that.
 - **The e2e harness socket.** Only the staged e2e fixture (bundle id `dev.wakil.e2e`) opens a
   third socket beside each agent socket, `<dir>/<session id>-e2e.sock`, mode 0600
   (`startHarnessSocket`, `MCP/HarnessChannel.swift`). It serves only the operator-only actions,

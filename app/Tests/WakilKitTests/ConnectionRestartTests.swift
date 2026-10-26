@@ -56,11 +56,14 @@ private final class Launches: @unchecked Sendable {
 }
 
 @Suite @MainActor struct ConnectionRestartTests {
-    private func window() async -> (WindowModel, AgentConnectionsBox, Launches) {
+    private func window(
+        reads: TranscriptReads = TranscriptReads(), confirmations: ConfirmationBroker = ConfirmationBroker()
+    ) async -> (WindowModel, AgentConnectionsBox, Launches) {
         let box = AgentConnectionsBox()
         let launches = Launches()
         let model = WindowModel.forTesting(
-            scratchRoot: testScratchRoot, harnessFactory: { place, _ in launches.launch(place, box) })
+            scratchRoot: testScratchRoot, harnessFactory: { place, _ in launches.launch(place, box) },
+            confirmations: confirmations)
         model.agentConnectionsBox = box
         box.set(org: model.place.organization, connections: [])
         // The fork-resume reads the conversation's transcript, as every resume does.
@@ -68,7 +71,8 @@ private final class Launches: @unchecked Sendable {
             name: "session_read", description: "test double", kind: .read,
             schema: .object(["type": .string("object")]),
             handler: { _ in
-                .object(["structuredContent": .object([
+                try await reads.read()
+                return .object(["structuredContent": .object([
                     "cwd": .string("/tmp"), "provider": .string("test-provider"), "parent": .string(""),
                     "truncated": .bool(false),
                     "entries": .array([
@@ -78,6 +82,15 @@ private final class Launches: @unchecked Sendable {
                 ])])
             }))
         return (model, box, launches)
+    }
+
+    /// Waits until `condition` holds, or records that it never did.
+    private func until(_ what: String, _ condition: () async -> Bool) async throws {
+        for _ in 0..<300 {
+            if await condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        Issue.record("never: \(what)")
     }
 
     /// Lands one `.result` on `harness` and waits for the pump to take it.
@@ -219,6 +232,160 @@ private final class Launches: @unchecked Sendable {
         #expect(launches.count == 1)
         #expect(launches.harnesses[0].sent == ["one", "two"])
     }
+
+    // MARK: Review fixes
+
+    /// The restart is not an instructions change: the first message after it carries no update.
+    @Test func aRestartDoesNotSayTheInstructionsChanged() async throws {
+        let (model, box, launches) = await window()
+        let instructions = AgentInstructionsBox()
+        model.agentInstructionsBox = instructions
+        instructions.set(org: model.place.organization, project: model.place.project, text: "## Organisation o — general\nA")
+        await model.send("one")
+        let agent = try #require(model.currentAgent)
+        try await answerOne(launches.harnesses[0], on: agent)
+
+        box.set(org: model.place.organization, connections: [AgentConnection(name: "tracker")])
+        await model.send("two")
+        try #require(launches.count == 2)
+        #expect(launches.harnesses[1].sent == ["two"])
+        #expect(!agent.thoughts.contains { $0.label == "instructions" })
+        #expect(agent.thoughts.contains {
+            $0.label == "resumed" && $0.detail.hasPrefix("restarted with the organisation's current connections")
+        })
+    }
+
+    /// Closed while it restarts: the message goes nowhere, and Rule 8's sentence says so.
+    @Test(.timeLimit(.minutes(1))) func aConversationClosedDuringTheRestartSendsNothing() async throws {
+        let reads = TranscriptReads()
+        let (model, box, launches) = await window(reads: reads)
+        await model.send("one")
+        let agent = try #require(model.currentAgent)
+        try await answerOne(launches.harnesses[0], on: agent)
+        box.set(org: model.place.organization, connections: [AgentConnection(name: "tracker")])
+
+        await reads.hold()
+        let sending = Task { await model.send("two") }
+        try await until("the restart reads the transcript") { await reads.waiting }
+        await model.closeConversation(agent.id)
+        await model.answerCloseQuestion(close: true)
+        await reads.release()
+        #expect(await sending.value == false)
+        #expect(model.status.contains("no longer live"), "\(model.status)")
+        #expect(launches.harnesses[0].sent == ["one"])
+        #expect(launches.harnesses.dropFirst().allSatisfy { $0.sent.isEmpty })
+        #expect(!agent.thoughts.contains { $0.label == "you" && $0.detail == "two" })
+    }
+
+    /// A restart that fails keeps the agent as it was: the message goes to it, the conversation
+    /// says why once, and every next message tries again until one succeeds.
+    @Test func aFailedRestartSaysSoOnceAndTriesAgainAtTheNextMessage() async throws {
+        let reads = TranscriptReads()
+        let (model, box, launches) = await window(reads: reads)
+        await model.send("one")
+        let agent = try #require(model.currentAgent)
+        try await answerOne(launches.harnesses[0], on: agent)
+        box.set(org: model.place.organization, connections: [AgentConnection(name: "tracker")])
+        let old = model.status
+
+        await reads.fail("the transcript is unreadable")
+        #expect(await model.send("two"))
+        #expect(launches.count == 1)
+        #expect(launches.harnesses[0].sent == ["one", "two"])
+        #expect(model.status.contains("the transcript is unreadable"), "\(model.status)")
+        #expect(model.status != old)
+        let said = { agent.thoughts.filter { $0.isError && $0.detail.contains("current connections") }.count }
+        #expect(said() == 1)
+        try await answerOne(launches.harnesses[0], on: agent)
+
+        #expect(await model.send("three"))
+        #expect(await reads.count == 2)
+        #expect(launches.harnesses[0].sent == ["one", "two", "three"])
+        #expect(said() == 1)
+        try await answerOne(launches.harnesses[0], on: agent)
+
+        await reads.fail(nil)
+        #expect(await model.send("four"))
+        try #require(launches.count == 2)
+        #expect(launches.harnesses[1].sent == ["four"])
+    }
+
+    /// No restart while the agent's own call waits on the plane.
+    @Test(.timeLimit(.minutes(1))) func aCallOnThePlaneHoldsTheRestart() async throws {
+        let broker = ConfirmationBroker()
+        let (model, box, launches) = await window(confirmations: broker)
+        await model.send("one")
+        let agent = try #require(model.currentAgent)
+        try await answerOne(launches.harnesses[0], on: agent)
+        box.set(org: model.place.organization, connections: [AgentConnection(name: "tracker")])
+
+        let proposal = PendingMutation(
+            action: "connection_call", params: .object([:]), database: nil, statement: "tracker · create_issue({})",
+            affectsEveryRow: false, origin: .agent, place: agent.place, conversation: agent.id)
+        let asking = Task { await broker.request(proposal) }
+        try await until("the call is on the plane") { model.parkedSlots.values.contains { $0.id == proposal.id } }
+        #expect(!model.connectionsRestartDue(agent))
+        await model.send("two")
+        #expect(launches.count == 1)
+
+        await broker.cancel(id: proposal.id)
+        _ = await asking.value
+        try await until("the plane is clear") { model.parkedSlots.isEmpty }
+        try await answerOne(launches.harnesses[0], on: agent)
+        await model.send("three")
+        #expect(launches.count == 2)
+    }
+
+    /// A message sent while the restart runs waits for it and goes to the new agent; one restart.
+    @Test(.timeLimit(.minutes(1))) func aSendDuringTheRestartGoesToTheNewAgent() async throws {
+        let reads = TranscriptReads()
+        let (model, box, launches) = await window(reads: reads)
+        await model.send("one")
+        let agent = try #require(model.currentAgent)
+        try await answerOne(launches.harnesses[0], on: agent)
+        box.set(org: model.place.organization, connections: [AgentConnection(name: "tracker")])
+
+        await reads.hold()
+        let first = Task { await model.send("two") }
+        try await until("the restart reads the transcript") { await reads.waiting }
+        let second = Task { await model.send("three") }
+        try await Task.sleep(for: .milliseconds(50))
+        await reads.release()
+        #expect(await first.value)
+        #expect(await second.value)
+        #expect(launches.count == 2)
+        #expect(launches.harnesses[0].sent == ["one"])
+        #expect(launches.harnesses[1].sent == ["two", "three"])
+        #expect(await reads.count == 1)
+    }
+}
+
+/// The transcript read a restart makes: held, failed, counted.
+actor TranscriptReads {
+    private(set) var count = 0
+    private var failure: String?
+    private var held = false
+    private(set) var waiting = false
+    private var gate: CheckedContinuation<Void, Never>?
+
+    func hold() { held = true }
+    func fail(_ message: String?) { failure = message }
+    func release() {
+        held = false
+        gate?.resume()
+        gate = nil
+    }
+
+    func read() async throws {
+        count += 1
+        if held {
+            waiting = true
+            await withCheckedContinuation { gate = $0 }
+            waiting = false
+        }
+        if let failure { throw StandardActionError.missingParam(action: "session_read", param: failure) }
+    }
+
 }
 
 // MARK: - A removed connection refuses at once
@@ -269,4 +436,21 @@ private actor Outcomes {
     #expect(await server.answer(kept) == .allow)
     // An organisation the app has never read decides nothing by the list.
     #expect(AgentConnectionsBox().stillHas(org: "initech", name: "tracker"))
+}
+
+/// `"removed":true` on the wire, as `wakil-connect` sends it, decodes; a line without it is not
+/// removed.
+@Test func aRemovedLineFromTheSocketDecodes() throws {
+    let line = #"{"connection":"tracker","tool":"read_doc","arguments":{"id":"d-1"},"allowed":true,"readOnly":true,"locked":false,"removed":true}"#
+    let request = try #require(ConnectionApprovalServer.request(fromLine: Data(line.utf8)))
+    #expect(request.removed)
+    #expect(request.connection == "tracker" && request.tool == "read_doc")
+    #expect(request.params == .object([
+        "connection": .string("tracker"), "tool": .string("read_doc"), "arguments": .object(["id": .string("d-1")]),
+        "allowed": .bool(true), "readOnly": .bool(true), "locked": .bool(false), "removed": .bool(true),
+    ]))
+    let plain = #"{"connection":"tracker","tool":"read_doc","arguments":{},"allowed":true,"readOnly":true,"locked":false}"#
+    let kept = try #require(ConnectionApprovalServer.request(fromLine: Data(plain.utf8)))
+    #expect(!kept.removed)
+    if case .object(let o) = kept.params { #expect(o["removed"] == nil) }
 }

@@ -32,6 +32,9 @@ public final class PlaceAgent {
     /// launched at; nil before one. Behind the box's means a connection changed since: the next
     /// message restarts the agent (spec amendment 2026-10-26, `WindowModel.send`).
     var launchedConnectionsRevision: Int?
+    /// The revision whose failed restart the conversation was last told of: a failure is said
+    /// once per change, though every next message tries again.
+    var connectionsRestartFailureSaid: Int?
     /// The id the running child was started with; set and cleared with `harness`.
     public internal(set) var sessionId: String? {
         didSet { if let sessionId { sessionIds.insert(sessionId) } }

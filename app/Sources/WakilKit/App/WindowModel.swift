@@ -7432,7 +7432,13 @@ public final class WindowModel {
     /// `conversations`: `endConversation` marks it `closing` first, then awaits its stop and
     /// its arrangement's write before it drops the entry, and a start finishing in between
     /// would otherwise be installed after `stopSession` had found nothing to stop.
-    private func install(_ started: StartedSession, in agent: PlaceAgent, resumed: Bool = false) async -> Bool {
+    ///
+    /// `keepsInstructions`: a restart for connections (spec amendment 2026-10-26) keeps what the
+    /// agent was last given — its transcript holds it — so its next turn carries the instructions
+    /// only if they really changed, never because it restarted.
+    private func install(
+        _ started: StartedSession, in agent: PlaceAgent, resumed: Bool = false, keepsInstructions: Bool = false
+    ) async -> Bool {
         guard conversations[agent.id] === agent, !closing.contains(agent.id) else {
             await started.harness.stop()
             await started.socket?.stop()
@@ -7442,7 +7448,7 @@ public final class WindowModel {
         // A new session's first turn records what it launched with. A resumed one keeps the prompt
         // its parent was first launched with (the 3a-iii-b probe), which may predate the current
         // text — so its first turn carries the text as an update.
-        agent.launchedInstructions = resumed ? resumedInstructionsUnknown : nil
+        if !keepsInstructions { agent.launchedInstructions = resumed ? resumedInstructionsUnknown : nil }
         agent.launchedConnectionsRevision = started.connectionsRevision
         agent.socket = started.socket
         agent.socketFailure = started.socketFailure
@@ -7552,9 +7558,31 @@ public final class WindowModel {
         var restartFailure: String?
         if connectionsRestartDue(agent), let live = agent.sessionId {
             agent.startWaiters = []
+            // Cleared first, so what `resume` says is this restart's own reason, never an old one.
+            status = ""
             await resume(sessionId: live, conversation: agent.id, restartingForConnections: true)
             agent.releaseStartWaiters()
-            if agent.sessionId == live, !status.isEmpty { restartFailure = status }
+            // Closed while it restarted (Rule 8, as `conversation(pinned:)` says above): its
+            // harness is stopped, and the message goes to no other conversation.
+            guard conversations[agent.id] === agent, !closing.contains(agent.id) else {
+                status = "not sent: the conversation this was typed in is no longer live — "
+                    + "the message went to no other conversation"
+                return false
+            }
+            if agent.sessionId == live {
+                let reason = status.isEmpty ? "the new agent could not be installed" : status
+                restartFailure = "connections not applied: \(reason)"
+                // Said once in the conversation per change, not at every message that retries.
+                let revision = agentConnectionsBox.revision(org: agent.place.organization)
+                if agent.connectionsRestartFailureSaid != revision {
+                    agent.connectionsRestartFailureSaid = revision
+                    agent.appendRow(
+                        label: "agent",
+                        detail: "Wakil could not restart the agent with the organisation's current connections "
+                            + "(\(reason)), so it still has the ones it started with. Each next message tries again.",
+                        isError: true)
+                }
+            }
         }
         // Conversations 3 of 3: a session whose process went away is resumed first, as a fork of
         // it, and the turn goes to the fork. A turn typed meanwhile waits for it (Rule 5), as for
@@ -7976,7 +8004,7 @@ public final class WindowModel {
         agent.endTurns()
 
         // Closed while the fork started: the fork is stopped, and nothing else is done.
-        guard await install(started, in: agent, resumed: true) else { return }
+        guard await install(started, in: agent, resumed: true, keepsInstructions: restartingForConnections) else { return }
         agent.providerId = providerId
         retainAgentPlace()
         agent.sessionId = child

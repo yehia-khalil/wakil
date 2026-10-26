@@ -116,6 +116,12 @@ this Mac. Do them in order: each starts where the one before left off.
 - Quick tasks get no connections; today "every harness" means Claude Code sessions.
 - The spoken flag is sticky for the conversation's turn: a typed message sent beside a spoken one
   still asks before a ticked write.
+- A change made from a terminal (`wakil-ctx`) reaches the open conversations only after Settings
+  is next read. A removal is the exception: it refuses at once, because `wakil-connect` reads
+  `org.json` at every call.
+- A restart for a connection change ends the idle agent's background shells and subagents.
+- A sign-in change (a token replaced, a browser sign-in or sign-out) restarts every open
+  conversation in the organisation at its next message, even one that never uses that connection.
 
 ## 3. Residue: what the walk cannot establish
 
