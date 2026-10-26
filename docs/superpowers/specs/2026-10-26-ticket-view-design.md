@@ -87,7 +87,7 @@ harness reads.
    | Several tickets | The header lists each ticket the branch or its stack carries (key, title, status), marks the one this branch is for, and shows one **Next**: the marked ticket's, or, when it has none, the newest among the others, labelled with its key. |
 6. **A source Wakil could not read says so whole, and blocks nothing else** (Rule 8): "Pull
    requests not read: this organization's github.com account signs in with SSH, which reads no pull
-   requests. Add a token in Settings → Git accounts, or a GitHub connection." The record and the PM
+   requests. Add a token, or API access to an SSH account, in Settings → Organisation → Git." The record and the PM
    status still show.
 
 ## How it works (the parts decided)
@@ -278,7 +278,7 @@ against it.
 | 1 Agent-agnostic core | No harness's notes are read; the agent's path is registry actions over the shim. |
 | 2 Actions only | Every write — record, link, reply, resolve, draft — is a registry action; the view and the agent dispatch the same ones. Wakil's cache of reads is not operator state. |
 | 3 Panes observable | The column's ticket state is in the editor's snapshot. |
-| 4 Credential boundary | Tokens are the organization's own (git account, then its GitHub connection), read in its own process; `gh` is not used; the record lives under the org folder; the client restarts on an org switch and its memory resets in `invalidateForOrgChange`. |
+| 4 Credential boundary | Tokens are the organization's own (its git account), read in its own process; `gh` is not used; the record lives under the org folder; the client restarts on an org switch and its memory resets in `invalidateForOrgChange`. |
 | 6 Earned writes | Reply and resolve earn in, above; the record is Wakil's own store; everything else on GitHub stays refused. |
 | 7 Voice | Send is *gate*, so a spoken "send it" raises the plane and needs typed confirmation. |
 | 10 Layers | `wakil-ticket` is headless; the view and the boxes own no logic WakilKit cannot test. |
@@ -337,8 +337,8 @@ at narrow widths.
 ## Calls made for the operator
 
 - **my call:** PR, thread and CI data come from GitHub's GraphQL API with the organization's git
-  account token, falling back to its GitHub connection's token; never `gh`, never the connection's
-  MCP tools.
+  account's credential — Sign in, access token, or an SSH account's API access (operator, 2026-10-26);
+  never `gh`, never a connection.
 - **my call:** Jira status and assignee come from `wakilcore.JiraClient` inside `wakil-ticket`,
   checked against the organization's PM project keys.
 - **my call:** one new window-owned binary, `wakil-ticket`; the agent reaches it only through
