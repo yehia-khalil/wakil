@@ -89,6 +89,9 @@ struct BrowserPromptCard: View {
     let prompt: BrowserPrompt
     /// Whether the pane may take the keyboard now (`BrowserPane.mayTakeKeyboard`), read live.
     let mayTakeKeyboard: @MainActor () -> Bool
+    /// As the card arrives, unasked: also that the operator is not typing somewhere else — the
+    /// composer, a field, an editor, a terminal (`BrowserTabHost.keyboardIsFreeFor`).
+    let mayTakeKeyboardOnArrival: @MainActor () -> Bool
     /// Raised each time the pane takes the keyboard while this card is shown.
     let focusTurn: Int
     let answer: (BrowserPrompt.Answer) -> Void
@@ -105,7 +108,8 @@ struct BrowserPromptCard: View {
     var body: some View {
         ZStack {
             // Takes the page's clicks while the page waits for its answer.
-            BrowserPaneStyle.promptScrim.contentShape(Rectangle()).onTapGesture {}
+            // A click on it is the operator moving to the question: it takes the keyboard.
+            BrowserPaneStyle.promptScrim.contentShape(Rectangle()).onTapGesture { takeKeyboard() }
             VStack(alignment: .leading, spacing: BrowserPaneStyle.gap) {
                 // The page's host, an identifier (§6: monospaced), over its question.
                 Text(prompt.origin)
@@ -145,7 +149,7 @@ struct BrowserPromptCard: View {
         }
         .onAppear {
             if case .text(_, let initial) = prompt.kind { text = initial }
-            if mayTakeKeyboard() { takeKeyboard() }
+            if mayTakeKeyboardOnArrival() { takeKeyboard() }
         }
         .onChange(of: focusTurn) { _, _ in if mayTakeKeyboard() { takeKeyboard() } }
         .accessibilityElement(children: .contain)

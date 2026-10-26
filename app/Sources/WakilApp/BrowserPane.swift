@@ -294,8 +294,12 @@ struct BrowserPane: View {
                 }
                 // The page's own question, over this tab's page only; switching tabs keeps it.
                 if let prompt = host.prompts[key]?.first {
-                    BrowserPromptCard(prompt: prompt, mayTakeKeyboard: mayTakeKeyboard,
-                                      focusTurn: promptFocusTurn) { answer in host.answer(prompt, answer, key: key) }
+                    BrowserPromptCard(
+                        prompt: prompt, mayTakeKeyboard: mayTakeKeyboard,
+                        mayTakeKeyboardOnArrival: { [scope, host] in
+                            mayTakeKeyboard() && host.keyboardIsFreeFor(scope: scope, pane: pane.id)
+                        },
+                        focusTurn: promptFocusTurn) { answer in host.answer(prompt, answer, key: key) }
                         .id(prompt.id)
                 }
             } else {

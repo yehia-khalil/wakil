@@ -401,6 +401,18 @@ final class BrowserTabHost {
             schedule: { next in DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { next() } })
     }
 
+    /// Whether a page's question arriving in this pane may take the keyboard unasked (Rule 6, final
+    /// review I3): yes when the keyboard is on one of the pane's own pages, or on nothing that takes
+    /// typing (the window, Wakil's canvas); no while the operator types anywhere else — the composer,
+    /// a field, the editor, a terminal, another page — whatever pane the window counts as focused.
+    func keyboardIsFreeFor(scope: LayoutScope, pane: String) -> Bool {
+        let own = views.filter { $0.key.scope == scope && $0.key.pane == pane }.map(\.value)
+        guard let window = own.first(where: { $0.window != nil })?.window ?? NSApp.keyWindow,
+              let responder = window.firstResponder as? NSView else { return true }
+        if own.contains(where: { responder === $0 || responder.isDescendant(of: $0) }) { return true }
+        return !(responder is NSTextInputClient)
+    }
+
     /// The pane gives the keyboard up when one of its web views holds it.
     func resignKeyboard(scope: LayoutScope, pane: String) {
         for (key, view) in views where key.scope == scope && key.pane == pane {
