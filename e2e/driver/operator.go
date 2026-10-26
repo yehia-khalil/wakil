@@ -42,7 +42,7 @@ func OperatorSocketFor(agentSocket string) string {
 // A switch moves the screen's agent socket, and with it this one.
 type OperatorChannel struct {
 	pid    int
-	agent  interface{ Socket() (string, error) }
+	agent  operatorAgent
 	held   func() ([]string, error)
 	serves map[string]bool
 
@@ -51,12 +51,23 @@ type OperatorChannel struct {
 	client *MCP
 }
 
+// operatorAgent is what the operator channel needs of the screen's agent channel: its socket,
+// which the operator socket sits beside, and what it says about the operator socket's start.
+type operatorAgent interface {
+	Socket() (string, error)
+	HarnessFailure() (string, error)
+}
+
 // NewOperatorChannel opens the operator socket beside the screen's agent socket and reads which
 // actions it serves. **Nil, with no error, when the pid holds none**: a build from before it —
 // the merge-base `make e2e-new` drives — where every dispatch goes over the agent socket, as it
 // did there. The app opens it before the agent socket it sits beside, so a current build that
 // shows an agent socket already holds it.
-func NewOperatorChannel(pid int, agent interface{ Socket() (string, error) }, held func() ([]string, error)) (*OperatorChannel, error) {
+//
+// **An error when the agent socket says it failed to start** (`wakil/harnessFailure`): that is a
+// current build whose channel is missing, and falling back would only move the failure to every
+// operator-only step, worded as the agent's refusal.
+func NewOperatorChannel(pid int, agent operatorAgent, held func() ([]string, error)) (*OperatorChannel, error) {
 	channel := &OperatorChannel{pid: pid, agent: agent, held: held}
 	path, err := channel.besideScreen()
 	if err != nil {
@@ -67,6 +78,13 @@ func NewOperatorChannel(pid int, agent interface{ Socket() (string, error) }, he
 		return nil, err
 	}
 	if !contains(paths, path) {
+		failure, err := agent.HarnessFailure()
+		if err != nil {
+			return nil, err
+		}
+		if failure != "" {
+			return nil, fmt.Errorf("the operator channel failed to start: %s", failure)
+		}
 		return nil, nil
 	}
 	client, err := channel.clientFor(path)

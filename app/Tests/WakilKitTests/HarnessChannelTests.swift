@@ -125,4 +125,50 @@ func theHarnessChannelRefusesWhatIsNotOperatorOnly(name: String) async throws {
         approvalSocket: approvalSocketPath(forAgentSocket: agent))
     #expect(!config.contains("-e2e.sock"))
     #expect(!config.contains(harnessSocketPath(forAgentSocket: agent)))
+
+    // Nor does the environment the agent itself is started with (review M4).
+    let launch = buildLaunch(claudePath: "/c", sessionId: "s", configDir: "/d", oauthToken: "t",
+                             mcpConfigJSON: config, allowedTools: [], workingDirectory: "/w")
+    for (key, value) in launch.environment {
+        #expect(!value.contains("-e2e.sock"), "\(key) names the harness socket")
+    }
+    #expect(!launch.arguments.contains { $0.contains("-e2e.sock") })
+}
+
+/// **A harness socket that would not start is said, not swallowed** (review M3): the window gets
+/// the sentence its status shows, as for the approval socket, and no server.
+@Test func aHarnessSocketThatWouldNotStartAnswersWhy() async {
+    // A directory that does not exist: `bind` fails.
+    let agent = "/nonexistent-\(UUID().uuidString.prefix(8))/wakil-h.sock"
+    let opened = await openHarnessSocket(
+        bundleIdentifier: "dev.wakil.e2e", agentSocket: agent,
+        surface: await harnessSurface(), caller: agentCaller)
+    #expect(opened.server == nil)
+    let failure = try? #require(opened.failure)
+    #expect(failure?.contains(harnessSocketPath(forAgentSocket: agent)) == true, "names the path")
+    #expect(failure?.contains("operator-only") == true, "says what it costs")
+}
+
+/// Outside the fixture nothing is opened and nothing failed: no sentence for a channel this build
+/// never opens.
+@Test func aBundleThatIsNotTheFixtureOpensNoHarnessSocketAndReportsNoFailure() async {
+    let opened = await openHarnessSocket(
+        bundleIdentifier: "dev.wakil.app", agentSocket: "/nonexistent/wakil-h.sock",
+        surface: await harnessSurface(), caller: agentCaller)
+    #expect(opened.server == nil)
+    #expect(opened.failure == nil)
+}
+
+/// The agent socket's `initialize` carries the harness socket's start failure, so the e2e harness
+/// can tell "this build opens none" (no key) from "it failed to start" (the sentence).
+@Test func initializeCarriesTheHarnessSocketsStartFailureOnlyWhenThereIsOne() async throws {
+    let m = JSONRPCMessage(id: .number(1), method: "initialize", params: .object([:]), result: nil, error: nil)
+    func meta(_ failure: String?) async -> [String: JSONValue] {
+        let out = await handle(m, surface: await harnessSurface(), caller: agentCaller, harnessFailure: failure)
+        guard case .object(let r)? = out?.result, case .object(let meta)? = r["_meta"] else { return [:] }
+        return meta
+    }
+    #expect(await meta("harness socket /x-e2e.sock: bind failed")["wakil/harnessFailure"]
+            == .string("harness socket /x-e2e.sock: bind failed"))
+    #expect(await meta(nil)["wakil/harnessFailure"] == nil, "absent, never null, when nothing failed")
 }

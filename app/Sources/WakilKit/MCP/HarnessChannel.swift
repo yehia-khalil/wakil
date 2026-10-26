@@ -69,6 +69,40 @@ public func startHarnessSocket(
     return server
 }
 
+/// The sentence a conversation's status shows when the fixture's harness socket would not start,
+/// and what the agent socket's `initialize` carries as `wakil/harnessFailure` (`initializeMeta`),
+/// so the e2e harness can tell a build that opens none from one whose socket failed.
+public func harnessSocketFailure(path: String, error: any Error) -> String {
+    "e2e harness socket \(path): \(error) — the harness's operator-only steps are refused this session"
+}
+
+/// What starting the harness socket came to: the server, or why there is none. Both nil outside
+/// the e2e fixture, where nothing is opened and nothing failed.
+public struct HarnessSocketStart: Sendable {
+    public let server: MCPSocketServer?
+    public let failure: String?
+}
+
+/// `startHarnessSocket`, with a failure kept as its sentence (`harnessSocketFailure`) rather than
+/// thrown: the window keeps the session as it is, and says why the channel is missing.
+public func openHarnessSocket(
+    bundleIdentifier: String?,
+    agentSocket: String,
+    surface: MCPSurface,
+    caller: @escaping @Sendable () async -> DispatchCaller,
+    screen: (@Sendable () async -> ScreenShown?)? = nil
+) async -> HarnessSocketStart {
+    do {
+        let server = try await startHarnessSocket(
+            bundleIdentifier: bundleIdentifier, agentSocket: agentSocket,
+            surface: surface, caller: caller, screen: screen)
+        return HarnessSocketStart(server: server, failure: nil)
+    } catch {
+        return HarnessSocketStart(
+            server: nil, failure: harnessSocketFailure(path: harnessSocketPath(forAgentSocket: agentSocket), error: error))
+    }
+}
+
 /// JSON-RPC error code for a call the harness channel does not serve: an action that is not
 /// operator-only goes over the agent socket.
 let harnessNotServedCode = -32008

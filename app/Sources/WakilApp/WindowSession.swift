@@ -68,23 +68,28 @@ final class WindowSession {
         // screen beside the socket's own (`initializeMeta`), which is how the e2e harness picks
         // its channel.
         let screen = ScreenPlace()
-        let bundleIdentifier = Bundle.main.bundleIdentifier
         let agentSocketFactory: AgentSocketFactory = { path, caller in
             // The e2e harness's operator channel, only in the staged e2e fixture
             // (`startHarnessSocket`; nil and nothing bound in any other build). Started BEFORE the
             // agent socket, so a harness that sees the agent socket already finds this one beside it.
-            // One that would not start leaves the session as it is: the harness, finding none,
-            // refuses the operator-only steps by name.
-            let harness = try? await startHarnessSocket(
-                bundleIdentifier: bundleIdentifier, agentSocket: path,
+            // One that would not start leaves the session as it is, and is said, never swallowed:
+            // the conversation's status says why (`startFailure`, as for the approval socket),
+            // and the agent socket's `initialize` carries it (`wakil/harnessFailure`), so the
+            // harness can tell a socket that failed from a build that opens none.
+            // The gate's input is read here, from the running bundle itself, and nowhere else
+            // (`TestTheWindowJudgesTheHarnessGateByItsOwnBundleIdentifier`).
+            let opened = await openHarnessSocket(
+                bundleIdentifier: Bundle.main.bundleIdentifier, agentSocket: path,
                 surface: surface, caller: caller, screen: { await screen.shown })
+            let harness = opened.server
             // The registry *and* the pane store the window itself draws
             // from, as one value: `read_pane` answers the agent from the
             // same `PaneStore` `WindowModel.refreshPanes` reads, so what the
             // agent is told is on screen is what is on screen (Invariant 3).
             // The gate judges the session's own place, whatever the screen shows.
             let server = MCPSocketServer(
-                surface: surface, socketPath: path, caller: caller, screen: { await screen.shown })
+                surface: surface, socketPath: path, caller: caller, screen: { await screen.shown },
+                harnessFailure: opened.failure)
             do {
                 try await server.start()
             } catch {
@@ -108,11 +113,13 @@ final class WindowSession {
                 })
             do {
                 try await approval.start()
-                return AgentSockets(mcp: server, approval: approval, harness: harness, startFailure: nil)
+                return AgentSockets(mcp: server, approval: approval, harness: harness, startFailure: opened.failure)
             } catch {
+                let failures = [approvalSocketFailure(path: approvalSocketPath(forAgentSocket: path), error: error),
+                                opened.failure].compactMap { $0 }
                 return AgentSockets(
                     mcp: server, approval: nil, harness: harness,
-                    startFailure: approvalSocketFailure(path: approvalSocketPath(forAgentSocket: path), error: error))
+                    startFailure: failures.joined(separator: "; "))
             }
         }
 

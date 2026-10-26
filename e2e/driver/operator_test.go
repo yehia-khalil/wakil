@@ -192,3 +192,69 @@ func TestOperatorChannelFollowsTheScreenAndRefusesASocketThePidDoesNotHold(t *te
 		t.Errorf("the call reached %q, want the place switched to", result.Text)
 	}
 }
+
+// failedHarnessSocket is an agent socket of a current fixture whose operator socket would not
+// start: its `initialize` says why, under `wakil/harnessFailure`.
+func failedHarnessSocket(t *testing.T, dir, name string, place driver.Place, failure string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatalf("listening on %s: %v", path, err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	go func() {
+		for {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				reader := bufio.NewReader(conn)
+				for {
+					line, readErr := reader.ReadBytes('\n')
+					if readErr != nil {
+						return
+					}
+					var request struct {
+						ID int `json:"id"`
+					}
+					if json.Unmarshal(line, &request) != nil {
+						return
+					}
+					result := map[string]interface{}{
+						"serverInfo": map[string]string{"name": "wakil"},
+						"_meta": map[string]interface{}{
+							"wakil/place": place, "wakil/screen": place, "wakil/harnessFailure": failure,
+						},
+					}
+					frame, _ := json.Marshal(map[string]interface{}{"jsonrpc": "2.0", "id": request.ID, "result": result})
+					if _, writeErr := conn.Write(append(frame, '\n')); writeErr != nil {
+						return
+					}
+				}
+			}(conn)
+		}
+	}()
+	return path
+}
+
+// **A socket that failed is not a build that opens none** (review M3). When the pid holds no
+// operator socket but the agent socket says the fixture's failed to start, the channel is an
+// error naming why — never the silent fallback to the agent socket a merge-base build gets.
+func TestOperatorChannelThatFailedToStartIsAnErrorNamingWhy(t *testing.T) {
+	dir := socketDir(t)
+	failure := "e2e harness socket /tmp/a-e2e.sock: bind failed — the harness's operator-only steps are refused this session"
+	agent := failedHarnessSocket(t, dir, "wakil-a.sock", staging, failure)
+	screenChannel := driver.NewScreenChannel(7, 2*time.Second, func() ([]string, error) { return []string{agent}, nil })
+	t.Cleanup(func() { _ = screenChannel.Close() })
+
+	channel, err := driver.NewOperatorChannel(7, screenChannel, func() ([]string, error) { return []string{agent}, nil })
+	if err == nil || !strings.Contains(err.Error(), failure) {
+		t.Fatalf("want an error naming %q, got %v, %v", failure, channel, err)
+	}
+	if !strings.Contains(err.Error(), "failed to start") {
+		t.Errorf("the error does not say the socket failed to start: %v", err)
+	}
+}

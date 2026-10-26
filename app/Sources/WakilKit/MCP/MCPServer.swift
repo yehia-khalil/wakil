@@ -132,7 +132,8 @@ public func handle(
     surface: MCPSurface,
     caller: @Sendable () async -> DispatchCaller,
     screen: (@Sendable () async -> ScreenShown?)? = nil,
-    channel: MCPChannel = .agent
+    channel: MCPChannel = .agent,
+    harnessFailure: String? = nil
 ) async -> JSONRPCMessage? {
     guard let id = message.id else {
         return nil
@@ -159,7 +160,8 @@ public func handle(
             ]),
             "_meta": initializeMeta(
                 place: own.place, screen: shown?.place,
-                conversation: own.conversation, screenConversation: shown?.conversation),
+                conversation: own.conversation, screenConversation: shown?.conversation,
+                harnessFailure: harnessFailure),
         ]))
 
     case "tools/list" where channel == .harness:
@@ -207,13 +209,18 @@ public struct ScreenShown: Sendable, Equatable {
 /// (conversations 2 of 3), each null when unknown. MCP's `_meta` is the result's room for
 /// exactly this, and a client that does not read it ignores it.
 ///
+/// `wakil/harnessFailure`, **only when there is one**: why the e2e fixture's harness socket beside
+/// this one would not start (`harnessSocketFailure`). Absent in every other build and whenever it
+/// started, so the harness reads "no key" as a build that opens none.
+///
 /// **What the e2e harness picks its channel by** (`e2e/driver/socket.go`): a window holds one
 /// socket per conversation it has shown, and the one to drive is the one whose place — and
 /// conversation — is the screen's: after ⌘N a place holds the backgrounded conversation's
 /// socket and its Landing's, and only the second is the screen's. All four answers come from
 /// the window that knows them. `project` is the registry key, the one `WAKIL_PROJECT` pins by.
 func initializeMeta(
-    place: Place, screen: Place?, conversation: String?, screenConversation: String?
+    place: Place, screen: Place?, conversation: String?, screenConversation: String?,
+    harnessFailure: String? = nil
 ) -> JSONValue {
     func object(_ place: Place) -> JSONValue {
         .object([
@@ -222,12 +229,14 @@ func initializeMeta(
             "environment": .string(place.environment),
         ])
     }
-    return .object([
+    var meta: [String: JSONValue] = [
         "wakil/place": object(place),
         "wakil/screen": screen.map(object) ?? .null,
         "wakil/conversation": conversation.map(JSONValue.string) ?? .null,
         "wakil/screenConversation": screenConversation.map(JSONValue.string) ?? .null,
-    ])
+    ]
+    if let harnessFailure { meta["wakil/harnessFailure"] = .string(harnessFailure) }
+    return .object(meta)
 }
 
 /// Projects one registered action into the shape `tools/list` advertises.
@@ -1065,6 +1074,8 @@ public actor MCPSocketServer {
     private let screen: (@Sendable () async -> ScreenShown?)?
     /// Which channel this socket is: the agent's, or the e2e harness's (`MCPChannel`).
     private let channel: MCPChannel
+    /// Why the e2e harness socket beside this one would not start, for `initialize`.
+    private let harnessFailure: String?
 
     private var listenFD: Int32 = -1
     private var acceptThread: Thread?
@@ -1084,13 +1095,15 @@ public actor MCPSocketServer {
         socketPath: String,
         caller: @escaping @Sendable () async -> DispatchCaller,
         screen: (@Sendable () async -> ScreenShown?)? = nil,
-        channel: MCPChannel = .agent
+        channel: MCPChannel = .agent,
+        harnessFailure: String? = nil
     ) {
         self.surface = surface
         self.socketPath = socketPath
         self.caller = caller
         self.screen = screen
         self.channel = channel
+        self.harnessFailure = harnessFailure
     }
 
     public func start() async throws {
@@ -1163,6 +1176,7 @@ public actor MCPSocketServer {
         let caller = self.caller
         let screen = self.screen
         let channel = self.channel
+        let harnessFailure = self.harnessFailure
         let thread = Thread {
             while true {
                 let clientFD = accept(fd, nil, nil)
@@ -1174,7 +1188,9 @@ public actor MCPSocketServer {
                     return
                 }
                 disableSIGPIPE(onSocket: clientFD)
-                let connection = Connection(fd: clientFD, surface: surface, caller: caller, screen: screen, channel: channel)
+                let connection = Connection(
+                    fd: clientFD, surface: surface, caller: caller, screen: screen, channel: channel,
+                    harnessFailure: harnessFailure)
                 Task { await connection.run() }
             }
         }
@@ -1260,18 +1276,20 @@ private actor Connection {
     private let caller: @Sendable () async -> DispatchCaller
     private let screen: (@Sendable () async -> ScreenShown?)?
     private let channel: MCPChannel
+    private let harnessFailure: String?
     private var reader = FrameReader()
     private var poisoned = false
 
     init(
         fd: Int32, surface: MCPSurface, caller: @escaping @Sendable () async -> DispatchCaller,
-        screen: (@Sendable () async -> ScreenShown?)?, channel: MCPChannel
+        screen: (@Sendable () async -> ScreenShown?)?, channel: MCPChannel, harnessFailure: String?
     ) {
         self.fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         self.surface = surface
         self.caller = caller
         self.screen = screen
         self.channel = channel
+        self.harnessFailure = harnessFailure
     }
 
     func run() {
@@ -1349,7 +1367,9 @@ private actor Connection {
             // 120 seconds, and the environment the gate judges on the way
             // out must be the one that is active *then*. See `handle`'s doc
             // comment.
-            guard let reply = await handle(message, surface: surface, caller: caller, screen: screen, channel: channel)
+            guard let reply = await handle(
+                message, surface: surface, caller: caller, screen: screen, channel: channel,
+                harnessFailure: harnessFailure)
             else { continue }
             if let frame = try? encodeFrame(reply) {
                 try? fh.write(contentsOf: frame)
