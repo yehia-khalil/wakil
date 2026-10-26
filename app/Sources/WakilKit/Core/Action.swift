@@ -184,6 +184,22 @@ public struct Action: Sendable {
     /// which reaches them through the agent) ask raises the plane.
     public var agentPrice: GateDecision? = nil
 
+    /// 3c-ii: this call's price, asked once per `.mutate` dispatch before `writeGate`, for an
+    /// action whose cost depends on the call rather than on the action — a browser act costs
+    /// what its site does. Its answer is passed to the gate as both halves of `price`, with no
+    /// `agentPrice`, so it alone decides (a `.block` stands outside production too). Never asked
+    /// for a `.read` or a `.control`. It runs under the same task-locals as the handler, the
+    /// caller's own canvas among them (ruling C5a), so a background agent's call is priced
+    /// against its own pane and site. Nil, as for every action before 3c-ii, keeps `price`.
+    public var callPrice: (@Sendable (_ params: JSONValue, _ caller: DispatchCaller,
+                                      _ origin: ActionOrigin) async -> GateDecision)? = nil
+
+    /// 3c-ii: what the confirmation plane shows for this call, and what it asks — preferred by
+    /// `parkForConfirmation` over `confirmationDescription`. Reached only through
+    /// `ActionRegistry.proposal(name:params:caller:)`, which binds the handler's task-locals
+    /// (ruling C5b). Nil, or a nil answer, parks as before.
+    public var proposal: (@Sendable (_ params: JSONValue) async -> ActionProposal?)? = nil
+
     /// The names of this action's parameters whose **values** must never
     /// reach the journal. `ActionRegistry` writes `[redacted]` in place of
     /// each, keeping the parameter's name.
@@ -220,7 +236,10 @@ public struct Action: Sendable {
         targetEnvironmentParam: String? = nil,
         price: (production: GateDecision, otherwise: GateDecision) = (.block, .gate),
         agentPrice: GateDecision? = nil,
-        secretParams: Set<String> = []
+        secretParams: Set<String> = [],
+        callPrice: (@Sendable (_ params: JSONValue, _ caller: DispatchCaller,
+                               _ origin: ActionOrigin) async -> GateDecision)? = nil,
+        proposal: (@Sendable (_ params: JSONValue) async -> ActionProposal?)? = nil
     ) {
         self.name = name
         self.description = description
@@ -232,6 +251,29 @@ public struct Action: Sendable {
         self.price = price
         self.agentPrice = agentPrice
         self.secretParams = secretParams
+        self.callPrice = callPrice
+        self.proposal = proposal
+    }
+}
+
+/// 3c-ii: what a parked proposal asks the operator. `.change` is every proposal before 3c-ii — confirm
+/// this one change. `.site` asks to let the agent use a site for the conversation; `.productionSite`
+/// confirms one act on a production site, which no Allow covers.
+public enum PendingAsk: Sendable, Equatable {
+    case change
+    case site(String)
+    case productionSite(String)
+}
+
+/// 3c-ii: an action's own description of one call for the confirmation plane — the statement it reads
+/// and the question it asks (`Action.proposal`).
+public struct ActionProposal: Sendable, Equatable {
+    public var statement: String
+    public var ask: PendingAsk
+
+    public init(statement: String, ask: PendingAsk) {
+        self.statement = statement
+        self.ask = ask
     }
 }
 
