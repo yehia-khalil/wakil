@@ -207,7 +207,7 @@ sphere's four-hue gradient is gone with the sphere.)*
 | Hue | Meaning |
 |-----|---------|
 | Green `#8be0c8` | Local / staging · healthy · completed |
-| Amber `#e8b45a` | Pending · caution |
+| Amber `#e8b45a` | Pending · caution · untrusted site text in the thread |
 | Red `#e85c5c` | **Production** · destructive · failed |
 
 **Red's value was assigned 2026-09-09**, during 2b-ii's implementation — this table named

@@ -63,7 +63,7 @@ public func threadLine(fromToolResult content: JSONValue) -> String? {
 /// perhaps six lines; the probe measured 10 of a turn's 13 events as
 /// `.unknown`, so drawing them buries the lines that describe work under
 /// the ones that do not.
-public func thoughtRow(id: Int, for event: HarnessEvent) -> ThoughtRow? {
+public func thoughtRow(id: Int, for event: HarnessEvent, toolNames: [String: String] = [:]) -> ThoughtRow? {
     switch event {
     case .systemInit(let sessionId):
         return ThoughtRow(id: id, label: "session", detail: sessionId, isError: false)
@@ -74,8 +74,10 @@ public func thoughtRow(id: Int, for event: HarnessEvent) -> ThoughtRow? {
         // (probe §4), because that is what was actually called — including
         // for tools Wakil never configured, which the CLI loads on its own.
         return ThoughtRow(id: id, label: "tool", detail: "\(name) \(PaneCell(input).text)", isError: false)
-    case .toolResult(_, let content, let isError):
-        if let line = threadLine(fromToolResult: content) {
+    case .toolResult(let toolId, let content, let isError):
+        // Only a browser tool's own reply may speak in the thread's voice: any
+        // other tool can echo a `thread` key a page put there.
+        if isBrowserTool(toolNames[toolId]), let line = threadLine(fromToolResult: content) {
             return ThoughtRow(id: id, label: "browser", detail: line, isError: isError)
         }
         return ThoughtRow(id: id, label: "tool result", detail: PaneCell(content).text, isError: isError)
@@ -84,4 +86,11 @@ public func thoughtRow(id: Int, for event: HarnessEvent) -> ThoughtRow? {
     case .unknown, .rateLimit:
         return nil
     }
+}
+
+/// Whether a tool use's name (the CLI's `mcp__<server>__<tool>` form or bare) is a `browser_*` tool.
+public func isBrowserTool(_ name: String?) -> Bool {
+    guard let name else { return false }
+    let tool = name.components(separatedBy: "__").last ?? name
+    return tool.hasPrefix("browser_")
 }

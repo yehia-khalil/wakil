@@ -9832,7 +9832,8 @@ public final class WindowModel {
         // what the first cut got wrong. See `MirrorEvent`'s own doc
         // comment for the regression this replaced.
         agent.mirror.retain(event, at: Date())
-        guard let row = thoughtRow(id: agent.nextThoughtId, for: event) else { return }
+        if case .toolUse(let toolId, let name, _) = event { agent.toolNames[toolId] = name }
+        guard let row = thoughtRow(id: agent.nextThoughtId, for: event, toolNames: agent.toolNames) else { return }
         agent.nextThoughtId += 1
         agent.thoughts.append(row)
         agent.lastActivity = Date()

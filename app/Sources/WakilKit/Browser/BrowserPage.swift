@@ -135,12 +135,26 @@ public func browserIdleWait(lastInput: Date?, now: Date, quiet: TimeInterval = 1
 
 // MARK: - The copy
 
+/// Page-written text made safe to quote on one thread line: whitespace (newlines and tabs
+/// included) runs collapse to single spaces, `"` becomes `'`, ends trimmed. Done before any trim
+/// to length, so a page cannot close the quote or start a line of its own.
+public func browserQuotable(_ text: String) -> String {
+    text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
+        .replacingOccurrences(of: "\"", with: "'")
+}
+
 /// 60 characters at most, the last being `…` when trimmed; an empty label is `the <role> <ref>`.
 public func browserElementLabel(_ e: BrowserElement) -> String {
-    let label = e.label.trimmingCharacters(in: .whitespacesAndNewlines)
+    let label = browserQuotable(e.label)
     if label.isEmpty { return "the \(e.role) \(e.ref)" }
     if label.count > 60 { return String(label.prefix(59)) + "…" }
     return label
+}
+
+/// An option's text as quoted in the thread: sanitised, then trimmed like a label.
+public func browserOptionLabel(_ option: String) -> String {
+    let o = browserQuotable(option)
+    return o.count > 60 ? String(o.prefix(59)) + "…" : o
 }
 
 public func browserThreadLine(_ act: BrowserPageAct, _ e: BrowserElement) -> String {
@@ -148,7 +162,7 @@ public func browserThreadLine(_ act: BrowserPageAct, _ e: BrowserElement) -> Str
     switch act {
     case .click: return "clicked \"\(label)\""
     case .type: return "typed into \"\(label)\""
-    case .select(_, let option, _): return "selected \"\(option)\" in \"\(label)\""
+    case .select(_, let option, _): return "selected \"\(browserOptionLabel(option))\" in \"\(label)\""
     case .press(_, let key): return "pressed \(key.rawValue) in \"\(label)\""
     case .scroll: return "scrolled to \"\(label)\""
     }
@@ -160,7 +174,7 @@ public func browserStatement(_ act: BrowserPageAct, _ e: BrowserElement, site: S
     switch act {
     case .click: base = "click \"\(label)\""
     case .type(_, let text, _): base = "type \"\(text)\" into \"\(label)\""
-    case .select(_, let option, _): base = "select \"\(option)\" in \"\(label)\""
+    case .select(_, let option, _): base = "select \"\(browserOptionLabel(option))\" in \"\(label)\""
     case .press(_, let key): base = "press \(key.rawValue) in \"\(label)\""
     case .scroll: base = "scroll to \"\(label)\""
     }

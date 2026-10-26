@@ -61,6 +61,8 @@ public final class PlaceAgent {
     public internal(set) var thoughts: [ThoughtRow] = []
     /// Monotonic row ids (`WindowModel.thoughts`), per thread.
     var nextThoughtId = 0
+    /// Tool use id -> tool name, so a result is known to come from a browser tool.
+    var toolNames: [String: String] = [:]
     /// True from a successful `send` to the `.result` that ends the turn.
     public internal(set) var turnInFlight = false
     /// A turn ended while the place was off screen, and the operator has not been back since

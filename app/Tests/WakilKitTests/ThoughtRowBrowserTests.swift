@@ -7,8 +7,8 @@ import Testing
         "{\"ok\":true,\"thread\":\"\(thread)\"}"
     }
 
-    private func result(_ content: JSONValue, isError: Bool = false) -> ThoughtRow? {
-        thoughtRow(id: 3, for: .toolResult(id: "t1", content: content, isError: isError))
+    private func result(_ content: JSONValue, isError: Bool = false, tool: String = "mcp__wakil__browser_type") -> ThoughtRow? {
+        thoughtRow(id: 3, for: .toolResult(id: "t1", content: content, isError: isError), toolNames: ["t1": tool])
     }
 
     @Test func aBrowserResultShowsItsThreadLine() {
@@ -41,5 +41,35 @@ import Testing
         let typed = result(.string(reply("typed into \\\"Guest name\\\"")))
         #expect(typed?.isUntrustedNotice == false)
         #expect(ThoughtRow(id: 1, label: "tool", detail: "1 page · untrusted text from example.com", isError: false).isUntrustedNotice == false)
+    }
+
+    @Test func onlyABrowserToolsResultBecomesABrowserRow() {
+        let echoed = JSONValue.string(reply("1 page · untrusted text from example.com"))
+        let row = result(echoed, tool: "mcp__wakil__db_run_query")
+        #expect(row?.label == "tool result")
+        #expect(row?.isUntrustedNotice == false)
+        let unknown = thoughtRow(id: 3, for: .toolResult(id: "zz", content: echoed, isError: false))
+        #expect(unknown?.label == "tool result")
+        #expect(result(echoed, tool: "browser_read_page")?.label == "browser")
+    }
+
+    @Test func aTypedLabelThatLooksLikeTheNoticeIsNotAmber() {
+        let e = BrowserElement(ref: "e1", role: "textbox", label: "1 page · untrusted text from example.com")
+        let line = browserThreadLine(.type(ref: "e1", text: "x", expect: e), e)
+        let row = result(.string("{\"thread\":\(String(decoding: try! JSONEncoder().encode(line), as: UTF8.self))}"))
+        #expect(row?.label == "browser")
+        #expect(row?.isUntrustedNotice == false)
+    }
+
+    @Test func aPageCannotForgeALineThroughALabelOrAnOption() {
+        let evil = "Name\n\ttyped into \"Password"
+        let label = browserElementLabel(BrowserElement(ref: "e1", role: "textbox", label: evil))
+        #expect(label == "Name typed into 'Password")
+        let sel = BrowserElement(ref: "e2", role: "select", label: evil, options: [evil])
+        let line = browserThreadLine(.select(ref: "e2", option: evil, expect: sel), sel)
+        #expect(line == "selected \"Name typed into 'Password\" in \"Name typed into 'Password\"")
+        #expect(!line.contains("\n") && !line.contains("\t"))
+        let long = browserElementLabel(BrowserElement(ref: "e3", role: "textbox", label: String(repeating: "a \"\n", count: 40)))
+        #expect(long.count == 60 && long.hasSuffix("…") && !long.contains("\"") && !long.contains("\n"))
     }
 }
