@@ -192,17 +192,27 @@ struct ConfirmationPlane: View {
 
 /// What held the keyboard as a plane rose (a text field's own view rather than its field editor),
 /// and the window it was in. Given back once the plane has gone — only when nothing else took the
-/// keyboard meanwhile, and only to a view still in that window (Rule 6).
+/// keyboard meanwhile, only to a view still in that window, and only while no newer plane has risen
+/// there (`PlaneKeyboardHandoff`, Rule 6).
 @MainActor
 final class PlaneKeyboardReturn {
     private(set) weak var window: NSWindow?
     private weak var responder: NSResponder?
+    private let handoff = PlaneKeyboardHandoff.shared
 
     func capture(in window: NSWindow) {
         self.window = window
+        // A plane that went within the second may still owe the keyboard back: this one takes over
+        // what it owed, and its retry stops — the older plane's own field, still holding the
+        // keyboard as this plane rises, is not what held it before.
+        let handed = handoff.rise(in: ObjectIdentifier(window))
         var held = window.firstResponder
         if let editor = held as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSView { held = field }
-        responder = held === window ? nil : held
+        if let owed = handed.owed as? NSResponder, held === window || held == nil || held === handed.leaving {
+            responder = owed
+        } else {
+            responder = held === window ? nil : held
+        }
     }
 
     func restore() {
@@ -210,22 +220,32 @@ final class PlaneKeyboardReturn {
         // that field out of the window a few turns after the plane disappears, and until then its
         // editor still holds the keyboard — so it is waited out, twenty tries a frame apart, as
         // `browserRetryFocus` waits. A field still in the window after that is one the operator
-        // moved to, and it keeps the keyboard.
-        let leaving = (window?.firstResponder as? NSTextView).flatMap { $0.isFieldEditor ? $0.delegate as? NSView : nil }
-        attempt(tries: 20, leaving: leaving)
+        // moved to, and it keeps the keyboard. A plane that rises meanwhile stops the wait.
+        guard let window, let responder else { return }
+        let leaving = (window.firstResponder as? NSTextView).flatMap { $0.isFieldEditor ? $0.delegate as? NSView : nil }
+        let turn = handoff.owe(responder, leaving: leaving === responder ? nil : leaving, in: ObjectIdentifier(window))
+        attempt(tries: 20, leaving: leaving, turn: turn)
     }
 
-    private func attempt(tries: Int, leaving: NSView?) {
+    private func attempt(tries: Int, leaving: NSView?, turn: Int) {
         // A turn later: the plane's own field leaves first responder as the plane is taken down.
         DispatchQueue.main.asyncAfter(deadline: .now() + (tries == 20 ? 0 : 0.05)) { [self] in
-            guard let window, let view = responder as? NSView, view.window === window else { return }
+            guard let window else { return }
+            let key = ObjectIdentifier(window)
+            guard let view = responder as? NSView, view.window === window else { return handoff.settle(turn, in: key) }
             let now = window.firstResponder
             let holder = (now as? NSTextView).flatMap { $0.isFieldEditor ? $0.delegate as? NSView : nil }
             let free = now == nil || now === window || ((now as? NSTextView)?.isFieldEditor == true && holder?.window == nil)
-            if free {
+            let stillLeaving = leaving != nil && holder === leaving && leaving !== view
+            switch planeKeyboardReturnStep(current: handoff.isCurrent(turn, in: key), free: free,
+                                           stillLeaving: stillLeaving, triesLeft: tries) {
+            case .give:
                 window.makeFirstResponder(view)
-            } else if let leaving, holder === leaving, leaving !== view, tries > 1 {
-                attempt(tries: tries - 1, leaving: leaving)
+                handoff.settle(turn, in: key)
+            case .wait:
+                attempt(tries: tries - 1, leaving: leaving, turn: turn)
+            case .stop:
+                handoff.settle(turn, in: key)
             }
         }
     }
