@@ -1008,6 +1008,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
     "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set", "ctx_git_account_test",
     "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
+    "ctx_git_api_access_token_set", "ctx_git_api_access_remove", "ctx_git_api_access_test",
     "ctx_set_project_agent_instructions",
     // Connections: the operator-only connection actions and the Jira token.
     "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove",

@@ -1125,7 +1125,10 @@ public func registerStandardActions(
         ("ctx_git_key_passphrase_set", "git_key_passphrase_set", ["id", "host", "passphrase"], ["id", "host", "passphrase"], ["passphrase"]),
         ("ctx_git_account_test", "git_account_test", ["id", "host"], ["id", "host"], []),
         ("ctx_git_device_start", "git_device_start", ["id", "provider"], ["id", "provider"], []),
-        ("ctx_git_device_poll", "git_device_poll", ["id", "provider", "host", "deviceCode"], ["id", "provider", "host", "deviceCode"], []),
+        ("ctx_git_device_poll", "git_device_poll", ["id", "provider", "host", "deviceCode", "apiAccess"], ["id", "provider", "host", "deviceCode"], []),
+        ("ctx_git_api_access_token_set", "git_api_access_token_set", ["id", "host", "token"], ["id", "host", "token"], ["token"]),
+        ("ctx_git_api_access_remove", "git_api_access_remove", ["id", "host"], ["id", "host"], []),
+        ("ctx_git_api_access_test", "git_api_access_test", ["id", "host"], ["id", "host"], []),
         ("ctx_git_gh_logins", "git_gh_logins", ["id"], ["id"], []),
         ("ctx_git_gh_import", "git_gh_import", ["id", "host", "user"], ["id", "host", "user"], []),
         ("ctx_set_project_agent_instructions", "set_project_agent_instructions",
@@ -1144,6 +1147,9 @@ public func registerStandardActions(
                 "ctx_git_account_test": "Ask a host who an organisation's account there is. Operator-only.",
                 "ctx_git_device_start": "Begin Sign in with a provider (device flow). Operator-only.",
                 "ctx_git_device_poll": "Ask once whether a Sign in was approved. Operator-only.",
+                "ctx_git_api_access_token_set": "Give an SSH GitHub account API access with an access token, kept in the Keychain. Operator-only.",
+                "ctx_git_api_access_remove": "Drop an SSH GitHub account's API access; the account stays. Operator-only.",
+                "ctx_git_api_access_test": "Ask GitHub who an SSH account's API access belongs to. Operator-only.",
                 "ctx_git_gh_logins": "The GitHub CLI's logins. Operator-only.",
                 "ctx_git_gh_import": "Use one of the GitHub CLI's logins as the organisation's account. Operator-only.",
                 "ctx_set_project_agent_instructions": "Change one project's agent instructions. Operator-only.",
@@ -1153,7 +1159,10 @@ public func registerStandardActions(
             audience: .operatorOnly,
             schema: .object([
                 "type": .string("object"),
-                "properties": .object(Dictionary(uniqueKeysWithValues: keys.map { ($0, JSONValue.object(["type": .string("string")])) })),
+                // `apiAccess` (device poll) is the one switch among the strings.
+                "properties": .object(Dictionary(uniqueKeysWithValues: keys.map {
+                    ($0, JSONValue.object(["type": .string($0 == "apiAccess" ? "boolean" : "string")]))
+                })),
                 "required": .array(required.map { .string($0) }),
             ]),
             handler: { params in
@@ -1162,6 +1171,7 @@ public func registerStandardActions(
                 for key in required { arguments[key] = .string(try requireStringParam(params, key, action: name)) }
                 for key in keys where arguments[key] == nil {
                     if case .object(let o) = params, case .string(let v)? = o[key] { arguments[key] = .string(v) }
+                    if key == "apiAccess", case .object(let o) = params, case .bool(let b)? = o[key] { arguments[key] = .bool(b) }
                 }
                 return try await callChecked(
                     context, tool: tool, arguments: .object(arguments), action: name,

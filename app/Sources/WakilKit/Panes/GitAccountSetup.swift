@@ -125,6 +125,27 @@ public func gitAccountCard(_ a: SettingsGitAccount) -> GitAccountCard {
         user: a.user.isEmpty ? "Not tested yet" : a.user, method: method)
 }
 
+/// An SSH GitHub account's API access row: git keeps pushing over SSH, and this is what Wakil
+/// reads pull requests with.
+public struct GitAPIAccessRow: Sendable, Equatable {
+    public var title: String
+    public var detail: String
+    /// Whether any access is set (Test and Remove apply).
+    public var isSet: Bool
+}
+
+/// The row under an account's card: only an SSH GitHub account has one.
+public func gitAPIAccessRow(_ a: SettingsGitAccount) -> GitAPIAccessRow? {
+    guard a.provider == "github", a.method == "ssh" else { return nil }
+    let detail: String
+    switch a.apiAccess {
+    case "signin": detail = "Signed in"
+    case "token": detail = "Access token"
+    default: detail = "Not set — pull requests are not read"
+    }
+    return GitAPIAccessRow(title: "API access", detail: detail, isSet: !a.apiAccess.isEmpty)
+}
+
 /// A failed Test, said plainly when it is the usual case — the key not added on the host yet —
 /// and whole otherwise.
 public func gitTestFailureText(_ error: String, provider: GitProvider) -> String {

@@ -630,7 +630,11 @@ extension WakilWindow {
                         setPassphrase: { host, pass in await model.setGitKeyPassphrase(host: host, passphrase: pass) },
                         test: { host in await model.testGitAccount(host: host) },
                         deviceStart: { provider in await model.gitDeviceStart(provider: provider) },
-                        devicePoll: { provider, host, code in await model.gitDevicePoll(provider: provider, host: host, deviceCode: code) },
+                        devicePoll: { provider, host, code, apiAccess in
+                            await model.gitDevicePoll(provider: provider, host: host, deviceCode: code, apiAccess: apiAccess) },
+                        setAPIToken: { host, token in await model.setGitAPIAccessToken(host: host, token: token) },
+                        removeAPIAccess: { host in await model.removeGitAPIAccess(host: host) },
+                        testAPIAccess: { host in await model.testGitAPIAccess(host: host) },
                         ghLogins: { await model.gitGhLogins() },
                         ghImport: { host, user in await model.gitGhImport(host: host, user: user) }),
                     connections: ConnectionActions(

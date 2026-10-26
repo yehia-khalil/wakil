@@ -127,6 +127,7 @@ public let operatorOnlyActions: Set<String> = [
     "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
     "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set",
     "ctx_git_account_test", "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
+    "ctx_git_api_access_token_set", "ctx_git_api_access_remove", "ctx_git_api_access_test",
     // 3a-iii-b (Decision 45): what the agent is told is the operator's to write.
     "ctx_set_project_agent_instructions",
     // Connections: which account an organisation's agents reach a service as, its secrets, and
@@ -273,7 +274,8 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "do it in the settings pane (\u{2318},)."
     case "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_host_suggestions",
          "ctx_git_ssh_keys", "ctx_git_key_generate", "ctx_git_token_set", "ctx_git_key_passphrase_set",
-         "ctx_git_account_test", "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import":
+         "ctx_git_account_test", "ctx_git_device_start", "ctx_git_device_poll", "ctx_git_gh_logins", "ctx_git_gh_import",
+         "ctx_git_api_access_token_set", "ctx_git_api_access_remove", "ctx_git_api_access_test":
         return "\(toolName): only the operator adds and removes an organisation's git accounts: "
             + "they decide which account pushes and hold its secrets. Ask the operator "
             + "to do it in Settings → Organisation → Git (\u{2318},)."

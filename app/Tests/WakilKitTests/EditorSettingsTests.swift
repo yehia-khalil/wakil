@@ -303,6 +303,42 @@ private actor GhostRecordingCaller: ToolCaller {
     #expect(!journal.contains("pass-SECRET-2"))
 }
 
+/// An SSH GitHub account's API access token reaches its tool and never the journal; the device poll
+/// carries `apiAccess` as a boolean.
+@Test func apiAccessTokenIsRedactedInTheJournal() async throws {
+    let caller = GhostRecordingCaller()
+    let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "api-access-secret")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    _ = try await registry.dispatch(
+        name: "ctx_git_api_access_token_set",
+        params: .object(["id": .string("o"), "host": .string("github.com"), "token": .string("tok-SECRET-9")]),
+        origin: .ui, caller: .test("staging"), confirmation: nil)
+    #expect(await caller.arguments == [.object(["id": .string("o"), "host": .string("github.com"), "token": .string("tok-SECRET-9")])])
+    let journal = try String(contentsOf: try #require(FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)?
+        .compactMap { $0 as? URL }.first { $0.pathExtension == "jsonl" }), encoding: .utf8)
+    #expect(!journal.contains("tok-SECRET-9"))
+}
+
+/// Setting, testing or removing an account's API access moves a credential, so an agent is refused.
+@Test func apiAccessActionsAreOperatorOnly() async throws {
+    let caller = GhostRecordingCaller()
+    let registry = ActionRegistry(
+        journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "api-access-agent")
+    await registerStandardActions(into: registry, context: caller, panes: PaneStore(), db: nil, resumes: ResumeBroker())
+    for name in ["ctx_git_api_access_token_set", "ctx_git_api_access_remove", "ctx_git_api_access_test"] {
+        let d = try #require(await registry.descriptor(named: name))
+        #expect(d.audience == .operatorOnly)
+        #expect(operatorOnlyActions.contains(name))
+        await #expect(throws: (any Error).self) {
+            _ = try await registry.dispatch(
+                name: name, params: .object(["id": .string("o"), "host": .string("github.com"), "token": .string("t")]),
+                origin: .agent, caller: .test("staging"), confirmation: nil)
+        }
+    }
+    #expect(await caller.arguments.isEmpty)
+}
+
 /// 3a-iii-b: the organisation's three agent texts reach `update_org`, and the tree reads both levels.
 @Test func theAgentTextsAreForwardedAndRead() async throws {
     let caller = GhostRecordingCaller()
