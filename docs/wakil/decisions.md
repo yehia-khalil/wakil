@@ -1639,8 +1639,8 @@ Each entry: the call, why, and what would change our mind.
     when it is the `baseUrl` host of an API entry in any environment of any project of the organisation
     that is production: the config tree carries the flag (`ConfigTreeEnvironment.Production`, from
     `EnvironmentIsProduction`), since the organisation-wide view Swift has is that tree. Until the tree
-    is read, or for a site it does not name, every site is treated as production; `www.` is forgiven for
-    production and never for consent.
+    is read, every site is treated as production; `www.` is forgiven for production and never for
+    consent.
     *Why per site, and not per submit:* a page's script can send from any click, so a price on the
     submit button prices nothing; the site is the unit the operator can reason about. A password, card
     or one-time-code field is never typed by the agent whatever the price (Invariant 6): the never-list
