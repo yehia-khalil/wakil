@@ -153,6 +153,9 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The address last asked for, which a failed first load has no `url` to report.
     var requested: String?
     private(set) var failure: String?
+    /// Whether a load has ended here, finished or failed (3c-ii): a read waits for the page to
+    /// arrive, and a first load that failed leaves no `url` — this says the wait is over anyway.
+    private(set) var loadEnded = false
     /// The host whose remembered zoom the page took (`zoom.json`); a page arriving on another host
     /// takes that one's.
     var zoomHost: String?
@@ -267,6 +270,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loadEnded = true
         // Again once loaded (I8): the state at commit holds the page as it began, not as it ended.
         host?.saveState(of: webView, scope: scope, pane: pane, tab: tab, files: files)
         scheduleReport()
@@ -282,6 +286,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     private func failed(_ error: Error, _ webView: WKWebView) {
+        loadEnded = true
         // A refused certificate shows its own page, not the load error under it.
         if !tab.isEmpty, host?.certificates[key] != nil {
             scheduleReport()

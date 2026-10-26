@@ -27,9 +27,13 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
     private static let pollInterval: Duration = .milliseconds(50)
 
     func read(scope: LayoutScope?, pane: String, tab: String, firstRef: Int) async throws -> BrowserPageRead {
-        try await waitForPage(scope: scope, pane: pane, tab: tab)
+        // One budget for the whole read, the wait and the script together: never longer than a call.
+        let deadline = Date().addingTimeInterval(Self.callTimeout)
+        try await waitForPage(scope: scope, pane: pane, tab: tab,
+                              until: deadline.addingTimeInterval(-Self.readScriptReserve))
         let text = try await call(scope: scope, pane: pane, tab: tab, "globalThis.wakil.read(firstRef)",
-                                  ["firstRef": firstRef])
+                                  ["firstRef": firstRef],
+                                  seconds: max(deadline.timeIntervalSinceNow, Self.readScriptReserve))
         let answer = try decode(ReadAnswer.self, text)
         guard answer.stale != true, let url = answer.url, let elements = answer.elements else {
             throw BrowserPageDriverError.stale
@@ -96,18 +100,22 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
         }
     }
 
-    /// Before a read: up to 10 s (`settleFinish`, an act's wait) for the page the tab is loading to
-    /// arrive. A web view just made — a restored tab drawn when a new conversation's first turn
-    /// replaces its Landing with the canvas — has no page of its own yet (`url` nil, its document
-    /// `about:blank`) while the tab already reports the address it is loading; a read then would hand
-    /// the agent the empty document under no site. After the wait it reads what the tab shows, and
-    /// the reply says whether it is still loading.
-    private func waitForPage(scope: LayoutScope?, pane: String, tab: String) async throws {
-        let finishBy = Date().addingTimeInterval(Self.settleFinish)
-        while Date() < finishBy {
+    /// What a read keeps of its 10 s for the script itself, after waiting for the page.
+    static let readScriptReserve: TimeInterval = 2
+
+    /// Before a read: until `deadline` for the page the tab is loading to arrive. A web view just
+    /// made — a restored tab drawn when a new conversation's first turn replaces its Landing with
+    /// the canvas — has no page of its own yet (`url` nil, its document `about:blank`) while the tab
+    /// already reports the address it is loading; a read then would hand the agent the empty
+    /// document under no site. Arrived: not loading, and a page there or a load that ended (a first
+    /// load that failed has no `url`). After the deadline it reads what the tab shows, and the reply
+    /// says whether it is still loading.
+    private func waitForPage(scope: LayoutScope?, pane: String, tab: String, until deadline: Date) async throws {
+        while Date() < deadline {
             let arrived = try await MainActor.run {
                 let view = try self.liveView(scope: scope, pane: pane, tab: tab)
-                return view.url != nil && !view.isLoading
+                let ended = (view.navigationDelegate as? BrowserTabDelegate)?.loadEnded ?? false
+                return !view.isLoading && (view.url != nil || ended)
             }
             if arrived { return }
             try await Task.sleep(for: Self.pollInterval)
@@ -184,6 +192,7 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
     private func call(scope: LayoutScope?, pane: String, tab: String, _ expression: String,
                       _ arguments: [String: any Sendable],
                       timeout timeoutReason: String = BrowserPageAgent.noAnswerReason,
+                      seconds: TimeInterval = BrowserPageAgent.callTimeout,
                       holdsKeyboard: Bool = false) async throws -> String {
         try await MainActor.run { _ = try self.liveView(scope: scope, pane: pane, tab: tab) }
         let body = BrowserAgentScript.body(expression)
@@ -204,7 +213,7 @@ final class BrowserPageAgent: BrowserPageDriver, @unchecked Sendable {
                     }
                 }
                 Task { @MainActor in
-                    try? await Task.sleep(for: .seconds(Self.callTimeout))
+                    try? await Task.sleep(for: .seconds(seconds))
                     once.answer(.failure(.failed(timeoutReason)))
                 }
             }
