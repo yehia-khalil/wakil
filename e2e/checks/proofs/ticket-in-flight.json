@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/ticket-in-flight.jsonl",
+  "baseCommit": "fc59bcc8f9ddc37f9c724bf047cdfd3853ed7087",
+  "provedAt": "2026-10-26T18:25:07.927876Z",
+  "checkBlob": "d3114500356bf50c1b5918855cbc7d94d1ff17a3"
+}

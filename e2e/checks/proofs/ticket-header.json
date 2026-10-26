@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/ticket-header.jsonl",
+  "baseCommit": "fc59bcc8f9ddc37f9c724bf047cdfd3853ed7087",
+  "provedAt": "2026-10-26T18:25:07.927876Z",
+  "checkBlob": "f2b2ba6204fac4fb5bc4b6cfb12e82b489b4d178"
+}

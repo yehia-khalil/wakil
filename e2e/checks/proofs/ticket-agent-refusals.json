@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/ticket-agent-refusals.jsonl",
+  "baseCommit": "fc59bcc8f9ddc37f9c724bf047cdfd3853ed7087",
+  "provedAt": "2026-10-26T18:25:07.927876Z",
+  "checkBlob": "f80a98e66d3f0c7f33d65574e5d1fb643acbcc9a"
+}
