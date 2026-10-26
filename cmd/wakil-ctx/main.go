@@ -190,7 +190,7 @@ type gitSecretArgs struct {
 // argument set names the organisation in id, as update_org does.
 type connectionAddArgs struct {
 	ID        string            `json:"id" jsonschema:"the organisation's id"`
-	Kind      string            `json:"kind" jsonschema:"a catalog id (github, atlassian, figma, datadog, amplitude, slack) or custom"`
+	Kind      string            `json:"kind" jsonschema:"a catalog id (github, atlassian, datadog, amplitude, slack) or custom"`
 	Name      string            `json:"name,omitempty" jsonschema:"optional; defaults to the kind, then kind-2, kind-3"`
 	Transport string            `json:"transport,omitempty" jsonschema:"custom only: stdio or http"`
 	URL       string            `json:"url,omitempty" jsonschema:"the address of an http server; a catalog kind has its own"`

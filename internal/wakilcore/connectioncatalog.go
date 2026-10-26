@@ -41,9 +41,6 @@ var ConnectionCatalog = []ConnectionKind{
 		ID: "atlassian", Title: "Atlassian (Confluence)", Transport: "http", URL: "https://mcp.atlassian.com/v1/mcp", SignIn: "browser",
 	},
 	{
-		ID: "figma", Title: "Figma", Transport: "http", URL: "https://mcp.figma.com/mcp", SignIn: "browser",
-	},
-	{
 		// Doc: https://docs.datadoghq.com/bits_ai/mcp_server/setup/ — the address is per site;
 		// {site} is the "site" field's value (the page lists one host per site and publishes
 		// the US1 one, https://mcp.datadoghq.com/api/unstable/mcp-server/mcp). Header sign-in

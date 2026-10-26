@@ -47,7 +47,7 @@ the organization form asks for the Jira site and nothing else (`OrgPlane.swift`)
 1. **Organization settings → Connections.** A list: each connection with a dot and a word —
    *connected* (green), *needs sign-in* (amber), *failing* (red) — and **+ Add connection**.
    The existing Jira site moves here as the Jira connection; nothing about it is lost.
-2. **Add connection** offers the ready-made list — GitHub, Jira, Confluence, Figma, Datadog,
+2. **Add connection** offers the ready-made list — GitHub, Jira, Confluence, Datadog,
    Amplitude, Slack — and **Custom server**. A ready-made entry already knows its server's address
    or command, its sign-in kind and its fields; the operator only signs in.
 3. **The connection's page**:
@@ -56,9 +56,9 @@ the organization form asks for the Jira site and nothing else (`OrgPlane.swift`)
 
      | Kind | Form | Examples |
      |---|---|---|
-     | Token | one field (two for Jira: email and API token) | GitHub PAT, Figma, Jira |
+     | Token | one field (two for Jira: email and API token) | GitHub PAT, Jira |
      | Fields | several labelled fields, some not secret (site, region) | Datadog (site, API key, app key), Amplitude (region, key, secret) |
-     | Browser | **Sign in with …** → the browser → "Signed in as …" · **Sign out** | Atlassian remote, Slack, Figma remote |
+     | Browser | **Sign in with …** → the browser → "Signed in as …" · **Sign out** | Atlassian remote, Slack |
      | None | a command and optional environment variables | a local `npx` server |
 
      A stored secret shows as `•••••••• stored in Keychain`, with **Replace** (the existing
@@ -204,3 +204,5 @@ the servers it was launched with. The operator did not accept that.
 
 This replaces the runbook's *Known and not fixed* line "A Claude Code session started before a
 connection was added does not have it".
+
+**2026-10-26, decided by the operator:** Figma leaves the ready-made list — its sign-in server (`mcp.figma.com/register`) answers 403 to any client not on Figma's allowlist.

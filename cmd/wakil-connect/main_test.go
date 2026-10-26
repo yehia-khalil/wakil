@@ -554,9 +554,9 @@ func TestCredentialsInjected(t *testing.T) {
 		setupOrg(t)
 		memorySecurity(t)
 		srv, header := recordingServer(t)
-		addConn(t, wakilcore.MCPConnection{Name: "figma", Kind: "figma", Transport: "http", URL: srv.URL, SignIn: "browser"})
-		setSecrets(t, "figma", map[string]string{"access": "bt-1"})
-		dialAndList(t, "figma")
+		addConn(t, wakilcore.MCPConnection{Name: "atlassian", Kind: "atlassian", Transport: "http", URL: srv.URL, SignIn: "browser"})
+		setSecrets(t, "atlassian", map[string]string{"access": "bt-1"})
+		dialAndList(t, "atlassian")
 		if got := header().Get("Authorization"); got != "Bearer bt-1" {
 			t.Fatalf("Authorization = %q", got)
 		}

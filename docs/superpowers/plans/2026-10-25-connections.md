@@ -74,7 +74,6 @@
 - [ ] **Step 3: Implement** in `connections.go`; `ConnectionCatalog` in `connectioncatalog.go` with these entries (ID · Title · Transport · URL/Command · SignIn · Fields):
   - `github` · GitHub · http · `https://api.githubcopilot.com/mcp/` · token · `token` (secret, Header `Authorization: Bearer`)
   - `atlassian` · Atlassian (Confluence) · http · `https://mcp.atlassian.com/v1/mcp` · browser · —
-  - `figma` · Figma · http · `https://mcp.figma.com/mcp` · browser · —
   - `datadog`, `amplitude`, `slack` · their official MCP server · **verify each address and sign-in kind from the vendor's own MCP documentation and record the doc URL in a comment beside the entry**; Datadog's fields are `site` (not secret), `apiKey`, `appKey`; Amplitude's `region` (not secret), and its key and secret if its server takes them.
   - `custom` is not a catalog entry; it is `Kind: "custom"`.
   Jira is not in this catalog (it is `wakil-pm`, Task 7).
