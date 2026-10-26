@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/3c-ii-production.jsonl",
+  "baseCommit": "5feb2f5e5892308cc712bebd2ac05ddeccec792a",
+  "provedAt": "2026-10-26T16:32:58.632693Z",
+  "checkBlob": "c3492acda2f1df161c2aacf9b7ce28e264c01251"
+}

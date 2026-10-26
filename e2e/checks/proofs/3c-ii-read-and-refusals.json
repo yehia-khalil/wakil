@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3c-ii-read-and-refusals.jsonl",
+  "baseCommit": "5feb2f5e5892308cc712bebd2ac05ddeccec792a",
+  "provedAt": "2026-10-26T16:32:58.632693Z",
+  "checkBlob": "5099d309f9ac8aace295e90cc4f5eb9a82e5190c"
+}
