@@ -1,0 +1,37 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].id","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"keys":"{pageStub}/b.html"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].title","equals":"Page B"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"pane":"browser-1","field":"tabs[1]","present":false}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"do":{"hotkey":"cmd+shift+t"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].url","contains":"/b.html"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t3"}}
+{"expect":{"focus":"browser.page"}}
+{"do":{"hotkey":"cmd+1"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"do":{"hotkey":"cmd+2"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t3"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/popup.html?auto=1"}}}
+{"expect":{"pane":"browser-1","field":"tabs[2].url","contains":"/b.html"}}
+{"expect":{"pane":"browser-1","field":"tabs[2].title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].title","equals":"Pop-up"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t4"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"pane":"browser-1","field":"tabs[2]","present":false}}
+{"do":{"hotkey":"cmd+w"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"tree":"absent","text":"Page A"}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_close_tab\""}}}

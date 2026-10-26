@@ -77,6 +77,8 @@ struct EditorPane: View {
     var inlineBlame: Bool = false
     var blameFor: (String, String, String?) async -> [GitBlameInfo]? = { _, _, _ in nil }
     var openCommitDiff: (String, GitCommitRef) -> Void = { _, _ in }
+    /// 3c-i: the hover's Open on GitHub, the commit's page, and whether ⌥ was held (`WakilLinks.open`).
+    var openLink: (String, Bool) -> Void = { _, _ in }
     var timeline = EditorTimelineControls()
     let ghostSchema: () async -> GhostScope
     let ghostSuggest: (InfillRequest, Int) async -> String?
@@ -115,12 +117,6 @@ struct EditorPane: View {
     @State private var treeBrowsed: String?
     /// The revealed file's row, until the column has drawn and selected it.
     @State private var pendingReveal: String?
-    /// Each tab's horizontal span in the strip's space, reported by the tabs themselves.
-    @State private var tabSpans: [Int: ClosedRange<Double>] = [:]
-    /// Where a dragged tab would land now, while a drag is over the strip.
-    @State private var drop: EditorTabDrop?
-    /// The tabs' origin in the visible strip, for the middle-click monitor.
-    @State private var tabsOrigin: CGPoint = .zero
 
     private var activeTab: EditorTab? {
         snapshot.active.flatMap { $0 < snapshot.tabs.count ? snapshot.tabs[$0] : nil }
@@ -165,7 +161,7 @@ struct EditorPane: View {
         .onChange(of: inlineBlame, initial: true) { _, on in
             host.setBlameEnabled(on)
         }
-        .onChange(of: gitRoots.map { "\($0.root)|\($0.branch)|\($0.detached)|\($0.ahead)|\($0.files.count)" }) { _, _ in
+        .onChange(of: gitRoots.map(editorBlameRefreshMark)) { _, _ in
             host.refreshBlame()
         }
         // 3a-v-b: which files are conflicted decides which tabs show their blocks.
@@ -211,6 +207,7 @@ struct EditorPane: View {
             host.ghostSuggest = ghostSuggest
             host.blameFor = blameFor
             host.blameOpen = openCommitDiff
+            host.blameWeb = openLink
             host.ghostCancel = ghostCancel
             host.keyboardHeld = keyboardHeld
             // Handed in first, so `start` applies the newest snapshot, never this one if a newer
@@ -283,20 +280,26 @@ struct EditorPane: View {
         .accessibilityIdentifier("editor.pane")
     }
 
-    /// The 3b-i pane beside the column: tab strip, lines, save-as and Monaco.
+    /// The 3b-i pane beside the column: tab strip, lines, save-as and Monaco — edge to edge since
+    /// the compact chrome (2026-10-26): the strip a 32 pt row, each line under it compact with a
+    /// hairline beneath, and Monaco to the pane's border.
     private var editorStack: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let unsavedPrompt { UnsavedPromptBar(message: closeTabMessage(unsavedPrompt), resolve: resolveUnsaved) }
+            if let unsavedPrompt {
+                UnsavedPromptBar(message: closeTabMessage(unsavedPrompt), compact: true, resolve: resolveUnsaved)
+                PaneHairline()
+            }
             // Drawn even with no tab: its toggle is how an empty pane shows the column without ⌘B.
             tabStrip
+            PaneHairline()
             if let tab = activeTab {
                 if let notice = tab.notice { noticeLine(notice) }
-                if tab.diskState == .changedOnDisk, comparing == nil { diskChangedLine(tab) }
+                if tab.diskState == .changedOnDisk, comparing == nil { compactRow { diskChangedLine(tab) } }
             }
             if let compareFailure {
-                lineText(compareFailure).accessibilityIdentifier("editor.compare.failure")
+                compactRow { lineText(compareFailure).accessibilityIdentifier("editor.compare.failure") }
             }
-            if saveAsRequested { saveAsField }
+            if saveAsRequested { saveAsField; PaneHairline() }
             // One web view for the code editor, a diff tab and Compare: the page chooses what shows.
             ZStack(alignment: .top) {
                 VStack(spacing: 0) {
@@ -335,75 +338,84 @@ struct EditorPane: View {
 
     // MARK: - Tab strip
 
+    /// The first row (the compact chrome, 2026-10-26): the editor glyph in the pane label's place,
+    /// the column's toggle, then the shared strip (`PaneTabStrip`) — file tabs at their own width
+    /// (a name is never shrunk), the tick and the raised chip on the active one, hairlines between
+    /// the rest, the faded `‹ n` / `n ›` counts once they overflow, and ＋ for ⌘T's scratch tab.
     private var tabStrip: some View {
-        let titles = editorTabTitles(snapshot.tabs)
-        return HStack(spacing: 0) {
+        let tabs = snapshot.tabs
+        let titles = editorTabTitles(tabs)
+        return PaneStripRow(glyph: "chevron.left.forwardslash.chevron.right", name: "Editor") {
             // The column's toggle, leading, so the column can always be shown again.
             Button {
                 if !column.shown { columnFocusWanted = column.view }   // the operator's own toggle (Rule 3)
                 Task { await dispatch("editor_tree", ["shown": .bool(!column.shown), "view": .string(column.view.rawValue)]) }
             }
-                label: { Image(systemName: "sidebar.left").font(.system(size: 11)) }
+                label: {
+                    Image(systemName: "sidebar.left").font(.system(size: 11))
+                        .frame(width: PaneStripStyle.glyphBox, height: PaneStripStyle.glyphBox)
+                        .contentShape(Rectangle())
+                }
                 .buttonStyle(.plain)
                 .foregroundStyle(EditorPaneStyle.text)
                 .opacity(column.shown ? 0.9 : 0.5)
-                .padding(.leading, 10)
+                .padding(.trailing, PaneStripStyle.glyphTrailing)
                 .help("Files ⌘B · Search ⌘⇧F · Changes ⌘⇧G")
                 .accessibilityIdentifier("editor.column.toggle")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(Array(snapshot.tabs.enumerated()), id: \.offset) { index, tab in
-                        tabView(tab, title: titles[index], index: index, on: index == snapshot.active)
+            PaneTabStrip(
+                ids: tabs.indices.map { "\($0)" },
+                active: snapshot.active.map { "\($0)" },
+                width: .natural,
+                stripIds: PaneStripIds(
+                    tabs: "editor.tabs",
+                    moreLeft: "editor.tabs.moreLeft", moreLeftCount: "editor.tabs.moreLeft.count",
+                    moreRight: "editor.tabs.moreRight", moreRightCount: "editor.tabs.moreRight.count",
+                    newTab: "editor.newTab",
+                    entry: { "editor.tab.\($0)" }),
+                accessibility: .text,
+                entry: { index, on in tabContent(tabs[index], title: titles[index], on: on) },
+                label: { tabs[$0].path ?? titles[$0] },
+                // A double-click keeps a preview tab (a file tab opened again without preview). One tap
+                // reading the click count: a `count: 2` gesture beside it would hold every single click
+                // for the double-click interval.
+                tap: { index in
+                    if NSApp.currentEvent?.clickCount ?? 1 >= 2, let path = tabs[index].path {
+                        Task { await dispatch("editor_open", ["path": .string(path), "preview": .bool(false)]) }
+                    } else {
+                        focusTab(index)
                     }
-                }
-                .coordinateSpace(name: "editor.tabs")
-                .onPreferenceChange(EditorTabSpansKey.self) { tabSpans = $0 }
-                // Where the tabs sit in the visible strip (they move as it scrolls), for the middle-click.
-                .background(GeometryReader { g in
-                    Color.clear.preference(key: EditorTabStripOriginKey.self, value: g.frame(in: .named("editor.strip")).origin)
-                })
-                .onPreferenceChange(EditorTabStripOriginKey.self) { tabsOrigin = $0 }
-                // Where the dragged tab would land: violet, on the side away from where it came from.
-                .overlay(alignment: .topLeading) {
-                    if let drop {
-                        Rectangle().fill(EditorPaneStyle.violet).frame(width: 2, height: 22)
-                            .offset(x: editorTabDropX(drop, spans: orderedSpans) - 1, y: 4)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-            }
-            .coordinateSpace(name: "editor.strip")
-            // A middle-click on a tab: ⌘W's path for it — a clean tab closes, a dirty one asks (3b-i's
-            // prompt). One monitor for the strip, never a view over each tab.
-            .background(EditorTabStripMiddleClick(
-                spans: orderedSpans, contentOrigin: tabsOrigin, height: 30, enabled: isKeyboardOwner,
-                onMiddleClick: { index in
+                },
+                activate: { focusTab($0) },
+                // A drop anywhere over a tab moves to that tab's index (pre-flight F4); off the strip or
+                // on its own place, nothing.
+                move: { from, to in
+                    Task { await dispatch("editor_move_tab", ["from": .integer(Int64(from)), "to": .integer(Int64(to))]) }
+                },
+                newTab: PaneStripNewTab(help: "New Scratch Tab ⌘T") {
+                    Task { await dispatch("editor_new_scratch", [:]) }
+                },
+                // A middle-click on a tab: ⌘W's path for it — a clean tab closes, a dirty one asks (3b-i's
+                // prompt).
+                middleClick: { index in
                     guard snapshot.tabs.indices.contains(index) else { return }
                     let subject = snapshot.tabs[index].subject
                     Task { await closeTab(subject) }
-                }))
+                },
+                middleClickEnabled: isKeyboardOwner)
         }
-        .frame(height: 36)
     }
 
-    private var orderedSpans: [ClosedRange<Double>] {
-        snapshot.tabs.indices.map { tabSpans[$0] ?? 0...0 }
-    }
-
-    private func tabView(_ tab: EditorTab, title: String, index: Int, on: Bool) -> some View {
-        HStack(spacing: 9) {
-            RoundedRectangle(cornerRadius: 1)
-                .fill(on ? EditorPaneStyle.tick : .clear)
-                .frame(width: 2, height: 15)
-                .shadow(color: on ? EditorPaneStyle.tick.opacity(0.7) : .clear, radius: 3.5)
+    /// A tab's own content between the tick and its edge: the file's glyph, its name (italic while
+    /// it is the preview), the dirty dot, the disk's word and the saving tick with its Cancel.
+    @ViewBuilder
+    private func tabContent(_ tab: EditorTab, title: String, on: Bool) -> some View {
+        HStack(spacing: PaneStripStyle.tabGap) {
             EditorFileIcon(editorTabGlyph(tab))
-                .foregroundStyle(on ? EditorPaneStyle.text : EditorPaneStyle.text.opacity(0.62))
+                .foregroundStyle(on ? EditorPaneStyle.text : EditorPaneStyle.text.opacity(PaneStripStyle.tabTitleRest))
             Text(title)
                 .font(.system(size: 11.5, design: .monospaced))
                 .italic(tab.preview)
-                .foregroundStyle(on ? EditorPaneStyle.text : EditorPaneStyle.text.opacity(0.62))
+                .foregroundStyle(on ? EditorPaneStyle.text : EditorPaneStyle.text.opacity(PaneStripStyle.tabTitleRest))
                 .lineLimit(1)
                 .truncationMode(.middle)
             if tab.dirty {
@@ -427,45 +439,6 @@ struct EditorPane: View {
                     .accessibilityIdentifier("editor.saving.cancel")
             }
         }
-        .padding(.leading, 9)
-        .padding(.trailing, 11)
-        .frame(height: 30)
-        .background(on ? EditorPaneStyle.text.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 5))
-        .background(GeometryReader { g in
-            let f = g.frame(in: .named("editor.tabs"))
-            Color.clear.preference(key: EditorTabSpansKey.self, value: [index: Double(f.minX)...Double(f.maxX)])
-        })
-        .contentShape(Rectangle())
-        // A drag needs 4 pt of movement, so a click stays a tab click (ruling 14). A drop anywhere over
-        // a tab moves to that tab's index (pre-flight F4); off the strip or on its own place, nothing.
-        .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .named("editor.tabs"))
-            .onChanged { g in
-                drop = editorTabDropTarget(from: index, x: g.location.x, y: g.location.y, spans: orderedSpans, height: 30)
-                    .map { EditorTabDrop(from: index, to: $0) }
-            }
-            .onEnded { g in
-                defer { drop = nil }
-                guard let to = editorTabDropTarget(from: index, x: g.location.x, y: g.location.y,
-                                                   spans: orderedSpans, height: 30) else { return }
-                Task { await dispatch("editor_move_tab", ["from": .integer(Int64(index)), "to": .integer(Int64(to))]) }
-            })
-        // A double-click keeps a preview tab (a file tab opened again without preview). One tap gesture
-        // reading the click count: a `count: 2` gesture beside it would hold every single click for
-        // the double-click interval.
-        .onTapGesture {
-            if NSApp.currentEvent?.clickCount ?? 1 >= 2, let path = tab.path {
-                Task { await dispatch("editor_open", ["path": .string(path), "preview": .bool(false)]) }
-            } else {
-                focusTab(index)
-            }
-        }
-        .help(tab.path ?? title)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("editor.tab.\(index)")
-        .accessibilityAction { focusTab(index) }
-        // Text, as a Changes row is: as a button its title never reached the tree (AXDescription only).
-        .accessibilityRemoveTraits(.isButton)
-        .accessibilityAddTraits(on ? [.isStaticText, .isSelected] : .isStaticText)
     }
 
     private func focusTab(_ index: Int) {
@@ -475,20 +448,29 @@ struct EditorPane: View {
 
     // MARK: - Lines
 
-    /// Rule 8: whole, wrapping, never truncated.
+    /// Rule 8: whole, wrapping, never truncated. One line is 22 pt; a longer one wraps rather than
+    /// being held to the row.
     private func lineText(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 11, design: .monospaced))
             .foregroundStyle(EditorPaneStyle.text.opacity(0.85))
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, PaneStripStyle.rowInset)
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// A compact row under the strip (the compact chrome): its content, then a hairline across the pane.
+    private func compactRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+            PaneHairline()
+        }
+    }
+
     private func noticeLine(_ notice: String) -> some View {
-        lineText(notice).accessibilityIdentifier("editor.notice")
+        compactRow { lineText(notice).accessibilityIdentifier("editor.notice") }
     }
 
     private func diskChangedLine(_ tab: EditorTab) -> some View {
@@ -510,7 +492,7 @@ struct EditorPane: View {
                 .accessibilityIdentifier("editor.compare")
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, PaneStripStyle.rowInset)
         .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("editor.diskChanged")
@@ -523,16 +505,20 @@ struct EditorPane: View {
     @ViewBuilder
     private func diffLine(_ tab: EditorTab, _ d: GitDiffState) -> some View {
         if d.loading {
-            HStack(spacing: 6) { EditorBusyTick(); lineText("Loading") }.accessibilityIdentifier("editor.diff.loading")
+            compactRow {
+                HStack(spacing: 6) { EditorBusyTick(); lineText("Loading") }
+                    .padding(.leading, PaneStripStyle.rowInset)
+                    .accessibilityIdentifier("editor.diff.loading")
+            }
         } else if let error = d.error {
-            lineText(error).accessibilityIdentifier("editor.diff.error")
+            compactRow { lineText(error).accessibilityIdentifier("editor.diff.error") }
         } else if let banner = gitDiffBanner(d) {
-            lineText(banner).accessibilityIdentifier("editor.diff.banner")
+            compactRow { lineText(banner).accessibilityIdentifier("editor.diff.banner") }
         }
-        if d.noLongerChanged { lineText("No longer changed").accessibilityIdentifier("editor.diff.gone") }
+        if d.noLongerChanged { compactRow { lineText("No longer changed").accessibilityIdentifier("editor.diff.gone") } }
         if case .diff(let root, _, let group, nil) = tab.subject, group != .untracked, !d.loading, d.error == nil,
            gitDiffBanner(d) == nil {
-            rangesLine(tab, d, root: root, group: group)
+            compactRow { rangesLine(tab, d, root: root, group: group) }
         }
     }
 
@@ -561,7 +547,7 @@ struct EditorPane: View {
             if busy { EditorBusyTick() }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, PaneStripStyle.rowInset)
         .padding(.vertical, 4)
     }
 
@@ -641,7 +627,7 @@ struct EditorPane: View {
     }
 
     private func compareHeader(_ c: EditorComparing) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 Text("\((c.path as NSString).lastPathComponent) — on disk ↔ unsaved")
                     .font(.system(size: 10, design: .monospaced))
@@ -660,7 +646,9 @@ struct EditorPane: View {
                     .foregroundStyle(EditorPaneStyle.text)
                     .accessibilityIdentifier("editor.compare.close")
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, PaneStripStyle.rowInset)
+            .padding(.vertical, 4)
+            PaneHairline()
         }
     }
 
@@ -728,8 +716,8 @@ struct EditorPane: View {
                     .accessibilityIdentifier("editor.saveAs.failure")
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, PaneStripStyle.rowInset)
+        .padding(.vertical, 4)
         .background(EditorPaneStyle.text.opacity(0.04))
         // Rule 3: the field takes the keyboard when it appears, prefilled with the selected tree row's
         // folder, else the first root (Rule 9: a suggestion, typed over freely).
@@ -796,18 +784,6 @@ struct EditorPane: View {
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("editor.empty")
     }
-}
-
-private struct EditorTabSpansKey: PreferenceKey {
-    static let defaultValue: [Int: ClosedRange<Double>] = [:]
-    static func reduce(value: inout [Int: ClosedRange<Double>], nextValue: () -> [Int: ClosedRange<Double>]) {
-        value.merge(nextValue()) { _, b in b }
-    }
-}
-
-private struct EditorTabStripOriginKey: PreferenceKey {
-    static let defaultValue: CGPoint = .zero
-    static func reduce(value: inout CGPoint, nextValue: () -> CGPoint) { value = nextValue() }
 }
 
 private struct EditorComparing: Equatable {
@@ -878,6 +854,7 @@ final class EditorHost {
     /// cursor move (R1).
     @ObservationIgnored var blameFor: ((String, String, String?) async -> [GitBlameInfo]?)?
     @ObservationIgnored var blameOpen: ((String, GitCommitRef) -> Void)?
+    @ObservationIgnored var blameWeb: ((String, Bool) -> Void)?
     @ObservationIgnored private var blameOn = false
     @ObservationIgnored private var blames = EditorBlameCache()
     @ObservationIgnored private var blameTask: Task<Void, Never>?
@@ -969,11 +946,14 @@ final class EditorHost {
         made.onKey = { [weak self] key in self?.onKey?(key) }
         made.onPeek = { [weak self] _, op in self?.peekPressed?(op) }
         made.onRanges = { [weak self] _, op, selections in self?.rangesPressed?(op, selections) }
-        made.onBlame = { [weak self] key, op, id in
+        made.onBlame = { [weak self] key, op, id, alt in
             guard let self, case .file(let path, let root)? = self.subjects[key], path.hasPrefix(root + "/") else { return }
             if op == "copy" {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(id, forType: .string)
+            } else if op == "web" {
+                // 3c-i: the commit's page, which editor_blame set only for a pushed commit on a known host.
+                if let page = self.blames.commit(key: key, id: id)?.web { self.blameWeb?(page.url, alt) }
             } else {
                 // Under the file's name at that commit, and the one before it across a rename (3a-v-a walk).
                 let current = String(path.dropFirst(root.count + 1))
@@ -1273,6 +1253,9 @@ final class EditorHost {
 struct UnsavedPromptBar: View {
     let message: String
     var canSave = true
+    /// Over an editor pane's own strip (the compact chrome): a row across the pane, no card — at
+    /// least the strip's 32 pt, more only while the message wraps (Rule 8).
+    var compact = false
     let resolve: (UnsavedChoice) -> Void
     @FocusState private var focused: Bool
 
@@ -1305,10 +1288,11 @@ struct UnsavedPromptBar: View {
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("editor.unsaved.cancel")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(EditorPaneStyle.slab, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(EditorPaneStyle.text.opacity(0.14)))
+        .padding(.horizontal, compact ? PaneStripStyle.rowInset : 12)
+        .padding(.vertical, compact ? 4 : 8)
+        .frame(minHeight: compact ? PaneStripStyle.rowHeight : nil)
+        .background(EditorPaneStyle.slab, in: RoundedRectangle(cornerRadius: compact ? 0 : 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(EditorPaneStyle.text.opacity(compact ? 0 : 0.14)))
         .focusable()
         .focusEffectDisabled()
         .focused($focused)

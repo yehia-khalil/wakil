@@ -44,17 +44,48 @@ With none of them, `WakilApplication.main()` opens the window.
 | `pane.kind` | View | Reads from `WindowModel` |
 |---|---|---|
 | `db` | `DBPane` (`DBPane.swift`, with `DataSurface.swift` and `QueryLineEditor.swift`) | `table(_:)`, `editable(paneId:)`, query-line state |
-| `terminal` | `TerminalPane` (`TerminalPane.swift`) | `terminal(_:)` |
+| `terminal` | `TerminalPane` (`TerminalPane.swift`; its header row is `PaneStripRow`) | `terminal(_:)` |
 | `api` | `ApiPane` (`ApiPane*.swift`, `ApiFieldEditor.swift`, `ApiTokenView.swift`, `ApiPaneFlow.swift`) | `api(_:)` |
-| `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`) | `editor(_:)`, `gitRoots`, `editorSaveAsRequest`, the unsaved prompt |
+| `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`; its tabs are the shared `PaneTabStrip`) | `editor(_:)`, `gitRoots`, `editorSaveAsRequest`, the unsaved prompt |
 | `settings` (`Pane.settingsKind`) | `SettingsPane` (`SettingsPane.swift`, `SettingsForm.swift`) | `settings`, `accounts`, the login state |
+| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — its tabs on the shared `PaneTabStrip`, and the address row — `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache` |
 | anything else | a "no view for a … pane" line | — |
+
+**Edge to edge** (2026-10-26, `PaneKind.edgeToEdge`, read as `Pane.edgeToEdge`): the editor, the
+terminal and the browser draw to the slab's border. `paneView` drops the inset, `PaneTitle` and the
+resize row for them, and `EdgeToEdgePane` clips the content to the slab's corners, draws the border
+token's 1 px edge and puts the resize handle on a chip over the bottom-right corner. Their first row
+is the compact chrome in `PaneTabStrip.swift`: `PaneStripStyle` (the 32 pt row, the border token and
+the hairline, the tab entry's numbers), `PaneStripRow` and `PaneGlyph` (the kind's glyph in the
+title's place), `PaneHairline`, and `PaneTabStrip` — the tab strip the browser and the editor share,
+its overflow worked out by `TabStripLayout` (WakilKit).
 
 `terminal(_:)`, `api(_:)` and `editor(_:)` each read one pane's `PaneSnapshotCell`, so one
 pane's terminal tick writes only that pane's cell and invalidates only views reading it
 (`refreshPanes`, after every action, still rewrites every pane's cell). Whether SwiftUI redraws
 only that view depends on `paneView`'s call site in `Canvas.swift` (unchanged, untested).
 `PaneSnapshotCellTests` pins the write.
+
+**A link the operator clicks elsewhere in Wakil** goes through `WakilLinks.open` (`WakilLinks.swift`):
+`WindowModel.openLinkInWakil` (`browser_open`, a new tab in the place's browser pane, focus left
+where it is), or the system browser on ⌥-click — the modifier as the clicked surface saw it at the
+press (`monaco-host.html` records `altKey` from a capture-phase mousedown and posts it with `web`). 3c-i's one caller
+is the blame hover's Open on GitHub (`EditorPane`'s `openLink`).
+
+**The browser pane does not own its pages.** `BrowserTabHost` (`BrowserTabHost.swift`), held by
+`WindowSession` for the life of the window, keeps one `WKWebView` per tab **keyed by place** —
+`(LayoutScope, pane, tab)` — so a tab switch, a resize or a place switch rebuilds the SwiftUI view and
+puts the same web view back, never reloading the page; pane and tab ids repeat from place to place, and
+a key without the place would hand one organisation's logged-in page to another (Invariant 4). Each
+view is built on its organisation's `WKWebsiteDataStore(forIdentifier:)`; at most 20 are live, the
+least recently shown saved to its `interactionState` and rebuilt on selection. **The seam rule:** a
+web view reports what the page did (title, URL, progress, find count, downloads, a page-opened tab)
+through `PaneStore`'s seam calls, never through an action, and carries its place; `WindowModel`
+drops a report from a place not on screen, and the pane asks for every report again when its place
+is shown (`reportAll`). Commands go the other way only: an action bumps the tab's `command`, the
+pane's `sync` hands it to the host. A page's own prompts (alert, sign-in, camera) are the host's,
+not store state (`BrowserPrompt`): the page asked, not the operator or the agent.
+`BrowserSettingsForm.swift` is Settings → Browser (search engine, start page, Clear data).
 
 **This switch is the one view-side place a new pane kind touches**: its view file and one `case`
 (the rest of the recipe is `CONTRIBUTING.md`, "A new pane kind").

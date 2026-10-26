@@ -123,6 +123,65 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 `ClaudeExecutableTests`, `ClaudeLocatorTests`, `OrgListingsTests`, `SurfaceChainTests`,
 `ThreadDisclosureTests`.
 
+### Browser/ — the browser pane's logic
+
+- `BrowserAddress.swift` — `BrowserAddress` (3c-i): the pure rule that turns typed text into a URL or a
+  search (`resolve`, with the settings' search engine), `isSecure` (https, file, loopback http) and
+  `displayHost` (host without `www.`, or a file's name), and `lockDetail` — what the address
+  field's padlock says under the pointer: the host and TLS for https, plain HTTP for http (Not
+  Secure except to a loopback host, beside `isSecure`, so the glyph and its words agree), and the
+  certificate's reason when it was not trusted; nothing for a blank page.
+- `BrowserFocusRetry.swift` — `browserRetryFocus`: a page focus that waits for its web view to
+  join the window asks again before every try whether the pane may still take the keyboard and the
+  tab is still the active one, and gives up quietly when not (Rule 6).
+- `BrowserDownloadNames.swift` — where a download lands (`browserDownloadDestination`: the suggested
+  name cut to its last component, `name 2.ext` when taken) and the strip's size line
+  (`browserDownloadSize`, decimal units).
+- `BrowserSnapshot.swift` — `BrowserSnapshot` (tabs, `active` id, `find`, `downloads`, the ⌘⇧T
+  `closed` stack, `nextTab` for `"t<n>"` ids), `BrowserTab` (with `loaded`, false until its web view has
+  fetched, and `command`, the latest `BrowserCommand` for the host to apply), `BrowserFind`,
+  `BrowserDownload` and `BrowserPageReport`, what a web view reports.
+- `BrowserPaneKind.swift` — `BrowserPaneKind` (`browser`): contents are the snapshot, `failure` is the
+  active tab's, `readPane` gives tabs, address, title, loading, history, zoom, find and downloads, never
+  page text; `PaneRestorable` restores saved tabs through `browser_restore`.
+- `PaneStore+Browser.swift` — `browserSnapshot`, `updateBrowser` (the `updateEditor` shape),
+  `browserRestore` (keeps the saved ids, loads only the active tab), and **the seam** the web view
+  reports through: `browserPageDidReport`, `browserFindDidReport`, `browserDownloadDidChange`,
+  `browserPageOpenedTab`. The seam never creates a pane and never issues a command.
+- `BrowserActions.swift` — `registerBrowserActions` (3c-i): `browser_open` (opens a pane when none is),
+  `browser_navigate` (the address rule; refuses blank and `javascript:`), back, forward, reload, stop,
+  new/close/reopen/select/move tab, focus address (⌘L), find, find step and close, zoom (the fixed ladder), download cancel
+  and clear, and the operator-only `browser_restore`. `pane` defaults to the focused browser pane,
+  else the one most recently focused, else the last opened (`LayoutStore.preferredPane`, one call over
+  the arrangement and its in-memory focus order): the spec's call 11, where a link from elsewhere in
+  Wakil opens. That link's one path is `WindowModel.openLinkInWakil` (`App/WindowModel+Links.swift`,
+  `browser_open` with `newTab` and `keepFocus`, so a pane it has to open does not take focus, Rule 6);
+  the app's `WakilLinks.open` sends it there, or to the system browser on ⌥-click. 3c-i routes the
+  blame hover's Open on GitHub through it; 3c-iii routes the terminal's, the editor's and an API entry's
+  links. Each command bumps its tab's `command.seq`; tab changes write the layout's
+  saved tabs. Also `BrowserKey`, the keys `WindowModel.browserKey` takes over in a focused browser pane.
+  `browser_clear_data` (`.mutate`, operator-only, gated in production and out of it) asks the injected
+  `removeData` to delete the organisation's WebKit store, handing it the deletion of `tabs/` and
+  `zoom.json` to run after the store is gone (`browserRemoveStoreThenFiles`: a store that will not
+  go deletes nothing, and its error is shown whole). Its `org` is the organisation the
+  operator's question named; it refuses `The organisation changed; ask again.` when that is no longer
+  the active one, and refuses without a remover (nothing but the app can) or without an active
+  organisation. `BrowserSettingsCache` holds the search engine and start page the actions read,
+  refreshed by `WindowModel.refreshBrowserSettings` at launch and after a save.
+- `BrowserOrgFiles.swift` — `BrowserOrgFiles` (3c-i): one organisation's `~/.wakil/orgs/<org>/browser/`:
+  `profile.json` (the id of its `WKWebsiteDataStore(forIdentifier:)`, created on first use, replaced
+  when unreadable), `zoom.json` (zoom per host) and `tabs/` (per-tab state, named by `stateKey`:
+  a digest of the place, then pane and tab, since ids repeat from place to place). The organisation is used
+  as the directory name as Go's `OrgDirFor` does; `init` throws for `/`, `.`, `..` or empty, never
+  flattening, so no id can be shared. `WindowModel.browserOrgFiles` is the active organisation's, nil
+  while none is active; the registered actions ask for the caller's own. WebKit keeps the store's own
+  files under `~/Library/WebKit/`, outside Wakil's reach, so deleting them goes through `removeData`.
+  `BrowserClearDataQuestion` is the Settings confirmation's copy and its Keep it / Delete labels.
+
+Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
+`PaneStore`), `Registry` (`ActionRegistry`, `Action`).
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `WindowModelBrowserTests`.
+
 ### Command/ — the ⌘K and ⌘P palettes
 
 The palettes' state machine and their lists, pure so the window only feeds keys and acts on effects.
@@ -281,10 +340,20 @@ status and what reads it. A saved Git pane loads as an editor pane on Changes
   window's `GitStatus` (so only while an editor pane keeps it).
 - `GitWatcher.swift` — `RootWatcher` (protocol), `FSEventsRootWatcher`; `GitRootWatcher.swift` —
   `GitRootWatcher`, which the window tells which roots to watch.
+- `GitHistory.swift` — a file's history and blame as `editor_timeline` and `editor_blame` read them
+  (3a-v-a): `GitCommitInfo`, `GitBlameInfo`, `EditorBlameCache`, the blame text and its hover
+  (`editorBlameHover`: Open Changes · Copy Commit ID, and 3c-i's Open on GitHub / GitLab / Bitbucket
+  when the line carries `web`). `gitRemoteWebRepository` and `gitCommitWebPage` map an `origin`
+  (scp-like, `ssh://` or `https://`, credentials and `.git` dropped) on github.com, gitlab.com
+  (subgroups kept) or bitbucket.org to the commit's page; any other host is nil. `editor_blame`
+  reads the root's origin once (`git_origin`, kept in `GitOriginCache` until the root's
+  `editorBlameRefreshMark` moves, the signal the editor refetches blame on) and, for such a root, asks
+  `git_blame` with `pushed` and sets `web` only on lines whose commit one of origin's branches holds.
+  A remote path segment outside `[A-Za-z0-9._-]` (or a lone `-` on GitLab) gives no page.
 
 Uses: `Context`, `Identifiers`, `MCP`, `Registry`.
 Tests: `GitStatusTests`, `GitPaneLinesTests`, `GitRootWatcherTests`, `GitSourceTests`,
-`GitWatcherTests`, with `GitTestSupport.swift`.
+`GitWatcherTests`, `GitHistoryTests`, `GitCommitWebTests`, with `GitTestSupport.swift`.
 
 ### Harness/ — driving the agent
 
@@ -405,10 +474,17 @@ Terminal, Api and Editor keep their conformance and store methods in their own f
   and cell write-back.
 - `SettingsTree.swift`, `AccountTable.swift`, `UnlinkReport.swift`, `DatabaseConnection.swift` —
   the settings pane's decoded data.
+- `TabStripLayout.swift` — `TabStripLayout`: a pane's tab strip when its tabs do not fit, the
+  browser's and the editor's (`PaneTabStrip` draws it) — `widths` (200 pt while they fit, then
+  shrinking evenly to 96, the active one to no less than 140, before the strip scrolls),
+  `overflows` (for fixed widths, and for entries that keep their own width, the editor's),
+  `hidden` (how many entries a scroll offset leaves out of sight on each side), `pageTarget` /
+  `pageOffset` (where a side's count scrolls to) and `needsReveal` / `revealOffset` (whether, and
+  where, the active entry is scrolled into view).
 
 Uses: nothing but `Core`.
 Tests: `PaneStoreTests`, `PaneKindStorageTests`, `PaneFetchTests`, `PaneEditableTests`,
-`PaneColumnLayoutTests`, `AccountTableTests`, `DatabaseConnectionStringTests`.
+`PaneColumnLayoutTests`, `AccountTableTests`, `DatabaseConnectionStringTests`, `TabStripLayoutTests`.
 
 ### Query/ — the db pane's query line
 

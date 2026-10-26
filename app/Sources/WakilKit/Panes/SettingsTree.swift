@@ -39,6 +39,8 @@ public struct SettingsTree: Sendable, Equatable, Decodable {
     public var providersSkipped: [String]
     public var editor: SettingsEditor
     public var editorError: String?
+    /// The app-wide browser tier (3c-i), from the same settings.json; its read error is `editorError`.
+    public var browser: SettingsBrowser
 
     public init(
         org: SettingsOrg,
@@ -48,7 +50,8 @@ public struct SettingsTree: Sendable, Equatable, Decodable {
         unreadable: [String] = [],
         providersSkipped: [String] = [],
         editor: SettingsEditor = .defaults,
-        editorError: String? = nil
+        editorError: String? = nil,
+        browser: SettingsBrowser = .defaults
     ) {
         self.org = org
         self.providers = providers
@@ -58,6 +61,7 @@ public struct SettingsTree: Sendable, Equatable, Decodable {
         self.providersSkipped = providersSkipped
         self.editor = editor
         self.editorError = editorError
+        self.browser = browser
     }
 
     /// Every optional-on-the-wire collection decodes to empty rather than
@@ -75,10 +79,11 @@ public struct SettingsTree: Sendable, Equatable, Decodable {
         providersSkipped = try container.decodeIfPresent([String].self, forKey: .providersSkipped) ?? []
         editor = try container.decodeIfPresent(SettingsEditor.self, forKey: .editor) ?? .defaults
         editorError = try container.decodeIfPresent(String.self, forKey: .editorError)
+        browser = try container.decodeIfPresent(SettingsBrowser.self, forKey: .browser) ?? .defaults
     }
 
     private enum CodingKeys: String, CodingKey {
-        case org, providers, projects, misfiled, unreadable, providersSkipped, editor, editorError
+        case org, providers, projects, misfiled, unreadable, providersSkipped, editor, editorError, browser
     }
 
     /// Whether anything could not be read. The pane draws a line saying so
@@ -142,6 +147,30 @@ public struct SettingsEditor: Sendable, Equatable, Decodable {
     }
 
     private enum CodingKeys: String, CodingKey { case fontSize, wordWrap, autosave, showIgnored, ghostText, inlineBlame }
+}
+
+/// The app-wide browser tier (`~/.wakil/settings.json`'s `browser`), defaults filled by Go (3c-i).
+/// An absent key decodes to the default, so an older answer still draws.
+public struct SettingsBrowser: Sendable, Equatable, Decodable {
+    /// `google`, `duckduckgo`, `bing` or `kagi`.
+    public var searchEngine: String
+    /// An http or https URL a new tab opens; empty is blank.
+    public var startPage: String
+
+    public static let defaults = SettingsBrowser(searchEngine: "google", startPage: "")
+
+    public init(searchEngine: String, startPage: String) {
+        self.searchEngine = searchEngine
+        self.startPage = startPage
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        searchEngine = try c.decodeIfPresent(String.self, forKey: .searchEngine) ?? Self.defaults.searchEngine
+        startPage = try c.decodeIfPresent(String.self, forKey: .startPage) ?? Self.defaults.startPage
+    }
+
+    private enum CodingKeys: String, CodingKey { case searchEngine, startPage }
 }
 
 /// One project's editor tier (`project.json`'s `editor`), defaults filled by Go.

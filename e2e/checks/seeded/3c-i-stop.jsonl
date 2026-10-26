@@ -1,0 +1,13 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/stall.html"}}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"true"}}
+{"expect":{"frame":"browser.stop","inside":"browser.pane"}}
+{"parity":{"action":"browser_stop","params":{"pane":"browser-1"},"click":"browser.stop","assert":"read_pane"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"expect":{"frame":"browser.reload","inside":"browser.pane"}}
+{"expect":{"tree":"absent","text":"Couldn't reach"}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/stall.html"}}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"true"}}
+{"dispatch":{"action":"browser_stop","params":{"pane":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}

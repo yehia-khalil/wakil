@@ -129,6 +129,7 @@ struct EditorColumn: View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 header
+                PaneHairline()
                 switch column.view {
                 case .files:
                     VStack(spacing: 0) {
@@ -220,7 +221,10 @@ struct EditorColumn: View {
         }
         .font(.system(size: 11, weight: .medium, design: .monospaced))
         .foregroundStyle(EditorPaneStyle.text)
-        .padding(.horizontal, 10).padding(.vertical, 6)
+        // The compact chrome (2026-10-26): the strip's 32 pt beside it, so the two rows and their
+        // hairlines meet in one line across the pane.
+        .padding(.horizontal, 10)
+        .frame(height: PaneStripStyle.rowHeight)
     }
 
     private var edge: some View {

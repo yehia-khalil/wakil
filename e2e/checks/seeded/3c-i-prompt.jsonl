@@ -1,0 +1,18 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"type":{"into":"browser.address","text":"{pageStub}/prompt.html"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"What is your name?"}}
+{"expect":{"frame":"browser.prompt.field","inside":"browser.pane"}}
+{"do":{"type":{"into":"browser.prompt.field","text":"Ada"}}}
+{"do":{"click":"browser.prompt.ok"}}
+{"expect":{"tree":"absent","text":"What is your name?"}}
+{"expect":{"tree":"contains","text":"Named Ada"}}
+{"dispatch":{"action":"browser_reload","params":{"pane":"browser-1"}}}
+{"expect":{"tree":"contains","text":"What is your name?"}}
+{"expect":{"tree":"absent","text":"Named Ada"}}
+{"do":{"click":"browser.prompt.cancel"}}
+{"expect":{"tree":"absent","text":"What is your name?"}}
+{"expect":{"tree":"contains","text":"Cancelled"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Prompt"}}

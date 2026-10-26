@@ -164,6 +164,9 @@ type ConfigTree struct {
 	// holds the defaults.
 	Editor      EditorAppValues `json:"editor"`
 	EditorError string          `json:"editorError,omitempty"`
+	// Browser is the app-wide browser tier (3c-i), from the same file, so a failure to read it is
+	// EditorError too.
+	Browser BrowserSettings `json:"browser"`
 
 	// Misfiled names registry entries whose project.json declares another
 	// organisation. Same field, same meaning, as ProjectListing's.
@@ -205,6 +208,7 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 		tree.EditorError = err.Error()
 	}
 	tree.Editor = app.Editor.Resolved()
+	tree.Browser = app.Browser.Resolved()
 
 	record, err := LoadOrgFor(org)
 	if err != nil {
@@ -324,6 +328,7 @@ func emptyConfigTree(org string) ConfigTree {
 		Providers: []ConfigTreeProvider{},
 		Projects:  []ConfigTreeProject{},
 		Editor:    EditorAppSettings{}.Resolved(),
+		Browser:   BrowserAppSettings{}.Resolved(),
 	}
 }
 

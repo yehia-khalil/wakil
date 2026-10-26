@@ -746,3 +746,45 @@ func TestProviderAddLocalWithBaseURLAndServes(t *testing.T) {
 		t.Fatalf("provider list: exit = %d, out = %q, stderr = %q", code, out.String(), stderr.String())
 	}
 }
+
+// TestOrgRmNamesTheBrowserStoreItLeaves pins final review I6: an organisation's browser logins
+// live in a WebKit store under ~/Library/WebKit that only Wakil can delete, by the id in
+// browser/profile.json. `org rm` deletes that id with the directory, so it says the store stays,
+// names it, and says how to clear it first. An org with no browser profile says nothing more.
+func TestOrgRmNamesTheBrowserStoreItLeaves(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("WAKIL_ORG", "")
+	var stderr bytes.Buffer
+	for _, org := range []string{"initech", "globex"} {
+		if code := run([]string{"org", "create", org}, strings.NewReader(""), io.Discard, &stderr, failingStore(t), failingReader(t)); code != 0 {
+			t.Fatalf("org create %s: exit = %d, stderr = %q", org, code, stderr.String())
+		}
+	}
+	browser := filepath.Join(home, ".wakil", "orgs", "initech", "browser")
+	if err := os.MkdirAll(browser, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const id = "6B29FC40-CA47-1067-B31D-00DD010662DA"
+	if err := os.WriteFile(filepath.Join(browser, "profile.json"), []byte(`{"identifier":"`+id+`"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stderr.Reset()
+	if code := run([]string{"org", "rm", "initech"}, strings.NewReader(""), io.Discard, &stderr, failingStore(t), failingReader(t)); code != 0 {
+		t.Fatalf("org rm: exit = %d, stderr = %q", code, stderr.String())
+	}
+	for _, want := range []string{`removed org "initech"`, id, "~/Library/WebKit", "Settings → Browser"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("org rm stderr = %q, want it to contain %q", stderr.String(), want)
+		}
+	}
+
+	stderr.Reset()
+	if code := run([]string{"org", "rm", "globex"}, strings.NewReader(""), io.Discard, &stderr, failingStore(t), failingReader(t)); code != 0 {
+		t.Fatalf("org rm globex: exit = %d, stderr = %q", code, stderr.String())
+	}
+	if got := stderr.String(); got != "removed org \"globex\"\n" {
+		t.Fatalf("org rm with no browser profile stderr = %q, want only the removal line", got)
+	}
+}

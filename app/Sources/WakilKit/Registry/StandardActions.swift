@@ -1532,6 +1532,60 @@ public func registerStandardActions(
         }
     ))
 
+    // 3c-i. The browser's app-wide setting, beside the editor's. Same shape as its editor twins:
+    // the read is the agent's too, the write is operator-only on Decision 30.
+    await registry.register(Action(
+        name: "ctx_browser_settings",
+        description: "Read the browser settings in force: the search engine the address bar uses "
+            + "for words that are not a URL (google, duckduckgo, bing or kagi) and the start page a "
+            + "new tab opens (empty is blank). Defaults fill anything unset. appError carries "
+            + "settings.json's error, whole, when it cannot be read.",
+        kind: .read,
+        audience: .agentReachable,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_browser_settings", role: "context")
+            }
+            return try await callChecked(
+                context, tool: "browser_settings", arguments: .object([:]),
+                action: "ctx_browser_settings", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
+    await registry.register(Action(
+        name: "ctx_set_browser_settings",
+        description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing "
+            + "or kagi) and startPage (an http or https URL, or empty for a blank page). "
+            + "Read-modify-write: omit a field to leave it. Operator-only.",
+        kind: .control,
+        audience: .operatorOnly,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "searchEngine": .object([
+                    "type": .string("string"),
+                    "enum": .array([.string("google"), .string("duckduckgo"), .string("bing"), .string("kagi")]),
+                ]),
+                "startPage": .object(["type": .string("string")]),
+            ]),
+        ]),
+        handler: { params in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_set_browser_settings", role: "context")
+            }
+            guard case .object(let fields) = params else {
+                throw StandardActionError.missingParam(action: "ctx_set_browser_settings", param: "searchEngine")
+            }
+            var arguments: [String: JSONValue] = [:]
+            if case .string? = fields["searchEngine"] { arguments["searchEngine"] = fields["searchEngine"] }
+            if case .string? = fields["startPage"] { arguments["startPage"] = fields["startPage"] }
+            return try await callChecked(
+                context, tool: "set_browser_settings", arguments: .object(arguments),
+                action: "ctx_set_browser_settings", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
     await registry.register(Action(
         name: "ctx_set_project_editor_settings",
         description: "Change one project's editor settings in its project.json: tabSize (1 to 16) "

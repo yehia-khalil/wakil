@@ -29,6 +29,25 @@ public final class WindowModel {
     /// `refreshContext()` has answered — `environmentLabel` is what the view
     /// draws, and it says so rather than showing a blank.
     public private(set) var organization = ""
+    /// The home directory `~/.wakil` lives under; set by the app when it builds the window
+    /// (`WindowSession.start`), so an overridden `HOME` moves it with everything else.
+    public var browserHome: URL?
+    /// The active organisation's browser files (`~/.wakil/orgs/<org>/browser/`): the profile id and
+    /// zoom a browser tab's web view is built from. Nil while no organisation is active, or when
+    /// the window has no home. Read per use, never kept: a tab built after an organisation switch
+    /// must get the new organisation's id (Invariant 4).
+    public var browserOrgFiles: BrowserOrgFiles? {
+        guard let browserHome, !organization.isEmpty else { return nil }
+        return try? BrowserOrgFiles(home: browserHome, org: organization)
+    }
+    /// The browser files of `scope`'s organisation — **the place a web view belongs to, not the
+    /// context's** (3c-i): between a context change and the canvas swap the two differ, and a tab of
+    /// the canvas still drawn must be built on its own organisation's store, its state kept in its
+    /// own organisation's folder. Nil with no home, or no organisation on the scope.
+    public func browserOrgFiles(for scope: LayoutScope) -> BrowserOrgFiles? {
+        guard let browserHome, !scope.organization.isEmpty else { return nil }
+        return try? BrowserOrgFiles(home: browserHome, org: scope.organization)
+    }
     /// `project.json`'s name, for drawing. Never what a pin carries — that is `projectKey`.
     public private(set) var project = ""
     /// The active project's registry key (`ContextStore.ActiveContext.projectKey`), which
@@ -433,6 +452,14 @@ public final class WindowModel {
     /// editor pane is drawn with `editorSettings.viewOptions`, and autosave reads its mode here.
     public internal(set) var editorSettings: EditorSettings = .defaults
 
+    /// The browser settings in force (3c-i), read through `ctx_browser_settings` at launch and after
+    /// every save. The browser actions read `browserSettingsCache`, which this keeps current, so a
+    /// new tab dispatches nothing.
+    public internal(set) var browserSettings: SettingsBrowser = .defaults
+
+    /// What the browser actions read; `WindowSession` points it at the wiring's.
+    public var browserSettingsCache = BrowserSettingsCache()
+
     /// The database each pane's query line has been pointed at by the
     /// operator, keyed by pane id — see `QueryLineDatabaseChoice`, which
     /// carries what the pane's subject named at the time so a choice
@@ -462,6 +489,12 @@ public final class WindowModel {
     /// have changed it — the store is an actor and SwiftUI cannot await one
     /// while rendering.
     public private(set) var layoutSnapshot = LayoutSnapshot()
+    /// The scope `layoutSnapshot` is the canvas of, recorded with it (3c-i). **Not the context's
+    /// place**: `refreshContext` names the incoming place several suspensions before
+    /// `activateLayout` swaps the canvas, and a browser pane drawn in that gap with the incoming
+    /// place would build a web view on the incoming organisation's store for the outgoing canvas's
+    /// tab. Nil until the first read.
+    public private(set) var drawnScope: LayoutScope?
 
     /// `LayoutStore.focusRequests`, mirrored: how many times *anything* has
     /// asked for a pane to be focused, counting the requests that named the
@@ -2008,6 +2041,7 @@ public final class WindowModel {
     public func terminal(_ paneId: String) -> TerminalSnapshot? { paneCells[paneId]?.snapshot.terminal }
     public func api(_ paneId: String) -> ApiSnapshot? { paneCells[paneId]?.snapshot.api }
     public func editor(_ paneId: String) -> EditorSnapshot? { paneCells[paneId]?.snapshot.editor }
+    public func browser(_ paneId: String) -> BrowserSnapshot? { paneCells[paneId]?.snapshot.browser }
 
     /// Puts `snapshot` in `paneId`'s cell, adding the cell only if the pane is new.
     private func setCell(_ paneId: String, _ snapshot: PaneSnapshot) {
@@ -2105,6 +2139,7 @@ public final class WindowModel {
             await vocabulary?.contextChanged(active)
             // 3b-v: the tabs follow the project, so the settings in force are read with it.
             await refreshEditorSettings()
+            await refreshBrowserSettings()
             // Capacity is read once the providers and the org are known,
             // so the hairlines are not empty until a turn ends or
             // Settings opens. Launch and an org switch both come here, so
@@ -2542,6 +2577,8 @@ public final class WindowModel {
             await panes.switchScope(to: scope, adoptingFrom: outgoing)
             // Its shells too: they are keyed by the scope they were opened in.
             await terminals.rehome(from: outgoing, to: scope)
+            // And its browser pages (final review I1), before the canvas is drawn under the new name.
+            rehomeBrowser(from: outgoing, to: scope)
             loadedLayoutScopes.insert(scope)
         } else {
             await layout.switchScope(to: scope)
@@ -2676,8 +2713,13 @@ public final class WindowModel {
     private func showCanvas(_ scope: LayoutScope) async {
         // A Send asked of a pane on the canvas being left is not one to answer on the next.
         apiSendRequests = [:]
+        // A swap, as `activateLayout`'s is: the stores move before the window re-reads them, and
+        // nothing keyed by the screen (a browser page's report) may land in between.
+        let outerSwap = layoutSwapInFlight
+        layoutSwapInFlight = true
         await layout.switchScope(to: scope)
         await panes.switchScope(to: scope)
+        layoutSwapInFlight = outerSwap
         await readLayoutSnapshot()
         await refreshPanes()
     }
@@ -2974,6 +3016,49 @@ public final class WindowModel {
               let decoded = decodeEditorSettings(fromResult: result)
         else { return }
         editorSettings = decoded
+    }
+
+    /// Re-reads the browser settings in force and hands them to the browser actions. A failed read
+    /// keeps what the window had, as the editor's does.
+    public func refreshBrowserSettings() async {
+        guard let result = try? await registry.dispatch(
+                  name: "ctx_browser_settings", params: .object([:]), origin: .ui,
+                  caller: DispatchCaller(place: place, session: nil), confirmation: nil),
+              let decoded = decodeBrowserSettings(fromResult: result)
+        else { return }
+        browserSettings = decoded
+        browserSettingsCache.current = decoded
+    }
+
+    /// Saves app-wide browser fields (`searchEngine`, `startPage`), then re-reads the tree and the
+    /// settings in force. Answers the refusal's own sentence, or nil.
+    public func saveBrowserSettings(_ fields: [String: JSONValue]) async -> String? {
+        var refusal: String?
+        do {
+            _ = try await registry.dispatch(
+                name: "ctx_set_browser_settings", params: .object(fields), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: nil)
+        } catch {
+            refusal = statusDescribingFailure("ctx_set_browser_settings", error)
+        }
+        await refreshSettings()
+        await refreshBrowserSettings()
+        return refusal
+    }
+
+    /// Deletes the active organisation's browsing data, after the Settings form's own confirmation
+    /// (`browser_clear_data` is gated; that confirmation is the operator's yes). Answers the
+    /// refusal's sentence, or nil. `org` is the organisation the question named: if another one
+    /// is active by now, the action refuses and nothing is deleted.
+    public func clearBrowserData(org: String) async -> String? {
+        do {
+            _ = try await registry.dispatch(
+                name: "browser_clear_data", params: .object(["org": .string(org)]), origin: .ui,
+                caller: DispatchCaller(place: place, session: nil), confirmation: "confirm")
+            return nil
+        } catch {
+            return statusDescribingFailure("browser_clear_data", error)
+        }
     }
 
     /// Saves app-wide editor fields, then re-reads the tree and the settings in force. Answers
@@ -3680,6 +3765,7 @@ public final class WindowModel {
             await layout.switchScope(to: to, adoptingFrom: from)
             await panes.switchScope(to: to, adoptingFrom: from)
             await terminals.rehome(from: from, to: to)
+            rehomeBrowser(from: from, to: to)
         }
         if !affected.contains(screen) {
             await layout.switchScope(to: screen)
@@ -4693,8 +4779,9 @@ public final class WindowModel {
         // `pane_sort`, `db_page` and `db_refetch` all write `Pane.fetch`,
         // which lives in `LayoutStore` and which `refreshPanes` cannot
         // see. Without this the query line keeps showing the page and the
-        // sort the pane was on before the click.
-        if name == "pane_sort" || name.hasPrefix("db_") {
+        // sort the pane was on before the click. 3c-i: a browser action writes the pane's saved
+        // tabs into `LayoutStore` too, so the layout file follows a tab click.
+        if name == "pane_sort" || name.hasPrefix("db_") || name.hasPrefix("browser_") {
             await refreshLayout()
         }
         return ran
@@ -4847,6 +4934,7 @@ public final class WindowModel {
         // — see `LayoutStore.reading()`.
         let reading = await layout.reading()
         layoutSnapshot = reading.snapshot
+        drawnScope = reading.scope
         // 3b-v: focus leaving an editor pane is `focus` mode's trigger.
         if let left = before.focusedId, left != layoutSnapshot.focusedId { autosaveFocusLeft(pane: left) }
         pruneApiSendRequests()
@@ -4888,6 +4976,7 @@ public final class WindowModel {
         let before = layoutSnapshot
         let reading = await layout.reading()
         layoutSnapshot = reading.snapshot
+        drawnScope = reading.scope
         pruneApiSendRequests()
         pruneGhostSessions(before: before)
         keyboardFocusRequests = reading.focusRequests
@@ -5474,6 +5563,8 @@ public final class WindowModel {
     /// ⌘T: a scratch tab in the focused editor pane, else the first, else a new one — which then
     /// takes focus. Opening a pane opens it into the conversation, as `openPane` does.
     public func newScratch() async {
+        // 3c-i: in a focused browser pane ⌘T is a new tab; everywhere else, a scratch tab as before.
+        if await browserKey(.newTab) { return }
         var params: [String: JSONValue] = [:]
         if let pane = focusedEditor { params["pane"] = .string(pane) }
         let before = paneIds
@@ -5571,6 +5662,8 @@ public final class WindowModel {
     /// ⌘W: the active tab of a focused editor pane, else the pane, as before. A tab with unsaved
     /// edits asks first (`askUnsaved`, Task 9).
     public func closeFocusedTabOrPane() async {
+        // 3c-i: in a focused browser pane ⌘W closes its tab (the last one closes the pane).
+        if await browserKey(.closeTab) { return }
         guard let id = layoutSnapshot.focusedId else { return }
         let s = focusedEditor.flatMap { editor($0) } ?? .empty
         guard let pane = focusedEditor, editorCloseTarget(tabs: s.tabs.count) == .tab,
@@ -5585,6 +5678,185 @@ public final class WindowModel {
         _ = await dispatch("editor_close", .object(["pane": .string(pane), "discard": .bool(true)]))
         await refreshLayout()
         await refreshPanes()
+    }
+
+    // MARK: Browser (3c-i)
+
+    /// The pane the browser's keys act on: the focused pane if it is a browser.
+    var focusedBrowser: String? {
+        guard let id = layoutSnapshot.focusedId,
+              layoutSnapshot.panes.first(where: { $0.id == id })?.kind == "browser" else { return nil }
+        return id
+    }
+
+    /// A browser key, acted on when a browser pane is focused; false (nothing done) otherwise, so the
+    /// key keeps its meaning elsewhere. Every key dispatches the browser action for it (Invariant 2).
+    public func browserKey(_ key: BrowserKey) async -> Bool {
+        guard let pane = focusedBrowser else { return false }
+        let s = browser(pane) ?? .empty
+        var params: [String: JSONValue] = ["pane": .string(pane)]
+        let name: String
+        switch key {
+        case .newTab: name = "browser_new_tab"
+        case .closeTab:
+            // A pane with no tab left to close closes, as ⌘W on any other pane.
+            guard s.activeTab != nil else {
+                _ = await closePane(id: pane)
+                return true
+            }
+            name = "browser_close_tab"
+        case .reopenTab: name = "browser_reopen_tab"
+        case .focusAddress:
+            guard s.activeTab != nil else { return true }
+            name = "browser_focus_address"
+        case .reload: name = "browser_reload"
+        case .back: name = "browser_back"
+        case .forward: name = "browser_forward"
+        case .find:
+            name = "browser_find"
+            params["query"] = .string(s.find?.query ?? "")
+        case .findNext, .findPrevious:
+            guard s.find != nil else { return true }
+            name = "browser_find_step"
+            params["forward"] = .bool(key == .findNext)
+        case .zoomIn, .zoomOut, .zoomReset:
+            name = "browser_zoom"
+            params["step"] = .string(key == .zoomIn ? "in" : key == .zoomOut ? "out" : "reset")
+        case .nextTab, .previousTab:
+            guard let i = s.tabs.firstIndex(where: { $0.id == s.active }), s.tabs.count > 1 else { return true }
+            name = "browser_select_tab"
+            params["index"] = .integer(Int64((i + (key == .nextTab ? 1 : s.tabs.count - 1)) % s.tabs.count))
+        case .tab(let n):
+            // ⌘1–8 tab N, ⌘9 the last.
+            guard n >= 1, n == 9 || n <= s.tabs.count else { return true }
+            name = "browser_select_tab"
+            params["index"] = .integer(Int64(n == 9 ? -1 : n - 1))
+        }
+        _ = await dispatch(name, .object(params))
+        await refreshLayout()
+        await refreshPanes()
+        return true
+    }
+
+    /// The place a browser web view belongs to (3c-i): the scope of the canvas drawn
+    /// (`drawnScope`), so a pane is always keyed with the place whose canvas it is on. Nil with no
+    /// organisation on that canvas. The window keys each web view by it, and every seam call below
+    /// carries the one its web view was made in.
+    public var browserScope: LayoutScope? {
+        guard let drawnScope, !drawnScope.organization.isEmpty else { return nil }
+        return drawnScope
+    }
+
+    /// Told when a place takes a new name — a conversation adopts the conversation-less canvas, or
+    /// its project or environment is renamed — after its tab states have moved
+    /// (`BrowserOrgFiles.moveStates`): the app's web-view host re-keys its pages under the new name,
+    /// as `TerminalStore.rehome` does the shells, so no page reloads (final review I1).
+    @ObservationIgnored
+    public var onBrowserRehome: (@MainActor (_ from: LayoutScope, _ to: LayoutScope) -> Void)?
+
+    /// The browser's half of a place's new name: its tab states move, then the host is told.
+    /// Synchronous, so nothing draws or saves between the two.
+    private func rehomeBrowser(from: LayoutScope, to: LayoutScope) {
+        guard from != to else { return }
+        if from.organization == to.organization, let files = browserOrgFiles(for: from) {
+            files.moveStates(from: from, to: to)
+        }
+        onBrowserRehome?(from, to)
+    }
+
+    /// Whether `scope` is the canvas drawn, and no swap is under way. **A web view keeps running
+    /// while its place is off screen**, and pane and tab ids repeat from place to place
+    /// (`browser-1`, `t1`), so a report from another place would land in this one's pane and its
+    /// saved layout (Invariant 4 across organisations). Such a call is dropped; the window
+    /// re-reports a place's live web views when the place is shown again.
+    ///
+    /// **Both the canvas drawn and the store's screen must be `scope`**: a canvas swap moves the
+    /// pane store's screen before the window re-reads the layout, and a report in between would be
+    /// written into the incoming place's pane of the same id.
+    private func browserScopeIsShown(_ scope: LayoutScope) async -> Bool {
+        guard !layoutSwapInFlight, scope == browserScope else { return false }
+        return await panes.screenScope == scope && !layoutSwapInFlight && scope == browserScope
+    }
+
+    /// A tab's web view after a navigation event: into the store, the cell re-read, and — when the
+    /// address or title moved — the saved tabs written on the trailing debounce. Dropped when
+    /// `scope` is not the place on screen.
+    public func browserPageDidReport(scope: LayoutScope, pane: String, tab: String, _ report: BrowserPageReport) async {
+        guard await browserScopeIsShown(scope) else { return }
+        let before = browser(pane)?.tabs.first { $0.id == tab }
+        await panes.browserPageDidReport(paneId: pane, tab: tab, report)
+        await refreshBrowser(pane: pane)
+        if before?.url != report.url || before?.title != report.title { scheduleBrowserTabsWrite(pane: pane) }
+    }
+
+    /// The find bar's match count from the page.
+    public func browserFindDidReport(scope: LayoutScope, pane: String, current: Int, total: Int) async {
+        guard await browserScopeIsShown(scope) else { return }
+        await panes.browserFindDidReport(paneId: pane, current: current, total: total)
+        await refreshBrowser(pane: pane)
+    }
+
+    /// A download started or changed.
+    public func browserDownloadDidChange(scope: LayoutScope, pane: String, _ download: BrowserDownload) async {
+        guard await browserScopeIsShown(scope) else { return }
+        await panes.browserDownloadDidChange(paneId: pane, download)
+        await refreshBrowser(pane: pane)
+    }
+
+    /// A page opened a window: a new tab beside its opener. Answers the new tab's id, or nil when
+    /// the opener is gone or its place is not on screen.
+    public func browserPageOpenedTab(scope: LayoutScope, pane: String, opener: String, url: String) async -> String? {
+        guard await browserScopeIsShown(scope) else { return nil }
+        let id = await panes.browserPageOpenedTab(paneId: pane, opener: opener, url: url)
+        await refreshBrowser(pane: pane)
+        if id != nil { scheduleBrowserTabsWrite(pane: pane) }
+        return id
+    }
+
+    /// A page closed its own window (`window.close()`): `browser_close_tab` on its tab, only while
+    /// its place is on screen — elsewhere the same ids name another place's tab. Answers whether it ran.
+    @discardableResult
+    public func browserPageClosed(scope: LayoutScope, pane: String, tab: String) async -> Bool {
+        guard await browserScopeIsShown(scope) else { return false }
+        await dispatchFromSurface("browser_close_tab", .object(["pane": .string(pane), "tab": .string(tab)]))
+        return true
+    }
+
+    /// How long after the last report a browser pane's saved tabs are written. Tests shorten it.
+    @ObservationIgnored var browserTabsDelay: Duration = .milliseconds(500)
+    @ObservationIgnored private var browserTabsWrites: [String: Task<Void, Never>] = [:]
+    /// Debounced browser saved-tabs writes that ran (a test seam).
+    @ObservationIgnored private(set) var browserTabsWriteCount = 0
+
+    /// `scheduleEditorTabsWrite`'s twin: (re)starts `pane`'s trailing write, read from the store
+    /// when it fires, ending in `refreshLayout` (not `persistLayout`) for the reason given there.
+    /// Tab adds, closes, moves and selections persist through their own actions.
+    private func scheduleBrowserTabsWrite(pane: String) {
+        browserTabsWrites[pane]?.cancel()
+        let delay = browserTabsDelay
+        browserTabsWrites[pane] = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.browserTabsWrites[pane] = nil
+            let s = await self.panes.browserSnapshot(paneId: pane)
+            await self.layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active)
+            self.browserTabsWriteCount += 1
+            await self.refreshLayout()
+        }
+    }
+
+    /// TEST-ONLY: waits for `pane`'s pending browser saved-tabs write, if any.
+    func settleBrowserTabsWrite(pane: String) async {
+        await browserTabsWrites[pane]?.value
+    }
+
+    /// One browser pane's cell, re-read after a seam report (the store has no change stream). A
+    /// pane no longer on the canvas gets no cell.
+    private func refreshBrowser(pane: String) async {
+        guard layoutSnapshot.panes.contains(where: { $0.id == pane }) else { return }
+        let snapshot = await panes.snapshot(paneId: pane, kind: "browser")
+        guard snapshot.browser != nil else { return }
+        setCell(pane, snapshot)
     }
 
     // MARK: Unsaved edits (3b-i Task 9)

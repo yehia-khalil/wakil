@@ -252,6 +252,10 @@ public actor LayoutStore {
     private var scope: LayoutScope { ScopeRouting.home ?? screen }
     private var byScope: [LayoutScope: LayoutSnapshot]
     private var nextPaneNumber: Int
+    /// Per scope, the panes in the order they last took focus, most recent last: what "the most
+    /// recently used browser pane" reads (3c browser spec, call 11). In memory only, like
+    /// `focusRequests`: it describes what happened, not an arrangement, so it is never saved.
+    private var focusOrder: [LayoutScope: [String]] = [:]
 
     /// How many times anything has asked for a pane to be focused, counting
     /// the requests that named the pane already focused.
@@ -311,7 +315,7 @@ public actor LayoutStore {
     /// named by the old `focusedId` would answer a request meant for the new
     /// one.
     public func reading() -> LayoutReading {
-        LayoutReading(snapshot: snapshot(), focusRequests: focusRequests)
+        LayoutReading(snapshot: snapshot(), focusRequests: focusRequests, scope: scope)
     }
 
     /// Records that an operator asked for the keyboard where it already is.
@@ -353,7 +357,7 @@ public actor LayoutStore {
     /// was opened (walk-defects B2) rather than only the title derived
     /// from it.
     @discardableResult
-    public func open(kind: String, title: String, terminalPath: String? = nil) -> Pane {
+    public func open(kind: String, title: String, terminalPath: String? = nil, focus: Bool = true) -> Pane {
         var current = snapshot()
         let id = "\(kind)-\(nextPaneNumber)"
         nextPaneNumber += 1
@@ -369,9 +373,38 @@ public actor LayoutStore {
             terminalPath: terminalPath)
 
         current.panes.append(pane)
-        current.focusedId = id
+        // 3c-i (spec call 11, Rule 6): a link from another surface opens its pane with `focus` false,
+        // so the pane the operator was in keeps focus. The new pane is in no focus order yet.
+        if focus { current.focusedId = id }
         byScope[scope] = current
+        if focus { noteFocused(id) }
         return pane
+    }
+
+    /// The current scope's open panes, the one that took focus most recently first. A pane that has
+    /// not taken focus since the arrangement was loaded is not listed.
+    public func recentlyFocused() -> [String] {
+        let open = Set(snapshot().panes.map(\.id))
+        return (focusOrder[scope] ?? []).reversed().filter { open.contains($0) }
+    }
+
+    /// The pane of `kind` an action that names none acts on, read in one call so the arrangement and
+    /// the focus order are of one moment and one scope: the focused pane if it is of `kind`, else the
+    /// one of `kind` most recently focused, else the last of `kind` opened. Nil when none is open.
+    /// `browserPane`'s rule (3c spec, call 11).
+    public func preferredPane(kind: String) -> String? {
+        let snap = snapshot()
+        let ofKind = snap.panes.filter { $0.kind == kind }.map(\.id)
+        if let focused = snap.focusedId, ofKind.contains(focused) { return focused }
+        if let recent = recentlyFocused().first(where: ofKind.contains) { return recent }
+        return ofKind.last
+    }
+
+    private func noteFocused(_ id: String) {
+        var order = focusOrder[scope] ?? []
+        order.removeAll { $0 == id }
+        order.append(id)
+        focusOrder[scope] = order
     }
 
     /// Opens the settings pane, or focuses the one already open.
@@ -469,6 +502,25 @@ public actor LayoutStore {
         byScope[scope]?.panes.first(where: { $0.id == id })?.editorTabs
     }
 
+    /// The browser pane `id`'s saved tabs and selected tab (3c-i). A no-op when unchanged.
+    public func setBrowserTabs(id: String, to tabs: [BrowserSavedTab], active: String?) {
+        guard var current = byScope[scope],
+            let index = current.panes.firstIndex(where: { $0.id == id }),
+            current.panes[index].browserTabs != tabs || current.panes[index].browserActiveTab != active
+        else { return }
+        current.panes[index].browserTabs = tabs
+        current.panes[index].browserActiveTab = active
+        byScope[scope] = current
+    }
+
+    /// `nil` when the pane is missing or has no saved tabs.
+    public func browserTabs(id: String) -> (tabs: [BrowserSavedTab], active: String?)? {
+        guard let pane = byScope[scope]?.panes.first(where: { $0.id == id }),
+            let tabs = pane.browserTabs
+        else { return nil }
+        return (tabs, pane.browserActiveTab)
+    }
+
     /// The editor pane `id`'s column (3b-ii), and the window's default for a new pane: what the
     /// operator last left any editor pane in, without its open folders. A no-op when unchanged.
     /// `asDefault` false keeps the default as it is: a restore puts back a column, it does not leave one.
@@ -513,6 +565,7 @@ public actor LayoutStore {
     public func focus(id: String) throws {
         var current = try requirePane(id)
         current.focusedId = id
+        noteFocused(id)
         // **Raised before the pane is even known to exist? No — after.**
         // `requirePane` throws for an unknown id, and a refused focus is not
         // a request anything should answer: a view that took the keyboard on
@@ -780,6 +833,7 @@ public actor LayoutStore {
         current.maximizedId = id
         current.focusedId = id
         byScope[scope] = current
+        noteFocused(id)
     }
 
     /// Puts the maximized pane back to the frame it held before
@@ -842,6 +896,7 @@ public actor LayoutStore {
         let carried = byScope[outgoing] ?? LayoutSnapshot()
         byScope[outgoing] = nil
         byScope[scope] = carried
+        focusOrder[scope] = focusOrder.removeValue(forKey: outgoing)
         screen = scope
     }
 
@@ -875,6 +930,7 @@ public actor LayoutStore {
     /// back knowing where to put it again.
     public func load(_ snapshot: LayoutSnapshot, for scope: LayoutScope) {
         byScope[scope] = snapshot
+        focusOrder[scope] = nil  // a restored arrangement starts with no focus history
         // Keep ids unique against whatever was restored: a persisted
         // `db-7` must not be handed out again this session.
         for pane in snapshot.panes {
@@ -904,9 +960,13 @@ public actor LayoutStore {
 public struct LayoutReading: Sendable {
     public let snapshot: LayoutSnapshot
     public let focusRequests: Int
+    /// The scope `snapshot` is the canvas of (3c-i): read in the same hop, so a window drawing the
+    /// snapshot knows whose canvas it is drawing, not whose place its context already names.
+    public let scope: LayoutScope?
 
-    public init(snapshot: LayoutSnapshot, focusRequests: Int) {
+    public init(snapshot: LayoutSnapshot, focusRequests: Int, scope: LayoutScope? = nil) {
         self.snapshot = snapshot
         self.focusRequests = focusRequests
+        self.scope = scope
     }
 }

@@ -217,7 +217,7 @@ public struct RunningConversationsSource: PaletteSource {
 
 /// The kinds the palette may open, in the order they are offered. `pane_open` refuses
 /// `settings`, so it is never one.
-private let paneKindOrder = ["db", "terminal", "api", "editor"]
+private let paneKindOrder = ["db", "terminal", "api", "editor", "browser"]
 
 private func offeredKinds(_ kinds: Set<String>) -> [String] {
     let offered = kinds.subtracting([Pane.settingsKind])
@@ -231,6 +231,7 @@ public func paneKindTitle(kind: String) -> String {
     case "terminal": "Terminal"
     case "api": "API client"
     case "editor": "Editor"
+    case "browser": "Browser"
     default: kind
     }
 }
@@ -242,6 +243,7 @@ public func newPaneTitle(kind: String) -> String {
     case "terminal": "New Terminal"
     case "api": "New API client"
     case "editor": "New Editor pane"
+    case "browser": "New Browser pane"
     default: "New \(kind) pane"
     }
 }

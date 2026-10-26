@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3c-i-keys-reach-wakil.jsonl",
+  "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
+  "provedAt": "2026-10-26T03:38:16.445541Z",
+  "checkBlob": "dc8fe0cfa5c2fb836cce57a18a325b03c91999f0"
+}

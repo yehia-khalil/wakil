@@ -243,6 +243,13 @@ type setEditorSettingsArgs struct {
 	GhostText   *bool   `json:"ghostText,omitempty" jsonschema:"false turns AI ghost-text off in every editor and query line; omit to leave unchanged"`
 }
 
+// setBrowserSettingsArgs is the app-wide browser setting's edit (3c-i), pointers for the same
+// reason as setEditorSettingsArgs.
+type setBrowserSettingsArgs struct {
+	SearchEngine *string `json:"searchEngine,omitempty" jsonschema:"google, duckduckgo, bing or kagi; omit to leave unchanged"`
+	StartPage    *string `json:"startPage,omitempty" jsonschema:"an http or https URL a new tab opens, or empty for a blank page; omit to leave unchanged"`
+}
+
 // setProjectEditorSettingsArgs is one project's editor tier's edit (3b-v).
 type setProjectEditorSettingsArgs struct {
 	ProjectPath  string    `json:"projectPath" jsonschema:"absolute path to the project.json"`
@@ -693,6 +700,22 @@ func newServer() *mcp.Server {
 			if err := wakilcore.UpdateEditorAppSettings(wakilcore.EditorAppPatch{
 				FontSize: a.FontSize, WordWrap: a.WordWrap, Autosave: a.Autosave, ShowIgnored: a.ShowIgnored, GhostText: a.GhostText, InlineBlame: a.InlineBlame,
 			}); err != nil {
+				return toolErr(err), empty{}, nil
+			}
+			return nil, empty{}, nil
+		})
+
+	// Added by 3c-i: the browser's app-wide setting, beside the editor's in settings.json. The
+	// read is the agent's as much as the operator's; the write is operator-only on the Swift side.
+	mcp.AddTool(s, &mcp.Tool{Name: "browser_settings", Description: "Read the browser settings in force: the search engine the address bar uses for words that are not a URL (google, duckduckgo, bing or kagi) and the start page a new tab opens (empty is blank). Defaults fill anything unset. appError carries settings.json's error, whole, when it cannot be read; the defaults are then in force."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.BrowserSettings, error) {
+			v, _ := wakilcore.ReadBrowserSettings()
+			return nil, v, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_browser_settings", Description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing or kagi) and startPage (an http or https URL, or empty for a blank page). Read-modify-write: omit a field to leave it unchanged. Refuses an unknown engine or a start page that is not an http or https URL, and refuses to write over a settings.json that does not parse."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a setBrowserSettingsArgs) (*mcp.CallToolResult, empty, error) {
+			if err := wakilcore.WriteBrowserSettings(wakilcore.BrowserSettingsPatch{SearchEngine: a.SearchEngine, StartPage: a.StartPage}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

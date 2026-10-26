@@ -368,6 +368,29 @@ func TestConfigTreeNamesAMalformedSettingsFile(t *testing.T) {
 	}
 }
 
+func TestConfigTreeCarriesTheBrowserSettings(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := CreateOrg("acme", Org{}); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := LoadConfigTreeFor("acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Browser != (BrowserSettings{SearchEngine: "google"}) {
+		t.Errorf("default tree.Browser = %+v", tree.Browser)
+	}
+	if err := WriteBrowserSettings(BrowserSettingsPatch{SearchEngine: strp("bing"), StartPage: strp("https://example.com")}); err != nil {
+		t.Fatal(err)
+	}
+	if tree, err = LoadConfigTreeFor("acme"); err != nil {
+		t.Fatal(err)
+	}
+	if tree.Browser != (BrowserSettings{SearchEngine: "bing", StartPage: "https://example.com"}) {
+		t.Errorf("tree.Browser = %+v", tree.Browser)
+	}
+}
+
 func TestConfigTreeCarriesTheOrgGitIdentity(t *testing.T) {
 	localOrg(t)
 	name, email := "Org Person", "org@example.test"

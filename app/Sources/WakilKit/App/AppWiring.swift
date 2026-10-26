@@ -149,6 +149,8 @@ public struct WakilWiring: Sendable {
     /// one subscriber for the assembly's whole life — see `ResumeBroker`'s
     /// own doc comment for that lifecycle contract.
     public let resumes: ResumeBroker
+    /// 3c-i. The browser settings the browser actions read; the window refreshes it. Built here, before the window exists.
+    public let browserSettings: BrowserSettingsCache
     /// Where a `session_set_provider` request parks for the window to act
     /// on. Same reasoning and lifecycle contract as `resumes`, for the
     /// same action-set-shared-by-`--dispatch`-and-the-window reason — see
@@ -303,7 +305,10 @@ public struct WakilWiring: Sendable {
         journalDirectory: URL,
         sessionId: String,
         executableDirectory: URL = WakilWiring.defaultExecutableDirectory(),
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        // 3c-i. Deletes a WebKit data store by id. Only the app can (`WKWebsiteDataStore` is
+        // WebKit's); nil leaves `browser_clear_data` refusing, as `--dispatch` and tests want.
+        removeBrowserData: BrowserDataRemover? = nil
     ) async -> WakilWiring {
         var diagnostics: [String] = []
         // `environment["WAKIL_PROVIDER"]` here, not a live pick: every
@@ -411,13 +416,42 @@ public struct WakilWiring: Sendable {
             liveConversations: { await liveLookup.live(in: $0) },
             liveOrganization: { await liveLookup.organization() })
         let shellContext = ActiveShellContext()
+        // 3c-i. The settings are read when a tab needs them (a search, a new tab's start page), so a
+        // change in Settings → Browser applies to the next one; a failed read uses the defaults.
+        let browserSettings = BrowserSettingsCache()
+        let browserSettingsRegistry = registry
+        // The organisation's browser files are asked live, for the caller's own organisation (the
+        // shell context follows the window, an agent's place stays its own): one organisation's id
+        // never reaches another's web view (Invariant 4). Nothing while no organisation is active.
+        let browserHome = URL(fileURLWithPath: environment["HOME"] ?? NSHomeDirectory())
+        let browser = browserActions(
+            panes: panes, layout: layout,
+            settings: {
+                // The window keeps this fresh; a headless `--dispatch` has no window, so the first
+                // read comes from the action and is kept.
+                await browserSettings.value {
+                    guard let result = try? await browserSettingsRegistry.dispatch(
+                              name: "ctx_browser_settings", params: .object([:]), origin: .ui,
+                              caller: DispatchCaller(place: Place(organization: "", project: "", environment: ""), session: nil),
+                              confirmation: nil)
+                    else { return nil }
+                    return decodeBrowserSettings(fromResult: result)
+                }
+            },
+            orgFiles: {
+                let org = await shellContext.current().org
+                return org.isEmpty ? nil : try BrowserOrgFiles(home: browserHome, org: org)
+            },
+            removeData: removeBrowserData)
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
             unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes),
             openTerminal: terminalActions(
                 terminals: terminals, panes: panes, layout: layout,
                 activeContext: { await shellContext.current() }
-            ).first { $0.name == "term_open" }?.handler)
+            ).first { $0.name == "term_open" }?.handler,
+            // 3c-i: a browser pane opens with its first tab.
+            openBrowserTab: browser.first { $0.name == "browser_new_tab" }?.handler)
         await registerPaneContentActions(into: registry, panes: panes, layout: layout)
         // `activeContext:` is this box's own read, not a value: the
         // window does not exist yet, and the context it will report
@@ -447,6 +481,8 @@ public struct WakilWiring: Sendable {
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
             gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites)
+        // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
+        for action in browser { await registry.register(action) }
         let commitDrafts = CommitDraftSink()
         await registerCommitDraftAction(into: registry, drafts: commitDrafts)
 
@@ -519,6 +555,7 @@ public struct WakilWiring: Sendable {
             placeClients: placeClients,
             confirmations: ConfirmationBroker(),
             resumes: resumes,
+            browserSettings: browserSettings,
             providerSwitches: providerSwitches,
             conversationRequests: conversationRequests,
             diagnostics: diagnostics,

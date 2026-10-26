@@ -493,3 +493,43 @@ private func waitUntil(_ condition: @MainActor () async -> Bool) async -> Bool {
     }
     return await condition()
 }
+
+// MARK: - Final fix wave I1: the browser's web views and tab states follow a renamed or adopted place
+
+@MainActor
+@Suite struct BrowserRehomeTests {
+    /// The app's web-view host is told (`onBrowserRehome`), and each tab's saved state moves to the
+    /// new place's name, so no page reloads and ‹ › history survives.
+    @Test func aConversationTakingTheCanvasRehomesTheBrowser() async throws {
+        let (window, _, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
+        window.browserHome = home
+        var told: [(LayoutScope, LayoutScope)] = []
+        window.onBrowserRehome = { told.append(($0, $1)) }
+        let seed = scope("p", "dev")
+        let files = try BrowserOrgFiles(home: home, org: "test-org")
+        let old = files.stateURL(tab: BrowserOrgFiles.stateKey(scope: seed, pane: "browser-1", tab: "t1"))
+        try FileManager.default.createDirectory(at: old.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("state".utf8).write(to: old)
+
+        #expect(await window.openPane(kind: "db"))
+        let root = try #require(window.lineageRoot)
+        let adopted = LayoutScope(organization: "test-org", project: "p", environment: "dev", lineageRoot: root)
+
+        #expect(told.map(\.0) == [seed])
+        #expect(told.map(\.1) == [adopted])
+        let moved = files.stateURL(tab: BrowserOrgFiles.stateKey(scope: adopted, pane: "browser-1", tab: "t1"))
+        #expect(FileManager.default.fileExists(atPath: moved.path))
+        #expect(!FileManager.default.fileExists(atPath: old.path))
+    }
+
+    @Test func aRenamedProjectRehomesTheBrowser() async throws {
+        let (window, _, _) = try await lifecycleWindow(saved: [("p", "dev", "mine")])
+        var told: [(LayoutScope, LayoutScope)] = []
+        window.onBrowserRehome = { told.append(($0, $1)) }
+
+        #expect(await window.renameProject("p", to: "q") == nil)
+
+        #expect(told.contains { $0.0 == scope("p", "dev") && $0.1 == scope("q", "dev") })
+    }
+}

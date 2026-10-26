@@ -2,8 +2,16 @@ import AppKit
 import Foundation
 import WakilKit
 import SwiftUI
+import WebKit
 
 // MARK: - Session
+
+/// Where `removeBrowserData` finds the window's browser host, which is made after the wiring that
+/// takes the closure. Read and written on the main actor only.
+@MainActor
+private final class BrowserTabsBox: Sendable {
+    weak var host: BrowserTabHost?
+}
 
 /// One window's worth of assembled Wakil: the shared wiring, the MCP sockets
 /// the agents' shims connect back to, and the model the view draws.
@@ -25,12 +33,16 @@ final class WindowSession {
     /// fatal — the window still opens, and each failure is visible rather
     /// than silent.
     let notes: [String]
+    /// 3c-i: every browser tab's web view, for the window's life (`BrowserTabHost`).
+    let browserTabs: BrowserTabHost
 
-    private init(wiring: WakilWiring, model: WindowModel, composer: ComposerModel, notes: [String]) {
+    private init(wiring: WakilWiring, model: WindowModel, composer: ComposerModel, notes: [String],
+                 browserTabs: BrowserTabHost) {
         self.wiring = wiring
         self.model = model
         self.composer = composer
         self.notes = notes
+        self.browserTabs = browserTabs
     }
 
     static func start() async -> WindowSession {
@@ -47,7 +59,28 @@ final class WindowSession {
             .appendingPathComponent(".wakil", isDirectory: true)
             .appendingPathComponent("journal", isDirectory: true)
 
-        let wiring = await WakilWiring.build(journalDirectory: journalDirectory, sessionId: sessionId)
+        // 3c-i. `browser_clear_data` deletes the organisation's WebKit store, which only the app
+        // can: WebKit refuses while a web view still uses it, so those are released first (their
+        // tabs rebuild when shown). The host exists once the model does; set below.
+        let browserTabsBox = BrowserTabsBox()
+        let wiring = await WakilWiring.build(
+            journalDirectory: journalDirectory, sessionId: sessionId,
+            // `browser_clear_data`: the store's web views go and none is built on it (beginClear),
+            // then the store is removed, then its files — no page is left to write a tab state
+            // after, and a store that will not go deletes nothing — then the panes draw again
+            // (endClear, on failure too).
+            removeBrowserData: { id, deleteFiles in
+                await MainActor.run { browserTabsBox.host?.beginClear(onStore: id) }
+                do {
+                    // The store first, then its files: a store that will not go deletes nothing.
+                    try await browserRemoveStoreThenFiles(
+                        id, removeStore: { try await removeWebsiteDataStore($0) }, deleteFiles: deleteFiles)
+                } catch {
+                    await MainActor.run { browserTabsBox.host?.endClear(onStore: id) }
+                    throw error
+                }
+                await MainActor.run { browserTabsBox.host?.endClear(onStore: id) }
+            })
         notes.append(contentsOf: wiring.diagnostics)
 
         // Each agent session has a socket of its own (background agents 3 of 4, Task 4), at
@@ -407,10 +440,19 @@ final class WindowSession {
             guard let model else { throw CancellationError() }
             return try await model.changesDraftMessage(root: root)
         }
+        // The browser's per-organisation files live under the same `home`; Task 7's tabs ask for them.
+        // 3c-i. The browser actions read this cache; the model refreshes it.
+        model.browserSettingsCache = wiring.browserSettings
+        model.browserHome = URL(fileURLWithPath: home)
+        let browserTabs = BrowserTabHost(model: model)
+        browserTabsBox.host = browserTabs
+        // A place's new name carries its pages with it (final review I1), as `terminals.rehome`.
+        model.onBrowserRehome = { [weak browserTabs] from, to in browserTabs?.rehome(from: from, to: to) }
         screen.model = model
         let composer = ComposerModel(window: model, speech: wiring.speech)
 
-        return WindowSession(wiring: wiring, model: model, composer: composer, notes: notes)
+        return WindowSession(wiring: wiring, model: model, composer: composer, notes: notes,
+                             browserTabs: browserTabs)
     }
 
     /// Stops every agent session and every shown place's MCP socket, then every Wakil-owned Go child:
@@ -425,6 +467,10 @@ final class WindowSession {
     /// a child in the middle of a slow tool call would not read that EOF
     /// promptly.
     func shutdown() async {
+        // 3c-i: each tab's state written as it is now (I8), then no page's question is left with
+        // its WebKit handler uncalled.
+        browserTabs.saveAll()
+        browserTabs.closeAll()
         await wiring.commitDrafts.bind(nil)
         await model.shutdown()
         await wiring.shutdown()
@@ -453,5 +499,23 @@ private final class ScreenPlace {
     weak var model: WindowModel?
     var shown: ScreenShown? {
         model.map { ScreenShown(place: $0.place, conversation: $0.screenConversation) }
+    }
+}
+
+/// Removes the WebKit store `id`. A web view released a moment ago still holds it until WebKit has
+/// torn its page down, which happens after the release returns: WebKit answers "Data store is in
+/// use" (WKWebSiteDataStore code 1) meanwhile, so that answer is asked again, for up to two seconds.
+/// Found by 3c-i-settings.jsonl: with a browser pane open, Delete was refused every time.
+@MainActor
+private func removeWebsiteDataStore(_ id: UUID) async throws {
+    var attempt = 0
+    while true {
+        do {
+            try await WKWebsiteDataStore.remove(forIdentifier: id)
+            return
+        } catch let error as NSError where error.domain == "WKWebSiteDataStore" && error.code == 1 && attempt < 20 {
+            attempt += 1
+            try await Task.sleep(for: .milliseconds(100))
+        }
     }
 }

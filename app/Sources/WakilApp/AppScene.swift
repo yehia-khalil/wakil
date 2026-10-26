@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import WakilKit
 import SwiftUI
+import WebKit
 
 // MARK: - Scene
 
@@ -437,8 +438,9 @@ struct WakilApplication: App {
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
                 // 3b-iii. ⌘⇧G shows or hides the focused editor's Changes, on ⌘B's terms.
+                // 3c-i: in a focused browser pane ⌘⇧G is Find Previous; anywhere else, as before.
                 Button("Show Changes") {
-                    withModel { model in Task { await model.toggleEditorColumn(.changes) } }
+                    browserKey(.findPrevious) { model in await model.toggleEditorColumn(.changes) }
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
                 // 3b-i. ⌘S saves the focused editor's active tab; a scratch tab asks for a path.
@@ -498,7 +500,77 @@ struct WakilApplication: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
+            // 3c-i. The browser's keys: each is the focused browser pane's action (`browserKey`), and
+            // anywhere else the key goes on to whatever holds the keyboard, as if this menu were not
+            // here — so every key keeps today's meaning outside a browser pane. ⌘T, ⌘W and ⌘⇧G are
+            // the items above (New Scratch Tab, Close Pane, Show Changes), which ask the browser first.
+            CommandMenu("Browser") {
+                Button("Reopen Closed Tab") { browserKey(.reopenTab) }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+                Button("Open Location") { browserKey(.focusAddress) }
+                    .keyboardShortcut("l", modifiers: .command)
+                Button("Reload Page") { browserKey(.reload) }
+                    .keyboardShortcut("r", modifiers: .command)
+                Button("Back") { browserKey(.back) }
+                    .keyboardShortcut("[", modifiers: .command)
+                Button("Forward") { browserKey(.forward) }
+                    .keyboardShortcut("]", modifiers: .command)
+                Divider()
+                Button("Find…") { browserKey(.find) }
+                    .keyboardShortcut("f", modifiers: .command)
+                Button("Find Next") { browserKey(.findNext) }
+                    .keyboardShortcut("g", modifiers: .command)
+                Divider()
+                Button("Zoom In") { browserKey(.zoomIn) }
+                    .keyboardShortcut("=", modifiers: .command)
+                Button("Zoom Out") { browserKey(.zoomOut) }
+                    .keyboardShortcut("-", modifiers: .command)
+                Button("Actual Size") { browserKey(.zoomReset) }
+                    .keyboardShortcut("0", modifiers: .command)
+                Divider()
+                Button("Show Next Tab") { browserKey(.nextTab) }
+                    .keyboardShortcut(.tab, modifiers: .control)
+                Button("Show Previous Tab") { browserKey(.previousTab) }
+                    .keyboardShortcut(.tab, modifiers: [.control, .shift])
+                Button("Next Tab") { browserKey(.nextTab) }
+                    .keyboardShortcut("]", modifiers: [.command, .shift])
+                Button("Previous Tab") { browserKey(.previousTab) }
+                    .keyboardShortcut("[", modifiers: [.command, .shift])
+                ForEach(1...8, id: \.self) { n in
+                    Button("Tab \(n)") { browserKey(.tab(n)) }
+                        .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
+                }
+                Button("Last Tab") { browserKey(.tab(9)) }
+                    .keyboardShortcut("9", modifiers: .command)
+            }
         }
+    }
+
+    /// A browser key (3c-i): the focused browser pane's, through `WindowModel.browserKey`. Anywhere
+    /// else it is `otherwise`, the key's meaning before 3c-i, or — for a key that had none of its
+    /// own in this menu bar — the key goes on to whatever holds the keyboard, as it would have with
+    /// no menu item to claim it (⌃Tab moving focus out of a text view, say).
+    private func browserKey(_ key: BrowserKey, otherwise: (@MainActor (WindowModel) async -> Void)? = nil) {
+        let event = NSApp.currentEvent
+        guard let startup = delegate.startup else { return }
+        Task { @MainActor in
+            let model = await startup.value.model
+            if await model.browserKey(key) { return }
+            if let otherwise { await otherwise(model) } else { Self.passOn(event) }
+        }
+    }
+
+    /// The key a menu item claimed, to the window's first responder. Not to a web view: one that
+    /// holds the keyboard already offered the key to its page before the menu saw it.
+    @MainActor private static func passOn(_ event: NSEvent?) {
+        guard let event, event.type == .keyDown, let window = event.window, window.isKeyWindow,
+              let responder = window.firstResponder else { return }
+        var view = responder as? NSView
+        while let v = view {
+            if v is WKWebView { return }
+            view = v.superview
+        }
+        responder.keyDown(with: event)
     }
 
     /// Runs `body` against the window's model, once it exists — the same

@@ -1,0 +1,28 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"type":{"into":"browser.address","text":"{pageStub}/a.html"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"browser-1","field":"url","contains":"/a.html"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"expect":{"focus":"browser.page"}}
+{"expect":{"tree":"contains","text":"Page A"}}
+{"expect":{"frame":"browser.addressField","inside":"browser.pane"}}
+{"expect":{"frame":"browser.lock","inside":"browser.addressField"}}
+{"do":{"hotkey":"cmd+l"}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"keys":"{pageStub}/b.html"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"browser-1","field":"url","contains":"/b.html"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"canGoBack","equals":"true"}}
+{"expect":{"focus":"browser.page"}}
+{"do":{"hotkey":"cmd+["}}
+{"expect":{"pane":"browser-1","field":"url","contains":"/a.html"}}
+{"expect":{"pane":"browser-1","field":"canGoForward","equals":"true"}}
+{"do":{"hotkey":"cmd+]"}}
+{"expect":{"pane":"browser-1","field":"url","contains":"/b.html"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"tabs[1]","present":false}}

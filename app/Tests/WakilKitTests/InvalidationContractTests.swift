@@ -149,6 +149,8 @@ private let keptPerPlace: Set<String> = [
     "layoutNotesAwaitingReturn",
     // Projections of the screen's scope, rebuilt from the stores whenever a scope is activated.
     "tables", "editables", "paneCells", "layoutSnapshot", "databases", "databaseDrivers",
+    // 3c-i: the scope `layoutSnapshot` is the canvas of, read with it, so it follows the swap.
+    "drawnScope",
     // Per pane of the screen's canvas, as on a project switch. `apiSendRequests` is emptied by
     // the swap itself (`activateLayout`).
     "queryLineRefusals", "queryLineRestores", "queryLineRestoreToken",
@@ -156,6 +158,8 @@ private let keptPerPlace: Set<String> = [
     // The editor's saves in flight, debounced saved-tabs writes and autosave: each acts on a
     // buffer in its own scope, which stays (OrgSwitchTests.anOrgSwitchWithUnsavedTabsAsksNothingAndKeepsThem).
     "editorSaves", "editorTabsWrites", "editorAutosave", "editorAutosaveTimers", "editorAutosaveRuns",
+    // 3c-i: the browser's debounced saved-tabs writes, per pane in its own scope, as the editor's.
+    "browserTabsWrites",
     // The stores themselves: every scope's arrangement, contents and shells.
     "panes", "layout", "terminals",
     // The pool of clients pinned to agent places, and what their `wakil-ctx`s said: the places
@@ -164,6 +168,11 @@ private let keptPerPlace: Set<String> = [
 ]
 
 private let orgIndependent: Set<String> = [
+    // 3c-i: the search engine and start page are the operator's, in ~/.wakil/settings.json, across
+    // every organisation; the cache is the box the browser actions read them from.
+    "browserSettings", "browserSettingsCache",
+    // 3c-i: the home directory the browser files sit under; the organisation is read from `organization` per use.
+    "browserHome",
     // 3a-iii-a: the fetch loop runs for whatever roots the window has; its interval, sleep and the
     // app's activity are no organisation's.
     "backgroundFetchInterval", "backgroundFetchSleep", "backgroundFetchTask", "appActive",
@@ -208,6 +217,9 @@ private let orgIndependent: Set<String> = [
     // Conversations 3 final review: the composer's hook for Keep it on the Close question, set
     // once by `ComposerModel.init`, for `onScreenChange`'s reason.
     "onCloseQuestionKept",
+    // 3c-i final review I1: the browser host's hook for a place's new name, set once by
+    // `WindowSession`; it carries no organisation's state, for `onScreenChange`'s reason.
+    "onBrowserRehome",
     // Fix round 1: the screen it was last told about, and New Conversation's focus flag — what
     // is on screen, which an org switch changes and `activateLayout` then tells.
     "toldScreenKey", "composerFocusForced",
@@ -272,6 +284,8 @@ private let orgIndependent: Set<String> = [
     // 3b-i PR 8: the saved-tabs debounce's length (configuration, shortened by tests) and the
     // count of writes it ran (a test seam). Neither describes an organisation.
     "editorTabsDelay", "editorTabsWriteCount", "editorAutosaveDelay", "editorAutosaveCount",
+    // 3c-i: the browser's saved-tabs debounce length and its write count, the same shapes.
+    "browserTabsDelay", "browserTabsWriteCount",
     // 3b-i Task 9: event counts again — a quit prompt resolved to quit, or to stay. The app
     // replies to AppKit when either DIFFERS from the last value it saw.
     "quitApproved", "quitCancelled",

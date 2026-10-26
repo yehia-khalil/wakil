@@ -58,6 +58,8 @@ public enum LayoutActionError: Error, Sendable, Equatable, CustomStringConvertib
 /// - Parameter unsavedEditorTabs: Asked by `pane_close`: the titles of the pane's unsaved editor
 ///   tabs, empty for any other pane. Layout does not know editors; the assembly (`App/`) does, and
 ///   passes the answer in. The default answers none, for geometry-only tests.
+/// - Parameter openBrowserTab: `browser_new_tab`'s handler, which `pane_open` runs on a new browser
+///   pane (3c-i), so it arrives with its first tab. Nil leaves a browser pane opened empty.
 /// - Parameter openTerminal: `term_open`'s handler, which `pane_open` runs for a terminal (#1):
 ///   a terminal pane is its shell, and one opened bare drew "no shell" for good. Nil for
 ///   geometry-only tests, which open a bare terminal pane as before.
@@ -69,11 +71,12 @@ public func registerLayoutActions(
     into registry: ActionRegistry, layout: LayoutStore, panes: PaneStore? = nil,
     terminals: TerminalStore? = nil,
     unsavedEditorTabs: @escaping @Sendable (String) async -> [String] = { _ in [] },
-    openTerminal: (@Sendable (JSONValue) async throws -> JSONValue)? = nil
+    openTerminal: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
+    openBrowserTab: (@Sendable (JSONValue) async throws -> JSONValue)? = nil
 ) async {
     for action in layoutActions(
         layout: layout, panes: panes, terminals: terminals, unsavedEditorTabs: unsavedEditorTabs,
-        openTerminal: openTerminal)
+        openTerminal: openTerminal, openBrowserTab: openBrowserTab)
     {
         await registry.register(action)
     }
@@ -89,7 +92,8 @@ public func registerLayoutActions(
 func layoutActions(
     layout: LayoutStore, panes: PaneStore? = nil, terminals: TerminalStore? = nil,
     unsavedEditorTabs: @escaping @Sendable (String) async -> [String] = { _ in [] },
-    openTerminal: (@Sendable (JSONValue) async throws -> JSONValue)? = nil
+    openTerminal: (@Sendable (JSONValue) async throws -> JSONValue)? = nil,
+    openBrowserTab: (@Sendable (JSONValue) async throws -> JSONValue)? = nil
 ) -> [Action] {
     [
         // 2e (#198). ⌘, reaches the canvas through this and through
@@ -188,6 +192,12 @@ func layoutActions(
                 }
                 let title = optionalString(params, "title") ?? Pane.defaultTitle(kind: kind)
                 let pane = await layout.open(kind: kind, title: title)
+                // **A browser opens with its first tab (3c-i)**, as a terminal opens with its shell:
+                // `browser_new_tab` on the new pane — the start page, or a blank tab with the
+                // address field focused.
+                if kind == "browser", let openBrowserTab {
+                    _ = try await openBrowserTab(.object(["pane": .string(pane.id)]))
+                }
                 return .object(["id": .string(pane.id)])
             }
         ),
