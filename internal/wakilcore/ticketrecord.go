@@ -70,10 +70,15 @@ type TicketRecord struct {
 // TicketEdit is one change to the record. Line carries the text fields only; By and
 // Conversation come from the caller's dispatch origin, never from the line.
 type TicketEdit struct {
-	Section      string // "next" | "decisions" | "notDone" | "waitingOn" | "verified" | "rulings"
-	Op           string // "set" (next only) | "add" | "edit" | "remove"
-	ID           string // edit, remove
-	Line         TicketLine
+	Section string // "next" | "decisions" | "notDone" | "waitingOn" | "verified" | "rulings"
+	Op      string // "set" (next only) | "add" | "edit" | "remove"
+	ID      string // edit, remove
+	Line    TicketLine
+	// Fields, when set, names the text fields of Line an edit (or a set of next) changes
+	// ("text", "why", "how", "who", "what", "state"); the line's other fields are kept. The
+	// merge runs under the ticket's lock, so two edits of one line both land. Nil replaces the
+	// line's text whole.
+	Fields       []string
 	By           string
 	Conversation string
 }
@@ -255,6 +260,25 @@ func nextTicketID(r *TicketRecord, logPath, section string) string {
 // line's identity. An agent editing an operator's line keeps By: operator and says it edited.
 func replaceTicketLine(old TicketLine, e TicketEdit, now string) TicketLine {
 	l := e.Line
+	if e.Fields != nil {
+		l = old
+		for _, f := range e.Fields {
+			switch f {
+			case "text":
+				l.Text = e.Line.Text
+			case "why":
+				l.Why = e.Line.Why
+			case "how":
+				l.How = e.Line.How
+			case "who":
+				l.Who = e.Line.Who
+			case "what":
+				l.What = e.Line.What
+			case "state":
+				l.State = e.Line.State
+			}
+		}
+	}
 	l.ID = old.ID
 	l.At = now
 	l.By, l.Conversation, l.Edited = e.By, e.Conversation, ""

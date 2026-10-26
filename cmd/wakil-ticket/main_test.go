@@ -39,8 +39,9 @@ type stubs struct {
 	branch func(gqlRequest) (int, string)
 	// search answers MyOpenPRs' query.
 	search func(gqlRequest) (int, string)
-	// jiraDown makes every Jira search answer 502.
+	// jiraDown makes every Jira search answer 502; jiraHung makes it never answer.
 	jiraDown bool
+	jiraHung bool
 	// issues are the Jira issues by key.
 	issues map[string]string // key -> summary
 }
@@ -206,6 +207,10 @@ func (f *fixture) serveJira() {
 		s.mu.Lock()
 		s.jira = append(s.jira, req.JQL)
 		s.mu.Unlock()
+		if s.jiraHung {
+			<-r.Context().Done()
+			return
+		}
 		if s.jiraDown {
 			w.WriteHeader(502)
 			fmt.Fprint(w, "Jira is down")
@@ -700,5 +705,92 @@ func TestTicketRecordEditKeepsOtherFields(t *testing.T) {
 	if msg := callErr(t, cs, "ticket_record_write", map[string]any{"key": "INI-142", "section": "next", "op": "set",
 		"line": map[string]any{"text": "x"}, "by": "someone"}); !strings.Contains(msg, "operator, agent or wakil") {
 		t.Errorf("unknown by: %q", msg)
+	}
+}
+
+func TestTicketBranchLongLivedStagingReadsNoJira(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "staging", "Merge INI-142\n\nTicket: INI-142")
+	f.s.branch = branchReply(nil, []any{prNode(212, "INI-142 keep", "ini-142-login", "staging", nil, nil)})
+	got, _ := f.branch(connect(t))
+	if !got.LongLived || len(got.Tickets) != 0 {
+		t.Errorf("staging = %+v", got)
+	}
+	if f.s.jiraCount() != 0 {
+		t.Errorf("Jira asked %d times on a long-lived branch", f.s.jiraCount())
+	}
+}
+
+func TestTicketBranchStackTicketIsNotMarked(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "fix-utf-8", "Fix UTF-8 names")
+	pr := prNode(216, "Fix UTF-8 names", "fix-utf-8", "ini-142-login", nil, nil)
+	pr["baseRef"] = map[string]any{"associatedPullRequests": map[string]any{"nodes": []any{prNode(212, "INI-142 keep", "ini-142-login", "main", nil, nil)}}}
+	f.s.branch = branchReply([]any{pr}, nil)
+	got, _ := f.branch(connect(t))
+	if len(got.Tickets) != 1 || got.Tickets[0].Key != "INI-142" || got.Tickets[0].Marked {
+		t.Errorf("tickets = %+v, want INI-142 from the stack, unmarked", got.Tickets)
+	}
+}
+
+func TestTicketBranchJiraHungReturnsWithinTheBudget(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	f.s.jiraHung = true
+	f.s.branch = branchReply([]any{prNode(212, "INI-142 keep", "ini-142-login", "main", nil, nil)}, nil)
+	if err := wakilcore.RecordTicketSeen("initech", "INI-142", wakilcore.TicketSeen{Title: "Sign-in keeps the last organization", Status: "In Review"}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	old := jiraCallTimeout
+	jiraCallTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { jiraCallTimeout = old })
+	start := time.Now()
+	got, _ := f.branch(connect(t))
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("the read took %v", d)
+	}
+	if len(got.PRs) != 1 {
+		t.Errorf("prs = %+v", got.PRs)
+	}
+	if len(got.Tickets) != 1 || got.Tickets[0].Title != "Sign-in keeps the last organization" || got.Tickets[0].Status != "In Review" {
+		t.Errorf("tickets = %+v, want the record's last read", got.Tickets)
+	}
+	want := SourceNote{Source: "jira", Message: "Jira did not answer within 300ms"}
+	if len(got.Partial) != 1 || got.Partial[0] != want {
+		t.Errorf("partial = %+v", got.Partial)
+	}
+}
+
+func TestReadBudgetIsUnderTheWindowsCancel(t *testing.T) {
+	if readBudget != 15*time.Second || jiraCallTimeout != 5*time.Second {
+		t.Errorf("budget %v, Jira call %v; want 15 s and 5 s, under the window's 20 s", readBudget, jiraCallTimeout)
+	}
+}
+
+// Two writers editing different fields of one line at once: both edits land, because each
+// reads, merges and writes under the ticket's lock.
+func TestTicketRecordConcurrentEditsOfOneLineKeepBoth(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	str := func(s string) *string { return &s }
+	for round := 0; round < 10; round++ {
+		key := fmt.Sprintf("INI-%d", 500+round)
+		if _, err := writeRecord("initech", recordWriteArg{Key: key, Section: "decisions", Op: "add", Line: lineArg{Text: str("t0"), Why: str("w0")}, By: "operator"}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		for _, a := range []recordWriteArg{
+			{Key: key, Section: "decisions", Op: "edit", ID: "d1", Line: lineArg{Text: str("t1")}, By: "operator"},
+			{Key: key, Section: "decisions", Op: "edit", ID: "d1", Line: lineArg{Why: str("w1")}, By: "agent"},
+		} {
+			wg.Add(1)
+			go func(a recordWriteArg) {
+				defer wg.Done()
+				if _, err := writeRecord("initech", a, time.Now()); err != nil {
+					t.Error(err)
+				}
+			}(a)
+		}
+		wg.Wait()
+		r, _ := wakilcore.ReadTicketRecord("initech", key)
+		if d := r.Decisions[0]; d.Text != "t1" || d.Why != "w1" {
+			t.Fatalf("round %d: line = %+v, want both edits", round, d)
+		}
 	}
 }

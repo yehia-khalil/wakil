@@ -227,9 +227,9 @@ func main() {
 	}
 }
 
-// writeRecord applies one record edit. The edited line's current text is read first and every
-// field the call leaves out is kept, so an edit of one field never blanks the others (the record
-// replaces a line whole). An added ruling is open.
+// writeRecord applies one record edit. Only the fields the call gives change: the merge with
+// the line's current text runs inside UpdateTicketRecord, under the ticket's lock, so an edit of
+// one field never blanks the others and two edits of one line both land. An added ruling is open.
 func writeRecord(org string, a recordWriteArg, now time.Time) (wakilcore.TicketRecord, error) {
 	switch a.By {
 	case "operator", "agent", "wakil":
@@ -237,54 +237,24 @@ func writeRecord(org string, a recordWriteArg, now time.Time) (wakilcore.TicketR
 		return wakilcore.TicketRecord{}, wakilcore.UserError("by is operator, agent or wakil, not " + strconvQuote(a.By))
 	}
 	var line wakilcore.TicketLine
-	if a.Op == "edit" || a.Section == "next" {
-		r, err := wakilcore.ReadTicketRecord(org, a.Key)
-		if err != nil {
-			return wakilcore.TicketRecord{}, err
-		}
-		if old := recordLine(&r, a.Section, a.ID); old != nil {
-			line = *old
-		}
-	}
+	fields := []string{}
 	for _, f := range []struct {
+		name string
 		from *string
 		to   *string
-	}{{a.Line.Text, &line.Text}, {a.Line.Why, &line.Why}, {a.Line.How, &line.How}, {a.Line.Who, &line.Who}, {a.Line.What, &line.What}, {a.Line.State, &line.State}} {
+	}{{"text", a.Line.Text, &line.Text}, {"why", a.Line.Why, &line.Why}, {"how", a.Line.How, &line.How},
+		{"who", a.Line.Who, &line.Who}, {"what", a.Line.What, &line.What}, {"state", a.Line.State, &line.State}} {
 		if f.from != nil {
 			*f.to = *f.from
+			fields = append(fields, f.name)
 		}
 	}
 	if a.Op == "add" && a.Section == "rulings" && a.Line.State == nil {
 		line.State = "open"
 	}
 	return wakilcore.UpdateTicketRecord(org, a.Key, wakilcore.TicketEdit{
-		Section: a.Section, Op: a.Op, ID: a.ID, Line: line, By: a.By, Conversation: a.Conversation,
+		Section: a.Section, Op: a.Op, ID: a.ID, Line: line, Fields: fields, By: a.By, Conversation: a.Conversation,
 	}, now)
-}
-
-// recordLine is the record's line in section with id (the next line for "next"), or nil.
-func recordLine(r *wakilcore.TicketRecord, section, id string) *wakilcore.TicketLine {
-	var lines []wakilcore.TicketLine
-	switch section {
-	case "next":
-		return r.Next
-	case "decisions":
-		lines = r.Decisions
-	case "notDone":
-		lines = r.NotDone
-	case "waitingOn":
-		lines = r.WaitingOn
-	case "verified":
-		lines = r.Verified
-	case "rulings":
-		lines = r.Rulings
-	}
-	for i := range lines {
-		if lines[i].ID == id {
-			return &lines[i]
-		}
-	}
-	return nil
 }
 
 // linkBranch links (or unlinks) the root's branch, then asks Jira whether it knows the key. The

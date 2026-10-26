@@ -14,8 +14,21 @@ import (
 // branch.go assembles ticket_branch and ticket_in_flight from local git, GitHub (the
 // organization's git account) and Jira, each source failing alone (Rule 8).
 
-// readBudget bounds one read: GitHub's and Jira's calls share it.
-const readBudget = 20 * time.Second
+// readBudget bounds one read, under the window's 20 s cancel so that a slow source comes back as
+// a partial note rather than as the window's "Read stopped": GitHub's calls run inside it, and
+// each Jira call gets at most jiraCallTimeout of it.
+const readBudget = 15 * time.Second
+
+// jiraCallTimeout bounds each Jira read (a var so a test can shorten it).
+var jiraCallTimeout = 5 * time.Second
+
+// seconds writes d as "5 s", or as Go writes it when it is not whole seconds.
+func seconds(d time.Duration) string {
+	if d%time.Second == 0 {
+		return fmt.Sprintf("%d s", int(d/time.Second))
+	}
+	return d.String()
+}
 
 // SourceNote is a source that could not be read, and why, whole. Source is "github", "jira" or
 // "git".
@@ -334,7 +347,12 @@ func (j *jiraReads) start(key string) *jiraResult {
 			res.err = j.clientErr
 			return
 		}
-		res.issue, res.err = j.client.GetIssue(j.ctx, prefix, key)
+		ctx, cancel := context.WithTimeout(j.ctx, jiraCallTimeout)
+		defer cancel()
+		res.issue, res.err = j.client.GetIssue(ctx, prefix, key)
+		if res.err != nil && ctx.Err() == context.DeadlineExceeded && j.ctx.Err() == nil {
+			res.err = wakilcore.UserError("Jira did not answer within " + seconds(jiraCallTimeout))
+		}
 		res.notFound = res.err != nil && strings.HasPrefix(res.err.Error(), "issue not found: ")
 	}()
 	return res
@@ -397,11 +415,14 @@ func readTicketBranch(ctx context.Context, org, root string, now time.Time) (Tic
 
 	jira := newJiraReads(ctx, keys)
 	onDefault := r.Branch == def
+	// Started before GitHub answers: the link, or the branch name's keys (a branch whose name
+	// carries a key is never long-lived). Trailer keys wait for the long-lived check, since a
+	// staging branch carries every merged commit's trailer.
 	if !onDefault {
 		if link != "" {
 			jira.start(strings.ToUpper(link))
 		} else {
-			for _, k := range append(wakilcore.TicketKeysIn(r.Branch, keys), wakilcore.TrailerKeys(messages, keys)...) {
+			for _, k := range wakilcore.TicketKeysIn(r.Branch, keys) {
 				jira.start(k)
 			}
 		}
@@ -520,7 +541,7 @@ func readTicketBranch(ctx context.Context, org, root string, now time.Time) (Tic
 	at := now.UTC().Format(time.RFC3339)
 	for i, t := range tickets {
 		res := jira.get(t.key)
-		ref := TicketRef{Key: t.key, Sources: t.sources, Marked: i == 0}
+		ref := TicketRef{Key: t.key, Sources: t.sources, Marked: i == 0 && !t.stack}
 		var seen wakilcore.TicketSeen
 		if res.err == nil {
 			seen = wakilcore.TicketSeen{Title: res.issue.Summary, Status: res.issue.Status, Assignee: res.issue.Assignee, URL: res.issue.URL, At: at}
