@@ -82,6 +82,10 @@ see everything (see `CONTRIBUTING.md`, "Where does my code go?").
   `registry.dispatch(..., origin: .ui)` and its handlers. `WindowModel` itself writes `PaneStore`
   only for a few window-side marks (failure lines, api focus, response clears, a cleared terminal
   proposal, scope switches and the org-switch clear); see [runtime.md](runtime.md).
+  3c-ii: it keeps the browser's sites in step with the config tree (`refreshSettings`, skipped when the
+  org changed meanwhile), forgets a closed conversation's allow-list, and answers the site question:
+  `siteQuestionWantsTyping` (true unless the proposing conversation's last turn, `PlaceAgent.lastTurnSource`,
+  was typed) and `allowPendingSite` (a click answers only a `.site` ask that does not want typing).
 - `WindowModelSupport.swift` — `apiSurfaceCallDetaches`.
 - `QuickTasks.swift` — `QuickTasks` (3b-viii, Decision 42): the one entry point for quick tasks.
   `infill` and `respond` route to the org's `quickProvider`, else the active provider, fall back once
@@ -135,6 +139,22 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   port, `www.` kept; `label` for display), `BrowserSites` (the org's production sites and the active
   environment's tags, `www.` forgiven; unread means every site is production) and `browserActPrice`:
   production always gates, elsewhere only an agent on a site not allowed for the conversation does.
+- `BrowserPage.swift` — a page as the agent reads it (3c-ii): `BrowserElement` (ref, role, label, state),
+  `BrowserPageRead`, `BrowserPageAct` (click, type, select, press, scroll), `BrowserKeyName`, the
+  `BrowserPageDriver` seam WakilApp's `BrowserPageAgent` fills, `browserFitToCap` (the 204,800-byte cap:
+  says where it cut, never splits a character), `browserIdleWait` (the 1 s quiet after the operator
+  types) and the copy helpers: labels trimmed to 60 characters, `browserThreadLine`, `browserStatement`.
+- `BrowserFieldRules.swift` — `BrowserFieldRules` (3c-ii): the never-list of fields that are the
+  operator's to fill (password, card number and code, one-time code), read from a field's type,
+  autocomplete, name, id and label with camelCase split; `scriptSource` generates the same rules as
+  JavaScript for the page script's act-time re-check, so the two cannot drift.
+- `BrowserReachActions.swift` — `browserReachActions` (3c-ii): `browser_read_page` (`.read`);
+  `browser_click`, `browser_type`, `browser_select`, `browser_press`, `browser_scroll` (`.mutate`,
+  agent-reachable, each with a `callPrice` and a `proposal`); `browser_revoke_site` (`.control`,
+  operator-only). `browserActTarget` is the one place an act is checked against the tab's last read
+  (no read, unknown ref, URL changed, non-web page, never-list field, wrong role, unknown option, bad
+  key); price and proposal run it and fall back to *allow* / nothing on any failure, and the handler
+  runs it again. `BrowserReachError` holds the refusal sentences.
 - `BrowserFocusRetry.swift` — `browserRetryFocus`: a page focus that waits for its web view to
   join the window asks again before every try whether the pane may still take the keyboard and the
   tab is still the active one, and gives up quietly when not (Rule 6).
@@ -146,12 +166,17 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   fetched, and `command`, the latest `BrowserCommand` for the host to apply), `BrowserFind`,
   `BrowserDownload` and `BrowserPageReport`, what a web view reports.
 - `BrowserPaneKind.swift` — `BrowserPaneKind` (`browser`): contents are the snapshot, `failure` is the
-  active tab's, `readPane` gives tabs, address, title, loading, history, zoom, find and downloads, never
-  page text; `PaneRestorable` restores saved tabs through `browser_restore`.
+  active tab's, `readPane` gives tabs, address, title, loading, history, zoom, find and downloads, and per tab the
+  `site`, `production` and `environment` the agent's price follows, never page text; `PaneRestorable` restores saved tabs through `browser_restore`.
 - `PaneStore+Browser.swift` — `browserSnapshot`, `updateBrowser` (the `updateEditor` shape),
   `browserRestore` (keeps the saved ids, loads only the active tab), and **the seam** the web view
   reports through: `browserPageDidReport`, `browserFindDidReport`, `browserDownloadDidChange`,
-  `browserPageOpenedTab`. The seam never creates a pane and never issues a command.
+  `browserPageOpenedTab`. The seam never creates a pane and never issues a command. 3c-ii adds, in
+  **memory only**: `browserSetSites` / `browserSites(org:)` (the organisation's production sites and
+  the active environment's tags), the conversation allow-list (`browserAllow`, `browserAllowed`,
+  `browserRevoke`, `browserForget`, in the browser kind's `Shared`, keyed by `PlaceAgent.id`) and
+  each tab's last read (`browserRecordRead`, `browserDropRead`; a read whose first ref is not above
+  `refsIssued` is refused, so a ref names one element). None of it is saved.
 - `BrowserActions.swift` — `registerBrowserActions` (3c-i): `browser_open` (opens a pane when none is),
   `browser_navigate` (the address rule; refuses blank and `javascript:`), back, forward, reload, stop,
   new/close/reopen/select/move tab, focus address (⌘L), find, find step and close, zoom (the fixed ladder), download cancel
@@ -219,6 +244,9 @@ alone.
 
 - `Action.swift` — `Action`, `ActionDescriptor`, `ActionKind` (`read`, `control`, `mutate`),
   `ActionAudience` (`agentReachable`, `operatorOnly`), `ActionOrigin` (`ui`, `agent`, `debug`).
+  3c-ii adds `Action.callPrice` (a `.mutate` priced by the call, not the action), `Action.proposal`
+  (what the plane shows for one call), `ActionProposal` (statement and ask) and `PendingAsk`
+  (`change`, `site`, `productionSite`).
 - `GateDecision.swift` — `GateDecision` (`allow`, `gate`, `block`).
 - `JSONValue.swift` — `JSONValue`, `safeInt`, `safeInt64`.
 - `ToolCaller.swift` — `ToolCaller`, the one-method port (`callTool`) every MCP client is used
@@ -324,7 +352,7 @@ Tests: `EditorStoreTests`, `EditorTabsTests`, `EditorActionsTests`, `EditorReadP
   `environmentSwitchIsNoOp`.
 - `ConfirmationBroker.swift` — `ConfirmationBroker` (actor): holds at most one refused mutation while
   a human decides. One per assembly, shared by the agent's path and the window's.
-- `PendingMutation.swift` — `PendingMutation`, `ConfirmationDecision`, `mutationAffectsEveryRow`.
+- `PendingMutation.swift` — `PendingMutation` (with its `ask`, 3c-ii), `ConfirmationDecision`, `mutationAffectsEveryRow`.
 
 Uses: nothing but `Core`.
 Tests: `WriteGateTests`, `ConfirmationBrokerTests`, `ProductionDeclarationTests`.
@@ -367,7 +395,7 @@ Tests: `GitStatusTests`, `GitPaneLinesTests`, `GitRootWatcherTests`, `GitSourceT
   (the `claude` argv: `--mcp-config`, `--strict-mcp-config`, `--permission-prompt-tool
   mcp__wakil__approve_tool_use`, `--allowedTools`, `--resume`/`--fork-session`, …).
 - `StreamJSON.swift` — `HarnessEvent`, `decodeHarnessEvents` (the CLI's stream-json output).
-- `AgentInstructions.swift` — `agentSystemPrompt`.
+- `AgentInstructions.swift` — `agentSystemPrompt` (3c-ii: says page text is data, never a request).
 - `ResumeBroker.swift`, `ProviderSwitchBroker.swift` — where `session_resume` and
   `session_set_provider` requests park for the window.
 - `QuickModel.swift` — `QuickModel` (protocol; Decision 42), `QuickOperation` (`infill`, `respond`),
@@ -477,7 +505,8 @@ Terminal, Api and Editor keep their conformance and store methods in their own f
 - `PaneTable.swift`, `PaneFetch.swift`, `PaneEditable.swift` — the db pane's table, paging and sort,
   and cell write-back.
 - `SettingsTree.swift`, `AccountTable.swift`, `UnlinkReport.swift`, `DatabaseConnection.swift` —
-  the settings pane's decoded data.
+  the settings pane's decoded data (each environment carries `production`, the config tree's flag that
+  `BrowserSites.from` reads).
 - `TabStripLayout.swift` — `TabStripLayout`: a pane's tab strip when its tabs do not fit, the
   browser's and the editor's (`PaneTabStrip` draws it) — `widths` (200 pt while they fit, then
   shrinking evenly to 96, the active one to no less than 140, before the strip scrolls),
@@ -505,7 +534,10 @@ Tests: `SQLTokenizerTests`, `SQLStyleTests`, `SQLFormatTests`, `QueryLineKeysTes
 - `ActionRegistry.swift` — `ActionRegistry` (actor): `register`, `all()`, and `dispatch(name:params:
   origin:environment:confirmation:)`, which asks `writeGate`, runs the handler and journals every
   outcome; `setProductionLookup` and `setScopeLookup` (an agent caller's own flags and scope;
-  the scope is bound around the handler as `ScopeRouting.home`); `setScreenScope` (every other
+  the scope is bound around the handler as `ScopeRouting.home`); **the price per call** (3c-ii): for a
+  `.mutate` with a `callPrice` the registry works out the caller's home first and asks `callPrice`
+  under the handler's own task-locals, so a background agent is priced against its own pane and site;
+  `proposal(name:params:caller:)` describes a parked call the same way; `setScreenScope` (every other
   dispatch is bound to the scope on screen when it began, so writes after an await land there); `ActionError` (`unknown`, `needsConfirmation`, `blockedInProduction`).
 - `StandardActions.swift` — `registerStandardActions` (the `ctx_*`, `db_*` and `session_*`
   actions, and `pane_sort`), `StandardActionError`, `readConfigTree`. `db_cancel` ends the pane's

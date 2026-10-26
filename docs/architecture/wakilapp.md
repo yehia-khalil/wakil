@@ -48,7 +48,7 @@ With none of them, `WakilApplication.main()` opens the window.
 | `api` | `ApiPane` (`ApiPane*.swift`, `ApiFieldEditor.swift`, `ApiTokenView.swift`, `ApiPaneFlow.swift`) | `api(_:)` |
 | `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`; its tabs are the shared `PaneTabStrip`) | `editor(_:)`, `gitRoots`, `editorSaveAsRequest`, the unsaved prompt |
 | `settings` (`Pane.settingsKind`) | `SettingsPane` (`SettingsPane.swift`, `SettingsForm.swift`) | `settings`, `accounts`, the login state |
-| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — its tabs on the shared `PaneTabStrip`, and the address row — `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache` |
+| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — its tabs on the shared `PaneTabStrip`, and the address row, which also draws the site tag chip, the tab dots and the *agent allowed* mark — `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache` |
 | anything else | a "no view for a … pane" line | — |
 
 **Edge to edge** (2026-10-26, `PaneKind.edgeToEdge`, read as `Pane.edgeToEdge`): the editor, the
@@ -87,6 +87,17 @@ pane's `sync` hands it to the host. A page's own prompts (alert, sign-in, camera
 not store state (`BrowserPrompt`): the page asked, not the operator or the agent.
 `BrowserSettingsForm.swift` is Settings → Browser (search engine, start page, Clear data).
 
+**The agent's reach into a page (3c-ii)** is `BrowserPageAgent` (`BrowserPageAgent.swift`), the
+`BrowserPageDriver` WakilKit's actions call, and `BrowserAgentScript.swift`, the script it runs. The
+driver works only on a tab's existing live web view (`BrowserTabHost.liveView`; none live means
+*not loaded*), never takes the keyboard and never selects a tab (Rule 6). The script runs in the
+isolated content world `wakil.agent`, so the page cannot see it; the agent's strings reach it only as
+`callAsyncJavaScript` arguments, never as source. It reads visible elements with refs (open shadow roots
+walked, frames counted), builds the page text from text nodes and skips every never-list field, and
+re-checks the live element at act time. An act waits out the operator's typing (`lastOperatorInput`,
+1 s quiet, 10 s ceiling) and each call has a 10 s timeout. The driver replaces any script failure that
+is not the script's own fixed sentence with Wakil's, so no page text reaches the agent that way.
+
 **This switch is the one view-side place a new pane kind touches**: its view file and one `case`
 (the rest of the recipe is `CONTRIBUTING.md`, "A new pane kind").
 
@@ -98,7 +109,7 @@ not store state (`BrowserPrompt`): the page asked, not the operator or the agent
 | `ContextLine` | `ContextLine.swift` | The active org, project and environment, drawn as one line |
 | `ComposerBar` | `ComposerBar.swift` | The bar typed and spoken text land in; Return sends |
 | `ThoughtThread` | `ThoughtThread.swift` | The agent's progress, rising from the bottom edge |
-| `ConfirmationPlane` | `ConfirmationPlane.swift` | The typed confirmation for a gated mutation |
+| `ConfirmationPlane` | `ConfirmationPlane.swift` | The typed confirmation for a gated mutation; the site question (3c-ii): **Don't Allow** / **Allow for this conversation**, a click for a typed request and the typed word for a spoken one |
 | `OrgPlane` | `OrgPlane.swift` | ⌘⇧O: every organisation on the machine; create, adopt, switch |
 | `Landing` | `Landing.swift` | What the window draws before the session has done anything |
 | `PalettePlane`, `PaletteController` | `Palettes.swift` | ⌘K and ⌘P, driving `PaletteModel` |
