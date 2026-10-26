@@ -671,7 +671,8 @@ struct GitAccountSheet: View {
 /// An SSH GitHub account's **API access**: what Wakil reads pull requests with while git keeps
 /// pushing over SSH. Sign in (a code to approve; Cancel ends the wait, Rule 4) or an access token
 /// (a secure field, focused when it opens, kept when focus leaves, Rules 2 and 3); once set, Test and
-/// Remove. One action runs at a time per row, its buttons off while it does (Rule 5).
+/// Remove. One action runs at a time per row, its buttons off until its call returns (Rule 5): Store,
+/// Test and Remove offer no Cancel, since one would only stop watching a call already sent.
 struct GitAPIAccessRowView: View {
     let account: SettingsGitAccount
     let row: GitAPIAccessRow
@@ -683,6 +684,8 @@ struct GitAPIAccessRowView: View {
     @State private var userCode: String?
     @State private var page: String?
     @State private var work: Task<Void, Never>?
+    /// The running work is Sign in's: the only one Cancel is offered for.
+    @State private var signingIn = false
     @State private var confirmingRemove = false
     @State private var note: String?
     @FocusState private var tokenFocused: Bool
@@ -703,10 +706,12 @@ struct GitAPIAccessRowView: View {
                 Spacer(minLength: 0)
                 if work != nil {
                     ProgressView().controlSize(.small)
-                    FormButton(title: "Cancel", tone: SettingsPalette.coolWhite, identifier: "\(id).cancel") {
-                        work?.cancel()
-                        work = nil
-                        userCode = nil
+                    if signingIn {
+                        // Ends the wait; the row stays busy until the sign-in's call returns.
+                        FormButton(title: "Cancel", tone: SettingsPalette.coolWhite, identifier: "\(id).cancel") {
+                            work?.cancel()
+                            userCode = nil
+                        }
                     }
                 } else {
                     if signInAvailable {
@@ -777,13 +782,13 @@ struct GitAPIAccessRowView: View {
         }
     }
 
-    /// Starts one piece of work and clears the row's busy state when it ends.
+    /// Starts one piece of work and clears the row's busy state when it ends, cancelled or not.
     private func run(_ body: @escaping () async -> Void) {
         guard work == nil else { return }
         note = nil
         work = Task {
             await body()
-            if !Task.isCancelled { work = nil }
+            work = nil
         }
     }
 
@@ -811,7 +816,10 @@ struct GitAPIAccessRowView: View {
 
     private func signIn() {
         run {
+            signingIn = true
+            defer { signingIn = false }
             let start = await git.deviceStart(.github)
+            guard !Task.isCancelled else { return }
             guard let deviceCode = start.deviceCode, start.error == nil else {
                 note = start.error
                 return
@@ -824,7 +832,8 @@ struct GitAPIAccessRowView: View {
                 try? await Task.sleep(for: .seconds(start.interval))
                 if Task.isCancelled { break }
                 let r = await git.devicePoll(.github, host, deviceCode, true)
-                if let e = r.error {
+                // A wait cancelled meanwhile shows no late note (Rule 5).
+                if let e = r.error, !Task.isCancelled {
                     note = e
                     return
                 }
