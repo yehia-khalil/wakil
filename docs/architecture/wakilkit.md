@@ -137,11 +137,6 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 - `BrowserDownloadNames.swift` — where a download lands (`browserDownloadDestination`: the suggested
   name cut to its last component, `name 2.ext` when taken) and the strip's size line
   (`browserDownloadSize`, decimal units).
-- `BrowserTabStrip.swift` — `BrowserTabStrip`: the tab strip when its tabs do not fit — `widths`
-  (200 pt while they fit, then shrinking evenly to 96, the active one to no less than 140, before
-  the strip scrolls), `hidden` (how many entries a scroll offset leaves out of sight on each side),
-  `pageTarget` (the entry a side's count scrolls to) and `needsReveal` (whether the active entry is
-  out of view).
 - `BrowserSnapshot.swift` — `BrowserSnapshot` (tabs, `active` id, `find`, `downloads`, the ⌘⇧T
   `closed` stack, `nextTab` for `"t<n>"` ids), `BrowserTab` (with `loaded`, false until its web view has
   fetched, and `command`, the latest `BrowserCommand` for the host to apply), `BrowserFind`,
@@ -185,7 +180,7 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserTabStripTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `WindowModelBrowserTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 
@@ -479,10 +474,17 @@ Terminal, Api and Editor keep their conformance and store methods in their own f
   and cell write-back.
 - `SettingsTree.swift`, `AccountTable.swift`, `UnlinkReport.swift`, `DatabaseConnection.swift` —
   the settings pane's decoded data.
+- `TabStripLayout.swift` — `TabStripLayout`: a pane's tab strip when its tabs do not fit, the
+  browser's and the editor's (`PaneTabStrip` draws it) — `widths` (200 pt while they fit, then
+  shrinking evenly to 96, the active one to no less than 140, before the strip scrolls),
+  `overflows` (for fixed widths, and for entries that keep their own width, the editor's),
+  `hidden` (how many entries a scroll offset leaves out of sight on each side), `pageTarget` /
+  `pageOffset` (where a side's count scrolls to) and `needsReveal` / `revealOffset` (whether, and
+  where, the active entry is scrolled into view).
 
 Uses: nothing but `Core`.
 Tests: `PaneStoreTests`, `PaneKindStorageTests`, `PaneFetchTests`, `PaneEditableTests`,
-`PaneColumnLayoutTests`, `AccountTableTests`, `DatabaseConnectionStringTests`.
+`PaneColumnLayoutTests`, `AccountTableTests`, `DatabaseConnectionStringTests`, `TabStripLayoutTests`.
 
 ### Query/ — the db pane's query line
 

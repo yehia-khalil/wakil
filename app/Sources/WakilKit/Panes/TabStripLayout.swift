@@ -1,14 +1,17 @@
 import Foundation
 
-/// **The browser's tab strip when its tabs do not fit** (3c-i, the overflow ruling of
-/// 2026-10-26): entries shrink evenly before the strip scrolls, a faded edge with a count says
-/// how many are out of sight on that side, and the active entry is always brought into view.
+/// **A pane's tab strip when its tabs do not fit** — the browser's since 3c-i (the overflow ruling
+/// of 2026-10-26), the editor's since the compact chrome reached it (2026-10-26): entries shrink
+/// evenly before the strip scrolls (the browser's), or keep their own width (the editor's, whose
+/// file names are its tabs), a faded edge with a count says how many are out of sight on that
+/// side, and the active entry is always brought into view. The drawing is `PaneTabStrip`
+/// (WakilApp).
 ///
 /// Pure: the strip's measurements in, widths, counts and scroll targets out. Every x here is in
 /// the strip's content coordinates — the first entry's left edge is 0 — and `offset` is how far
 /// the content is scrolled, so what the strip shows is `offset ... offset + viewport`.
-public enum BrowserTabStrip {
-    /// A whole entry's width while every entry fits (`BrowserPaneStyle.tabWidth`).
+public enum TabStripLayout {
+    /// A whole entry's width while every entry fits (`PaneStripStyle.tabWidth`).
     public static let fullWidth: Double = 200
     /// The narrowest an entry shrinks to before the strip scrolls: the tick, the favicon and a
     /// few letters of the title.
@@ -54,6 +57,12 @@ public enum BrowserTabStrip {
     public static func overflows(count: Int, width: Double, available: Double, separator: Double) -> Bool {
         guard count > 0 else { return false }
         return Double(count) * width + Double(count - 1) * separator > available + tolerance
+    }
+
+    /// Whether entries that keep their own width — `contentWidth` in all, separators included —
+    /// overflow `available` (the editor's strip, which never shrinks a file's name).
+    public static func overflows(contentWidth: Double, available: Double) -> Bool {
+        contentWidth > available + tolerance
     }
 
     /// How many entries are out of sight on each side: an entry cut by an edge counts as hidden

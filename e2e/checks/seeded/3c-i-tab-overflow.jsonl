@@ -36,6 +36,8 @@
 {"do":{"click":"browser.tabs.moreRight"}}
 {"expect":{"frame":"browser.tabs.moreLeft","inside":"browser.pane"}}
 {"expect":{"frame":"browser.tabs.moreLeft.count","inside":"browser.tabs.moreLeft"}}
+{"do":{"click":"browser.tabs.moreLeft"}}
+{"expect":{"frame":"browser.tabs.moreRight","inside":"browser.pane"}}
 {"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
 {"do":{"click":"browser.tabCount"}}
 {"do":{"press":"Down"}}

@@ -60,12 +60,12 @@ struct BrowserPane: View {
             // find bar and the downloads take a row of their own, each across a hairline.
             tabStrip
             BrowserHeader(tab: active, dispatch: send) { addressField }
-            BrowserHairline()
+            PaneHairline()
             if let find = snapshot.find {
                 findBar(find)
                     .padding(.horizontal, BrowserPaneStyle.rowInset)
                     .frame(height: BrowserPaneStyle.rowHeight)
-                BrowserHairline()
+                PaneHairline()
             }
             pageArea
                 .overlay(alignment: .top) { progressLine }
@@ -75,7 +75,7 @@ struct BrowserPane: View {
                     bottomTrailingRadius: snapshot.downloads.isEmpty ? BrowserPaneStyle.paneRadius : 0,
                     style: .continuous))
             if !snapshot.downloads.isEmpty {
-                BrowserHairline()
+                PaneHairline()
                 BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
                     .padding(.horizontal, BrowserPaneStyle.rowInset)
                     .padding(.vertical, BrowserPaneStyle.rowPadding)
@@ -126,14 +126,7 @@ struct BrowserPane: View {
     /// The first row: the browser glyph (the pane's label, as its help and its accessibility
     /// name), then the tabs and their count; too narrow for the list, the ⌄ menu holds both.
     private var tabStrip: some View {
-        HStack(spacing: 0) {
-            Image(systemName: "safari")
-                .font(.system(size: BrowserPaneStyle.paneGlyph))
-                .foregroundStyle(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
-                .frame(width: BrowserPaneStyle.controlSize, height: BrowserPaneStyle.controlSize)
-                .padding(.trailing, BrowserPaneStyle.glyphTrailing)
-                .help("Browser")
-                .accessibilityLabel("Browser")
+        PaneStripRow(glyph: "safari", name: "Browser") {
             if listMode != .hidden {
                 BrowserTabList(
                     snapshot: snapshot, mode: listMode,
@@ -146,8 +139,6 @@ struct BrowserPane: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, BrowserPaneStyle.rowInset)
-        .frame(height: BrowserPaneStyle.rowHeight)
     }
 
     // MARK: The address field
