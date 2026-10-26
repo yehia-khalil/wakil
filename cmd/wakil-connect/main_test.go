@@ -954,3 +954,43 @@ func TestStartLimitIsTwentySeconds(t *testing.T) {
 		t.Fatalf("startLimit = %v", startLimit)
 	}
 }
+
+// Spec amendment 2026-10-26: a connection removed while a session runs refuses at once, even a
+// ticked read-only tool, and the app is told — so it journals the refusal — whatever it answers.
+// With no app to tell, it is refused all the same.
+func TestARemovedConnectionRefusesAndTellsTheApp(t *testing.T) {
+	setupOrg(t)
+	addConn(t, github())
+	up := &fakeUpstream{}
+	// One session started with no app to ask, one with the app, both before the removal.
+	ctx2, cs2 := fronted(t, "github", up.dial(t))
+	sock := listenSocket(t, `{"decision":"allow"}`)
+	ctx, cs := fronted(t, "github", up.dial(t))
+	if err := wakilcore.RemoveConnection("initech", "github"); err != nil {
+		t.Fatal(err)
+	}
+
+	text, isErr := call(t, ctx, cs, "read_doc", map[string]any{"id": "d-1"})
+	if !isErr || !strings.Contains(text, "no longer") {
+		t.Fatalf("read_doc on a removed connection = %q (error %v)", text, isErr)
+	}
+	asks := sock.requests()
+	if len(asks) != 1 {
+		t.Fatalf("asked %d times, want 1: %v", len(asks), asks)
+	}
+	var told struct {
+		Connection string `json:"connection"`
+		Tool       string `json:"tool"`
+		Removed    bool   `json:"removed"`
+	}
+	if err := json.Unmarshal([]byte(asks[0]), &told); err != nil || !told.Removed || told.Connection != "github" || told.Tool != "read_doc" {
+		t.Fatalf("the app was told %q (%v)", asks[0], err)
+	}
+
+	if text, isErr := call(t, ctx2, cs2, "read_doc", nil); !isErr || !strings.Contains(text, "no longer") {
+		t.Fatalf("headless read_doc on a removed connection = %q (error %v)", text, isErr)
+	}
+	if got := up.ran(); len(got) != 0 {
+		t.Fatalf("a removed connection's call reached the server: %v", got)
+	}
+}

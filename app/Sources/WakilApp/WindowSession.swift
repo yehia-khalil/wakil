@@ -110,7 +110,8 @@ final class WindowSession {
                 spoken: { await screen.turnIsSpoken(conversation: conversation) },
                 journal: { request, outcome in
                     try? await registry.journalConnectionCall(request, outcome: outcome, caller: pinned)
-                })
+                },
+                connectionExists: { AgentConnectionsBox.shared.stillHas(org: pinned.place.organization, name: $0) })
             do {
                 try await approval.start()
                 return AgentSockets(mcp: server, approval: approval, harness: harness, startFailure: opened.failure)

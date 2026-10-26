@@ -7282,6 +7282,8 @@ public final class WindowModel {
         let harness: AgentHarness
         let socket: (any AgentSocket)?
         let socketFailure: String?
+        /// The organisation's connections revision the harness was built at.
+        let connectionsRevision: Int
     }
 
     /// A socket a place opened when it was shown, before any session there took it: the session
@@ -7401,6 +7403,8 @@ public final class WindowModel {
         }
         let socket = opened?.socket
         await ensureAgentConnections(in: place)
+        // Read beside the factory, which reads the connections themselves, with nothing between.
+        let connectionsRevision = agentConnectionsBox.revision(org: place.organization)
         guard let harness = harnessFactory(place, selection, path) else {
             if let shown, let opened, socket != nil, !socketsClosed, shownSockets[conversation] == nil {
                 shownSockets[conversation] = ShownSocket(
@@ -7414,7 +7418,8 @@ public final class WindowModel {
         if let unavailable = connectionsUnavailable, !agentConnectionsBox.connections(org: place.organization).isEmpty {
             failure = [failure, unavailable].compactMap { $0 }.joined(separator: "; ")
         }
-        return StartedSession(harness: harness, socket: socket, socketFailure: failure)
+        return StartedSession(
+            harness: harness, socket: socket, socketFailure: failure, connectionsRevision: connectionsRevision)
     }
 
     /// Installs `started` as `agent`'s live session: its harness and its socket. False, with
@@ -7438,6 +7443,7 @@ public final class WindowModel {
         // its parent was first launched with (the 3a-iii-b probe), which may predate the current
         // text — so its first turn carries the text as an update.
         agent.launchedInstructions = resumed ? resumedInstructionsUnknown : nil
+        agent.launchedConnectionsRevision = started.connectionsRevision
         agent.socket = started.socket
         agent.socketFailure = started.socketFailure
         return true
@@ -7537,6 +7543,18 @@ public final class WindowModel {
         // harness and a socket under the one assigned id, and the first pair would leak.
         while agent.startWaiters != nil {
             await withCheckedContinuation { agent.startWaiters?.append($0) }
+        }
+        // Spec amendment 2026-10-26: a connection changed since this agent launched, and it is
+        // between turns — it is fork-resumed with the organisation's current connections, by the
+        // same `resume` every resume takes, before this message goes. One that will not restart
+        // keeps its session (start-then-swap) and the message goes to it; the reason is in the
+        // status, and the next message tries again.
+        var restartFailure: String?
+        if connectionsRestartDue(agent), let live = agent.sessionId {
+            agent.startWaiters = []
+            await resume(sessionId: live, conversation: agent.id, restartingForConnections: true)
+            agent.releaseStartWaiters()
+            if agent.sessionId == live, !status.isEmpty { restartFailure = status }
         }
         // Conversations 3 of 3: a session whose process went away is resumed first, as a fork of
         // it, and the turn goes to the fork. A turn typed meanwhile waits for it (Rule 5), as for
@@ -7664,7 +7682,7 @@ public final class WindowModel {
                     caller: DispatchCaller(place: agent.place, session: nil, conversation: agent.id))
             }
             // A session running without its socket says so after each turn, not only once.
-            status = agent.socketFailure ?? ""
+            status = [restartFailure, agent.socketFailure].compactMap { $0 }.joined(separator: "; ")
             return true
         } catch {
             // A failed send did not start a turn — including a failed
@@ -7676,6 +7694,20 @@ public final class WindowModel {
             status = "agent: \(error)"
             return false
         }
+    }
+
+    /// Whether `agent` is restarted before its next message goes (spec amendment 2026-10-26): its
+    /// live session launched before its organisation's connections last changed
+    /// (`AgentConnectionsBox.revision`), and it is between turns — no turn running or unanswered,
+    /// no call of its own on the plane, no session starting. Not when `wakil-connect` is missing:
+    /// a relaunch would have no connections either.
+    func connectionsRestartDue(_ agent: PlaceAgent) -> Bool {
+        guard connectionsUnavailable == nil, agent.harness != nil, agent.sessionId != nil, !agent.sessionEnded,
+              let launched = agent.launchedConnectionsRevision,
+              launched != agentConnectionsBox.revision(org: agent.place.organization)
+        else { return false }
+        return !agent.turnInFlight && agent.unansweredSends == 0 && !agent.startsSession
+            && !waitingConversations.contains(agent.id)
     }
 
     /// Drains `events()` into `thoughts` for as long as *this* session
@@ -7799,6 +7831,17 @@ public final class WindowModel {
     /// Landing's creating it; refused in `status` when that Landing shows another conversation
     /// now, or the conversation is no longer live. Nil is the place's agent.
     public func resume(sessionId parent: String, in place: Place? = nil, conversation: String? = nil) async {
+        await resume(sessionId: parent, in: place, conversation: conversation, restartingForConnections: false)
+    }
+
+    /// `restartingForConnections` (spec amendment 2026-10-26, from `send` only): `parent` is the
+    /// conversation's own live session, idle between turns (`connectionsRestartDue`), forked so
+    /// its agent relaunches with the organisation's current connections. Its process writes
+    /// nothing between turns, so reading its transcript races no writer — the reason a live
+    /// session is otherwise refused here.
+    func resume(
+        sessionId parent: String, in place: Place? = nil, conversation: String? = nil, restartingForConnections: Bool
+    ) async {
         let agent: PlaceAgent
         if let conversation {
             // Pinned when it was asked for (`screenPinnedActions`): that conversation, or its
@@ -7834,7 +7877,7 @@ public final class WindowModel {
         // writing to a FRESH id nothing else touches, not on the PARENT
         // being read while a live process still owns it.
         // A session whose process went away is no longer written to: forking it is its revival.
-        guard parent != agent.sessionId || agent.sessionEnded else {
+        guard parent != agent.sessionId || agent.sessionEnded || restartingForConnections else {
             status = "resume \(parent): that is the session already running in this window"
             return
         }
@@ -7926,7 +7969,9 @@ public final class WindowModel {
         agent.eventPumpGeneration += 1
         await stopSession(of: agent)
 
-        agent.thoughts = rebuiltThread(thread, parent: parent, for: agent)
+        agent.thoughts = rebuiltThread(
+            thread, parent: parent, for: agent,
+            seam: restartingForConnections ? "restarted with the organisation's current connections — resumed from \(parent)" : nil)
         agent.turnInFlight = false
         agent.endTurns()
 
@@ -9363,7 +9408,7 @@ public final class WindowModel {
     /// `droppedEventsDoNotCollapseRowIds` already pinned once for the live
     /// path, which a reset here would have reintroduced for the rebuilt one.
     private func rebuiltThread(
-        _ thread: SessionThreadSnapshot, parent: String, for agent: PlaceAgent
+        _ thread: SessionThreadSnapshot, parent: String, for agent: PlaceAgent, seam named: String? = nil
     ) -> [ThoughtRow] {
         var rows: [ThoughtRow] = []
         for entry in thread.entries.suffix(Self.rebuiltThreadLimit) {
@@ -9380,7 +9425,7 @@ public final class WindowModel {
                 agent.nextThoughtId += 1
             }
         }
-        var seam = "resumed from \(parent)"
+        var seam = named ?? "resumed from \(parent)"
         if thread.truncated { seam += " (earlier turns not shown)" }
         rows.append(ThoughtRow(id: agent.nextThoughtId, label: "resumed", detail: seam, isError: false))
         agent.nextThoughtId += 1

@@ -49,6 +49,10 @@ type approvalRequest struct {
 	Allowed    bool            `json:"allowed"`
 	ReadOnly   bool            `json:"readOnly"`
 	Locked     bool            `json:"locked"`
+	// Removed is set when the connection is no longer in the organisation's record at the call:
+	// the app is told so it can journal the refusal (spec amendment 2026-10-26). It is refused
+	// here whatever the app answers.
+	Removed bool `json:"removed,omitempty"`
 }
 
 // approvalAnswer is the app's one line back: allow, or deny with the sentence the agent reads.
@@ -80,17 +84,27 @@ func canonicalArguments(raw json.RawMessage) (json.RawMessage, error) {
 	return out, nil
 }
 
-// gateCall decides one call: nil forwards it, an error is the refusal the agent reads. An allowed
-// read-only tool goes straight through. Everything else asks the app over socket — a ticked write
-// too, so the app can apply the spoken-turn rule. With no socket (no app to ask), only an allowed
-// tool goes through. Any trouble reaching or reading the app refuses the call.
+// gateCall decides one call: nil forwards it, an error is the refusal the agent reads. The record
+// is read again at every call, so a tick or a removal counts from the next call with no restart.
+// A connection no longer in the record is refused, the app told first (`Removed`) so it journals
+// it. An allowed read-only tool goes straight through. Everything else asks the app over socket —
+// a ticked write too, so the app can apply the spoken-turn rule. With no socket (no app to ask),
+// only an allowed tool goes through. Any trouble reaching or reading the app refuses the call.
 func gateCall(ctx context.Context, org, name, socket string, tool *mcp.Tool, args json.RawMessage) error {
 	c, ok, err := wakilcore.ConnectionForErr(org, name)
 	if err != nil {
 		return wakilcore.UserError("Wakil could not read " + org + "'s connections (" + errText(err) + "): nothing was sent")
 	}
 	if !ok {
-		return wakilcore.UserError("connection " + name + " is no longer in " + org + ": nothing was sent")
+		gone := wakilcore.UserError("connection " + name + " is no longer in " + org + ": nothing was sent")
+		if socket == "" {
+			return gone
+		}
+		answer, err := askApp(ctx, socket, approvalRequest{Connection: name, Tool: tool.Name, Arguments: args, Removed: true})
+		if err == nil && answer.Decision == "deny" && answer.Message != "" {
+			return wakilcore.UserError(answer.Message)
+		}
+		return gone
 	}
 	allowed, readOnly, locked := gateFlags(c, tool)
 	if allowed && readOnly {

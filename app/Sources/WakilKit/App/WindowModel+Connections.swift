@@ -167,9 +167,13 @@ extension WindowModel {
 
     /// Keeps secret values in the connection's Keychain item, merged with what is there: a catalog
     /// field's id, or a custom server's `env:<NAME>` / `header:<Name>`.
+    /// A conversation in `org` restarts at its next message (`AgentConnectionsBox.noteSignInChanged`):
+    /// `wakil-connect` reads the credentials only when it starts.
     public func setConnectionSecrets(org: String, name: String, values: [String: String]) async -> String? {
-        await connectionCall(org: org, "ctx_connection_secrets_set",
-                             ["name": .string(name), "values": .object(values.mapValues { .string($0) })], refresh: true).1
+        let error = await connectionCall(org: org, "ctx_connection_secrets_set",
+                                         ["name": .string(name), "values": .object(values.mapValues { .string($0) })], refresh: true).1
+        if error == nil { agentConnectionsBox.noteSignInChanged(org: org) }
+        return error
     }
 
     /// One tool's **Allow agent** switch. A locked (destructive) tool is refused by Go.
@@ -232,6 +236,7 @@ extension WindowModel {
         guard !Task.isCancelled else { return nil }
         if let waitError { return waitError }
         if let account = Self.string(done, "account"), !account.isEmpty { connectionAccounts["\(org)/\(name)"] = account }
+        agentConnectionsBox.noteSignInChanged(org: org)
         await refreshSettings()
         return nil
     }
@@ -239,7 +244,9 @@ extension WindowModel {
     /// Forgets a browser sign-in's tokens.
     public func signOut(org: String, name: String) async -> String? {
         connectionAccounts["\(org)/\(name)"] = nil
-        return await connectionCall(org: org, "ctx_connection_signout", ["name": .string(name)], refresh: true).1
+        let error = await connectionCall(org: org, "ctx_connection_signout", ["name": .string(name)], refresh: true).1
+        if error == nil { agentConnectionsBox.noteSignInChanged(org: org) }
+        return error
     }
 
     /// The Jira connection's sign-in: email and API token, kept as today's `jira:<org>`.

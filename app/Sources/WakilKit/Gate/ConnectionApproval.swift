@@ -17,9 +17,23 @@ public struct ConnectionCallRequest: Sendable, Equatable, Codable {
     /// (`ConnectionApprovalServer.request(fromLine:)`): the plane's statement is built from these
     /// bytes, so a number `JSONValue` would round (an integer past 2^53) shows as it was sent.
     public var rawArguments: String?
+    /// `wakil-connect` found the connection gone from `org.json` at the call (spec amendment
+    /// 2026-10-26): it is telling, not asking — it refuses the call whatever the answer.
+    public var removed = false
 
     private enum CodingKeys: String, CodingKey {
-        case connection, tool, arguments, allowed, readOnly, locked
+        case connection, tool, arguments, allowed, readOnly, locked, removed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        connection = try c.decode(String.self, forKey: .connection)
+        tool = try c.decode(String.self, forKey: .tool)
+        arguments = try c.decode(JSONValue.self, forKey: .arguments)
+        allowed = try c.decode(Bool.self, forKey: .allowed)
+        readOnly = try c.decode(Bool.self, forKey: .readOnly)
+        locked = try c.decode(Bool.self, forKey: .locked)
+        removed = try c.decodeIfPresent(Bool.self, forKey: .removed) ?? false
     }
 
     public init(connection: String, tool: String, arguments: JSONValue, allowed: Bool, readOnly: Bool, locked: Bool) {
@@ -34,10 +48,12 @@ public struct ConnectionCallRequest: Sendable, Equatable, Codable {
     /// The request as the plane's `params` and the journal's: whole, arguments included — they
     /// are the agent's own words, not secrets.
     public var params: JSONValue {
-        .object([
+        var fields: [String: JSONValue] = [
             "connection": .string(connection), "tool": .string(tool), "arguments": arguments,
             "allowed": .bool(allowed), "readOnly": .bool(readOnly), "locked": .bool(locked),
-        ])
+        ]
+        if removed { fields["removed"] = .bool(true) }
+        return .object(fields)
     }
 }
 
@@ -86,7 +102,13 @@ public func approvalSocketFailure(path: String, error: any Error) -> String {
 /// is the decision. **Nothing a peer sends can approve anything**: the request's flags only ever
 /// narrow what runs unasked, and an approval comes only from the broker. Every decision is
 /// journalled (`journal`, outcome `peer-allowed`, `asked-approved`, `asked-declined`, `asked-timeout`,
-/// `asked-busy`, or `conversation-ended` for a request the server's `stop` overtook).
+/// `asked-busy`, `conversation-ended` for a request the server's `stop` overtook, or
+/// `connection-removed`).
+///
+/// **A call on a connection the organisation no longer has is refused** before anything else is
+/// decided (spec amendment 2026-10-26): when `connectionExists` says so — the app's own list, read
+/// again after every Settings write — or the request says `removed` — `wakil-connect`'s own read of
+/// `org.json` at the call, which also sees a removal made from a terminal.
 ///
 /// The socket is created owner-only and set to mode 0600 before it listens, after unlinking a
 /// stale file at the path. A line over 1 MiB, or one not sent within `readTimeout`, is refused.
@@ -115,6 +137,7 @@ public actor ConnectionApprovalServer {
     private let broker: ConfirmationBroker
     private let spoken: @Sendable () async -> Bool
     private let journal: @Sendable (ConnectionCallRequest, String) async -> Void
+    private let connectionExists: @Sendable (String) async -> Bool
     private nonisolated let connections = OpenConnections(
         limit: ConnectionApprovalServer.maxConnections, readTimeout: ConnectionApprovalServer.readTimeout)
 
@@ -124,12 +147,15 @@ public actor ConnectionApprovalServer {
     private var waiting: Set<String> = []
 
     /// `spoken` is read at each request: whether this conversation's current turn came from
-    /// speech. `journal` records each decision with its outcome.
+    /// speech. `journal` records each decision with its outcome. `connectionExists` is read at each
+    /// request too: whether the conversation's organisation still has the connection named.
     public init(
         socketPath: String, place: Place, conversation: String, broker: ConfirmationBroker,
         spoken: @escaping @Sendable () async -> Bool,
-        journal: @escaping @Sendable (ConnectionCallRequest, String) async -> Void
+        journal: @escaping @Sendable (ConnectionCallRequest, String) async -> Void,
+        connectionExists: @escaping @Sendable (String) async -> Bool = { _ in true }
     ) {
+        self.connectionExists = connectionExists
         self.socketPath = socketPath
         self.place = place
         self.conversation = conversation
@@ -326,6 +352,12 @@ public actor ConnectionApprovalServer {
         guard !stopped else {
             await journal(request, "conversation-ended")
             return ended
+        }
+        let exists = request.removed ? false : await connectionExists(request.connection)
+        if !exists {
+            await journal(request, "connection-removed")
+            return .deny("Connection \(request.connection) is no longer in this organisation in Wakil, "
+                + "so \(request.tool) was not run: nothing was sent.")
         }
         let spoken = await spoken()
         guard !stopped else {

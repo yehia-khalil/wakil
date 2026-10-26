@@ -38,15 +38,62 @@ func usableConnections(_ connections: [AgentConnection]) -> [AgentConnection] {
 /// Each organisation's connections, filled from the config tree and read by the harness factory at
 /// each launch — `AgentInstructionsBox`'s shape, keyed by organisation. An organisation never read
 /// has no entry, which is not the same as an entry with none (`isKnown`).
+///
+/// **Each organisation's `revision`** (spec amendment 2026-10-26) moves when what a launch would
+/// give its agent changes: a connection added, removed or renamed, a server field changed
+/// (`serverShape`), or a sign-in replaced (`noteSignInChanged`) — never an Allow agent switch or a
+/// recorded hint, which `wakil-connect` reads from `org.json` at every call. A conversation whose
+/// agent launched at an older revision is restarted at its next message (`WindowModel.send`).
 public final class AgentConnectionsBox: @unchecked Sendable {
     public static let shared = AgentConnectionsBox()
     private let lock = NSLock()
     private var byOrg: [String: [AgentConnection]] = [:]
+    private var revisions: [String: Int] = [:]
 
     public init() {}
 
     public func set(org: String, connections: [AgentConnection]) {
-        lock.withLock { byOrg[org] = connections }
+        lock.withLock {
+            if Self.serverShape(byOrg[org] ?? []) != Self.serverShape(connections) { revisions[org, default: 0] += 1 }
+            byOrg[org] = connections
+        }
+    }
+
+    /// The organisation's revision: 0 until something changed it.
+    public func revision(org: String) -> Int {
+        lock.withLock { revisions[org] ?? 0 }
+    }
+
+    /// A connection's credentials changed (a token replaced, a browser sign-in or sign-out):
+    /// nothing in the tree shows it, and `wakil-connect` reads them only when it starts.
+    public func noteSignInChanged(org: String) {
+        lock.withLock { revisions[org, default: 0] += 1 }
+    }
+
+    /// Whether `org` still has a connection called `name`, as the app last read it. True for an
+    /// organisation never read: the app knows nothing to refuse it by (`wakil-connect`, reading
+    /// `org.json` at the call, still does).
+    public func stillHas(org: String, name: String) -> Bool {
+        lock.withLock { byOrg[org].map { $0.contains { $0.name == name } } ?? true }
+    }
+
+    /// What of each connection reaches its `wakil-connect` at start: its name and its server —
+    /// transport, address, command, arguments, field values, sign-in kind and whether it is signed
+    /// in. Not its switches, hints, title or field labels.
+    private struct ServerShape: Equatable {
+        let name, kind, transport, url, command, signIn: String
+        let args: [String]
+        let values: [String: String]
+        let signedIn: Bool
+        let secretKeys: [String]
+    }
+
+    private static func serverShape(_ connections: [AgentConnection]) -> [ServerShape] {
+        connections.map {
+            ServerShape(name: $0.name, kind: $0.kind, transport: $0.transport, url: $0.url, command: $0.command,
+                        signIn: $0.signIn, args: $0.args, values: $0.values, signedIn: $0.signedIn,
+                        secretKeys: $0.secretKeys.sorted())
+        }.sorted { $0.name < $1.name }
     }
 
     public func connections(org: String) -> [AgentConnection] {
