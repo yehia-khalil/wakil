@@ -1,6 +1,6 @@
 {
   "check": "e2e/checks/seeded/connections-focus-rule3.jsonl",
   "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
-  "provedAt": "2026-10-26T01:13:12.879055Z",
+  "provedAt": "2026-10-26T01:38:06.761392Z",
   "checkBlob": "41a1f6b399a9c700394650094879418430ba5cca"
 }
