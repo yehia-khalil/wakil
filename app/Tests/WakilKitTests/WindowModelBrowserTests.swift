@@ -211,6 +211,51 @@ private func browserWindow(
         #expect(await model.browserSuggestions(typed: "marked", pane: pane).map(\.kind) == [.bookmark])
     }
 
+    // MARK: 3c-iii Task 9: the ★ menu's list and a chosen tab row
+
+    @Test func theStarMenuReadsTheDrawnOrganisationsBookmarks() async throws {
+        let (model, _, home, panes) = try await homedBrowser()
+        let files = try BrowserOrgFiles(home: home, org: model.organization)
+        try files.setBookmark(url: "https://marked.test/", title: "Marked", on: true, now: Date())
+        await model.refreshBrowserSites()
+        #expect(model.browserBookmarksOnScreen.map(\.url) == ["https://marked.test/"])
+        await panes.browserSetBookmarks(org: model.organization, [])
+        await model.refreshPanes()
+        #expect(model.browserBookmarksOnScreen.isEmpty, "re-read after every dispatch")
+        let drawn = try #require(model.browserScope)
+        await panes.browserSetBookmarks(org: "umbrella", [BrowserBookmark(url: "https://u.test/", title: "", added: Date())])
+        model.setDrawnScopeForTesting(LayoutScope(
+            organization: "umbrella", project: drawn.project, environment: drawn.environment,
+            lineageRoot: drawn.lineageRoot))
+        await model.refreshPanes()
+        #expect(model.browserBookmarksOnScreen.map(\.url) == ["https://u.test/"], "the drawn place's organisation")
+    }
+
+    @Test func aTabRowOfThisPaneSelectsItAndKeepsTheFocus() async throws {
+        let (model, pane, _, _) = try await focusedBrowser()
+        await model.dispatchFromSurface("browser_new_tab", .object(["pane": .string(pane)]))
+        let first = try #require(model.browser(pane)?.tabs.first)
+        await model.browserChooseTab(first.id, url: first.url, from: pane)
+        #expect(model.browser(pane)?.active == first.id)
+        #expect(model.layoutSnapshot.focusedId == pane)
+    }
+
+    @Test func aTabRowOfAnotherPaneSelectsItThereAndFocusesThatPane() async throws {
+        let (model, pane, _, _) = try await focusedBrowser()
+        await model.dispatchFromSurface("pane_open", .object(["kind": .string("browser")]))
+        await model.refreshLayout()
+        let other = try #require(model.layoutSnapshot.panes.first { $0.kind == "browser" && $0.id != pane }?.id)
+        await model.dispatchFromSurface("browser_open", .object(["url": .string("https://b.test/"), "pane": .string(other)]))
+        await model.focusPane(id: pane)
+        await model.refreshLayout()
+        #expect(model.layoutSnapshot.focusedId == pane)
+        let tab = try #require(model.browser(other)?.tabs.first { $0.url == "https://b.test/" })
+        await model.browserChooseTab(tab.id, url: tab.url, from: pane)
+        await model.refreshLayout()
+        #expect(model.browser(other)?.active == tab.id)
+        #expect(model.layoutSnapshot.focusedId == other)
+    }
+
     @Test func anUnreadableBookmarksFileLoadsAsNothingAndIsNotWritten() async throws {
         let (model, _, home, panes) = try await homedBrowser()
         let org = model.organization

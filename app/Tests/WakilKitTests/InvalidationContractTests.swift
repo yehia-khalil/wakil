@@ -38,6 +38,8 @@ private let orgDerived: Set<String> = [
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.
     "browserSites", "browserAllowedOnScreen",
+    // 3c-iii: the ★ menu's bookmarks are the drawn org's, re-read from the store after the switch.
+    "browserBookmarksOnScreen",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
     // 3b-viii: the quick tasks route to the org's providers on its credentials, and each pane's

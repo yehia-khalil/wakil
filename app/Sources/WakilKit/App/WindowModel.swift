@@ -429,6 +429,10 @@ public final class WindowModel {
     /// re-read from the store in `refreshPanes`. Empty with no conversation on screen.
     public private(set) var browserAllowedOnScreen: Set<String> = []
 
+    /// 3c-iii: the drawn place's organisation's bookmarks, as the store holds them (the ★ menu's),
+    /// re-read in `refreshPanes`. Empty with no place drawn.
+    public private(set) var browserBookmarksOnScreen: [BrowserBookmark] = []
+
     /// Every account on this machine, as the settings pane's flat table
     /// draws it — or `nil` when it has not been read yet or the read
     /// failed.
@@ -2301,6 +2305,7 @@ public final class WindowModel {
         // prices as production until the incoming org's tree is read.
         browserSites = .unread
         browserAllowedOnScreen = []
+        browserBookmarksOnScreen = []
         // The store's copy for the outgoing org goes too: coming back before a re-read must not
         // price from a list that may be stale (`organization` still names the outgoing org here).
         if !organization.isEmpty { await panes.browserSetSites(org: organization, .unread) }
@@ -4643,6 +4648,7 @@ public final class WindowModel {
         } else {
             browserAllowedOnScreen = []
         }
+        await readBrowserBookmarksOnScreen()
         gitRoots = await gitStatus?.roots ?? []
         await changesFollowStatus()
         // The dictionary itself changes only when a pane opens or closes.
@@ -5875,6 +5881,20 @@ public final class WindowModel {
         guard browserScope == scope else { return [] }
         return BrowserSuggestions.rank(
             typed, tabs: tabs, editing: editing, bookmarks: bookmarks, history: history, search: search)
+    }
+
+    /// A tab row chosen under the address field of `pane` (ruling 9): `browser_select_tab` in the
+    /// pane that holds it — `pane` itself first, where the keyboard stays; a tab of another browser
+    /// pane on the canvas brings that pane forward with it, as ⌘P's open tabs do (ruling 11).
+    public func browserChooseTab(_ tab: String, url: String, from pane: String) async {
+        let browsers = layoutSnapshot.panes.filter { $0.kind == "browser" }.map(\.id)
+        let holder = ([pane] + browsers.filter { $0 != pane }).first { id in
+            browser(id)?.tabs.contains { $0.id == tab && $0.url == url } == true
+        }
+        guard let holder else { return }
+        var params: [String: JSONValue] = ["pane": .string(holder), "tab": .string(tab)]
+        if holder != pane { params["focus"] = .bool(true) }
+        await dispatchFromSurface("browser_select_tab", .object(params))
     }
 
     /// TEST-ONLY: runs after `browserSuggestions` has read, before it answers.
@@ -9768,6 +9788,19 @@ public final class WindowModel {
         let marks = (try? files.bookmarks()) ?? []
         guard org == organization else { return }
         await panes.browserSetBookmarks(org: org, marks)
+        await readBrowserBookmarksOnScreen()
+    }
+
+    /// The drawn place's organisation's bookmarks out of the store, for the ★ menu.
+    private func readBrowserBookmarksOnScreen() async {
+        guard let scope = browserScope else {
+            browserBookmarksOnScreen = []
+            return
+        }
+        let marks = await panes.browserBookmarks(org: scope.organization)
+        // A switch that landed during the read: the next refresh reads the new place's.
+        guard browserScope == scope, marks != browserBookmarksOnScreen else { return }
+        browserBookmarksOnScreen = marks
     }
 
     /// 3c-ii: reads the config tree once and refreshes the sites from it. Called at launch and after
