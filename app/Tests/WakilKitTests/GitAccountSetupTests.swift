@@ -91,4 +91,10 @@ import Testing
         let org = try JSONDecoder().decode(SettingsOrg.self, from: Data(json.utf8))
         #expect(org.gitAccounts.map(\.apiAccess) == ["token", ""])
     }
+
+    @Test func onlyAGitHubSSHAccountGetsTheAPIAccessTip() {
+        #expect(gitSSHAPIAccessTip(provider: .github)?.contains("access token") == true)
+        #expect(gitSSHAPIAccessTip(provider: .gitlab) == nil)
+        #expect(gitSSHAPIAccessTip(provider: .other) == nil)
+    }
 }

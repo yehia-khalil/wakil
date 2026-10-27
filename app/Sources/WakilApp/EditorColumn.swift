@@ -202,32 +202,15 @@ struct EditorColumn: View {
         }
     }
 
+    /// The four view names, or their icons when the column is too narrow for the names (a walk
+    /// found them wrapping letter by letter at the column's minimum width). Each keeps its name as
+    /// its accessibility label and tooltip, so the icon row reads the same to VoiceOver and checks.
     private var header: some View {
         HStack(spacing: 12) {
-            Button("Files") {
-                focusWanted = .files
-                Task { await dispatch("editor_tree", ["view": .string("files"), "shown": .bool(true)]) }
+            ViewThatFits(in: .horizontal) {
+                viewTabs(icons: false)
+                viewTabs(icons: true)
             }
-                .buttonStyle(.plain).opacity(column.view == .files ? 1 : 0.5)
-                .accessibilityIdentifier("editor.column.files")
-            Button("Search") {
-                focusWanted = .search
-                Task { await dispatch("editor_tree", ["view": .string("search"), "shown": .bool(true)]) }
-            }
-                .buttonStyle(.plain).opacity(column.view == .search ? 1 : 0.5)
-                .accessibilityIdentifier("editor.column.search")
-            Button("Changes") {
-                focusWanted = .changes
-                Task { await dispatch("editor_tree", ["view": .string("changes"), "shown": .bool(true)]) }
-            }
-                .buttonStyle(.plain).opacity(column.view == .changes ? 1 : 0.5)
-                .accessibilityIdentifier("editor.column.changes")
-            Button("Ticket") {
-                focusWanted = .ticket
-                Task { await dispatch("editor_tree", ["view": .string("ticket"), "shown": .bool(true)]) }
-            }
-                .buttonStyle(.plain).opacity(column.view == .ticket ? 1 : 0.5)
-                .accessibilityIdentifier("editor.column.ticket")
             Spacer()
             if column.view == .files {
                 Button(action: reveal) { Image(systemName: "scope").font(.system(size: 11)) }
@@ -241,6 +224,28 @@ struct EditorColumn: View {
         .font(.system(size: 11, weight: .medium, design: .monospaced))
         .foregroundStyle(EditorPaneStyle.text)
         .padding(.horizontal, 10).padding(.vertical, 6)
+    }
+
+    private func viewTabs(icons: Bool) -> some View {
+        HStack(spacing: icons ? 10 : 12) {
+            viewTab(.files, "Files", "doc.on.doc", "files", icons: icons)
+            viewTab(.search, "Search", "magnifyingglass", "search", icons: icons)
+            viewTab(.changes, "Changes", "arrow.triangle.branch", "changes", icons: icons)
+            viewTab(.ticket, "Ticket", "ticket", "ticket", icons: icons)
+        }
+    }
+
+    private func viewTab(_ view: EditorColumnView, _ name: String, _ symbol: String, _ id: String, icons: Bool) -> some View {
+        Button {
+            focusWanted = view
+            Task { await dispatch("editor_tree", ["view": .string(id), "shown": .bool(true)]) }
+        } label: {
+            if icons { Image(systemName: symbol).font(.system(size: 11)) } else { Text(name).lineLimit(1).fixedSize() }
+        }
+            .buttonStyle(.plain).opacity(column.view == view ? 1 : 0.5)
+            .help(name)
+            .accessibilityLabel(name)
+            .accessibilityIdentifier("editor.column." + id)
     }
 
     private var edge: some View {

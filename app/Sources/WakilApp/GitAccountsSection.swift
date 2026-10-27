@@ -426,6 +426,13 @@ struct GitAccountSheet: View {
                     }
                 }
             }
+            if let p = provider, let tip = gitSSHAPIAccessTip(provider: p) {
+                Text(tip)
+                    .font(.system(size: SettingsScale.body))
+                    .foregroundStyle(SettingsPalette.coolWhite.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.org.git.account.add.apiTip")
+            }
         }
     }
 

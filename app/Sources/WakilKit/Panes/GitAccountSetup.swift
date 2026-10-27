@@ -101,6 +101,14 @@ extension GitAccountMethod {
     }
 }
 
+/// The tip under an SSH account's setup: SSH reads nothing from the host's API, so the Ticket
+/// view's pull requests, threads and checks need a token beside the key (walk, 2026-10-27). Only
+/// GitHub's API is read today; other hosts get no tip.
+public func gitSSHAPIAccessTip(provider: GitProvider) -> String? {
+    guard provider == .github else { return nil }
+    return "Tip: SSH pushes and pulls but reads nothing from GitHub's API. For pull requests, review threads and checks in the Ticket view, also give this account an access token: its API access row, once it is added."
+}
+
 /// What an account's card in Settings shows.
 public struct GitAccountCard: Sendable, Equatable {
     public var title: String
