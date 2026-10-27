@@ -73,6 +73,15 @@ type SeedSpec struct {
 	// `editor_clone` has the folder it may clone into. **Only the clone check's launch asks for it**
 	// (`WantsCloneFolder`): every other launch opens the sheet as an operator's first clone would.
 	CloneFolder bool
+	// BrowserSites (3c-ii) adds a `pages` entry to the active environment — the page stub's origin,
+	// so the agent's reach into the browser pane has a staging site — and registers `e2e-live`, a
+	// project (never active) whose `live` environment is declared production and whose `site` entry
+	// is `http://localhost:<the stub's port>`. **Only the tags and production checks' launches ask
+	// for it** (`WantsBrowserSites`): every other launch declares the three api entries it always did.
+	BrowserSites bool
+	// PageStub is the page stub's origin (StartPageStub); BrowserSites reads its port. Empty with
+	// BrowserSites is refused.
+	PageStub string
 	// RootlessProject names a project in this org whose project.json declares
 	// no roots. Never active: a check switches to it with `ctx_set_project`,
 	// which is how the "no project root" note — derived from the live context
@@ -366,7 +375,7 @@ func seedOrgState(fixture Fixture, spec SeedSpec) error {
 		Environments: map[string]wakilcore.Environment{
 			spec.Environment: {
 				Databases: []wakilcore.Database{},
-				API:       fixtureAPIEntries(spec.StallOrigin),
+				API:       browserSiteEntries(fixtureAPIEntries(spec.StallOrigin), spec),
 			},
 			// A second environment, for W1's round-trip switch. It declares catalog under its
 			// own origin, and no billing, so a switch shows both re-resolution (a new origin)
@@ -399,6 +408,13 @@ func seedOrgState(fixture Fixture, spec SeedSpec) error {
 			return err
 		}
 		registry[spec.GitProject] = wakilcore.ProjectEntry{Path: gitProjectFile, Provider: spec.Provider}
+	}
+	if spec.BrowserSites {
+		liveFile, err := seedLiveProject(fixture.Root, spec)
+		if err != nil {
+			return err
+		}
+		registry[LiveProjectName] = wakilcore.ProjectEntry{Path: liveFile, Provider: spec.Provider}
 	}
 	if spec.RootlessProject != "" {
 		rootlessFile, err := seedRootlessProject(fixture.Root, spec)

@@ -10,6 +10,7 @@ enum PaneKinds {
         ApiPaneKind.self,
         SettingsPaneKind.self,
         EditorPaneKind.self,
+        BrowserPaneKind.self,
     ]
 
     static func kind(named name: String) -> (any PaneKind.Type)? {
@@ -20,6 +21,12 @@ enum PaneKinds {
     static func `is`(_ name: String, _ kind: any PaneKind.Type) -> Bool {
         Self.kind(named: name).map { ObjectIdentifier($0) == ObjectIdentifier(kind) } ?? false
     }
+}
+
+extension Pane {
+    /// Whether the canvas draws this pane's content to its border (`PaneKind.edgeToEdge`): the
+    /// editor, the terminal and the browser. A kind this build does not know is inset.
+    public var edgeToEdge: Bool { PaneKinds.kind(named: kind)?.edgeToEdge ?? false }
 }
 
 extension DataSurfacePaneKind: PaneRestorable {

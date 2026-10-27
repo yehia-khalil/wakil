@@ -21,8 +21,8 @@ import WebKit
 /// so `canvasMouseDown` answers only the one `sessionStarted` says is live.
 struct PaneClickWatcher: NSViewRepresentable {
     /// The click in this surface's points, and whether it lands on a text input that will
-    /// take the keyboard by itself. **Broad on purpose**: any `NSText` (a field editor, every
-    /// `NSTextView`, the API pane's editors), any editable `NSTextField`, and any `WKWebView`
+    /// take the keyboard by itself. **Broad on purpose**: any `NSText` that accepts first responder (a
+    /// field editor, every `NSTextView` but a terminal's output, the API pane's editors), any editable `NSTextField`, and any `WKWebView`
     /// — Monaco, Compare and Git's diffs alike, read-only or not.
     let onMouseDown: (CGPoint, Bool) -> Void
 
@@ -72,7 +72,8 @@ struct PaneClickWatcher: NSViewRepresentable {
             guard let frame = window.contentView?.superview else { return false }
             var view = frame.hitTest(frame.convert(event.locationInWindow, from: nil))
             while let current = view {
-                if current is NSText || current is WKWebView { return true }
+                // A terminal's output view selects but never takes the keyboard (it refuses it).
+                if (current is NSText && current.acceptsFirstResponder) || current is WKWebView { return true }
                 if let field = current as? NSTextField, field.isEditable { return true }
                 view = current.superview
             }

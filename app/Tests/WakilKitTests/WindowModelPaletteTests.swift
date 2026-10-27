@@ -990,6 +990,11 @@ private let registeredBeforeThePalette: Set<String> = [
     // Ticket view: the ticket reads and record, and the review threads, all agent-reachable.
     "ticket_read", "ticket_refresh", "ticket_show", "ticket_in_flight", "ticket_link", "ticket_record_update",
     "review_open", "review_step", "review_reply_draft", "review_reply_send", "review_resolve",
+    // 3c-i: the browser's actions; browser_restore is the window's own (operator-only).
+    "browser_back", "browser_bookmark", "browser_clear_data", "browser_close_tab", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_print", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_zoom",
+    // 3c-ii: the agent's reach into the page; the five acts are mutations, revoke_site the operator's.
+    "browser_read_page", "browser_click", "browser_type", "browser_select", "browser_press", "browser_scroll",
+    "browser_revoke_site",
     "api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_render_curl", "api_reopen",
     "api_remove_entry", "api_request", "api_send", "api_set_entry", "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
     // Provider capacity, on purpose: the operator-only record path and the agent's read.
@@ -999,6 +1004,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "ctx_rename_environment", "ctx_rename_project",
     // 3b-v (Decision 38): the editor settings read, and the two operator-only writes.
     "ctx_editor_settings", "ctx_set_editor_settings", "ctx_set_project_editor_settings",
+    // 3c-i: the browser settings read, and the operator-only write.
+    "ctx_browser_settings", "ctx_set_browser_settings",
     // 3b-viii (Decision 42): the operator-only write for a local model endpoint.
     "ctx_set_local_provider", "ctx_config_tree_for",
     "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs", "ctx_list_projects",
@@ -1029,6 +1036,7 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__editor_refresh",
     // 3b-v (Decision 38): the read only; both writes are operator-only and absent.
     "mcp__wakil__ctx_editor_settings",
+    "mcp__wakil__ctx_browser_settings",
     "mcp__wakil__editor_tree", "mcp__wakil__editor_tree_expand", "mcp__wakil__editor_tree_collapse",
     "mcp__wakil__editor_move_tab", "mcp__wakil__editor_tree_reveal",
     "mcp__wakil__editor_changes_select", "mcp__wakil__editor_changes_step",
@@ -1048,6 +1056,10 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__ticket_read", "mcp__wakil__ticket_refresh", "mcp__wakil__ticket_show", "mcp__wakil__ticket_in_flight",
     "mcp__wakil__review_open", "mcp__wakil__review_step", "mcp__wakil__review_reply_draft",
     "mcp__wakil-git", "mcp__wakil-pm", "mcp__wakil-recall",
+    // 3c-i: every browser action but browser_restore.
+    "mcp__wakil__browser_back", "mcp__wakil__browser_bookmark", "mcp__wakil__browser_close_tab", "mcp__wakil__browser_download_cancel", "mcp__wakil__browser_downloads_clear", "mcp__wakil__browser_find", "mcp__wakil__browser_find_close", "mcp__wakil__browser_find_step", "mcp__wakil__browser_focus_address", "mcp__wakil__browser_forward", "mcp__wakil__browser_move_tab", "mcp__wakil__browser_navigate", "mcp__wakil__browser_new_tab", "mcp__wakil__browser_open", "mcp__wakil__browser_reload", "mcp__wakil__browser_reopen_tab", "mcp__wakil__browser_select_tab", "mcp__wakil__browser_stop", "mcp__wakil__browser_zoom",
+    // 3c-ii: the read only; the acts are mutations, reached through the gate.
+    "mcp__wakil__browser_read_page",
     "mcp__wakil__api_bind", "mcp__wakil__api_cancel", "mcp__wakil__api_fill_from_curl",
     "mcp__wakil__api_open", "mcp__wakil__api_render_curl", "mcp__wakil__api_reopen",
     "mcp__wakil__api_request", "mcp__wakil__api_set_request", "mcp__wakil__api_unbind",

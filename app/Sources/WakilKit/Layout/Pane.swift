@@ -166,13 +166,14 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
     /// `PaneKind` in `App/PaneKinds.swift`.
     /// 3b-iii removes `git`: the Git pane folded into the editor, and a saved one is migrated
     /// (`layoutMigratingGitPanes`).
-    public static let kinds: Set<String> = ["db", "terminal", "api", settingsKind, "editor"]
+    public static let kinds: Set<String> = ["db", "terminal", "api", settingsKind, "editor", "browser"]
 
     /// The title a pane opened with none is given: the kind's wire word, except where the
     /// operator reads a name — `Editor` (3b-i).
     public static func defaultTitle(kind: String) -> String {
         switch kind {
         case "editor": "Editor"
+        case "browser": "Browser"
         default: kind
         }
     }
@@ -262,6 +263,13 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
     /// that has never had it set. **In `CodingKeys`**, and decoded with `try?` for `editorTabs`'s reason.
     public var editorColumn: EditorColumnState?
 
+    /// A **browser** pane's tabs (3c-i) — `nil` for every other kind, and for a browser pane that has
+    /// saved none. **In `CodingKeys`**, decoded with `try?` for `editorTabs`'s reason.
+    public var browserTabs: [BrowserSavedTab]?
+
+    /// A **browser** pane's selected tab id (3c-i). Same keeping and tolerance as `browserTabs`.
+    public var browserActiveTab: String?
+
     /// Everything about a pane except `busy`. Omitting a key entirely is
     /// what makes the synthesized *encoder* skip it, and what makes a
     /// hand-rolled decoder unnecessary for `busy` — nothing ever asks the
@@ -275,6 +283,7 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
     /// which is the one thing this field must not do.
     private enum CodingKeys: String, CodingKey {
         case id, kind, title, frame, density, columnWidths, fetch, terminalPath, editorTabs, editorColumn
+        case browserTabs, browserActiveTab
     }
 
     public init(
@@ -284,7 +293,9 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
         fetch: PaneFetch? = nil,
         terminalPath: String? = nil,
         editorTabs: [EditorSavedTab]? = nil,
-        editorColumn: EditorColumnState? = nil
+        editorColumn: EditorColumnState? = nil,
+        browserTabs: [BrowserSavedTab]? = nil,
+        browserActiveTab: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -297,6 +308,8 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
         self.terminalPath = terminalPath
         self.editorTabs = editorTabs
         self.editorColumn = editorColumn
+        self.browserTabs = browserTabs
+        self.browserActiveTab = browserActiveTab
     }
 
     /// Tolerant of a missing `density`, the same way `LayoutSnapshot`'s own
@@ -329,6 +342,8 @@ public struct Pane: Sendable, Equatable, Identifiable, Codable {
         terminalPath = try container.decodeIfPresent(String.self, forKey: .terminalPath)
         editorTabs = (try? container.decodeIfPresent([EditorSavedTab].self, forKey: .editorTabs)) ?? nil
         editorColumn = (try? container.decodeIfPresent(EditorColumnState.self, forKey: .editorColumn)) ?? nil
+        browserTabs = (try? container.decodeIfPresent([BrowserSavedTab].self, forKey: .browserTabs)) ?? nil
+        browserActiveTab = (try? container.decodeIfPresent(String.self, forKey: .browserActiveTab)) ?? nil
     }
 }
 
@@ -352,6 +367,19 @@ public struct EditorSavedTab: Sendable, Equatable, Codable {
         self.path = path
         self.cursor = cursor
         self.scrollTop = scrollTop
+    }
+}
+
+/// One browser tab as a layout keeps it (3c-i): which page, and the title it last showed. `Layout/`
+/// may not use `Browser/`, so the type lives here beside `EditorSavedTab`.
+public struct BrowserSavedTab: Codable, Sendable, Equatable {
+    public var id: String
+    public var url: String
+    public var title: String
+    public init(id: String, url: String, title: String) {
+        self.id = id
+        self.url = url
+        self.title = title
     }
 }
 

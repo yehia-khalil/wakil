@@ -100,12 +100,14 @@ extension WakilWindow {
                     ConfirmationPlane(
                         pending: pending,
                         environment: model.environmentLabel,
+                        siteWantsTyping: model.siteQuestionWantsTyping(pending),
                         typed: $typedConfirmation,
                         confirm: {
                             Task {
                                 await model.confirmPending(typed: typedConfirmation)
                             }
                         },
+                        allow: { Task { await model.allowPendingSite() } },
                         cancel: {
                             Task { await model.cancelPending() }
                         },
@@ -310,11 +312,13 @@ extension WakilWindow {
     // from `WakilWindow`, where there is no canvas to put a pane on. Same
     // slab, same title bar, one definition — see `settingsPaneOverlay`.
     func paneView(_ model: WindowModel, _ pane: Pane) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(pane.title.uppercased())
-                .font(.system(size: 9, weight: .medium))
-                .tracking(1.7)
-                .foregroundStyle(Color(red: 0.910, green: 0.925, blue: 0.965).opacity(0.45))
+        // The compact chrome (2026-10-26): the editor's, the terminal's and the browser's content
+        // runs edge to edge — no inset round it, the kind's own 32 pt header in place of the title,
+        // and the resize handle over its corner rather than a row under it (`PaneKind.edgeToEdge`).
+        let edgeToEdge = pane.edgeToEdge
+        return VStack(alignment: .leading, spacing: edgeToEdge ? 0 : 8) {
+            // An edge-to-edge kind draws its label itself, as the glyph at the left of its header.
+            if !edgeToEdge { PaneTitle(title: pane.title) }
 
             // **The first `switch pane.kind` in the codebase.** Since 2b-i
             // every pane has drawn the same thing and `kind` has been read
@@ -379,6 +383,7 @@ extension WakilWindow {
                     resize: { cols, rows in
                         Task { await model.resizeTerminal(pane: pane.id, cols: cols, rows: rows) }
                     },
+                    openLink: { url, alt in WakilLinks.open(url, systemBrowser: alt, model: model) },
                     // `Send to thread` on a block: straight into the
                     // thought thread, the same entry point the operator's
                     // own compose field calls. It used to stop at the
@@ -494,6 +499,7 @@ extension WakilWindow {
                     openCommitDiff: { root, ref in
                         Task { await model.editorOpenCommitDiff(root: root, path: ref.path, commit: ref.id, parentPath: ref.parentPath) }
                     },
+                    openLink: { url, alt in WakilLinks.open(url, systemBrowser: alt, model: model) },
                     timeline: EditorTimelineControls(
                         load: { root, path, skip in await model.editorTimeline(root: root, path: path, skip: skip) },
                         openCommit: { root, ref in
@@ -588,6 +594,52 @@ extension WakilWindow {
                         withPane["pane"] = .string(pane.id)
                         return try await model.dispatchFromSurfaceThrowing(name, .object(withPane))
                     })
+            case "browser":
+                // 3c-i. Every control is a `browser_*` action with this pane folded in; the web views
+                // are the window's (`BrowserTabHost`), so a rebuild here never reloads a page.
+                if let browserHost, let scope = model.browserScope {
+                    BrowserPane(
+                        snapshot: model.browser(pane.id) ?? .empty, pane: pane,
+                        width: pane.frame.width + (resizeOffsets[pane.id]?.width ?? 0),
+                        scope: scope, host: browserHost,
+                        dispatch: { name, params in
+                            var withPane = params
+                            withPane["pane"] = .string(pane.id)
+                            await model.dispatchFromSurface(name, .object(withPane))
+                        },
+                        isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
+                        isKeyboardOwner: !(
+                            model.showOrgPlane || model.organization.isEmpty || model.pending != nil
+                            || model.paletteShowing || model.unsavedPrompt != nil || model.closeQuestion != nil),
+                        keyboardHeld: { model.composerHoldsKeyboard },
+                        // The same three, read when asked: a deferred page focus acts on the
+                        // window as it is then, not as this view was built (Rule 6).
+                        mayTakeKeyboard: {
+                            model.layoutSnapshot.focusedId == pane.id && !model.composerHoldsKeyboard
+                                && !(model.showOrgPlane || model.organization.isEmpty || model.pending != nil
+                                     || model.paletteShowing || model.unsavedPrompt != nil || model.closeQuestion != nil)
+                        },
+                        liveActiveTab: { model.browser(pane.id)?.active },
+                        keyboardFocusRequests: model.keyboardFocusRequests,
+                        keyboardReturns: model.keyboardReturns,
+                        // Closed, not switched away from: the same canvas drawn, and the pane gone from it.
+                        isClosed: {
+                            model.drawnScope == scope && !model.layoutSnapshot.panes.contains { $0.id == pane.id }
+                        },
+                        sites: model.browserSites,
+                        agentAllowed: model.browserAllowedOnScreen,
+                        revokeSite: { site in Task { await model.revokeBrowserSite(site) } },
+                        bookmarks: model.browserBookmarksOnScreen,
+                        suggestions: { typed, search in
+                            await model.browserSuggestions(typed: typed, pane: pane.id, search: search)
+                        },
+                        engineSuggestions: { typed in await model.browserEngineSuggestions(typed: typed) },
+                        chooseTab: { tab, url in await model.browserChooseTab(tab, url: url, from: pane.id) })
+                    // **One view per place and pane.** Pane ids repeat from place to place, so
+                    // without this a switch from A's `browser-1` to B's would keep the view: no
+                    // appearance (no re-report of B's pages) and A's snapshot as B's `old`.
+                    .id(BrowserTabHost.Key(scope: scope, pane: pane.id, tab: ""))
+                }
             case Pane.settingsKind:
                 // 2e (#198). The third arm, beside the view that can draw
                 // its kind — the rule `Pane.kinds` has always stated.
@@ -606,6 +658,8 @@ extension WakilWindow {
                             field, to: value, organisation: organisation)
                     },
                     saveEditorSettings: { fields in await model.saveEditorSettings(fields) },
+                    saveBrowserSettings: { fields in await model.saveBrowserSettings(fields) },
+                    clearBrowserData: { org in await model.clearBrowserData(org: org) },
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },
@@ -733,7 +787,7 @@ extension WakilWindow {
                     activeEnvironment: model.environment)
             default:
                 // Unreachable today: `Pane.kinds` is
-                // `["db", "terminal", "api", "settings", "editor"]`, all five arms
+                // `["db", "terminal", "api", "settings", "editor", "browser"]`, all six arms
                 // above are drawn, and `pane_open` and
                 // `layoutDroppingUnknownPaneKinds` check against the same
                 // set. Here so that adding a kind to that set without
@@ -743,14 +797,17 @@ extension WakilWindow {
                     .foregroundStyle(Color(red: 0.910, green: 0.925, blue: 0.965).opacity(0.30))
             }
 
-            HStack {
-                Spacer()
-                Text("resize")
-                    .gesture(resizeGesture(model, pane))
+            if !edgeToEdge {
+                HStack {
+                    Spacer()
+                    Text("resize")
+                        .gesture(resizeGesture(model, pane))
+                }
             }
         }
-        .padding()
+        .padding(.all, edgeToEdge ? 0 : nil)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .modifier(EdgeToEdgePane(on: edgeToEdge, resize: resizeGesture(model, pane)))
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 // Near-opaque, never translucent. §1's second register: the
@@ -835,5 +892,50 @@ private extension UnsavedPrompt {
     /// One tab's prompt, which its editor pane draws over its own strip.
     var isCloseTab: Bool {
         if case .closeTab = intent { true } else { false }
+    }
+}
+
+/// A pane whose content meets its border (the editor's, the terminal's, the browser's): the content
+/// clipped to the slab's corners, the border token's 1 px edge over it so the pane's outline holds
+/// against any page, and the resize handle on a chip in the bottom-right corner, over the content.
+private struct EdgeToEdgePane<Resize: Gesture>: ViewModifier {
+    let on: Bool
+    let resize: Resize
+
+    func body(content: Content) -> some View {
+        if on {
+            content
+                .clipShape(RoundedRectangle(cornerRadius: PaneStripStyle.paneRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: PaneStripStyle.paneRadius, style: .continuous)
+                        .strokeBorder(PaneStripStyle.text.opacity(PaneStripStyle.edge), lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    Text("resize")
+                        .font(.system(size: SettingsScale.micro))
+                        .foregroundStyle(PaneStripStyle.text.opacity(RailTreatment.kindOpacity))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(PaneStripStyle.slab.opacity(0.85), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(6)
+                        .gesture(resize)
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// A pane's title as the canvas draws it over every inset slab: §6's micro-label, uppercase-tracked
+/// 9 pt. An edge-to-edge pane names itself with its glyph instead; the terminal's header keeps
+/// this label beside it.
+struct PaneTitle: View {
+    let title: String
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .medium))
+            .tracking(1.7)
+            .foregroundStyle(Color(red: 0.910, green: 0.925, blue: 0.965).opacity(0.45))
     }
 }

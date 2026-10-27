@@ -191,18 +191,69 @@ import Testing
     #expect(await store.snapshot() == before)
 }
 
-@Test func maximizingASecondPaneRestoresTheFirst() async throws {
+/// Maximize is the pane's own: maximizing a second pane leaves the first filling the canvas behind it,
+/// and selecting the first again shows it in front, still full (the operator, 2026-10-27).
+@Test func maximizingASecondPaneKeepsTheFirstMaximized() async throws {
     let store = LayoutStore()
     let a = await store.open(kind: "db", title: "A")
     let b = await store.open(kind: "db", title: "B")
     let aFrame = try #require(await store.snapshot().panes.first { $0.id == a.id }).frame
+    let bFrame = try #require(await store.snapshot().panes.first { $0.id == b.id }).frame
 
     try await store.maximize(id: a.id)
     try await store.maximize(id: b.id)
 
-    let snapshot = await store.snapshot()
+    var snapshot = await store.snapshot()
     #expect(snapshot.maximizedId == b.id)
+    #expect(snapshot.panes.first { $0.id == a.id }?.frame == LayoutStore.defaultVoid)
+    #expect(snapshot.preMaximizeFrames[a.id] == aFrame)
+
+    try await store.focus(id: a.id)
+    snapshot = await store.snapshot()
+    #expect(snapshot.maximizedId == a.id)
+    #expect(snapshot.panes.first { $0.id == a.id }?.frame == LayoutStore.defaultVoid)
+
+    // ⌘⏎ restores only the pane in front.
+    await store.restore()
+    snapshot = await store.snapshot()
+    #expect(snapshot.maximizedId == nil)
     #expect(snapshot.panes.first { $0.id == a.id }?.frame == aFrame)
+    #expect(snapshot.panes.first { $0.id == b.id }?.frame == LayoutStore.defaultVoid)
+
+    try await store.focus(id: b.id)
+    #expect(await store.snapshot().maximizedId == b.id)
+    await store.restore(id: b.id)
+    #expect(await store.snapshot().panes.first { $0.id == b.id }?.frame == bFrame)
+}
+
+/// A pane in front that is not maximized means nothing fills the canvas in front: the rail and Core
+/// come back, and ⌘⏎ maximizes it rather than restoring the one behind.
+@Test func focusingAPaneThatIsNotMaximizedClearsTheOneInFront() async throws {
+    let store = LayoutStore()
+    let a = await store.open(kind: "db", title: "A")
+    let b = await store.open(kind: "db", title: "B")
+    try await store.maximize(id: a.id)
+    try await store.focus(id: b.id)
+    #expect(await store.snapshot().maximizedId == nil)
+    #expect(await store.snapshot().panes.first { $0.id == a.id }?.frame == LayoutStore.defaultVoid)
+
+    let c = await store.open(kind: "db", title: "C")
+    #expect(await store.snapshot().focusedId == c.id)
+    #expect(await store.snapshot().maximizedId == nil)
+}
+
+/// Every maximized pane follows the canvas, not only the one in front.
+@Test func everyMaximizedPaneFollowsTheCanvas() async throws {
+    let store = LayoutStore()
+    let a = await store.open(kind: "db", title: "A")
+    let b = await store.open(kind: "db", title: "B")
+    try await store.maximize(id: a.id)
+    try await store.maximize(id: b.id)
+    let bigger = PaneFrame(x: 0, y: 0, width: 2000, height: 1200)
+    await store.setVoid(bigger)
+    let snapshot = await store.snapshot()
+    #expect(snapshot.panes.first { $0.id == a.id }?.frame == bigger)
+    #expect(snapshot.panes.first { $0.id == b.id }?.frame == bigger)
 }
 
 @Test func switchingProjectPreservesTheOutgoingArrangement() async throws {

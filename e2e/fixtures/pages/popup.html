@@ -1,0 +1,9 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pop-up</title></head>
+<body><h1>Pop-up</h1>
+<button id="open" onclick="window.open('b.html', '_blank')">Open page B</button>
+<script>
+// ?auto=1 opens on load, so a check reaches the pop-up without an in-page click.
+if (new URLSearchParams(location.search).get('auto') === '1') { window.open('b.html', '_blank'); }
+</script>
+</body></html>

@@ -283,6 +283,29 @@ func ListOrgs() ([]string, error) {
 	return out, nil
 }
 
+// BrowserStoreID is the id of the org's browser data store (3c-i), read from
+// browser/profile.json, or "" when the org has none or it does not parse.
+// WebKit keeps the store itself under ~/Library/WebKit, outside the org's
+// directory, and only the app can delete it, by this id — so a caller about
+// to remove the org reads it first and names what stays behind.
+func BrowserStoreID(org string) string {
+	dir, err := OrgDirFor(org)
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "browser", "profile.json"))
+	if err != nil {
+		return ""
+	}
+	var profile struct {
+		Identifier string `json:"identifier"`
+	}
+	if json.Unmarshal(data, &profile) != nil {
+		return ""
+	}
+	return profile.Identifier
+}
+
 // RemoveOrg deletes an org's whole directory. It refuses while the org
 // still holds providers or projects unless forced, because those are the
 // two things that make an org non-empty and the deletion is not undoable.

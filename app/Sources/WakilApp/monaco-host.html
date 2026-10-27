@@ -498,7 +498,7 @@
       }));
     };
     // 3a-v-a: inline blame. Swift fetches and picks the line; the page draws one annotation per model,
-    // after the line's text, and its hover's two links post back which commit was asked about.
+    // after the line's text, and its hover's links post back which commit was asked about.
     const blames = {};  // key -> { ids, id }
     window.wakilSetBlame = function (key, line, text, hover, id) {
       const m = models[key]; if (!m) return;
@@ -513,11 +513,37 @@
       }
       blames[key] = { ids: m.deltaDecorations((blames[key] || {}).ids || [], list), id: id || '' };
     };
-    ['open', 'copy'].forEach(function (op) {
+    // 3c-i: `web`, the hover's Open on GitHub (GitLab, Bitbucket), shown only when Swift found the page.
+    // A command link hands its command no event, so ⌥ is read from the pointer press that clicked it:
+    // a capture-phase mousedown runs before Monaco's own link handling. `alt` goes with `web` only.
+    // Any key press clears it, so a link opened from the keyboard never inherits an earlier ⌥-click.
+    let pressAlt = false;
+    window.addEventListener('mousedown', function (e) { pressAlt = e.altKey; }, true);
+    window.addEventListener('keydown', function () { pressAlt = false; }, true);
+    ['open', 'copy', 'web'].forEach(function (op) {
       monaco.editor.registerCommand('wakil.blame.' + op, function () {
         const b = current && blames[current];
-        if (b && b.id) post({ type: 'blame', key: current, op: op, id: b.id });
+        if (!b || !b.id) return;
+        const m = { type: 'blame', key: current, op: op, id: b.id };
+        if (op === 'web') m.alt = pressAlt;
+        post(m);
+        pressAlt = false;
       });
+    });
+    // 3c-iii: a URL in the text, followed with ⌘-click (Monaco's own gesture, `links` stays on). The
+    // opener is asked first (registered openers run before the built-in ones); it takes http and
+    // https only and declines the rest, which fall through to Monaco's defaults. `alt` is ⌥ from the
+    // same capture-phase press as the blame `web` command.
+    monaco.editor.registerLinkOpener({
+      open: function (resource) {
+        // As Monaco's own external opener builds it: a URI's default toString() would percent-encode
+        // `= & : +` in the query. A string is passed through as given.
+        const url = typeof resource === 'string' ? resource : encodeURI(resource.toString(true));
+        if (!/^https?:\/\//i.test(url)) return false;
+        post({ type: 'link', url: url, alt: pressAlt });
+        pressAlt = false;
+        return true;
+      }
     });
     // 3a-v-b: a conflicted file's blocks. WakilKit parses them from the tab's text and pushes them on
     // every change (none for a file git did not mark conflicted); the page tints them per model and

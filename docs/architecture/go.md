@@ -84,7 +84,10 @@ Tools: `list_databases`, `list_tables`, `describe_table`, `list_columns`, `query
 Read-only git for the active project's roots (`cmd/wakil-git/main.go`). Started by the window and by
 the harness (see above).
 
-Tools: `git_status`, `git_diff`, `git_show`.
+Tools: `git_status`, `git_diff`, `git_show`. 3c-i adds `git_origin` (the root's `origin` URL, any
+credentials taken out; `ReadOrigin`) and `git_blame`'s `pushed`, which marks the lines whose commit one
+of origin's remote-tracking branches holds with one `rev-list <ids> --not --remotes=origin`
+(`MarkPushed`, its own 1 s `PushedDeadline`; a failure or timeout marks nothing and never fails the blame).
 
 ### wakil-files
 
@@ -193,7 +196,8 @@ meant for a human are `UserError` (`mcperr.go`). By area:
   (`ProjectEntry`, `projects.json`), `config.go` (`Project`, `LoadProject`: a project's
   `project.json`), `projectwrite.go` (`SaveProject`, `SetDatabaseDSN`), `active.go`
   (`ActiveContext`, `active.json`), `resolve.go` (`Resolve`, `PartialResolved`), `configtree.go`
-  (what `config_tree` returns), `production.go` (`EnvironmentIsProduction`,
+  (what `config_tree` returns; each environment carries `production`, from
+  `EnvironmentIsProduction`, which the browser reads to price a site), `production.go` (`EnvironmentIsProduction`,
   `EnvironmentIsReadOnly`), `pickname.go`. See [state.md](state.md) for the files.
 - **Keychain** — `secrets.go` (`SecretGet`, `SecretSet`; service name `wakil:<org>:<ref>` from
   `keychainService`), `credpresence.go` (`SecretPresence`; runs `/usr/bin/security` at its absolute

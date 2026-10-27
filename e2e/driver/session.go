@@ -158,7 +158,7 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 	// other source, so an instance launched without it resolves no org
 	// however much state is on disk.
 	var seeded Seeded
-	var chatStub string
+	var chatStub, pageStub string
 	if s.Seed {
 		spec := DefaultSeed()
 		// The cancel check's slow server (W14). Alive for the whole launch, closed with it.
@@ -176,6 +176,14 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		}
 		defer stopChat()
 		chatStub = origin
+		// The browser checks' pages (3c-i). Alive for the whole launch; a
+		// check names it with PageStubToken.
+		pages, stopPages, err := StartPageStub(PageFixtures)
+		if err != nil {
+			return Result{}, err
+		}
+		defer stopPages()
+		pageStub = pages
 		// **The scripted agent goes on the provider record, when there is
 		// one.** A run without it seeds a record with no `claudePath`, which
 		// `decodeProviderCredentials` refuses — so the window opens with no
@@ -197,6 +205,9 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 		spec.CloneFolder = WantsCloneFolder(checks)
 		// The Ticket view's repository, branches and record, for the ticket checks' launches only.
 		spec.TicketRepo = WantsTicketRepo(checks)
+		// 3c-ii's staging site and production project, for the tags and production checks only.
+		spec.BrowserSites = WantsBrowserSites(checks)
+		spec.PageStub = pageStub
 		seeded, err = Seed(fixture, spec)
 		if err != nil {
 			return Result{}, err
@@ -353,18 +364,20 @@ func (s Session) Run(checks []Check) (result Result, err error) {
 
 	settle := settleFor(s.Settle, s.Agent.SeedsAnAgent())
 	runner := &Runner{
-		Orca:        s.Orca,
-		Resolver:    s.Resolver,
-		Channel:     client,
-		PID:         instance.PID,
-		FixtureRoot: fixture.Root,
-		ChatStub:    chatStub,
-		Processes:   PS{},
-		Journal:     FileJournal{Home: fixture.Home},
-		Evidence:    evidence,
-		Settle:      settle,
-		Quarantined: s.Quarantined,
-		Input:       s.Resolver.WatchInput,
+		Orca:         s.Orca,
+		Resolver:     s.Resolver,
+		Channel:      client,
+		PID:          instance.PID,
+		FixtureRoot:  fixture.Root,
+		ChatStub:     chatStub,
+		PageStub:     pageStub,
+		PageStubLive: PageStubLive(pageStub),
+		Processes:    PS{},
+		Journal:      FileJournal{Home: fixture.Home},
+		Evidence:     evidence,
+		Settle:       settle,
+		Quarantined:  s.Quarantined,
+		Input:        s.Resolver.WatchInput,
 	}
 	if operator != nil {
 		runner.Operator = operator

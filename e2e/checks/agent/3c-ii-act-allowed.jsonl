@@ -1,0 +1,73 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/form.html","newTab":false}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"dispatch":{"action":"browser_read_page","params":{"pane":"browser-1"}}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"fill the guest name"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Let the agent use 127.0.0.1:"}}
+{"expect":{"tree":"contains","text":"It can click, type and submit there until this conversation ends."}}
+{"expect":{"tree":"absent","text":"type confirm"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"typed into \"Guest name\""}}
+{"expect":{"tree":"contains","text":"typed the guest name"}}
+{"expect":{"tree":"contains","text":"agent allowed"}}
+{"expect":{"frame":"browser.agentAllowed","inside":"browser.pane"}}
+{"expect":{"focus":"window.composer"}}
+{"dispatch":{"action":"browser_revoke_site","params":{"site":"example.com","conversation":"e2e-no-such-conversation"}}}
+{"expect":{"tree":"contains","text":"agent allowed"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"choose two nights"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"chose two nights"}}
+{"expect":{"tree":"absent","text":"Let the agent use"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"type the card number"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"that field is yours to fill"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"scroll to the back link"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"scrolled to the back link"}}
+{"expect":{"tree":"contains","text":"scrolled to \"Back to page A\""}}
+{"dispatch":{"action":"browser_scroll","params":{"pane":"browser-1","ref":"e6"}}}
+{"expect":{"focus":"window.composer"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"press return in the guest name"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booked: Ada Lovelace, 2 nights"}}
+{"expect":{"tree":"contains","text":"pressed Return in \"Guest name\""}}
+{"do":{"click":"browser.agentAllowed.revoke"}}
+{"expect":{"tree":"absent","text":"agent allowed"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/form.html"}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"dispatch":{"action":"browser_read_page","params":{"pane":"browser-1"}}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"fill the guest name"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Let the agent use 127.0.0.1:"}}
+{"do":{"click":"confirmation.allow"}}
+{"expect":{"tree":"contains","text":"agent allowed"}}
+{"expect":{"focus":"window.composer"}}
+{"do":{"keys":"confirm the booking"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booked: Ada Lovelace, 1 night"}}
+{"do":{"click":"browser.agentAllowed.revoke"}}
+{"expect":{"tree":"absent","text":"agent allowed"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/form.html"}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t3"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"dispatch":{"action":"browser_read_page","params":{"pane":"browser-1"}}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"fill the guest name"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Let the agent use 127.0.0.1:"}}
+{"do":{"click":"confirmation.deny"}}
+{"expect":{"tree":"contains","text":"did not allow the agent on 127.0.0.1:"}}
+{"expect":{"tree":"absent","text":"Let the agent use"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"tree":"absent","text":"agent allowed"}}

@@ -41,3 +41,14 @@ private func servedNames() -> [String] {
         #expect(fields["failure"] == .null, "\(kind): \(String(describing: fields["failure"]))")
     }
 }
+
+/// The compact chrome (2026-10-26): the editor, the terminal and the browser run to the slab's
+/// border; the db, api and settings panes keep the canvas's inset, title and resize row.
+@Test func theEditorTerminalAndBrowserAreEdgeToEdge() {
+    func pane(_ kind: String) -> Pane {
+        Pane(id: "\(kind)-1", kind: kind, title: kind, frame: PaneFrame(x: 0, y: 0, width: 400, height: 300))
+    }
+    for kind in ["editor", "terminal", "browser"] { #expect(pane(kind).edgeToEdge, "\(kind)") }
+    for kind in ["db", "api", Pane.settingsKind] { #expect(!pane(kind).edgeToEdge, "\(kind)") }
+    #expect(!pane("unknown").edgeToEdge)
+}

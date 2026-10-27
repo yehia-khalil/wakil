@@ -125,6 +125,22 @@ private func filesTool(_ files: any ToolCaller, _ name: String, _ args: [String:
     return .ok(content)
 }
 
+/// Each root's `origin` URL as `git_origin` read it, once per root (3c-i): blame runs on every cursor
+/// line, and the remote it is mapped against does not move with it. Read again when the root's status
+/// moves (`mark`, `editorBlameRefreshMark` — the signal the editor fetches its blame again on), so a
+/// `git remote set-url` is seen by the next commit, checkout or change. A read that failed is not kept.
+actor GitOriginCache {
+    private var byRoot: [String: (mark: String, url: String)] = [:]
+
+    func origin(_ root: String, mark: String, read: @Sendable () async -> String?) async -> String? {
+        if let known = byRoot[root], known.mark == mark { return known.url }
+        byRoot[root] = nil
+        guard let url = await read() else { return nil }
+        byRoot[root] = (mark, url)
+        return url
+    }
+}
+
 /// Thrown when wakil-files refused or failed: its text, whole.
 struct EditorFilesError: Error, CustomStringConvertible { let description: String }
 
@@ -1676,11 +1692,14 @@ public func registerEditorActions(
             }
         }))
 
+    let origins = GitOriginCache()
     await registry.register(Action(
         name: "editor_blame",
         description: "Read who last changed each line of one file (or only line): commit id, author, date, subject, and "
             + "path (the file's name at that commit) and parentPath (its name before, across a rename) for "
-            + "editor_open_commit_diff; an all-zero id is a line not yet committed. root (absolute) and path (relative to it), or the editor pane's "
+            + "editor_open_commit_diff; an all-zero id is a line not yet committed. When the root's origin is on GitHub, "
+            + "GitLab or Bitbucket, a line whose commit is on a remote branch has pushed true and web: {host, url}, the "
+            + "commit's page (open it with browser_open). root (absolute) and path (relative to it), or the editor pane's "
             + "active tab, whose unsaved text is blamed as it stands; text: blame this text in place of the file.",
         kind: .read, audience: .agentReachable,
         schema: schema(pathSchema.merging(["line": .object(["type": .string("integer")]),
@@ -1691,12 +1710,30 @@ public func registerEditorActions(
             var args: [String: JSONValue] = ["root": .string(sub.root), "path": .string(sub.path)]
             if let text = optionalString(params, "text") { args["text"] = .string(text) }
             else if let t = sub.tab, case .file = t.subject, t.dirty { args["text"] = .string(t.text) }
+            // 3c-i: the commit's web page, only where one exists: a known host, and the commit pushed.
+            let root = sub.root
+            let states = await gitStatus?.roots ?? []
+            let mark = states.first(where: { $0.root == root }).map(editorBlameRefreshMark) ?? ""
+            let remote = await origins.origin(root, mark: mark) {
+                guard case .ok(let o)? = try? await filesTool(git, "git_origin", ["root": .string(root)]) else { return nil }
+                return optionalString(.object(o), "url") ?? ""
+            } ?? ""
+            let web = gitRemoteWebRepository(remote) != nil
+            if web { args["pushed"] = .bool(true) }
             switch try await filesTool(git, "git_blame", args) {
             case .failed(let text): throw EditorFilesError(description: text)
             case .ok(let o):
                 var lines = o["lines"] ?? .array([])
                 if let n = jsonObject(params)?["line"]?.intValue, case .array(let all) = lines {
                     lines = .array(all.filter { jsonObject($0)?["line"]?.intValue == n })
+                }
+                if web, case .array(let all) = lines {
+                    lines = .array(all.map { line in
+                        guard case .object(var l) = line, l["pushed"] == .bool(true), let id = optionalString(line, "id"),
+                              let page = gitCommitWebPage(remote: remote, commit: id) else { return line }
+                        l["web"] = .object(["host": .string(page.host), "url": .string(page.url)])
+                        return .object(l)
+                    })
                 }
                 return .object(["root": .string(sub.root), "path": .string(sub.path), "lines": lines])
             }

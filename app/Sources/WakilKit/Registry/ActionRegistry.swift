@@ -262,7 +262,8 @@ public actor ActionRegistry {
     ///    before anything else runs, resolving the target environment out
     ///    of `params` first (see `targetEnvironment(of:in:)`), and passing
     ///    `price` as the action's own declared pair, defaulting to
-    ///    `(.block, .gate)`.
+    ///    `(.block, .gate)` — or, for a `.mutate` with a `callPrice`, that
+    ///    call's own answer as both halves, asked once just before the gate.
     /// 3. `.block` journals `"blocked"` and throws `.blockedInProduction`
     ///    without going anywhere near the handler.
     /// 4. `.gate` without the exact confirmation string `"confirm"` journals
@@ -279,7 +280,8 @@ public actor ActionRegistry {
         params: JSONValue,
         origin: ActionOrigin,
         caller: DispatchCaller,
-        confirmation: String?
+        confirmation: String?,
+        asked: ActionProposal? = nil
     ) async throws -> JSONValue {
         guard let action = actions[name] else {
             try appendJournalEntry(action: name, params: params, origin: origin,
@@ -309,15 +311,30 @@ public actor ActionRegistry {
         // they say, so it asks nothing.
         let lookup = action.kind == .read ? nil : productionLookup.current()
         let production = await lookup?(caller) ?? environmentProduction
-        switch writeGate(
+        // 3c-ii: a `.mutate` that prices each call is asked once, before the gate, under the
+        // handler's own task-locals and canvas (ruling C5a); its answer is the whole price. The
+        // canvas it was priced in is the one the handler then runs in.
+        let callPrice = action.kind == .mutate ? action.callPrice : nil
+        var home: LayoutScope?
+        var price = action.price
+        var agentPrice = action.agentPrice
+        if let callPrice {
+            home = await self.home(of: caller)
+            let priced = await bindingDispatch(origin: origin, caller: caller, home: home) {
+                await callPrice(params, caller, origin)
+            }
+            price = (priced, priced)
+            agentPrice = nil
+        }
+        let decision = writeGate(
             environment: caller.place.environment,
             kind: action.kind,
             origin: origin,
             targetEnvironment: targetEnvironment(of: action, in: params),
-            price: action.price,
-            agentPrice: action.agentPrice,
+            price: price,
+            agentPrice: agentPrice,
             production: production)
-        {
+        switch decision {
         case .block:
             try appendJournalEntry(action: name, params: params, origin: origin,
                                    caller: caller, outcome: "blocked",
@@ -335,15 +352,14 @@ public actor ActionRegistry {
         }
 
         do {
-            // Bound here and nowhere else: `dispatch` is the one place
+            // Bound by `bindingDispatch` and nowhere else: `dispatch` is the one place
             // that knows who asked. See `ActionRegistry.dispatchOrigin`.
             // The caller's own canvas, else the one on screen now — never whatever the screen
-            // shows when the handler's later writes land.
-            var home = await scopeLookup.current()?(caller)
-            if home == nil { home = await screenScope.current()?(caller) }
-            let result = try await ActionRegistry.$dispatchOrigin.withValue(origin) {
-                try await ActionRegistry.$dispatchCaller.withValue(caller) {
-                    try await ScopeRouting.$home.withValue(home) {
+            // shows when the handler's later writes land. Already read if the call was priced.
+            if callPrice == nil { home = await self.home(of: caller) }
+            let result = try await ActionRegistry.$dispatchConfirmedGate.withValue(decision == .gate) {
+                try await ActionRegistry.$dispatchAsked.withValue(asked) {
+                    try await bindingDispatch(origin: origin, caller: caller, home: home) {
                         try await action.handler(params)
                     }
                 }
@@ -353,6 +369,13 @@ public actor ActionRegistry {
                                    secretParams: action.secretParams)
             publishDispatch(name)
             return result
+        } catch ActionError.needsConfirmation(let gated) where gated == name {
+            // 3c-ii: a handler found the consent it was priced on gone (a browser act whose site was
+            // revoked since the price) and asks for the confirmation the call now costs: a gate.
+            try appendJournalEntry(action: name, params: params, origin: origin,
+                                   caller: caller, outcome: "gated",
+                                   secretParams: action.secretParams)
+            throw ActionError.needsConfirmation(name)
         } catch {
             try appendJournalEntry(action: name, params: params, origin: origin,
                                    caller: caller, outcome: "error",
@@ -360,6 +383,43 @@ public actor ActionRegistry {
                                    reason: Self.reason(for: error, params: params,
                                                        secretParams: action.secretParams))
             throw error
+        }
+    }
+
+    /// The caller's own canvas, else the one on screen now.
+    private func home(of caller: DispatchCaller) async -> LayoutScope? {
+        if let own = await scopeLookup.current()?(caller) { return own }
+        return await screenScope.current()?(caller)
+    }
+
+    /// Runs `body` under the three task-locals a handler runs under: who asked, the caller, and
+    /// the canvas its writes land in. `dispatch` binds them here and nowhere else, for the handler,
+    /// the call price and the action's own proposal alike.
+    private func bindingDispatch<T: Sendable>(
+        origin: ActionOrigin, caller: DispatchCaller, home: LayoutScope?,
+        _ body: () async throws -> T
+    ) async rethrows -> T {
+        try await ActionRegistry.$dispatchOrigin.withValue(origin) {
+            try await ActionRegistry.$dispatchCaller.withValue(caller) {
+                try await ScopeRouting.$home.withValue(home) {
+                    try await body()
+                }
+            }
+        }
+    }
+
+    /// Whether `name` describes its own proposals (`Action.proposal`).
+    public func declaresProposal(name: String) -> Bool { actions[name]?.proposal != nil }
+
+    /// 3c-ii: `name`'s own description of this call for the confirmation plane, or nil when the
+    /// action has none (or does not exist). Run under the task-locals and canvas `dispatch` would
+    /// run its handler under for `caller` (ruling C5b), so a background agent's proposal names its
+    /// own pane and site. Its only caller is the agent's park, so the origin bound is `.agent`.
+    public func proposal(name: String, params: JSONValue, caller: DispatchCaller) async -> ActionProposal? {
+        guard let propose = actions[name]?.proposal else { return nil }
+        let home = await home(of: caller)
+        return await bindingDispatch(origin: .agent, caller: caller, home: home) {
+            await propose(params)
         }
     }
 
@@ -779,6 +839,18 @@ extension ActionRegistry {
     /// the same place and session as the dispatch line it follows. `nil` outside
     /// `dispatch`, where no caller is known.
     @TaskLocal static var dispatchCaller: DispatchCaller?
+
+    /// 3c-ii: true while the running handler's dispatch was priced `.gate` and confirmed — the one
+    /// case a browser act may add its site to the conversation's allow-list. A call priced `.allow`
+    /// (its site already allowed) never adds one, so a revoke landing between the price and the
+    /// handler is never undone. False outside `dispatch`, the refusing side.
+    @TaskLocal static var dispatchConfirmedGate = false
+
+    /// 3c-ii (final review I1): what the plane asked when this dispatch is the operator's approval of a
+    /// parked proposal — the proposal the park raised, target and question included. A browser act
+    /// refuses as page-changed when its target, site or price no longer match it. Nil outside an
+    /// approved re-dispatch.
+    @TaskLocal static var dispatchAsked: ActionProposal?
 }
 
 private extension String {

@@ -1,0 +1,11 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Booked</title></head>
+<body>
+<h1>Booked</h1>
+<script>
+  var q = new URLSearchParams(location.search);
+  var guest = q.get('guest') || 'no name';
+  var stay = q.get('nights') === '2' ? '2 nights' : '1 night';
+  document.title = 'Booked: ' + guest + ', ' + stay;
+</script>
+</body></html>

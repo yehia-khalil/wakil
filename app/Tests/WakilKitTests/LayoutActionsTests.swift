@@ -393,3 +393,15 @@ private func makeRegistry() -> (ActionRegistry, URL) {
         origin: .ui, caller: .test("staging"), confirmation: nil)
     #expect(await !layout.snapshot().panes.contains { $0.id == id })
 }
+
+@Test func paneOpenAcceptsBrowserAndTitlesItBrowser() async throws {
+    let (registry, directory) = makeRegistry()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let layout = LayoutStore()
+    await registerLayoutActions(into: registry, layout: layout)
+    _ = try await registry.dispatch(
+        name: "pane_open", params: .object(["kind": .string("browser")]),
+        origin: .agent, caller: .test("production"), confirmation: nil)
+    let panes = await layout.snapshot().panes
+    #expect(panes.count == 1 && panes[0].kind == "browser" && panes[0].title == "Browser")
+}

@@ -82,7 +82,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>Wakil</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.2a</string>
-  <key>NSMicrophoneUsageDescription</key><string>Wakil listens only while you hold ⌥. Audio never leaves this Mac.</string>
+  <key>NSCameraUsageDescription</key><string>A web page in Wakil's browser asked to use the camera.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Wakil listens while you hold ⌥, and when a web page in its browser asks and you allow it. Audio for speech never leaves this Mac.</string>
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoadsInWebContent</key><true/></dict>
   <key>NSSpeechRecognitionUsageDescription</key><string>Wakil turns what you say while holding ⌥ into text, on this Mac.</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>UTExportedTypeDeclarations</key><array><dict>

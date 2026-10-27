@@ -1077,6 +1077,44 @@ func TestEditorSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBrowserSettingsTools(t *testing.T) {
+	setupProject(t, `"local":{"databases":[]}`)
+	ctx := context.Background()
+	srvT, cliT := mcp.NewInMemoryTransports()
+	ss, err := newServer().Connect(ctx, srvT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "t", Version: "0"}, nil).Connect(ctx, cliT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cs.Close() })
+	call := func(name string, args map[string]any) *mcp.CallToolResult {
+		t.Helper()
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatalf("CallTool %s: %v", name, err)
+		}
+		return res
+	}
+	if res := call("set_browser_settings", map[string]any{"searchEngine": "duckduckgo", "startPage": "https://example.com"}); res.IsError {
+		t.Fatalf("set_browser_settings: %s", textOf(t, res))
+	}
+	if res := call("set_browser_settings", map[string]any{"searchEngine": "yahoo"}); !res.IsError {
+		t.Fatal("an unknown engine was accepted")
+	}
+	res := call("browser_settings", nil)
+	if res.IsError {
+		t.Fatalf("browser_settings: %s", textOf(t, res))
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(b), `"searchEngine":"duckduckgo"`) || !strings.Contains(string(b), `"startPage":"https://example.com"`) {
+		t.Errorf("browser_settings = %s", b)
+	}
+}
+
 func TestSetEnvironmentRefusedWhenPinned(t *testing.T) {
 	setupProject(t, `"staging":{"databases":[]},"local":{"databases":[]}`)
 	for _, pin := range []string{"WAKIL_PROJECT", "WAKIL_ENVIRONMENT"} {

@@ -74,6 +74,24 @@ approves and the action is dispatched again with `confirmation: "confirm"`.
 9. **The reply** goes back over the socket, through the shim, to `claude`, and the window reads its
    panes back as in flow 1. `read_pane` answers from the same `PaneStore` the window draws.
 
+**An agent's page act (3c-ii)** is flow 2 with the price asked per call:
+
+1. **Read.** `browser_read_page` (`.read`) runs `BrowserPageAgent`'s script, fits the text to the cap,
+   records the read in the tab (memory only) and answers with the page marked untrusted.
+2. **Price per call.** `browser_click` and its kin are `.mutate` with a `callPrice`: `dispatch` works out
+   the caller's home, then asks the action for this call's price under the handler's own task-locals.
+   `browserActTarget` checks the ref against the tab's last read; the price is the site's
+   (`browserActPrice`): *gate* for a production site, or for a site this conversation has not allowed;
+   *allow* otherwise. Any failure to describe the call prices *allow*, and the handler then refuses it.
+3. **Plane.** On *gate*, `parkForConfirmation` asks the action's `proposal` for the statement and the ask:
+   `site` (Let the agent use <site>?) or `productionSite` (the red plane, `PRODUCTION`, the element named).
+   A typed request's site question is answered by a click, a spoken one by the typed word, and a
+   production act always by the typed word.
+4. **Re-dispatch.** Approval re-dispatches the same call. A `site` approval adds the site to the
+   conversation's allow-list first. The handler checks the ref again, then `BrowserPageAgent` waits out the
+   operator's typing, runs the act in the page and answers with the page after it; the thread shows one
+   line per act. If the page changed since the read, the act is refused and adds no site.
+
 ## 3. An org switch
 
 1. **The request.** `OrgPlane` (`WakilApp/OrgPlane.swift`) calls
