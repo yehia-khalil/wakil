@@ -56,7 +56,7 @@ BINS := wakil wakil-ctx wakil-db wakil-git wakil-http wakil-pm wakil-recall waki
 # `test` did.
 export CGO_ENABLED := 0
 
-.PHONY: build test test-live e2e e2e-full e2e-run e2e-new e2e-runbook e2e-agent e2e-agent-checks e2e-retrodict e2e-cover e2e-backlog controls axresolve docs-check vet fmt clean shaders app-build app-test app-bundle captures captures-motion bench-surface
+.PHONY: build test test-live e2e e2e-full e2e-run e2e-new e2e-night-install e2e-night-status e2e-runbook e2e-agent e2e-agent-checks e2e-retrodict e2e-cover e2e-backlog controls axresolve docs-check vet fmt clean shaders app-build app-test app-bundle captures captures-motion bench-surface
 
 build:
 	@mkdir -p bin
@@ -508,6 +508,21 @@ E2E_TRUNK ?= origin/main
 # avoids, and it is the same reason both tools are resolved before the build.
 e2e-new: axresolve e2e-agent
 	go run ./e2e/cmd/wakil-e2e-new --trunk "$(E2E_TRUNK)" $(E2E_NEW_ARGS)
+
+# ---------------------------------------------------------------------
+# e2e-night — the full suite on main, once a night
+# ---------------------------------------------------------------------
+#
+# A launchd job runs `make e2e-full` on origin/main between 23:00 and 07:00
+# when main has moved since the last green night, fixes what went red on
+# e2e-night/<date> (local commits, never pushed) and re-runs it. It replaces
+# a pre-merge e2e-full. Install once, from a checkout of main; read the
+# morning's result from any worktree. See e2e/cmd/wakil-e2e-night.
+e2e-night-install:
+	go run ./e2e/cmd/wakil-e2e-night install
+
+e2e-night-status:
+	@go run ./e2e/cmd/wakil-e2e-night status
 
 # ---------------------------------------------------------------------
 # e2e-runbook — the machine half of an acceptance runbook, rendered
