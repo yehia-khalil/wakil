@@ -751,6 +751,7 @@ struct BrowserPageHost: NSViewRepresentable {
         webView.autoresizingMask = [.width, .height]
         // A view docked for Restore is invisible (`BrowserPictureInPictureHost.dock`); taken, it shows.
         webView.alphaValue = 1
+        (webView as? BrowserWebView)?.docked = false
         container.addSubview(webView)
     }
 }

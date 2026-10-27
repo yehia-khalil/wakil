@@ -15,6 +15,13 @@ final class BrowserWebView: WKWebView {
     /// Where the page last stood in its window, in window coordinates, kept as it leaves: Restore
     /// docks a view with no window there (3d-iii ruling 5).
     private(set) var lastPageFrame: NSRect?
+    /// Docked for Restore (`BrowserPictureInPictureHost.dock`): invisible, so it takes no click either
+    /// — `hitTest` ignores alpha.
+    var docked = false
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        docked ? nil : super.hitTest(point)
+    }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil, window != nil { lastPageFrame = convert(bounds, to: nil) }

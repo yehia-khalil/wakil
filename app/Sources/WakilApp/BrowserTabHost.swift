@@ -132,8 +132,14 @@ final class BrowserTabHost {
         views.first { $0.value === view }?.key
     }
 
-    /// Whether `scope` is a place's old name that the canvas may still draw a moment after `rehome`.
-    func isOldName(_ scope: LayoutScope) -> Bool { renamed[scope] != nil }
+    /// A pane under `scope` is on screen (picture in picture's `show`): answers whether `scope` is a
+    /// place's old name the canvas still draws a moment after `rehome`. A new name drawn ends its old
+    /// names, so the guard lasts only that moment (`BrowserRenamedPlaces.drawn`).
+    func isOldName(_ scope: LayoutScope) -> Bool {
+        let drawn = BrowserRenamedPlaces.drawn(scope, renamed: renamed)
+        renamed = drawn.renamed
+        return drawn.isOldName
+    }
 
     /// The tab's web view if it is live, without making one or touching its recency.
     func existing(scope: LayoutScope, pane: String, tab: String) -> BrowserWebView? {
@@ -353,8 +359,7 @@ final class BrowserTabHost {
         }) { new, _ in new }
         for delegate in delegates.values where delegate.scope == from { delegate.scope = to }
         for tracker in downloads.values where tracker.scope == from { tracker.scope = to }
-        renamed = renamed.mapValues { $0 == from ? to : $0 }
-        renamed[from] = to
+        renamed = BrowserRenamedPlaces.rehome(renamed, from: from, to: to)
         pictureInPicture.rehome(from: from, to: to)
         if let drawn = model?.drawnScope, drawn == from || drawn == to {
             for key in views.keys where key.scope == to { renamedPanes.insert(Key(scope: to, pane: key.pane, tab: "")) }

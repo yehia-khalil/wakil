@@ -33,6 +33,11 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
     /// per frame token. Emptied when the view is dropped (`forget(view:)`) or its main frame commits.
     private var frames: [ObjectIdentifier: [String: Frame]] = [:]
 
+    /// The frame whose `enter` floated each view's video, kept until the float ends: a video paused
+    /// in the floating window posts `playing: false` and loses its token, but `inline` and `pause`
+    /// must still reach it.
+    private var floated: [ObjectIdentifier: WKFrameInfo] = [:]
+
     /// The view docked for Restore and the view it was docked in.
     private var docked: (view: WKWebView, parent: NSView)?
 
@@ -86,6 +91,10 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
     /// WebKit said the tab's video entered (`on`) or left picture in picture.
     func didChange(_ key: BrowserTabHost.Key, _ on: Bool) {
         run { $0.didChange(Self.ref(key), floating: on) }
+        // Ended: after its effects (a `.pause` still reaches the floated frame).
+        if !on, let view = host?.existing(scope: key.scope, pane: key.pane, tab: key.tab) {
+            floated[ObjectIdentifier(view)] = nil
+        }
     }
 
     /// Restore was pressed on the floating window; `view` must be in a window before this returns.
@@ -102,6 +111,9 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
     func closed(_ key: BrowserTabHost.Key) {
         refreshEnabled()
         _ = machine.closed(Self.ref(key))
+        if let view = host?.existing(scope: key.scope, pane: key.pane, tab: key.tab) {
+            floated[ObjectIdentifier(view)] = nil
+        }
     }
 
     /// A place took a new name: its panes and floating tab go with it.
@@ -119,6 +131,7 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
     /// so its identity can never answer for a later view's.
     func forget(view: WKWebView) {
         frames[ObjectIdentifier(view)] = nil
+        floated[ObjectIdentifier(view)] = nil
     }
 
     /// A frame's `wakilPictureInPicture` message, through `BrowserPictureInPictureMessages`:
@@ -167,6 +180,7 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
                 // Refused or gone: the next newest. None floats: the video plays on in the page (ruling 9).
                 for candidate in candidates
                 where await Self.call(BrowserPictureInPictureScript.enter, in: candidate.view, frame: candidate.frame.info) {
+                    self.floated[ObjectIdentifier(candidate.view)] = candidate.frame.info
                     return
                 }
             }
@@ -181,11 +195,13 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
         }
     }
 
-    /// `body` in the main frame and every other kept frame of the tab's view. `inline` and `pause`
-    /// act on what the frame holds, so asking one twice does nothing more.
+    /// `body` in the main frame, every other kept frame of the tab's view, and the frame Wakil floated.
+    /// `inline` and `pause` act on what the frame holds, so asking one twice does nothing more.
     private func everyFrame(of ref: BrowserTabRef, _ body: String) {
         guard let view = liveView(ref) else { return }
-        let kept = frames[ObjectIdentifier(view)]?.values.map(\.info).filter { !$0.isMainFrame } ?? []
+        var kept = frames[ObjectIdentifier(view)]?.values.map(\.info) ?? []
+        if let floated = floated[ObjectIdentifier(view)] { kept.append(floated) }
+        kept.removeAll { $0.isMainFrame }
         Task { @MainActor in
             _ = await Self.call(body, in: view, frame: nil)
             for info in kept { _ = await Self.call(body, in: view, frame: info) }
@@ -221,6 +237,7 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
         let frame = (view as? BrowserWebView)?.lastPageFrame.map { content.convert($0, from: nil) } ?? view.frame
         view.removeFromSuperview()
         view.alphaValue = 0
+        (view as? BrowserWebView)?.docked = true
         view.autoresizingMask = []
         view.frame = frame
         content.addSubview(view, positioned: .below, relativeTo: nil)
@@ -238,6 +255,7 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
         docked = nil
         if view.superview === parent { view.removeFromSuperview() }
         view.alphaValue = 1
+        (view as? BrowserWebView)?.docked = false
     }
 
     private func liveView(_ ref: BrowserTabRef) -> WKWebView? {
