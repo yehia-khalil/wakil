@@ -492,6 +492,19 @@
         pressAlt = false;
       });
     });
+    // 3c-iii: a URL in the text, followed with ⌘-click (Monaco's own gesture, `links` stays on). The
+    // opener is asked first (registered openers run before the built-in ones); it takes http and
+    // https only and declines the rest, which fall through to Monaco's defaults. `alt` is ⌥ from the
+    // same capture-phase press as the blame `web` command.
+    monaco.editor.registerLinkOpener({
+      open: function (resource) {
+        const url = String(resource);
+        if (!/^https?:\/\//i.test(url)) return false;
+        post({ type: 'link', url: url, alt: pressAlt });
+        pressAlt = false;
+        return true;
+      }
+    });
     // 3a-v-b: a conflicted file's blocks. WakilKit parses them from the tab's text and pushes them on
     // every change (none for a file git did not mark conflicted); the page tints them per model and
     // lays an actions row over a one-line view zone above each, as the peek's buttons are (R3): content

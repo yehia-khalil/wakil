@@ -207,7 +207,7 @@ struct EditorPane: View {
             host.ghostSuggest = ghostSuggest
             host.blameFor = blameFor
             host.blameOpen = openCommitDiff
-            host.blameWeb = openLink
+            host.openLink = openLink
             host.ghostCancel = ghostCancel
             host.keyboardHeld = keyboardHeld
             // Handed in first, so `start` applies the newest snapshot, never this one if a newer
@@ -854,7 +854,7 @@ final class EditorHost {
     /// cursor move (R1).
     @ObservationIgnored var blameFor: ((String, String, String?) async -> [GitBlameInfo]?)?
     @ObservationIgnored var blameOpen: ((String, GitCommitRef) -> Void)?
-    @ObservationIgnored var blameWeb: ((String, Bool) -> Void)?
+    @ObservationIgnored var openLink: ((String, Bool) -> Void)?
     @ObservationIgnored private var blameOn = false
     @ObservationIgnored private var blames = EditorBlameCache()
     @ObservationIgnored private var blameTask: Task<Void, Never>?
@@ -946,6 +946,7 @@ final class EditorHost {
         made.onKey = { [weak self] key in self?.onKey?(key) }
         made.onPeek = { [weak self] _, op in self?.peekPressed?(op) }
         made.onRanges = { [weak self] _, op, selections in self?.rangesPressed?(op, selections) }
+        made.onLink = { [weak self] url, alt in self?.openLink?(url, alt) }
         made.onBlame = { [weak self] key, op, id, alt in
             guard let self, case .file(let path, let root)? = self.subjects[key], path.hasPrefix(root + "/") else { return }
             if op == "copy" {
@@ -953,7 +954,7 @@ final class EditorHost {
                 NSPasteboard.general.setString(id, forType: .string)
             } else if op == "web" {
                 // 3c-i: the commit's page, which editor_blame set only for a pushed commit on a known host.
-                if let page = self.blames.commit(key: key, id: id)?.web { self.blameWeb?(page.url, alt) }
+                if let page = self.blames.commit(key: key, id: id)?.web { self.openLink?(page.url, alt) }
             } else {
                 // Under the file's name at that commit, and the one before it across a rename (3a-v-a walk).
                 let current = String(path.dropFirst(root.count + 1))
