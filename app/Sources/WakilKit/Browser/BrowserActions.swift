@@ -917,7 +917,15 @@ func browserActions(
             await panes.browserSetPullRequests(org: org, list)
             if read != nil || failure != nil, let layout {
                 for pane in await layout.snapshot().panes where pane.kind == kind {
-                    if await panes.browserApplyPullRequests(paneId: pane.id, org: org) { await persist(pane.id) }
+                    guard await panes.browserApplyPullRequests(paneId: pane.id, org: org) else { continue }
+                    // A pane whose only content was the group (restored with `pr` alone) left with no
+                    // tab and no group closes, by the rule restore and reconcile use.
+                    if await panes.browserSnapshot(paneId: pane.id).isEmptyOfTabsAndPullRequests {
+                        try? await layout.close(id: pane.id)
+                        await panes.drop(paneId: pane.id)
+                    } else {
+                        await persist(pane.id)
+                    }
                 }
             }
             return await answer()

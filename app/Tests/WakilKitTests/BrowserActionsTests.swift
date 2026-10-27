@@ -1293,6 +1293,22 @@ private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.g
     #expect(after[0].loaded == false && after[0].title == "Fix 3 · initech/app#3")
 }
 
+/// A pane whose only content was the pull-request group (restored with `pr` alone) closes when a
+/// refresh says `absent` — by the rule restore and reconcile use — rather than staying empty.
+@Test func aPaneLeftEmptyByARefreshCloses() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs.removeAll { $0.pullRequest == nil }
+        s.active = nil
+    }
+    reader.answer(absent: "No pull-request group: initech has no GitHub account.")
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(await !f.layout.snapshot().panes.contains { $0.id == f.pane }, "the empty pane closes")
+    #expect(await !f.panes.holdsContents(paneId: f.pane))
+}
+
 @Test func theActivePullRequestTabStaysAsALooseTab() async throws {
     let reader = PullRequestsReader([pr(1), pr(2)])
     let f = try await prFixture(reader)
