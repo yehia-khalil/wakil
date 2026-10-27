@@ -219,8 +219,8 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   (YouTube, Atlassian, GitHub, Google Docs), a local address as `host:port`, else the registrable domain
   from the bundled public-suffix rules (`BrowserPublicSuffixes.swift`); `nil` beyond http and https.
 - `BrowserGrouping.swift` — the grouping rules, pure, as `BrowserSnapshot` methods (3d-i): `placeOpened`
-  (the opener rule, run when a tab is made), the site rule (run when a load finishes; a placed tab moves only after two finished loads on
-  another site, so a sign-in page on the way back moves nothing), a group becoming
+  (the opener rule, run when a tab is made), the site rule (run when a load finishes; a grouped tab leaves only after two finished loads on
+  the same other site, so a sign-in page on the way back moves nothing; a page with no site is ignored), a group becoming
   yours, `keptLoose`, colours and `arrange()`, which keeps `tabs` in drawn order (pinned tabs, pinned
   groups, the pull-request group, groups in the order made, loose tabs). None moves the active tab.
 - `BrowserGroupNames.swift` — `BrowserGroupNames` (3d-i): which automatic groups are due a name, the

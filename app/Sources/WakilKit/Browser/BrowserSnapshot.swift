@@ -89,12 +89,11 @@ public struct BrowserTab: Sendable, Equatable, Codable {
     public var keptLoose: Bool
     /// The pull request this tab lists (ruling 18), its URL; such a tab is never saved.
     public var pullRequest: String?
-    /// The site key the site rule last placed it by (`""` for a page with no site key); nil until a
-    /// finished load first places it. Not saved: a restored tab in an automatic site group counts
-    /// as placed on that group's key.
+    /// The site key the site rule last placed it by; nil until a finished load on a page with a site
+    /// key first places it. Not saved: a tab in an automatic site group is placed on that group's key.
     public var placedSite: String?
-    /// A finished load on a site other than `placedSite`, waiting for a second one before the tab
-    /// moves (a sign-in hop through another host comes back after one).
+    /// A grouped tab's finished load on a site other than its group's, waiting for a second one on
+    /// the same site before the tab moves (a sign-in hop through another host comes back after one).
     public var pendingSite: String?
 
     public init(

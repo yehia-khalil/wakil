@@ -65,8 +65,9 @@ extension PaneStore {
     ///
     /// A report that **ends a load** (loading before, not now, no failure) runs the site rule on the
     /// tab's address then (ruling 7), which may group it; no other report moves a tab, so a redirect
-    /// through a sign-in host never regroups one. A placed tab moves only after two finished loads on
-    /// another site, so a sign-in page that finishes loading on the way back moves nothing either.
+    /// through a sign-in host never regroups one. A grouped tab leaves its site group only after two
+    /// finished loads on the same other site, so a sign-in page (or a chain of them) that finishes
+    /// loading on the way back moves nothing either.
     public func browserPageDidReport(paneId: String, tab: String, _ report: BrowserPageReport) {
         guard holds(BrowserPaneKind.self, paneId) else { return }
         updateBrowser(paneId: paneId) { s in

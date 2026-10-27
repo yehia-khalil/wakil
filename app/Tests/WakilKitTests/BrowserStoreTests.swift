@@ -363,6 +363,20 @@ private func array(_ value: JSONValue?) -> [JSONValue] {
     #expect(s.groups.first { $0.siteKey == "google.com" } != nil, "with the Gmail tab it forms Google's group")
 }
 
+/// A ⌘T tab finishes on a start page, then is typed to YouTube next to a loose YouTube tab: the two
+/// form YouTube's group on that load — a loose tab waits for no second one.
+@Test func aNewTabTypedToASiteFromAStartPageGroupsOnItsFirstLoad() async {
+    let store = await browserStore(["t1", "t2"])
+    await load(store, "t1", "https://www.youtube.com/watch?v=1")
+    await load(store, "t2", "https://www.google.com/")
+    var s = await store.browserSnapshot(paneId: pane)
+    #expect(s.groups.isEmpty)
+    await load(store, "t2", "https://www.youtube.com/watch?v=x")
+    s = await store.browserSnapshot(paneId: pane)
+    #expect(s.groups.map(\.siteKey) == ["family:youtube"])
+    #expect(s.tabs.allSatisfy { $0.group == "g1" })
+}
+
 @Test func aPopupJoinsItsOpenersGroup() async {
     let store = await browserStore(["t1", "t2", "t3"])
     await store.updateBrowser(paneId: pane) { s in

@@ -41,40 +41,40 @@ extension BrowserSnapshot {
     }
 
     /// Ruling 9, run when `tab`'s load finishes. A pinned, kept-loose or pull-request tab never moves.
+    /// A finished load with no site key (about:blank, data:, file:) is ignored: it moves nothing.
     ///
-    /// Review Focus 1: a tab already placed moves only after **two** consecutive finished loads on a
-    /// site other than the one it was placed on, so a sign-in page that finishes loading on its way
-    /// back (an SSO page, a SAML auto-submit) neither takes it out of its group nor starts one. A
-    /// finished load back on its site clears the wait. A tab never placed is placed at once.
+    /// Review Focus 1: a tab in an automatic site group leaves it only after **two** consecutive
+    /// finished loads on the **same** other site, so a sign-in page (or a chain of sign-in hosts,
+    /// each a different site) that finishes loading on its way back neither takes it out of its
+    /// group nor starts one. A second load on a different site replaces the wait; a load back on
+    /// the group's site clears it. A loose tab is placed at once on every finished load.
     public mutating func placeLoaded(tab: String) {
         defer { arrange() }
         guard let t = tabIndex(tab) else { return }
         let current = tabs[t]
         guard !isPinned(current), !current.keptLoose, current.pullRequest == nil else { return }
-        let key = BrowserSiteKey.of(current.url)
-        let site = key ?? ""
-        var siteGroup: String?
+        guard let key = BrowserSiteKey.of(current.url) else { return }
         if let gid = current.group, let g = group(gid) {
             switch g.kind {
             case .own, .pullRequests: return
             case .automatic:
                 // A tab that came by opener stays; so does any tab of an opener chain (no site key).
-                if current.opener != nil || g.siteKey == nil { return }
-                siteGroup = g.siteKey
+                guard current.opener == nil, let siteGroup = g.siteKey else { return }
+                if siteGroup == key {
+                    tabs[t].pendingSite = nil
+                    tabs[t].placedSite = key
+                    return
+                }
+                if current.pendingSite != key {
+                    tabs[t].pendingSite = key
+                    return
+                }
+                tabs[t].group = nil
+                tabs[t].opener = nil
             }
         }
-        if let placed = current.placedSite ?? siteGroup, placed != site, current.pendingSite == nil {
-            tabs[t].pendingSite = site
-            return
-        }
         tabs[t].pendingSite = nil
-        tabs[t].placedSite = site
-        if let siteGroup {
-            if siteGroup == key { return }
-            tabs[t].group = nil
-            tabs[t].opener = nil
-        }
-        guard let key else { return }
+        tabs[t].placedSite = key
         if let g = groups.first(where: { $0.kind == .automatic && $0.siteKey == key }) {
             tabs[t].group = g.id
             return

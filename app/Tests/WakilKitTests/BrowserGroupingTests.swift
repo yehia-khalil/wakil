@@ -176,17 +176,70 @@ struct BrowserGroupingTests {
         #expect(groupOf(s, "t2") == "g1")
         #expect(groupOf(s, "t3") == nil)
         #expect(s.tabs[1].pendingSite == nil)
+    }
 
-        // A tab placed loose waits too: one finished load next to the Gmail tab groups nothing.
-        var l = pane([tab("t1", "https://github.com/initech/a"), tab("t2", "https://mail.google.com/")])
-        l.placeLoaded(tab: "t1")
-        #expect(l.tabs[0].placedSite == "family:github")
-        l.tabs[0].url = "https://accounts.google.com/o/saml2"
-        l.placeLoaded(tab: "t1")
-        #expect(l.groups.isEmpty)
-        l.tabs[0].url = "https://github.com/initech/a"
-        l.placeLoaded(tab: "t1")
-        #expect(l.groups.isEmpty && l.tabs[0].pendingSite == nil)
+    /// A grouped tab hopping through a chain of sign-in hosts, each a different site, comes back
+    /// to its group: a second load elsewhere moves it only when it is on the same site as the first.
+    @Test func aChainOfSignInHostsDoesNotRegroup() {
+        var s = pane([
+            tab("t1", "https://github.com/initech/a", group: "g1"),
+            tab("t2", "https://github.com/initech/b", group: "g1"),
+            tab("t3", "https://mail.google.com/mail/u/0/"),
+        ], groups: [auto("g1", "family:github", name: "GitHub")], nextGroup: 2)
+        s.arrange()
+        let before = s.groups
+        s.tabs[1].url = "https://initech.okta.com/app/github/sso/saml"
+        s.placeLoaded(tab: "t2")
+        #expect(groupOf(s, "t2") == "g1")
+        s.tabs[1].url = "https://accounts.google.com/signin"
+        s.placeLoaded(tab: "t2")
+        #expect(groupOf(s, "t2") == "g1", "a second load on another site than the first moves nothing")
+        #expect(s.tabs[1].pendingSite == "google.com")
+        #expect(s.groups == before)
+        s.tabs[1].url = "https://github.com/initech/b/pulls"
+        s.placeLoaded(tab: "t2")
+        #expect(s.groups == before, "same group, same id")
+        #expect(groupOf(s, "t2") == "g1")
+        #expect(groupOf(s, "t3") == nil)
+        #expect(s.tabs[1].pendingSite == nil)
+    }
+
+    /// A ⌘T tab is loose: it finishes on a start page, then is typed to a site — it is placed by
+    /// that load at once, with no second load to wait for.
+    @Test func aNewTabTypedToASiteFromAStartPageGroupsOnItsFirstLoad() {
+        var s = pane([tab("t1", yt1), tab("t2", "about:blank")])
+        s.placeLoaded(tab: "t1")
+        s.tabs[1].url = "https://www.google.com/"
+        s.placeLoaded(tab: "t2")
+        #expect(s.groups.isEmpty)
+        s.tabs[1].url = "https://www.youtube.com/watch?v=x"
+        s.placeLoaded(tab: "t2")
+        #expect(s.groups.count == 1)
+        #expect(s.groups.first?.siteKey == "family:youtube")
+        #expect(groupOf(s, "t1") == "g1" && groupOf(s, "t2") == "g1")
+    }
+
+    /// A finished load with no site key (about:blank, data:, file:) changes nothing; the next real
+    /// load places the tab at once.
+    @Test func aFinishedLoadWithNoSiteChangesNothing() {
+        var s = pane([tab("t1", yt1), tab("t2", "https://www.google.com/")])
+        s.placeLoaded(tab: "t2")
+        let placed = s.tabs[1]
+        s.tabs[1].url = "about:blank"
+        s.placeLoaded(tab: "t2")
+        #expect(s.tabs[1].placedSite == placed.placedSite && s.tabs[1].pendingSite == nil)
+        #expect(s.groups.isEmpty)
+        s.tabs[1].url = yt2
+        s.placeLoaded(tab: "t2")
+        #expect(s.groups.count == 1 && groupOf(s, "t2") == "g1")
+
+        // A grouped tab: about:blank neither takes it out nor counts as a first load elsewhere.
+        s.tabs[1].url = "about:blank"
+        s.placeLoaded(tab: "t2")
+        #expect(groupOf(s, "t2") == "g1" && s.tabs[1].pendingSite == nil)
+        s.tabs[1].url = "data:text/html,x"
+        s.placeLoaded(tab: "t2")
+        #expect(groupOf(s, "t2") == "g1" && s.tabs[1].pendingSite == nil)
     }
 
     @Test func aTabThatCameByOpenerStaysWhenItNavigates() {
