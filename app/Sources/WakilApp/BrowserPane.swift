@@ -343,9 +343,9 @@ struct BrowserPane: View {
     }
 
     /// Selects the address field's whole text, in that field's own editor: the window's first
-    /// responder when it is the field editor of an `NSTextField` named `browser.address` and this
-    /// pane's field still has focus. The editor is the field's a turn or two after focus moves, so
-    /// this asks again briefly; anything else holding the keyboard by then is left alone.
+    /// responder while this pane's field has focus. The editor is the field's a turn or two after
+    /// focus moves, so this asks again briefly; anything else holding the keyboard by then is left
+    /// alone.
     private func selectAddress(tries: Int = 10) {
         guard addressFocused else { return }
         guard let editor = addressEditor(), editor.string == draft else {
@@ -358,10 +358,12 @@ struct BrowserPane: View {
     }
 
     /// The field editor of this pane's address field while it has the keyboard: the window's first
-    /// responder when it edits an `NSTextField` named `browser.address`.
+    /// responder, editing an `NSTextField`, while `addressFocused` says the field is this pane's.
+    /// SwiftUI's `accessibilityIdentifier` never reaches the `NSTextField` itself (its own is
+    /// empty), so the focus state is what names it; callers also match the editor's text.
     private func addressEditor() -> NSTextView? {
         guard addressFocused, let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
-              let field = editor.delegate as? NSTextField, field.accessibilityIdentifier() == "browser.address"
+              editor.delegate is NSTextField
         else { return nil }
         return editor
     }
