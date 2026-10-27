@@ -14,6 +14,21 @@ public enum BrowserOrgFilesError: Error, Sendable, Equatable, CustomStringConver
     }
 }
 
+/// A bookmark: matched by its exact URL string; `bookmarks.json` keeps them in the order they were added.
+public struct BrowserBookmark: Codable, Sendable, Equatable {
+    public var url: String
+    public var title: String
+    public var added: Date
+    public init(url: String, title: String, added: Date) {
+        self.url = url; self.title = title; self.added = added
+    }
+}
+
+/// `bookmarks.json` exists but cannot be read; it is never written over (Ruling 4).
+public struct BrowserBookmarksUnreadable: Error, Sendable, Equatable {
+    public let reason: String
+}
+
 /// The copy of the clear-data question (global constraints), for the view that asks it.
 public enum BrowserClearDataQuestion {
     public static func text(org: String) -> String {
@@ -60,6 +75,7 @@ public struct BrowserOrgFiles: Sendable, Equatable {
 
     private var profileURL: URL { directory.appendingPathComponent("profile.json") }
     private var zoomURL: URL { directory.appendingPathComponent("zoom.json") }
+    private var bookmarksURL: URL { directory.appendingPathComponent("bookmarks.json") }
     private var historyURL: URL { directory.appendingPathComponent("history.sqlite") }
     private var tabsDirectory: URL { directory.appendingPathComponent("tabs", isDirectory: true) }
 
@@ -107,6 +123,41 @@ public struct BrowserOrgFiles: Sendable, Equatable {
         all[host] = factor
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(all).write(to: zoomURL, options: .atomic)
+    }
+
+    /// The bookmarks in the order they were added; `[]` when the file is missing. A file that is
+    /// there but cannot be read or parsed throws `BrowserBookmarksUnreadable`.
+    public func bookmarks() throws -> [BrowserBookmark] {
+        let data: Data
+        do {
+            data = try Data(contentsOf: bookmarksURL)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            return []
+        } catch {
+            throw BrowserBookmarksUnreadable(reason: error.localizedDescription)
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do { return try decoder.decode([BrowserBookmark].self, from: data) }
+        catch { throw BrowserBookmarksUnreadable(reason: error.localizedDescription) }
+    }
+
+    /// Adds (`on` true), removes (`on` false) or toggles (`on` nil) the bookmark for `url`; the
+    /// result is whether it is bookmarked afterwards. Nothing is written when nothing changes.
+    @discardableResult
+    public func setBookmark(url: String, title: String, on: Bool?, now: Date) throws -> Bool {
+        var all = try bookmarks()
+        let exists = all.contains { $0.url == url }
+        let wanted = on ?? !exists
+        guard wanted != exists else { return exists }
+        if wanted { all.append(BrowserBookmark(url: url, title: title, added: now)) }
+        else { all.removeAll { $0.url == url } }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try encoder.encode(all).write(to: bookmarksURL, options: .atomic)
+        return wanted
     }
 
     /// The name a tab's state is kept under (`stateURL(tab:)`): `<scopeKey>.<pane>.<tab>`. Pane and
@@ -168,7 +219,8 @@ public struct BrowserOrgFiles: Sendable, Equatable {
     /// Deletes `tabs/`, `zoom.json` and the history (`history.sqlite`, `-wal`, `-shm`); `profile.json`
     /// stays, so the organisation keeps its id, and `bookmarks.json` stays, as Safari's Clear History keeps them.
     func removeEverythingButTheProfile() throws {
-        let historyFiles = ["", "-wal", "-shm"].map { URL(fileURLWithPath: historyURL.path + $0) }
+        // -wal and -shm go before the database: a writer opening between the removals could otherwise replay a stale WAL.
+        let historyFiles = ["-wal", "-shm", ""].map { URL(fileURLWithPath: historyURL.path + $0) }
         for url in [tabsDirectory, zoomURL] + historyFiles where FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }

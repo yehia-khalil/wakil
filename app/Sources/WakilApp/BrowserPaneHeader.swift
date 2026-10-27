@@ -23,13 +23,6 @@ enum BrowserTabListMode: Equatable {
     }
 }
 
-/// What a tab is called in the list and the count menu: its title, else its host, else New Tab.
-func browserTabLabel(_ tab: BrowserTab) -> String {
-    if !tab.title.isEmpty { return tab.title }
-    if let url = URL(string: tab.url), !tab.url.isEmpty { return BrowserAddress.displayHost(url) }
-    return "New Tab"
-}
-
 /// The browser pane's drawing (3c-i, Task 8b): `Browser.dc.html`'s numbers, each read from the
 /// token another pane already draws with where one exists — the editor's colours, the rail's tick
 /// and row lift, the settings form's micro-label and field — and named here only where the browser
@@ -196,7 +189,7 @@ struct BrowserTabCount: View {
     var body: some View {
         Menu {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { _, t in
-                Button(browserTabLabel(t)) { dispatch("browser_select_tab", ["tab": .string(t.id)]) }
+                Button(t.label) { dispatch("browser_select_tab", ["tab": .string(t.id)]) }
             }
         } label: {
             HStack(spacing: 3) {
@@ -253,7 +246,7 @@ struct BrowserTabList: View {
                             }
                         }
                     if mode == .full {
-                        Text(browserTabLabel(tabs[index]))
+                        Text(tabs[index].label)
                             .font(.system(size: BrowserPaneStyle.tabTitleSize))
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -261,7 +254,7 @@ struct BrowserTabList: View {
                     }
                 }
             },
-            label: { browserTabLabel(tabs[$0]) },
+            label: { tabs[$0].label },
             tap: { select(tabs[$0]) },
             activate: { select(tabs[$0]) },
             move: { from, to in

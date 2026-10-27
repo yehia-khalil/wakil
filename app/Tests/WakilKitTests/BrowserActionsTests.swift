@@ -636,3 +636,87 @@ private struct StoreInUse: Error, CustomStringConvertible {
     let on = try JSONDecoder().decode(SettingsBrowser.self, from: Data(#"{"searchSuggestions": true}"#.utf8))
     #expect(on.searchSuggestions == true)
 }
+
+// MARK: - Bookmarks (3c-iii Task 3)
+
+private func bookmarkFixture(org: String = "initech") async throws -> (BrowserFixture, BrowserOrgFiles) {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: org)
+    return (try await browserFixture(orgFiles: files), files)
+}
+
+
+private func bookmarkFixture() async throws -> (BrowserFixture, BrowserOrgFiles) {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "initech")
+    var f = try await browserFixture(open: false, orgFiles: files)
+    let scope = LayoutScope(organization: "initech", project: "p", environment: "e")
+    await f.layout.switchScope(to: scope)
+    await f.panes.switchScope(to: scope)
+    f.pane = await f.layout.open(kind: "browser", title: "Browser").id
+    return (f, files)
+}
+
+private func bookmarked(_ reply: JSONValue) -> Bool? {
+    guard case .object(let o) = reply, case .bool(let b)? = o["bookmarked"] else { return nil }
+    return b
+}
+
+@Test func browserBookmarkTogglesTheActiveTabAndReadPaneSaysSo() async throws {
+    let (f, files) = try await bookmarkFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    #expect(bookmarked(await f.panes.readPane(paneId: f.pane, kind: "browser")) == false)
+    #expect(bookmarked(try await f.dispatch("browser_bookmark")) == true)
+    #expect(try files.bookmarks().map(\.url) == ["https://example.com/a"])
+    #expect(await f.panes.browserBookmarks(org: "initech").map(\.url) == ["https://example.com/a"])
+    #expect(bookmarked(await f.panes.readPane(paneId: f.pane, kind: "browser")) == true)
+    #expect(bookmarked(try await f.dispatch("browser_bookmark", ["on": .bool(true)])) == true)
+    #expect(try files.bookmarks().count == 1)
+    #expect(bookmarked(try await f.dispatch("browser_bookmark")) == false)
+    #expect(await f.panes.browserBookmarks(org: "initech") == [])
+}
+
+@Test func browserBookmarkRefusesANonWebPage() async throws {
+    let (f, files) = try await bookmarkFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("about:blank")])
+    await #expect(throws: BrowserActionError.notBookmarkable(scheme: "about")) {
+        try await f.dispatch("browser_bookmark")
+    }
+    #expect(BrowserActionError.notBookmarkable(scheme: "about").description
+            == "browser_bookmark: only a web page can be bookmarked, not about:")
+    #expect(try files.bookmarks() == [])
+}
+
+@Test func browserBookmarkRefusesAnUnreadableFileWithTheCopy() async throws {
+    let (f, files) = try await bookmarkFixture()
+    try FileManager.default.createDirectory(at: files.directory, withIntermediateDirectories: true)
+    try Data("oops".utf8).write(to: files.directory.appendingPathComponent("bookmarks.json"))
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    do { try await f.dispatch("browser_bookmark"); Issue.record("should refuse") }
+    catch let error as BrowserActionError {
+        let text = error.description
+        #expect(text.hasPrefix("browser_bookmark: bookmarks.json can't be read ("))
+        #expect(text.hasSuffix(") — fix or move it; Wakil won't write over it."))
+    }
+}
+
+@Test func readPaneAlwaysCarriesBookmarked() async throws {
+    let (f, _) = try await bookmarkFixture()
+    #expect(bookmarked(await f.panes.readPane(paneId: f.pane, kind: "browser")) == false)
+}
+
+@Test func selectTabWithFocusFocusesThePane() async throws {
+    let f = try await browserFixture()
+    let editor = await f.layout.open(kind: "editor", title: "Editor").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://a.test/")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://b.test/")])
+    try await f.layout.focus(id: editor)
+    try await f.dispatch("browser_select_tab", ["index": .integer(0)])
+    #expect(await f.layout.snapshot().focusedId == editor)
+    try await f.dispatch("browser_select_tab", ["index": .integer(1), "focus": .bool(true)])
+    #expect(await f.layout.snapshot().focusedId == f.pane)
+}
+
+@Test func tabLabelFallsBackToHostThenNewTab() {
+    #expect(BrowserTab(id: "t1", url: "https://example.com/x", title: "Docs").label == "Docs")
+    #expect(BrowserTab(id: "t1", url: "https://www.example.com/x", title: "").label == BrowserAddress.displayHost(URL(string: "https://www.example.com/x")!))
+    #expect(BrowserTab(id: "t1", url: "", title: "").label == "New Tab")
+}

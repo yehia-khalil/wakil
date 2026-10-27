@@ -176,3 +176,55 @@ private func writeState(_ files: BrowserOrgFiles, _ scope: LayoutScope, _ pane: 
     #expect(BrowserClearDataQuestion.text(org: "initech")
         == "Delete initech's browsing data? Every site signs you out, in every project, and its history is deleted. Bookmarks stay.")
 }
+
+// MARK: - Bookmarks (3c-iii Task 3)
+
+private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+
+@Test func aBookmarkTogglesOnAndOff() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    #expect(try files.bookmarks() == [])
+    #expect(try files.setBookmark(url: "https://example.com/", title: "Example", on: nil, now: t0) == true)
+    #expect(try files.bookmarks() == [BrowserBookmark(url: "https://example.com/", title: "Example", added: t0)])
+    #expect(try files.setBookmark(url: "https://example.com/", title: "Example", on: nil, now: t0) == false)
+    #expect(try files.bookmarks() == [])
+    #expect(try files.setBookmark(url: "https://example.com/", title: "Example", on: false, now: t0) == false)
+}
+
+@Test func onTrueTwiceKeepsOneBookmark() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try files.setBookmark(url: "https://example.com/", title: "Example", on: true, now: t0)
+    #expect(try files.setBookmark(url: "https://example.com/", title: "Example", on: true, now: t0 + 5) == true)
+    #expect(try files.bookmarks().count == 1)
+    #expect(try files.bookmarks()[0].added == t0)
+}
+
+@Test func bookmarksKeepTheOrderTheyWereAdded() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    for (i, u) in ["https://b.example.com/", "https://a.example.com/", "https://c.example.com/"].enumerated() {
+        try files.setBookmark(url: u, title: "T\(i)", on: true, now: t0 + Double(i))
+    }
+    #expect(try files.bookmarks().map(\.url) == ["https://b.example.com/", "https://a.example.com/", "https://c.example.com/"])
+    try files.setBookmark(url: "https://a.example.com/", title: "", on: false, now: t0)
+    #expect(try files.bookmarks().map(\.url) == ["https://b.example.com/", "https://c.example.com/"])
+}
+
+@Test func aBookmarkFileThatDoesNotParseIsNeverWrittenOver() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try FileManager.default.createDirectory(at: files.directory, withIntermediateDirectories: true)
+    let path = files.directory.appendingPathComponent("bookmarks.json")
+    let bytes = Data("{not json".utf8)
+    try bytes.write(to: path)
+    #expect(throws: BrowserBookmarksUnreadable.self) { try files.bookmarks() }
+    #expect(throws: BrowserBookmarksUnreadable.self) {
+        try files.setBookmark(url: "https://example.com/", title: "E", on: true, now: t0)
+    }
+    #expect(try Data(contentsOf: path) == bytes)
+}
+
+@Test func clearingBrowsingDataKeepsTheBookmarks() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try files.setBookmark(url: "https://example.com/", title: "E", on: true, now: t0)
+    try files.removeEverythingButTheProfile()
+    #expect(try files.bookmarks().count == 1)
+}

@@ -5756,6 +5756,9 @@ public final class WindowModel {
         case .zoomIn, .zoomOut, .zoomReset:
             name = "browser_zoom"
             params["step"] = .string(key == .zoomIn ? "in" : key == .zoomOut ? "out" : "reset")
+        case .bookmark:
+            guard s.activeTab != nil else { return true }
+            name = "browser_bookmark"
         case .nextTab, .previousTab:
             guard let i = s.tabs.firstIndex(where: { $0.id == s.active }), s.tabs.count > 1 else { return true }
             name = "browser_select_tab"

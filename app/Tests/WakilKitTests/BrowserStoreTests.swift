@@ -65,7 +65,7 @@ private func report(_ url: String, title: String = "Page", loading: Bool = false
 
 private let readPaneKeys: Set<String> = [
     "kind", "failure", "tabs", "active", "url", "title", "loading", "canGoBack", "canGoForward",
-    "zoom", "find", "downloads",
+    "zoom", "find", "downloads", "bookmarked",
 ]
 
 @Test func readPaneHasEveryKeyAndNoPageText() async {

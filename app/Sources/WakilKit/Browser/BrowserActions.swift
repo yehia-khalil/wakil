@@ -24,6 +24,9 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     /// `browser_open` was handed an app's link (`zoommtg:`, `mailto:`): it opens web pages and files
     /// only, so no app on the Mac is launched from an action (final review I4).
     case notAWebPage(scheme: String)
+    /// `browser_bookmark` was asked for a page that is not http, https or file.
+    case notBookmarkable(scheme: String)
+    case bookmarksUnreadable(String)
 
     public var description: String {
         switch self {
@@ -40,11 +43,19 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .noOrganisation: "No organisation is active."
         case .clearOnlyFromTheApp: "Browsing data can only be cleared from the app."
         case .organisationChanged: "The organisation changed; ask again."
+        case .notBookmarkable(let scheme): "browser_bookmark: only a web page can be bookmarked, not \(scheme):"
+        case .bookmarksUnreadable(let error):
+            "browser_bookmark: bookmarks.json can't be read (\(error)) — fix or move it; Wakil won't write over it."
         case .notAWebPage(let scheme):
             "browser_open opens web pages and files (http, https, file), not \(scheme): links — an app's "
                 + "link opens from a page, after the operator allows it."
         }
     }
+}
+
+private func optionalBool(_ params: JSONValue, _ key: String) -> Bool? {
+    guard case .object(let o) = params, case .bool(let b)? = o[key] else { return nil }
+    return b
 }
 
 /// The zoom ladder (global constraints): `in` and `out` move one rung; reset is 1.0.
@@ -376,9 +387,10 @@ func browserActions(
     actions.append(Action(
         name: "browser_select_tab",
         description: "Select a tab, by id (tab) or by position (index, 0 first, -1 the last). A tab that "
-            + "has not loaded yet loads when selected.",
+            + "has not loaded yet loads when selected. With focus true the pane takes the focus too.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["tab": string, "index": .object(["type": .string("integer")])]),
+        schema: schema(["tab": string, "index": .object(["type": .string("integer")]),
+                        "focus": .object(["type": .string("boolean")])]),
         handler: { params in
             let pane = try await browserPane(params, action: "browser_select_tab").id
             let tab = optionalString(params, "tab")
@@ -395,6 +407,7 @@ func browserActions(
                 return true
             }
             guard ok else { throw BrowserActionError.noTab(action: "browser_select_tab", tab: tab ?? index.map { "at \($0)" }) }
+            if optionalBool(params, "focus") == true { try await layout?.focus(id: pane) }
             await persist(pane)
             return await reply(pane)
         }))
@@ -493,6 +506,31 @@ func browserActions(
             if let site = URL(string: zoomed.url).flatMap(BrowserOrgFiles.zoomHost(of:)),
                let files = try await orgFiles() {
                 try files.setZoom(zoomed.factor, host: site)
+            }
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
+        name: "browser_bookmark",
+        description: "Bookmark the active tab's page for the organisation, or remove its bookmark. With on "
+            + "omitted it toggles; true adds, false removes. Only http, https and file pages can be "
+            + "bookmarked. read_pane's bookmarked says where it stands.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["tab": string, "on": .object(["type": .string("boolean")])]),
+        handler: { params in
+            let pane = try await browserPane(params, action: "browser_bookmark").id
+            let wanted = optionalBool(params, "on")
+            let snapshot = await panes.browserSnapshot(paneId: pane)
+            let target = snapshot.tabIndex(optionalString(params, "tab")).map { snapshot.tabs[$0] }
+            guard let target else { throw BrowserActionError.noTab(action: "browser_bookmark", tab: optionalString(params, "tab")) }
+            let scheme = URL(string: target.url)?.scheme?.lowercased() ?? "about"
+            guard ["http", "https", "file"].contains(scheme) else { throw BrowserActionError.notBookmarkable(scheme: scheme) }
+            guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
+            do {
+                try files.setBookmark(url: target.url, title: target.label, on: wanted, now: Date())
+                await panes.browserSetBookmarks(org: files.org, try files.bookmarks())
+            } catch let error as BrowserBookmarksUnreadable {
+                throw BrowserActionError.bookmarksUnreadable(error.reason)
             }
             return await reply(pane)
         }))
@@ -606,7 +644,7 @@ public func decodeBrowserSettings(fromResult result: JSONValue?) -> SettingsBrow
 /// on them. Elsewhere each keeps today's meaning.
 public enum BrowserKey: Sendable, Equatable {
     case newTab, closeTab, reopenTab, focusAddress, reload, back, forward, find, findNext, findPrevious
-    case zoomIn, zoomOut, zoomReset, nextTab, previousTab
+    case zoomIn, zoomOut, zoomReset, nextTab, previousTab, bookmark
     /// ⌘1–8 tab N; ⌘9 the last tab.
     case tab(Int)
 }
