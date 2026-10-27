@@ -69,6 +69,15 @@ public struct BrowserAddressInput: Equatable, Sendable {
         completes = false
     }
 
+    /// The field editor's selection is now `selection` over `text`. While a completion shows, any
+    /// selection but the completion's own — the caret collapsed at the end (→, a click there) as much
+    /// as one moved left — ends it: what shows stays, as typed, so a following ⌫ is a deletion
+    /// (ruling 8). The text this is placing is not yet in the field when `text` differs.
+    public mutating func selectionChanged(_ selection: NSRange, in text: String) {
+        guard let range = completionRange, text == shown, selection != range else { return }
+        caretLeftEnd()
+    }
+
     /// Rows answered for `text`; dropped when the operator has typed on since, or Esc hid them.
     public mutating func rowsArrived(_ new: [BrowserSuggestion], for text: String) {
         guard query == text else { return }

@@ -421,12 +421,12 @@ struct BrowserPane: View {
         placingCompletion = false
     }
 
-    /// The caret or selection left the end while a completion showed: the completion is dropped,
-    /// and what shows stays (ruling 8).
+    /// The selection moved off the completion while it showed — left, or collapsed at the end: the
+    /// completion is dropped, and what shows stays (ruling 8).
     private func caretMoved(_ note: Notification) {
         guard !placingCompletion, input.completionRange != nil, let editor = note.object as? NSTextView,
-              editor === addressEditor(), editor.string == input.shown else { return }
-        if NSMaxRange(editor.selectedRange()) < (editor.string as NSString).length { input.caretLeftEnd() }
+              editor === addressEditor() else { return }
+        input.selectionChanged(editor.selectedRange(), in: editor.string)
     }
 
     /// A press on a row: the same as Return on it.

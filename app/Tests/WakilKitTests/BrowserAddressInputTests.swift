@@ -80,6 +80,28 @@ import Testing
         #expect(input.typed == "github.com" && input.completion == nil && input.shown == "github.com")
     }
 
+    @Test func backspaceAfterTheCompletionIsAcceptedDeletesOneCharacterAndOffersNoCompletion() {
+        var input = typing("git")
+        #expect(input.completion == "hub.com" && input.shown == "github.com")
+        // → (or a click at the end): the caret collapses at the end of what shows.
+        input.selectionChanged(NSRange(location: 10, length: 0), in: "github.com")
+        #expect(input.completion == nil && input.typed == "github.com")
+        // ⌫ deletes the last character of the accepted text.
+        input.fieldChanged(to: "github.co", caretAtEnd: true)
+        #expect(input.completion == nil && input.shown == "github.co")
+        input.rowsArrived(rows, for: "github.co")
+        #expect(input.completion == nil && input.shown == "github.co", "a deletion is offered no completion")
+    }
+
+    @Test func theCompletionsOwnSelectionAndTextNotYetPlacedKeepIt() {
+        var input = typing("git")
+        input.selectionChanged(NSRange(location: 3, length: 7), in: "github.com")
+        input.selectionChanged(NSRange(location: 3, length: 0), in: "git")
+        #expect(input.completion == "hub.com" && input.typed == "git")
+        input.selectionChanged(NSRange(location: 2, length: 0), in: "github.com")
+        #expect(input.completion == nil && input.typed == "github.com", "a caret moved left ends it too")
+    }
+
     @Test func noCompletionWithWhitespace() {
         let input = typing("git re")
         #expect(input.completion == nil)
