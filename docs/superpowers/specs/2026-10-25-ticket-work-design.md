@@ -231,3 +231,9 @@ every harness sees the same record. It never replaces a harness's own notes.
 - Open question 16 (`Connection` means an org account in §9 but a database in `wakil-db`) — this
   design uses §9's meaning; the database sense should be renamed when piece 1 is planned.
 - How "what you did last time" is learned and stored (piece 5's own design).
+
+## Amendment 2026-10-27 — piece 2 ships on its own
+
+The operator, after walking piece 2: the Ticket view ships alone, ahead of piece 3. It works by
+itself — the Ticket tab is one click in the editor's left column — and a combined PR would be large.
+"2 and 3 ship together" above no longer holds; piece 3 follows on its own branch.
