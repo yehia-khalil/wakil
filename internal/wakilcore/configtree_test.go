@@ -378,7 +378,7 @@ func TestConfigTreeCarriesTheBrowserSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tree.Browser != (BrowserSettings{SearchEngine: "google"}) {
+	if tree.Browser != (BrowserSettings{SearchEngine: "google", Tabs: "horizontal", NameGroups: true}) {
 		t.Errorf("default tree.Browser = %+v", tree.Browser)
 	}
 	if err := WriteBrowserSettings(BrowserSettingsPatch{SearchEngine: strp("bing"), StartPage: strp("https://example.com")}); err != nil {
@@ -387,7 +387,7 @@ func TestConfigTreeCarriesTheBrowserSettings(t *testing.T) {
 	if tree, err = LoadConfigTreeFor("acme"); err != nil {
 		t.Fatal(err)
 	}
-	if tree.Browser != (BrowserSettings{SearchEngine: "bing", StartPage: "https://example.com"}) {
+	if tree.Browser != (BrowserSettings{SearchEngine: "bing", StartPage: "https://example.com", Tabs: "horizontal", NameGroups: true}) {
 		t.Errorf("tree.Browser = %+v", tree.Browser)
 	}
 }

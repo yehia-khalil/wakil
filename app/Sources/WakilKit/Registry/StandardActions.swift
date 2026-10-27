@@ -1557,7 +1557,8 @@ public func registerStandardActions(
         name: "ctx_set_browser_settings",
         description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing "
             + "or kagi), startPage (an http or https URL, or empty for a blank page), and "
-            + "searchSuggestions (true or false; off by default). "
+            + "searchSuggestions (true or false; off by default), tabs (horizontal or vertical), "
+            + "and nameGroups (true or false; on by default). "
             + "Read-modify-write: omit a field to leave it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
@@ -1570,6 +1571,11 @@ public func registerStandardActions(
                 ]),
                 "startPage": .object(["type": .string("string")]),
                 "searchSuggestions": .object(["type": .string("boolean")]),
+                "tabs": .object([
+                    "type": .string("string"),
+                    "enum": .array([.string("horizontal"), .string("vertical")]),
+                ]),
+                "nameGroups": .object(["type": .string("boolean")]),
             ]),
         ]),
         handler: { params in
@@ -1583,6 +1589,8 @@ public func registerStandardActions(
             if case .string? = fields["searchEngine"] { arguments["searchEngine"] = fields["searchEngine"] }
             if case .string? = fields["startPage"] { arguments["startPage"] = fields["startPage"] }
             if case .bool? = fields["searchSuggestions"] { arguments["searchSuggestions"] = fields["searchSuggestions"] }
+            if case .string? = fields["tabs"] { arguments["tabs"] = fields["tabs"] }
+            if case .bool? = fields["nameGroups"] { arguments["nameGroups"] = fields["nameGroups"] }
             return try await callChecked(
                 context, tool: "set_browser_settings", arguments: .object(arguments),
                 action: "ctx_set_browser_settings", timeout: MCPClient.readReplyTimeout)

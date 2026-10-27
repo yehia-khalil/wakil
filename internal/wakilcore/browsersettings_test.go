@@ -102,3 +102,71 @@ func TestWriteBrowserSettingsSearchSuggestionsKeepsOtherKeys(t *testing.T) {
 		t.Errorf("ReadBrowserSettings() = %+v; want searchSuggestions true", got)
 	}
 }
+
+func TestBrowserSettingsTabsAndNamingDefaults(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	got, appErr := ReadBrowserSettings()
+	if appErr != "" || got.Tabs != "horizontal" || !got.NameGroups {
+		t.Errorf("ReadBrowserSettings() = %+v, %q; want horizontal, nameGroups true", got, appErr)
+	}
+	// A hand edit that breaks the rule reads as the default.
+	if got := (BrowserAppSettings{Tabs: "diagonal"}).Resolved(); got.Tabs != "horizontal" {
+		t.Errorf("tabs diagonal resolved to %q; want horizontal", got.Tabs)
+	}
+	if got := (BrowserAppSettings{Tabs: "vertical"}).Resolved(); got.Tabs != "vertical" {
+		t.Errorf("tabs vertical resolved to %q", got.Tabs)
+	}
+}
+
+func TestWriteBrowserSettingsTabsRefusesUnknown(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	err := WriteBrowserSettings(BrowserSettingsPatch{Tabs: strp("grid")})
+	if err == nil || err.Error() != `tabs is horizontal or vertical, not "grid"` {
+		t.Fatalf("err = %v; want the tabs refusal", err)
+	}
+	if got, _ := ReadBrowserSettings(); got.Tabs != "horizontal" {
+		t.Errorf("tabs = %q after a refused write", got.Tabs)
+	}
+	path, _ := appSettingsPath()
+	if _, statErr := os.Stat(path); statErr == nil {
+		t.Error("a refused write created settings.json")
+	}
+	if err := WriteBrowserSettings(BrowserSettingsPatch{Tabs: strp("vertical")}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := ReadBrowserSettings(); got.Tabs != "vertical" {
+		t.Errorf("tabs = %q; want vertical", got.Tabs)
+	}
+}
+
+func TestWriteBrowserSettingsNameGroupsFalseIsKept(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := UpdateEditorAppSettings(EditorAppPatch{FontSize: intp(15)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteBrowserSettings(BrowserSettingsPatch{SearchEngine: strp("kagi")}); err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	if err := WriteBrowserSettings(BrowserSettingsPatch{NameGroups: &off}); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := appSettingsPath()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"nameGroups": false`) {
+		t.Errorf("settings.json = %s; want \"nameGroups\": false stored", b)
+	}
+	s, err := LoadAppSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Browser.SearchEngine != "kagi" || s.Editor.FontSize != 15 {
+		t.Errorf("settings = %+v; searchEngine and editor must survive", s)
+	}
+	if got, _ := ReadBrowserSettings(); got.NameGroups {
+		t.Errorf("ReadBrowserSettings() = %+v; want nameGroups false", got)
+	}
+}

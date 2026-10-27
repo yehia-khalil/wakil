@@ -249,6 +249,8 @@ type setBrowserSettingsArgs struct {
 	SearchEngine      *string `json:"searchEngine,omitempty" jsonschema:"google, duckduckgo, bing or kagi; omit to leave unchanged"`
 	StartPage         *string `json:"startPage,omitempty" jsonschema:"an http or https URL a new tab opens, or empty for a blank page; omit to leave unchanged"`
 	SearchSuggestions *bool   `json:"searchSuggestions,omitempty" jsonschema:"true sends what you type in the address bar to the search engine for suggestions; false (the default) sends nothing until Return; omit to leave unchanged"`
+	Tabs              *string `json:"tabs,omitempty" jsonschema:"horizontal or vertical: where the tab strip sits; omit to leave unchanged"`
+	NameGroups        *bool   `json:"nameGroups,omitempty" jsonschema:"false stops the model naming automatic tab groups; true (the default) lets it; omit to leave unchanged"`
 }
 
 // setProjectEditorSettingsArgs is one project's editor tier's edit (3b-v).
@@ -708,15 +710,15 @@ func newServer() *mcp.Server {
 
 	// Added by 3c-i: the browser's app-wide setting, beside the editor's in settings.json. The
 	// read is the agent's as much as the operator's; the write is operator-only on the Swift side.
-	mcp.AddTool(s, &mcp.Tool{Name: "browser_settings", Description: "Read the browser settings in force: the search engine the address bar uses for words that are not a URL (google, duckduckgo, bing or kagi) and the start page a new tab opens (empty is blank), and searchSuggestions (true or false; off by default). Defaults fill anything unset. appError carries settings.json's error, whole, when it cannot be read; the defaults are then in force."},
+	mcp.AddTool(s, &mcp.Tool{Name: "browser_settings", Description: "Read the browser settings in force: the search engine the address bar uses for words that are not a URL (google, duckduckgo, bing or kagi) and the start page a new tab opens (empty is blank), searchSuggestions (true or false; off by default), tabs (horizontal or vertical), and nameGroups (true or false; on by default). Defaults fill anything unset. appError carries settings.json's error, whole, when it cannot be read; the defaults are then in force."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.BrowserSettings, error) {
 			v, _ := wakilcore.ReadBrowserSettings()
 			return nil, v, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "set_browser_settings", Description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing or kagi), startPage (an http or https URL, or empty for a blank page), and searchSuggestions (true or false; off by default). Read-modify-write: omit a field to leave it unchanged. Refuses an unknown engine or a start page that is not an http or https URL, and refuses to write over a settings.json that does not parse."},
+	mcp.AddTool(s, &mcp.Tool{Name: "set_browser_settings", Description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing or kagi), startPage (an http or https URL, or empty for a blank page), searchSuggestions (true or false; off by default), tabs (horizontal or vertical), and nameGroups (true or false; on by default). Read-modify-write: omit a field to leave it unchanged. Refuses an unknown engine, a tabs value other than horizontal or vertical, or a start page that is not an http or https URL, and refuses to write over a settings.json that does not parse."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setBrowserSettingsArgs) (*mcp.CallToolResult, empty, error) {
-			if err := wakilcore.WriteBrowserSettings(wakilcore.BrowserSettingsPatch{SearchEngine: a.SearchEngine, StartPage: a.StartPage, SearchSuggestions: a.SearchSuggestions}); err != nil {
+			if err := wakilcore.WriteBrowserSettings(wakilcore.BrowserSettingsPatch{SearchEngine: a.SearchEngine, StartPage: a.StartPage, SearchSuggestions: a.SearchSuggestions, Tabs: a.Tabs, NameGroups: a.NameGroups}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

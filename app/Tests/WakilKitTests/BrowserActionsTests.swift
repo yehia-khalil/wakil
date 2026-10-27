@@ -640,6 +640,16 @@ private struct StoreInUse: Error, CustomStringConvertible {
     #expect(on.searchSuggestions == true)
 }
 
+@Test func browserSettingsDecodeTabsAndNaming() throws {
+    let d = try JSONDecoder().decode(SettingsBrowser.self, from: Data("{}".utf8))
+    #expect(d.tabs == "horizontal")
+    #expect(d.nameGroups == true)
+    let v = try JSONDecoder().decode(
+        SettingsBrowser.self, from: Data(#"{"tabs":"vertical","nameGroups":false}"#.utf8))
+    #expect(v.tabs == "vertical")
+    #expect(v.nameGroups == false)
+}
+
 // MARK: - Bookmarks (3c-iii Task 3)
 
 private func bookmarkFixture(org: String = "initech") async throws -> (BrowserFixture, BrowserOrgFiles) {

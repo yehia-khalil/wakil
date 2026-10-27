@@ -158,13 +158,20 @@ public struct SettingsBrowser: Sendable, Equatable, Decodable {
     public var startPage: String
     /// Whether the address bar asks the search engine for suggestions as the operator types. Off by default.
     public var searchSuggestions: Bool
+    /// `horizontal` or `vertical`: where the tab strip sits.
+    public var tabs: String
+    /// Whether the model names automatic tab groups. On by default.
+    public var nameGroups: Bool
 
     public static let defaults = SettingsBrowser(searchEngine: "google", startPage: "")
 
-    public init(searchEngine: String, startPage: String, searchSuggestions: Bool = false) {
+    public init(searchEngine: String, startPage: String, searchSuggestions: Bool = false,
+                tabs: String = "horizontal", nameGroups: Bool = true) {
         self.searchEngine = searchEngine
         self.startPage = startPage
         self.searchSuggestions = searchSuggestions
+        self.tabs = tabs
+        self.nameGroups = nameGroups
     }
 
     public init(from decoder: Decoder) throws {
@@ -172,9 +179,11 @@ public struct SettingsBrowser: Sendable, Equatable, Decodable {
         searchEngine = try c.decodeIfPresent(String.self, forKey: .searchEngine) ?? Self.defaults.searchEngine
         startPage = try c.decodeIfPresent(String.self, forKey: .startPage) ?? Self.defaults.startPage
         searchSuggestions = try c.decodeIfPresent(Bool.self, forKey: .searchSuggestions) ?? false
+        tabs = try c.decodeIfPresent(String.self, forKey: .tabs) ?? "horizontal"
+        nameGroups = try c.decodeIfPresent(Bool.self, forKey: .nameGroups) ?? true
     }
 
-    private enum CodingKeys: String, CodingKey { case searchEngine, startPage, searchSuggestions }
+    private enum CodingKeys: String, CodingKey { case searchEngine, startPage, searchSuggestions, tabs, nameGroups }
 }
 
 /// One project's editor tier (`project.json`'s `editor`), defaults filled by Go.
