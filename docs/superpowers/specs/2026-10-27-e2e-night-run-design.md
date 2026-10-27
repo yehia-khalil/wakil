@@ -124,11 +124,11 @@ like a quiet green.
 ## Constraints
 
 - All worktrees share one git common dir
-  (`/Users/yehia/Desktop/scripts/wakil-public/.git`). The night run's state (last green
+  (`<repo>/.git`). The night run's state (last green
   commit, results) lives outside any feature worktree and is never committed.
 - The job must run with no Claude session open: a launchd job, not a Claude Code cron
   (those are session-only).
-- `claude` is at `/Users/yehia/.local/bin/claude`.
+- `claude` is on the operator's PATH.
 - A daytime session still running e2e by hand must not collide with the night run
   (memory *e2e screen sharing*: wait on `pgrep -f "[W]akilE2E.app/Contents/MacOS/Wakil"`).
   The night run waits the same way before it starts.

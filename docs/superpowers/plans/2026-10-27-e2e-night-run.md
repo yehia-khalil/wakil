@@ -17,7 +17,7 @@
 - Fixes: one branch per night, `e2e-night/<YYYY-MM-DD>` (the date the night started), cut from the commit run; local commits only. **Never push, never open or comment on a PR or issue.** The PR text is a draft inside the result.
 - Fixer rules (spec §"The fixer's rules") go into its prompt verbatim; one fix round and one re-run per night.
 - `make e2e`, `make e2e-new` and `make e2e-full` behave exactly as today unless `E2E_KEEP_GOING=1` is set.
-- State lives at `<git common dir>/wakil-e2e-night/` (today `/Users/yehia/Desktop/scripts/wakil-public/.git/wakil-e2e-night/`); the night worktree at `filepath.Dir(<common dir>) + "-night"` (today `/Users/yehia/Desktop/scripts/wakil-public-night`). Neither is committed.
+- State lives at `<git common dir>/wakil-e2e-night/` (for a checkout at `<repo>`, `<repo>/.git/wakil-e2e-night/`); the night worktree at `filepath.Dir(<common dir>) + "-night"` (`<repo>-night`). Neither is committed.
 - Commits: no `Co-Authored-By` or "Generated with" lines (operator's global rule).
 - The repo's commit style: `<area>: <what changed>`, lower case, as in `git log`.
 
@@ -144,7 +144,7 @@
   - `func WaitQuiet(busy func() (bool, error), now func() time.Time, sleep func(time.Duration), until time.Time) (bool, error)`: true once `busy` has been false continuously for **2 minutes**, polling every **30 s**; false at `until`.
   - `func runUntil(dir string, deadline time.Time, name string, args ...string) (timedOut bool, err error)`: starts the command in its own process group (`SysProcAttr{Setpgid: true}`), kills the group at `deadline`, then runs `pkill -f 'WakilE2E.app/Contents/MacOS/'` to tear down a stray fixture.
   - `Suite` = `runUntil(worktree, deadline, "make", "e2e-full", "E2E_KEEP_GOING=1")`, then `RedFilesSince(<worktree>/.context/e2e, start)`, then `make e2e-cover` (output kept as `CoverRed` when it exits non-zero). `Rerun` = the same with `make e2e E2E_ONLY='<files>' E2E_KEEP_GOING=1`.
-  - `Fix` = `runUntil(worktree, in.Deadline, "/Users/yehia/.local/bin/claude", "-p", <prompt>, "--permission-mode", "bypassPermissions")`, with the prompt rendered from `fixer-prompt.md` by `text/template` over `FixInput`.
+  - `Fix` = `runUntil(worktree, in.Deadline, "claude", "-p", <prompt>, "--permission-mode", "bypassPermissions")`, with the prompt rendered from `fixer-prompt.md` by `text/template` over `FixInput`.
 - `fixer-prompt.md` carries the spec's fixer rules word for word, the red files with their notes and evidence paths, the unmerged night branches ("if one already fixes a failure, say so and do not fix it again"), the instruction to commit on the current branch only with the repo's commit style and no attribution lines, and to write a summary plus a drafted PR description to `{{.SummaryPath}}`.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -185,7 +185,7 @@
 **Files:**
 - Modify: `e2e/driver/runbook.go:159-163`, `e2e/driver/runbook_test.go` (the owed-check test)
 - Modify: `docs/agents/e2e.md` (step 9; the collision note), `docs/agents/workflow.md:40` (Walk row), `CONTRIBUTING.md:128`, `docs/architecture/testing.md` (`## e2e` and the make-targets table)
-- Modify (outside the repo, not committed): memories `wakil-e2e-full-overnight.md` and `e2e-screen-sharing.md` in `/Users/yehia/Library/Application Support/orca/claude-profiles/fc5946b4-74f6-4771-a66a-a7da5d58881e/home/projects/-Users-yehia-Desktop-scripts-wakil-public/memory/`
+- Modify (outside the repo, not committed): memories `wakil-e2e-full-overnight.md` and `e2e-screen-sharing.md` in the operator's Claude memory folder for this project
 
 **Interfaces:**
 - Produces the copy: runbook owed sentence ends "…**%d check(s) are owed to `make e2e-full`**, which the night run covers on `main` after the merge (`make e2e-night-status`)."

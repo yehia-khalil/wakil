@@ -23,7 +23,7 @@ func commit(t *testing.T, repo, file, body string) string {
 }
 
 func TestTheNightWorktreeSitsBesideTheRepository(t *testing.T) {
-	if got := NightWorktree("/Users/yehia/Desktop/scripts/wakil-public/.git"); got != "/Users/yehia/Desktop/scripts/wakil-public-night" {
+	if got := NightWorktree("/home/op/src/wakil/.git"); got != "/home/op/src/wakil-night" {
 		t.Fatalf("NightWorktree = %s", got)
 	}
 }
