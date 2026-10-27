@@ -40,6 +40,11 @@ struct BrowserTabColumn: View {
     /// A click on a chip, held for the double-click time so a double-click renames instead.
     @State private var pendingToggle: Task<Void, Never>?
 
+    private var presses: BrowserEntryPresses {
+        BrowserEntryPresses(dispatch: dispatch, renaming: $renaming, headerFocus: headerFocus,
+                            setHeaderFocus: setHeaderFocus, pendingToggle: $pendingToggle)
+    }
+
     static let rowHeight: CGFloat = 28
     static let indent: CGFloat = 12
     /// Each row's inset from the column's edges.
@@ -60,6 +65,19 @@ struct BrowserTabColumn: View {
                     .padding(.vertical, 4)
                 }
                 .scrollIndicators(.never)
+                // The pinned tab's tip hangs over the row below — outside the scroll view, so the
+                // last row's is not clipped; shown while its row is in view.
+                .overlayPreferenceValue(BrowserTabColumnTipAnchor.self) { anchor in
+                    GeometryReader { proxy in
+                        if let anchor, let tip = tip(list) {
+                            let row = proxy[anchor]
+                            if row.maxY > 0, row.minY < proxy.size.height {
+                                PaneStripTipLabel(tip: tip)
+                                    .offset(x: row.minX + Self.rowInset + Self.indent, y: row.maxY - 2)
+                            }
+                        }
+                    }
+                }
                 newTabRow
             }
             .frame(width: CGFloat(BrowserTabColumnRules.clamp(width)))
@@ -122,7 +140,7 @@ struct BrowserTabColumn: View {
                 let gap = self.gap(at: g.location.y, count: list.entries.count)
                 if let params = target(list, from: index, gap: gap) { dispatch("browser_move_tab", params) }
             })
-        .onTapGesture { tap(entry) }
+        .onTapGesture { presses.tap(entry) }
         .onHover { inside in hovered = inside ? entry.id : (hovered == entry.id ? nil : hovered) }
         .contextMenu {
             switch entry {
@@ -130,18 +148,14 @@ struct BrowserTabColumn: View {
             case .tab(let t): BrowserTabMenu(tab: t, context: menus)
             }
         }
-        .help(label(entry))
-        // The pinned tab's tip, over the row below (as the strip hangs it).
-        .overlay(alignment: .bottomLeading) {
-            if let armed = closeArmed, list.index(ofTab: armed) == index {
-                tip(armed)
-            }
+        .help(BrowserEntryPresses.label(entry))
+        .anchorPreference(key: BrowserTabColumnTipAnchor.self, value: .bounds) { bounds in
+            tip(list)?.index == index ? bounds : nil
         }
-        .zIndex(closeArmed.flatMap { list.index(ofTab: $0) } == index ? 1 : 0)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(label(entry))
+        .accessibilityLabel(BrowserEntryPresses.label(entry))
         .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { activate(entry) }
+        .accessibilityAction { presses.activate(entry) }
         .accessibilityIdentifier(entry.identifier)
     }
 
@@ -210,21 +224,13 @@ struct BrowserTabColumn: View {
         }
     }
 
-    private func tip(_ tab: String) -> some View {
-        Text(BrowserPinnedClose.tip)
-            .font(.system(size: SettingsScale.meta))
-            .foregroundStyle(PaneStripStyle.text)
-            .lineLimit(1)
-            .fixedSize()
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
-                .fill(PaneStripStyle.slab))
-            .overlay(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
-                .strokeBorder(PaneStripStyle.text.opacity(PaneStripStyle.edge), lineWidth: 1))
-            .offset(x: Self.rowInset + Self.indent, y: Self.rowHeight - 2)
-            .allowsHitTesting(false)
-            .accessibilityIdentifier("browser.tab.\(tab).closeTip")
+    /// The pinned tab armed by ⌘W, as the strip names its tip.
+    private func tip(_ list: BrowserStripEntries) -> PaneStripTip? {
+        closeArmed.flatMap { tab in
+            list.index(ofTab: tab).map {
+                PaneStripTip(index: $0, text: BrowserPinnedClose.tip, identifier: "browser.tab.\(tab).closeTip")
+            }
+        }
     }
 
     /// ＋ at the column's foot: ⌘T's `browser_new_tab`.
@@ -261,7 +267,8 @@ struct BrowserTabColumn: View {
         Rectangle().fill(BrowserPaneStyle.text.opacity(PaneStripStyle.hairline)).frame(width: 1)
             .padding(.horizontal, 2).contentShape(Rectangle())
             .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
-            .gesture(DragGesture(minimumDistance: 1)
+            // Global: the divider moves as the width follows it (DataSurface's column edge too).
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { g in
                     let start = dragStart ?? BrowserTabColumnRules.clamp(width)
                     dragStart = start
@@ -273,9 +280,10 @@ struct BrowserTabColumn: View {
 
     // MARK: Drag
 
-    /// The gap a drag at `y` (in the rows' space) is nearest: 0 before the first row, `count` after the last.
+    /// The gap a drag at `y` (in the rows' space, whose origin is the first row's top — the space is
+    /// named inside the vertical padding) is nearest: 0 before the first row, `count` after the last.
     private func gap(at y: CGFloat, count: Int) -> Int {
-        max(0, min(count, Int(((y - 4) / Self.rowHeight).rounded())))
+        max(0, min(count, Int((y / Self.rowHeight).rounded())))
     }
 
     /// The move a drop of entry `from` in `gap` makes, counted without it (`BrowserStripEntries.move`).
@@ -295,51 +303,13 @@ struct BrowserTabColumn: View {
                 .accessibilityHidden(true)
         }
     }
+}
 
-    // MARK: Presses
-
-    private func label(_ entry: BrowserStripEntry) -> String {
-        switch entry {
-        case .chip(let g): BrowserGroupChip.label(g)
-        case .tab(let t): t.label
-        }
-    }
-
-    private func tap(_ entry: BrowserStripEntry) {
-        switch entry {
-        case .tab(let t):
-            if headerFocus != nil { setHeaderFocus(nil) }
-            dispatch("browser_select_tab", ["tab": .string(t.id)])
-        case .chip(let g):
-            // A click in the open name field is the field's.
-            guard renaming != g.id else { return }
-            // Only the pull-request group's header is under ⌘R (ruling 19).
-            setHeaderFocus(g.kind == .pullRequests ? g.id : nil)
-            pendingToggle?.cancel()
-            pendingToggle = nil
-            if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
-                if g.kind != .pullRequests { renaming = g.id }
-                return
-            }
-            guard g.kind != .pullRequests else { return toggle(g) }
-            pendingToggle = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(NSEvent.doubleClickInterval))
-                guard !Task.isCancelled else { return }
-                toggle(g)
-            }
-        }
-    }
-
-    private func activate(_ entry: BrowserStripEntry) {
-        switch entry {
-        case .tab(let t): dispatch("browser_select_tab", ["tab": .string(t.id)])
-        case .chip(let g): toggle(g)
-        }
-    }
-
-    /// Collapse or expand: never the selected tab, never the keyboard (Rule 6).
-    private func toggle(_ g: BrowserGroup) {
-        dispatch("browser_group", ["action": .string(g.collapsed ? "expand" : "collapse"), "group": .string(g.id)])
+/// Where the pinned tab armed by ⌘W is drawn in the column, so its tip hangs outside the scroll view.
+struct BrowserTabColumnTipAnchor: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
     }
 }
 

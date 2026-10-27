@@ -133,6 +133,75 @@ struct BrowserStripEntries {
     }
 }
 
+/// The one press rule of a browser pane's tab list (3d-i), the strip's and the column's. A click on
+/// a tab selects it and takes ⌘R off the group header. A click on a chip collapses or expands it —
+/// after the double-click time, so a double-click renames instead — and puts the pull-request
+/// group's header under ⌘R (ruling 19). Every press is a `browser_*` action (Invariant 2); none takes
+/// the keyboard (Rule 6).
+@MainActor
+struct BrowserEntryPresses {
+    let dispatch: (String, [String: JSONValue]) -> Void
+    /// The group whose name is being edited.
+    @Binding var renaming: String?
+    /// The group header ⌘R acts on in this pane; nil, none.
+    let headerFocus: String?
+    let setHeaderFocus: (String?) -> Void
+    /// A click on a chip, held for the double-click time; the view keeps it in its `@State`.
+    @Binding var pendingToggle: Task<Void, Never>?
+
+    /// The entry's tooltip and accessibility name.
+    static func label(_ entry: BrowserStripEntry) -> String {
+        switch entry {
+        case .chip(let g): BrowserGroupChip.label(g)
+        case .tab(let t): t.label
+        }
+    }
+
+    func tap(_ entry: BrowserStripEntry) {
+        switch entry {
+        case .tab(let t):
+            if headerFocus != nil { setHeaderFocus(nil) }
+            select(t)
+        case .chip(let g):
+            // A click in the open name field is the field's.
+            guard renaming != g.id else { return }
+            // Only the pull-request group's header is under ⌘R (ruling 19). Set unconditionally: the
+            // mouse-down cleared it (`canvasMouseDown`), whatever this view last drew.
+            setHeaderFocus(g.kind == .pullRequests ? g.id : nil)
+            pendingToggle?.cancel()
+            pendingToggle = nil
+            if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
+                if g.kind != .pullRequests { renaming = g.id }
+                return
+            }
+            // The pull-request group has no name to edit: no double-click to wait for.
+            guard g.kind != .pullRequests else { return toggle(g) }
+            pendingToggle = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(NSEvent.doubleClickInterval))
+                guard !Task.isCancelled else { return }
+                toggle(g)
+            }
+        }
+    }
+
+    /// The accessibility press: a tab selected, a group collapsed or expanded.
+    func activate(_ entry: BrowserStripEntry) {
+        switch entry {
+        case .tab(let t): select(t)
+        case .chip(let g): toggle(g)
+        }
+    }
+
+    /// Collapse or expand: never the selected tab, never the keyboard (Rule 6).
+    private func toggle(_ g: BrowserGroup) {
+        dispatch("browser_group", ["action": .string(g.collapsed ? "expand" : "collapse"), "group": .string(g.id)])
+    }
+
+    private func select(_ tab: BrowserTab) {
+        dispatch("browser_select_tab", ["tab": .string(tab.id)])
+    }
+}
+
 /// A group's chip (3d-i): an 8 pt dot in its colour and its name at the tab title's size;
 /// collapsed, the tab it shows (`lastOpen`)'s favicon after the name. No ×. While renamed, the
 /// name is the field. The pull-request group shows ↻ while a refresh runs.

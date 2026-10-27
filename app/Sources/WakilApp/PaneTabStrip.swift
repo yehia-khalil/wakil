@@ -185,6 +185,28 @@ struct PaneStripTip: Equatable {
     let identifier: String
 }
 
+/// A tip's label: the slab, its edge and the meta-size words, taking no clicks. The strip hangs it
+/// under its entry; the browser's vertical column under its row.
+struct PaneStripTipLabel: View {
+    let tip: PaneStripTip
+
+    var body: some View {
+        Text(tip.text)
+            .font(.system(size: SettingsScale.meta))
+            .foregroundStyle(PaneStripStyle.text)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
+                .fill(PaneStripStyle.slab))
+            .overlay(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
+                .strokeBorder(PaneStripStyle.text.opacity(PaneStripStyle.edge), lineWidth: 1))
+            .allowsHitTesting(false)
+            .accessibilityIdentifier(tip.identifier)
+    }
+}
+
 /// The ＋ pinned at a strip's right: what it opens, and its name.
 struct PaneStripNewTab {
     let help: String
@@ -328,20 +350,8 @@ struct PaneTabStrip<Entry: View>: View {
     private func tipLabel(available: Double, height: CGFloat) -> some View {
         if let tip, ids.indices.contains(tip.index), let span = spans[ids[tip.index]] {
             let slot = overflows(available: available, widths(available: available)) ? Double(PaneStripStyle.overflowSlot) : 0
-            Text(tip.text)
-                .font(.system(size: SettingsScale.meta))
-                .foregroundStyle(PaneStripStyle.text)
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
-                    .fill(PaneStripStyle.slab))
-                .overlay(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
-                    .strokeBorder(PaneStripStyle.text.opacity(PaneStripStyle.edge), lineWidth: 1))
+            PaneStripTipLabel(tip: tip)
                 .offset(x: CGFloat(max(0, span.lowerBound - offset + slot)), y: height - 2)
-                .allowsHitTesting(false)
-                .accessibilityIdentifier(tip.identifier)
         }
     }
 
