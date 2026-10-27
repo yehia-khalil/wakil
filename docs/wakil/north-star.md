@@ -254,29 +254,34 @@ live app; *accepted* means it was marked met without one.
 | **integer fidelity** | `JSONValue.integer(Int64)` — a fix, not a sub-phase | **2026-09-13** | — |
 | **conversation layouts** | Pane arrangements keyed by conversation and project — cross-cutting, not a sub-phase | **2026-09-21**, walked | — |
 | **2c-ii-b** | Editing records from the DB pane | **2026-09-15** — *walked 2026-09-14, its three open checks accepted* | — |
-| **2c-ii-c** | DB pane copy, cancel and row detail — ⌘C and Copy as JSON, `db_cancel` and a per-pane read flight, the row detail strip | **2026-10-15**, walked | — |
+| **2c-ii-c** | DB pane copy, cancel and row detail | **2026-10-15**, walked | — |
 | **2c-iii** | Terminal pane — PTY, a shell opened at a path, the write-gate boundary for a shell | **2026-09-18**, walked | — |
 | **2c-iv** | API client pane; `wakil-http` gains a gated write method | **2026-10-04**, walked ×3 | — |
 | ~~**2c-v**~~ | Session browser — **cut 2026-09-16** (`phase-log.md`) | — | — |
 | **2c-vi** | PM board pane — Jira issues as a dual-driven kanban board | — | deferred 2026-10-06; q15 for writes |
 | **2d-i** | Identifier resolution — transcripts resolved against the identifiers in scope | **2026-10-07**, walked | — |
 | **2d-ii** | Push-to-talk, Apple STT, live transcription, composer, listening state | **2026-10-08**, walked | — |
-| **2e** | The settings pane — an account added from Wakil with no credential in the operator's hands; unlink; the DSN write; the residue named | **2026-09-30**, walked | the rest of 2c; **built before 2d** |
+| **2e** | The settings pane — accounts added and unlinked from Wakil | **2026-09-30**, walked | the rest of 2c; **built before 2d** |
 | **Phase 3** | Breadth — editor, API client UI, chat and inbox adapters | — | — |
 | **3a-i** | Git pane, read-only: changes by root, the spine, the Monaco diff host | **2026-10-09**, walked | — |
 | **3a-ii** | Stage, unstage, commit — the fourth write | **2026-10-22**, walked | 3a-i |
-| **3a-ii-b** | Stage and Unstage Selected Ranges in the diff tab; ✨ drafts the commit message with the quick model, the operator commits | **2026-10-22**, walked | 3a-ii |
+| **3a-ii-b** | Stage and Unstage Selected Ranges; ✨ drafts the commit message | **2026-10-22**, walked | 3a-ii |
 | **2e-ii** | Add, rename and remove a project and an environment from Settings | — | 3a-ii |
-| **2e-iii** | Add, edit and remove an environment's API entries from Settings, the token to the Keychain; databases edited in place, removal confirmed | — | 2e-ii |
-| **2e-iv** | Edit a database's connection in Settings — host, port, database and user in project.json, only the password in the Keychain; Edit replaces Replace connection | — | 2e-iii |
-| **3a-iii** | A git account per organisation — sign in, token or SSH key in the Keychain; push, pull, fetch, sync, clone; agent instructions | **2026-10-22**, walked | 3a-ii |
+| **2e-iii** | Add, edit and remove an environment's API entries from Settings | — | 2e-ii |
+| **2e-iv** | Edit a database's connection in Settings; only the password in the Keychain | — | 2e-iii |
+| **3a-iii** | A git account per organisation; push, pull, fetch, sync, clone | **2026-10-22**, walked | 3a-ii |
 | **3a-iv** | Branches and stash — the branch picker in the context line, stash, pop, apply | **2026-10-23**, walked | 3a-iii |
 | **3a-v** | Conflicts, history and blame — accept current or incoming, the Timeline, inline blame | — | 3a-ii |
 | **3c** | Browser | — | — |
 | **3c-i** | Pane, tabs, a profile per organisation | — | — |
 | **3c-ii** | Agent reach | **2026-10-27**, walked | 3c-i |
 | **3c-iii** | History, bookmarks, links | — | 3c-i |
-| **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
+| **3d** | The browser you live in | — | 3c |
+| **3d-i** | Tab groups — automatic, named by the quick model, and your own; the pull-request group; pins per project; vertical tabs | — | 3c-iii |
+| **3d-ii** | Identities inside an organisation | — | 3d-i |
+| **3d-iii** | Picture-in-picture | — | 3c-i |
+| **3d-iv** | Passwords in the Keychain | — | 3c-ii |
+| **Conversations** | Several live conversations per place: new, switch, close | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
 ## 9. Glossary

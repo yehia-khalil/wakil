@@ -215,10 +215,25 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   own suggestions, behind the `searchSuggestions` setting (off by default).
 - `BrowserAddressInput.swift` — `BrowserAddressInput` (3c-iii): the address field's key and completion
   state machine (↓ ↑ Return Esc, ⌫ after a completion); `BrowserBookmarkChoices` is the ★ menu.
+- `BrowserSiteKey.swift` — `BrowserSiteKey` (3d-i): which site a page is, for grouping — a family
+  (YouTube, Atlassian, GitHub, Google Docs), a local address as `host:port`, else the registrable domain
+  from the bundled public-suffix rules (`BrowserPublicSuffixes.swift`); `nil` beyond http and https.
+- `BrowserGrouping.swift` — the grouping rules, pure, as `BrowserSnapshot` methods (3d-i): `placeOpened`
+  (the opener rule, run when a tab is made), the site rule (run when a load finishes), a group becoming
+  yours, `keptLoose`, colours and `arrange()`, which keeps `tabs` in drawn order (pinned tabs, pinned
+  groups, the pull-request group, groups in the order made, loose tabs). None moves the active tab.
+- `BrowserGroupNames.swift` — `BrowserGroupNames` (3d-i): which automatic groups are due a name, the
+  titles sent (never URLs) and the reply read, for the `respond` quick task; the window asks once per
+  group per launch.
+- `BrowserPins.swift` — `BrowserPin` and the project's pins file (3d-i): read when a pane opens or is
+  restored, written when a pin changes, and a pane brought in line with it; a file that will not parse is
+  never written over.
+- `BrowserPinnedClose.swift` — `BrowserPinnedClose` (3d-i): ⌘W on a pinned tab arms for 2 s
+  (`Press ⌘W again to close`) and closes on the second press; the × closes at once.
 
-Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
+Uses: `Layout` (`Pane`, `BrowserSavedTab`, `BrowserGroup`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `BrowserSiteKeyTests`, `BrowserGroupingTests`, `BrowserGroupNamesTests`, `BrowserPinsTests`, `BrowserPinnedCloseTests`, `WindowModelBrowserTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 
