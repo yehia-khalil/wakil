@@ -162,6 +162,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The zoom the next report tells the store: set only when the page took a host's zoom, so a
     /// report read before a `browser_zoom` applied never undoes it.
     private var pendingZoom: Double?
+    /// Whether this tab's video floats (3d-iii), as WebKit last said; carried in every report.
+    var pictureInPicture = false
     private var observations: [NSKeyValueObservation] = []
     private var reporting: Task<Void, Never>?
     private var reportAgain = false
@@ -239,7 +241,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
                         ?? self.requested ?? "",
                     title: view.title ?? "",
                     isLoading: view.isLoading, progress: view.estimatedProgress,
-                    canGoBack: view.canGoBack, canGoForward: view.canGoForward, failure: self.failure, zoom: zoom)
+                    canGoBack: view.canGoBack, canGoForward: view.canGoForward, failure: self.failure, zoom: zoom,
+                    pictureInPicture: self.pictureInPicture)
                 await model.browserPageDidReport(scope: self.scope, pane: self.pane, tab: self.tab, report)
             }
             self?.reporting = nil
@@ -266,6 +269,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             if webView.pageZoom != factor { webView.pageZoom = factor }
             pendingZoom = factor
         }
+        // 3d-iii: a new page in the main frame; the old documents' frame tokens are gone.
+        if !tab.isEmpty { host?.pictureInPicture.forgetFrames(key) }
         scheduleReport()
     }
 
@@ -505,6 +510,28 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor ([URL]?) -> Void) {
         guard let host else { return completionHandler(nil) }
         host.runOpenPanel(parameters, for: webView, scope: scope, pane: pane, tab: tab, completion: completionHandler)
+    }
+
+    // MARK: Picture in picture (3d-iii)
+
+    /// Private: `WKUIDelegatePrivate`'s `_webView:hasVideoInPictureInPictureDidChange:` (guarded by
+    /// `BrowserPictureInPictureSupport`). A video of this tab entered (`on`) or left picture in picture,
+    /// whoever floated it — Wakil or the page's own button.
+    @objc(_webView:hasVideoInPictureInPictureDidChange:)
+    func webView(_ webView: WKWebView, hasVideoInPictureInPictureDidChange on: Bool) {
+        guard !tab.isEmpty else { return }
+        pictureInPicture = on
+        scheduleReport()
+        host?.pictureInPicture.didChange(key, on)
+    }
+
+    /// Private: `WKUIDelegatePrivate`'s `_webViewFullscreenMayReturnToInline:`. The operator pressed
+    /// Restore on the floating window. Synchronous: the view must be in a window before this returns
+    /// (ruling 5), so the host docks it here.
+    @objc(_webViewFullscreenMayReturnToInline:)
+    func webViewFullscreenMayReturnToInline(_ webView: WKWebView) {
+        guard !tab.isEmpty else { return }
+        host?.pictureInPicture.restore(key, view: webView)
     }
 
     func webViewDidClose(_ webView: WKWebView) {
