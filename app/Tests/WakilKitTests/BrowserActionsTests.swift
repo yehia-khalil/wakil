@@ -965,3 +965,147 @@ private func groupedFixture() async throws -> BrowserFixture {
     try await f.dispatch("browser_group", ["action": .string("close"), "group": .string("g1")])
     #expect(await f.snapshot().active == "t3", "closing a group the selection is not in")
 }
+
+// MARK: - Pins per project (3d-i Task 8)
+
+/// Two browser panes on project `web`'s canvas, each with one loaded tab: `f.pane` on example.com/a,
+/// `other` on example.org/b.
+private func pinFixture() async throws -> (f: BrowserFixture, other: String, files: BrowserOrgFiles) {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "initech")
+    var f = try await browserFixture(open: false, orgFiles: files)
+    let scope = LayoutScope(organization: "initech", project: "web", environment: "e")
+    await f.layout.switchScope(to: scope)
+    await f.panes.switchScope(to: scope)
+    f.pane = await f.layout.open(kind: "browser", title: "Browser").id
+    let other = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.org/b"), "pane": .string(other)])
+    for p in [f.pane, other] {
+        await f.panes.updateBrowser(paneId: p) { s in for i in s.tabs.indices { s.tabs[i].loaded = true } }
+    }
+    return (f, other, files)
+}
+
+@Test func anUnreadablePinsFileIsNeverWrittenOver() async throws {
+    let (f, _, files) = try await pinFixture()
+    let url = files.pinsURL(project: "web")
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let bytes = Data("{\"items\": [oops".utf8)
+    try bytes.write(to: url)
+    let why = await refusal { try await f.dispatch("browser_pin") }
+    #expect(why?.hasPrefix("browser_pin: pins/web.json can't be read (") == true)
+    #expect(why?.hasSuffix(") — fix or move it; Wakil won't write over it.") == true)
+    _ = await refusal { try await f.dispatch("browser_unpin") }
+    #expect(try Data(contentsOf: url) == bytes)
+    #expect(await f.snapshot().tabs.allSatisfy { $0.pin == nil })
+}
+
+@Test func pinningRefusesWithNoProject() async throws {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "initech")
+    let f = try await browserFixture(orgFiles: files)
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    #expect(await refusal { try await f.dispatch("browser_pin") } == "browser_pin: no project is active")
+}
+
+@Test func pinningATabShowsItInTheOtherBrowserPaneUnloaded() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let pins = try files.pins(project: "web")
+    #expect(pins.count == 1)
+    let pin = try #require(pins.first)
+    #expect(pin.kind == .tab)
+    #expect(pin.url == "https://example.com/a")
+    #expect(pin.id.count == 9 && pin.id.hasPrefix("p"))
+    #expect(await f.snapshot().tabs.first?.pin == pin.id)
+
+    let o = await f.panes.browserSnapshot(paneId: other)
+    #expect(o.tabs.map(\.url) == ["https://example.com/a", "https://example.org/b"])
+    let copy = try #require(o.tabs.first)
+    #expect(copy.pin == pin.id)
+    #expect(copy.loaded == false)
+    #expect(o.active != copy.id)
+    // Saved in the other pane's layout too.
+    #expect(await f.layout.browserTabs(id: other)?.tabs.first?.pin == pin.id)
+}
+
+@Test func pinningAGroupWritesItsTabs() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.net/c")])
+    let ids = await f.snapshot().tabs.map(\.id)
+    guard case .object(let made) = try await f.dispatch(
+        "browser_group", ["action": .string("create"), "name": .string("Work"), "colour": .string("stone"),
+                          "tabs": .array(ids.map { .string($0) })]),
+        case .string(let group)? = made["group"] else { Issue.record("no group"); return }
+    try await f.dispatch("browser_pin", ["group": .string(group)])
+    let pin = try #require(try files.pins(project: "web").first)
+    #expect(pin.kind == .group)
+    #expect(pin.name == "Work")
+    #expect(pin.colour == .stone)
+    #expect(pin.tabs == [BrowserPinTab(url: "https://example.com/a", title: ""),
+                         BrowserPinTab(url: "https://example.net/c", title: "")])
+    #expect(await f.snapshot().group(group)?.pin == pin.id)
+
+    let o = await f.panes.browserSnapshot(paneId: other)
+    let copy = try #require(o.groups.first { $0.pin == pin.id })
+    #expect(copy.name == "Work")
+    #expect(o.tabs.filter { $0.group == copy.id }.map(\.url) == ["https://example.com/a", "https://example.net/c"])
+    #expect(o.tabs.last?.url == "https://example.org/b")
+}
+
+@Test func pinMakesAnAutomaticGroupOwn() async throws {
+    let (f, _, files) = try await pinFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/b")])
+    let group = await f.panes.updateBrowser(paneId: f.pane) { s -> String in
+        s.newGroup(tabs: s.tabs.map(\.id), name: "Example", kind: .automatic, siteKey: "example.com")
+    }
+    #expect(await f.snapshot().group(group)?.kind == .automatic)
+    try await f.dispatch("browser_pin", ["group": .string(group)])
+    #expect(await f.snapshot().group(group)?.kind == .own)
+    #expect(try files.pins(project: "web").first?.name == "Example")
+}
+
+@Test func unpinKeepsItHereAndRemovesItFromTheOtherPane() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let tab = try #require(await f.snapshot().tabs.first)
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.count == 2)
+    try await f.dispatch("browser_unpin", ["tab": .string(tab.id)])
+    #expect(try files.pins(project: "web") == [])
+    let here = await f.snapshot()
+    #expect(here.tabs.map(\.id) == [tab.id])
+    #expect(here.tabs.first?.pin == nil)
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.map(\.url) == ["https://example.org/b"])
+}
+
+@Test func pinCurrentPageRewritesTheEntryOnly() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    try await f.dispatch("browser_navigate", ["input": .string("https://example.com/moved")])
+    try await f.dispatch("browser_pin", ["update": .bool(true)])
+    let pins = try files.pins(project: "web")
+    #expect(pins.count == 1)
+    #expect(pins.first?.url == "https://example.com/moved")
+    // The other pane's live tab keeps its page.
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.first?.url == "https://example.com/a")
+}
+
+@Test func aNewBrowserPaneOpensWithTheProjectsPins() async throws {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "initech")
+    try files.setPins([BrowserPin(id: "p0000000a", kind: .tab, url: "https://example.com/pinned", title: "Pinned")],
+                      project: "web")
+    let f = try await browserFixture(open: false, orgFiles: files)
+    let scope = LayoutScope(organization: "initech", project: "web", environment: "e")
+    await f.layout.switchScope(to: scope)
+    await f.panes.switchScope(to: scope)
+    guard case .object(let o) = try await f.dispatch("browser_open", ["url": .string("https://example.org/")], named: false),
+          case .string(let pane)? = o["pane"] else { Issue.record("no pane"); return }
+    let s = await f.panes.browserSnapshot(paneId: pane)
+    #expect(s.tabs.map(\.url) == ["https://example.com/pinned", "https://example.org/"])
+    #expect(s.tabs.first?.loaded == false)
+    #expect(s.activeTab?.url == "https://example.org/")
+
+    // A restored pane is reconciled too: a pin the file no longer holds goes.
+    try files.setPins([], project: "web")
+    try await f.dispatch("browser_restore", ["pane": .string(pane)], named: false)
+    #expect(await f.panes.browserSnapshot(paneId: pane).tabs.map(\.url) == ["https://example.org/"])
+}

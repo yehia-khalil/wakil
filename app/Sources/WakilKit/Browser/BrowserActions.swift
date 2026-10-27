@@ -34,6 +34,10 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     case pullRequestGroupRefuses(String)
     case unknownColour
     case unknownGroupAction(String)
+    /// 3d-i: pins are per project, and the place on screen has none.
+    case noProject(action: String)
+    /// 3d-i: `pins/<project>.json` is there but can't be read; it is never written over (ruling 13).
+    case pinsUnreadable(action: String, file: String, reason: String)
 
     public var description: String {
         switch self {
@@ -59,6 +63,9 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
             "browser_group: colour is one of " + BrowserGroupColour.allCases.map(\.rawValue).joined(separator: ", ")
         case .unknownGroupAction(let verb):
             "browser_group: action is create, rename, recolour, collapse, expand, ungroup or close, not \(verb)"
+        case .noProject(let action): "\(action): no project is active"
+        case .pinsUnreadable(let action, let file, let reason):
+            "\(action): \(file) can't be read (\(reason)) — fix or move it; Wakil won't write over it."
         case .notAWebPage(let scheme):
             "browser_open opens web pages and files (http, https, file), not \(scheme): links — an app's "
                 + "link opens from a page, after the operator allows it."
@@ -90,6 +97,11 @@ func browserSavedTabs(_ s: BrowserSnapshot) -> [BrowserSavedTab] {
     }
 }
 
+/// What `browser_pin` and `browser_unpin` act on: a tab or a group, by id.
+private enum BrowserPinTarget: Sendable {
+    case tab(String), group(String)
+}
+
 /// The ⌘⇧T stack's depth.
 let browserClosedLimit = 20
 
@@ -119,17 +131,13 @@ extension BrowserSnapshot {
     /// the first of them was is selected, else the last. Ends in `arrange()`. Answers how many closed.
     @discardableResult
     mutating func closeTabs(_ ids: Set<String>) -> Int {
-        guard let first = tabs.firstIndex(where: { ids.contains($0.id) }) else { return 0 }
+        guard tabs.contains(where: { ids.contains($0.id) }) else { return 0 }
         let gone = tabs.filter { ids.contains($0.id) }
-        tabs.removeAll { ids.contains($0.id) }
         for tab in gone {
             closed.append(BrowserSavedTab(id: tab.id, url: tab.url, title: tab.title, group: tab.group))
         }
         if closed.count > browserClosedLimit { closed.removeFirst(closed.count - browserClosedLimit) }
-        if let active, ids.contains(active) {
-            self.active = nil
-            if !tabs.isEmpty { select(min(first, tabs.count - 1)) }
-        }
+        removeTabs(ids)
         arrange()
         return gone.count
     }
@@ -241,6 +249,62 @@ func browserActions(
                                      columnHidden: s.tabColumnHidden)
     }
 
+    /// The place's pins file and project (ruling 13): refused when the place has no project, or the
+    /// window no organisation.
+    @Sendable func pinsPlace(_ action: String) async throws -> (files: BrowserOrgFiles, project: String) {
+        let project = await panes.activeScope.project
+        guard !project.isEmpty else { throw BrowserActionError.noProject(action: action) }
+        guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
+        return (files, project)
+    }
+
+    /// Reads or writes the place's pins, an unreadable file refused with its file name and reason.
+    @Sendable func withPins<T>(_ action: String, _ place: (files: BrowserOrgFiles, project: String),
+                               _ body: () throws -> T) throws -> T {
+        do { return try body() } catch let error as BrowserPinsUnreadable {
+            throw BrowserActionError.pinsUnreadable(
+                action: action, file: BrowserOrgFiles.pinsName(project: place.project), reason: error.reason)
+        }
+    }
+
+    /// Full reconcile (ruling 14) of `pane` with its project's pins, when a pane is opened or
+    /// restored. Nothing without a project or an organisation.
+    @Sendable func reconcile(_ pane: String) async {
+        guard let place = try? await pinsPlace("browser_restore") else { return }
+        let pins: Result<[BrowserPin], BrowserPinsUnreadable>
+        do { pins = .success(try place.files.pins(project: place.project)) }
+        catch let error as BrowserPinsUnreadable { pins = .failure(error) }
+        catch { pins = .failure(BrowserPinsUnreadable(reason: error.localizedDescription)) }
+        await panes.browserReconcilePins(paneId: pane, pins: pins)
+    }
+
+    /// Delta reconcile (ruling 14) of every other browser pane on the canvas — `layout.snapshot()`,
+    /// the place on screen only — after a pin, unpin or *Update Pin* in `pane`. A pane left with no
+    /// tab closes, as closing its last tab would.
+    @Sendable func reconcileOthers(_ pane: String, add: BrowserPin?, remove: String?) async {
+        guard let layout else { return }
+        for other in await layout.snapshot().panes where other.kind == kind && other.id != pane {
+            guard let left = await panes.browserApplyPin(paneId: other.id, add: add, remove: remove) else { continue }
+            if left == 0 {
+                try? await layout.close(id: other.id)
+                await panes.drop(paneId: other.id)
+            } else {
+                await persist(other.id)
+            }
+        }
+    }
+
+    /// The group `group` names, else the tab `tab` names, else the active tab.
+    @Sendable func pinTarget(_ s: BrowserSnapshot, _ params: JSONValue, action: String) throws -> BrowserPinTarget {
+        if let group = optionalString(params, "group"), !group.isEmpty {
+            guard s.group(group) != nil else { throw BrowserActionError.noGroup(action: action, group: group) }
+            return .group(group)
+        }
+        let tab = optionalString(params, "tab")
+        guard let i = s.tabIndex(tab) else { throw BrowserActionError.noTab(action: action, tab: tab) }
+        return .tab(s.tabs[i].id)
+    }
+
     /// `typed` by the address rule, refused when it resolves to nothing or to a `javascript:` URL.
     @Sendable func address(_ typed: String) async throws -> String {
         guard let url = BrowserAddress.resolve(typed, searchEngine: await settings().searchEngine) else {
@@ -253,7 +317,12 @@ func browserActions(
     /// A new tab at the end, made active: `url` loads; none opens the start page, and a blank start
     /// page loads nothing and puts the keyboard in the address field. With an `opener` the pane still
     /// has, the opener rule places it (ruling 8); an opener that has closed meanwhile is none.
+    ///
+    /// A pane this store holds nothing for is new — `browserPane(open:)` just opened it, or
+    /// `pane_open` did — and first takes its project's pins (ruling 14's full reconcile), behind the
+    /// new tab, which stays the selected one.
     @Sendable func addTab(_ pane: String, url: String?, opener: String? = nil) async {
+        if !(await panes.holdsContents(paneId: pane)) { await reconcile(pane) }
         var target = url
         if target == nil {
             let start = await settings().startPage.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -628,6 +697,102 @@ func browserActions(
         }))
 
     actions.append(Action(
+        name: "browser_pin",
+        description: "Pin a tab (tab, default the active one) or a group (group, a group id from read_pane's "
+            + "groups; pr is the pull-request group) to the project: it is kept in the project's pins and "
+            + "shows, unloaded, in every browser pane of the project; a closed pinned tab comes back when the "
+            + "pane next opens. A pinned tab leaves its group; a pinned group becomes yours. update true on a "
+            + "pinned tab keeps its page now as the pin (Pin Current Page), on a pinned group its name, colour "
+            + "and tabs (Update Pin); other panes keep the pages they show.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["tab": string, "group": string, "update": .object(["type": .string("boolean")])]),
+        handler: { params in
+            let action = "browser_pin"
+            let pane = try await browserPane(params, action: action).id
+            let place = try await pinsPlace(action)
+            let update = optionalBool(params, "update") == true
+            let s = await panes.browserSnapshot(paneId: pane)
+            let target = try pinTarget(s, params, action: action)
+            var pins = try withPins(action, place) { try place.files.pins(project: place.project) }
+
+            let entry: BrowserPin
+            switch target {
+            case .group(let gid):
+                guard let g = s.group(gid) else { throw BrowserActionError.noGroup(action: action, group: gid) }
+                let id = g.pin ?? BrowserPin.newId()
+                entry = g.kind == .pullRequests
+                    ? BrowserPin(id: id, kind: .pullRequests)
+                    : BrowserPin(id: id, kind: .group, name: g.name, colour: g.colour,
+                                 tabs: s.tabs.filter { $0.group == gid }.map { BrowserPinTab(url: $0.url, title: $0.title) })
+            case .tab(let tid):
+                guard let tab = s.tabs.first(where: { $0.id == tid }) else {
+                    throw BrowserActionError.noTab(action: action, tab: tid)
+                }
+                // A tab of a pinned group is pinned with it.
+                if tab.pin == nil, s.isPinned(tab) { return await reply(pane) }
+                entry = BrowserPin(id: tab.pin ?? BrowserPin.newId(), kind: .tab, url: tab.url, title: tab.title)
+            }
+            let present = pins.firstIndex { $0.id == entry.id }
+            guard present == nil || update else { return await reply(pane) }
+            if let present { pins[present] = entry } else { pins.append(entry) }
+            try withPins(action, place) { try place.files.setPins(pins, project: place.project) }
+
+            await panes.updateBrowser(paneId: pane, create: true) { s in
+                switch target {
+                case .group(let gid):
+                    guard let g = s.groups.firstIndex(where: { $0.id == gid }) else { return }
+                    s.groups[g].pin = entry.id
+                    s.makeOwn(gid)   // ruling 11
+                case .tab(let tid):
+                    guard let i = s.tabs.firstIndex(where: { $0.id == tid }) else { return }
+                    s.tabs[i].pin = entry.id
+                    s.tabs[i].group = nil
+                    s.tabs[i].opener = nil
+                    s.tabs[i].pullRequest = nil
+                }
+                s.arrange()
+            }
+            await persist(pane)
+            await reconcileOthers(pane, add: entry, remove: nil)
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
+        name: "browser_unpin",
+        description: "Unpin a tab (tab, default the active one; a tab of a pinned group unpins the group) or a "
+            + "group (group): it leaves the project's pins and every other browser pane of the project, and "
+            + "stays here, unpinned.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["tab": string, "group": string]),
+        handler: { params in
+            let action = "browser_unpin"
+            let pane = try await browserPane(params, action: action).id
+            let place = try await pinsPlace(action)
+            let s = await panes.browserSnapshot(paneId: pane)
+            let pin: String?
+            switch try pinTarget(s, params, action: action) {
+            case .group(let gid): pin = s.group(gid)?.pin
+            case .tab(let tid):
+                let tab = s.tabs.first { $0.id == tid }
+                pin = tab?.pin ?? tab?.group.flatMap { s.group($0)?.pin }
+            }
+            guard let pin else { return await reply(pane) }
+            var pins = try withPins(action, place) { try place.files.pins(project: place.project) }
+            if pins.contains(where: { $0.id == pin }) {
+                pins.removeAll { $0.id == pin }
+                try withPins(action, place) { try place.files.setPins(pins, project: place.project) }
+            }
+            await panes.updateBrowser(paneId: pane, create: true) { s in
+                for i in s.tabs.indices where s.tabs[i].pin == pin { s.tabs[i].pin = nil }
+                for i in s.groups.indices where s.groups[i].pin == pin { s.groups[i].pin = nil }
+                s.arrange()
+            }
+            await persist(pane)
+            await reconcileOthers(pane, add: nil, remove: pin)
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
         name: "browser_find",
         description: "Open the find bar on the active tab's page and look for query (empty opens the bar "
             + "with nothing to find). read_pane's find answers the match count.",
@@ -771,6 +936,10 @@ func browserActions(
                 await panes.browserRestore(paneId: pane, tabs: saved.tabs, active: saved.active,
                                            groups: saved.groups, columnHidden: saved.columnHidden)
             }
+            // Ruling 14: a restored pane takes the pins added since and drops the ones gone.
+            let before = await panes.browserSnapshot(paneId: pane)
+            await reconcile(pane)
+            if await panes.browserSnapshot(paneId: pane).tabs != before.tabs { await persist(pane) }
             return await reply(pane)
         }))
 

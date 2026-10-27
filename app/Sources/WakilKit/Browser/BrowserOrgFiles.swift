@@ -52,6 +52,7 @@ public enum BrowserClearDataQuestion {
 /// - `history.sqlite` (with `-wal`, `-shm`): the browsing history, 90 days (`BrowserHistory`).
 /// - `bookmarks.json`: the bookmarks; clearing browsing data keeps them.
 /// - `tabs/`: per-tab state, `tabs/<tab-id>.state`.
+/// - `pins/`: each project's pins, `pins/<project>.json` (3d-i, ruling 13); clearing browsing data keeps them.
 public struct BrowserOrgFiles: Sendable, Equatable {
     public let home: URL
     public let org: String
@@ -78,6 +79,16 @@ public struct BrowserOrgFiles: Sendable, Equatable {
     private var bookmarksURL: URL { directory.appendingPathComponent("bookmarks.json") }
     private var historyURL: URL { directory.appendingPathComponent("history.sqlite") }
     private var tabsDirectory: URL { directory.appendingPathComponent("tabs", isDirectory: true) }
+    private var pinsDirectory: URL { directory.appendingPathComponent("pins", isDirectory: true) }
+
+    /// `pins/<project>.json`, the project's registry key encoded (`encoded`'s rule), so a key with a
+    /// slash is one file name.
+    public func pinsURL(project: String) -> URL {
+        pinsDirectory.appendingPathComponent("\(Self.encoded(project)).json")
+    }
+
+    /// The file name `pinsURL(project:)` uses, `pins/<encoded project>.json`, as refusals name it.
+    public static func pinsName(project: String) -> String { "pins/\(encoded(project)).json" }
 
     /// The organisation's history, at `history.sqlite`.
     public var history: BrowserHistory { BrowserHistory(url: historyURL) }
@@ -160,6 +171,31 @@ public struct BrowserOrgFiles: Sendable, Equatable {
         return wanted
     }
 
+    /// The project's pins in the file's order; `[]` when the file is missing. A file that is there but
+    /// cannot be read or parsed throws `BrowserPinsUnreadable`.
+    public func pins(project: String) throws -> [BrowserPin] {
+        let data: Data
+        do {
+            data = try Data(contentsOf: pinsURL(project: project))
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            return []
+        } catch {
+            throw BrowserPinsUnreadable(reason: error.localizedDescription)
+        }
+        do { return try JSONDecoder().decode(BrowserPinsFile.self, from: data).items }
+        catch { throw BrowserPinsUnreadable(reason: error.localizedDescription) }
+    }
+
+    /// Writes the project's pins whole and atomically, making `pins/` on first write. Refuses, writing
+    /// nothing, when the file there cannot be read (ruling 13: never written over).
+    public func setPins(_ pins: [BrowserPin], project: String) throws {
+        _ = try self.pins(project: project)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try FileManager.default.createDirectory(at: pinsDirectory, withIntermediateDirectories: true)
+        try encoder.encode(BrowserPinsFile(items: pins)).write(to: pinsURL(project: project), options: .atomic)
+    }
+
     /// The name a tab's state is kept under (`stateURL(tab:)`): `<scopeKey>.<pane>.<tab>`. Pane and
     /// tab ids repeat from place to place, and one organisation's directory holds every project's,
     /// so the place is in the name. `scopeKey` is a stable digest of the project, environment and
@@ -217,7 +253,8 @@ public struct BrowserOrgFiles: Sendable, Equatable {
     }
 
     /// Deletes `tabs/`, `zoom.json` and the history (`history.sqlite`, `-wal`, `-shm`); `profile.json`
-    /// stays, so the organisation keeps its id, and `bookmarks.json` stays, as Safari's Clear History keeps them.
+    /// stays, so the organisation keeps its id, and `bookmarks.json` and `pins/` stay, as Safari's Clear
+    /// History keeps bookmarks.
     func removeEverythingButTheProfile() throws {
         // -wal and -shm go before the database: a writer opening between the removals could otherwise replay a stale WAL.
         let historyFiles = ["-wal", "-shm", ""].map { URL(fileURLWithPath: historyURL.path + $0) }
