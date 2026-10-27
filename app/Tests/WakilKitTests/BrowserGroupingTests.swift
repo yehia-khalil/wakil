@@ -130,9 +130,47 @@ struct BrowserGroupingTests {
                      groups: [auto("g1", "family:youtube")], nextGroup: 2)
         s.tabs[1].url = "https://www.google.com/"
         s.placeLoaded(tab: "t2")
+        #expect(groupOf(s, "t2") == "g1", "one finished load on another site moves nothing")
+        #expect(s.tabs[1].pendingSite == "google.com")
+        s.tabs[1].url = "https://www.google.com/search?q=x"
+        s.placeLoaded(tab: "t2")
         #expect(s.groups.isEmpty)
         #expect(groupOf(s, "t1") == nil)
         #expect(groupOf(s, "t2") == nil)
+        #expect(s.tabs[1].pendingSite == nil && s.tabs[1].placedSite == "google.com")
+    }
+
+    /// Review Focus 1: a sign-in page that *finishes* loading (an SSO page, a SAML auto-submit) on
+    /// the way back to the tab's site neither takes it out of its group nor starts a group there.
+    @Test func aSignInPageThatFinishesLoadingDoesNotRegroup() {
+        var s = pane([
+            tab("t1", "https://github.com/initech/a", group: "g1"),
+            tab("t2", "https://github.com/initech/b", group: "g1"),
+            tab("t3", "https://mail.google.com/mail/u/0/"),
+        ], groups: [auto("g1", "family:github", name: "GitHub")], nextGroup: 2)
+        s.arrange()
+        let before = s.groups
+        s.tabs[1].url = "https://accounts.google.com/signin"
+        s.placeLoaded(tab: "t2")
+        #expect(groupOf(s, "t2") == "g1")
+        #expect(s.groups == before, "no Google group with the loose Gmail tab")
+        s.tabs[1].url = "https://github.com/initech/b/pulls"
+        s.placeLoaded(tab: "t2")
+        #expect(s.groups == before, "same group, same id")
+        #expect(groupOf(s, "t2") == "g1")
+        #expect(groupOf(s, "t3") == nil)
+        #expect(s.tabs[1].pendingSite == nil)
+
+        // A tab placed loose waits too: one finished load next to the Gmail tab groups nothing.
+        var l = pane([tab("t1", "https://github.com/initech/a"), tab("t2", "https://mail.google.com/")])
+        l.placeLoaded(tab: "t1")
+        #expect(l.tabs[0].placedSite == "family:github")
+        l.tabs[0].url = "https://accounts.google.com/o/saml2"
+        l.placeLoaded(tab: "t1")
+        #expect(l.groups.isEmpty)
+        l.tabs[0].url = "https://github.com/initech/a"
+        l.placeLoaded(tab: "t1")
+        #expect(l.groups.isEmpty && l.tabs[0].pendingSite == nil)
     }
 
     @Test func aTabThatCameByOpenerStaysWhenItNavigates() {
@@ -371,6 +409,7 @@ struct BrowserGroupingTests {
         ], groups: [auto("g1", "family:youtube"), auto("g2", "family:github")], nextGroup: 3)
         s.tabs[1].url = "https://www.google.com/"
         s.placeLoaded(tab: "b")
+        s.placeLoaded(tab: "b")   // two finished loads on another site move it (Review Focus 1)
         #expect(s.groups.map(\.id) == ["g2"])
         #expect(ids(s) == ["c", "d", "a", "b", "e"])
     }

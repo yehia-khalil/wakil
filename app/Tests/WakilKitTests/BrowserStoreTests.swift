@@ -336,6 +336,33 @@ private func array(_ value: JSONValue?) -> [JSONValue] {
     #expect(s.tabs.first { $0.id == "t3" }?.group == nil)
 }
 
+/// Review Focus 1, a sign-in page that finishes loading: a grouped GitHub tab whose load ends on
+/// accounts.google.com, then on github.com, keeps its group — and starts no Google group with a
+/// loose Gmail tab. Two finished loads elsewhere do move it.
+@Test func aSignInPageThatFinishesLoadingKeepsTheTabsGroup() async {
+    let store = await browserStore(["t1", "t2", "t3"])
+    await load(store, "t1", "https://github.com/initech/app")
+    await load(store, "t2", "https://github.com/initech/api")
+    await load(store, "t3", "https://mail.google.com/mail/u/0/")
+    let before = await store.browserSnapshot(paneId: pane)
+    #expect(before.groups.map(\.siteKey) == ["family:github"])
+    await load(store, "t2", "https://accounts.google.com/signin")
+    var s = await store.browserSnapshot(paneId: pane)
+    #expect(s.groups == before.groups, "the sign-in page moves nothing")
+    #expect(s.tabs.first { $0.id == "t2" }?.group == "g1")
+    await load(store, "t2", "https://github.com/initech/api/pulls")
+    s = await store.browserSnapshot(paneId: pane)
+    #expect(s.groups == before.groups, "same group, same id, no Google group")
+    #expect(s.tabs.first { $0.id == "t2" }?.group == "g1")
+    #expect(s.tabs.first { $0.id == "t3" }?.group == nil)
+
+    await load(store, "t2", "https://accounts.google.com/a")
+    await load(store, "t2", "https://www.google.com/")
+    s = await store.browserSnapshot(paneId: pane)
+    #expect(s.tabs.first { $0.id == "t2" }?.group != "g1", "a second finished load elsewhere moves it")
+    #expect(s.groups.first { $0.siteKey == "google.com" } != nil, "with the Gmail tab it forms Google's group")
+}
+
 @Test func aPopupJoinsItsOpenersGroup() async {
     let store = await browserStore(["t1", "t2", "t3"])
     await store.updateBrowser(paneId: pane) { s in

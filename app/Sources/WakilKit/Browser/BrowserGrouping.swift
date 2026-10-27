@@ -40,21 +40,38 @@ extension BrowserSnapshot {
     }
 
     /// Ruling 9, run when `tab`'s load finishes. A pinned, kept-loose or pull-request tab never moves.
+    ///
+    /// Review Focus 1: a tab already placed moves only after **two** consecutive finished loads on a
+    /// site other than the one it was placed on, so a sign-in page that finishes loading on its way
+    /// back (an SSO page, a SAML auto-submit) neither takes it out of its group nor starts one. A
+    /// finished load back on its site clears the wait. A tab never placed is placed at once.
     public mutating func placeLoaded(tab: String) {
         defer { arrange() }
         guard let t = tabIndex(tab) else { return }
         let current = tabs[t]
         guard !isPinned(current), !current.keptLoose, current.pullRequest == nil else { return }
         let key = BrowserSiteKey.of(current.url)
+        let site = key ?? ""
+        var siteGroup: String?
         if let gid = current.group, let g = group(gid) {
             switch g.kind {
             case .own, .pullRequests: return
             case .automatic:
                 // A tab that came by opener stays; so does any tab of an opener chain (no site key).
-                if current.opener != nil || g.siteKey == nil || g.siteKey == key { return }
-                tabs[t].group = nil
-                tabs[t].opener = nil
+                if current.opener != nil || g.siteKey == nil { return }
+                siteGroup = g.siteKey
             }
+        }
+        if let placed = current.placedSite ?? siteGroup, placed != site, current.pendingSite == nil {
+            tabs[t].pendingSite = site
+            return
+        }
+        tabs[t].pendingSite = nil
+        tabs[t].placedSite = site
+        if let siteGroup {
+            if siteGroup == key { return }
+            tabs[t].group = nil
+            tabs[t].opener = nil
         }
         guard let key else { return }
         if let g = groups.first(where: { $0.kind == .automatic && $0.siteKey == key }) {

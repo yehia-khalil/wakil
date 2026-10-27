@@ -89,14 +89,24 @@ public struct BrowserTab: Sendable, Equatable, Codable {
     public var keptLoose: Bool
     /// The pull request this tab lists (ruling 18), its URL; such a tab is never saved.
     public var pullRequest: String?
+    /// The site key the site rule last placed it by (`""` for a page with no site key); nil until a
+    /// finished load first places it. Not saved: a restored tab in an automatic site group counts
+    /// as placed on that group's key.
+    public var placedSite: String?
+    /// A finished load on a site other than `placedSite`, waiting for a second one before the tab
+    /// moves (a sign-in hop through another host comes back after one).
+    public var pendingSite: String?
 
     public init(
         id: String, url: String, title: String, isLoading: Bool = false, progress: Double = 0,
         canGoBack: Bool = false, canGoForward: Bool = false, failure: String? = nil, zoom: Double = 1,
         loaded: Bool = false, command: BrowserCommand? = nil, fromSavedLayout: Bool = false,
         lastRead: BrowserReadStamp? = nil, refsIssued: Int = 0, group: String? = nil, opener: String? = nil,
-        pin: String? = nil, keptLoose: Bool = false, pullRequest: String? = nil
+        pin: String? = nil, keptLoose: Bool = false, pullRequest: String? = nil,
+        placedSite: String? = nil, pendingSite: String? = nil
     ) {
+        self.placedSite = placedSite
+        self.pendingSite = pendingSite
         self.group = group
         self.opener = opener
         self.pin = pin
@@ -121,6 +131,7 @@ public struct BrowserTab: Sendable, Equatable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, url, title, isLoading, progress, canGoBack, canGoForward, failure, zoom, loaded
         case command, fromSavedLayout, lastRead, refsIssued, group, opener, pin, keptLoose, pullRequest
+        case placedSite, pendingSite
     }
 
     public init(from decoder: Decoder) throws {
@@ -144,6 +155,8 @@ public struct BrowserTab: Sendable, Equatable, Codable {
         pin = try c.decodeIfPresent(String.self, forKey: .pin)
         keptLoose = try c.decodeIfPresent(Bool.self, forKey: .keptLoose) ?? false
         pullRequest = try c.decodeIfPresent(String.self, forKey: .pullRequest)
+        placedSite = try c.decodeIfPresent(String.self, forKey: .placedSite)
+        pendingSite = try c.decodeIfPresent(String.self, forKey: .pendingSite)
     }
 }
 
