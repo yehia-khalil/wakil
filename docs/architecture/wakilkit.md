@@ -206,10 +206,19 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   while none is active; the registered actions ask for the caller's own. WebKit keeps the store's own
   files under `~/Library/WebKit/`, outside Wakil's reach, so deleting them goes through `removeData`.
   `BrowserClearDataQuestion` is the Settings confirmation's copy and its Keep it / Delete labels.
+  3c-iii adds `bookmarks.json` here (matched by exact URL, never written over when unreadable) and
+  `history.sqlite`; clearing browsing data deletes the history and keeps the bookmarks.
+- `BrowserHistory.swift` — `BrowserHistory` (3c-iii): one organisation's visits in SQLite, kept 90 days;
+  `record` on load, `matching` for the address field.
+- `BrowserSuggestions.swift` — `BrowserSuggestions` (3c-iii): the ranking (open tabs, bookmarks, history,
+  scored before they are cut) and the inline `completion`; `BrowserEngineSuggest`, the search engine's
+  own suggestions, behind the `searchSuggestions` setting (off by default).
+- `BrowserAddressInput.swift` — `BrowserAddressInput` (3c-iii): the address field's key and completion
+  state machine (↓ ↑ Return Esc, ⌫ after a completion); `BrowserBookmarkChoices` is the ★ menu.
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `WindowModelBrowserTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 
@@ -585,6 +594,8 @@ Tests: `ListeningMachineTests`, `ScriptedSpeechProviderTests`, `SpeechRegistryTe
 - `ShellIntegration.swift` — `shellLaunch`, `terminalChildEnvironment`.
 - `ActiveShellContext.swift` — `ActiveShellContext`: the window's live org, project and environment
   for a new shell.
+- `TerminalLinks.swift` — `TerminalLinks` (3c-iii): the URLs in a terminal row, cut in UTF-16 units over
+  the joined row so a link can span style runs; ⌘-click opens one in Wakil's browser, ⌘⌥ in the system's.
 - `TerminalMirror.swift` (`TerminalMirrorFeed`: the agent's `Bash` calls mirrored into panes),
   `TerminalBlock.swift`, `TerminalLineEdit.swift`, `TerminalMarkScanner.swift`,
   `TerminalAnsiColor.swift`, `TerminalPaneSupport.swift`.

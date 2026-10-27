@@ -57,7 +57,7 @@ video, they are a developer, and they keep work, local testing, study and home b
      operator's.
 7. **No forced dark mode.** Wakil runs in dark appearance, so sites with a dark theme already show it.
    Pages without one stay as they are.
-8. **Address-bar suggestions** as 3c-iii plans them: open tabs, then bookmarks, then history, with the
+8. **Address-bar suggestions (built, 3c-iii)** as it planned them: open tabs, then bookmarks, then history, with the
    address completed inline. Suggestions from the search engine come as a setting, off by default,
    because they send every keystroke to the engine.
 
