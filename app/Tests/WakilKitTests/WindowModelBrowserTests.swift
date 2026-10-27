@@ -51,6 +51,108 @@ private func browserWindow(
         return (model, pane, layout, journal, panes)
     }
 
+    // MARK: 3d-i Task 9: ⌘W twice on a pinned tab, the tab column
+
+    /// A fixed, steppable clock for `browserNow`.
+    private final class Clock: @unchecked Sendable {
+        var now = Date(timeIntervalSince1970: 5_000)
+    }
+
+    /// The pane's second tab, `t2`, added; returns the clock the model reads.
+    private func twoTabs(_ model: WindowModel, _ pane: String, _ panes: PaneStore, pinned: Bool) async throws -> Clock {
+        await model.dispatchFromSurface("browser_new_tab", .object(["pane": .string(pane),
+                                                                    "url": .string("https://b.test/")]))
+        await model.refreshPanes()
+        let clock = Clock()
+        model.browserNow = { [clock] in clock.now }
+        if pinned {
+            let id = try #require(model.browser(pane)?.active)
+            await panes.updateBrowser(paneId: pane, create: true) { s in
+                for i in s.tabs.indices where s.tabs[i].id == id { s.tabs[i].pin = "pin1" }
+            }
+            await model.refreshPanes()
+        }
+        return clock
+    }
+
+    @Test func anUnpinnedTabClosesOnTheFirstPress() async throws {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        _ = try await twoTabs(model, pane, panes, pinned: false)
+        #expect(model.browser(pane)?.tabs.count == 2)
+        #expect(await model.browserKey(.closeTab))
+        #expect(model.browser(pane)?.tabs.count == 1)
+        #expect(model.browserCloseArm == nil)
+    }
+
+    @Test func aPinnedTabTakesTwoPresses() async throws {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        let clock = try await twoTabs(model, pane, panes, pinned: true)
+        let tab = try #require(model.browser(pane)?.active)
+        #expect(await model.browserKey(.closeTab))
+        #expect(model.browser(pane)?.tabs.count == 2, "the first press only arms")
+        #expect(model.browserCloseArm?.tab == tab)
+        clock.now = clock.now.addingTimeInterval(1)
+        #expect(await model.browserKey(.closeTab))
+        #expect(model.browser(pane)?.tabs.count == 1, "the second press within 2 s closes")
+        #expect(model.browserCloseArm == nil)
+    }
+
+    @Test func aPressAfterTwoSecondsOnAPinnedTabArmsAgain() async throws {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        let clock = try await twoTabs(model, pane, panes, pinned: true)
+        _ = await model.browserKey(.closeTab)
+        clock.now = clock.now.addingTimeInterval(3)
+        _ = await model.browserKey(.closeTab)
+        #expect(model.browser(pane)?.tabs.count == 2)
+        #expect(model.browserCloseArm != nil)
+    }
+
+    @Test func aTabOfAPinnedGroupCountsAsPinned() async throws {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        let clock = try await twoTabs(model, pane, panes, pinned: false)
+        _ = clock
+        let id = try #require(model.browser(pane)?.active)
+        await panes.updateBrowser(paneId: pane, create: true) { s in
+            s.groups.append(BrowserGroup(id: "g1", name: "G", colour: .blue, kind: .own, pin: "pin2"))
+            for i in s.tabs.indices where s.tabs[i].id == id { s.tabs[i].group = "g1" }
+        }
+        await model.refreshPanes()
+        #expect(await model.browserKey(.closeTab))
+        #expect(model.browser(pane)?.tabs.count == 2, "a tab of a pinned group arms, not closes")
+        #expect(model.browserCloseArm?.tab == id)
+    }
+
+    @Test func theAgentClosesAPinnedTabInOneCall() async throws {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        _ = try await twoTabs(model, pane, panes, pinned: true)
+        await model.dispatchFromSurface("browser_close_tab", .object(["pane": .string(pane)]))
+        await model.refreshPanes()
+        #expect(model.browser(pane)?.tabs.count == 1)
+    }
+
+    @Test func tabColumnTogglesAndIsSaved() async throws {
+        let (model, pane, layout, _, _) = try await focusedBrowserAndPanes()
+        await model.dispatchFromSurface("browser_tab_column", .object(["pane": .string(pane)]))
+        await model.refreshPanes()
+        #expect(model.browser(pane)?.tabColumnHidden == true)
+        #expect(await layout.snapshot().panes.first { $0.id == pane }?.browserColumnHidden == true)
+        await model.dispatchFromSurface("browser_tab_column", .object(["pane": .string(pane), "hidden": .bool(true)]))
+        await model.refreshPanes()
+        #expect(model.browser(pane)?.tabColumnHidden == true, "hidden true sets, it does not toggle")
+        await model.dispatchFromSurface("browser_tab_column", .object(["pane": .string(pane), "hidden": .bool(false)]))
+        await model.refreshPanes()
+        #expect(model.browser(pane)?.tabColumnHidden == false)
+    }
+
+    @Test func toggleTabColumnPassesTheKeyInHorizontalMode() async throws {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        #expect(await !model.browserKey(.toggleTabColumn))
+        #expect(model.browser(pane)?.tabColumnHidden == false)
+        model.browserSettings = SettingsBrowser(searchEngine: "google", startPage: "", tabs: "vertical")
+        #expect(await model.browserKey(.toggleTabColumn))
+        #expect(model.browser(pane)?.tabColumnHidden == true)
+    }
+
     // MARK: 3c-iii Task 5: visits recorded, suggestions answered
 
     /// A report for the active tab of `pane`.

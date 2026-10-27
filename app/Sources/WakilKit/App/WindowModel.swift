@@ -2304,6 +2304,7 @@ public final class WindowModel {
         // 3c-ii: the sites describe the outgoing organisation's environments; unread, every site
         // prices as production until the incoming org's tree is read.
         browserSites = .unread
+        clearBrowserCloseArm()
         browserAllowedOnScreen = []
         browserBookmarksOnScreen = []
         // The store's copy for the outgoing org goes too: coming back before a re-read must not
@@ -5722,6 +5723,29 @@ public final class WindowModel {
 
     // MARK: Browser (3c-i)
 
+    /// A first ⌘W on a pinned tab, until the second, 2 s, or any close (ruling 15). Observed: the
+    /// view draws the tip while it is set. Org-derived: `invalidateForOrgChange` clears it.
+    public private(set) var browserCloseArm: BrowserCloseArm?
+    /// The clock ⌘W's two presses are timed by (a test seam).
+    @ObservationIgnored var browserNow: @Sendable () -> Date = { Date() }
+    @ObservationIgnored private var browserCloseArmTask: Task<Void, Never>?
+
+    private func armBrowserClose(_ arm: BrowserCloseArm) {
+        browserCloseArmTask?.cancel()
+        browserCloseArm = arm
+        browserCloseArmTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(BrowserPinnedClose.window))
+            guard !Task.isCancelled, let self, self.browserCloseArm == arm else { return }
+            self.browserCloseArm = nil
+        }
+    }
+
+    private func clearBrowserCloseArm() {
+        browserCloseArmTask?.cancel()
+        browserCloseArmTask = nil
+        browserCloseArm = nil
+    }
+
     /// The pane the browser's keys act on: the focused pane if it is a browser.
     var focusedBrowser: String? {
         guard let id = layoutSnapshot.focusedId,
@@ -5744,7 +5768,19 @@ public final class WindowModel {
                 _ = await closePane(id: pane)
                 return true
             }
+            // Ruling 15: a pinned tab (or a tab of a pinned group) takes two presses within 2 s.
+            if let active = s.activeTab, s.isPinned(active) {
+                let now = browserNow()
+                if BrowserPinnedClose.press(browserCloseArm, pane: pane, tab: active.id, now: now) == .arm {
+                    armBrowserClose(BrowserCloseArm(pane: pane, tab: active.id, at: now))
+                    return true
+                }
+            }
+            clearBrowserCloseArm()
             name = "browser_close_tab"
+        case .toggleTabColumn:
+            guard browserSettings.tabs == "vertical" else { return false }
+            name = "browser_tab_column"
         case .reopenTab: name = "browser_reopen_tab"
         case .focusAddress:
             guard s.activeTab != nil else { return true }

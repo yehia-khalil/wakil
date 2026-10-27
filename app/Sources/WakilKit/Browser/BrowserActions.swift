@@ -491,6 +491,22 @@ func browserActions(
         }))
 
     actions.append(Action(
+        name: "browser_tab_column",
+        description: "Hide or show the vertical tab column of a browser pane (hidden true or false; omitted "
+            + "toggles). Saved with the pane.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["hidden": .object(["type": .string("boolean")])]),
+        handler: { params in
+            let pane = try await browserPane(params, action: "browser_tab_column").id
+            let hidden = optionalBool(params, "hidden")
+            await panes.updateBrowser(paneId: pane, create: true) { s in
+                s.tabColumnHidden = hidden ?? !s.tabColumnHidden
+            }
+            await persist(pane)
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
         name: "browser_reopen_tab",
         description: "Reopen the tab closed most recently in a browser pane, at the end of its tabs (in its "
             + "group, if the pane still has it), and select it.",
@@ -1006,7 +1022,7 @@ public func decodeBrowserSettings(fromResult result: JSONValue?) -> SettingsBrow
 /// The keys a focused browser pane takes over (global constraints); `WindowModel.browserKey` acts
 /// on them. Elsewhere each keeps today's meaning.
 public enum BrowserKey: Sendable, Equatable {
-    case newTab, closeTab, reopenTab, focusAddress, reload, back, forward, find, findNext, findPrevious
+    case newTab, closeTab, toggleTabColumn, reopenTab, focusAddress, reload, back, forward, find, findNext, findPrevious
     case zoomIn, zoomOut, zoomReset, nextTab, previousTab, bookmark
     /// ⌘1–8 tab N; ⌘9 the last tab.
     case tab(Int)

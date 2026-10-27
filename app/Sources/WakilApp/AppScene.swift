@@ -547,6 +547,9 @@ struct WakilApplication: App {
                 }
                 Button("Last Tab") { browserKey(.tab(9)) }
                     .keyboardShortcut("9", modifiers: .command)
+                Divider()
+                Button("Toggle Tab Column") { browserKey(.toggleTabColumn) }
+                    .keyboardShortcut("s", modifiers: [.control, .command])
             }
         }
     }
