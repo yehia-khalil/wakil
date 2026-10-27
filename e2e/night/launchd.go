@@ -3,6 +3,8 @@ package night
 import (
 	"fmt"
 	"html"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -36,7 +38,7 @@ func Plist(binary, repo, logPath, path string) string {
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>PATH</key>
-		<string>%s</string>
+		<string>%s</string>%s
 	</dict>
 	<key>StandardOutPath</key>
 	<string>%s</string>
@@ -44,7 +46,19 @@ func Plist(binary, repo, logPath, path string) string {
 	<string>%s</string>
 </dict>
 </plist>
-`, Label, esc(binary), esc(repo), startHour, esc(path), esc(logPath), esc(logPath))
+`, Label, esc(binary), esc(repo), startHour, esc(path), profile(), esc(logPath), esc(logPath))
+}
+
+// profile carries the installer's Claude profile into the job, so the fixer
+// runs as the same account, settings and proxy as the operator's sessions.
+func profile() string {
+	var b strings.Builder
+	for _, name := range []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_BASE_URL"} {
+		if v := os.Getenv(name); v != "" {
+			fmt.Fprintf(&b, "\n\t\t<key>%s</key>\n\t\t<string>%s</string>", name, html.EscapeString(v))
+		}
+	}
+	return b.String()
 }
 
 // LastNight is the most recent night that should have finished by now: the

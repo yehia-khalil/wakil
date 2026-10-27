@@ -202,5 +202,6 @@
 
 The night runs `main`'s Makefile, so `E2E_KEEP_GOING` only exists for it once Task 1 is on `main`. Installing earlier would make the first nights stop at the first red file.
 
-- [ ] **Step 1:** After the merge, `make e2e-night-install` from a checkout of the merged `main`. Expected: `launchctl print gui/$(id -u)/com.yehia-khalil.wakil.e2e-night` shows the job with a calendar trigger at 23:00.
+- [ ] **Step 1:** After the merge, `make e2e-night-install` from a checkout of the merged `main`.
+- [ ] **Step 1b (operator):** grant the binary it prints Accessibility, Screen Recording and Files and Folders › Desktop in System Settings › Privacy & Security. Added after the final review: under launchd no terminal lends its grants, and a night without them reports `did not start`. Expected: `launchctl print gui/$(id -u)/com.yehia-khalil.wakil.e2e-night` shows the job with a calendar trigger at 23:00.
 - [ ] **Step 2:** Tell the operator the first night is tonight and what to run in the morning (`make e2e-night-status`). Do not trigger a run in the day.

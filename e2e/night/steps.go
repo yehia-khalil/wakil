@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/template"
@@ -60,7 +61,8 @@ func RealSteps(repo string, store Store, out io.Writer) (Steps, error) {
 			}
 			return gitOut(repo, "rev-parse", "origin/main")
 		},
-		Prepare: func(commit string) error { return PrepareWorktree(repo, wt, commit) },
+		Prepare:   func(commit string) error { return PrepareWorktree(repo, wt, commit) },
+		Preflight: func() error { return preflight(wt, out) },
 		Suite: func(deadline time.Time) (SuiteRun, error) {
 			return suite(wt, deadline, out, []string{"e2e-full", "E2E_KEEP_GOING=1"})
 		},
@@ -78,7 +80,9 @@ func RealSteps(repo string, store Store, out io.Writer) (Steps, error) {
 			if err != nil {
 				return err
 			}
-			timedOut, _, err := runUntil(wt, in.Deadline, out, claude, "-p", prompt, "--permission-mode", "bypassPermissions")
+			cmd := fixerCommand(wt, claude, prompt)
+			cmd.Stdout, cmd.Stderr = out, out
+			timedOut, _, err := runUntil(cmd, in.Deadline)
 			if timedOut {
 				return fmt.Errorf("stopped at %s to leave time for the re-run", in.Deadline.Format("15:04"))
 			}
@@ -109,7 +113,7 @@ func RealSteps(repo string, store Store, out io.Writer) (Steps, error) {
 // coverage gate (a bundle that did not build, say) is an error, never a run.
 func suite(wt string, deadline time.Time, out io.Writer, args []string) (SuiteRun, error) {
 	start := time.Now()
-	timedOut, _, err := runUntil(wt, deadline, out, "make", args...)
+	timedOut, _, err := runUntil(command(wt, out, "make", args...), deadline)
 	if timedOut {
 		TearDownFixtures()
 	}
@@ -126,7 +130,7 @@ func suite(wt string, deadline time.Time, out io.Writer, args []string) (SuiteRu
 		return run, nil
 	}
 	var cover bytes.Buffer
-	if _, _, coverErr := runUntil(wt, deadline, io.MultiWriter(out, &cover), "make", "e2e-cover"); coverErr != nil {
+	if _, _, coverErr := runUntil(command(wt, io.MultiWriter(out, &cover), "make", "e2e-cover"), deadline); coverErr != nil {
 		run.CoverRed = cover.String()
 	}
 	if len(run.Red) == 0 && run.CoverRed == "" {
@@ -136,11 +140,15 @@ func suite(wt string, deadline time.Time, out io.Writer, args []string) (SuiteRu
 	return run, nil
 }
 
-// runUntil runs a command in dir in its own process group, killing the whole
-// group at deadline. It returns the group id so a caller can confirm it is gone.
-func runUntil(dir string, deadline time.Time, out io.Writer, name string, args ...string) (timedOut bool, pgid int, err error) {
+func command(dir string, out io.Writer, name string, args ...string) *exec.Cmd {
 	cmd := exec.Command(name, args...)
 	cmd.Dir, cmd.Stdout, cmd.Stderr = dir, out, out
+	return cmd
+}
+
+// runUntil runs cmd in its own process group, killing the whole group at
+// deadline. It returns the group id so a caller can confirm it is gone.
+func runUntil(cmd *exec.Cmd, deadline time.Time) (timedOut bool, pgid int, err error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return false, 0, err
@@ -170,10 +178,19 @@ func TearDownFixtures() {
 	exec.Command("pkill", "-f", "WakilE2E.app/Contents/MacOS/").Run()
 }
 
-// ScreenBusy says whether any e2e run holds the screen: a Wakil fixture, or a
-// driver between two of its launches.
+// busyPatterns are the command lines (pgrep -f, extended regex) of an e2e run
+// that holds or is about to take the screen: a Wakil fixture, a driver between
+// two launches, `make e2e-new` building its merge-base bundle, or any make
+// e2e target still building. Each is bracketed so pgrep never matches itself.
+var busyPatterns = []string{
+	"[W]akilE2E.app/Contents/MacOS/",
+	"[e]2e/cmd/wakil-e2e(-new|-select)?( |$)",
+	"[m]ake( [^ ]+)* e2e(-new|-full|-run)?( |$)",
+}
+
+// ScreenBusy says whether any e2e run holds, or is about to take, the screen.
 func ScreenBusy() (bool, error) {
-	for _, pattern := range []string{"[W]akilE2E.app/Contents/MacOS/", "[e]2e/cmd/wakil-e2e( |$)"} {
+	for _, pattern := range busyPatterns {
 		err := exec.Command("pgrep", "-f", pattern).Run()
 		if err == nil {
 			return true, nil
@@ -239,4 +256,70 @@ func gitOut(dir string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// fixerEnv is the fixer's environment with pushing cut off below the prompt:
+// origin's push URL goes nowhere and gh gets a token that authenticates as
+// no one. "Never push" must not rest on the model reading a sentence.
+func fixerEnv(env []string) []string {
+	return append(env,
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=remote.origin.pushurl",
+		"GIT_CONFIG_VALUE_0=no-push://the-night-fixer-never-pushes",
+		"GH_TOKEN=the-night-fixer-never-posts",
+		"GITHUB_TOKEN=the-night-fixer-never-posts",
+	)
+}
+
+// fixerCommand is the headless Claude session that fixes the night's reds.
+func fixerCommand(wt, claude, prompt string) *exec.Cmd {
+	cmd := exec.Command(claude, "-p", prompt,
+		"--permission-mode", "bypassPermissions",
+		"--disallowedTools", "Bash(git push:*)", "Bash(gh:*)")
+	cmd.Dir, cmd.Env = wt, fixerEnv(os.Environ())
+	return cmd
+}
+
+func errNoAccessibility(binary string) error {
+	return fmt.Errorf("%s is not trusted for Accessibility, so no check could read the window. "+
+		"Grant it in System Settings > Privacy & Security > Accessibility (and Screen Recording, for "+
+		"the evidence screenshots); the grant holds until `make e2e-night-install` builds a different binary", binary)
+}
+
+// axTrusted reads axresolve's reply: only a refused trust check is this job's
+// problem; anything else is left to the suite to report.
+func axTrusted(binary string, reply []byte) error {
+	if bytes.Contains(reply, []byte("accessibility_denied")) {
+		return errNoAccessibility(binary)
+	}
+	return nil
+}
+
+// preflight asks axresolve, as this job, whether it may read the window. It
+// reads only this process's own frontmost state and touches nothing.
+func preflight(wt string, out io.Writer) error {
+	if _, _, err := runUntil(command(wt, out, "make", "axresolve"), time.Now().Add(10*time.Minute)); err != nil {
+		return fmt.Errorf("building axresolve: %w", err)
+	}
+	reply, _ := exec.Command(filepath.Join(wt, "e2e", "bin", "axresolve"),
+		"--pid", strconv.Itoa(os.Getpid()), "--frontmost").CombinedOutput()
+	self, err := os.Executable()
+	if err != nil {
+		self = "wakil-e2e-night"
+	}
+	return axTrusted(self, reply)
+}
+
+// ReplaceIfChanged moves fresh over dst only when their bytes differ. macOS
+// ties privacy grants to the binary, so reinstalling an identical build must
+// leave the granted one in place.
+func ReplaceIfChanged(fresh, dst string) (bool, error) {
+	a, err := os.ReadFile(fresh)
+	if err != nil {
+		return false, err
+	}
+	if b, err := os.ReadFile(dst); err == nil && bytes.Equal(a, b) {
+		return false, os.Remove(fresh)
+	}
+	return true, os.Rename(fresh, dst)
 }

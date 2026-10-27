@@ -30,7 +30,8 @@ func (f *fakeNight) steps() Steps {
 			f.calls = append(f.calls, "quiet")
 			return f.quiet, nil
 		},
-		Fetch: func() (string, error) { f.calls = append(f.calls, "fetch"); return f.main, nil },
+		Fetch:     func() (string, error) { f.calls = append(f.calls, "fetch"); return f.main, nil },
+		Preflight: func() error { return nil },
 		Prepare: func(commit string) error {
 			f.calls = append(f.calls, "prepare "+commit)
 			return nil
@@ -209,4 +210,54 @@ func TestACoverageRedIsReportedNotFixed(t *testing.T) {
 		t.Fatalf("result %+v, calls %v", r, f.calls)
 	}
 	assertWritten(t, store, r)
+}
+
+func TestAMissedNightIsFiledUnderTheNightItMissed(t *testing.T) {
+	f, store := newFake(t)
+	f.now = at(28, 8, 30)
+	r := Run(f.steps(), store)
+	if !r.Night.Equal(at(27, 0, 0)) {
+		t.Fatalf("filed under %s, want the night of Oct 27", r.Night)
+	}
+	assertWritten(t, store, r)
+}
+
+func TestARunOutsideTheWindowNeverOverwritesARealNight(t *testing.T) {
+	f, store := newFake(t)
+	store.WriteResult(Result{Night: at(27, 0, 0), Outcome: Green, Main: "main2"})
+	f.now = at(28, 8, 30)
+	Run(f.steps(), store)
+	if _, body, _ := store.Latest(); !strings.Contains(body, "green") {
+		t.Fatalf("the real night was overwritten:\n%s", body)
+	}
+}
+
+func TestASuiteThatCannotFinishBy7IsNotStarted(t *testing.T) {
+	f, store := newFake(t)
+	f.now = at(28, 6, 30)
+	r := Run(f.steps(), store)
+	if r.Outcome != DidNotStart || f.called("suite") || !strings.Contains(r.Reason, "07:00") {
+		t.Fatalf("result %+v, calls %v", r, f.calls)
+	}
+}
+
+func TestAJobWithoutAccessibilityDoesNotStart(t *testing.T) {
+	f, store := newFake(t)
+	steps := f.steps()
+	steps.Preflight = func() error { return errNoAccessibility("/x/bin/wakil-e2e-night") }
+	r := Run(steps, store)
+	if r.Outcome != DidNotStart || f.called("suite") || !strings.Contains(r.Reason, "Accessibility") {
+		t.Fatalf("result %+v, calls %v", r, f.calls)
+	}
+}
+
+func TestTheFixBranchIsReleasedAndCleanedBeforeTheRerun(t *testing.T) {
+	f, store := newFake(t)
+	f.first = twoRed
+	f.commits = []string{"f00d123 fix"}
+	Run(f.steps(), store)
+	got := strings.Join(f.calls, ",")
+	if !strings.Contains(got, "fix,prepare e2e-night/2026-10-27,rerun") {
+		t.Fatalf("calls %s: want the worktree detached and cleaned at the fix branch between fix and rerun", got)
+	}
 }

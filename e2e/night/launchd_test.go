@@ -45,3 +45,20 @@ func TestTheLastNightThatShouldHaveRun(t *testing.T) {
 		}
 	}
 }
+
+func TestPlistCarriesTheClaudeProfileItWasInstalledWith(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("ANTHROPIC_BASE_URL", "")
+	plist := Plist("/b", "/r", "/l", "/usr/bin")
+	if strings.Contains(plist, "CLAUDE_CONFIG_DIR") {
+		t.Fatal("an unset profile was written")
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "/profiles/abc")
+	t.Setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
+	plist = Plist("/b", "/r", "/l", "/usr/bin")
+	for _, want := range []string{"<key>CLAUDE_CONFIG_DIR</key>", "<string>/profiles/abc</string>", "<key>ANTHROPIC_BASE_URL</key>"} {
+		if !strings.Contains(plist, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+}

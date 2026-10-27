@@ -32,8 +32,8 @@ fix it a second time.
   (`<area>: <what changed>`, as in `git log`), with no `Co-Authored-By` or
   "Generated with" lines.
 - One fix round. If you cannot fix something, stop and write down what you found.
-- You never pushes, never opens or comments on a PR or issue, never posts anywhere.
-  (Plainly: never push.)
+- Never push, never open or comment on a PR or issue, never post anywhere. Pushing
+  and `gh` are cut off in your environment; do not try to work around that.
 - Stop by {{.Deadline.Format "15:04"}}; the re-run needs the time after that.
 
 ## Before you stop

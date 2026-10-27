@@ -100,10 +100,16 @@ func install(repo string) error {
 		return err
 	}
 	binary := filepath.Join(store.Dir, "bin", "wakil-e2e-night")
-	build := exec.Command("go", "build", "-o", binary, "./e2e/cmd/wakil-e2e-night")
+	build := exec.Command("go", "build", "-o", binary+".new", "./e2e/cmd/wakil-e2e-night")
 	build.Dir, build.Stdout, build.Stderr = repo, os.Stdout, os.Stderr
 	if err := build.Run(); err != nil {
 		return fmt.Errorf("building: %w", err)
+	}
+	// macOS ties the Accessibility and Screen Recording grants to the binary,
+	// so an identical build keeps the one already granted.
+	changed, err := night.ReplaceIfChanged(binary+".new", binary)
+	if err != nil {
+		return err
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -120,5 +126,10 @@ func install(repo string) error {
 		return fmt.Errorf("launchctl bootstrap: %w: %s", err, out)
 	}
 	fmt.Printf("installed %s: every night at 23:00, %s run --repo %s\n", plist, binary, filepath.Dir(common))
+	if changed {
+		fmt.Printf("\nThe binary is new. Grant %s, once, in System Settings > Privacy & Security:\n"+
+			"Accessibility, Screen Recording, and Files and Folders > Desktop (the repository is there).\n"+
+			"A night without them is reported as \"did not start\", never as red.\n", binary)
+	}
 	return nil
 }

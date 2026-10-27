@@ -28,6 +28,9 @@ type Steps struct {
 	ScreenQuiet func(until time.Time) (bool, error)
 	// Fetch fetches origin and returns origin/main's commit.
 	Fetch func() (main string, err error)
+	// Preflight fails when this job cannot drive the window at all (no
+	// Accessibility grant), so a night that could test nothing says so.
+	Preflight func() error
 	// Prepare puts the night worktree on commit, detached and clean.
 	Prepare    func(commit string) error
 	Suite      func(deadline time.Time) (SuiteRun, error)
@@ -46,9 +49,19 @@ func RerunEstimate(n int) time.Duration {
 	return 15*time.Minute + time.Duration(n)*5*time.Minute
 }
 
+// SuiteEstimate is how long `make e2e-full` takes. A suite that could not
+// finish by 07:00 is not started.
+const SuiteEstimate = time.Hour
+
 // Run is one night, from the window to the result, which it writes to store.
+// A start outside the window is filed under the night it missed, and never
+// overwrites a night that did run.
 func Run(steps Steps, store Store) Result {
+	outside := !InWindow(steps.Now())
 	r := night(steps, store)
+	if _, err := os.Stat(store.ResultPath(r.Night)); outside && err == nil {
+		return r
+	}
 	if _, err := store.WriteResult(r); err != nil {
 		fmt.Fprintln(os.Stderr, "wakil-e2e-night: writing the result:", err)
 	}
@@ -59,6 +72,7 @@ func night(steps Steps, store Store) Result {
 	now := steps.Now()
 	r := Result{Night: NightOf(now)}
 	if !InWindow(now) {
+		r.Night = LastNight(now)
 		r.Outcome, r.Reason = DidNotStart, fmt.Sprintf(
 			"Started at %s, outside the night (23:00 to 07:00); the Mac was probably asleep at 23:00.",
 			now.Format("15:04"))
@@ -75,7 +89,11 @@ func night(steps Steps, store Store) Result {
 
 	quiet, err := steps.ScreenQuiet(deadline)
 	if err != nil || !quiet {
-		return didNotStart("Another e2e run held the screen until 07:00", err)
+		return didNotStart("The screen was not free for two quiet minutes before 07:00", err)
+	}
+	if late := steps.Now(); late.Add(SuiteEstimate).After(deadline) {
+		return didNotStart(fmt.Sprintf(
+			"Ready at %s, too late for the full run (about an hour) to finish by 07:00", late.Format("15:04")), nil)
 	}
 	main, err := steps.Fetch()
 	if err != nil {
@@ -92,6 +110,9 @@ func night(steps Steps, store Store) Result {
 	}
 	if err := steps.Prepare(main); err != nil {
 		return didNotStart("Preparing the night worktree failed", err)
+	}
+	if err := steps.Preflight(); err != nil {
+		return didNotStart("This job cannot drive the window", err)
 	}
 	r.First, err = steps.Suite(deadline)
 	if err != nil {
@@ -152,6 +173,12 @@ func fixAndRerun(steps Steps, store Store, r *Result) {
 		return
 	}
 	r.Branch, r.FixCommits = branch, commits
+	// Detach at the branch's tip: the re-run tests only what was committed, and
+	// the branch is free for the operator to check out or delete.
+	if err := steps.Prepare(branch); err != nil {
+		skip("cleaning the worktree before the re-run failed", err)
+		return
+	}
 	now := steps.Now()
 	if now.Add(RerunEstimate(len(r.First.Red))).After(Deadline(now)) {
 		skip("re-run skipped: it could not finish by 07:00", nil)

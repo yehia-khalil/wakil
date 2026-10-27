@@ -516,8 +516,11 @@ e2e-new: axresolve e2e-agent
 # A launchd job runs `make e2e-full` on origin/main between 23:00 and 07:00
 # when main has moved since the last green night, fixes what went red on
 # e2e-night/<date> (local commits, never pushed) and re-runs it. It replaces
-# a pre-merge e2e-full. Install once, from a checkout of main; read the
-# morning's result from any worktree. See e2e/cmd/wakil-e2e-night.
+# a pre-merge e2e-full. Install once, from a checkout of main, then grant the
+# binary it names Accessibility, Screen Recording and Desktop access (launchd
+# has no terminal to borrow them from; a night without them reports "did not
+# start"). Read the morning's result from any worktree. See
+# e2e/cmd/wakil-e2e-night.
 e2e-night-install:
 	go run ./e2e/cmd/wakil-e2e-night install
 

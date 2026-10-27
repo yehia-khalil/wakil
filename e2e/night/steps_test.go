@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -114,7 +115,7 @@ func TestWaitQuietGivesUpAtTheDeadline(t *testing.T) {
 
 func TestRunUntilKillsTheWholeProcessGroupAtTheDeadline(t *testing.T) {
 	began := time.Now()
-	timedOut, pgid, err := runUntil(t.TempDir(), began.Add(time.Second), io.Discard, "sh", "-c", "sleep 30 & sleep 30")
+	timedOut, pgid, err := runUntil(command(t.TempDir(), io.Discard, "sh", "-c", "sleep 30 & sleep 30"), began.Add(time.Second))
 	if !timedOut || err == nil {
 		t.Fatalf("timedOut %v, err %v", timedOut, err)
 	}
@@ -150,11 +151,96 @@ func TestTheFixerPromptCarriesTheRulesAndTheFailures(t *testing.T) {
 	}
 	for _, want := range []string{
 		"e2e/checks/seeded/a.jsonl", "a broke", ".context/e2e/x", "e2e-night/2026-10-25",
-		"/tmp/summary.md", "06:40", "Never retries a check into green", "never pushes",
+		"/tmp/summary.md", "06:40", "Never retries a check into green", "Never push",
 		"Fixes the **code**, not the check",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt is missing %q", want)
 		}
+	}
+}
+
+func TestTheFixerCannotPush(t *testing.T) {
+	remote := gitRepo(t)
+	commit(t, remote, "f.txt", "one")
+	git(t, remote, "checkout", "-q", "--detach")
+	local := filepath.Join(filepath.Dir(remote), "clone")
+	if out, err := exec.Command("git", "clone", "-q", remote, local).CombinedOutput(); err != nil {
+		t.Fatalf("clone: %v %s", err, out)
+	}
+	git(t, local, "config", "user.email", "n@example.invalid")
+	git(t, local, "config", "user.name", "n")
+	commit(t, local, "g.txt", "fix")
+	push := exec.Command("git", "-C", local, "push", "-q", "origin", "HEAD:refs/heads/main")
+	push.Env = fixerEnv(os.Environ())
+	if out, err := push.CombinedOutput(); err == nil {
+		t.Fatalf("the fixer's environment pushed: %s", out)
+	}
+	cmd := fixerCommand(local, "/x/claude", "prompt")
+	if !strings.Contains(strings.Join(cmd.Args, " "), "--disallowedTools") {
+		t.Fatalf("args %v", cmd.Args)
+	}
+	if !strings.Contains(strings.Join(cmd.Env, "\n"), "GH_TOKEN=") {
+		t.Fatal("gh is not cut off")
+	}
+}
+
+func TestTheScreenIsBusyWhileAnyE2ERunsOrBuilds(t *testing.T) {
+	busy := []string{
+		"/Users/x/.context/e2e/bundles/abc/WakilE2E.app/Contents/MacOS/Wakil",
+		"go run ./e2e/cmd/wakil-e2e --bundle x e2e/checks/seeded/a.jsonl",
+		"go run ./e2e/cmd/wakil-e2e-new --trunk origin/main",
+		"go run ./e2e/cmd/wakil-e2e-select --trunk origin/main",
+		"make e2e", "make e2e-new", "make e2e-full E2E_KEEP_GOING=1", "make --no-print-directory e2e-run E2E_FILES=a",
+	}
+	quiet := []string{"make e2e-night-status", "/x/bin/wakil-e2e-night run --repo /x", "make test", "vim e2e/night/run.go"}
+	matches := func(line string) bool {
+		for _, p := range busyPatterns {
+			if regexp.MustCompile(p).MatchString(line) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, line := range busy {
+		if !matches(line) {
+			t.Errorf("not seen as busy: %s", line)
+		}
+	}
+	for _, line := range quiet {
+		if matches(line) {
+			t.Errorf("seen as busy: %s", line)
+		}
+	}
+}
+
+func TestInstallKeepsTheBinaryWhenNothingChanged(t *testing.T) {
+	dir := t.TempDir()
+	dst, fresh := filepath.Join(dir, "bin"), filepath.Join(dir, "fresh")
+	os.WriteFile(dst, []byte("same"), 0o755)
+	before, _ := os.Stat(dst)
+	os.WriteFile(fresh, []byte("same"), 0o755)
+	if changed, err := ReplaceIfChanged(fresh, dst); err != nil || changed {
+		t.Fatalf("changed %v, %v", changed, err)
+	}
+	if after, _ := os.Stat(dst); !after.ModTime().Equal(before.ModTime()) {
+		t.Fatal("an identical binary was replaced, which would drop its privacy grants")
+	}
+	os.WriteFile(fresh, []byte("new"), 0o755)
+	if changed, err := ReplaceIfChanged(fresh, dst); err != nil || !changed {
+		t.Fatalf("changed %v, %v", changed, err)
+	}
+	if body, _ := os.ReadFile(dst); string(body) != "new" {
+		t.Fatalf("dst = %q", body)
+	}
+}
+
+func TestAnUntrustedAxresolveIsNoAccessibility(t *testing.T) {
+	denied := []byte(`{"ok":false,"error":"accessibility_denied","message":"not trusted"}`)
+	if err := axTrusted("/x/bin/wakil-e2e-night", denied); err == nil || !strings.Contains(err.Error(), "/x/bin/wakil-e2e-night") {
+		t.Fatalf("err %v", err)
+	}
+	if err := axTrusted("/x/bin/wakil-e2e-night", []byte(`{"ok":true,"pid":1}`)); err != nil {
+		t.Fatalf("err %v", err)
 	}
 }
