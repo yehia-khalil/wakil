@@ -269,6 +269,7 @@ struct BrowserGroupingTests {
         s.makeOwn("g2")
         #expect(ids(s) == ["a", "b", "c", "d", "e"])
         s.moveTab("e", into: "g2", at: nil)
+        #expect(groupOf(s, "e") == "g2")
         #expect(ids(s) == ["a", "b", "c", "d", "e"])
         #expect(s.groups.map(\.id) == ["g1", "g2"])
     }
@@ -331,5 +332,38 @@ struct BrowserGroupingTests {
         #expect(BrowserSnapshot.fallbackName(siteKey: nil, openerTitle: "Amazon.com : usb c hub") == "Amazon.com : usb")
         #expect(BrowserSnapshot.fallbackName(siteKey: nil, openerTitle: "  ") == "New Group")
         #expect(BrowserSnapshot.fallbackName(siteKey: nil, openerTitle: nil) == "New Group")
+    }
+
+    @Test func aDissolvedGroupsLastTabBecomesTheFirstLooseTab() {
+        var s = pane([
+            tab("a", yt1, group: "g1"), tab("b", yt2, group: "g1"),
+            tab("c", "https://github.com/a", group: "g2"), tab("d", "https://github.com/b", group: "g2"),
+            tab("e", "https://example.com/"),
+        ], groups: [auto("g1", "family:youtube"), auto("g2", "family:github")], nextGroup: 3)
+        s.tabs[1].url = "https://www.google.com/"
+        s.placeLoaded(tab: "b")
+        #expect(s.groups.map(\.id) == ["g2"])
+        #expect(ids(s) == ["c", "d", "a", "b", "e"])
+    }
+
+    @Test func aPinnedTabCannotBeMovedIntoAGroup() {
+        var s = pane([
+            tab("a", yt1, group: "g1"), tab("b", yt2, group: "g1"), tab("p", "https://example.com/", pin: "p1"),
+        ], groups: [auto("g1", "family:youtube")], nextGroup: 2)
+        s.moveTab("p", into: "g1", at: nil)
+        #expect(groupOf(s, "p") == nil)
+        #expect(s.group("g1")?.kind == .automatic)
+        let id = s.newGroup(tabs: ["p"], name: "Mine", kind: .own, siteKey: nil)
+        #expect(groupOf(s, "p") == nil)
+        #expect(s.group(id) == nil)
+    }
+
+    @Test func lastOpenFallsBackToTheGroupsFirstTabWhenItsTabIsGone() {
+        var g = auto("g1", "family:youtube")
+        g.lastOpen = "gone"
+        var s = pane([tab("a", yt1, group: "g1"), tab("b", yt2, group: "g1"), tab("x", "https://example.com/")],
+                     groups: [g], active: "x", nextGroup: 2)
+        s.arrange()
+        #expect(s.group("g1")?.lastOpen == "a")
     }
 }

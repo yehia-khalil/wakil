@@ -81,7 +81,7 @@ extension BrowserSnapshot {
         nextGroup += 1
         groups.append(BrowserGroup(id: id, name: name, colour: nextColour(), kind: kind, siteKey: siteKey))
         for member in members {
-            guard let i = tabIndex(member) else { continue }
+            guard let i = tabIndex(member), tabs[i].pin == nil else { continue }
             if kind == .own {
                 if let old = tabs[i].group { makeOwnOnly(old) }
                 tabs[i].keptLoose = false
@@ -107,7 +107,7 @@ extension BrowserSnapshot {
         defer { arrange() }
         guard let i = tabIndex(tab) else { return }
         if let target {
-            guard let g = group(target), g.kind != .pullRequests else { return }
+            guard let g = group(target), g.kind != .pullRequests, tabs[i].pin == nil else { return }
         }
         let old = tabs[i].group
         if old != target {
@@ -155,12 +155,13 @@ extension BrowserSnapshot {
             if let gid = tabs[i].group, group(gid) == nil { tabs[i].group = nil }
         }
         // Dissolve automatic groups of one; drop empty own groups. The pull-request group stays.
+        var dissolved = Set<String>()
         groups.removeAll { g in
             let members = tabs.indices.filter { tabs[$0].group == g.id }
             switch g.kind {
             case .automatic:
                 guard members.count <= 1 else { return false }
-                for i in members { tabs[i].group = nil }
+                for i in members { tabs[i].group = nil; dissolved.insert(tabs[i].id) }
                 return true
             case .own: return members.isEmpty
             case .pullRequests: return false
@@ -171,7 +172,8 @@ extension BrowserSnapshot {
         let order = Dictionary(uniqueKeysWithValues: groups.enumerated().map { ($1.id, $0) })
         func rank(_ tab: BrowserTab) -> (Int, Int) {
             guard let gid = tab.group, let g = group(gid), let n = order[gid] else {
-                return (tab.pin != nil ? 0 : 4, 0)
+                // A dissolved group's last tab leads the loose tabs.
+                return (tab.pin != nil ? 0 : 4, dissolved.contains(tab.id) ? -1 : 0)
             }
             if g.pin != nil { return (1, n) }
             if g.kind == .pullRequests { return (2, n) }
