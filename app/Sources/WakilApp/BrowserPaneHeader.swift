@@ -106,6 +106,8 @@ enum BrowserPaneStyle {
     static let promptButtonGap: CGFloat = 14
     /// A download's entries, side by side.
     static let downloadSpacing: CGFloat = 14
+    /// A running download's bar: wide enough to read how far it is, narrow enough for its row.
+    static let downloadBarWidth: CGFloat = 72
     /// The certificate page's lock.
     static let pageGlyph: CGFloat = 22
     /// What the page under a prompt is dimmed by while it waits (it takes the page's clicks).

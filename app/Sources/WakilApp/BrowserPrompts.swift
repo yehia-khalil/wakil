@@ -287,8 +287,10 @@ struct BrowserCrashPage: View {
 
 // MARK: - Downloads
 
-/// The pane's foot while a download is live or ended this session: each one's name, its size line,
-/// Cancel while it runs (Rule 4), Show in Finder once it finished; × clears the ended ones. Every
+/// The pane's foot while a download is live or ended this session: each one's name, a bar while it
+/// runs (filled to its bytes, or running unfilled when its size is unknown), its line saying what is
+/// happening (`browserDownloadStatus`), Cancel while it runs (Rule 4), Show in Finder once it
+/// finished; × clears the ended ones. Every
 /// control is a `browser_*` action, but Show in Finder, which is the Mac's.
 struct BrowserDownloadStrip: View {
     let downloads: [BrowserDownload]
@@ -328,7 +330,21 @@ struct BrowserDownloadStrip: View {
                 .truncationMode(.middle)
                 .foregroundStyle(BrowserPaneStyle.text)
                 .accessibilityIdentifier("browser.download.\(d.id).name")
-            Text(status(d))
+            if d.state == .running {
+                Group {
+                    if let fraction = browserDownloadFraction(d) {
+                        ProgressView(value: fraction)
+                    } else {
+                        ProgressView()
+                    }
+                }
+                .progressViewStyle(.linear)
+                .controlSize(.small)
+                .tint(BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
+                .frame(width: BrowserPaneStyle.downloadBarWidth)
+                .accessibilityIdentifier("browser.download.\(d.id).progress")
+            }
+            Text(browserDownloadStatus(d))
                 .font(.system(size: BrowserPaneStyle.metaSize, design: .monospaced))
                 .foregroundStyle(d.state == .failed ? BrowserPaneStyle.amber : BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
                 // A failure is shown whole and can be copied (Rule 8, final review I5); the size
@@ -359,13 +375,5 @@ struct BrowserDownloadStrip: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser.download.\(d.id)")
-    }
-
-    private func status(_ d: BrowserDownload) -> String {
-        switch d.state {
-        case .running, .finished: browserDownloadSize(received: d.received, expected: d.expected, state: d.state)
-        case .cancelled: "Cancelled"
-        case .failed: d.failure ?? "Failed"
-        }
     }
 }
