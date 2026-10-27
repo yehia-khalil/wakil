@@ -747,9 +747,11 @@ private actor NamingModel: QuickModel {
         return reply
     }
     func release() { open = true }
-    /// Waits (up to 5 s) for the first request.
-    func waitUntilAsked() async {
+    /// Waits (up to 5 s) for the first request; never asked by then is a failure, so a late-name
+    /// test cannot pass without the model having been asked.
+    func waitUntilAsked(sourceLocation: SourceLocation = #_sourceLocation) async {
         for _ in 0..<5_000 where inputs.isEmpty { try? await Task.sleep(nanoseconds: 1_000_000) }
+        if inputs.isEmpty { Issue.record("the naming model was never asked", sourceLocation: sourceLocation) }
     }
     func shutdown() async {}
 }
