@@ -27,6 +27,13 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     /// `browser_bookmark` was asked for a page that is not http, https or file.
     case notBookmarkable(scheme: String)
     case bookmarksUnreadable(String)
+    /// 3d-i: the group named is not in the pane.
+    case noGroup(action: String, group: String)
+    /// 3d-i: the pull-request group is the read's; only collapse and expand change it. The word is
+    /// the participle: `renamed`, `recoloured`, `ungrouped`, `closed`.
+    case pullRequestGroupRefuses(String)
+    case unknownColour
+    case unknownGroupAction(String)
 
     public var description: String {
         switch self {
@@ -46,6 +53,12 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .notBookmarkable(let scheme): "browser_bookmark: only a web page can be bookmarked, not \(scheme):"
         case .bookmarksUnreadable(let error):
             "browser_bookmark: bookmarks.json can't be read (\(error)) — fix or move it; Wakil won't write over it."
+        case .noGroup(let action, let group): "\(action): this pane has no group \(group)"
+        case .pullRequestGroupRefuses(let word): "browser_group: the pull-request group can't be \(word)"
+        case .unknownColour:
+            "browser_group: colour is one of " + BrowserGroupColour.allCases.map(\.rawValue).joined(separator: ", ")
+        case .unknownGroupAction(let verb):
+            "browser_group: action is create, rename, recolour, collapse, expand, ungroup or close, not \(verb)"
         case .notAWebPage(let scheme):
             "browser_open opens web pages and files (http, https, file), not \(scheme): links — an app's "
                 + "link opens from a page, after the operator allows it."
@@ -99,6 +112,41 @@ extension BrowserSnapshot {
     func tabIndex(_ id: String?) -> Int? {
         let wanted = id ?? active
         return tabs.firstIndex { $0.id == wanted }
+    }
+
+    /// Closes the tabs `ids` names (`browser_close_tab`, `browser_group`'s close): each goes on the
+    /// ⌘⇧T stack with its group (ruling 22), and when the selection was among them the tab now where
+    /// the first of them was is selected, else the last. Ends in `arrange()`. Answers how many closed.
+    @discardableResult
+    mutating func closeTabs(_ ids: Set<String>) -> Int {
+        guard let first = tabs.firstIndex(where: { ids.contains($0.id) }) else { return 0 }
+        let gone = tabs.filter { ids.contains($0.id) }
+        tabs.removeAll { ids.contains($0.id) }
+        for tab in gone {
+            closed.append(BrowserSavedTab(id: tab.id, url: tab.url, title: tab.title, group: tab.group))
+        }
+        if closed.count > browserClosedLimit { closed.removeFirst(closed.count - browserClosedLimit) }
+        if let active, ids.contains(active) {
+            self.active = nil
+            if !tabs.isEmpty { select(min(first, tabs.count - 1)) }
+        }
+        arrange()
+        return gone.count
+    }
+
+    /// The opener rule (ruling 8) for a tab whose address may not be known yet: a pop-up made by
+    /// `window.open()` is `about:blank` (or empty) until it loads. Such a tab still joins a grouped
+    /// opener, but never starts a chain group with a loose one — its site is unknown, not another —
+    /// and waits for the site rule.
+    mutating func placeOpenedKnowingTheSite(tab: String, opener: String) {
+        guard let t = tabs.firstIndex(where: { $0.id == tab }) else { return arrange() }
+        let url = tabs[t].url.lowercased()
+        let unknown = url.isEmpty || url.hasPrefix("about:")
+        if unknown, tabs.first(where: { $0.id == opener })?.group == nil {
+            tabs[t].opener = nil
+            return arrange()
+        }
+        placeOpened(tab: tab, opener: opener)
     }
 
     /// Selects `i`, loading it if it has never fetched (a restored tab loads when shown).
@@ -203,8 +251,9 @@ func browserActions(
     }
 
     /// A new tab at the end, made active: `url` loads; none opens the start page, and a blank start
-    /// page loads nothing and puts the keyboard in the address field.
-    @Sendable func addTab(_ pane: String, url: String?) async {
+    /// page loads nothing and puts the keyboard in the address field. With an `opener` the pane still
+    /// has, the opener rule places it (ruling 8); an opener that has closed meanwhile is none.
+    @Sendable func addTab(_ pane: String, url: String?, opener: String? = nil) async {
         var target = url
         if target == nil {
             let start = await settings().startPage.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -216,6 +265,11 @@ func browserActions(
             if let load { tab.issue(.load(load)) } else { tab.issue(.focusAddress) }
             s.tabs.append(tab)
             s.active = tab.id
+            if let opener, s.tabs.contains(where: { $0.id == opener }) {
+                s.placeOpenedKnowingTheSite(tab: tab.id, opener: opener)
+            } else {
+                s.arrange()
+            }
         }
     }
 
@@ -329,15 +383,16 @@ func browserActions(
         name: "browser_new_tab",
         description: "Open a new tab at the end of a browser pane's tabs and select it: url when given, "
             + "else (url left out) the start page; a blank start page leaves the address field focused. Opens a browser "
-            + "pane when none is open.",
+            + "pane when none is open. opener, a tab id, is the tab it was opened from (a ⌘-click): it "
+            + "joins the opener's group, or forms one with a loose opener of another site.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["url": string]),
+        schema: schema(["url": string, "opener": string]),
         handler: { params in
             var url: String?
             // A url given is held to the address rule, blank included; leave it out for the start page.
             if let typed = optionalString(params, "url") { url = try await address(typed) }
             let pane = try await browserPane(params, action: "browser_new_tab", open: true).id
-            await addTab(pane, url: url)
+            await addTab(pane, url: url, opener: optionalString(params, "opener"))
             await persist(pane)
             return await reply(pane)
         }))
@@ -353,13 +408,7 @@ func browserActions(
             let tab = optionalString(params, "tab")
             let left = await panes.updateBrowser(paneId: pane, create: true) { s -> Int? in
                 guard let i = s.tabIndex(tab) else { return nil }
-                let gone = s.tabs.remove(at: i)
-                s.closed.append(BrowserSavedTab(id: gone.id, url: gone.url, title: gone.title))
-                if s.closed.count > browserClosedLimit { s.closed.removeFirst(s.closed.count - browserClosedLimit) }
-                if s.active == gone.id {
-                    s.active = nil
-                    if !s.tabs.isEmpty { s.select(min(i, s.tabs.count - 1)) }
-                }
+                s.closeTabs([s.tabs[i].id])
                 return s.tabs.count
             }
             guard let left else { throw BrowserActionError.noTab(action: "browser_close_tab", tab: tab) }
@@ -374,7 +423,8 @@ func browserActions(
 
     actions.append(Action(
         name: "browser_reopen_tab",
-        description: "Reopen the tab closed most recently in a browser pane, at the end of its tabs, and select it.",
+        description: "Reopen the tab closed most recently in a browser pane, at the end of its tabs (in its "
+            + "group, if the pane still has it), and select it.",
         kind: .control, audience: .agentReachable,
         schema: schema([:]),
         handler: { params in
@@ -383,8 +433,20 @@ func browserActions(
                 guard let saved = s.closed.popLast() else { return false }
                 var tab = BrowserTab(id: s.takeTabId(), url: saved.url, title: saved.title)
                 if saved.url.isEmpty { tab.issue(.focusAddress) } else { tab.issue(.load(saved.url)) }
-                s.tabs.append(tab)
+                // Ruling 22: back to its group while the pane has it (never the pull-request group,
+                // whose tabs are the read's); else loose, for the site rule when it loads.
+                if let gid = saved.group, let g = s.group(gid), g.kind != .pullRequests {
+                    tab.group = gid
+                    if let last = s.tabs.lastIndex(where: { $0.group == gid }) {
+                        s.tabs.insert(tab, at: last + 1)
+                    } else {
+                        s.tabs.append(tab)
+                    }
+                } else {
+                    s.tabs.append(tab)
+                }
                 s.active = tab.id
+                s.arrange()
                 return true
             }
             guard ok else { throw BrowserActionError.nothingToReopen }
@@ -412,6 +474,7 @@ func browserActions(
                 else if let index { i = index < 0 ? s.tabs.count + index : index }
                 guard let i, s.tabs.indices.contains(i) else { return false }
                 s.select(i)
+                s.arrange()   // a collapsed group shows the tab selected in it (ruling 21)
                 return true
             }
             guard ok else { throw BrowserActionError.noTab(action: "browser_select_tab", tab: tab ?? index.map { "at \($0)" }) }
@@ -422,22 +485,144 @@ func browserActions(
 
     actions.append(Action(
         name: "browser_move_tab",
-        description: "Move a tab to position to (0 first; past the end is the end).",
+        description: "Move a tab to position to (0 first; past the end is the end), and/or into group (a group "
+            + "id from read_pane's groups; \"\" takes it out of its group and keeps it out of automatic "
+            + "groups). Into a group without to, it goes after the group's last tab. Tabs stay in drawn "
+            + "order: pinned, groups, then loose tabs.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["tab": string, "to": .object(["type": .string("integer")])], required: ["tab", "to"]),
+        schema: schema(["tab": string, "to": .object(["type": .string("integer")]), "group": string],
+                       required: ["tab"]),
         handler: { params in
             let pane = try await browserPane(params, action: "browser_move_tab").id
             let tab = try requireString(params, "tab", action: "browser_move_tab")
-            guard case .object(let o) = params, let to = o["to"]?.intValue else {
+            let to: Int? = { if case .object(let o) = params { o["to"]?.intValue } else { nil } }()
+            let group = optionalString(params, "group")
+            guard to != nil || group != nil else {
                 throw StandardActionError.missingParam(action: "browser_move_tab", param: "to")
             }
-            let ok = await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
-                guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else { return false }
-                let moved = s.tabs.remove(at: i)
-                s.tabs.insert(moved, at: max(0, min(to, s.tabs.count)))
-                return true
+            let target = group.flatMap { $0.isEmpty ? nil : $0 }
+            let outcome = await panes.updateBrowser(paneId: pane, create: true) { s -> BrowserActionError? in
+                guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else {
+                    return .noTab(action: "browser_move_tab", tab: tab)
+                }
+                if let target, s.group(target) == nil { return .noGroup(action: "browser_move_tab", group: target) }
+                if group != nil {
+                    s.moveTab(tab, into: target, at: to)
+                } else if let to {
+                    let moved = s.tabs.remove(at: i)
+                    s.tabs.insert(moved, at: max(0, min(to, s.tabs.count)))
+                    s.arrange()
+                }
+                return nil
             }
-            guard ok else { throw BrowserActionError.noTab(action: "browser_move_tab", tab: tab) }
+            if let outcome { throw outcome }
+            await persist(pane)
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
+        name: "browser_group",
+        description: "Change a browser pane's tab groups (3d-i). action: create makes your group named name "
+            + "(default New Group) of tabs (tab ids, default the active tab), coloured colour when given; "
+            + "rename (name) and recolour (colour: blue, steel, teal, sand, stone or smoke) make an automatic "
+            + "group yours; collapse and expand; ungroup leaves its tabs loose and out of automatic groups; "
+            + "close closes its tabs (browser_reopen_tab brings each back), and the pane with the last. "
+            + "group is a group id from read_pane's groups. The pull-request group (pr) only collapses and "
+            + "expands. Never changes the selected tab.",
+        kind: .control, audience: .agentReachable,
+        schema: schema([
+            "action": .object(["type": .string("string"), "enum": .array(
+                ["create", "rename", "recolour", "collapse", "expand", "ungroup", "close"].map { .string($0) })]),
+            "group": string, "name": string,
+            "tabs": .object(["type": .string("array"), "items": string]),
+            "colour": .object(["type": .string("string"), "enum": .array(
+                BrowserGroupColour.allCases.map { .string($0.rawValue) })]),
+        ], required: ["action"]),
+        handler: { params in
+            let action = "browser_group"
+            let verb = try requireString(params, "action", action: action)
+            guard ["create", "rename", "recolour", "collapse", "expand", "ungroup", "close"].contains(verb) else {
+                throw BrowserActionError.unknownGroupAction(verb)
+            }
+            let pane = try await browserPane(params, action: action).id
+            let name = optionalString(params, "name")?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let typedColour = optionalString(params, "colour")
+            let colour = typedColour.flatMap { typed in BrowserGroupColour.allCases.first { $0.rawValue == typed } }
+            if typedColour != nil, colour == nil { throw BrowserActionError.unknownColour }
+
+            if verb == "create" {
+                let listed: [String]? = {
+                    guard case .object(let o) = params, case .array(let items)? = o["tabs"] else { return nil }
+                    return items.compactMap { if case .string(let id) = $0 { id } else { nil } }
+                }()
+                let made = await panes.updateBrowser(paneId: pane, create: true) { s -> Result<String, BrowserActionError> in
+                    let members = listed ?? s.active.map { [$0] } ?? []
+                    guard !members.isEmpty else { return .failure(.noTab(action: action, tab: nil)) }
+                    if let missing = members.first(where: { id in !s.tabs.contains { $0.id == id } }) {
+                        return .failure(.noTab(action: action, tab: missing))
+                    }
+                    let id = s.newGroup(tabs: members, name: name.flatMap { $0.isEmpty ? nil : $0 } ?? "New Group",
+                                        kind: .own, siteKey: nil)
+                    if let colour, let g = s.groups.firstIndex(where: { $0.id == id }) { s.groups[g].colour = colour }
+                    return .success(id)
+                }
+                let id = try made.get()
+                await persist(pane)
+                guard case .object(var o) = await reply(pane) else { return .null }
+                o["group"] = .string(id)
+                return .object(o)
+            }
+
+            guard let group = optionalString(params, "group"), !group.isEmpty else {
+                throw StandardActionError.missingParam(action: action, param: "group")
+            }
+            if verb == "rename", name?.isEmpty ?? true {
+                throw StandardActionError.missingParam(action: action, param: "name")
+            }
+            if verb == "recolour", colour == nil {
+                throw StandardActionError.missingParam(action: action, param: "colour")
+            }
+            let outcome = await panes.updateBrowser(paneId: pane, create: true) { s -> Result<Int, BrowserActionError> in
+                guard let g = s.groups.firstIndex(where: { $0.id == group }) else {
+                    return .failure(.noGroup(action: action, group: group))
+                }
+                if s.groups[g].kind == .pullRequests {
+                    let words = ["rename": "renamed", "recolour": "recoloured", "ungroup": "ungrouped", "close": "closed"]
+                    if let word = words[verb] { return .failure(.pullRequestGroupRefuses(word)) }
+                }
+                switch verb {
+                case "rename":
+                    s.groups[g].name = name ?? s.groups[g].name
+                    s.groups[g].named = true
+                    s.makeOwn(group)
+                case "recolour":
+                    s.groups[g].colour = colour ?? s.groups[g].colour
+                    s.makeOwn(group)
+                case "collapse", "expand":
+                    s.groups[g].collapsed = verb == "collapse"
+                    s.arrange()
+                case "ungroup":
+                    // Ruling 10: the operator ungrouped them, so the site rule never regroups them.
+                    for i in s.tabs.indices where s.tabs[i].group == group {
+                        s.tabs[i].group = nil
+                        s.tabs[i].opener = nil
+                        s.tabs[i].keptLoose = true
+                    }
+                    s.groups.remove(at: g)
+                    s.arrange()
+                default:   // close
+                    s.closeTabs(Set(s.tabs.filter { $0.group == group }.map(\.id)))
+                    s.groups.removeAll { $0.id == group }
+                    s.arrange()
+                }
+                return .success(s.tabs.count)
+            }
+            let left = try outcome.get()
+            if left == 0 {
+                try await layout?.close(id: pane)
+                await panes.drop(paneId: pane)
+                return .object(["pane": .string(pane), "closed": .bool(true)])
+            }
             await persist(pane)
             return await reply(pane)
         }))

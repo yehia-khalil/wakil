@@ -42,8 +42,17 @@ enum BrowserPaneKind: PaneKind {
                     "loading": .bool(t.isLoading), "active": .bool(t.id == s.active),
                     "site": site.map { .string($0) } ?? .null, "environment": environment,
                     "production": .bool(site.map { sites.isProduction($0) } ?? false),
+                    "group": t.group.map { .string($0) } ?? .null, "pinned": .bool(s.isPinned(t)),
                 ])
             }),
+            // 3d-i: the pane's groups in the order they were made, each with its tabs in drawn order.
+            "groups": .array(s.groups.map { g in .object([
+                "id": .string(g.id), "name": .string(g.name), "colour": .string(g.colour.rawValue),
+                "collapsed": .bool(g.collapsed), "kind": .string(g.kind.rawValue), "pinned": .bool(g.pin != nil),
+                "tabs": .array(s.tabs.filter { $0.group == g.id }.map { .string($0.id) }),
+            ]) }),
+            "tabColumnHidden": .bool(s.tabColumnHidden),
+            "pinsError": s.pinsError.map { .string($0) } ?? .null,
             "active": tab.map { .string($0.id) } ?? .null,
             "url": tab.map { .string($0.url) } ?? .null,
             "title": tab.map { .string($0.title) } ?? .null,

@@ -65,7 +65,7 @@ private func report(_ url: String, title: String = "Page", loading: Bool = false
 
 private let readPaneKeys: Set<String> = [
     "kind", "failure", "tabs", "active", "url", "title", "loading", "canGoBack", "canGoForward",
-    "zoom", "find", "downloads", "bookmarked",
+    "zoom", "find", "downloads", "bookmarked", "groups", "tabColumnHidden", "pinsError",
 ]
 
 @Test func readPaneHasEveryKeyAndNoPageText() async {
@@ -93,7 +93,8 @@ private let readPaneKeys: Set<String> = [
     guard case .array(let tabs) = o["tabs"], tabs.count == 2, case .object(let t0) = tabs[0] else {
         Issue.record("tabs"); return
     }
-    #expect(Set(t0.keys) == ["id", "url", "title", "loading", "active", "site", "environment", "production"])
+    #expect(Set(t0.keys) == ["id", "url", "title", "loading", "active", "site", "environment", "production",
+                             "group", "pinned"])
     #expect(t0["active"] == .bool(true))
     guard case .array(let downloads) = o["downloads"], case .object(let d0) = downloads.first else {
         Issue.record("downloads"); return
@@ -144,11 +145,13 @@ private let readPaneKeys: Set<String> = [
 
 @Test func aPopupOpensBesideItsOpener() async {
     let store = await browserStore(["t1", "t2", "t3"])
-    let id = await store.browserPageOpenedTab(paneId: pane, opener: "t2", url: "https://pop.test/")
+    // Its opener's site (3d-i): the opener rule forms no group, so it stays beside its opener.
+    let id = await store.browserPageOpenedTab(paneId: pane, opener: "t2", url: "https://example.com/pop")
     #expect(id == "t4")
     let s = await store.browserSnapshot(paneId: pane)
     #expect(s.tabs.map(\.id) == ["t1", "t2", "t4", "t3"] && s.active == "t4" && s.nextTab == 5)
-    #expect(s.tabs[2].url == "https://pop.test/" && s.tabs[2].loaded && s.tabs[2].command == nil)
+    #expect(s.tabs[2].url == "https://example.com/pop" && s.tabs[2].loaded && s.tabs[2].command == nil)
+    #expect(s.groups.isEmpty)
     #expect(await store.browserPageOpenedTab(paneId: pane, opener: "t9", url: "https://x.test/") == nil)
     #expect(await store.browserSnapshot(paneId: pane) == s)
 }
@@ -273,4 +276,151 @@ private let readPaneKeys: Set<String> = [
     #expect(g.lastOpen == nil && g.siteKey == nil && g.pin == nil && g.named)
     #expect(BrowserGroupColour.allCases.map(\.hex) == [0x7f97b2, 0x8d98a8, 0x77a0a3, 0xad9f86, 0xa0938b, 0x9b9da6])
     #expect(BrowserGroupColour.allCases.map { $0.rawValue } == ["blue", "steel", "teal", "sand", "stone", "smoke"])
+}
+
+// MARK: - 3d-i Task 7: tabs placed at the seam
+
+/// A load on `url` that starts, then finishes without a failure.
+private func load(_ store: PaneStore, _ tab: String, _ url: String, via hop: String? = nil) async {
+    await store.browserPageDidReport(paneId: pane, tab: tab, report(hop ?? url, loading: true))
+    await store.browserPageDidReport(paneId: pane, tab: tab, report(url, loading: true))
+    await store.browserPageDidReport(paneId: pane, tab: tab, report(url))
+}
+
+private func object(_ value: JSONValue?) -> [String: JSONValue] {
+    if case .object(let o)? = value { return o }
+    return [:]
+}
+
+private func array(_ value: JSONValue?) -> [JSONValue] {
+    if case .array(let a)? = value { return a }
+    return []
+}
+
+@Test func aFinishedLoadPlacesTheTabBySite() async {
+    let store = await browserStore(["t1", "t2", "t3"])
+    await store.updateBrowser(paneId: pane) { s in for i in s.tabs.indices { s.tabs[i].url = "" } }
+    await load(store, "t1", "https://www.example.com/a")
+    #expect(await store.browserSnapshot(paneId: pane).groups.isEmpty, "one tab of a site is no group")
+    await load(store, "t2", "https://shop.example.com/b")
+    // A report that is not the end of a load places nothing.
+    await store.browserPageDidReport(paneId: pane, tab: "t3", report("https://example.com/c"))
+    let s = await store.browserSnapshot(paneId: pane)
+    #expect(s.tabs.first { $0.id == "t3" }?.group == nil)
+    #expect(s.groups.map(\.id) == ["g1"] && s.groups[0].kind == .automatic && s.groups[0].siteKey == "example.com")
+    #expect(s.groups[0].name == "Example")
+    #expect(s.tabs.filter { $0.group == "g1" }.map(\.id) == ["t1", "t2"])
+    #expect(s.active == "t1")
+    let read = object(await store.readPane(paneId: pane, kind: "browser"))
+    let groups = array(read["groups"])
+    #expect(groups.count == 1)
+    #expect(object(groups.first)["tabs"] == .array([.string("t1"), .string("t2")]))
+    #expect(object(array(read["tabs"]).first)["group"] == .string("g1"))
+}
+
+/// Review Focus 1: a GitHub tab that redirects through a sign-in host and back neither leaves its
+/// group nor starts one — the site rule runs only when a load finishes.
+@Test func aRedirectThroughAnotherHostDoesNotRegroup() async {
+    let store = await browserStore(["t1", "t2", "t3"])
+    await load(store, "t1", "https://github.com/initech/app")
+    await load(store, "t2", "https://github.com/initech/api")
+    await load(store, "t3", "https://accounts.google.com/x")
+    let before = await store.browserSnapshot(paneId: pane)
+    #expect(before.groups.map(\.siteKey) == ["family:github"])
+    #expect(before.tabs.first { $0.id == "t2" }?.group == "g1")
+    // The hop: loading on accounts.google.com, then finished back on github.com.
+    await load(store, "t2", "https://github.com/initech/api/pulls", via: "https://accounts.google.com/signin")
+    let s = await store.browserSnapshot(paneId: pane)
+    #expect(s.groups == before.groups, "no new group, none dissolved")
+    #expect(s.tabs.first { $0.id == "t2" }?.group == "g1")
+    #expect(s.tabs.first { $0.id == "t3" }?.group == nil)
+}
+
+@Test func aPopupJoinsItsOpenersGroup() async {
+    let store = await browserStore(["t1", "t2", "t3"])
+    await store.updateBrowser(paneId: pane) { s in
+        s.tabs[2].url = "https://other.org/"
+        s.groups = [BrowserGroup(id: "g1", name: "Example", colour: .blue, kind: .automatic, siteKey: "example.com")]
+        s.nextGroup = 2
+        s.tabs[0].group = "g1"; s.tabs[1].group = "g1"
+    }
+    let id = await store.browserPageOpenedTab(paneId: pane, opener: "t1", url: "https://login.example.net/")
+    let s = await store.browserSnapshot(paneId: pane)
+    let popup = s.tabs.first { $0.id == id }
+    #expect(popup?.group == "g1" && popup?.opener == "t1", "joins its opener's group, whatever its site")
+    #expect(s.tabs.map(\.id) == ["t1", "t4", "t2", "t3"])
+    #expect(s.active == "t4", "a pop-up is selected, as before")
+    // Its first finished load on another site does not take it out: it came by opener.
+    await load(store, "t4", "https://login.example.net/done")
+    #expect(await store.browserSnapshot(paneId: pane).tabs.first { $0.id == "t4" }?.group == "g1")
+}
+
+/// A pop-up with no address yet (`window.open()`) from a loose opener starts no chain group: its
+/// site is unknown. It waits for the site rule.
+@Test func aBlankPopupFromALooseOpenerWaitsForTheSiteRule() async {
+    let store = await browserStore(["t1"])
+    let id = await store.browserPageOpenedTab(paneId: pane, opener: "t1", url: "")
+    var s = await store.browserSnapshot(paneId: pane)
+    #expect(s.groups.isEmpty)
+    #expect(s.tabs.first { $0.id == id }?.opener == nil)
+    await load(store, "t2", "https://example.com/next")
+    s = await store.browserSnapshot(paneId: pane)
+    #expect(s.groups.map(\.siteKey) == ["example.com"], "the site rule groups it with its opener's site")
+    // A pop-up on about:blank from a grouped opener still joins.
+    await store.updateBrowser(paneId: pane) { s in s.tabs.append(tab("t3", "https://other.org/")); s.nextTab = 4 }
+    let blank = await store.browserPageOpenedTab(paneId: pane, opener: "t1", url: "about:blank")
+    #expect(await store.browserSnapshot(paneId: pane).tabs.first { $0.id == blank }?.group == "g1")
+}
+
+/// Ruling 12's guard: the name lands only on a group that still exists, is automatic and unnamed.
+@Test func browserNameGroupLandsOnlyOnAnUnnamedAutomaticGroup() async {
+    let store = await browserStore(["t1", "t2", "t3", "t4"])
+    await store.updateBrowser(paneId: pane) { s in
+        s.groups = [
+            BrowserGroup(id: "g1", name: "Example", colour: .blue, kind: .automatic, siteKey: "example.com"),
+            BrowserGroup(id: "g2", name: "Mine", colour: .steel, kind: .own),
+            BrowserGroup(id: "g3", name: "Named", colour: .teal, kind: .automatic, siteKey: "other.org", named: true),
+        ]
+        s.tabs[0].group = "g1"; s.tabs[1].group = "g1"; s.tabs[2].group = "g2"; s.tabs[3].group = "g3"
+        s.nextGroup = 4
+    }
+    #expect(await store.browserNameGroup(paneId: pane, group: "g1", name: "Trip Planning"))
+    var s = await store.browserSnapshot(paneId: pane)
+    #expect(s.group("g1")?.name == "Trip Planning" && s.group("g1")?.named == true && s.group("g1")?.kind == .automatic)
+    #expect(!(await store.browserNameGroup(paneId: pane, group: "g1", name: "Again")), "named already")
+    #expect(!(await store.browserNameGroup(paneId: pane, group: "g2", name: "X")), "the operator's own")
+    #expect(!(await store.browserNameGroup(paneId: pane, group: "g3", name: "X")))
+    #expect(!(await store.browserNameGroup(paneId: pane, group: "g9", name: "X")), "dissolved")
+    #expect(!(await store.browserNameGroup(paneId: "nope", group: "g1", name: "X")))
+    s = await store.browserSnapshot(paneId: pane)
+    #expect(s.group("g1")?.name == "Trip Planning" && s.group("g2")?.name == "Mine" && s.group("g3")?.name == "Named")
+    #expect(await !store.holdsContents(paneId: "nope"))
+}
+
+@Test func readPaneCarriesGroupsAndPins() async {
+    let store = await browserStore(["t1", "t2", "t3", "t4"])
+    await store.updateBrowser(paneId: pane) { s in
+        s.tabs[0].pin = "p00000001"
+        s.groups = [
+            BrowserGroup(id: "g1", name: "Docs", colour: .teal, collapsed: true, kind: .own, pin: "p00000002"),
+            BrowserGroup(id: "g2", name: "Example", colour: .sand, kind: .automatic, siteKey: "example.com"),
+        ]
+        s.tabs[1].group = "g1"; s.tabs[2].group = "g2"; s.tabs[3].group = "g2"
+        s.tabColumnHidden = true
+        s.pinsError = "line 1: not JSON"
+    }
+    let o = object(await store.readPane(paneId: pane, kind: "browser"))
+    #expect(o["tabColumnHidden"] == .bool(true) && o["pinsError"] == .string("line 1: not JSON"))
+    let tabs = array(o["tabs"]).map(object)
+    #expect(tabs.map { $0["group"] } == [.null, .string("g1"), .string("g2"), .string("g2")])
+    #expect(tabs.map { $0["pinned"] } == [.bool(true), .bool(true), .bool(false), .bool(false)],
+            "a tab of a pinned group counts as pinned")
+    #expect(array(o["groups"]).map(object) == [
+        ["id": .string("g1"), "name": .string("Docs"), "colour": .string("teal"), "collapsed": .bool(true),
+         "kind": .string("own"), "pinned": .bool(true), "tabs": .array([.string("t2")])],
+        ["id": .string("g2"), "name": .string("Example"), "colour": .string("sand"), "collapsed": .bool(false),
+         "kind": .string("automatic"), "pinned": .bool(false), "tabs": .array([.string("t3"), .string("t4")])],
+    ])
+    let empty = object(await PaneStore(kinds: PaneKinds.standard).readPane(paneId: "x", kind: "browser"))
+    #expect(empty["groups"] == .array([]) && empty["tabColumnHidden"] == .bool(false) && empty["pinsError"] == .null)
 }

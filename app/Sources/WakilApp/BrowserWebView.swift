@@ -428,7 +428,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let pane = self.pane, opener = self.tab
         Task {
             _ = await model.dispatchFromSurfaceInOrder([
-                ("browser_new_tab", .object(["pane": .string(pane), "url": .string(url.absoluteString)])),
+                ("browser_new_tab", .object(["pane": .string(pane), "url": .string(url.absoluteString),
+                                             "opener": .string(opener)])),
                 ("browser_select_tab", .object(["pane": .string(pane), "tab": .string(opener)])),
             ])
         }

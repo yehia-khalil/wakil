@@ -733,3 +733,235 @@ private func bookmarked(_ reply: JSONValue) -> Bool? {
     #expect(BrowserTab(id: "t1", url: "https://www.example.com/x", title: "").label == BrowserAddress.displayHost(URL(string: "https://www.example.com/x")!))
     #expect(BrowserTab(id: "t1", url: "", title: "").label == "New Tab")
 }
+
+// MARK: - 3d-i Task 7: browser_group, browser_move_tab into a group, browser_new_tab's opener
+
+private func fields(_ value: JSONValue?) -> [String: JSONValue] {
+    if case .object(let o)? = value { return o }
+    return [:]
+}
+
+/// The reply's `groups`, each as an object.
+private func replyGroups(_ reply: JSONValue) -> [[String: JSONValue]] {
+    guard case .array(let a)? = fields(reply)["groups"] else { return [] }
+    return a.map { fields($0) }
+}
+
+/// Tabs t1–t4 (t1 active): t1 and t2 on example.com in automatic group g1, t3 and t4 loose.
+private func groupedFixture() async throws -> BrowserFixture {
+    let f = try await withTabs(["https://example.com/a", "https://example.com/b", "https://other.org/c",
+                                "https://third.net/d"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.groups = [BrowserGroup(id: "g1", name: "Example", colour: .blue, kind: .automatic, siteKey: "example.com")]
+        s.nextGroup = 2
+        s.tabs[0].group = "g1"; s.tabs[1].group = "g1"
+    }
+    return f
+}
+
+@Test func newTabWithOpenerUsesTheOpenerRule() async throws {
+    let f = try await withTabs(["https://example.com/a"])
+    // ⌘-click from a loose tab to another site: the two form a chain group, named after the opener.
+    try await f.dispatch("browser_new_tab", ["url": .string("https://other.org/x"), "opener": .string("t1")])
+    var s = await f.snapshot()
+    #expect(s.groups.count == 1 && s.groups[0].kind == .automatic && s.groups[0].siteKey == nil)
+    #expect(s.groups[0].name == "Example")
+    #expect(s.tabs.map(\.group) == ["g1", "g1"] && s.tabs[1].opener == "t1")
+    #expect(s.active == "t2", "browser_new_tab still selects the new tab")
+    // From a grouped tab: it joins.
+    try await f.dispatch("browser_new_tab", ["url": .string("https://third.net/"), "opener": .string("t2")])
+    s = await f.snapshot()
+    #expect(s.tabs.map(\.group) == ["g1", "g1", "g1"])
+    // The same site from a loose opener: no group; the site rule decides when it loads.
+    try await f.dispatch("browser_new_tab", ["url": .string("https://fourth.net/")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://fourth.net/b"), "opener": .string("t4")])
+    s = await f.snapshot()
+    #expect(s.tabs.suffix(2).map(\.group) == [nil, nil] && s.tabs.last?.opener == nil)
+    // An opener that has closed meanwhile is no opener.
+    try await f.dispatch("browser_new_tab", ["url": .string("https://fifth.net/"), "opener": .string("t99")])
+    #expect(await f.snapshot().tabs.last?.group == nil)
+    // Saved with the layout.
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).groups.map(\.id) == ["g1"])
+}
+
+@Test func groupCreateMakesAnOwnGroup() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/", "https://c.test/"])
+    let reply = try await f.dispatch("browser_group", ["action": .string("create"),
+                                                       "tabs": .array([.string("t1"), .string("t3")]),
+                                                       "name": .string("Trip")])
+    #expect(fields(reply)["group"] == .string("g1") && fields(reply)["pane"] == .string(f.pane))
+    #expect(replyGroups(reply).first?["kind"] == .string("own") && replyGroups(reply).first?["name"] == .string("Trip"))
+    #expect(replyGroups(reply).first?["tabs"] == .array([.string("t1"), .string("t3")]))
+    #expect(await f.snapshot().tabs.map(\.id) == ["t1", "t3", "t2"], "a group's tabs sit together")
+    // No tabs: the active tab, named New Group.
+    try await f.dispatch("browser_select_tab", ["tab": .string("t2")])
+    let second = try await f.dispatch("browser_group", ["action": .string("create")])
+    #expect(fields(second)["group"] == .string("g2"))
+    #expect(replyGroups(second).last?["name"] == .string("New Group"))
+    #expect(replyGroups(second).last?["tabs"] == .array([.string("t2")]))
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).groups.map(\.id) == ["g1", "g2"])
+    #expect(await refusal { try await f.dispatch("browser_group", ["action": .string("create"),
+                                                                   "tabs": .array([.string("t9")])]) }
+        == "browser_group: the browser pane has no tab t9")
+}
+
+@Test func groupRenameMakesItOwn() async throws {
+    let f = try await groupedFixture()
+    let reply = try await f.dispatch("browser_group", ["action": .string("rename"), "group": .string("g1"),
+                                                       "name": .string("Shopping")])
+    #expect(replyGroups(reply).first?["name"] == .string("Shopping") && replyGroups(reply).first?["kind"] == .string("own"))
+    #expect(await f.snapshot().group("g1")?.named == true)
+}
+
+@Test func groupRecolourMakesItOwn() async throws {
+    let f = try await groupedFixture()
+    let reply = try await f.dispatch("browser_group", ["action": .string("recolour"), "group": .string("g1"),
+                                                       "colour": .string("sand")])
+    #expect(replyGroups(reply).first?["colour"] == .string("sand") && replyGroups(reply).first?["kind"] == .string("own"))
+}
+
+@Test func groupCollapseAndExpandLeaveItAutomatic() async throws {
+    let f = try await groupedFixture()
+    var reply = try await f.dispatch("browser_group", ["action": .string("collapse"), "group": .string("g1")])
+    #expect(replyGroups(reply).first?["collapsed"] == .bool(true) && replyGroups(reply).first?["kind"] == .string("automatic"))
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).groups.first?.collapsed == true)
+    reply = try await f.dispatch("browser_group", ["action": .string("expand"), "group": .string("g1")])
+    #expect(replyGroups(reply).first?["collapsed"] == .bool(false) && replyGroups(reply).first?["kind"] == .string("automatic"))
+}
+
+@Test func groupUngroupKeepsItsTabsLoose() async throws {
+    let f = try await groupedFixture()
+    let reply = try await f.dispatch("browser_group", ["action": .string("ungroup"), "group": .string("g1")])
+    #expect(replyGroups(reply).isEmpty)
+    let s = await f.snapshot()
+    #expect(s.tabs.allSatisfy { $0.group == nil })
+    #expect(s.tabs.filter(\.keptLoose).map(\.id).sorted() == ["t1", "t2"])
+    // The site rule never pulls them back.
+    await f.panes.browserPageDidReport(paneId: f.pane, tab: "t2", BrowserPageReport(
+        url: "https://example.com/b", title: "", isLoading: true, progress: 0.5, canGoBack: false, canGoForward: false, failure: nil))
+    await f.panes.browserPageDidReport(paneId: f.pane, tab: "t2", BrowserPageReport(
+        url: "https://example.com/b", title: "", isLoading: false, progress: 1, canGoBack: false, canGoForward: false, failure: nil))
+    #expect(await f.snapshot().groups.isEmpty)
+}
+
+@Test func groupCloseClosesItsTabs() async throws {
+    let f = try await groupedFixture()
+    let reply = try await f.dispatch("browser_group", ["action": .string("close"), "group": .string("g1")])
+    #expect(replyGroups(reply).isEmpty)
+    let s = await f.snapshot()
+    #expect(s.tabs.map(\.id) == ["t3", "t4"] && s.active == "t3", "the tab right of the group is selected")
+    #expect(s.closed.map(\.url) == ["https://example.com/a", "https://example.com/b"])
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.map(\.id) == ["t3", "t4"])
+}
+
+@Test func closingAGroupClosesItsTabsAndTheLastClosesThePane() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    try await f.dispatch("browser_group", ["action": .string("create"), "tabs": .array([.string("t1"), .string("t2")])])
+    let reply = try await f.dispatch("browser_group", ["action": .string("close"), "group": .string("g1")])
+    #expect(reply == .object(["pane": .string(f.pane), "closed": .bool(true)]))
+    #expect(await !f.layout.snapshot().panes.contains { $0.id == f.pane })
+    #expect(await !f.panes.holdsContents(paneId: f.pane))
+}
+
+@Test func thePullRequestGroupRefusesRename() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs.append(BrowserTab(id: "t2", url: "https://github.com/initech/app/pull/4", title: "Fix · initech/app#4",
+                                 group: "pr", pullRequest: "https://github.com/initech/app/pull/4"))
+        s.groups = [BrowserGroup(id: "pr", name: "Pull Requests", colour: .blue, collapsed: true,
+                                 kind: .pullRequests, named: true)]
+        s.nextTab = 3
+    }
+    let before = await f.snapshot()
+    for (verb, word, extra) in [("rename", "renamed", ["name": JSONValue.string("X")]),
+                                ("recolour", "recoloured", ["colour": .string("teal")]),
+                                ("ungroup", "ungrouped", [:]), ("close", "closed", [:])] {
+        var params: [String: JSONValue] = ["action": .string(verb), "group": .string("pr")]
+        params.merge(extra) { a, _ in a }
+        #expect(await refusal { try await f.dispatch("browser_group", params) }
+            == "browser_group: the pull-request group can't be \(word)", "\(verb)")
+    }
+    #expect(await f.snapshot() == before)
+    let reply = try await f.dispatch("browser_group", ["action": .string("expand"), "group": .string("pr")])
+    #expect(replyGroups(reply).first?["collapsed"] == .bool(false) && replyGroups(reply).first?["kind"] == .string("pullRequests"))
+}
+
+@Test func anUnknownColourIsRefusedWithTheList() async throws {
+    let f = try await groupedFixture()
+    let before = await f.snapshot()
+    #expect(await refusal { try await f.dispatch("browser_group", ["action": .string("recolour"), "group": .string("g1"),
+                                                                   "colour": .string("red")]) }
+        == "browser_group: colour is one of blue, steel, teal, sand, stone, smoke")
+    #expect(await refusal { try await f.dispatch("browser_group", ["action": .string("collapse"), "group": .string("g7")]) }
+        == "browser_group: this pane has no group g7")
+    #expect(await f.snapshot() == before)
+}
+
+@Test func moveTabIntoAndOutOfAGroup() async throws {
+    let f = try await groupedFixture()
+    try await f.dispatch("browser_move_tab", ["tab": .string("t4"), "group": .string("g1")])
+    var s = await f.snapshot()
+    #expect(s.tabs.map(\.id) == ["t1", "t2", "t4", "t3"] && s.tabs[2].group == "g1")
+    #expect(s.group("g1")?.kind == .own, "a tab dragged in makes it yours")
+    try await f.dispatch("browser_move_tab", ["tab": .string("t1"), "group": .string("")])
+    s = await f.snapshot()
+    #expect(s.tabs.first { $0.id == "t1" }?.group == nil && s.tabs.first { $0.id == "t1" }?.keptLoose == true)
+    #expect(s.tabs.filter { $0.group == "g1" }.map(\.id) == ["t2", "t4"], "an own group of two stays")
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.first { $0.id == "t1" }?.keptLoose == true)
+    // Plain reordering is still today's, then arranged: a loose tab cannot land inside a group.
+    try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "to": .integer(0)])
+    s = await f.snapshot()
+    #expect(s.tabs.map(\.id).prefix(2) == ["t2", "t4"])
+    #expect(await refusal { try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "group": .string("g9")]) }
+        == "browser_move_tab: this pane has no group g9")
+    #expect(await refusal { try await f.dispatch("browser_move_tab", ["tab": .string("t3")]) }
+        == StandardActionError.missingParam(action: "browser_move_tab", param: "to").description)
+}
+
+/// Ruling 22: a reopened tab returns to its group while the pane still has it.
+@Test func aReopenedTabReturnsToItsGroup() async throws {
+    let f = try await groupedFixture()
+    try await f.dispatch("browser_group", ["action": .string("rename"), "group": .string("g1"), "name": .string("Mine")])
+    try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "group": .string("g1")])
+    try await f.dispatch("browser_close_tab", ["tab": .string("t2")])
+    try await f.dispatch("browser_reopen_tab")
+    var s = await f.snapshot()
+    #expect(s.tabs.first { $0.url == "https://example.com/b" }?.group == "g1")
+    // Its group gone, it comes back loose.
+    try await f.dispatch("browser_close_tab", ["tab": .string("t3")])
+    try await f.dispatch("browser_group", ["action": .string("ungroup"), "group": .string("g1")])
+    try await f.dispatch("browser_reopen_tab")
+    s = await f.snapshot()
+    #expect(s.tabs.first { $0.url == "https://other.org/c" }?.group == nil)
+}
+
+/// Rule 6: no grouping rule or action changes the selection; a tab moved into a group stays selected.
+@Test func groupingNeverChangesTheActiveTab() async throws {
+    let f = try await groupedFixture()
+    try await f.dispatch("browser_select_tab", ["tab": .string("t3")])
+    let steps: [[String: JSONValue]] = [
+        ["action": .string("rename"), "group": .string("g1"), "name": .string("A")],
+        ["action": .string("recolour"), "group": .string("g1"), "colour": .string("teal")],
+        ["action": .string("collapse"), "group": .string("g1")],
+        ["action": .string("expand"), "group": .string("g1")],
+        ["action": .string("create"), "tabs": .array([.string("t4")])],
+    ]
+    for p in steps {
+        try await f.dispatch("browser_group", p)
+        #expect(await f.snapshot().active == "t3", "\(p)")
+    }
+    try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "group": .string("g1")])
+    #expect(await f.snapshot().active == "t3", "moved into a group, still selected")
+    try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "group": .string("")])
+    #expect(await f.snapshot().active == "t3")
+    try await f.dispatch("browser_group", ["action": .string("ungroup"), "group": .string("g2")])
+    #expect(await f.snapshot().active == "t3")
+    try await f.dispatch("browser_new_tab", ["url": .string("https://x.org/"), "opener": .string("t1")])
+    try await f.dispatch("browser_select_tab", ["tab": .string("t3")])
+    await f.panes.browserPageDidReport(paneId: f.pane, tab: "t4", BrowserPageReport(
+        url: "https://example.com/z", title: "", isLoading: true, progress: 0.5, canGoBack: false, canGoForward: false, failure: nil))
+    await f.panes.browserPageDidReport(paneId: f.pane, tab: "t4", BrowserPageReport(
+        url: "https://example.com/z", title: "", isLoading: false, progress: 1, canGoBack: false, canGoForward: false, failure: nil))
+    try await f.dispatch("browser_group", ["action": .string("close"), "group": .string("g1")])
+    #expect(await f.snapshot().active == "t3", "closing a group the selection is not in")
+}

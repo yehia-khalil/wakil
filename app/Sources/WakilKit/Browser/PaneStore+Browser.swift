@@ -61,11 +61,16 @@ extension PaneStore {
 
     /// A tab's page state after a navigation event. A tab that is gone, or a pane that holds no
     /// browser, drops it. Marks the tab loaded; takes the zoom only when the report names one;
-    /// leaves `command`, `active` and tab order alone.
+    /// leaves `command` and `active` alone.
+    ///
+    /// A report that **ends a load** (loading before, not now, no failure) runs the site rule on the
+    /// tab's address then (ruling 7), which may group it; no other report moves a tab, so a redirect
+    /// through a sign-in host never regroups one.
     public func browserPageDidReport(paneId: String, tab: String, _ report: BrowserPageReport) {
         guard holds(BrowserPaneKind.self, paneId) else { return }
         updateBrowser(paneId: paneId) { s in
             guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else { return }
+            let endsALoad = s.tabs[i].isLoading && !report.isLoading && report.failure == nil
             // A new address is a new page: the agent's read of the old one no longer applies.
             if s.tabs[i].url != report.url { s.tabs[i].lastRead = nil }
             s.tabs[i].url = report.url
@@ -77,6 +82,7 @@ extension PaneStore {
             s.tabs[i].failure = report.failure
             if let zoom = report.zoom { s.tabs[i].zoom = zoom }
             s.tabs[i].loaded = true
+            if endsALoad { s.placeLoaded(tab: tab) }
         }
     }
 
@@ -106,8 +112,8 @@ extension PaneStore {
     }
 
     /// A page opened a window (`window.open`, `target=_blank`): a new tab right of its opener, made
-    /// active. WebKit already made its web view, so it is loaded and carries no command. Returns
-    /// the new id, or nil when the opener is gone.
+    /// active. WebKit already made its web view, so it is loaded and carries no command. The opener
+    /// rule places it (ruling 8). Returns the new id, or nil when the opener is gone.
     public func browserPageOpenedTab(paneId: String, opener: String, url: String) -> String? {
         guard holds(BrowserPaneKind.self, paneId) else { return nil }
         return updateBrowser(paneId: paneId) { s -> String? in
@@ -116,7 +122,22 @@ extension PaneStore {
             s.nextTab += 1
             s.tabs.insert(BrowserTab(id: id, url: url, title: "", loaded: true), at: i + 1)
             s.active = id
+            s.placeOpenedKnowingTheSite(tab: id, opener: opener)
             return id
+        }
+    }
+
+    /// Ruling 12's guard: the model's name lands only on a group that still exists, is still
+    /// automatic and is not yet named; it then is. False, and nothing changes, otherwise.
+    @discardableResult
+    public func browserNameGroup(paneId: String, group: String, name: String) -> Bool {
+        guard holds(BrowserPaneKind.self, paneId) else { return false }
+        return updateBrowser(paneId: paneId) { s -> Bool in
+            guard let i = s.groups.firstIndex(where: { $0.id == group }),
+                  s.groups[i].kind == .automatic, !s.groups[i].named else { return false }
+            s.groups[i].name = name
+            s.groups[i].named = true
+            return true
         }
     }
 
