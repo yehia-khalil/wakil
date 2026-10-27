@@ -85,7 +85,24 @@ drops a report from a place not on screen, and the pane asks for every report ag
 is shown (`reportAll`). Commands go the other way only: an action bumps the tab's `command`, the
 pane's `sync` hands it to the host. A page's own prompts (alert, sign-in, camera) are the host's,
 not store state (`BrowserPrompt`): the page asked, not the operator or the agent.
-`BrowserSettingsForm.swift` is Settings → Browser (search engine, start page, Clear data).
+`BrowserSettingsForm.swift` is Settings → Browser (search engine, start page, picture in picture, Clear data).
+
+**Picture in picture (3d-iii)** is `BrowserPictureInPictureHost` (`BrowserPictureInPictureHost.swift`),
+held by `BrowserTabHost`: it tells WakilKit's `BrowserPictureInPicture` machine what is on screen
+(`show` and `hide` from each pane, `didMiniaturize` and `didDeminiaturize` from the window; focus
+is not listened to) and carries out the effects it returns. `BrowserPictureInPictureScript.swift`
+runs in every frame, in its own content world `wakil.pip`, and posts to the handler
+`wakilPictureInPicture` which frames have a playing video and since when; a float tries those frames,
+newest first, through `callAsyncJavaScript` (a cross-origin iframe floats through its own frame).
+`BrowserPictureInPictureSupport.swift` is the one place that names WebKit's private API: the
+`WKPreferences` key `allowsPictureInPictureMediaPlayback` and the two `WKUIDelegate` callbacks
+`_webView:hasVideoInPictureInPictureDidChange:` and `_webViewFullscreenMayReturnToInline:`. It checks
+each exists and reports what is `missing`; Settings → Browser then turns the row off and says why,
+and nothing floats. Restore docks a view that has no window in the window's content view,
+below its siblings and invisible, so WebKit can bring the video back inline; the pane then takes
+the view, and `WindowModel.browserReturn(to:)` goes to the tab. A place's old name, for a moment after a
+rename, is ignored by the guard (`BrowserRenamedPlaces`, pure). `BrowserPane.isCovered` (a maximised
+sibling) hides its tab; closing a tab or pane ends its float without waiting for WebKit.
 
 **The agent's reach into a page (3c-ii)** is `BrowserPageAgent` (`BrowserPageAgent.swift`), the
 `BrowserPageDriver` WakilKit's actions call, and `BrowserAgentScript.swift`, the script it runs. The

@@ -215,10 +215,18 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   own suggestions, behind the `searchSuggestions` setting (off by default).
 - `BrowserAddressInput.swift` — `BrowserAddressInput` (3c-iii): the address field's key and completion
   state machine (↓ ↑ Return Esc, ⌫ after a completion); `BrowserBookmarkChoices` is the ★ menu.
+- `BrowserPictureInPicture.swift` — `BrowserTabRef` (a tab anywhere: scope, pane, tab) and
+  `BrowserPictureInPicture` (3d-iii): the pure rules for when a playing video floats, comes back
+  inline, is paused, or goes to its tab. The host says what is on screen and what WebKit reported;
+  it returns `Effect`s (`float`, `inline`, `pause`, `goTo`). Off floats nothing, and coming back from
+  the Dock brings back only a tab that is on screen. `closed` clears a floating tab itself, since WebKit
+  sends no callback. `BrowserRenamedPlaces.swift` is the pure map of a place's old names after a
+  rename, so a pane drawn under one is ignored. `read_pane` gives `pictureInPicture`, the id of the
+  floating tab or null; `WindowModel.browserReturn(to:)` is Restore's way back.
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `BrowserPictureInPictureTests`, `BrowserRenamedPlacesTests`, `WindowModelBrowserTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 
