@@ -28,6 +28,9 @@ import Foundation
         for (typed, expected) in table {
             #expect(BrowserAddress.resolve(typed, searchEngine: "google")?.absoluteString == expected,
                     "typed: \(typed)")
+            // looksLikeAddress is exactly "resolve would not search" (3c-iii).
+            let searches = expected == nil || expected!.hasPrefix(google)
+            #expect(BrowserAddress.looksLikeAddress(typed) == !searches, "looksLikeAddress: \(typed)")
         }
     }
 
