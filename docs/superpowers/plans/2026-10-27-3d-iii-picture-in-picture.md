@@ -46,8 +46,8 @@ These settle what the spec left open or where it contradicts itself. Each is a *
    left is compared, and only the newest is floated. Minimising with two panes on screen offers both
    panes' active tabs as candidates.
 4. **A floating video replaced while its tab is away is paused.** WebKit keeps one picture-in-picture
-   window, so when B floats, A goes back inline in a tab nobody sees. Without a pause, A would play
-   unseen. A video whose float ends while its tab is not on screen is paused, unless that end came from
+   window, so when B floats, A goes back inline in a tab nobody sees. Task 1 found WebKit already
+   pauses A then, muted or not; the pause stays as a guard that does not depend on it. A video whose float ends while its tab is not on screen is paused, unless that end came from
    Restore. Close in the system window already pauses.
 5. **Restore puts the web view back synchronously by docking it.** The place may be off screen and the
    SwiftUI pane may not exist when `_webViewFullscreenMayReturnToInline:` arrives. So, inside that call,
@@ -63,8 +63,8 @@ These settle what the spec left open or where it contradicts itself. Each is a *
    is not on that scope after the switch, nothing is selected, because pane and tab ids repeat from
    place to place.
 7. **"Guarded with `responds(to:)`" means three checks**, made once per launch:
-   `WKPreferences` instances respond to the setter the KVC key resolves to (Task 1 records which,
-   `_setAllowsPictureInPictureMediaPlayback:` or `setAllowsPictureInPictureMediaPlayback:`). WebKit's
+   `WKPreferences` instances respond to the setter the KVC key resolves to,
+   `_setAllowsPictureInPictureMediaPlayback:` (Task 1: macOS has no `setAllows…:`). WebKit's
    `WKUIDelegatePrivate` protocol, if present, declares `_webView:hasVideoInPictureInPictureDidChange:`
    and `_webViewFullscreenMayReturnToInline:` as optional instance methods. A delegate callback cannot
    be checked with `responds(to:)` on our own object, because WebKit asks us. If any check fails, the
@@ -80,8 +80,8 @@ These settle what the spec left open or where it contradicts itself. Each is a *
     It arrives through `BrowserPageReport`, so `reportAll` re-sends it when a place is shown again. It
     is not saved.
 11. **The floating tab's web view is never evicted** by the 20-view limit. It moves with
-    `rehome`. Releasing it (its tab closed) sends it back inline first. Task 1 decides whether the drop
-    must wait for that.
+    `rehome`. Releasing it (its tab closed) ends the float: the system window goes with the view, but
+    WebKit sends no `false` (Task 1), so `closed` clears the floating tab itself and the drop does not wait.
 
 ## Global Constraints
 
@@ -92,9 +92,10 @@ These settle what the spec left open or where it contradicts itself. Each is a *
   `WKPreferences`; the `WKUIDelegate` methods `_webView:hasVideoInPictureInPictureDidChange:` and
   `_webViewFullscreenMayReturnToInline:`. `webkitSetPresentationMode` is WebKit's prefixed web API,
   called from script. Each Swift use names it private in a comment.
-- The candidate rule, verbatim from the spec: a `<video>` with `!paused && !ended && readyState > 2 &&
-  !disablePictureInPicture`. Floated with `webkitSetPresentationMode('picture-in-picture')`, brought
-  back with `webkitSetPresentationMode('inline')`. Never `requestPictureInPicture()`.
+- The candidate rule, verbatim from the spec as amended 2026-10-27: a `<video>` that is `!paused`, or
+  was playing by its own events when the page went hidden while the page stays hidden, and `!ended &&
+  readyState > 2 && !disablePictureInPicture`. Floated with `webkitSetPresentationMode('picture-in-picture')`,
+  then `play()` if paused; brought back with `webkitSetPresentationMode('inline')`. Never `requestPictureInPicture()`.
 - Script world `wakil.pip` (`WKContentWorld.world(name:)`); message handler name `wakilPictureInPicture`.
   The page's own script never sees either.
 - Setting: `pictureInPicture` in `~/.wakil/settings.json` under `browser`, **on by default**.
@@ -328,7 +329,8 @@ These settle what the spec left open or where it contradicts itself. Each is a *
     static let handlerName = "wakilPictureInPicture"; static func userScript() -> WKUserScript /* at document
     end, every frame, in world */; static let enter: String; static let inline: String; static let pause: String }`
   - The user script assigns its frame a token (`crypto.randomUUID()`) and listens in the capture phase on
-    `document` for `play`, `playing`, `pause`, `ended`, `emptied` and `pagehide`. It also scans once at
+    `document` for `play`, `playing`, `pause`, `ended`, `emptied`, `visibilitychange` (the hidden-time
+    snapshot, cleared on visible and on `enter`/`leavepictureinpicture`) and `pagehide`. It also scans once at
     injection, for a video already playing. On each it posts `{frame: String, playing: Bool, since:
     Number}` for the frame's newest qualifying video (`since` from its `playing` stamp, an expando set in
     this world). `enter` floats the frame's newest qualifying video and returns whether it did. `inline`
