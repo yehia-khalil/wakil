@@ -373,7 +373,7 @@ func TestAnUnpickedCheckIsOwedToTheFullRunAndIsNotAFault(t *testing.T) {
 		t.Fatalf("owed %v", got)
 	}
 	section := walk.Markdown()
-	for _, want := range []string{"owed to `make e2e-full`", "1 check(s) are owed"} {
+	for _, want := range []string{"owed to `make e2e-full`", "1 check(s) are owed", "the night run covers on `main` after the merge"} {
 		if !strings.Contains(section, want) {
 			t.Fatalf("missing %q:\n%s", want, section)
 		}

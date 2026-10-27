@@ -125,5 +125,5 @@ Go records are `internal/wakilcore/provider.go`; the Swift side is the `Provider
 
 - `make build` and `make test`.
 - `make app-test`. It does not build Go, so run `make build` first when Go changed.
-- `make e2e` for a UI change: the checks the diff reaches, for a few minutes of screen. Ask the operator first. `make e2e-full` runs once, before merge.
+- `make e2e` for a UI change: the checks the diff reaches, for a few minutes of screen. Ask the operator first. `make e2e-full` runs nightly on `main` (the night run, `make e2e-night-status`), not before merge.
 - No `Co-Authored-By` or "Generated with" lines in commits or PR descriptions.
