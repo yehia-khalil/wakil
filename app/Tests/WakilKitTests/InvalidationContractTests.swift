@@ -47,6 +47,8 @@ private let orgDerived: Set<String> = [
     // next refreshLayout), Settings' absent reason is that organisation's, and the header focus names
     // a pane of the screen being left.
     "browserPullRequestsLoop", "browserPullRequestsAbsent", "browserHeaderFocus", "browserPullRequestsHeld",
+    // 3d-i Task 12: the strip's `pr` header draws the outgoing organisation's list until it is cleared.
+    "browserPullRequestsOnScreen",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
     // 3b-viii: the quick tasks route to the org's providers on its credentials, and each pane's
@@ -300,6 +302,9 @@ private let orgIndependent: Set<String> = [
     "browserTabsDelay", "browserTabsWriteCount", "browserNow", "browserCloseArmTask",
     // 3d-i: the pull-request loop's interval (configuration, shortened by tests).
     "browserPullRequestsInterval",
+    // 3d-i Task 12: how many of this window's refreshes are under way — each its own call, which
+    // counts itself out when it returns; reset across a switch, a late return would go below zero.
+    "browserPullRequestsRefreshes",
     // 3c-iii: the history writes queue (each targets its own place's organisation), and the
     // address suggestions' fetch and its one ephemeral session — the operator's setting, no organisation's.
     "browserHistoryTail", "browserSuggestionsAfterReads", "browserSuggestFetch", "browserSuggestSession",

@@ -181,17 +181,33 @@ struct BrowserHeader<Address: View>: View {
 }
 
 /// The number of tabs at the strip's right, pinned outside its scrolling: pressed, the ⌄ menu of
-/// every tab. With the list hidden it carries the ⌄ itself. Tabular digits and no tracking, so
-/// 15 reads as one number.
+/// every tab, by group (3d-i) — loose and pinned tabs on their own, each group's under its name.
+/// With the list hidden it carries the ⌄ itself. Tabular digits and no tracking, so 15 reads as one
+/// number.
 struct BrowserTabCount: View {
-    let tabs: [BrowserTab]
+    let snapshot: BrowserSnapshot
     let listMode: BrowserTabListMode
     let dispatch: (String, [String: JSONValue]) -> Void
 
+    /// Runs of tabs in drawn order, each a group's (by id) or loose (nil).
+    private var runs: [(group: String?, tabs: [BrowserTab])] {
+        var out: [(group: String?, tabs: [BrowserTab])] = []
+        for tab in snapshot.tabs {
+            let gid = tab.group.flatMap { snapshot.group($0)?.id }
+            if let last = out.last, last.group == gid { out[out.count - 1].tabs.append(tab) } else { out.append((gid, [tab])) }
+        }
+        return out
+    }
+
     var body: some View {
+        let tabs = snapshot.tabs
         Menu {
-            ForEach(Array(tabs.enumerated()), id: \.element.id) { _, t in
-                Button(t.label) { dispatch("browser_select_tab", ["tab": .string(t.id)]) }
+            ForEach(Array(runs.enumerated()), id: \.offset) { _, run in
+                if let gid = run.group, let g = snapshot.group(gid) {
+                    Section(g.name) { items(run.tabs) }
+                } else {
+                    Section { items(run.tabs) }
+                }
             }
         } label: {
             HStack(spacing: 3) {
@@ -211,12 +227,25 @@ struct BrowserTabCount: View {
         .accessibilityLabel("\(tabs.count) tabs")
         .accessibilityIdentifier(listMode == .hidden ? "browser.tabMenu" : "browser.tabCount")
     }
+
+    private func items(_ tabs: [BrowserTab]) -> some View {
+        ForEach(tabs, id: \.id) { t in
+            Button(t.label) { dispatch("browser_select_tab", ["tab": .string(t.id)]) }
+        }
+    }
 }
 
 /// The tab strip (`PaneTabStrip`, the shared one): entries 200 pt wide shrinking to 96 before
 /// the strip scrolls; tick, favicon, title, × on hover; folded, an entry is its favicon and ×.
 /// Every press is a `browser_*` action (Invariant 2): select, close, `browser_move_tab` for a drag
 /// (Safari's behaviours kept), ⌘T's `browser_new_tab` on the ＋.
+///
+/// **Groups (3d-i).** Each group's chip (`BrowserGroupChip`, its own width, no ×) leads its tabs,
+/// which carry a 2 pt line in its colour; a collapsed group is its chip alone. A click on a chip
+/// collapses or expands it — after the double-click time, so a double-click renames instead — and
+/// puts the group's header under the keyboard's ⌘R (`browserHeaderFocus`); a click on a tab takes
+/// it away. A drag into a group's run joins it, out of it leaves it (`BrowserStripEntries.move`).
+/// The tab and group menus are on a right-click; a pinned tab armed by ⌘W shows its tip under it.
 struct BrowserTabList: View {
     let snapshot: BrowserSnapshot
     let mode: BrowserTabListMode
@@ -224,46 +253,151 @@ struct BrowserTabList: View {
     /// Which sites are production and which the active environment's (3c-ii): each tagged entry's dot.
     let sites: BrowserSites
     let dispatch: (String, [String: JSONValue]) -> Void
+    /// The menus' context (3d-i).
+    let menus: BrowserGroupMenuContext
+    /// The group whose name is being edited.
+    @Binding var renaming: String?
+    /// The group header ⌘R acts on in this pane; nil, none.
+    let headerFocus: String?
+    let setHeaderFocus: (String?) -> Void
+    /// The pinned tab waiting for ⌘W's second press in this pane.
+    let closeArmed: String?
+    /// The rename field went; `explicit` when Return or Esc ended it.
+    let renameEnded: (_ explicit: Bool) -> Void
+
+    /// A click on a chip, held for the double-click time so a double-click renames instead.
+    @State private var pendingToggle: Task<Void, Never>?
 
     var body: some View {
-        let tabs = snapshot.tabs
+        let list = BrowserStripEntries(snapshot)
+        let entries = list.entries
         PaneTabStrip(
-            ids: tabs.map(\.id), active: snapshot.active,
+            ids: list.ids, active: list.active,
             width: mode == .full ? .shrink : .fixed(mode.entryWidth),
             stripIds: PaneStripIds(
                 tabs: "browser.tabs",
                 moreLeft: "browser.tabs.moreLeft", moreLeftCount: "browser.tabs.moreLeft.count",
                 moreRight: "browser.tabs.moreRight", moreRightCount: "browser.tabs.moreRight.count",
                 newTab: "browser.newTab",
-                entry: { "browser.tab.\(tabs[$0].id)" },
-                close: { "browser.tab.\(tabs[$0].id).close" }),
+                entry: { entries[$0].identifier },
+                close: { "\(entries[$0].identifier).close" }),
             entry: { index, active in
-                HStack(spacing: PaneStripStyle.tabGap) {
-                    BrowserFavicon(image: favicon(tabs[index].id))
-                        // Ruling 4: every tagged tab carries its tag's dot, a background one too —
-                        // on the favicon's corner, so a folded entry keeps its width.
-                        .overlay(alignment: .topTrailing) {
-                            if let tag = sites.tag(tabs[index].url) {
-                                BrowserSiteTagDot(tag: tag, tab: tabs[index].id).offset(x: 3, y: -3)
-                            }
-                        }
-                    if mode == .full {
-                        Text(tabs[index].label)
-                            .font(.system(size: BrowserPaneStyle.tabTitleSize))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .foregroundStyle(BrowserPaneStyle.text.opacity(active ? 1 : PaneStripStyle.tabTitleRest))
-                    }
+                switch entries[index] {
+                case .chip(let g): chip(g, active: active)
+                case .tab(let t): tabEntry(t, active: active)
                 }
             },
-            label: { tabs[$0].label },
-            tap: { select(tabs[$0]) },
-            activate: { select(tabs[$0]) },
+            label: { label(entries[$0]) },
+            tap: { tap(entries[$0]) },
+            activate: { activate(entries[$0]) },
             move: { from, to in
-                dispatch("browser_move_tab", ["tab": .string(tabs[from].id), "to": .integer(Int64(to))])
+                if let params = list.move(from: from, to: to) { dispatch("browser_move_tab", params) }
             },
-            close: { dispatch("browser_close_tab", ["tab": .string(tabs[$0].id)]) },
-            newTab: PaneStripNewTab(help: "New Tab") { dispatch("browser_new_tab", [:]) })
+            close: { index in
+                if case .tab(let t) = entries[index] { dispatch("browser_close_tab", ["tab": .string(t.id)]) }
+            },
+            newTab: PaneStripNewTab(help: "New Tab") { dispatch("browser_new_tab", [:]) },
+            closable: { if case .tab = entries[$0] { true } else { false } },
+            contextMenu: { index in
+                switch entries[index] {
+                case .chip(let g): AnyView(BrowserGroupMenu(group: g, context: menus))
+                case .tab(let t): AnyView(BrowserTabMenu(tab: t, context: menus))
+                }
+            },
+            canMove: { from, to in list.move(from: from, to: to) != nil },
+            underline: { list.underline($0) },
+            naturalWidth: { if case .chip = entries[$0] { true } else { false } },
+            tip: closeArmed.flatMap { tab in
+                list.index(ofTab: tab).map {
+                    PaneStripTip(index: $0, text: BrowserPinnedClose.tip, identifier: "browser.tab.\(tab).closeTip")
+                }
+            })
+    }
+
+    @ViewBuilder private func tabEntry(_ tab: BrowserTab, active: Bool) -> some View {
+        HStack(spacing: PaneStripStyle.tabGap) {
+            BrowserFavicon(image: favicon(tab.id))
+                // Ruling 4: every tagged tab carries its tag's dot, a background one too —
+                // on the favicon's corner, so a folded entry keeps its width.
+                .overlay(alignment: .topTrailing) {
+                    if let tag = sites.tag(tab.url) {
+                        BrowserSiteTagDot(tag: tag, tab: tab.id).offset(x: 3, y: -3)
+                    }
+                }
+            if mode == .full {
+                Text(tab.label)
+                    .font(.system(size: BrowserPaneStyle.tabTitleSize))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(BrowserPaneStyle.text.opacity(active ? 1 : PaneStripStyle.tabTitleRest))
+            }
+        }
+    }
+
+    private func chip(_ g: BrowserGroup, active: Bool) -> some View {
+        BrowserGroupChip(
+            group: g, favicon: g.lastOpen.flatMap { favicon($0) }, showsName: mode == .full, on: active,
+            refreshing: g.kind == .pullRequests && menus.refreshing, renaming: renaming == g.id,
+            commitName: { name in
+                dispatch("browser_group", ["action": .string("rename"), "group": .string(g.id), "name": .string(name)])
+            },
+            endRename: { explicit in
+                if renaming == g.id { renaming = nil }
+                renameEnded(explicit)
+            })
+            // The group header under ⌘R: the address field's editing edge, in the tick's colour.
+            .padding(.horizontal, 3)
+            .padding(.vertical, 2)
+            .overlay {
+                if headerFocus == g.id {
+                    RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius - 1, style: .continuous)
+                        .strokeBorder(BrowserPaneStyle.tick.opacity(BrowserPaneStyle.fieldEditingEdge), lineWidth: 1)
+                }
+            }
+    }
+
+    private func label(_ entry: BrowserStripEntry) -> String {
+        switch entry {
+        case .chip(let g): BrowserGroupChip.label(g)
+        case .tab(let t): t.label
+        }
+    }
+
+    private func tap(_ entry: BrowserStripEntry) {
+        switch entry {
+        case .tab(let t):
+            if headerFocus != nil { setHeaderFocus(nil) }
+            select(t)
+        case .chip(let g):
+            // A click in the open name field is the field's.
+            guard renaming != g.id else { return }
+            setHeaderFocus(g.id)
+            pendingToggle?.cancel()
+            pendingToggle = nil
+            if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {
+                if g.kind != .pullRequests { renaming = g.id }
+                return
+            }
+            // The pull-request group has no name to edit: no double-click to wait for.
+            guard g.kind != .pullRequests else { return toggle(g) }
+            pendingToggle = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(NSEvent.doubleClickInterval))
+                guard !Task.isCancelled else { return }
+                toggle(g)
+            }
+        }
+    }
+
+    private func activate(_ entry: BrowserStripEntry) {
+        switch entry {
+        case .tab(let t): select(t)
+        case .chip(let g): toggle(g)
+        }
+    }
+
+    /// Collapse or expand: never the selected tab, never the keyboard (Rule 6).
+    private func toggle(_ g: BrowserGroup) {
+        dispatch("browser_group", ["action": .string(g.collapsed ? "expand" : "collapse"), "group": .string(g.id)])
     }
 
     private func select(_ tab: BrowserTab) {

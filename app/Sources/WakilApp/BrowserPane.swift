@@ -45,6 +45,15 @@ struct BrowserPane: View {
     let suggestions: (_ typed: String, _ search: [String]) async -> [BrowserSuggestion]
     let engineSuggestions: (_ typed: String) async -> [String]
     let chooseTab: (_ tab: String, _ url: String) async -> Void
+    /// 3d-i: the active project's name (*Pin to <project>*; empty with none), the pinned tab
+    /// waiting for ⌘W's second press, the drawn organisation's pull-request list (the `pr` header's
+    /// ↻ and error), the group header ⌘R acts on in this pane and how to set it, and *Refresh*.
+    let project: String
+    let closeArm: BrowserCloseArm?
+    let pullRequests: BrowserPullRequests?
+    let headerFocus: String?
+    let setHeaderFocus: (String?) -> Void
+    let refreshPullRequests: () -> Void
 
     @FocusState private var addressFocused: Bool
     @FocusState private var findFocused: Bool
@@ -67,6 +76,8 @@ struct BrowserPane: View {
     /// While the field editor is being given a completion's text and selection: the selection it
     /// passes through on the way is not the caret leaving the end.
     @State private var placingCompletion = false
+    /// The group whose name field is open (3d-i): *Rename…*, *New Group…* or a double-click.
+    @State private var renamingGroup: String?
 
     private var active: BrowserTab? { snapshot.activeTab }
     private var listMode: BrowserTabListMode { BrowserTabListMode(paneWidth: width) }
@@ -77,6 +88,9 @@ struct BrowserPane: View {
             // the page edge to edge to the pane's border (the canvas pads no browser pane). The
             // find bar and the downloads take a row of their own, each across a hairline.
             tabStrip
+                // The pinned tab's tip hangs over the row below.
+                .zIndex(1)
+            stripErrors
             BrowserHeader(tab: active, dispatch: send) {
                 addressField
                 BrowserBookmarkMenu(
@@ -134,6 +148,8 @@ struct BrowserPane: View {
             if now { takeKeyboard() } else {
                 addressFocused = false
                 host.resignKeyboard(scope: scope, pane: pane.id)
+                // ⌘R acts on the focused pane: a header left behind here would not be under it.
+                if headerFocus != nil { setHeaderFocus(nil) }
             }
         }
         .onChange(of: keyboardFocusRequests) { _, _ in if isFocusedPane { takeKeyboard() } }
@@ -171,13 +187,53 @@ struct BrowserPane: View {
                 BrowserTabList(
                     snapshot: snapshot, mode: listMode,
                     favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
-                    sites: sites, dispatch: send)
-                BrowserTabCount(tabs: snapshot.tabs, listMode: listMode, dispatch: send)
+                    sites: sites, dispatch: send, menus: groupMenus, renaming: $renamingGroup,
+                    headerFocus: headerFocus, setHeaderFocus: setHeaderFocus,
+                    closeArmed: closeArm.flatMap { $0.pane == pane.id ? $0.tab : nil },
+                    renameEnded: { explicit in
+                        // Return or Esc gives the keyboard back to the page; focus the operator moved
+                        // elsewhere stays there (Rule 6).
+                        if explicit { DispatchQueue.main.async { focusPage() } }
+                    })
+                BrowserTabCount(snapshot: snapshot, listMode: listMode, dispatch: send)
                     .padding(.leading, BrowserPaneStyle.gap)
             } else {
-                BrowserTabCount(tabs: snapshot.tabs, listMode: listMode, dispatch: send)
+                BrowserTabCount(snapshot: snapshot, listMode: listMode, dispatch: send)
                 Spacer(minLength: 0)
             }
+        }
+    }
+
+    /// The tab and group menus' context (3d-i).
+    private var groupMenus: BrowserGroupMenuContext {
+        BrowserGroupMenuContext(
+            snapshot: snapshot, project: project, refreshing: pullRequests?.refreshing == true,
+            dispatch: send, refreshPullRequests: refreshPullRequests,
+            rename: { renamingGroup = $0 },
+            newGroup: { tab in
+                // `browser_group create` names the group `g<nextGroup>`; its field opens once it is drawn.
+                let id = "g\(snapshot.nextGroup)"
+                Task {
+                    await dispatch("browser_group", ["action": .string("create"), "tabs": .array([.string(tab)])])
+                    renamingGroup = id
+                }
+            })
+    }
+
+    /// Under the strip, each whole and wrapping (Rule 8): why the project's pins can't be read, and
+    /// the pull-request group's last refresh failure. Neither blocks anything.
+    @ViewBuilder private var stripErrors: some View {
+        let prError = snapshot.groups.contains { $0.kind == .pullRequests } ? pullRequests?.error : nil
+        if snapshot.pinsError != nil || prError != nil {
+            PaneHairline()
+            if let pinsError = snapshot.pinsError {
+                BrowserStripErrorRow(text: pinsError, identifier: "browser.pinsError")
+                if prError != nil { PaneHairline() }
+            }
+            if let prError {
+                BrowserStripErrorRow(text: prError, identifier: "browser.group.pr.error")
+            }
+            PaneHairline()
         }
     }
 
@@ -644,6 +700,11 @@ struct BrowserPane: View {
             DispatchQueue.main.async { focusPage() }
         }
         syncFind(old: old, now: now)
+        // A name field for a group that was made and is gone (or never made) closes.
+        if let renaming = renamingGroup, now.group(renaming) == nil, let n = Int(renaming.dropFirst()),
+           now.nextGroup > n {
+            renamingGroup = nil
+        }
         // `browser_download_cancel` asked: the host stops each, and reports it once WebKit has.
         host.cancelRequested(now.downloads, scope: scope, pane: pane.id)
         host.prune(now.downloads, scope: scope, pane: pane.id)

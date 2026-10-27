@@ -1097,6 +1097,33 @@ private actor NamingModel: QuickModel {
         #expect(reader.reads > after)
     }
 
+    /// Task 12: the strip's pull-request header reads the window's copy of the list — refreshing
+    /// while a refresh runs (Rule 5), and a failure whole (Rule 8).
+    @Test func theHeaderReadsTheRefreshAndItsFailureWhole() async throws {
+        let reader = PullRequestsReader([pr(1)])
+        let window = await window(reader)
+        let pane = try await openBrowser(window)
+        await waitFor(reader, reads: 1)
+        for _ in 0..<5_000 where window.browser(pane)?.group("pr") == nil
+            || window.browserPullRequestsOnScreen?.refreshing != false {
+            try await Task.sleep(nanoseconds: 1_000_000)
+            await window.refreshPanes()
+        }
+        #expect(window.browserPullRequestsOnScreen?.refreshing == false)
+        let why = "github.com refused the pull-request search (HTTP 502): Bad gateway — try again in a minute."
+        reader.fail(StandardActionError.serverError(action: "ctx_github_pull_requests", message: why))
+        reader.hold()
+        let refresh = Task { await window.refreshBrowserPullRequests() }
+        await waitFor(reader, reads: 2)
+        #expect(window.browserPullRequestsOnScreen?.refreshing == true, "the header shows the refresh while it runs")
+        reader.release()
+        await refresh.value
+        #expect(window.browserPullRequestsOnScreen?.refreshing == false)
+        #expect(window.browserPullRequestsOnScreen?.error == why, "the failure whole")
+        await window.invalidateForOrgChange()
+        #expect(window.browserPullRequestsOnScreen == nil, "another organisation's list is not drawn")
+    }
+
     @Test func settingsReadsWhyThereIsNoGroup() async throws {
         let reader = PullRequestsReader()
         let why = "No pull-request group: acme has no GitHub account."

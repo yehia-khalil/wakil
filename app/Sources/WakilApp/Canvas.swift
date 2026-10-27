@@ -620,7 +620,15 @@ extension WakilWindow {
                             await model.browserSuggestions(typed: typed, pane: pane.id, search: search)
                         },
                         engineSuggestions: { typed in await model.browserEngineSuggestions(typed: typed) },
-                        chooseTab: { tab, url in await model.browserChooseTab(tab, url: url, from: pane.id) })
+                        chooseTab: { tab, url in await model.browserChooseTab(tab, url: url, from: pane.id) },
+                        project: model.project,
+                        closeArm: model.browserCloseArm,
+                        pullRequests: model.browserPullRequestsOnScreen,
+                        headerFocus: model.browserHeaderFocus?.pane == pane.id ? model.browserHeaderFocus?.group : nil,
+                        setHeaderFocus: { group in
+                            model.browserHeaderFocus = group.map { BrowserHeaderFocus(pane: pane.id, group: $0) }
+                        },
+                        refreshPullRequests: { Task { await model.refreshBrowserPullRequests() } })
                     // **One view per place and pane.** Pane ids repeat from place to place, so
                     // without this a switch from A's `browser-1` to B's would keep the view: no
                     // appearance (no re-report of B's pages) and A's snapshot as B's `old`.

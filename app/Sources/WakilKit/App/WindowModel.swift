@@ -2319,6 +2319,7 @@ public final class WindowModel {
         stopBrowserPullRequestsLoop()
         browserPullRequestsHeld = true
         browserPullRequestsAbsent = nil
+        browserPullRequestsOnScreen = nil
         browserHeaderFocus = nil
         // The store's copy for the outgoing org goes too: coming back before a re-read must not
         // price from a list that may be stale (`organization` still names the outgoing org here).
@@ -4666,6 +4667,7 @@ public final class WindowModel {
             browserAllowedOnScreen = []
         }
         await readBrowserBookmarksOnScreen()
+        await readBrowserPullRequestsOnScreen()
         gitRoots = await gitStatus?.roots ?? []
         await changesFollowStatus()
         // The dictionary itself changes only when a pane opens or closes.
@@ -5993,6 +5995,11 @@ public final class WindowModel {
     /// Why the active organisation has no pull-request group, for Settings (ruling 18); nil when
     /// it has one or the list has not been read.
     public private(set) var browserPullRequestsAbsent: String?
+    /// The drawn organisation's pull-request list as the strip's `pr` header draws it: whether a
+    /// refresh runs (Rule 5) and its last failure, whole (Rule 8). Read after every dispatch
+    /// (`refreshPanes`), and marked refreshing the moment this window starts one, so the header
+    /// shows it while the read runs. Org-derived: `invalidateForOrgChange` clears it.
+    public private(set) var browserPullRequestsOnScreen: BrowserPullRequests?
     /// How often the loop refreshes: five minutes (shortened by tests).
     @ObservationIgnored var browserPullRequestsInterval: Duration = .seconds(300)
     /// The loop, while a browser pane is on the canvas.
@@ -6027,14 +6034,32 @@ public final class WindowModel {
     /// One refresh through the action (Invariant 2), the canvas re-read after; Settings' `absent`
     /// from its answer. A loop ended meanwhile (an organisation switch) re-reads nothing, so its last
     /// refresh never starts it again.
-    func refreshBrowserPullRequests() async {
-        guard case .object(let o)? = await dispatch("browser_pull_requests_refresh", .object([:])),
-              !Task.isCancelled else { return }
+    public func refreshBrowserPullRequests() async {
+        browserPullRequestsRefreshes += 1
+        browserPullRequestsOnScreen?.refreshing = true
+        let answer = await dispatch("browser_pull_requests_refresh", .object([:]))
+        browserPullRequestsRefreshes -= 1
+        guard case .object(let o)? = answer, !Task.isCancelled else {
+            await readBrowserPullRequestsOnScreen()
+            return
+        }
         if case .string(let org)? = o["org"], org == organization {
             if case .string(let why)? = o["absent"] { browserPullRequestsAbsent = why } else { browserPullRequestsAbsent = nil }
         }
         await refreshLayout()
         await refreshPanes()
+    }
+
+    /// How many of this window's refreshes are under way: a pane re-read while one runs keeps the
+    /// header's ↻, whatever the store said when that read began.
+    @ObservationIgnored private var browserPullRequestsRefreshes = 0
+
+    /// The store's list for the drawn organisation, into `browserPullRequestsOnScreen` when it changed.
+    private func readBrowserPullRequestsOnScreen() async {
+        let org = browserScope?.organization ?? ""
+        var list = org.isEmpty ? nil : await panes.browserPullRequests(org: org)
+        if browserPullRequestsRefreshes > 0 { list?.refreshing = true }
+        if list != browserPullRequestsOnScreen { browserPullRequestsOnScreen = list }
     }
 
     /// TEST-ONLY: whether the loop runs.

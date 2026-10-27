@@ -177,6 +177,14 @@ struct PaneStripIds {
     var close: (Int) -> String = { _ in "" }
 }
 
+/// A small label under one entry (3d-i: the pinned tab's `Press ⌘W again to close`), drawn over the
+/// row below the strip and taking no clicks.
+struct PaneStripTip: Equatable {
+    let index: Int
+    let text: String
+    let identifier: String
+}
+
 /// The ＋ pinned at a strip's right: what it opens, and its name.
 struct PaneStripNewTab {
     let help: String
@@ -223,6 +231,20 @@ struct PaneTabStrip<Entry: View>: View {
     /// A middle-click on entry `index`, while `middleClickEnabled`; nil watches for none.
     var middleClick: ((Int) -> Void)?
     var middleClickEnabled = false
+    /// Whether entry `index` shows the × (3d-i: a group's chip has none); nil, every entry does.
+    var closable: ((Int) -> Bool)?
+    /// Entry `index`'s context menu (3d-i: the tab and group menus); nil, none.
+    var contextMenu: ((Int) -> AnyView)?
+    /// Whether a drag may move entry `from` to index `to` (3d-i: a chip does not drag, and nothing
+    /// lands in the pull-request group); no line is drawn where it may not. Nil, every drag may.
+    var canMove: ((Int, Int) -> Bool)?
+    /// The 2 pt line under entry `index`, in this colour (3d-i: a group's tabs); nil, none.
+    var underline: ((Int) -> Color?)?
+    /// Whether entry `index` keeps its own width in a `.shrink` or `.fixed` strip (3d-i: a group's
+    /// chip); the others share what is left. Nil, none does.
+    var naturalWidth: ((Int) -> Bool)?
+    /// A label drawn under one entry; nil, none.
+    var tip: PaneStripTip?
 
     @State private var hovered: String?
     @State private var newTabHovered = false
@@ -250,34 +272,76 @@ struct PaneTabStrip<Entry: View>: View {
 
     var body: some View {
         GeometryReader { g in
-            strip(available: Double(g.size.width - (newTab == nil ? 0 : PaneStripStyle.newTabWidth)))
+            let available = Double(g.size.width - (newTab == nil ? 0 : PaneStripStyle.newTabWidth))
+            strip(available: available)
                 .frame(maxHeight: .infinity)
+                .overlay(alignment: .topLeading) { tipLabel(available: available, height: g.size.height) }
         }
     }
 
     private var separator: Double { Double(PaneStripStyle.separatorWidth) }
 
+    private func isNatural(_ index: Int) -> Bool { naturalWidth?(index) ?? false }
+
+    /// The room the entries of their own width take, each with its separator, as last laid out.
+    private var naturalRoom: Double {
+        guard naturalWidth != nil else { return 0 }
+        return ids.indices.filter(isNatural).reduce(0) { sum, i in
+            sum + (spans[ids[i]].map { $0.upperBound - $0.lowerBound } ?? 0) + separator
+        }
+    }
+
+    private var sizedCount: Int { ids.count - (naturalWidth == nil ? 0 : ids.indices.filter(isNatural).count) }
+
     private func widths(available: Double) -> TabStripLayout.Widths {
-        TabStripLayout.widths(count: ids.count, available: available, separator: separator)
+        TabStripLayout.widths(count: sizedCount, available: available - naturalRoom, separator: separator)
     }
 
     /// One entry's width under this layout; nil for an entry of its own width.
-    private func entryWidth(_ id: String, _ widths: TabStripLayout.Widths) -> CGFloat? {
+    private func entryWidth(_ index: Int, _ id: String, _ widths: TabStripLayout.Widths) -> CGFloat? {
+        if isNatural(index) { return nil }
         switch width {
-        case .shrink: CGFloat(id == active ? widths.active : widths.other)
-        case .fixed(let w): w
-        case .natural: nil
+        case .shrink: return CGFloat(id == active ? widths.active : widths.other)
+        case .fixed(let w): return w
+        case .natural: return nil
         }
     }
 
     private func overflows(available: Double, _ widths: TabStripLayout.Widths) -> Bool {
         guard available > 0 else { return false }
+        // Entries of their own width alone (every group collapsed) can fill the strip too.
+        let laidOut = naturalWidth != nil
+            && TabStripLayout.overflows(contentWidth: orderedSpans.last?.upperBound ?? 0, available: available)
         switch width {
-        case .shrink: return widths.overflows
+        case .shrink: return widths.overflows || laidOut
         case .fixed(let w):
-            return TabStripLayout.overflows(count: ids.count, width: Double(w), available: available, separator: separator)
+            return laidOut
+                || TabStripLayout.overflows(count: sizedCount, width: Double(w), available: available - naturalRoom,
+                                            separator: separator)
         case .natural:
             return TabStripLayout.overflows(contentWidth: orderedSpans.last?.upperBound ?? 0, available: available)
+        }
+    }
+
+    /// The tip under its entry, where the entry shows now (the strip scrolls), over the row below.
+    @ViewBuilder
+    private func tipLabel(available: Double, height: CGFloat) -> some View {
+        if let tip, ids.indices.contains(tip.index), let span = spans[ids[tip.index]] {
+            let slot = overflows(available: available, widths(available: available)) ? Double(PaneStripStyle.overflowSlot) : 0
+            Text(tip.text)
+                .font(.system(size: SettingsScale.meta))
+                .foregroundStyle(PaneStripStyle.text)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
+                    .fill(PaneStripStyle.slab))
+                .overlay(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
+                    .strokeBorder(PaneStripStyle.text.opacity(PaneStripStyle.edge), lineWidth: 1))
+                .offset(x: CGFloat(max(0, span.lowerBound - offset + slot)), y: height - 2)
+                .allowsHitTesting(false)
+                .accessibilityIdentifier(tip.identifier)
         }
     }
 
@@ -366,7 +430,7 @@ struct PaneTabStrip<Entry: View>: View {
     private func entries(_ widths: TabStripLayout.Widths) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(ids.enumerated()), id: \.element) { index, id in
-                row(id, index: index, width: entryWidth(id, widths))
+                row(id, index: index, width: entryWidth(index, id, widths))
                     .id(id)
                 if index + 1 < ids.count { separatorView(after: index) }
             }
@@ -462,8 +526,9 @@ struct PaneTabStrip<Entry: View>: View {
     /// Where a drag from entry `index` that is now at `location` would move it: onto an entry takes
     /// its place, between two goes between them (`editorTabDropTarget`).
     private func dropTarget(from index: Int, at location: CGPoint) -> Int? {
-        editorTabDropTarget(from: index, x: location.x, y: location.y, spans: orderedSpans,
-                            height: Double(PaneStripStyle.tabHeight))
+        guard let to = editorTabDropTarget(from: index, x: location.x, y: location.y, spans: orderedSpans,
+                                           height: Double(PaneStripStyle.tabHeight)) else { return nil }
+        return canMove?(index, to) ?? true ? to : nil
     }
 
     private func row(_ id: String, index: Int, width: CGFloat?) -> some View {
@@ -475,7 +540,7 @@ struct PaneTabStrip<Entry: View>: View {
                 glowRadius: PaneStripStyle.tickGlowRadius)
             entry(index, on)
             if width != nil { Spacer(minLength: 0) }
-            if lifted, let close {
+            if lifted, let close, closable?(index) ?? true {
                 Button { close(index) } label: {
                     Image(systemName: "xmark").font(.system(size: PaneStripStyle.closeGlyph, weight: .semibold))
                         .frame(width: PaneStripStyle.closeHit, height: PaneStripStyle.closeHit)
@@ -497,6 +562,15 @@ struct PaneTabStrip<Entry: View>: View {
                     .strokeBorder(PaneStripStyle.text.opacity(PaneStripStyle.edge), lineWidth: 1)
             }
         }
+        .overlay(alignment: .bottom) {
+            if let colour = underline?(index) {
+                Rectangle().fill(colour)
+                    .frame(height: 2)
+                    .padding(.horizontal, PaneStripStyle.tabRadius)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .animation(.easeOut(duration: PaneStripStyle.hoverDuration), value: lifted)
         .background(GeometryReader { g in
             let f = g.frame(in: .named(stripIds.tabs))
@@ -512,6 +586,7 @@ struct PaneTabStrip<Entry: View>: View {
             })
         .onTapGesture { tap(index) }
         .onHover { inside in hovered = inside ? id : (hovered == id ? nil : hovered) }
+        .modifier(PaneTabMenu(menu: contextMenu.map { menu in { menu(index) } }))
         .help(label(index))
         .modifier(PaneTabAccess(kind: accessibility, label: label(index), on: on, identifier: stripIds.entry(index),
                                 activate: { activate(index) }))
@@ -538,6 +613,19 @@ struct PaneTabStrip<Entry: View>: View {
     private func entryFill(_ opacity: Double) -> some View {
         RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
             .fill(PaneStripStyle.text.opacity(opacity))
+    }
+}
+
+/// An entry's context menu, when the strip has one.
+private struct PaneTabMenu: ViewModifier {
+    let menu: (() -> AnyView)?
+
+    func body(content: Content) -> some View {
+        if let menu {
+            content.contextMenu { menu() }
+        } else {
+            content
+        }
     }
 }
 

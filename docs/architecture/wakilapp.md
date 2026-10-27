@@ -48,7 +48,7 @@ With none of them, `WakilApplication.main()` opens the window.
 | `api` | `ApiPane` (`ApiPane*.swift`, `ApiFieldEditor.swift`, `ApiTokenView.swift`, `ApiPaneFlow.swift`) | `api(_:)` |
 | `editor` | `EditorPane` (`EditorPane.swift`, `EditorColumn.swift`, `MonacoEditorRenderer.swift` (one page: the code editor and the diff editor, 3b-iii), `EditorMiddleClick.swift`, `monaco-host.html`; its tabs are the shared `PaneTabStrip`) | `editor(_:)`, `gitRoots`, `editorSaveAsRequest`, the unsaved prompt |
 | `settings` (`Pane.settingsKind`) | `SettingsPane` (`SettingsPane.swift`, `SettingsForm.swift`) | `settings`, `accounts`, the login state |
-| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — its tabs on the shared `PaneTabStrip`, and the address row, which also draws the site tag chip, the tab dots and the *agent allowed* mark — `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache` |
+| `browser` | `BrowserPane` (`BrowserPane.swift`, `BrowserPaneHeader.swift` — its tabs on the shared `PaneTabStrip`, and the address row, which also draws the site tag chip, the tab dots and the *agent allowed* mark — `BrowserGroupViews.swift` (3d-i: the group chips, the rename field, the tab and group menus and the error rows under the strip), `BrowserPrompts.swift`, `BrowserWebView.swift`), its pages from the window's `BrowserTabHost` | `browser(_:)`, `browserScope`, `browserSettingsCache`, `browserCloseArm`, `browserHeaderFocus`, `browserPullRequestsOnScreen` |
 | anything else | a "no view for a … pane" line | — |
 
 **Edge to edge** (2026-10-26, `PaneKind.edgeToEdge`, read as `Pane.edgeToEdge`): the editor, the
