@@ -240,17 +240,18 @@ func browserActions(
         name: "browser_open",
         description: "Open url in the browser: a new tab (newTab, default true) in the focused browser "
             + "pane, else the one most recently focused, else the last opened, or in its active tab with newTab false. Opens a browser "
-            + "pane when none is open; keepFocus true leaves focus where it is even then (a link from another surface). url follows the address bar's rule: a host or URL loads, words search.",
+            + "pane, focused, when none is open; focus true focuses the pane it used either way (a link from another surface). url follows the address bar's rule: a host or URL loads, words search.",
         kind: .control, audience: .agentReachable,
         schema: schema(["url": string, "newTab": .object(["type": .string("boolean")]),
-                        "keepFocus": .object(["type": .string("boolean")])], required: ["url"]),
+                        "focus": .object(["type": .string("boolean")])], required: ["url"]),
         handler: { params in
             let url = try await address(try requireString(params, "url", action: "browser_open"))
             let scheme = URL(string: url)?.scheme?.lowercased() ?? ""
             guard ["http", "https", "file"].contains(scheme) else { throw BrowserActionError.notAWebPage(scheme: scheme) }
             let newTab: Bool = { if case .object(let o) = params, case .bool(let b)? = o["newTab"] { b } else { true } }()
-            let keepFocus: Bool = { if case .object(let o) = params, case .bool(let b)? = o["keepFocus"] { b } else { false } }()
-            let pane = try await browserPane(params, action: "browser_open", open: true, focus: !keepFocus).id
+            let focus: Bool = { if case .object(let o) = params, case .bool(let b)? = o["focus"] { b } else { false } }()
+            let pane = try await browserPane(params, action: "browser_open", open: true).id
+            if focus { try await layout?.focus(id: pane) }
             let loaded = newTab ? false : await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
                 guard let i = s.tabIndex(nil) else { return false }
                 s.tabs[i].url = url

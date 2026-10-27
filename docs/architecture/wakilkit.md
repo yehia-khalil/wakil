@@ -184,7 +184,7 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   else the one most recently focused, else the last opened (`LayoutStore.preferredPane`, one call over
   the arrangement and its in-memory focus order): the spec's call 11, where a link from elsewhere in
   Wakil opens. That link's one path is `WindowModel.openLinkInWakil` (`App/WindowModel+Links.swift`,
-  `browser_open` with `newTab` and `keepFocus`, so a pane it has to open does not take focus, Rule 6);
+  `browser_open` with `newTab` and `focus`, so the browser pane comes forward with the keyboard);
   the app's `WakilLinks.open` sends it there, or to the system browser on ⌥-click. 3c-i routes the
   blame hover's Open on GitHub through it; 3c-iii routes the terminal's, the editor's and an API entry's
   links. Each command bumps its tab's `command.seq`; tab changes write the layout's

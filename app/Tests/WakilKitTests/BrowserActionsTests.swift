@@ -290,21 +290,24 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     #expect(await layout.preferredPane(kind: "browser") == c)
 }
 
-/// Fix round M7 (Rule 6): browser_open with keepFocus — openLinkInWakil's — opens a needed pane without
-/// taking focus; without it (the agent's, the palette's) the new pane is focused as before.
-@Test func browserOpenWithKeepFocusOpensAPaneWithoutTakingFocus() async throws {
+/// 3c-iii walk: browser_open with focus — openLinkInWakil's — brings the pane it used forward, the one
+/// it opened and one already open alike; without it (the agent's, the palette's) a pane it opens is
+/// focused and one already open is left where it is.
+@Test func browserOpenWithFocusFocusesThePaneItUsed() async throws {
     let f = try await browserFixture(open: false)
     let editor = await f.layout.open(kind: "editor", title: "Editor").id
-    try await f.dispatch("browser_open", ["url": .string("https://a.test/"), "keepFocus": .bool(true)], named: false)
-    let snap = await f.layout.snapshot()
-    let browser = try #require(snap.panes.first { $0.kind == "browser" }).id
-    #expect(snap.focusedId == editor)
-    #expect(await f.panes.browserSnapshot(paneId: browser).tabs.count == 1)
-    try await f.dispatch("browser_open", ["url": .string("https://b.test/"), "keepFocus": .bool(true)], named: false)
-    #expect(await f.layout.snapshot().focusedId == editor)
+    try await f.dispatch("browser_open", ["url": .string("https://a.test/"), "focus": .bool(true)], named: false)
+    let browser = try #require(await f.layout.snapshot().panes.first { $0.kind == "browser" }).id
+    #expect(await f.layout.snapshot().focusedId == browser)
+    try await f.layout.focus(id: editor)
+    try await f.dispatch("browser_open", ["url": .string("https://b.test/"), "focus": .bool(true)], named: false)
+    #expect(await f.layout.snapshot().focusedId == browser)
     #expect(await f.panes.browserSnapshot(paneId: browser).tabs.count == 2)
-    try await f.layout.close(id: browser)
+    try await f.layout.focus(id: editor)
     try await f.dispatch("browser_open", ["url": .string("https://c.test/")], named: false)
+    #expect(await f.layout.snapshot().focusedId == editor)
+    try await f.layout.close(id: browser)
+    try await f.dispatch("browser_open", ["url": .string("https://d.test/")], named: false)
     let after = await f.layout.snapshot()
     #expect(after.focusedId != editor && after.panes.first { $0.id == after.focusedId }?.kind == "browser")
 }
