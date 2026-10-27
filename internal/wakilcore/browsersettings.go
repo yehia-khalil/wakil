@@ -34,6 +34,8 @@ type BrowserAppSettings struct {
 	StartPage    string `json:"startPage,omitempty"`
 	// SearchSuggestions asks the search engine for suggestions as the operator types; off by default.
 	SearchSuggestions bool `json:"searchSuggestions,omitempty"`
+	// PictureInPicture floats a playing video when the operator leaves its tab; nil is the default, on.
+	PictureInPicture *bool `json:"pictureInPicture,omitempty"`
 }
 
 // BrowserSettings is the tier with every default filled in — what browser_settings answers.
@@ -42,8 +44,10 @@ type BrowserSettings struct {
 	SearchEngine string `json:"searchEngine"`
 	StartPage    string `json:"startPage"`
 	// SearchSuggestions is false unless the operator turned it on.
-	SearchSuggestions bool   `json:"searchSuggestions"`
-	AppError          string `json:"appError,omitempty"`
+	SearchSuggestions bool `json:"searchSuggestions"`
+	// PictureInPicture is true unless the operator turned it off.
+	PictureInPicture bool   `json:"pictureInPicture"`
+	AppError         string `json:"appError,omitempty"`
 }
 
 func browserEngineNames() []string {
@@ -71,7 +75,7 @@ func startPageProblem(s string) string {
 // Resolved fills the defaults. A stored value that breaks a rule — only a hand edit can put one
 // there — reads as the default rather than reaching the browser.
 func (s BrowserAppSettings) Resolved() BrowserSettings {
-	v := BrowserSettings{SearchEngine: DefaultBrowserSearchEngine, StartPage: DefaultBrowserStartPage}
+	v := BrowserSettings{SearchEngine: DefaultBrowserSearchEngine, StartPage: DefaultBrowserStartPage, PictureInPicture: true}
 	if _, ok := BrowserSearchEngines[s.SearchEngine]; ok {
 		v.SearchEngine = s.SearchEngine
 	}
@@ -79,6 +83,9 @@ func (s BrowserAppSettings) Resolved() BrowserSettings {
 		v.StartPage = s.StartPage
 	}
 	v.SearchSuggestions = s.SearchSuggestions
+	if s.PictureInPicture != nil {
+		v.PictureInPicture = *s.PictureInPicture
+	}
 	return v
 }
 
@@ -100,12 +107,14 @@ type BrowserSettingsPatch struct {
 	StartPage    *string
 	// SearchSuggestions turns engine suggestions on or off.
 	SearchSuggestions *bool
+	// PictureInPicture turns floating a playing video on or off.
+	PictureInPicture *bool
 }
 
 // WriteBrowserSettings applies p to settings.json, read from disk now, keeping every other key.
 // A file that does not parse is refused rather than overwritten.
 func WriteBrowserSettings(p BrowserSettingsPatch) error {
-	if p.SearchEngine == nil && p.StartPage == nil && p.SearchSuggestions == nil {
+	if p.SearchEngine == nil && p.StartPage == nil && p.SearchSuggestions == nil && p.PictureInPicture == nil {
 		return nil
 	}
 	current, err := LoadAppSettings()
@@ -128,6 +137,10 @@ func WriteBrowserSettings(p BrowserSettingsPatch) error {
 	}
 	if p.SearchSuggestions != nil {
 		current.Browser.SearchSuggestions = *p.SearchSuggestions
+	}
+	if p.PictureInPicture != nil {
+		pip := *p.PictureInPicture
+		current.Browser.PictureInPicture = &pip
 	}
 	path, err := appSettingsPath()
 	if err != nil {

@@ -723,3 +723,10 @@ private func bookmarked(_ reply: JSONValue) -> Bool? {
     #expect(BrowserTab(id: "t1", url: "https://www.example.com/x", title: "").label == BrowserAddress.displayHost(URL(string: "https://www.example.com/x")!))
     #expect(BrowserTab(id: "t1", url: "", title: "").label == "New Tab")
 }
+
+@Test func browserSettingsDecodePictureInPicture() throws {
+    let on = try JSONDecoder().decode(SettingsBrowser.self, from: Data("{}".utf8))
+    #expect(on.pictureInPicture == true)
+    let off = try JSONDecoder().decode(SettingsBrowser.self, from: Data(#"{"pictureInPicture": false}"#.utf8))
+    #expect(off.pictureInPicture == false)
+}
