@@ -144,9 +144,12 @@ Run it when a ticket's implementation is otherwise finished: `make test` and
    Everything in it is generated; write nothing into it by hand.
 8. **Report the residue**, in the runbook's human section and in the ticket:
    what the ticket touched that no check covers, and why in each case.
-9. **Before merge, `make e2e-full`** on the head that merges, unattended — it
-   holds the screen for the whole suite (~22 minutes). Re-render the runbook
-   after it: only a full run turns *owed to `make e2e-full`* into green.
+9. **No `make e2e-full` before merge.** The night run
+   (`e2e/cmd/wakil-e2e-night`) runs it on `main` between 23:00 and 07:00 after
+   the merge, fixes what it can on `e2e-night/<date>` (local commits, never
+   pushed) and reports the rest; read it with `make e2e-night-status`. Never
+   start e2e by hand while `pgrep -f '[w]akil-e2e-night run'` matches: that
+   process holds the screen for the night.
 
 ### 2. Standing audit — the gate
 
