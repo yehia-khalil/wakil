@@ -519,8 +519,9 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// whoever floated it — Wakil or the page's own button.
     @objc(_webView:hasVideoInPictureInPictureDidChange:)
     func webView(_ webView: WKWebView, hasVideoInPictureInPictureDidChange on: Bool) {
-        guard !tab.isEmpty else { return }
+        // Recorded even before a pop-up's tab is named, so its first report carries it.
         pictureInPicture = on
+        guard !tab.isEmpty else { return }
         scheduleReport()
         host?.pictureInPicture.didChange(key, on)
     }

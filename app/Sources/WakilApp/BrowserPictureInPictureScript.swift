@@ -9,7 +9,8 @@ import WebKit
 /// floats through its own frame (probe b). Configured only when
 /// `BrowserPictureInPictureSupport.available`.
 ///
-/// **Each document gives itself a token** (`crypto.randomUUID()`) and posts
+/// **Each document gives itself a token** (`crypto.randomUUID()`, or 16 random bytes in hex where the
+/// page is not a secure context and has no `randomUUID`) and posts
 /// `{frame: token, playing: Bool, since: Number}` to `wakilPictureInPicture` for its newest
 /// qualifying video, on `play`, `playing`, `pause`, `ended`, `emptied`, `visibilitychange`,
 /// `enterpictureinpicture`, `leavepictureinpicture` and `webkitpresentationmodechanged` (all caught
@@ -51,7 +52,10 @@ enum BrowserPictureInPictureScript {
         (() => {
           'use strict';
           if (globalThis.wakilPip) return;
-          const token = crypto.randomUUID();
+          // `randomUUID` exists only in a secure context; a plain `http:` page (or a blank frame in one)
+          // has only `getRandomValues`.
+          const token = typeof crypto.randomUUID === 'function' ? crypto.randomUUID()
+            : Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
           // Expandos on the video's wrapper in this world: the page's own wrapper never has them.
           const SINCE = 'wakilPipSince', PLAYING = 'wakilPipPlaying', HIDDEN = 'wakilPipHidden';
           const videos = () => Array.from(document.querySelectorAll('video'));
