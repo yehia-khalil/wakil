@@ -46,6 +46,7 @@ public func reviewPlacement(headText: String?, buffer: String, line: Int) -> Rev
 /// One thread's box as the page draws it (`wakilSetReviews`). Every text is other people's and is
 /// set with `textContent`. `replies` are the comments after the first, their `createdAt` already
 /// as shown; `position` is "1 of 5" among the branch's open threads, empty for a resolved one.
+/// `waiting`: open and ending on someone else's word than the viewer's — its card's amber edge.
 public struct ReviewBox: Sendable, Equatable, Encodable {
     public let thread: String
     public let line: Int
@@ -57,6 +58,7 @@ public struct ReviewBox: Sendable, Equatable, Encodable {
     public let position: String
     public let resolved: Bool
     public let resolvedBy: String?
+    public let waiting: Bool
     public let draft: String?
     public let sending: Bool
     /// What GitHub answered beside the reply it posted here, whole.
@@ -94,6 +96,7 @@ public func reviewBoxes(threads: [ReviewThreadState], path: String, root: String
             text: first?.body ?? "",
             replies: t.comments.dropFirst().map { ReviewCommentState(author: $0.author, body: $0.body, createdAt: reviewTime($0.createdAt)) },
             position: t.resolved ? "" : reviewPosition(open, id: t.id), resolved: t.resolved, resolvedBy: t.resolved ? who : nil,
+            waiting: !t.resolved && !viewer.isEmpty && (t.comments.last.map { $0.author != viewer } ?? false),
             draft: drafts[t.id], sending: sending.contains(t.id), answer: answers[t.id])
     }
     return boxes.enumerated().sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }.map(\.element)

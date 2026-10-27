@@ -76,6 +76,21 @@ private func thread(_ id: String, _ path: String, _ line: Int, sha: String = "ab
         #expect(boxes[1].resolved && boxes[1].position == "")
     }
 
+    /// A box waits on the viewer while it is open and its last word is someone else's: the card's
+    /// amber edge. A thread the viewer answered last, a resolved one, and any with no viewer known
+    /// do not.
+    @Test func boxWaitsOnTheViewerUntilTheyAnswer() {
+        let head = text(lines(60))
+        let mine = [ReviewCommentState(author: "lena", body: "Nit", createdAt: ""), ReviewCommentState(author: "me", body: "Done", createdAt: "")]
+        let threads = [thread("T1", "a.go", 4), thread("T2", "a.go", 8, comments: mine), thread("T3", "a.go", 9, resolved: true)]
+        let boxes = reviewBoxes(threads: threads, path: "/p/api/a.go", root: "/p/api", headTexts: ["abc": head],
+                                buffer: head, drafts: [:], sending: [], viewer: "me")
+        #expect(boxes.map(\.waiting) == [true, false, false])
+        let unknown = reviewBoxes(threads: threads, path: "/p/api/a.go", root: "/p/api", headTexts: ["abc": head],
+                                  buffer: head, drafts: [:], sending: [])
+        #expect(unknown.map(\.waiting) == [false, false, false])
+    }
+
     @Test func boxCarriesTheDraftAndSending() {
         let head = text(lines(60))
         let threads = [thread("T1", "a.go", 41), thread("T2", "a.go", 44)]

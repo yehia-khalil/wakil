@@ -401,4 +401,45 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(Set([a, b, c].map(ticketInFlightRowName)).count == 3)
         #expect(ticketInFlightRowName(a) == ticketInFlightRowName(a))
     }
+
+    /// Design A's pills carry §5's meanings only: done green, waiting amber, failed red, the rest
+    /// neutral — never violet.
+    @Test func pillHuesFollowTheReservedMeanings() {
+        #expect(ticketStatusHue("Done") == .green)
+        #expect(ticketStatusHue("closed") == .green)
+        #expect(ticketStatusHue("Backlog") == .amber)
+        #expect(ticketStatusHue("To Do") == .amber)
+        #expect(ticketStatusHue("In Review") == .amber)
+        #expect(ticketStatusHue("Waiting for customer") == .amber)
+        #expect(ticketStatusHue("In Progress") == .neutral)
+        #expect(ticketStatusHue("") == .neutral)
+        #expect(ticketPRStatePill(PullRequestState(number: 1, state: "OPEN")) == ("open", .green))
+        #expect(ticketPRStatePill(PullRequestState(number: 1, state: "")) == ("open", .green))
+        #expect(ticketPRStatePill(PullRequestState(number: 1, state: "MERGED")) == ("merged", .neutral))
+        #expect(ticketPRStatePill(PullRequestState(number: 1, state: "closed")) == ("closed", .neutral))
+        #expect(ticketPRStatePill(PullRequestState(number: 1, state: "blocked")) == ("blocked", .amber))
+        let ok = TicketCheckState(name: "a", state: "success"), bad = TicketCheckState(name: "b", state: "failure")
+        let wait = TicketCheckState(name: "c", state: "pending")
+        #expect(ticketChecksPill(PullRequestState(number: 1)) == nil)
+        #expect(ticketChecksPill(PullRequestState(number: 1, checks: [ok, ok]))?.label == "checks 2/2")
+        #expect(ticketChecksPill(PullRequestState(number: 1, checks: [ok, ok]))?.hue == .green)
+        #expect(ticketChecksPill(PullRequestState(number: 1, checks: [ok, wait]))?.hue == .amber)
+        #expect(ticketChecksPill(PullRequestState(number: 1, checks: [ok, bad, wait]))?.hue == .red)
+    }
+
+    /// The header's waiting line counts the threads that wait on you, only when it names you.
+    @Test func waitingLineCountsThreadsWaitingOnYou() {
+        let theirs = ReviewThreadState(id: "T1", path: "a", line: 1, comments: [ReviewCommentState(author: "bob", body: "x", createdAt: "")])
+        let mine = ReviewThreadState(id: "T2", path: "a", line: 2, comments: [ReviewCommentState(author: "me", body: "x", createdAt: "")])
+        let done = ReviewThreadState(id: "T3", path: "a", line: 3, resolved: true, comments: [ReviewCommentState(author: "bob", body: "x", createdAt: "")])
+        let pr = PullRequestState(number: 1, state: "OPEN", author: "me", threads: [theirs, mine, done])
+        let b = TicketBranchState(root: "/p", viewer: "me", prs: [pr, pr])
+        #expect(ticketThreadsWaitingOnViewer(b) == 1)
+        #expect(ticketWaitingLine(["reviewer", "you"], threads: 1) == "waiting on reviewer, you · 1 thread")
+        #expect(ticketWaitingLine(["you"], threads: 2) == "waiting on you · 2 threads")
+        #expect(ticketWaitingLine(["reviewer"], threads: 2) == "waiting on reviewer")
+        #expect(ticketWaitingLine(["you"], threads: 0) == "waiting on you")
+        #expect(ticketWaitingLine([], threads: 3) == nil)
+        #expect(ticketBranchThreads([pr, pr]).map(\.id) == ["T1", "T2"])
+    }
 }

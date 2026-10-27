@@ -122,7 +122,8 @@ struct EditorTicketView: View {
     @ViewBuilder
     private func ownTicket(_ b: TicketBranchState) -> some View {
         let t = b.tickets[0]
-        header(key: t.key, title: t.title, status: t.status, waiting: ticketWaitingOn(b, record: t.record), linked: b.linked)
+        header(key: t.key, title: t.title, status: t.status, waiting: ticketWaitingOn(b, record: t.record),
+               threads: ticketThreadsWaitingOnViewer(b), linked: b.linked)
         nextField(b)
         pullRequests(b)
         record(t.record)
@@ -132,13 +133,14 @@ struct EditorTicketView: View {
     /// Picking one shows it (Rule 9), the branch unchanged.
     @ViewBuilder
     private func severalTickets(_ b: TicketBranchState) -> some View {
+        Text("Tickets").microLabel()
         VStack(alignment: .leading, spacing: Space.s) {
             ForEach(b.tickets, id: \.key) { t in
                 Button { Task { await dispatch("ticket_show", ["key": .string(t.key)]) } } label: {
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: Space.s) {
                             Text(t.marked ? "●" : " ").foregroundStyle(EditorPaneStyle.violet)
-                            Text(t.key).bold()
+                            Text(t.key).ticketKey()
                             Text(t.title).lineLimit(1)
                             Spacer()
                             Text(t.status).dimmed()
@@ -200,7 +202,7 @@ struct EditorTicketView: View {
 
     private func inFlightList(_ title: String, _ rows: [InFlightRowState], id: String) -> some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            Text(title).sectionTitle()
+            Text(title).microLabel()
             if rows.isEmpty { Text("None").dimmed() }
             ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                 Button {
@@ -208,7 +210,7 @@ struct EditorTicketView: View {
                     Task { await dispatch("ticket_show", ["key": .string(r.key), "root": .string(r.root), "branch": .string(r.branch)]) }
                 } label: {
                     HStack(spacing: Space.s) {
-                        Text(r.key).bold()
+                        Text(r.key).ticketKey()
                         Text(r.title).lineLimit(1)
                         Spacer(minLength: Space.s)
                         Text(r.status).dimmed()
@@ -244,7 +246,8 @@ struct EditorTicketView: View {
             .accessibilityIdentifier("editor.ticket.back")
         header(key: key, title: [ref?.title, row?.title, record?.seen.title].compactMap { $0 }.first { !$0.isEmpty } ?? "",
                status: [ref?.status, row?.status, record?.seen.status].compactMap { $0 }.first { !$0.isEmpty } ?? "",
-               waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record), linked: false)
+               waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record),
+               threads: own.map(ticketThreadsWaitingOnViewer) ?? 0, linked: false)
         if let record {
             nextLine(key: key, text: record.next?.text ?? "", labelled: false)
         }
@@ -267,15 +270,25 @@ struct EditorTicketView: View {
     // MARK: - The header and Next
 
     @ViewBuilder
-    private func header(key: String, title: String, status: String, waiting: [String], linked: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                Text(key).bold()
-                Text(title).fixedSize(horizontal: false, vertical: true)
+    private func header(key: String, title: String, status: String, waiting: [String], threads: Int, linked: Bool) -> some View {
+        Text("Ticket").microLabel()
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(key).ticketKey()
+                Text(title).fontWeight(.semibold).fixedSize(horizontal: false, vertical: true)
             }
-            let line = ([status].filter { !$0.isEmpty } + (waiting.isEmpty ? [] : ["waiting on " + waiting.joined(separator: ", ")]))
-                .joined(separator: " · ")
-            if !line.isEmpty { Text(line).dimmed() }
+            let line = ticketWaitingLine(waiting, threads: threads)
+            if !status.isEmpty || line != nil {
+                HStack(alignment: .center, spacing: 6) {
+                    if !status.isEmpty { TicketPill(label: status, hue: ticketStatusHue(status)) }
+                    if let line {
+                        // The pill is the separator on screen; read aloud, the header stays one line:
+                        // "In Progress · waiting on reviewer, you".
+                        Text(line).dimmed().font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel(status.isEmpty ? line : "· " + line)
+                    }
+                }
+            }
             if linked, let b = branch { unlinkButton(b) }
         }
         .accessibilityElement(children: .contain)
@@ -301,7 +314,7 @@ struct EditorTicketView: View {
     /// **Next:** a field — focused on click (Rule 3), kept on blur (Rule 2), Enter a shortcut.
     private func nextLine(key: String, text: String, labelled: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            Text(labelled ? "Next (\(key)):" : "Next:").bold()
+            Text(labelled ? "Next (\(key))" : "Next").dimmed()
             TicketField(value: text, placeholder: "what happens next", id: "editor.ticket.next", focus: $fieldFocus) { now in
                 write(["key": .string(key), "section": .string("next"), "op": .string("set"), "text": .string(now)])
             }
@@ -311,46 +324,79 @@ struct EditorTicketView: View {
 
     // MARK: - Pull requests
 
+    /// **Pull requests** as hairline cards — number and title, the state and checks pills, the base —
+    /// each failing check under its card; then **Threads**, every open one across them.
     @ViewBuilder
     private func pullRequests(_ b: TicketBranchState) -> some View {
-        ForEach(b.prs, id: \.number) { pr in
-            Divider().opacity(0.3)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(ticketPRLine(pr)).font(.system(size: 11, design: .monospaced))
-                    .lineLimit(1).truncationMode(.middle)
-                    .accessibilityIdentifier("editor.ticket.pr:\(pr.number)")
-                ForEach(Array(ticketFailingChecks(pr).enumerated()), id: \.offset) { _, c in
-                    HStack(spacing: Space.s) {
-                        Text("✗ \(c.name)").foregroundStyle(EditorPaneStyle.amber).lineLimit(1)
-                        Spacer()
-                        if let s = c.url, let url = URL(string: s) {
-                            Link("details ↗", destination: url).font(.system(size: 11))
-                                .accessibilityIdentifier("editor.ticket.check:\(pr.number):\(c.name)")
-                        }
-                    }
-                    .padding(.leading, Space.m)
-                }
-                ForEach(ticketColumnThreads(pr), id: \.id) { t in threadRow(t) }
+        if !b.prs.isEmpty {
+            Text("Pull requests").microLabel()
+            ForEach(b.prs, id: \.number) { pr in prCard(pr) }
+        }
+        let threads = ticketBranchThreads(b.prs)
+        if !threads.isEmpty {
+            Text("Threads · \(threads.count) open").microLabel()
+            let cursor = editorCursorThread(tab, reviews)
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(threads, id: \.id) { t in threadRow(t, selected: t.id == cursor) }
             }
         }
-        if !b.prs.isEmpty { Divider().opacity(0.3) }
+    }
+
+    private func prCard(_ pr: PullRequestState) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Text("#\(pr.number)").font(.system(size: 11, design: .monospaced))
+                Text(pr.title.isEmpty ? pr.head : pr.title).font(.system(size: 11.5)).lineLimit(1).truncationMode(.tail)
+            }
+            // One element read as the PR's whole line: number, branches, state and checks.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(ticketPRLine(pr))
+            .accessibilityIdentifier("editor.ticket.pr:\(pr.number)")
+            HStack(spacing: 6) {
+                let state = ticketPRStatePill(pr)
+                TicketPill(label: state.label, hue: state.hue)
+                if let checks = ticketChecksPill(pr) { TicketPill(label: checks.label, hue: checks.hue) }
+                if !pr.base.isEmpty {
+                    Text("→ \(pr.base)").font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(EditorPaneStyle.text.opacity(0.35)).lineLimit(1)
+                }
+            }
+            .accessibilityHidden(true)
+            ForEach(Array(ticketFailingChecks(pr).enumerated()), id: \.offset) { _, c in
+                HStack(spacing: Space.s) {
+                    Text("✗ \(c.name)").foregroundStyle(TicketPill.colour(.red)).lineLimit(1)
+                    Spacer()
+                    if let s = c.url, let url = URL(string: s) {
+                        Link("details ↗", destination: url).font(.system(size: 11))
+                            .accessibilityIdentifier("editor.ticket.check:\(pr.number):\(c.name)")
+                    }
+                }
+                .font(.system(size: 11))
+            }
+        }
+        .padding(.horizontal, 8).padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(EditorPaneStyle.text.opacity(0.08)))
     }
 
     /// A thread's row opens its file at its line; the column stays on Ticket, scrolled where it was,
-    /// and keeps the keyboard (Rule 6).
-    private func threadRow(_ t: ReviewThreadState) -> some View {
+    /// and keeps the keyboard (Rule 6). The thread whose box holds the cursor is tinted: where you are.
+    private func threadRow(_ t: ReviewThreadState, selected: Bool) -> some View {
         let row = ticketThreadRow(t)
         return Button {
             browsed = t.root + "/" + t.path
             Task { await dispatch("review_open", ["thread": .string(t.id)]) }
         } label: {
-            HStack(spacing: Space.s) {
-                Text(row.place).font(.system(size: 11, design: .monospaced)).lineLimit(1).truncationMode(.head)
-                Text("\u{201C}\(row.words)\u{201D}").lineLimit(1).dimmed()
+            HStack(spacing: 7) {
+                TicketAvatar(name: t.comments.first?.author ?? "")
+                Text(row.place).font(.system(size: 10.5, design: .monospaced)).opacity(0.6)
+                    .lineLimit(1).truncationMode(.head)
+                Text(row.words).font(.system(size: 11.5)).lineLimit(1)
                 Spacer(minLength: Space.s)
-                if let replies = row.replies { Text(replies).dimmed().font(.system(size: 11)) }
+                if let replies = row.replies { Text(replies).dimmed().font(.system(size: 10.5)) }
             }
-            .padding(.leading, Space.m)
+            .padding(.vertical, 3).padding(.horizontal, 4)
+            .modifier(TicketRowTint(selected: selected))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -372,14 +418,18 @@ struct EditorTicketView: View {
 
     @ViewBuilder
     private func record(_ r: TicketRecordState) -> some View {
-        Button {
-            recordOpen.toggle()
-        } label: {
-            Text(recordOpen ? ticketFoldLine(r).replacingOccurrences(of: "▸", with: "▾") : ticketFoldLine(r))
-                .contentShape(Rectangle())
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("Record").microLabel()
+            Button {
+                recordOpen.toggle()
+            } label: {
+                Text(recordOpen ? ticketFoldLine(r).replacingOccurrences(of: "▸", with: "▾") : ticketFoldLine(r))
+                    .font(.system(size: 11)).foregroundStyle(EditorPaneStyle.text.opacity(0.7))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("editor.ticket.fold")
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("editor.ticket.fold")
         if recordOpen {
             ForEach(TicketSection.allCases, id: \.self) { section in recordList(r, section) }
         }
@@ -388,7 +438,7 @@ struct EditorTicketView: View {
     private func recordList(_ r: TicketRecordState, _ section: TicketSection) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(section.title).sectionTitle()
+                Text(section.title).microLabel()
                 Button { adding = section } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain).font(.system(size: 10))
                     .help("Add a line to \(section.title)")
@@ -593,7 +643,67 @@ private struct TicketField: View {
 
 private extension View {
     func dimmed() -> some View { foregroundStyle(EditorPaneStyle.text.opacity(0.55)) }
-    func sectionTitle() -> some View {
-        font(.system(size: 10, weight: .semibold)).foregroundStyle(EditorPaneStyle.text.opacity(0.55)).textCase(.uppercase)
+}
+
+private extension Text {
+    /// §6's micro-label: uppercase, tracked .2em, 9 pt, low opacity — a section's name.
+    func microLabel() -> some View {
+        font(.system(size: 9, weight: .semibold)).tracking(1.8).textCase(.uppercase)
+            .foregroundStyle(EditorPaneStyle.text.opacity(0.42))
+            .padding(.top, 6)
+    }
+
+    /// A ticket key: an identifier, so mono (§6), in the column's violet tick.
+    func ticketKey() -> Text {
+        font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(EditorPaneStyle.tick)
+    }
+}
+
+/// A status pill: a dot in its meaning's hue (§5's reserved green, amber, red; grey for none) and
+/// its word, in a hairline capsule.
+private struct TicketPill: View {
+    let label: String
+    let hue: TicketHue
+
+    static func colour(_ hue: TicketHue) -> Color {
+        switch hue {
+        case .green: Color(TerminalPalette.green)
+        case .amber: EditorPaneStyle.amber
+        case .red: Color(VoidPalette.red)
+        case .neutral: EditorPaneStyle.text.opacity(0.4)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle().fill(Self.colour(hue)).frame(width: 6, height: 6)
+            Text(label).font(.system(size: 10.5)).lineLimit(1)
+        }
+        .padding(.horizontal, 7).padding(.vertical, 1)
+        .overlay(Capsule().strokeBorder(EditorPaneStyle.text.opacity(0.14)))
+        .opacity(0.85)
+    }
+}
+
+/// A commenter's initial in a quiet disc.
+private struct TicketAvatar: View {
+    let name: String
+    var body: some View {
+        Text(name.first.map(String.init) ?? "?")
+            .font(.system(size: 9, weight: .semibold))
+            .frame(width: 16, height: 16)
+            .background(Circle().fill(Color(red: 0x2a / 255, green: 0x2f / 255, blue: 0x44 / 255)))
+            .accessibilityHidden(true)
+    }
+}
+
+/// A thread row's tint: violet at low alpha where the cursor's thread is, and under the pointer.
+private struct TicketRowTint: ViewModifier {
+    let selected: Bool
+    @State private var hovered = false
+    func body(content: Content) -> some View {
+        content
+            .background(RoundedRectangle(cornerRadius: 5).fill(EditorPaneStyle.violet.opacity(selected || hovered ? 0.10 : 0)))
+            .onHover { hovered = $0 }
     }
 }

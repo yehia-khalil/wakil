@@ -30,22 +30,42 @@
 .wakil-conflict-row{pointer-events:auto;display:flex;align-items:center;gap:6px;padding:0 8px;color:rgba(232,236,246,.38);font:11px Menlo,monospace}
 .wakil-conflict-row button{all:unset;cursor:pointer;white-space:nowrap;color:rgba(232,236,246,.72)}
 .wakil-conflict-row button:hover{color:#e8ecf6}
-/* Ticket view: a review thread's box under its line, laid over a view zone as tall as the box. */
-.wakil-review{pointer-events:auto;box-sizing:border-box;padding:6px 10px 6px 12px;background:#11141e;border-top:1px solid #2a2f40;border-bottom:1px solid #2a2f40;border-left:2px solid #7c5cff;color:#e8ecf6;font:12px -apple-system,BlinkMacSystemFont,sans-serif;outline:none;overflow:hidden}
-.wakil-review:focus,.wakil-review:focus-within{background:#141826}
-.wakil-review-resolved{padding:2px 10px 2px 12px;border-left-color:#2a2f40}
-.wakil-review-head{display:flex;gap:8px;align-items:baseline;white-space:nowrap;overflow:hidden;color:rgba(232,236,246,.62);font-size:11px}
+/* Ticket view (design A, cards with state): a review thread is a quiet card under its line, laid
+   over a view zone as tall as the card. Its left edge carries §5's meaning only: amber while it waits
+   on you, green once resolved (and the card dims); violet hairlines are where the keyboard is. */
+.wakil-review{pointer-events:auto;box-sizing:border-box;padding:3px 18px 6px 4px;color:#e8ecf6;font:12.5px -apple-system,BlinkMacSystemFont,sans-serif;outline:none;overflow:hidden}
+.wakil-review ::selection{background:rgba(124,92,255,.35)}
+.wakil-review-card{background:rgba(232,236,246,.035);border:1px solid rgba(232,236,246,.08);border-left:2px solid rgba(232,236,246,.16);border-radius:6px;padding:8px 10px}
+.wakil-review-waiting .wakil-review-card{border-left-color:#e8b45a}
+.wakil-review-resolved .wakil-review-card{border-left-color:#8be0c8;opacity:.65}
+.wakil-review:focus .wakil-review-card,.wakil-review:focus-within .wakil-review-card{background:rgba(232,236,246,.055);border-top-color:rgba(124,92,255,.45);border-right-color:rgba(124,92,255,.45);border-bottom-color:rgba(124,92,255,.45)}
+.wakil-review-resolved:focus .wakil-review-card,.wakil-review-resolved:focus-within .wakil-review-card{opacity:.85}
+.wakil-review-head{display:flex;gap:7px;align-items:center;white-space:nowrap;overflow:hidden;color:rgba(232,236,246,.45);font-size:11px}
+.wakil-review-avatar{flex:none;width:16px;height:16px;border-radius:50%;background:#2a2f44;color:#e8ecf6;font:600 9px -apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center}
 .wakil-review-author{color:#e8ecf6;font-weight:600}
+.wakil-review-pos{margin-left:auto;display:flex;align-items:center;gap:6px;font:10.5px Menlo,monospace;font-variant-numeric:tabular-nums}
 .wakil-review-note{color:#e8b45a}
-.wakil-review-text{white-space:pre-wrap;word-break:break-word;margin:3px 0 4px;line-height:1.45}
-.wakil-review-reply{margin:4px 0 0 4px;padding-left:8px;border-left:1px solid #2a2f40}
-.wakil-review-actions{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;color:rgba(232,236,246,.38);font-size:11px}
-.wakil-review button{all:unset;cursor:pointer;white-space:nowrap;color:rgba(232,236,246,.72)}
-.wakil-review button:hover{color:#e8ecf6}
-.wakil-review button:focus-visible{outline:1px solid #7c5cff}
-.wakil-review button[disabled]{cursor:default;color:rgba(232,236,246,.38)}
-.wakil-review textarea{display:block;box-sizing:border-box;width:100%;min-height:54px;margin:4px 0;padding:4px 6px;resize:vertical;background:#0b0d14;color:#e8ecf6;border:1px solid #2a2f40;border-radius:3px;font:12px Menlo,monospace;outline:none}
-.wakil-review textarea:focus{border-color:#7c5cff}
+.wakil-review-text{white-space:pre-wrap;word-break:break-word;margin:5px 0 7px 23px;line-height:1.45}
+.wakil-review-reply{margin:2px 0 6px 23px;padding-left:9px;border-left:1px solid rgba(232,236,246,.1)}
+.wakil-review-reply .wakil-review-text{margin-left:0;margin-bottom:4px}
+.wakil-review-actions{display:flex;align-items:center;gap:6px;margin:0 0 0 23px;white-space:nowrap;overflow:hidden;color:rgba(232,236,246,.45);font-size:11px}
+.wakil-review-actions + .wakil-review-actions{margin-top:6px}
+.wakil-review > .wakil-review-card > .wakil-review-note{margin:0 0 6px 23px;white-space:pre-wrap;word-break:break-word}
+.wakil-review button{all:unset;box-sizing:border-box;cursor:pointer;white-space:nowrap;font-size:11px;line-height:16px;padding:1px 9px;border-radius:5px;border:1px solid rgba(232,236,246,.16);color:#e8ecf6}
+.wakil-review button:hover{background:rgba(232,236,246,.06)}
+.wakil-review button.wakil-review-primary{border-color:rgba(124,92,255,.6);color:#cfc3ff}
+.wakil-review button.wakil-review-primary:hover{background:rgba(124,92,255,.12)}
+.wakil-review button.wakil-review-fold{padding:0;border:0;color:rgba(232,236,246,.62)}
+.wakil-review button.wakil-review-fold:hover{background:none;color:#e8ecf6}
+.wakil-review button.wakil-review-kbd{font:10px Menlo,monospace;line-height:14px;padding:0 4px;border-radius:3px;border-color:rgba(232,236,246,.2);color:rgba(232,236,246,.6)}
+.wakil-review button:focus-visible{outline:1px solid #7c5cff;outline-offset:1px}
+.wakil-review button[disabled]{cursor:default;color:rgba(232,236,246,.38);border-color:rgba(232,236,246,.08);background:none}
+.wakil-review textarea{display:block;box-sizing:border-box;width:calc(100% - 23px);min-height:54px;margin:2px 0 7px 23px;padding:6px 8px;resize:vertical;background:#0b0d14;color:#e8ecf6;caret-color:#9e82ff;border:1px solid rgba(232,236,246,.12);border-radius:5px;font:12.5px/1.45 -apple-system,BlinkMacSystemFont,sans-serif;outline:none}
+.wakil-review textarea::placeholder{color:rgba(232,236,246,.38)}
+.wakil-review textarea:focus{border-color:rgba(124,92,255,.6)}
+/* The line a waiting thread is on: a faint amber wash, and an amber dot in the gutter. */
+.wakil-review-line{background:rgba(232,180,90,.07)}
+.wakil-review-gutter::before{content:'';position:absolute;top:50%;right:3px;width:6px;height:6px;margin-top:-3px;border-radius:50%;background:#e8b45a}
 </style></head>
 <body><div id="d"></div>
 <script>
@@ -602,6 +622,7 @@
     let reviewFocusField = null;   // thread whose draft field takes the keyboard when drawn (Reply, Keep)
     let reviewFocusKeep = null;    // thread whose "Discard this reply?" takes the keyboard on Keep when drawn
     const reviewAsking = {};   // thread -> true: Discard pressed on a typed reply, asked in place
+    const reviewDecos = {};    // key -> the waiting lines' wash and gutter dot (decoration ids on its model)
     // ⌥↓ from a box: the box of the thread stepped to takes the keyboard by its id, whenever it is
     // drawn (wakilFocusReview names it once the step ran). Until then the text is not focused, so a
     // second ⌥↓ is never Monaco's Move Line Down; a press in the text, or 10 s, ends the wait.
@@ -720,7 +741,13 @@
       });
       return el;
     }
-    function reviewDot(row) { row.appendChild(reviewEl('span', '', '·')); }
+    function reviewHead(author, when) {
+      const head = reviewEl('div', 'wakil-review-head');
+      head.appendChild(reviewEl('span', 'wakil-review-avatar', (author || '?').charAt(0)));
+      head.appendChild(reviewEl('span', 'wakil-review-author', author));
+      if (when) head.appendChild(reviewEl('span', '', when));
+      return head;
+    }
     function reviewNode(key, b) {
       const node = reviewEl('div', 'wakil-review');
       node.tabIndex = -1;
@@ -739,44 +766,55 @@
         if (e.key === 'Escape') { e.preventDefault(); ed.focus(); }
       });
       ['keyup', 'keypress'].forEach(function (t) { node.addEventListener(t, function (e) { e.stopPropagation(); }); });
+      const card = reviewEl('div', 'wakil-review-card');
+      node.appendChild(card);
       if (b.resolved) {
         node.classList.add('wakil-review-resolved');
+        card.appendChild(reviewHead(b.author, 'resolved by ' + (b.resolvedBy || 'someone')));
+        card.appendChild(reviewEl('div', 'wakil-review-text', b.text));
         const row = reviewEl('div', 'wakil-review-actions');
-        row.appendChild(reviewEl('span', '', 'Resolved by ' + (b.resolvedBy || 'someone')));
-        reviewDot(row);
         row.appendChild(reviewButton(node, 'Unresolve', 'Unresolve', function (el) {
           el.disabled = true;
           reviewPost(key, b.thread, 'unresolve');
         }));
-        node.appendChild(row);
+        card.appendChild(row);
         return node;
       }
-      const head = reviewEl('div', 'wakil-review-head');
-      head.appendChild(reviewEl('span', 'wakil-review-author', b.author));
-      head.appendChild(reviewEl('span', '', b.time));
+      if (b.waiting) node.classList.add('wakil-review-waiting');
+      const head = reviewHead(b.author, b.time);
       if (b.note) head.appendChild(reviewEl('span', 'wakil-review-note', b.note));
-      node.appendChild(head);
-      node.appendChild(reviewEl('div', 'wakil-review-text', b.text));
+      if (b.position) {
+        // "1 of 2" and the ⌥↓ chip, right-aligned; the chip steps as ⌥↓ does.
+        const pos = reviewEl('span', 'wakil-review-pos');
+        pos.appendChild(reviewEl('span', '', b.position));
+        const next = reviewButton(node, '⌥↓', '⌥↓', function () { reviewStep(key, b, 1); });
+        next.className = 'wakil-review-kbd';
+        next.setAttribute('aria-label', 'Next thread'); next.title = 'Next thread (⌥↓)';
+        pos.appendChild(next);
+        head.appendChild(pos);
+      }
+      card.appendChild(head);
+      card.appendChild(reviewEl('div', 'wakil-review-text', b.text));
       if (b.replies.length) {
         const n = b.replies.length, open = !!reviewUnfolded[b.thread];
         const word = n + (n === 1 ? ' reply ' : ' replies ') + (open ? '▾' : '▸');
         const fold = reviewEl('div', 'wakil-review-actions');
-        fold.appendChild(reviewButton(node, word, word, function () {
+        const foldButton = reviewButton(node, word, word, function () {
           reviewUnfolded[b.thread] = !open;
           redrawReviews(key);
-        }));
-        node.appendChild(fold);
+        });
+        foldButton.className = 'wakil-review-fold';
+        fold.appendChild(foldButton);
+        fold.style.marginBottom = '6px';
+        card.appendChild(fold);
         if (open) b.replies.forEach(function (c) {
           const r = reviewEl('div', 'wakil-review-reply');
-          const h = reviewEl('div', 'wakil-review-head');
-          h.appendChild(reviewEl('span', 'wakil-review-author', c.author));
-          h.appendChild(reviewEl('span', '', c.createdAt));
-          r.appendChild(h);
+          r.appendChild(reviewHead(c.author, c.createdAt));
           r.appendChild(reviewEl('div', 'wakil-review-text', c.body));
-          node.appendChild(r);
+          card.appendChild(r);
         });
       }
-      if (b.answer) node.appendChild(reviewEl('div', 'wakil-review-note', b.answer));
+      if (b.answer) card.appendChild(reviewEl('div', 'wakil-review-note', b.answer));
       const drafting = reviewOpen[b.thread] || b.draft != null || reviewLive[b.thread] !== undefined;
       let field = null;
       if (drafting) {
@@ -792,7 +830,7 @@
         field.addEventListener('keydown', function (e) {
           if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); e.stopPropagation(); send(); }
         });
-        node.appendChild(field);
+        card.appendChild(field);
         const row = reviewEl('div', 'wakil-review-actions');
         function discardNow() {
           delete reviewOpen[b.thread]; delete reviewLive[b.thread]; delete reviewAsking[b.thread];
@@ -803,17 +841,18 @@
           // A typed reply is not thrown away unasked: Discard · Keep, the keyboard on Keep.
           row.appendChild(reviewEl('span', '', 'Discard this reply?'));
           row.appendChild(reviewButton(node, 'Discard', 'Discard', discardNow));
-          reviewDot(row);
-          row.appendChild(reviewButton(node, 'Keep', 'Keep', function () {
+          const keep = reviewButton(node, 'Keep', 'Keep', function () {
             delete reviewAsking[b.thread];
             reviewFocusField = b.thread;
             redrawReviews(key);
-          }));
+          });
+          keep.className = 'wakil-review-primary';
+          row.appendChild(keep);
         } else {
           const sendButton = reviewButton(node, b.sending ? 'Sending…' : 'Send', b.sending ? 'Sending…' : 'Send', send);
+          sendButton.className = 'wakil-review-primary';
           sendButton.disabled = !!b.sending;
           row.appendChild(sendButton);
-          reviewDot(row);
           const discard = reviewButton(node, 'Discard', 'Discard', function () {
             const typed = field ? field.value : '';
             if (!typed.trim()) { discardNow(); return; }   // an empty draft closes without asking
@@ -825,7 +864,7 @@
           discard.disabled = !!b.sending;
           row.appendChild(discard);
         }
-        node.appendChild(row);
+        card.appendChild(row);
       }
       function send() {
         if (b.sending || !field || !field.value.trim()) return;
@@ -834,25 +873,33 @@
       }
       const row = reviewEl('div', 'wakil-review-actions');
       if (!drafting) {
-        row.appendChild(reviewButton(node, 'Reply', 'Reply', function () {
+        const reply = reviewButton(node, 'Reply', 'Reply', function () {
           reviewOpen[b.thread] = true;
           reviewFocusField = b.thread;
           redrawReviews(key);
-        }));
-        reviewDot(row);
+        });
+        reply.className = 'wakil-review-primary';
+        row.appendChild(reply);
       }
       row.appendChild(reviewButton(node, 'Resolve', 'Resolve', function (el) {
         el.disabled = true;
         reviewPost(key, b.thread, 'resolve');
       }));
-      if (b.position) {
-        reviewDot(row);
-        row.appendChild(reviewLabel('span', b.position, b.position.replace(' of ', '/')));
-        reviewDot(row);
-        row.appendChild(reviewButton(node, '⌥↓ next', '⌥↓', function () { reviewStep(key, b, 1); }));
-      }
-      node.appendChild(row);
+      card.appendChild(row);
       return node;
+    }
+    // The waiting threads' lines on the key's model: a faint amber wash and a gutter dot. On the
+    // model, as the conflict tints are, so they come back with it.
+    function decorateReviews(key) {
+      const m = models[key];
+      if (!m) return;
+      const lines = m.getLineCount();
+      const list = (reviews[key] || []).filter(function (b) { return b.waiting && !b.resolved && b.line <= lines; })
+        .map(function (b) {
+          return { range: new monaco.Range(b.line, 1, b.line, 1),
+                   options: { isWholeLine: true, className: 'wakil-review-line', linesDecorationsClassName: 'wakil-review-gutter' } };
+        });
+      reviewDecos[key] = m.deltaDecorations(reviewDecos[key] || [], list);
     }
     function drawReviewBoxes(acc, key) {
       // The field or box that has the keyboard keeps it, and its caret, across a redraw.
@@ -860,6 +907,7 @@
       const keep = inReview(a) ? { thread: a.closest('.wakil-review').dataset.thread, field: a.tagName === 'TEXTAREA',
                                    start: a.selectionStart, end: a.selectionEnd } : null;
       dropReviewBoxes(acc, false);
+      decorateReviews(key);
       const boxes = reviews[key];
       if (!boxes || key !== current || diffKey || !models[key]) return;
       const lines = models[key].getLineCount(), l = ed.getLayoutInfo();
@@ -917,6 +965,7 @@
         reviewWas[b.thread] = b;
       });
       reviews[key] = boxes;
+      decorateReviews(key);
       redrawReviews(key);
     };
     // 3b-viii: ghost-text. Swift owns the debounce, the model and the clean-up; the page asks
@@ -982,12 +1031,12 @@
     window.wakilDispose = function (key) {
       if (current === key) ed.changeViewZones(function (acc) { dropConflictRows(acc); dropReviewBoxes(acc, true); });
       if (models[key]) { models[key].dispose(); delete models[key]; }
-      delete basis[key]; delete marks[key]; delete blames[key]; delete conflicts[key]; delete reviews[key];
+      delete basis[key]; delete marks[key]; delete blames[key]; delete conflicts[key]; delete reviews[key]; delete reviewDecos[key];
       if (current === key) current = null;
     };
     // A renamed tab (3b-iv R2): its model, undo history and marks move to the new key.
     window.wakilRekey = function (from, to) {
-      [models, basis, marks, blames, conflicts, reviews].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
+      [models, basis, marks, blames, conflicts, reviews, reviewDecos].forEach(function (m) { if (from in m) { m[to] = m[from]; delete m[from]; } });
       if (current === from) current = to;
     };
     window.wakilFocus = function () {

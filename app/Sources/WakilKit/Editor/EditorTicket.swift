@@ -446,6 +446,71 @@ public func ticketThreadRow(_ t: ReviewThreadState) -> (place: String, words: St
     return (place, words, replies)
 }
 
+// MARK: - The column's pills (design A, "cards with state")
+
+/// A pill's hue, by §5's reserved meanings only: green done or healthy, amber waiting or pending,
+/// red failed, neutral otherwise. Violet is where the operator is, never a status.
+public enum TicketHue: Equatable, Sendable { case green, amber, red, neutral }
+
+/// A PM status's hue: a done-like status green, a waiting or not-started one amber, any other —
+/// "In Progress" among them — neutral. Matched on the words, case and spacing aside.
+public func ticketStatusHue(_ status: String) -> TicketHue {
+    let s = status.lowercased().split(whereSeparator: { !$0.isLetter }).joined(separator: " ")
+    let done = ["done", "closed", "resolved", "complete", "completed", "merged", "released", "shipped", "deployed", "fixed"]
+    let waiting = ["backlog", "to do", "todo", "open", "new", "pending", "waiting", "blocked", "on hold", "in review",
+                   "review", "ready for review", "needs review", "awaiting review", "selected for development"]
+    if done.contains(s) { return .green }
+    if waiting.contains(s) || s.hasPrefix("waiting") || s.hasPrefix("awaiting") || s.hasPrefix("blocked") { return .amber }
+    return .neutral
+}
+
+/// A pull request's state pill: its word and hue — open green, blocked amber, merged and closed
+/// (and anything else) neutral.
+public func ticketPRStatePill(_ pr: PullRequestState) -> (label: String, hue: TicketHue) {
+    let state = pr.state.isEmpty ? "open" : pr.state.lowercased()
+    switch state {
+    case "open": return (state, .green)
+    case "blocked": return (state, .amber)
+    default: return (state, .neutral)
+    }
+}
+
+/// A pull request's checks pill, nil with no checks: `checks 7/9`, red while one fails, green when
+/// all passed, amber while any is still pending.
+public func ticketChecksPill(_ pr: PullRequestState) -> (label: String, hue: TicketHue)? {
+    guard !pr.checks.isEmpty else { return nil }
+    let passed = pr.checks.filter { $0.state == "success" }.count
+    let label = "checks \(passed)/\(pr.checks.count)"
+    if !ticketFailingChecks(pr).isEmpty { return (label, .red) }
+    return (label, passed == pr.checks.count ? .green : .amber)
+}
+
+/// The threads the column lists across the branch's pull requests — each PR's
+/// `ticketColumnThreads`, a thread read twice (a PR and the stack) once.
+public func ticketBranchThreads(_ prs: [PullRequestState]) -> [ReviewThreadState] {
+    var seen: Set<String> = []
+    return prs.flatMap { ticketColumnThreads($0) }.filter { seen.insert($0.id).inserted }
+}
+
+/// The open threads that wait on the viewer: on their own open PRs, ending on someone else's word
+/// (the threads behind `ticketWaitingOn`'s `you`).
+public func ticketThreadsWaitingOnViewer(_ b: TicketBranchState) -> Int {
+    guard !b.viewer.isEmpty else { return 0 }
+    var seen: Set<String> = []
+    return b.prs.filter { $0.state.lowercased() == "open" && $0.author == b.viewer }.flatMap(\.threads).filter { t in
+        !t.resolved && (t.comments.last.map { $0.author != b.viewer } ?? false) && seen.insert(t.id).inserted
+    }.count
+}
+
+/// The header's line after the status pill: `waiting on reviewer, you · 2 threads` — the thread
+/// count only when it waits on you and some do. Nil when it waits on nobody.
+public func ticketWaitingLine(_ waiting: [String], threads: Int) -> String? {
+    guard !waiting.isEmpty else { return nil }
+    var line = "waiting on " + waiting.joined(separator: ", ")
+    if waiting.contains("you"), threads > 0 { line += " · \(threads) thread" + (threads == 1 ? "" : "s") }
+    return line
+}
+
 /// The sources that could not be read, each message whole (Rule 8), an exact repeat once.
 public func ticketPartialLine(_ notes: [SourceNoteState]) -> [String] {
     var out: [String] = []
