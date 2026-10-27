@@ -30,6 +30,10 @@ enum PaneStripStyle {
     static let glyphTrailing: CGFloat = 4
     /// The terminal's inner gutter: its text never meets the border it runs to.
     static let gutter: CGFloat = 6
+    /// The room `resize` takes in an edge-to-edge pane's bottom-right corner (`Canvas`'s
+    /// `EdgeToEdgePane` draws it over the content): a row along the pane's foot ends this far in,
+    /// so its last control is not under the handle.
+    static let resizeCorner: CGFloat = 56
 
     // MARK: The tokens
 

@@ -100,7 +100,9 @@ struct BrowserPane: View {
             if !snapshot.downloads.isEmpty {
                 PaneHairline()
                 BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
-                    .padding(.horizontal, BrowserPaneStyle.rowInset)
+                    .padding(.leading, BrowserPaneStyle.rowInset)
+                    // Its × clear of the pane's resize handle, drawn over this corner.
+                    .padding(.trailing, PaneStripStyle.resizeCorner)
                     .padding(.vertical, BrowserPaneStyle.rowPadding)
             }
         }
