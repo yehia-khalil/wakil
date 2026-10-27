@@ -336,7 +336,7 @@ struct BrowserGroupMenuContext {
 }
 
 /// A tab's menu (Global Constraints' copy): New Group…, Add to Group, Remove from Group, Pin to
-/// <project> or Unpin, Pin Current Page, Close Tab. Nothing here asks (Rule 1) and nothing selects
+/// <project> or Unpin (Unpin Group on a member of a pinned group), Pin Current Page, Close Tab. Nothing here asks (Rule 1) and nothing selects
 /// the tab or takes the keyboard (Rule 6) — but *New Group…*, whose name field arrives focused.
 struct BrowserTabMenu: View {
     let tab: BrowserTab
@@ -362,7 +362,10 @@ struct BrowserTabMenu: View {
         }
         Divider()
         if pinned {
-            Button("Unpin") { context.dispatch("browser_unpin", ["tab": .string(tab.id)]) }
+            // A member of a pinned group unpins the whole group: the label says so.
+            Button(tab.pin == nil ? "Unpin Group" : "Unpin") {
+                context.dispatch("browser_unpin", ["tab": .string(tab.id)])
+            }
         } else {
             Button(context.pinTitle) { context.dispatch("browser_pin", ["tab": .string(tab.id)]) }
                 .disabled(context.project.isEmpty)
