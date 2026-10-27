@@ -920,18 +920,18 @@ struct TerminalPane: View {
 /// a program's OWN colour, legible against the pane's own near-black
 /// field; a coloured background is the rarer case and is left for the
 /// day a real pane is measured needing it.
+///
+/// **Drawn by `TerminalSelectableText`** (3c-iii walk): SwiftUI's selectable `Text` swallowed a
+/// ⌘-click on a link. The rows are one attributed string, one line each at the 15 pt row height,
+/// in the same 12 pt monospaced font `TerminalPane.cellSize` measures.
 private struct LiveGrid: View {
     let rows: [[TerminalStyleRun]]
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(rows.indices, id: \.self) { index in
-                terminalStyledRowText(
-                    rows[index], dimmedDefault: TerminalPane.text.opacity(0.55), linkDefault: TerminalPane.text)
-                    .font(.system(size: 12, design: .monospaced))
-                    .frame(height: 15, alignment: .leading)
-            }
-        }
-        .textSelection(.enabled)
+        TerminalSelectableText(
+            text: terminalAttributedLines(
+                rows, fontSize: 12, lineHeight: TerminalPane.cellSize.height, defaultColor: TerminalPane.text,
+                dimmedDefault: TerminalPane.text.opacity(0.55), linkDefault: TerminalPane.text),
+            layout: .rows(lineHeight: TerminalPane.cellSize.height))
     }
 }
 
@@ -1379,11 +1379,8 @@ private struct OperatorRow: View {
                 StructuredOutputView(
                     paneId: paneId, blockId: block.id, structured: structured, basePath: cwd)
             } else if !block.output.isEmpty {
-                outputText
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(TerminalPane.text.opacity(0.55))
-                    .textSelection(.enabled)
-                    .lineLimit(12)
+                // `TerminalSelectableText`, not selectable `Text`, so a ⌘-click reaches a link.
+                TerminalSelectableText(text: outputText, layout: .wrapping(maximumLines: 12))
             }
             actions()
         }
@@ -1398,29 +1395,22 @@ private struct OperatorRow: View {
         status == .failed ? TerminalPane.red.opacity(0.85) : TerminalPane.text.opacity(0.35)
     }
 
-    /// `block.output`, coloured when `block.outputRuns` is present and
-    /// trustworthy — one `Text` for the whole block, exactly as the plain
-    /// path already was, built by joining each line's runs with `+` and a
-    /// literal `"\n"` between lines rather than switching to one `Text`
-    /// per LINE: this block already draws as a single multi-line `Text`
-    /// today, and widening that to a `Text` per line would be a second,
-    /// unmeasured drawing shape this task was not asked to introduce.
+    /// `block.output`, coloured when `block.outputRuns` is present and trustworthy, as one
+    /// attributed string for `TerminalSelectableText`, a `"\n"` between lines.
     ///
-    /// **Falls back to the plain join whenever `outputRuns` cannot be
-    /// trusted** — absent (the common, uncoloured case;
-    /// `TerminalBlock.outputRuns`'s own doc comment on why that is `nil`
-    /// rather than a trivial array) or, defensively, misaligned with
-    /// `block.output` (a line count that disagrees is treated as "no
-    /// runs" rather than zipped against the wrong line). Either way this
-    /// produces the exact same `Text` the pane drew before this pane knew
-    /// about colour.
+    /// **Falls back to one default-style run per line whenever `outputRuns` cannot be trusted** —
+    /// absent (the common, uncoloured case; `TerminalBlock.outputRuns`'s own doc comment on why that
+    /// is `nil` rather than a trivial array) or, defensively, misaligned with `block.output` (a line
+    /// count that disagrees is treated as "no runs" rather than zipped against the wrong line).
     ///
-    /// **Links (3c-iii ruling 14):** the plain fallback is one default-style run per line, so both
-    /// paths go through `terminalStyledRowText` and a URL links whichever one drew it.
-    private var outputText: Text {
-        terminalLinkedOutputText(
-            block.output, runs: block.outputRuns, dimmedDefault: TerminalPane.text.opacity(0.55),
-            linkDefault: TerminalPane.text.opacity(0.55))
+    /// **Links (3c-iii ruling 14):** both paths go through `TerminalLinks.split`, so a URL links
+    /// whichever one drew it.
+    private var outputText: NSAttributedString {
+        let runs = block.outputRuns.flatMap { $0.count == block.output.count ? $0 : nil }
+            ?? block.output.map { [TerminalStyleRun(text: $0, style: .plain)] }
+        return terminalAttributedLines(
+            runs, fontSize: 10, defaultColor: TerminalPane.text.opacity(0.55),
+            dimmedDefault: TerminalPane.text.opacity(0.55), linkDefault: TerminalPane.text.opacity(0.55))
     }
 
     @ViewBuilder
