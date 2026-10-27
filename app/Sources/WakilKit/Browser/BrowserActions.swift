@@ -67,9 +67,14 @@ func browserZoom(_ zoom: Double, stepIn: Bool) -> Double {
     return browserZoomSteps.last { $0 < zoom - 0.0001 } ?? zoom
 }
 
-/// What a browser pane saves in the layout: each tab's id, URL and title, in order.
+/// What a browser pane saves in the layout as its tabs: each tab's id, URL, title, group, opener, pin
+/// and `keptLoose`, in order. A pull-request tab is skipped (ruling 18): the next refresh lists it
+/// again. Its group is saved with the rest of `groups`, without tabs, so its `collapsed` is kept.
 func browserSavedTabs(_ s: BrowserSnapshot) -> [BrowserSavedTab] {
-    s.tabs.map { BrowserSavedTab(id: $0.id, url: $0.url, title: $0.title) }
+    s.tabs.filter { $0.pullRequest == nil }.map {
+        BrowserSavedTab(id: $0.id, url: $0.url, title: $0.title, group: $0.group, opener: $0.opener,
+                        pin: $0.pin, keptLoose: $0.keptLoose)
+    }
 }
 
 /// The ⌘⇧T stack's depth.
@@ -184,7 +189,8 @@ func browserActions(
 
     @Sendable func persist(_ pane: String) async {
         let s = await panes.browserSnapshot(paneId: pane)
-        await layout?.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active)
+        await layout?.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active, groups: s.groups,
+                                     columnHidden: s.tabColumnHidden)
     }
 
     /// `typed` by the address rule, refused when it resolves to nothing or to a `javascript:` URL.
@@ -577,7 +583,8 @@ func browserActions(
             let pane = try requireString(params, "pane", action: "browser_restore")
             _ = try await browserPane(params, action: "browser_restore")
             if let saved = await layout?.browserTabs(id: pane), !saved.tabs.isEmpty {
-                await panes.browserRestore(paneId: pane, tabs: saved.tabs, active: saved.active)
+                await panes.browserRestore(paneId: pane, tabs: saved.tabs, active: saved.active,
+                                           groups: saved.groups, columnHidden: saved.columnHidden)
             }
             return await reply(pane)
         }))

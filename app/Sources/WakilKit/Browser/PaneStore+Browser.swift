@@ -19,21 +19,42 @@ extension PaneStore {
     /// Puts back a pane's saved tabs (`browser_restore`). Ids are kept; **only the active tab — or the
     /// first, when `active` names none — gets a load**, so a restored window does not fetch every
     /// page at once. Every tab starts unloaded; the rest load when shown.
-    public func browserRestore(paneId: String, tabs: [BrowserSavedTab], active: String?) {
+    ///
+    /// Groups come back in their saved order (3d-i), and `nextGroup` one past the highest `g<n>`. A
+    /// tab naming a group that did not come back is loose, and a group's `lastOpen` naming a tab that
+    /// did not (a pull-request tab is never saved) is cleared.
+    public func browserRestore(
+        paneId: String, tabs: [BrowserSavedTab], active: String?, groups: [BrowserGroup], columnHidden: Bool
+    ) {
         let chosen = tabs.contains { $0.id == active } ? active : tabs.first?.id
-        var top = 0
-        for t in tabs where t.id.hasPrefix("t") { top = max(top, Int(t.id.dropFirst()) ?? 0) }
-        let highest = top
+        let highestTab = Self.highestNumber(tabs.map(\.id), prefix: "t")
+        let highestGroup = Self.highestNumber(groups.map(\.id), prefix: "g")
+        let groupIds = Set(groups.map(\.id))
+        let tabIds = Set(tabs.map(\.id))
         updateBrowser(paneId: paneId, create: true) { s in
             s = .empty
             s.tabs = tabs.map { saved in
                 BrowserTab(id: saved.id, url: saved.url, title: saved.title, loaded: false,
                            command: saved.id == chosen ? BrowserCommand(seq: 1, verb: .load(saved.url)) : nil,
-                           fromSavedLayout: true)
+                           fromSavedLayout: true,
+                           group: saved.group.flatMap { groupIds.contains($0) ? $0 : nil }, opener: saved.opener,
+                           pin: saved.pin, keptLoose: saved.keptLoose)
             }
             s.active = chosen
-            s.nextTab = highest + 1
+            s.nextTab = highestTab + 1
+            s.groups = groups.map { g in
+                var g = g
+                if let open = g.lastOpen, !tabIds.contains(open) { g.lastOpen = nil }
+                return g
+            }
+            s.nextGroup = highestGroup + 1
+            s.tabColumnHidden = columnHidden
         }
+    }
+
+    /// The highest `n` among ids of the form `<prefix><n>`; 0 when none.
+    private static func highestNumber(_ ids: [String], prefix: String) -> Int {
+        ids.filter { $0.hasPrefix(prefix) }.compactMap { Int($0.dropFirst(prefix.count)) }.max() ?? 0
     }
 
     // MARK: - The seam: what a tab's web view reports. Never creates a pane; never issues a command.

@@ -548,7 +548,7 @@ private func browserWindow(
         let bare = LayoutScope(organization: "globex", project: "", environment: "")
         await panes.switchScope(to: bare)
         await panes.browserRestore(paneId: pane, tabs: [BrowserSavedTab(id: tab, url: "https://b.test/", title: "B")],
-                                         active: tab)
+                                         active: tab, groups: [], columnHidden: false)
         let incoming = await panes.browserSnapshot(paneId: pane)
         await model.browserPageDidReport(scope: drawn, pane: pane, tab: tab, BrowserPageReport(
             url: "https://mail.test/", title: "Inbox", isLoading: false, progress: 1, canGoBack: false,

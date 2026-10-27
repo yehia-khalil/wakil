@@ -117,7 +117,7 @@ private let readPaneKeys: Set<String> = [
     let saved = [BrowserSavedTab(id: "t1", url: "https://a.test/", title: "A"),
                  BrowserSavedTab(id: "t4", url: "https://b.test/", title: "B"),
                  BrowserSavedTab(id: "t2", url: "https://c.test/", title: "C")]
-    await store.browserRestore(paneId: pane, tabs: saved, active: "t4")
+    await store.browserRestore(paneId: pane, tabs: saved, active: "t4", groups: [], columnHidden: false)
     let s = await store.browserSnapshot(paneId: pane)
     #expect(s.tabs.map(\.id) == ["t1", "t4", "t2"] && s.active == "t4")
     #expect(s.tabs.allSatisfy { !$0.loaded })
@@ -126,7 +126,7 @@ private let readPaneKeys: Set<String> = [
     #expect(s.tabs[1].command?.verb == .load("https://b.test/"))
     #expect(s.nextTab == 5)
 
-    await store.browserRestore(paneId: "b2", tabs: saved, active: "gone")
+    await store.browserRestore(paneId: "b2", tabs: saved, active: "gone", groups: [], columnHidden: false)
     let other = await store.browserSnapshot(paneId: "b2")
     #expect(other.active == "t1" && other.tabs[0].command?.verb == .load("https://a.test/"))
     #expect(other.tabs[1].command == nil)
@@ -197,10 +197,80 @@ private let readPaneKeys: Set<String> = [
     let store = PaneStore(kinds: PaneKinds.standard)
     await store.browserRestore(paneId: pane, tabs: [BrowserSavedTab(id: "t1", url: "https://a.test/", title: "A"),
                                                     BrowserSavedTab(id: "t2", url: "https://b.test/", title: "B")],
-                               active: "t1")
+                               active: "t1", groups: [], columnHidden: false)
     #expect(await store.browserSnapshot(paneId: pane).tabs.allSatisfy(\.fromSavedLayout))
     let popup = await store.browserPageOpenedTab(paneId: pane, opener: "t1", url: "https://c.test/")
     let s = await store.browserSnapshot(paneId: pane)
     #expect(s.tabs.first { $0.id == popup }?.fromSavedLayout == false)
     #expect(BrowserTab(id: "t9", url: "", title: "").fromSavedLayout == false)
+}
+
+// MARK: - 3d-i: groups, pins and the column, saved with a pane's tabs
+
+/// Save (`browserSavedTabs` into the layout) → read back → restore keeps every 3d-i field.
+@Test func savedTabsRoundTripGroupsPinsAndColumn() async throws {
+    let store = PaneStore(kinds: PaneKinds.standard)
+    let groups = [
+        BrowserGroup(id: "g2", name: "Docs", colour: .teal, collapsed: true, lastOpen: "t3", kind: .own,
+                     siteKey: nil, named: true, pin: "pabc12345"),
+        BrowserGroup(id: "g7", name: "Amazon", colour: .sand, collapsed: false, lastOpen: nil, kind: .automatic,
+                     siteKey: "amazon.com", named: false, pin: nil),
+    ]
+    await store.updateBrowser(paneId: pane, create: true) { s in
+        s.tabs = [
+            BrowserTab(id: "t1", url: "https://a.test/", title: "A", pin: "p00000001"),
+            BrowserTab(id: "t3", url: "https://b.test/", title: "B", group: "g2", opener: "t1"),
+            BrowserTab(id: "t4", url: "https://amazon.com/", title: "C", group: "g7"),
+            BrowserTab(id: "t5", url: "https://d.test/", title: "D", keptLoose: true),
+        ]
+        s.active = "t4"; s.nextTab = 6
+        s.groups = groups; s.nextGroup = 8
+        s.tabColumnHidden = true
+    }
+    let layout = LayoutStore()
+    let p = await layout.open(kind: "browser", title: "Browser")
+    let before = await store.browserSnapshot(paneId: pane)
+    await layout.setBrowserTabs(id: p.id, to: browserSavedTabs(before), active: before.active,
+                                groups: before.groups, columnHidden: before.tabColumnHidden)
+    // Through the file's JSON too, so the `Pane` coding keys are covered.
+    let pane2 = try #require(await layout.snapshot().panes.first { $0.id == p.id })
+    let decoded = try JSONDecoder().decode(Pane.self, from: JSONEncoder().encode(pane2))
+    #expect(decoded.browserGroups == groups && decoded.browserColumnHidden == true)
+
+    let saved = try #require(await layout.browserTabs(id: p.id))
+    #expect(saved.groups == groups && saved.columnHidden)
+    await store.browserRestore(paneId: "b2", tabs: saved.tabs, active: saved.active, groups: saved.groups,
+                               columnHidden: saved.columnHidden)
+    let s = await store.browserSnapshot(paneId: "b2")
+    #expect(s.tabs.map(\.group) == [nil, "g2", "g7", nil])
+    #expect(s.tabs.map(\.opener) == [nil, "t1", nil, nil])
+    #expect(s.tabs.map(\.pin) == ["p00000001", nil, nil, nil])
+    #expect(s.tabs.map(\.keptLoose) == [false, false, false, true])
+    #expect(s.groups == groups, "in order, with collapsed, lastOpen, named, kind, siteKey and pin")
+    #expect(s.nextGroup == 8, "one past the highest g<n>")
+    #expect(s.tabColumnHidden)
+    #expect(s.active == "t4" && s.nextTab == 6)
+}
+
+/// Ruling 18: the pull-request group's tabs are not saved; the group, and its `collapsed`, is.
+@Test func pullRequestTabsAreNotSaved() {
+    var s = BrowserSnapshot.empty
+    s.tabs = [
+        BrowserTab(id: "t1", url: "https://a.test/", title: "A"),
+        BrowserTab(id: "t2", url: "https://github.com/initech/app/pull/4", title: "Fix · initech/app#4",
+                   group: "pr", pullRequest: "https://github.com/initech/app/pull/4"),
+    ]
+    s.groups = [BrowserGroup(id: "pr", name: "Pull Requests", colour: .blue, collapsed: false, lastOpen: "t2",
+                             kind: .pullRequests, siteKey: nil, named: true, pin: nil)]
+    #expect(browserSavedTabs(s).map(\.id) == ["t1"])
+}
+
+/// A layout written by a later build keeps its groups: an unknown kind is yours, an unknown colour blue.
+@Test func anUnknownGroupKindOrColourDecodesAsOwnAndBlue() throws {
+    let json = #"{"id":"g1","name":"X","colour":"violet","collapsed":false,"kind":"smart","named":true}"#
+    let g = try JSONDecoder().decode(BrowserGroup.self, from: Data(json.utf8))
+    #expect(g.kind == .own && g.colour == .blue)
+    #expect(g.lastOpen == nil && g.siteKey == nil && g.pin == nil && g.named)
+    #expect(BrowserGroupColour.allCases.map(\.hex) == [0x7f97b2, 0x8d98a8, 0x77a0a3, 0xad9f86, 0xa0938b, 0x9b9da6])
+    #expect(BrowserGroupColour.allCases.map { $0.rawValue } == ["blue", "steel", "teal", "sand", "stone", "smoke"])
 }

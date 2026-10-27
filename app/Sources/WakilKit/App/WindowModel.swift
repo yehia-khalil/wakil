@@ -5974,7 +5974,8 @@ public final class WindowModel {
             guard !Task.isCancelled, let self else { return }
             self.browserTabsWrites[pane] = nil
             let s = await self.panes.browserSnapshot(paneId: pane)
-            await self.layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active)
+            await self.layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active, groups: s.groups,
+                                             columnHidden: s.tabColumnHidden)
             self.browserTabsWriteCount += 1
             await self.refreshLayout()
         }

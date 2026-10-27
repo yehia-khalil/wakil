@@ -114,7 +114,7 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
 
 @Test func commandSeqsRiseFromARestoredTab() async throws {
     let f = try await browserFixture()
-    await f.layout.setBrowserTabs(id: f.pane, to: [BrowserSavedTab(id: "t3", url: "https://a.test/", title: "A")], active: "t3")
+    await f.layout.setBrowserTabs(id: f.pane, to: [BrowserSavedTab(id: "t3", url: "https://a.test/", title: "A")], active: "t3", groups: [], columnHidden: false)
     try await f.dispatch("browser_restore", origin: .ui)
     #expect(await f.active()?.command == BrowserCommand(seq: 1, verb: .load("https://a.test/")))
     try await f.dispatch("browser_reload")
@@ -167,7 +167,7 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     await f.layout.setBrowserTabs(id: f.pane, to: [
         BrowserSavedTab(id: "t1", url: "https://a.test/", title: "A"),
         BrowserSavedTab(id: "t2", url: "https://b.test/", title: "B"),
-    ], active: "t1")
+    ], active: "t1", groups: [], columnHidden: false)
     try await f.dispatch("browser_restore", origin: .ui)
     #expect(await f.snapshot().tabs[1].command == nil)
     try await f.dispatch("browser_select_tab", ["index": .integer(-1)])
