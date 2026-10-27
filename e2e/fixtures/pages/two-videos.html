@@ -8,6 +8,8 @@
 // `second` starts a second after `first`, so it is the one playing most recently.
 const second = document.getElementById('second');
 setTimeout(() => { second.play().catch(() => {}); }, 1000);
+// A check waits on this title before it leaves the tab, so `second` is the newest-playing by then.
+second.addEventListener('playing', () => { if (!document.title.startsWith('Floating')) document.title = 'Two videos · both playing'; }, { once: true });
 for (const video of document.querySelectorAll('video')) {
   video.addEventListener('enterpictureinpicture', () => { document.title = 'Floating: ' + video.id; });
   video.addEventListener('leavepictureinpicture', () => { document.title = 'Two videos'; });

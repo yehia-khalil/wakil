@@ -1,0 +1,28 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/video.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Video"}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"qa"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.qa"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"expect":{"journal":{"contains":"\"environment\":\"qa\""}}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"environment"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Placeholder: Environment"}}
+{"do":{"type":{"into":"palette.query","text":"staging"}}}
+{"expect":{"tree":"contains","text":"text 1 of "}}
+{"do":{"click":"palette.row.staging"}}
+{"expect":{"tree":"absent","text":"Placeholder: Environment"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"null"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Video"}}

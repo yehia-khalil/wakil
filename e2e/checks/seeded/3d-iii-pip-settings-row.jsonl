@@ -1,0 +1,18 @@
+{"do":{"hotkey":"cmd+,"}}
+{"expect":{"tree":"contains","text":"SETTINGS"}}
+{"do":{"click":"settings.tree.browser"}}
+{"expect":{"tree":"contains","text":"Picture in picture"}}
+{"expect":{"tree":"absent","text":"Picture in picture is off: this Mac"}}
+{"dispatch":{"action":"ctx_browser_settings","params":{}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.browser.pictureInPicture","equals":"true"}}
+{"parity":{"action":"ctx_set_browser_settings","params":{"pictureInPicture":false},"click":"settings.browser.pictureInPicture.off","assert":"tree"}}
+{"dispatch":{"action":"ctx_browser_settings","params":{}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.browser.pictureInPicture","equals":"false"}}
+{"expect":{"journal":{"contains":"pictureInPicture"}}}
+{"expect":{"tree":"contains","text":"Search engine"}}
+{"do":{"click":"settings.browser.pictureInPicture.on"}}
+{"dispatch":{"action":"ctx_browser_settings","params":{}}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.browser.pictureInPicture","equals":"true"}}
+{"expect":{"tree":"contains","text":"Search engine"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"expect":{"frame":"settings.browser.pictureInPicture.off","inside":"settings.browser.pictureInPicture"}}
