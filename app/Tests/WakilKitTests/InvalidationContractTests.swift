@@ -291,7 +291,7 @@ private let orgIndependent: Set<String> = [
     "browserTabsDelay", "browserTabsWriteCount",
     // 3c-iii: the history writes queue (each targets its own place's organisation), and the
     // address suggestions' fetch and its one ephemeral session — the operator's setting, no organisation's.
-    "browserHistoryTail", "browserSuggestFetch", "browserSuggestSession",
+    "browserHistoryTail", "browserSuggestionsAfterReads", "browserSuggestFetch", "browserSuggestSession",
     // 3b-i Task 9: event counts again — a quit prompt resolved to quit, or to stay. The app
     // replies to AppKit when either DIFFERS from the last value it saw.
     "quitApproved", "quitCancelled",

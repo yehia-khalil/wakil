@@ -122,7 +122,7 @@ private func browserWindow(
         #expect(try model.browserOrgFiles?.history.matching(["example"], limit: 5).isEmpty == true)
     }
 
-    @Test func suggestionsReadTheActiveOrganisationsHistoryOnly() async throws {
+    @Test func suggestionsReadTheDrawnPlacesHistoryOnly() async throws {
         let (model, pane, _, _) = try await homedBrowser()
         try await report(model, pane, title: "Example", loading: true)
         try await report(model, pane, title: "Example", loading: false)
@@ -130,7 +130,40 @@ private func browserWindow(
         // Move the tab off the page so only history can answer.
         try await report(model, pane, url: "https://other.test/", title: "Other", loading: false)
         #expect(await model.browserSuggestions(typed: "example", pane: pane).map(\.kind) == [.history])
-        model.setOrganizationForTesting("umbrella")
+        let drawn = try #require(model.browserScope)
+        model.setDrawnScopeForTesting(LayoutScope(
+            organization: "umbrella", project: drawn.project, environment: drawn.environment,
+            lineageRoot: drawn.lineageRoot))
+        #expect(await model.browserSuggestions(typed: "example", pane: pane).isEmpty, "another place's files")
+    }
+
+    @Test func aPrefixMatchWithFewVisitsBeatsBusierRowsThatMerelyContainTheWord() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        let scope = try #require(model.browserScope)
+        let history = try #require(model.browserOrgFiles(for: scope)).history
+        let now = Date()
+        for i in 0..<12 {
+            let url = "https://search.test/?q=github\(i)"
+            for _ in 0..<5 { try history.record(url: url, title: "", at: now, newVisit: true) }
+        }
+        try history.record(url: "https://github.com/", title: "GitHub", at: now, newVisit: true)
+        let rows = await model.browserSuggestions(typed: "github", pane: pane)
+        #expect(rows.first?.url == "https://github.com/")
+        #expect(BrowserSuggestions.completion("github", in: rows) == ".com")
+    }
+
+    @Test func aPlaceChangeDuringTheCallAnswersNothing() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        try await report(model, pane, title: "Example", loading: true)
+        try await report(model, pane, title: "Example", loading: false)
+        await model.settleBrowserHistory()
+        try await report(model, pane, url: "https://other.test/", title: "Other", loading: false)
+        let drawn = try #require(model.browserScope)
+        model.browserSuggestionsAfterReads = {
+            model.setDrawnScopeForTesting(LayoutScope(
+                organization: "umbrella", project: drawn.project, environment: drawn.environment,
+                lineageRoot: drawn.lineageRoot))
+        }
         #expect(await model.browserSuggestions(typed: "example", pane: pane).isEmpty)
     }
 

@@ -5857,20 +5857,31 @@ public final class WindowModel {
     /// and history, with `search` (the engine's words) last. Ruling 7.
     public func browserSuggestions(typed: String, pane: String, search: [String] = []) async -> [BrowserSuggestion] {
         let words = BrowserSuggestions.words(BrowserSuggestions.normalised(typed))
-        guard !words.isEmpty else { return [] }
+        // Every read keys on the place drawn when the call began; a switch landing mid-call answers nothing.
+        guard !words.isEmpty, let scope = browserScope else { return [] }
         var tabs: [BrowserTab] = []
         for p in layoutSnapshot.panes where p.kind == "browser" { tabs += browser(p.id)?.tabs ?? [] }
         let editing = browser(pane)?.active
-        let bookmarks = organization.isEmpty ? [] : await panes.browserBookmarks(org: organization)
+        let bookmarks = await panes.browserBookmarks(org: scope.organization)
         var history: [BrowserHistoryEntry] = []
-        if let files = browserOrgFiles {
+        if let files = browserOrgFiles(for: scope) {
+            // Wide, so `rank` scores before it cuts: a prefix match with few visits must not lose to
+            // eight busier pages that merely contain the word (rulings 7 and 8).
             history = await Task.detached {
-                (try? files.history.matching(words, limit: 8)) ?? []
+                (try? files.history.matching(words, limit: 200)) ?? []
             }.value
         }
+        await browserSuggestionsAfterReads?()
+        guard browserScope == scope else { return [] }
         return BrowserSuggestions.rank(
             typed, tabs: tabs, editing: editing, bookmarks: bookmarks, history: history, search: search)
     }
+
+    /// TEST-ONLY: runs after `browserSuggestions` has read, before it answers.
+    @ObservationIgnored var browserSuggestionsAfterReads: (@MainActor () async -> Void)?
+
+    /// TEST-ONLY: names another place as drawn.
+    func setDrawnScopeForTesting(_ scope: LayoutScope?) { drawnScope = scope }
 
     /// The engine's own suggestions for `typed` (ruling 10): empty when the setting is off, the text
     /// is an address, the engine has no endpoint, or the fetch fails.
