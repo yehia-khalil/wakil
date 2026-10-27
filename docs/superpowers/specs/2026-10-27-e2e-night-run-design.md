@@ -64,13 +64,16 @@ During the day nothing changes: sessions still run only new and affected checks
 - **A red coverage gate (`make e2e-cover`) is reported, not fixed.** It means a merged
   branch skipped Cover; writing checks is the auditor's job with the screen, not the
   night fixer's. The morning result names the uncovered surface.
-- **Runbooks:** when the night ends green (first run, or re-run after fixes), the night
-  run re-renders with `make e2e-runbook` every `docs/wakil/phase-*-acceptance.md` that
-  still says *owed to `make e2e-full`*, and commits that on the night's branch. So a
-  green night with nothing to fix can still produce a branch, holding only re-renders.
-- **A lock keeps daytime runs off the screen during the night run.** The night run
-  holds a lock for its whole run, and `docs/agents/e2e.md` and the *e2e screen sharing*
-  memory say a session waits on that lock as well as on the `pgrep`.
+- **Runbooks are not re-rendered by the night run** (amended while planning). A runbook's
+  machine section is a claim about *its* branch against *its* merge-base; rendering it
+  again on `main` would rewrite it as a claim about a different branch. Instead the
+  runbook copy for owed checks changes from "runs once, on the head that merges" to
+  "covered by the night run on `main` after the merge", and the night's result is the
+  record that they ran.
+- **A lock keeps daytime runs off the screen during the night run.** The lock is the
+  night run's own process (`wakil-e2e-night run`), alive for the whole night, so a crash
+  leaves no stale lock. `docs/agents/e2e.md` and the *e2e screen sharing* memory say a
+  session waits on that process as well as on the Wakil `pgrep`.
 
 ## The fixer's rules
 
