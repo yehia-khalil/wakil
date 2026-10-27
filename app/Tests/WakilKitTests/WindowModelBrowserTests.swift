@@ -95,6 +95,23 @@ private func browserWindow(
         #expect(try await visits(model).isEmpty)
     }
 
+    @Test func theTabAndBookmarkRowsUseTheLabelTheBareURLAndNewestFirst() async throws {
+        let (model, pane, _, panes) = try await homedBrowser()
+        let scope = try #require(model.browserScope)
+        let tab = try #require(model.browser(pane)?.tabs.first)
+        await panes.browserSetBookmarks(org: scope.organization, [
+            BrowserBookmark(url: "https://www.example.com/old", title: "Old", added: Date(timeIntervalSince1970: 10)),
+            BrowserBookmark(url: "https://example.com/new", title: "New", added: Date(timeIntervalSince1970: 20)),
+        ])
+        #expect(tab.label == "a.test", "a tab with no title is labelled by its host")
+        #expect(model.paletteBrowserTabs() == [PaletteBrowserTab(
+            pane: pane, tab: tab.id, title: tab.label, subtitle: "a.test")])
+        #expect(await model.paletteBookmarks() == [
+            PaletteBookmark(url: "https://example.com/new", title: "New", subtitle: "example.com/new"),
+            PaletteBookmark(url: "https://www.example.com/old", title: "Old", subtitle: "example.com/old"),
+        ])
+    }
+
     @Test func historyIsNotRecordedForAPlaceNoLongerOnScreen() async throws {
         let (model, pane, _, _) = try await homedBrowser()
         let scope = try #require(model.browserScope)

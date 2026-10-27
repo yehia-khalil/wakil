@@ -219,7 +219,9 @@ The palettes' state machine and their lists, pure so the window only feeds keys 
 - `CommandCatalog.swift` — `CommandCatalog`: the curated ⌘K list, each row pinned to a registered
   action.
 - `PaletteSources.swift` — `PaletteSource` and its sources (`OpenPanesSource`, `NewPaneSource`,
-  `TablesSource`, `ApiEntriesSource`, `ChangedFilesSource`), `PaletteClients`. `FilesSource` does the same
+  `TablesSource`, `ApiEntriesSource`, `BrowserTabsSource` and `BookmarksSource` (open tabs and bookmarks, fed plain
+  `PaletteBrowserTab` / `PaletteBookmark` rows by `WindowModel` so Command stays clear of Browser),
+  `ChangedFilesSource`), `PaletteClients`. `FilesSource` does the same
   as the tree when `showIgnored` is false.
 - `PaletteEntry.swift`, `PaletteItem.swift` (`fuzzyScore`), `PaletteSearch.swift`,
   `PaletteFocusReturn.swift`.

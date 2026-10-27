@@ -461,43 +461,64 @@ public struct ApiEntriesSource: PaletteSource {
 
 // MARK: - Open tabs and bookmarks
 
+/// One open browser tab as ⌘P shows it: the window has already chosen the title and subtitle.
+public struct PaletteBrowserTab: Sendable, Equatable {
+    public let pane: String
+    public let tab: String
+    public let title: String
+    public let subtitle: String
+    public init(pane: String, tab: String, title: String, subtitle: String) {
+        self.pane = pane; self.tab = tab; self.title = title; self.subtitle = subtitle
+    }
+}
+
+/// One bookmark as ⌘P shows it.
+public struct PaletteBookmark: Sendable, Equatable {
+    public let url: String
+    public let title: String
+    public let subtitle: String
+    public init(url: String, title: String, subtitle: String) {
+        self.url = url; self.title = title; self.subtitle = subtitle
+    }
+}
+
 /// Every tab of every browser pane on the canvas. A row switches to the tab and focuses its pane.
 public struct BrowserTabsSource: PaletteSource {
     public let id = "browsertabs"
     public let group = PaletteGroup.resources
-    private let tabs: @Sendable () async -> [(pane: String, tab: BrowserTab)]
+    private let tabs: @Sendable () async -> [PaletteBrowserTab]
 
-    public init(tabs: @escaping @Sendable () async -> [(pane: String, tab: BrowserTab)]) {
+    public init(tabs: @escaping @Sendable () async -> [PaletteBrowserTab]) {
         self.tabs = tabs
     }
 
     public func entries() async -> [PaletteEntry] {
-        await tabs().map { pane, tab in
+        await tabs().map { row in
             PaletteEntry(
-                id: "browsertab:\(pane)/\(tab.id)", group: group, title: tab.label,
-                subtitle: BrowserSuggestions.bareURL(tab.url), kindLabel: "tab", verb: "switch to",
+                id: "browsertab:\(row.pane)/\(row.tab)", group: group, title: row.title,
+                subtitle: row.subtitle, kindLabel: "tab", verb: "switch to",
                 action: .dispatch(action: "browser_select_tab", params: .object([
-                    "pane": .string(pane), "tab": .string(tab.id), "focus": .bool(true),
+                    "pane": .string(row.pane), "tab": .string(row.tab), "focus": .bool(true),
                 ])))
         }
     }
 }
 
-/// The organisation's bookmarks, newest first. A row opens the page in a new tab.
+/// The organisation's bookmarks, in the order given (newest first). A row opens the page in a new tab.
 public struct BookmarksSource: PaletteSource {
     public let id = "bookmarks"
     public let group = PaletteGroup.resources
-    private let bookmarks: @Sendable () async -> [BrowserBookmark]
+    private let bookmarks: @Sendable () async -> [PaletteBookmark]
 
-    public init(bookmarks: @escaping @Sendable () async -> [BrowserBookmark]) {
+    public init(bookmarks: @escaping @Sendable () async -> [PaletteBookmark]) {
         self.bookmarks = bookmarks
     }
 
     public func entries() async -> [PaletteEntry] {
-        await bookmarks().sorted { $0.added > $1.added }.map { mark in
+        await bookmarks().map { mark in
             PaletteEntry(
                 id: "bookmark:\(mark.url)", group: group, title: mark.title,
-                subtitle: BrowserSuggestions.bareURL(mark.url), kindLabel: "bookmark", verb: "open",
+                subtitle: mark.subtitle, kindLabel: "bookmark", verb: "open",
                 action: .dispatch(action: "browser_open", params: .object([
                     "url": .string(mark.url), "newTab": .bool(true),
                 ])))

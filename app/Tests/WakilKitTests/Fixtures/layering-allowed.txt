@@ -28,7 +28,6 @@ Browser -> Layout
 Browser -> Panes
 Browser -> Registry
 Command -> Api
-Command -> Browser
 Command -> Context
 Command -> Git
 Command -> Identifiers

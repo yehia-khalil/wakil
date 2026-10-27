@@ -6940,18 +6940,23 @@ public final class WindowModel {
     }
 
     /// Every tab of every browser pane on the canvas, read as ⌘P lists them.
-    func paletteBrowserTabs() -> [(pane: String, tab: BrowserTab)] {
-        var rows: [(pane: String, tab: BrowserTab)] = []
+    func paletteBrowserTabs() -> [PaletteBrowserTab] {
+        var rows: [PaletteBrowserTab] = []
         for p in layoutSnapshot.panes where p.kind == "browser" {
-            for tab in browser(p.id)?.tabs ?? [] { rows.append((pane: p.id, tab: tab)) }
+            for tab in browser(p.id)?.tabs ?? [] {
+                rows.append(PaletteBrowserTab(
+                    pane: p.id, tab: tab.id, title: tab.label, subtitle: BrowserSuggestions.bareURL(tab.url)))
+            }
         }
         return rows
     }
 
     /// The drawn place's organisation's bookmarks: the same place the address-field suggestions read.
-    func paletteBookmarks() async -> [BrowserBookmark] {
+    func paletteBookmarks() async -> [PaletteBookmark] {
         guard let scope = browserScope else { return [] }
-        return await panes.browserBookmarks(org: scope.organization)
+        return await panes.browserBookmarks(org: scope.organization).sorted { $0.added > $1.added }.map {
+            PaletteBookmark(url: $0.url, title: $0.title, subtitle: BrowserSuggestions.bareURL($0.url))
+        }
     }
 
     /// ⌘P's sources, in group order.
