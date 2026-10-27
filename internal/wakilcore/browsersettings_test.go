@@ -70,3 +70,35 @@ func TestSetBrowserSettingsRefusesAStartPageThatIsNotAURL(t *testing.T) {
 		t.Errorf("StartPage = %q", got.StartPage)
 	}
 }
+
+func TestBrowserSettingsSearchSuggestionsDefaultsOff(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	got, appErr := ReadBrowserSettings()
+	if appErr != "" || got.SearchSuggestions {
+		t.Errorf("ReadBrowserSettings() = %+v, %q; want searchSuggestions false", got, appErr)
+	}
+}
+
+func TestWriteBrowserSettingsSearchSuggestionsKeepsOtherKeys(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := UpdateEditorAppSettings(EditorAppPatch{FontSize: intp(15)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteBrowserSettings(BrowserSettingsPatch{SearchEngine: strp("kagi")}); err != nil {
+		t.Fatal(err)
+	}
+	on := true
+	if err := WriteBrowserSettings(BrowserSettingsPatch{SearchSuggestions: &on}); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadAppSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Browser.SearchSuggestions || s.Browser.SearchEngine != "kagi" || s.Editor.FontSize != 15 {
+		t.Errorf("settings = %+v; searchSuggestions on, searchEngine and editor must survive", s)
+	}
+	if got, _ := ReadBrowserSettings(); !got.SearchSuggestions {
+		t.Errorf("ReadBrowserSettings() = %+v; want searchSuggestions true", got)
+	}
+}

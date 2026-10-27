@@ -32,6 +32,8 @@ var BrowserSearchEngines = map[string]string{
 type BrowserAppSettings struct {
 	SearchEngine string `json:"searchEngine,omitempty"`
 	StartPage    string `json:"startPage,omitempty"`
+	// SearchSuggestions asks the search engine for suggestions as the operator types; off by default.
+	SearchSuggestions bool `json:"searchSuggestions,omitempty"`
 }
 
 // BrowserSettings is the tier with every default filled in — what browser_settings answers.
@@ -39,7 +41,9 @@ type BrowserAppSettings struct {
 type BrowserSettings struct {
 	SearchEngine string `json:"searchEngine"`
 	StartPage    string `json:"startPage"`
-	AppError     string `json:"appError,omitempty"`
+	// SearchSuggestions is false unless the operator turned it on.
+	SearchSuggestions bool   `json:"searchSuggestions"`
+	AppError          string `json:"appError,omitempty"`
 }
 
 func browserEngineNames() []string {
@@ -74,6 +78,7 @@ func (s BrowserAppSettings) Resolved() BrowserSettings {
 	if startPageProblem(s.StartPage) == "" {
 		v.StartPage = s.StartPage
 	}
+	v.SearchSuggestions = s.SearchSuggestions
 	return v
 }
 
@@ -93,12 +98,14 @@ func ReadBrowserSettings() (BrowserSettings, string) {
 type BrowserSettingsPatch struct {
 	SearchEngine *string
 	StartPage    *string
+	// SearchSuggestions turns engine suggestions on or off.
+	SearchSuggestions *bool
 }
 
 // WriteBrowserSettings applies p to settings.json, read from disk now, keeping every other key.
 // A file that does not parse is refused rather than overwritten.
 func WriteBrowserSettings(p BrowserSettingsPatch) error {
-	if p.SearchEngine == nil && p.StartPage == nil {
+	if p.SearchEngine == nil && p.StartPage == nil && p.SearchSuggestions == nil {
 		return nil
 	}
 	current, err := LoadAppSettings()
@@ -118,6 +125,9 @@ func WriteBrowserSettings(p BrowserSettingsPatch) error {
 			return UserError(msg)
 		}
 		current.Browser.StartPage = sp
+	}
+	if p.SearchSuggestions != nil {
+		current.Browser.SearchSuggestions = *p.SearchSuggestions
 	}
 	path, err := appSettingsPath()
 	if err != nil {

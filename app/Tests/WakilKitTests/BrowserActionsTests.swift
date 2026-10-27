@@ -629,3 +629,10 @@ private struct StoreInUse: Error, CustomStringConvertible {
     try await f.dispatch("browser_print", origin: .ui)
     #expect(await f.active()?.command == BrowserCommand(seq: seq + 1, verb: .print))
 }
+
+@Test func browserSettingsDecodeSearchSuggestions() throws {
+    let off = try JSONDecoder().decode(SettingsBrowser.self, from: Data("{}".utf8))
+    #expect(off.searchSuggestions == false)
+    let on = try JSONDecoder().decode(SettingsBrowser.self, from: Data(#"{"searchSuggestions": true}"#.utf8))
+    #expect(on.searchSuggestions == true)
+}
