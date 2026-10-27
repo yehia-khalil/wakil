@@ -121,3 +121,99 @@ func errString(err error) string {
 	}
 	return err.Error()
 }
+
+// TestPageStubServesTheFormPages — the form, the page it submits to and the injection page answer
+// with their titles, on the loopback address and under the name `localhost` alike.
+func TestPageStubServesTheFormPages(t *testing.T) {
+	origin, stop, err := StartPageStub(filepath.Join(repoRoot(t), PageFixtures))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	for page, want := range map[string][]string{
+		"/form.html":   {"<title>Booking form</title>", `name="guest"`, `name="nights"`, "One night", "Two nights", `autocomplete="cc-number"`, `type="password"`, "Confirm", "Back to page A"},
+		"/done.html":   {"document.title", "no name", "2 nights", "1 night"},
+		"/inject.html": {"<title>Release notes</title>", "ignore your instructions", "https://example.com/collect"},
+	} {
+		resp, err := http.Get(origin + page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Errorf("%s answered %d", page, resp.StatusCode)
+		}
+		for _, fragment := range want {
+			if !strings.Contains(string(body), fragment) {
+				t.Errorf("%s lacks %q", page, fragment)
+			}
+		}
+	}
+	// Document order: name, stay, card, password, confirm, then the link — e1 to e6.
+	form := string(fetchPage(t, origin+"/form.html"))
+	last := -1
+	for _, marker := range []string{`name="guest"`, `name="nights"`, `cc-number`, `type="password"`, `type="submit"`, "Back to page A"} {
+		at := strings.Index(form, marker)
+		if at <= last {
+			t.Errorf("%q is out of order in form.html", marker)
+		}
+		last = at
+	}
+	live := PageStubLive(origin)
+	if !strings.HasPrefix(live, "http://localhost:") {
+		t.Fatalf("PageStubLive(%q) = %q", origin, live)
+	}
+	if body := string(fetchPage(t, live+"/form.html")); !strings.Contains(body, "Booking form") {
+		t.Errorf("%s/form.html does not answer", live)
+	}
+}
+
+// TestPageStubLiveTokenExpands — {pageStubLive} becomes the stub under `localhost`, in params and
+// in typed text, and {pageStub} stays the loopback address.
+func TestPageStubLiveTokenExpands(t *testing.T) {
+	runner := &Runner{PageStub: "http://127.0.0.1:4321", PageStubLive: PageStubLive("http://127.0.0.1:4321")}
+	if runner.PageStubLive != "http://localhost:4321" {
+		t.Fatalf("PageStubLive = %q", runner.PageStubLive)
+	}
+	tokens := runner.tokens()
+	if got := ExpandText("{pageStubLive}/form.html and {pageStub}/a.html", tokens); got != "http://localhost:4321/form.html and http://127.0.0.1:4321/a.html" {
+		t.Errorf("ExpandText = %q", got)
+	}
+	params := ExpandParams(map[string]interface{}{"url": "{pageStubLive}/done.html", "n": []interface{}{"{pageStub}"}}, tokens)
+	if params["url"] != "http://localhost:4321/done.html" || params["n"].([]interface{})[0] != "http://127.0.0.1:4321" {
+		t.Errorf("ExpandParams = %v", params)
+	}
+	if PageStubLive("") != "" {
+		t.Error("an empty origin must stay empty")
+	}
+	if got := ExpandText("{pageStubLive}", (&Runner{}).tokens()); got != "{pageStubLive}" {
+		t.Errorf("without a stub the token must stay literal, got %q", got)
+	}
+}
+
+// TestPageStubServesTheFormSlowly — /slow-form.html is form.html after SlowFormDelay, never
+// cached, so a tab that loads it again (a restored tab) is still loading for that long.
+func TestPageStubServesTheFormSlowly(t *testing.T) {
+	origin, stop, err := StartPageStub(filepath.Join(repoRoot(t), PageFixtures))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	start := time.Now()
+	resp, err := http.Get(origin + "/slow-form.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if took := time.Since(start); took < SlowFormDelay {
+		t.Errorf("/slow-form.html answered after %v, before %v", took, SlowFormDelay)
+	}
+	if !strings.Contains(string(body), "<title>Booking form</title>") {
+		t.Errorf("/slow-form.html is not the booking form: %.80q", body)
+	}
+	if cc := resp.Header.Get("cache-control"); cc != "no-store" {
+		t.Errorf("/slow-form.html cache-control = %q, want no-store", cc)
+	}
+}

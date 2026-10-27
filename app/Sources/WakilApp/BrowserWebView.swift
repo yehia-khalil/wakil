@@ -32,7 +32,54 @@ final class BrowserWebView: WKWebView {
         return super.performKeyEquivalent(with: event)
     }
 
+    /// When the operator last pressed a key, clicked or scrolled in this page (3c-ii): the agent's
+    /// acts wait until it is a quiet second old (`browserIdleWait`), so none lands under their hands.
+    private(set) var lastOperatorInput: Date?
+
+    /// While the agent acts in this page (3c-ii), the page cannot take the keyboard (Rule 6).
+    ///
+    /// A script's `element.focus()` — Wakil's own in its `wakil.agent` world as much as the page's —
+    /// makes WebKit's web process ask the window to make this view first responder
+    /// (`Widget::setFocus` → `WebPageProxy::MakeFirstResponder`), which ends the operator's editing in
+    /// the composer and sends their next keys to the page. WebKit's one switch for that request is
+    /// `_setShouldSuppressFirstResponderChanges:`, which drops it and leaves the element focused in
+    /// the page, so the act still types where it aimed. The operator's own click still takes the
+    /// keyboard: AppKit gives it on the mouse-down, not through that request.
+    ///
+    /// Counted, so two acts in one page overlap safely; the switch is off again when the last ends.
+    private var agentActs = 0
+    private static let suppressSelector = NSSelectorFromString("_setShouldSuppressFirstResponderChanges:")
+
+    func agentActBegan() {
+        agentActs += 1
+        if agentActs == 1 { suppressFirstResponderChanges(true) }
+    }
+
+    func agentActEnded() {
+        guard agentActs > 0 else { return }
+        agentActs -= 1
+        if agentActs == 0 { suppressFirstResponderChanges(false) }
+    }
+
+    private func suppressFirstResponderChanges(_ on: Bool) {
+        let selector = Self.suppressSelector
+        guard responds(to: selector) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(method(for: selector), to: Setter.self)(self, selector, on)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        lastOperatorInput = Date()
+        super.mouseDown(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        lastOperatorInput = Date()
+        super.scrollWheel(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
+        lastOperatorInput = Date()
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if event.keyCode == 53, mods.isEmpty, isLoading, stopOnEscape?() == true { return }
         super.keyDown(with: event)
@@ -106,6 +153,9 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The address last asked for, which a failed first load has no `url` to report.
     var requested: String?
     private(set) var failure: String?
+    /// Whether a load has ended here, finished or failed (3c-ii): a read waits for the page to
+    /// arrive, and a first load that failed leaves no `url` — this says the wait is over anyway.
+    private(set) var loadEnded = false
     /// The host whose remembered zoom the page took (`zoom.json`); a page arriving on another host
     /// takes that one's.
     var zoomHost: String?
@@ -220,6 +270,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loadEnded = true
         // Again once loaded (I8): the state at commit holds the page as it began, not as it ended.
         host?.saveState(of: webView, scope: scope, pane: pane, tab: tab, files: files)
         scheduleReport()
@@ -235,6 +286,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     private func failed(_ error: Error, _ webView: WKWebView) {
+        loadEnded = true
         // A refused certificate shows its own page, not the load error under it.
         if !tab.isEmpty, host?.certificates[key] != nil {
             scheduleReport()

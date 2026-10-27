@@ -124,10 +124,11 @@ public func registerBrowserActions(
     layout: LayoutStore?,
     settings: @escaping @Sendable () async -> SettingsBrowser,
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
-    removeData: BrowserDataRemover? = nil
+    removeData: BrowserDataRemover? = nil,
+    driver: (any BrowserPageDriver)? = nil
 ) async {
     for action in browserActions(panes: panes, layout: layout, settings: settings, orgFiles: orgFiles,
-                                 removeData: removeData) {
+                                 removeData: removeData, driver: driver) {
         await registry.register(action)
     }
 }
@@ -139,7 +140,8 @@ func browserActions(
     layout: LayoutStore?,
     settings: @escaping @Sendable () async -> SettingsBrowser,
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
-    removeData: BrowserDataRemover? = nil
+    removeData: BrowserDataRemover? = nil,
+    driver: (any BrowserPageDriver)? = nil
 ) -> [Action] {
     var actions: [Action] = []
     let kind = BrowserPaneKind.names[0]
@@ -565,6 +567,12 @@ func browserActions(
         },
         // Signs out of every site in every project, in production and out of it.
         price: (production: .gate, otherwise: .gate)))
+
+    // 3c-ii: the agent's reach into the page — read it, act in it by ref, priced per site.
+    actions += browserReachActions(
+        panes: panes, driver: driver,
+        pane: { params, action in try await browserPane(params, action: action).id },
+        schema: { properties, required in schema(properties, required: required) })
     return actions
 }
 

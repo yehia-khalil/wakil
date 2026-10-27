@@ -238,7 +238,8 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "api_render_curl", "api_reopen", "api_request", "api_send", "api_set_entry",
              "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
              // 3c-i: the browser's actions.
-             "browser_back", "browser_clear_data", "browser_close_tab", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_print", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_zoom",
+             // 3c-ii: the agent's reach into the page (read_page, click, press, revoke_site, scroll, select, type).
+             "browser_back", "browser_clear_data", "browser_click", "browser_close_tab", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_press", "browser_print", "browser_read_page", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_revoke_site", "browser_scroll", "browser_select", "browser_select_tab", "browser_stop", "browser_type", "browser_zoom",
              "capacity_record", "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_capacity",
              "ctx_config_tree", "ctx_create_environment", "ctx_create_org", "ctx_create_project",
              "ctx_editor_settings", "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",

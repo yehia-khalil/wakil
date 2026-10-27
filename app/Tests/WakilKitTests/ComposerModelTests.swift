@@ -468,3 +468,38 @@ private final class HarnessesByPlace: @unchecked Sendable {
     window.onScreenChange?("landing:r", "conv-a", false)
     #expect(composer.draft == "kept")
 }
+
+/// 3c-ii (ruling 13): a spoken line the operator adds typed words to is still spoken — its site
+/// question waits for the typed word (Invariant 7) — and only emptying the composer makes what is
+/// typed next a typed line.
+@MainActor
+@Test func aVoiceDraftEditedWithTypedWordsStaysSpokenUntilItIsEmptied() async throws {
+    let clock = Clock()
+    let (composer, window, harness) = model(steps: [
+        .init(after: 0, event: .partial(settled: "say hello", volatile: "")),
+    ], clock: clock)
+    composer.optionDown(); clock.t = 0.2; composer.tick()
+    await settle(until: { !composer.machine.settled.isEmpty })
+    clock.t = 1; composer.optionUp()
+    await settle(until: { composer.machine.phase == .idle })
+    #expect(composer.draft == "say hello" && composer.landedUnsent)
+
+    composer.edited(draft: "say hello then fill the guest name", caret: 34)
+    #expect(composer.landedUnsent, "typed words added to a spoken line keep it spoken")
+    await composer.submit()
+    let agent = try #require(window.currentAgent)
+    #expect(harness.sent.last == "say hello then fill the guest name")
+    #expect(agent.lastTurnSource == .voice)
+
+    agent.turnInFlight = false
+    composer.optionDown(); clock.t = 1.2; composer.tick()
+    await settle(until: { !composer.machine.settled.isEmpty })
+    clock.t = 2; composer.optionUp()
+    await settle(until: { composer.machine.phase == .idle })
+    #expect(composer.landedUnsent)
+    composer.edited(draft: "", caret: 0)
+    #expect(!composer.landedUnsent, "an emptied composer holds nothing spoken")
+    composer.edited(draft: "fill the guest name", caret: 19)
+    await composer.submit()
+    #expect(agent.lastTurnSource == .typed)
+}

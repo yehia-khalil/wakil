@@ -226,7 +226,6 @@ editor.tabs.moreLeft.count	a Text (the compact chrome, 2026-10-26): how many tab
 editor.tabs.moreRight.count	a Text (the compact chrome, 2026-10-26): how many tabs are hidden right of the scrolled strip, inside the › control that is pressed as editor.tabs.moreRight. Read, not pressed — panes-editor-tab-overflow.jsonl holds its frame inside the control.
 pane.<…>.screen	a terminal pane's surface (.contain, the compact chrome, 2026-10-26): the block history or the live grid, inside its 6 pt gutter; it takes no press itself — typing reaches the shell through the pane's focus, and its block actions are pressed as pane.<…>.block.<…>.*. Read, not pressed — panes-terminal-edge-to-edge.jsonl holds it to the pane less the gutter at 700 and 420 wide.
 pane.<…>.header	a terminal pane's one header row (.contain, the compact chrome, 2026-10-26): its title, the live cwd, shell and size, and the controls pressed as pane.<…>.reopen and pane.<…>.searchToggle. Read, not pressed — panes-terminal-edge-to-edge.jsonl holds it to 32 pt with the search toggle inside it at 700 and 420 wide.
-editor.strip	not a control (3b-ii-b): the name of a SwiftUI coordinate space (`.coordinateSpace(name: "editor.strip")`, the visible tab strip's, where the middle-click converts a click), not an accessibility identifier — editor.tabs's case. Nothing in the accessibility tree carries it. The middle-click itself is walk-only: the harness posts no middle button (runbook row 8).
 editor.changes.rootError:<…>	a Text (3b-iii, Rule 8): the second and later lines of a root's error, drawn whole beneath its Changes header — and only when the error HAS a second line. The fixture's only failing root is not a git repository, which the Changes view does not draw at all (3b-iii-changes-list.jsonl asserts `not a git repository` absent), so it is never drawn; the split is pinned by WakilKitTests (gitRootErrorDetail), and a multi-line error is walk-only.
 editor.changes.<…>.hint	a Text (3a-ii): the message box's placeholder, drawn while the box is empty, naming who a commit in that root is authored as and ⌘⏎. Display text with no press action. Read, not pressed — 3a-ii-identity.jsonl asserts `Message · as cfg@e2e.invalid (from git config) (⌘⏎)` after a repository-local user.email, then `Message · as org@e2e.invalid (⌘⏎)` once Settings → Organisation → Git is saved; 3a-ii-commit.jsonl asserts the organisation's form.
 editor.changes.<…>.error	a Text (3a-ii, Rule 8): the root's last git write error, drawn whole under its message box. Display text with no press action. Read, not pressed — 3a-ii-hook-fails.jsonl asserts the failing pre-commit hook's `e2e hook says no` with the message kept in the box, and that a cancelled slow commit clears it and shows no error of its own (no `CancellationError`).
@@ -278,6 +277,9 @@ browser.download.<…>	one download's row (.contain, 3c-i). Read, not pressed �
 browser.download.<…>.name	a Text (3c-i): the download's file name. Read, not pressed — 3c-i-download.jsonl reads it as downloads[0].filename (big.bin).
 browser.download.<…>.status	a Text (3c-i): the size line or the ended state. Read, not pressed — 3c-i-download.jsonl asserts "of 10.5 MB" and "Cancelled".
 browser.page	the tab's web view (3c-i, Decision 48). Clicks and typing inside a page are the operator's and walk-only: the harness presses Wakil's own controls by identifier, and a page's links and fields carry none (runbook rows 1, 3 and 5 click in pages). Its focus is read, not pressed — 3c-i-keys-reach-wakil.jsonl asserts expect.focus browser.page after Return, ⌘K, ⌘P, ⌘1 and Escape, and a key typed there reaches the page. 3c-i-narrow.jsonl holds it edge to edge at 700 × 400 (at least 696 wide and 320 tall).
+browser.siteTag	a Text (3c-ii, ruling 4): the active tab's tag, `In <environment>` or `Production`. Read, not pressed — 3c-ii-tags.jsonl asserts both words as the tab changes, and holds the chip inside browser.pane and clear of browser.address at 1000 × 888 with two panes.
+browser.tab.<…>.tag	a tagged tab's 6 pt dot in the strip (3c-ii, ruling 4), in the tag's colour and with no words of its own. Read, not pressed — 3c-ii-tags.jsonl holds t1's and t2's inside browser.tabs; its colour is walk-only (runbook row 4).
+browser.agentAllowed	the `agent allowed` mark's container (.contain, 3c-ii): its words and its ×. Read, not pressed — 3c-ii-act-allowed.jsonl asserts the words after Allow and their absence after the × (browser.agentAllowed.revoke, pressed there), and holds the mark inside browser.pane.
 settings.browser.clear.question	a Text (3c-i, Rule 1): `Delete <org>'s browsing data? …`. Read, not pressed — 3c-i-settings.jsonl asserts it before Keep it and before Delete.
 settings.browser.clear.done	a Text (3c-i): `Deleted <org>'s browsing data.`. Read, not pressed — 3c-i-settings.jsonl asserts it after Delete.
 settings.browser.startPage.refusal	a Text (3c-i, Rule 8): the start page's refusal. Read, not pressed — 3c-i-settings.jsonl asserts `start page "not a url" is not an http or https URL — …`.
@@ -362,3 +364,50 @@ browser.prompt.allow	the camera / microphone prompt's Allow (3c-i): drawn only w
 browser.prompt.deny	the camera / microphone prompt's Don't Allow (3c-i): browser.prompt.allow's case. Walk-only: runbook row 8.
 browser.prompt.open	Open on a page's app link (3c-i, final review I4): pressing it hands the link to the app macOS names for it (Mail, Zoom) — the act's whole effect leaves the window (settings.org.git.account.add.openKeys' case). The question and its Cancel are 3c-i-app-link.jsonl's; Open is walk-only (runbook §3).
 browser_print	its dispatch and its parity (3c-i, final review I6): its whole effect is the system's print panel, a sheet of AppKit's controls that no step kind drives (a page's file chooser's case). The ⌘K row Print page is 3c-i-app-link.jsonl's; printing is runbook row 9.
+#
+# ---- 3c-ii: the agent's reach into the page ----------------------------------
+#
+# What no check can show, each with its reason and where the walk covers it.
+# None names a Wakil surface an entry could excuse (an entry that excuses
+# nothing fails the gate), so each is recorded here as a comment:
+#   - what a real site's page does with Wakil's page script: framework-controlled
+#     fields (React and the like, which see the act only through real input
+#     events), open shadow roots and cross-origin frames. The fixtures don't have
+#     them: no fixture page uses a framework, a shadow root or a frame. Runbook
+#     rows 2-3.
+#   - an agent's click on a target=_blank link: the page opens a tab of its
+#     own (a pop-up, BrowserTabHost.adoptPopup), which the act did not ask for
+#     and which may come to the front as a page's pop-up does. No fixture form
+#     links out that way, and whether the new tab takes the front is the
+#     pop-up's behaviour, not the driver's (the driver selects no tab). Walk-only.
+#   - a page that moves focus while the agent types (a focus trap, a step that
+#     jumps to a password or code field): the script checks the focused
+#     element, through open shadow roots, is still the target before the text
+#     goes in, else refuses as a changed page and types nothing (final review
+#     I2). No fixture page moves focus on its own; the refusal was proven once
+#     in an offscreen WKWebView whose focus handlers jump to a password field.
+#   - the 1 s idle wait: no arm types into the page while a scripted act waits
+#     on it — a do step and the stub's call run one after the other, never
+#     together — so the wait, and the refusal after 10 s of continuous input,
+#     cannot be raised. The wait's arithmetic is WakilKit's browserIdleWait.
+#     Runbook row 9.
+#   - colour: the site question's neutral edge (against the production plane's
+#     red) and the amber untrusted row in the thread. No step kind reads a
+#     colour; the words of both are 3c-ii-act-allowed.jsonl's and
+#     3c-ii-production.jsonl's. Runbook rows 1 and 2.
+#   - a spoken act made of the scripted sentence alone: every launch's speech
+#     script settles on one fixed sentence (e2e/driver/speech.go), whose stub
+#     rule is 2d-ii-voice-turn.jsonl's and acts nowhere. 3c-ii-spoken-act.jsonl
+#     covers the spoken site question by adding typed words to the landed
+#     sentence (the turn stays spoken until the composer is emptied): the
+#     type confirm field shows, Return without the word does nothing, and
+#     Allow answers once confirm is typed (Invariant 7). Runbook row 6.
+#
+# The agent's acts in a page have no Wakil control as their operator's half, so their parity
+# cannot be written:
+browser_type	its parity (3c-ii): the operator's channel is the page itself — typing into a field in the web view, and WebKit does not carry a field's DOM id as its AXIdentifier, so no `do` step names it and a parity step has no UI half to drive. Measured 2026-10-26: a page giving <input id="browser.page.guest">, a `do.type` into browser.page.guest failed with axresolve not_found (matched no element). The agent's channel IS covered: 3c-ii-act-allowed.jsonl types the guest name through the scripted agent after Allow and asserts the page's title after Return ("Booked: Ada Lovelace, 2 nights"), refuses the card field (Invariant 6), and keeps the keyboard in the composer (Rule 6); 3c-ii-read-and-refusals.jsonl dispatches its refusals.
+browser_select	its parity (3c-ii): the operator's channel is the page itself — choosing an option in the page's own <select> in the web view, and WebKit does not carry a <select>'s DOM id as its AXIdentifier, so no `do` step names it and a parity step has no UI half to drive. Measured 2026-10-26: a page giving <select id="browser.page.nights">, a `do.focus` on browser.page.nights failed with axresolve not_found (matched no element). The agent's channel IS covered: 3c-ii-act-allowed.jsonl chooses Two nights through the scripted agent and asserts it in the booked title ("2 nights"); 3c-ii-read-and-refusals.jsonl dispatches its refusals.
+browser_press	its parity (3c-ii): the operator's channel is the page itself — a key pressed in a page field in the web view. A `do.press` sends its key to whatever holds the keyboard, so its UI half needs the page field focused first, and no step can focus one: measured 2026-10-26, a `do.type` into <input id="browser.page.guest"> and a `do.focus` on <select id="browser.page.nights"> each failed with axresolve not_found, WebKit not carrying a DOM id as the AXIdentifier. The agent's channel IS covered: 3c-ii-act-allowed.jsonl presses Return in the guest name through the scripted agent and asserts the submitted page's title; 3c-ii-read-and-refusals.jsonl dispatches its refusals.
+browser_click	its parity (3c-ii): the operator's channel is the page itself — a click on a page element in the web view, and WebKit does not carry an element's DOM id as its AXIdentifier, so no `do` step names it and a parity step has no UI half to drive. Measured 2026-10-26: form.html given <a id="browser.page.jump" href="#bottom">, a parity after Allow clicking browser.page.jump failed its UI half with axresolve not_found (matched no element); the dispatch half was never in question — after Allow the harness speaks as the allowed conversation, and 3c-ii-act-allowed.jsonl dispatches browser_scroll there without a park. The agent's channel IS covered: 3c-ii-act-allowed.jsonl clicks Confirm through the scripted agent and asserts the booked title, and 3c-ii-production.jsonl clicks it on a production site after the typed confirm; 3c-ii-read-and-refusals.jsonl dispatches its refusals.
+browser_scroll	its parity (3c-ii): the operator's channel is the page itself — scrolling the web view, a scroll wheel and not a click or a drag, so a parity step has no UI half to drive (browser_zoom's case); and where a page sits after a scroll is not in read_pane or the tree a parity compares. The agent's channel IS covered by 3c-ii-act-allowed.jsonl: the scripted agent scrolls to the back link (`scrolled to "Back to page A"`), and a dispatch after Allow scrolls again with the keyboard left in the composer.
+browser_revoke_site	its parity (3c-ii): the click consumes its own subject — the agent-allowed mark's × takes the site off and the mark goes, so a dispatch after it revokes nothing and the halves cannot read back a change (ctx_unlink_provider's case); and the mark is drawn only after the scripted agent was allowed, which a parity's dispatch half cannot raise again. The × channel IS covered by 3c-ii-act-allowed.jsonl: browser.agentAllowed.revoke twice, each followed by the mark gone. The dispatch is covered only as a no-op: one dispatch revokes example.com for another conversation and the mark stays; no check dispatches a revoke that takes effect, because the harness has no {conversation} token to name the screen's own.

@@ -32,19 +32,36 @@ const ChatStubToken = "{chatStub}"
 // stub": the loopback origin StartPageStub serves the browser checks' pages
 // from. Its port changes on every launch, like the chat stub's.
 //
-// **The one token typed text may carry**, as well as params. The rule above
+// **The tokens typed text may carry** (this and PageStubLiveToken), as well as params. The rule above
 // holds because nothing an operator types carries a fixture path; a browser
 // operator types a URL, and the address field is what the browser checks
 // drive — a check that could only dispatch `browser_navigate` would never
 // press Return in the field. See ExpandText.
 const PageStubToken = "{pageStub}"
 
+// PageStubLiveToken is the page stub under the name `localhost` rather than its loopback address:
+// `http://localhost:<the stub's port>`, the origin of the seeded production project's `site` entry
+// (SeedSpec.BrowserSites). A tab opened there is a different host from PageStubToken's, so the
+// agent's consent for one never covers the other.
+const PageStubLiveToken = "{pageStubLive}"
+
+// PageStubLive turns the page stub's origin into its `localhost` twin. Empty stays empty, so a
+// Runner without a stub leaves the token alone.
+func PageStubLive(origin string) string {
+	if _, port, ok := strings.Cut(strings.TrimPrefix(origin, "http://"), ":"); ok && origin != "" {
+		return "http://localhost:" + port
+	}
+	return ""
+}
+
 // ExpandText replaces PageStubToken in the text a keystroke arm types, and no
 // other token: the fixture root and the chat stub are not things an operator
 // types, so they stay literal and a check that types one fails on it.
 func ExpandText(text string, tokens map[string]string) string {
-	if value := tokens[PageStubToken]; value != "" {
-		return strings.ReplaceAll(text, PageStubToken, value)
+	for _, token := range []string{PageStubToken, PageStubLiveToken} {
+		if value := tokens[token]; value != "" {
+			text = strings.ReplaceAll(text, token, value)
+		}
 	}
 	return text
 }

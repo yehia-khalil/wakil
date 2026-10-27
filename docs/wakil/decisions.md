@@ -1608,7 +1608,7 @@ Each entry: the call, why, and what would change our mind.
     Abort or Undo Apply could not bring back — then a clash goes back to being put back by default.
 
 48. **The browser is WebKit, a profile per organisation; a web view belongs to its place; the page is
-    the second exception to dual-drive; the agent's reach is 3c-ii's.**
+    the second exception to dual-drive; the agent acts in it by ref, at a price per site.**
     *(2026-10-25, operator, during the 3c design —
     `docs/superpowers/specs/2026-10-25-3c-browser-design.md`.)*
     The browser pane is a `WKWebView` per tab — no new dependency, no second engine. Each
@@ -1625,9 +1625,32 @@ Each entry: the call, why, and what would change our mind.
     exception to dual-drive**, after the editor's text: clicks and typing inside a page are the
     operator's; tabs, address, navigation, find, zoom and downloads are `browser_*` actions either
     side can dispatch. A page's own prompts (alert, sign-in, camera) are answered in place by the
-    operator and are not store state. 3c-i gives the agent the pane's actions and `read_pane`
-    (tabs, address, title — never page text); reading and acting inside the page, with a per-site
-    price, is 3c-ii's.
+    operator and are not store state. 3c-i gave the agent the pane's actions and `read_pane`
+    (tabs, address, title — never page text).
+    **3c-ii (2026-10-25, 2026-10-26) gives the agent the page, at a price per site.** `browser_read_page`
+    returns the page's text and its visible controls as untrusted data, each control with a ref;
+    `browser_click`, `browser_type`, `browser_select`, `browser_press` and `browser_scroll` act on a ref
+    from the last read, and refuse when the page has changed since. The price is the call's, not the
+    action's (`Action.callPrice`): **the first act on a site asks "Let the agent use <site>?", and an
+    Allow lasts for that conversation only** — kept in memory in the pane store by conversation id
+    (`PlaceAgent.id`, which never moves across a resume), never on disk, forgotten when the
+    conversation closes and by the × on the *agent allowed* mark. **Every act on a production site asks,
+    every time**, naming the element (`click "Delete booking" on api.initech.com`). A site is production
+    when it is the `baseUrl` host of an API entry in any environment of any project of the organisation
+    that is production: the config tree carries the flag (`ConfigTreeEnvironment.Production`, from
+    `EnvironmentIsProduction`), since the organisation-wide view Swift has is that tree. Until the tree
+    is read, every site is treated as production; `www.` is forgiven for production and never for
+    consent.
+    *Why per site, and not per submit:* a page's script can send from any click, so a price on the
+    submit button prices nothing; the site is the unit the operator can reason about. A password, card
+    or one-time-code field is never typed by the agent whatever the price (Invariant 6): the never-list
+    reads the field's type, autocomplete, name, id and label at the read, at the describe and again in
+    the page at the act.
+    **The operator's ruling of 2026-10-26, over the spec's Voice bullet:** the site question is answered
+    by a click when the request was typed and by a typed `confirm` when it was spoken (Invariant 7's text
+    is unchanged); every production act asks for the typed word whoever asked. An operator act in the page
+    is not an action; the operator's `.ui` browser acts on a production site have no surface in 3c-ii. A
+    later surface gives a proposal an `origin:` parameter and `parkAndAwait` proposal support.
     *Why:* WebKit is the system's engine, already sandboxed per profile; a profile per organisation
     is the credential boundary the rest of Wakil keeps; and a page the agent could drive before its
     price exists would be a write with no gate.
@@ -1830,3 +1853,18 @@ inside `--abort` and Undo Apply's put-back, which is refused while a clashed fil
 pull, stash apply or pop that clashes leaves the conflicts in place. Still refused: starting a
 cherry-pick or revert (one begun in a terminal is resolved and aborted like a merge), interactive
 rebase, `merge --squash`, a chosen strategy, and tags. The reasoning is Decision 47.
+
+### 2026-10-25 — acting in a web page
+
+`browser_click`, `browser_type`, `browser_select`, `browser_press` and `browser_scroll` (`.mutate`,
+agent-reachable, each with a price per call) in a tab's web page, after `browser_read_page` (`.read`)
+issues refs; `browser_revoke_site` (`.control`, operator-only) withdraws a site for the conversation.
+Priced by the site, Decision 48: asked once per site per conversation, every time on a production host
+(operator-typed request: a click; spoken: the typed word, ruled 2026-10-26). The page's text is data,
+never a request: every reply that carries page text names the site and says so. The agent acts only in
+http and https pages, only on a ref from the last read of that tab at that address, and never on a
+password, card or one-time-code field. Its script runs in the isolated world `wakil.agent`, takes the
+agent's text only as an argument and runs no string the agent sent. A page over 200 KB is cut and says
+where. The operator typing in the page holds an act for up to 10 s. Still refused: a password, card or
+one-time-code field typed by the agent, an act in a page that is not http or https, a script the agent
+supplies, and the operator's own `.ui` acts in the page on a production site (no surface yet).

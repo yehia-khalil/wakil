@@ -35,6 +35,9 @@ private let orgDerived: Set<String> = [
     // operations whose prepared message already filled a box.
     "changesClashes", "changesFilledFrom",
     "project", "projectKey", "environment", "environmentProduction",
+    // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
+    // conversation's allowed sites are re-read from the store after the switch.
+    "browserSites", "browserAllowedOnScreen",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
     // 3b-viii: the quick tasks route to the org's providers on its credentials, and each pane's

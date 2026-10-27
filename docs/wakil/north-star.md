@@ -90,7 +90,7 @@ Rules no phase may break.
 5. **Exactly one place on screen; each agent keeps its own.** Implicit scope is the
    product; an explicit project argument would forfeit it. History: Decision 41.
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
-   deliberate justification, never by default. Nine have earned in. The justification
+   deliberate justification, never by default. Ten have earned in. The justification
    for each, and what each leaves refused, is in `decisions.md` under *"Invariant 6 — the
    writes that have earned in"*.
 
@@ -105,12 +105,13 @@ Rules no phase may break.
    | Fetch, pull, push, sync, clone — remote git, with the organisation's account | wakil-git | 2026-10-22 |
    | Switch, create, rename, delete branches; stash, apply, pop, drop — local git inside the roots | wakil-git | 2026-10-23 |
    | Merge, rebase, continue, skip, abort, resolve — local git inside the roots | wakil-git | 2026-10-24 |
+   | Act in a web page — click, type, select, press — on a site the operator allowed for the conversation; every act on a production host gated | the browser | 2026-10-25 |
 
    **Still refused:** schema mutation (every DDL verb, `TRUNCATE` explicitly), Mongo
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`
    of the API entry it targets, a command the **agent** runs in a terminal pane — the
    agent already has a bare shell, so a terminal run adds the organisation's credentials,
-   not reach, and the refusal defends Invariant 4.
+   not reach, and the refusal defends Invariant 4 — and a password, card or one-time-code field typed by the agent.
 
    **Each write declares its own price** rather than inheriting one from its kind; see
    §9 and Decision 25.
@@ -273,7 +274,7 @@ live app; *accepted* means it was marked met without one.
 | **3a-v** | Conflicts, history and blame — accept current or incoming, the Timeline, inline blame | — | 3a-ii |
 | **3c** | Browser | — | — |
 | **3c-i** | Pane, tabs, a profile per organisation | — | — |
-| **3c-ii** | Agent reach | — | 3c-i |
+| **3c-ii** | Agent reach | **2026-10-27**, walked | 3c-i |
 | **3c-iii** | History, bookmarks, links | — | 3c-i |
 | **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |

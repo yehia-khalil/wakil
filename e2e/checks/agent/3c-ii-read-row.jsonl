@@ -1,0 +1,12 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/inject.html","newTab":false}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Release notes"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"read this page"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"read the release notes"}}
+{"expect":{"tree":"contains","text":"1 page · untrusted text from 127.0.0.1:"}}
+{"expect":{"tree":"absent","text":"Let the agent use"}}
+{"expect":{"tree":"absent","text":"\"untrusted\":"}}
+{"expect":{"focus":"window.composer"}}

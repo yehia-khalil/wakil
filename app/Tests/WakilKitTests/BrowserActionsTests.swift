@@ -372,8 +372,11 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     let f = try await browserFixture()
     let all = await f.registry.all()
     #expect(all.first { $0.name == "browser_restore" }?.audience == .operatorOnly)
-    // browser_print too (final review I6): its panel is the operator's window's.
-    #expect(all.filter { $0.name.hasPrefix("browser_") && !["browser_restore", "browser_clear_data", "browser_print"].contains($0.name) }
+    // browser_print too (final review I6): its panel is the operator's window's. 3c-ii's reach into
+    // the page (a read, five priced acts, the operator's revoke) is pinned in BrowserReachActionsTests.
+    let reach = ["browser_read_page", "browser_click", "browser_type", "browser_select", "browser_press",
+                 "browser_scroll", "browser_revoke_site"]
+    #expect(all.filter { $0.name.hasPrefix("browser_") && !(["browser_restore", "browser_clear_data", "browser_print"] + reach).contains($0.name) }
         .allSatisfy { $0.audience == .agentReachable && $0.kind == .control })
 }
 

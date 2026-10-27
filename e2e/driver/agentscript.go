@@ -26,6 +26,11 @@ const AgentScriptFile = "e2e-agent-script.json"
 type AgentCall struct {
 	Action string                 `json:"action"`
 	Params map[string]interface{} `json:"params,omitempty"`
+	// Echo writes the call into the stream as a real agent's turn would carry it: an `assistant`
+	// `tool_use` (`mcp__wakil__<action>`, the params as input) before the call and a `user`
+	// `tool_result` with the call's content after it, `is_error` on a refusal. Opt-in: the window
+	// draws a thread row for a tool call, and every rule written before the browser's has none.
+	Echo bool `json:"echo,omitempty"`
 }
 
 // AgentRead is one pane field the scripted agent looks at, so its answer can

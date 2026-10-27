@@ -127,6 +127,9 @@ public let operatorOnlyActions: Set<String> = [
     "browser_restore",
     // 3c-i. Deleting an organisation's browsing data signs it out of every site, in every project.
     "browser_clear_data",
+    // 3c-ii. Which sites the agent may act on is the operator's consent; the agent never takes one
+    // off its own list, nor anyone else's.
+    "browser_revoke_site",
     // 3b-viii (Decision 42). Which model reads the operator's code is the operator's choice.
     "ctx_set_local_provider",
     // 3a-iii (Decision 44). Which account pushes for an organisation, and its secrets, are the
@@ -338,6 +341,9 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
     case "browser_clear_data":
         return "\(toolName): only the operator deletes an organisation's browsing data. It signs "
             + "every site out, in every project. Ask the operator to do it in Settings → Browser (\u{2318},)."
+    case "browser_revoke_site":
+        return "\(toolName): only the operator takes a site off the agent's list for a conversation. "
+            + "Ask them to press \u{00D7} on its agent allowed mark."
     case "ctx_set_browser_settings":
         return "\(toolName): only the operator changes the browser's search engine and start "
             + "page. You may READ them: ctx_browser_settings answers the settings in force. "

@@ -32,6 +32,17 @@ public struct BrowserSnapshot: Sendable, Equatable, Codable {
     public var activeTab: BrowserTab? { active.flatMap { id in tabs.first { $0.id == id } } }
 }
 
+/// What the agent last read in a tab (3c-ii): the page's address, its site key and the elements that
+/// were given refs. Never the page's text. Dropped when a report names another address.
+public struct BrowserReadStamp: Sendable, Equatable, Codable {
+    public var url, site: String
+    public var elements: [String: BrowserElement]
+
+    public init(url: String, site: String, elements: [String: BrowserElement]) {
+        self.url = url; self.site = site; self.elements = elements
+    }
+}
+
 public struct BrowserTab: Sendable, Equatable, Codable {
     public var id: String
     public var url: String
@@ -50,12 +61,19 @@ public struct BrowserTab: Sendable, Equatable, Codable {
     /// take a saved state (its ‹ › history) on its first build. A tab made this launch never does,
     /// so a reissued pane or tab id never shows an earlier pane's page (final review I2).
     public var fromSavedLayout: Bool
+    /// The agent's last read of this tab; nil when none, or the page has moved since.
+    public var lastRead: BrowserReadStamp?
+    /// Refs `e1…e<refsIssued>` have been given out in this tab; a ref is never reused.
+    public var refsIssued: Int
 
     public init(
         id: String, url: String, title: String, isLoading: Bool = false, progress: Double = 0,
         canGoBack: Bool = false, canGoForward: Bool = false, failure: String? = nil, zoom: Double = 1,
-        loaded: Bool = false, command: BrowserCommand? = nil, fromSavedLayout: Bool = false
+        loaded: Bool = false, command: BrowserCommand? = nil, fromSavedLayout: Bool = false,
+        lastRead: BrowserReadStamp? = nil, refsIssued: Int = 0
     ) {
+        self.lastRead = lastRead
+        self.refsIssued = refsIssued
         self.fromSavedLayout = fromSavedLayout
         self.id = id
         self.url = url
@@ -68,6 +86,29 @@ public struct BrowserTab: Sendable, Equatable, Codable {
         self.zoom = zoom
         self.loaded = loaded
         self.command = command
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, url, title, isLoading, progress, canGoBack, canGoForward, failure, zoom, loaded
+        case command, fromSavedLayout, lastRead, refsIssued
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        url = try c.decode(String.self, forKey: .url)
+        title = try c.decode(String.self, forKey: .title)
+        isLoading = try c.decode(Bool.self, forKey: .isLoading)
+        progress = try c.decode(Double.self, forKey: .progress)
+        canGoBack = try c.decode(Bool.self, forKey: .canGoBack)
+        canGoForward = try c.decode(Bool.self, forKey: .canGoForward)
+        failure = try c.decodeIfPresent(String.self, forKey: .failure)
+        zoom = try c.decode(Double.self, forKey: .zoom)
+        loaded = try c.decode(Bool.self, forKey: .loaded)
+        command = try c.decodeIfPresent(BrowserCommand.self, forKey: .command)
+        fromSavedLayout = try c.decode(Bool.self, forKey: .fromSavedLayout)
+        lastRead = try c.decodeIfPresent(BrowserReadStamp.self, forKey: .lastRead)
+        refsIssued = try c.decodeIfPresent(Int.self, forKey: .refsIssued) ?? 0
     }
 }
 

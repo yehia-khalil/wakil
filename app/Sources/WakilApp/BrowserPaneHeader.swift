@@ -226,6 +226,8 @@ struct BrowserTabList: View {
     let snapshot: BrowserSnapshot
     let mode: BrowserTabListMode
     let favicon: (String) -> NSImage?
+    /// Which sites are production and which the active environment's (3c-ii): each tagged entry's dot.
+    let sites: BrowserSites
     let dispatch: (String, [String: JSONValue]) -> Void
 
     var body: some View {
@@ -243,6 +245,13 @@ struct BrowserTabList: View {
             entry: { index, active in
                 HStack(spacing: PaneStripStyle.tabGap) {
                     BrowserFavicon(image: favicon(tabs[index].id))
+                        // Ruling 4: every tagged tab carries its tag's dot, a background one too —
+                        // on the favicon's corner, so a folded entry keeps its width.
+                        .overlay(alignment: .topTrailing) {
+                            if let tag = sites.tag(tabs[index].url) {
+                                BrowserSiteTagDot(tag: tag, tab: tabs[index].id).offset(x: 3, y: -3)
+                            }
+                        }
                     if mode == .full {
                         Text(browserTabLabel(tabs[index]))
                             .font(.system(size: BrowserPaneStyle.tabTitleSize))
@@ -264,6 +273,102 @@ struct BrowserTabList: View {
 
     private func select(_ tab: BrowserTab) {
         dispatch("browser_select_tab", ["tab": .string(tab.id)])
+    }
+}
+
+// MARK: 3c-ii — the site's tag and the agent's allowance
+
+/// The tag's words and colour (ruling 4): `Production` in §5's red whichever environment is active,
+/// else `In <environment>` — the environment's name as declared — in §5's green.
+extension BrowserSiteTag {
+    var words: String {
+        switch self {
+        case .production: "Production"
+        case .environment(let name): "In \(name)"
+        }
+    }
+
+    var colour: Color {
+        switch self {
+        case .production: Color(red: 0.910, green: 0.361, blue: 0.361)    // #e85c5c
+        case .environment: Color(red: 0.545, green: 0.878, blue: 0.784)   // #8be0c8
+        }
+    }
+}
+
+/// The active tab's tag, a chip at the address row's right (`Browser.dc.html`'s `.chip`): the
+/// micro label's size, its tint under it. The words are drawn as the copy states them, so what the
+/// operator reads is what the tree carries.
+struct BrowserSiteTagChip: View {
+    let tag: BrowserSiteTag
+
+    var body: some View {
+        Text(tag.words)
+            .font(.system(size: SettingsScale.micro, weight: .medium))
+            .tracking(BrowserPaneStyle.monoTracking)
+            .foregroundStyle(tag.colour)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 3, style: .continuous).fill(tag.colour.opacity(0.12)))
+            .fixedSize()
+            .help(tag == .production
+                  ? "A production site: every act the agent proposes here asks first."
+                  : "A site of the active environment's API.")
+            .accessibilityIdentifier("browser.siteTag")
+    }
+}
+
+/// A tagged tab's 6 pt dot in the strip, in the tag's colour. No words of its own: the chip says
+/// them for the active tab, and the tree should carry a tag's words once.
+struct BrowserSiteTagDot: View {
+    let tag: BrowserSiteTag
+    let tab: String
+
+    var body: some View {
+        Circle()
+            .fill(tag.colour)
+            .frame(width: 6, height: 6)
+            .accessibilityElement()
+            .accessibilityIdentifier("browser.tab.\(tab).tag")
+    }
+}
+
+/// `agent allowed`, beside the chip while the on-screen conversation may act on the active tab's
+/// site (3c-ii), and its ×, which takes the site off that conversation's list
+/// (`browser_revoke_site`, operator-only): its next act there asks again. The × asks nothing (Rule 1:
+/// it ends a permission, it destroys nothing) and moves no focus (Rule 6).
+struct BrowserAgentAllowedMark: View {
+    let site: String
+    let revoke: () -> Void
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text("agent allowed")
+                .font(.system(size: SettingsScale.micro, weight: .medium))
+                .tracking(BrowserPaneStyle.monoTracking)
+                .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
+                .lineLimit(1)
+            Button(action: revoke) {
+                Image(systemName: "xmark")
+                    .font(.system(size: BrowserPaneStyle.closeGlyph, weight: .semibold))
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(ChangesIconButtonStyle())
+            .help("Stop the agent acting on \(site) — its next act there asks first")
+            .accessibilityLabel("Revoke for \(site)")
+            .accessibilityIdentifier("browser.agentAllowed.revoke")
+        }
+        .padding(.leading, 7)
+        .padding(.trailing, 2)
+        .padding(.vertical, 1)
+        .overlay(
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .strokeBorder(BrowserPaneStyle.text.opacity(BrowserPaneStyle.edge), lineWidth: 1))
+        .fixedSize()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("browser.agentAllowed")
     }
 }
 

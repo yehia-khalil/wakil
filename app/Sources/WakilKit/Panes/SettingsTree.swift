@@ -461,11 +461,16 @@ public struct SettingsEnvironment: Sendable, Equatable, Decodable {
     /// NAMED entries, so one request can run against staging and then
     /// production. Read-only is what kept the cost to a shape change.
     public var api: [SettingsAPI]
+    /// Whether the org counts this environment as production (the Go side's `EnvironmentIsProduction`:
+    /// the explicit flag, else the name). nil when the `wakil-ctx` that wrote the tree predates the field —
+    /// a reader treats nil as "not known" and fails toward asking.
+    public var production: Bool?
 
-    public init(name: String, databases: [SettingsDatabase] = [], api: [SettingsAPI] = []) {
+    public init(name: String, databases: [SettingsDatabase] = [], api: [SettingsAPI] = [], production: Bool? = nil) {
         self.name = name
         self.databases = databases
         self.api = api
+        self.production = production
     }
 
     public init(from decoder: Decoder) throws {
@@ -473,9 +478,10 @@ public struct SettingsEnvironment: Sendable, Equatable, Decodable {
         name = try container.decode(String.self, forKey: .name)
         databases = try container.decodeIfPresent([SettingsDatabase].self, forKey: .databases) ?? []
         api = try container.decodeIfPresent([SettingsAPI].self, forKey: .api) ?? []
+        production = try container.decodeIfPresent(Bool.self, forKey: .production)
     }
 
-    private enum CodingKeys: String, CodingKey { case name, databases, api }
+    private enum CodingKeys: String, CodingKey { case name, databases, api, production }
 }
 
 /// A database row: its name, driver, and the Keychain entry NAMES of its

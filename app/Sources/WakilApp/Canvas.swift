@@ -100,12 +100,14 @@ extension WakilWindow {
                     ConfirmationPlane(
                         pending: pending,
                         environment: model.environmentLabel,
+                        siteWantsTyping: model.siteQuestionWantsTyping(pending),
                         typed: $typedConfirmation,
                         confirm: {
                             Task {
                                 await model.confirmPending(typed: typedConfirmation)
                             }
                         },
+                        allow: { Task { await model.allowPendingSite() } },
                         cancel: {
                             Task { await model.cancelPending() }
                         },
@@ -608,7 +610,10 @@ extension WakilWindow {
                         // Closed, not switched away from: the same canvas drawn, and the pane gone from it.
                         isClosed: {
                             model.drawnScope == scope && !model.layoutSnapshot.panes.contains { $0.id == pane.id }
-                        })
+                        },
+                        sites: model.browserSites,
+                        agentAllowed: model.browserAllowedOnScreen,
+                        revokeSite: { site in Task { await model.revokeBrowserSite(site) } })
                     // **One view per place and pane.** Pane ids repeat from place to place, so
                     // without this a switch from A's `browser-1` to B's would keep the view: no
                     // appearance (no re-report of B's pages) and A's snapshot as B's `old`.

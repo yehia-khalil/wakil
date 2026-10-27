@@ -160,7 +160,8 @@ meant for a human are `UserError` (`mcperr.go`). By area:
   (`ProjectEntry`, `projects.json`), `config.go` (`Project`, `LoadProject`: a project's
   `project.json`), `projectwrite.go` (`SaveProject`, `SetDatabaseDSN`), `active.go`
   (`ActiveContext`, `active.json`), `resolve.go` (`Resolve`, `PartialResolved`), `configtree.go`
-  (what `config_tree` returns), `production.go` (`EnvironmentIsProduction`,
+  (what `config_tree` returns; each environment carries `production`, from
+  `EnvironmentIsProduction`, which the browser reads to price a site), `production.go` (`EnvironmentIsProduction`,
   `EnvironmentIsReadOnly`), `pickname.go`. See [state.md](state.md) for the files.
 - **Keychain** — `secrets.go` (`SecretGet`, `SecretSet`; service name `wakil:<org>:<ref>` from
   `keychainService`), `credpresence.go` (`SecretPresence`; runs `/usr/bin/security` at its absolute

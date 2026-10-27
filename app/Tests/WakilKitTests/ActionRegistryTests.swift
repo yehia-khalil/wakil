@@ -369,3 +369,160 @@ actor Ran {
     #expect(!line.contains("\"via\""))
     #expect(try await r.journalEntries().last?.via == nil)
 }
+
+// MARK: - A price per call (3c-ii)
+
+private func pricedRegistry() -> ActionRegistry {
+    ActionRegistry(journalDirectory: testScratchRoot
+        .appendingPathComponent("registry-call-price-\(UUID().uuidString)", isDirectory: true),
+        sessionId: "s")
+}
+
+/// Counts how often a call price is asked and records what it was handed.
+private actor PriceProbe {
+    private(set) var asked = 0
+    private(set) var params: JSONValue?
+    private(set) var caller: DispatchCaller?
+    private(set) var origin: ActionOrigin?
+    private(set) var boundCaller: DispatchCaller?
+    private(set) var boundOrigin: ActionOrigin?
+    private(set) var boundHome: LayoutScope?
+    func record(_ params: JSONValue, _ caller: DispatchCaller, _ origin: ActionOrigin,
+                boundCaller: DispatchCaller?, boundOrigin: ActionOrigin, boundHome: LayoutScope?) {
+        asked += 1
+        self.params = params
+        self.caller = caller
+        self.origin = origin
+        self.boundCaller = boundCaller
+        self.boundOrigin = boundOrigin
+        self.boundHome = boundHome
+    }
+}
+
+private func pricedAction(_ name: String, _ kind: ActionKind, ran: Ran, probe: PriceProbe,
+                          answer: GateDecision) -> Action {
+    var action = Action(name: name, description: "stub", kind: kind, schema: .object([:]),
+                        handler: { _ in await ran.mark(); return .object([:]) })
+    action.callPrice = { params, caller, origin in
+        await probe.record(params, caller, origin,
+                           boundCaller: ActionRegistry.dispatchCaller,
+                           boundOrigin: ActionRegistry.dispatchOrigin,
+                           boundHome: ScopeRouting.home)
+        return answer
+    }
+    return action
+}
+
+@Test func aCallPriceDecidesTheGateForThatCall() async throws {
+    let registry = pricedRegistry()
+    let ran = Ran()
+    let probe = PriceProbe()
+    await registry.register(pricedAction("gated_call", .mutate, ran: ran, probe: probe, answer: .gate))
+    await registry.register(pricedAction("allowed_call", .mutate, ran: ran, probe: probe, answer: .allow))
+    await registry.register(pricedAction("blocked_call", .mutate, ran: ran, probe: probe, answer: .block))
+
+    await #expect(throws: ActionError.needsConfirmation("gated_call")) {
+        try await registry.dispatch(name: "gated_call", params: .null, origin: .agent,
+                                    caller: .test("staging"), confirmation: nil)
+    }
+    #expect(await ran.count == 0)
+    _ = try await registry.dispatch(name: "allowed_call", params: .null, origin: .agent,
+                                    caller: .test("staging"), confirmation: nil)
+    #expect(await ran.count == 1)
+    // A per-call `.block` stands outside production too: the price is the call's, not the place's.
+    await #expect(throws: ActionError.blockedInProduction("blocked_call")) {
+        try await registry.dispatch(name: "blocked_call", params: .null, origin: .ui,
+                                    caller: .test("staging"), confirmation: nil)
+    }
+    await #expect(throws: ActionError.blockedInProduction("blocked_call")) {
+        try await registry.dispatch(name: "blocked_call", params: .null, origin: .ui,
+                                    caller: .test("staging"), confirmation: "confirm")
+    }
+    #expect(await ran.count == 1)
+    #expect(try await registry.journalEntries().map(\.outcome) == ["gated", "ok", "blocked", "blocked"])
+}
+
+@Test func aCallPriceIsNeverAskedForAReadOrAControl() async throws {
+    let registry = pricedRegistry()
+    let ran = Ran()
+    let probe = PriceProbe()
+    await registry.register(pricedAction("a_read", .read, ran: ran, probe: probe, answer: .block))
+    await registry.register(pricedAction("a_control", .control, ran: ran, probe: probe, answer: .block))
+    _ = try await registry.dispatch(name: "a_read", params: .null, origin: .agent,
+                                    caller: .test("production"), confirmation: nil)
+    _ = try await registry.dispatch(name: "a_control", params: .null, origin: .agent,
+                                    caller: .test("production"), confirmation: nil)
+    #expect(await ran.count == 2)
+    #expect(await probe.asked == 0)
+}
+
+@Test func theCallPriceSeesParamsCallerAndOrigin() async throws {
+    let registry = pricedRegistry()
+    let home = LayoutScope(organization: "initech", project: "b", environment: "staging")
+    let screen = LayoutScope(organization: "initech", project: "a", environment: "staging")
+    // C5a: an agent session's call is priced in its own canvas, never the one on screen.
+    registry.setScopeLookup { caller in caller.session == nil ? nil : home }
+    registry.setScreenScope { screen }
+    let ran = Ran()
+    let probe = PriceProbe()
+    await registry.register(pricedAction("seen_call", .mutate, ran: ran, probe: probe, answer: .allow))
+    let params = JSONValue.object(["ref": .string("e7")])
+    let caller = DispatchCaller.test("staging", session: "bg-1", conversation: "conv")
+    _ = try await registry.dispatch(name: "seen_call", params: params, origin: .agent,
+                                    caller: caller, confirmation: nil)
+    #expect(await probe.asked == 1)
+    #expect(await probe.params == params)
+    #expect(await probe.caller?.session == "bg-1")
+    #expect(await probe.caller?.conversation == "conv")
+    #expect(await probe.caller?.place == caller.place)
+    #expect(await probe.origin == .agent)
+    // The same task-locals the handler runs under.
+    #expect(await probe.boundCaller?.session == "bg-1")
+    #expect(await probe.boundOrigin == .agent)
+    #expect(await probe.boundHome?.project == "b")
+
+    // The operator's own call is priced in the canvas on screen, and says it is the operator's.
+    _ = try await registry.dispatch(name: "seen_call", params: params, origin: .ui,
+                                    caller: .test("staging"), confirmation: nil)
+    #expect(await probe.origin == .ui)
+    #expect(await probe.boundOrigin == .ui)
+    #expect(await probe.boundHome?.project == "a")
+}
+
+@Test func aConfirmedCallStillAsksTheCallPrice() async throws {
+    let registry = pricedRegistry()
+    let ran = Ran()
+    let probe = PriceProbe()
+    await registry.register(pricedAction("revoked_call", .mutate, ran: ran, probe: probe, answer: .block))
+    await #expect(throws: ActionError.blockedInProduction("revoked_call")) {
+        try await registry.dispatch(name: "revoked_call", params: .null, origin: .agent,
+                                    caller: .test("staging"), confirmation: "confirm")
+    }
+    #expect(await probe.asked == 1)
+    #expect(await ran.count == 0)
+}
+
+// MARK: - A proposal of the action's own (3c-ii)
+
+@Test func theProposalIsTheActionsOwnAndRunsInTheCallersCanvas() async throws {
+    let registry = pricedRegistry()
+    let home = LayoutScope(organization: "initech", project: "b", environment: "staging")
+    registry.setScopeLookup { caller in caller.session == nil ? nil : home }
+    registry.setScreenScope { LayoutScope(organization: "initech", project: "a", environment: "staging") }
+    var action = Action(name: "proposing", description: "stub", kind: .mutate, schema: .object([:]),
+                        handler: { _ in .object([:]) })
+    action.proposal = { params in
+        guard case .object(let fields) = params, case .string(let label)? = fields["label"] else { return nil }
+        let where_ = "\(ScopeRouting.home?.project ?? "-")/\(ActionRegistry.dispatchCaller?.session ?? "-")"
+        return ActionProposal(statement: "click \"\(label)\" \(where_)", ask: .site("staging.initech.dev"))
+    }
+    await registry.register(action)
+    await registry.register(testAction("plain", .mutate))
+
+    let caller = DispatchCaller.test("staging", session: "bg-1", conversation: "conv")
+    let proposal = await registry.proposal(
+        name: "proposing", params: .object(["label": .string("Save")]), caller: caller)
+    #expect(proposal == ActionProposal(statement: "click \"Save\" b/bg-1", ask: .site("staging.initech.dev")))
+    #expect(await registry.proposal(name: "plain", params: .null, caller: caller) == nil)
+    #expect(await registry.proposal(name: "nope", params: .null, caller: caller) == nil)
+}

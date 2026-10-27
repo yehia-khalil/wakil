@@ -81,6 +81,11 @@ final class BrowserTabHost {
     /// under the old name is given the page under the new one, never a fresh one. Let go once the
     /// new name is drawn.
     @ObservationIgnored private var renamed: [LayoutScope: LayoutScope] = [:]
+    /// Panes (`Key` with an empty tab) of the drawn place that `rehome` filed under its new name: the
+    /// pane drawn under that name is the one already on screen, not an arrival, so it does not take
+    /// the keyboard again (Rule 6) — the first turn of a conversation renames the canvas while the
+    /// operator is still in the composer. Taken once, by the pane's appearance.
+    @ObservationIgnored private var renamedPanes: Set<Key> = []
 
     struct OrgHost: Hashable {
         let org: String
@@ -120,6 +125,15 @@ final class BrowserTabHost {
     /// The tab's web view if it is live, without making one or touching its recency.
     func existing(scope: LayoutScope, pane: String, tab: String) -> BrowserWebView? {
         views[Key(scope: scope, pane: pane, tab: tab)]
+    }
+
+    /// 3c-ii: the tab's live web view for the agent's page driver (`BrowserPageAgent`) — never one
+    /// made for it (that would load a page unasked), never a pop-up's placeholder, and its recency
+    /// untouched. A place drawn a moment under its old name (`rehome`) answers under the new one.
+    func liveView(scope: LayoutScope, pane: String, tab: String) -> BrowserWebView? {
+        let key = Key(scope: renamed[scope] ?? scope, pane: pane, tab: tab)
+        guard !pendingPopups.contains(key) else { return nil }
+        return views[key]
     }
 
     /// The tab's web view, made with `make` when it has none; it becomes the most recently used.
@@ -195,6 +209,9 @@ final class BrowserTabHost {
             configuration.websiteDataStore = .nonPersistent()
         }
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
+        // 3c-ii: the agent's page script, in its own world, as each main-frame document ends. A
+        // pop-up's configuration is WebKit's copy of its opener's, so it carries the script too.
+        configuration.userContentController.addUserScript(BrowserAgentScript.userScript())
         // `isInspectable` only lets Safari's Develop menu attach; the page's own right-click
         // **Inspect Element** needs WebKit's developer extras, which have no public setter.
         configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
@@ -309,6 +326,14 @@ final class BrowserTabHost {
         for tracker in downloads.values where tracker.scope == from { tracker.scope = to }
         renamed = renamed.mapValues { $0 == from ? to : $0 }
         renamed[from] = to
+        if let drawn = model?.drawnScope, drawn == from || drawn == to {
+            for key in views.keys where key.scope == to { renamedPanes.insert(Key(scope: to, pane: key.pane, tab: "")) }
+        }
+    }
+
+    /// Whether the pane appearing under `scope` is one `rehome` renamed on screen; answered once.
+    func appearsRenamed(scope: LayoutScope, pane: String) -> Bool {
+        renamedPanes.remove(Key(scope: scope, pane: pane, tab: "")) != nil
     }
 
     /// `scope` is drawn under its own name: no pane is drawn under an old name of it any more.

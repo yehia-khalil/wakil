@@ -93,6 +93,9 @@ type Runner struct {
 	// PageStub is this launch's page stub origin (StartPageStub), which
 	// `PageStubToken` expands to, in params and in typed text. Empty without a seed.
 	PageStub string
+	// PageStubLive is the same stub under the name `localhost` (PageStubLiveToken), the origin of
+	// the seeded production project's site. Empty without a seed.
+	PageStubLive string
 
 	Processes ProcessTable
 	// Journal answers what the app recorded about its own actions. Nil means
@@ -269,6 +272,7 @@ func (r Result) For(name string) Result {
 func (r *Runner) tokens() map[string]string {
 	return map[string]string{
 		FixtureRootToken: r.FixtureRoot, ChatStubToken: r.ChatStub, PageStubToken: r.PageStub,
+		PageStubLiveToken: r.PageStubLive,
 	}
 }
 

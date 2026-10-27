@@ -93,7 +93,7 @@ private let readPaneKeys: Set<String> = [
     guard case .array(let tabs) = o["tabs"], tabs.count == 2, case .object(let t0) = tabs[0] else {
         Issue.record("tabs"); return
     }
-    #expect(Set(t0.keys) == ["id", "url", "title", "loading", "active"])
+    #expect(Set(t0.keys) == ["id", "url", "title", "loading", "active", "site", "environment", "production"])
     #expect(t0["active"] == .bool(true))
     guard case .array(let downloads) = o["downloads"], case .object(let d0) = downloads.first else {
         Issue.record("downloads"); return

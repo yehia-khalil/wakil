@@ -308,7 +308,10 @@ public struct WakilWiring: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         // 3c-i. Deletes a WebKit data store by id. Only the app can (`WKWebsiteDataStore` is
         // WebKit's); nil leaves `browser_clear_data` refusing, as `--dispatch` and tests want.
-        removeBrowserData: BrowserDataRemover? = nil
+        removeBrowserData: BrowserDataRemover? = nil,
+        // 3c-ii. Reads and acts on a tab's page; WebKit's, so only the app can. Nil leaves the
+        // agent's browser tools answering "no page driver", as `--dispatch` and tests want.
+        browserPageDriver: (any BrowserPageDriver)? = nil
     ) async -> WakilWiring {
         var diagnostics: [String] = []
         // `environment["WAKIL_PROVIDER"]` here, not a live pick: every
@@ -442,7 +445,8 @@ public struct WakilWiring: Sendable {
                 let org = await shellContext.current().org
                 return org.isEmpty ? nil : try BrowserOrgFiles(home: browserHome, org: org)
             },
-            removeData: removeBrowserData)
+            removeData: removeBrowserData,
+            driver: browserPageDriver)
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
             unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes),
