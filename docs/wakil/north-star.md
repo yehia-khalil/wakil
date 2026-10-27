@@ -261,13 +261,13 @@ live app; *accepted* means it was marked met without one.
 | **2c-vi** | PM board pane — Jira issues as a dual-driven kanban board | — | deferred 2026-10-06; q15 for writes |
 | **2d-i** | Identifier resolution — transcripts resolved against the identifiers in scope | **2026-10-07**, walked | — |
 | **2d-ii** | Push-to-talk, Apple STT, live transcription, composer, listening state | **2026-10-08**, walked | — |
-| **2e** | The settings pane — accounts added and unlinked from Wakil | **2026-09-30**, walked | the rest of 2c; **built before 2d** |
+| **2e** | The settings pane — accounts added and unlinked from Wakil with no credential in the operator's hands | **2026-09-30**, walked | the rest of 2c; **built before 2d** |
 | **Phase 3** | Breadth — editor, API client UI, chat and inbox adapters | — | — |
 | **3a-i** | Git pane, read-only: changes by root, the spine, the Monaco diff host | **2026-10-09**, walked | — |
 | **3a-ii** | Stage, unstage, commit — the fourth write | **2026-10-22**, walked | 3a-i |
 | **3a-ii-b** | Stage and Unstage Selected Ranges; ✨ drafts the commit message | **2026-10-22**, walked | 3a-ii |
 | **2e-ii** | Add, rename and remove a project and an environment from Settings | — | 3a-ii |
-| **2e-iii** | Add, edit and remove an environment's API entries from Settings | — | 2e-ii |
+| **2e-iii** | Add, edit and remove an environment's API entries from Settings; removal confirmed | — | 2e-ii |
 | **2e-iv** | Edit a database's connection in Settings; only the password in the Keychain | — | 2e-iii |
 | **3a-iii** | A git account per organisation; push, pull, fetch, sync, clone | **2026-10-22**, walked | 3a-ii |
 | **3a-iv** | Branches and stash — the branch picker in the context line, stash, pop, apply | **2026-10-23**, walked | 3a-iii |
@@ -277,11 +277,11 @@ live app; *accepted* means it was marked met without one.
 | **3c-ii** | Agent reach | **2026-10-27**, walked | 3c-i |
 | **3c-iii** | History, bookmarks, links | — | 3c-i |
 | **3d** | The browser you live in | — | 3c |
-| **3d-i** | Tab groups — automatic, named by the quick model, and your own; the pull-request group; pins per project; vertical tabs | — | 3c-iii |
+| **3d-i** | Tab groups, automatic or your own; the pull-request group; pins per project; vertical tabs | — | 3c-iii |
 | **3d-ii** | Identities inside an organisation | — | 3d-i |
 | **3d-iii** | Picture-in-picture | — | 3c-i |
 | **3d-iv** | Passwords in the Keychain | — | 3c-ii |
-| **Conversations** | Several live conversations per place: new, switch, close | — | — |
+| **Conversations** | Several live conversations per place: new, switch, close; folds New conversation and Track | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 
 ## 9. Glossary
