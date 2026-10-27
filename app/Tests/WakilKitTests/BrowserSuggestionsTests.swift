@@ -140,6 +140,21 @@ import Foundation
         #expect(BrowserSuggestions.completion("", in: rows) == nil)
     }
 
+    @Test func aTypedSchemeOrWwwStillMatches() {
+        let entries = [hist("https://github.com", "GitHub")]
+        for typed in ["https://git", "http://git", "www.git", "https://www.git", "HTTPS://GIT"] {
+            #expect(rank(typed, history: entries).map(\.url) == ["https://github.com"], "\(typed)")
+        }
+    }
+
+    @Test func completionAfterATypedSchemeOrWww() {
+        let rows = [row("https://github.com/x/y")]
+        #expect(BrowserSuggestions.completion("https://git", in: rows) == "hub.com")
+        #expect(BrowserSuggestions.completion("www.git", in: rows) == "hub.com")
+        #expect(BrowserSuggestions.completion("https://www.github.com/x", in: rows) == "/y")
+        #expect(BrowserSuggestions.completion("https://", in: rows) == nil)
+    }
+
     @Test func engineUrlsEncodeTheQuery() {
         func u(_ e: String) -> String? { BrowserEngineSuggest.url(engine: e, query: "a&b c")?.absoluteString }
         #expect(u("google") == "https://suggestqueries.google.com/complete/search?client=firefox&q=a%26b%20c")

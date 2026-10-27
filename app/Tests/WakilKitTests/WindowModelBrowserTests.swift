@@ -51,6 +51,166 @@ private func browserWindow(
         return (model, pane, layout, journal, panes)
     }
 
+    // MARK: 3c-iii Task 5: visits recorded, suggestions answered
+
+    /// A report for the active tab of `pane`.
+    private func report(_ model: WindowModel, _ pane: String, url: String = "https://example.com/",
+                        title: String = "", loading: Bool, failure: String? = nil) async throws {
+        let scope = try #require(model.browserScope)
+        let tab = try #require(model.browser(pane)?.active)
+        await model.browserPageDidReport(scope: scope, pane: pane, tab: tab, BrowserPageReport(
+            url: url, title: title, isLoading: loading, progress: loading ? 0.5 : 1, canGoBack: false,
+            canGoForward: false, failure: failure))
+    }
+
+    /// A browser window with a temp home and an active organisation.
+    private func homedBrowser() async throws -> (WindowModel, String, URL, PaneStore) {
+        let (model, pane, _, _, panes) = try await focusedBrowserAndPanes()
+        let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
+        model.browserHome = home
+        return (model, pane, home, panes)
+    }
+
+    private func visits(_ model: WindowModel) async throws -> [BrowserHistoryEntry] {
+        await model.settleBrowserHistory()
+        let scope = try #require(model.browserScope)
+        let files = try #require(model.browserOrgFiles(for: scope))
+        return try files.history.matching(["example"], limit: 50)
+    }
+
+    @Test func aFinishedLoadIsRecordedOnce() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        try await report(model, pane, loading: true)
+        try await report(model, pane, title: "Example", loading: false)
+        try await report(model, pane, title: "Example Domain", loading: false)
+        let rows = try await visits(model)
+        #expect(rows.count == 1 && rows[0].count == 1 && rows[0].title == "Example Domain")
+        #expect(rows[0].url == "https://example.com/")
+    }
+
+    @Test func aFailedLoadIsNotRecorded() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        try await report(model, pane, loading: true)
+        try await report(model, pane, loading: false, failure: "The server can't be found")
+        #expect(try await visits(model).isEmpty)
+    }
+
+    @Test func historyIsNotRecordedForAPlaceNoLongerOnScreen() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        let scope = try #require(model.browserScope)
+        let tab = try #require(model.browser(pane)?.active)
+        let elsewhere = LayoutScope(organization: "globex", project: scope.project, environment: scope.environment,
+                                    lineageRoot: scope.lineageRoot)
+        for loading in [true, false] {
+            await model.browserPageDidReport(scope: elsewhere, pane: pane, tab: tab, BrowserPageReport(
+                url: "https://example.com/", title: "E", isLoading: loading, progress: 1, canGoBack: false,
+                canGoForward: false, failure: nil))
+        }
+        #expect(try await visits(model).isEmpty)
+        let globex = try #require(model.browserOrgFiles(for: elsewhere))
+        #expect(try globex.history.matching(["example"], limit: 5).isEmpty)
+    }
+
+    @Test func aVisitLandsInThePlacesOrganisationNotTheActiveOne() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        let drawn = try #require(model.browserScope)
+        model.setOrganizationForTesting("globex")
+        try await report(model, pane, loading: true)
+        try await report(model, pane, title: "E", loading: false)
+        await model.settleBrowserHistory()
+        #expect(try model.browserOrgFiles(for: drawn)?.history.matching(["example"], limit: 5).count == 1)
+        #expect(try model.browserOrgFiles?.history.matching(["example"], limit: 5).isEmpty == true)
+    }
+
+    @Test func suggestionsReadTheActiveOrganisationsHistoryOnly() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        try await report(model, pane, title: "Example", loading: true)
+        try await report(model, pane, title: "Example", loading: false)
+        await model.settleBrowserHistory()
+        // Move the tab off the page so only history can answer.
+        try await report(model, pane, url: "https://other.test/", title: "Other", loading: false)
+        #expect(await model.browserSuggestions(typed: "example", pane: pane).map(\.kind) == [.history])
+        model.setOrganizationForTesting("umbrella")
+        #expect(await model.browserSuggestions(typed: "example", pane: pane).isEmpty)
+    }
+
+    @Test func suggestionsIncludeOpenTabsOfEveryBrowserPaneButNotTheOneBeingEdited() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        await model.dispatchFromSurface("browser_open", .object(["url": .string("https://second.test/")]))
+        await model.refreshLayout()
+        let first = try #require(model.browser(pane)?.tabs.first?.id)
+        await model.dispatchFromSurface("browser_select_tab", .object(["pane": .string(pane), "tab": .string(first)]))
+        let kinds = await model.browserSuggestions(typed: "second", pane: pane)
+        #expect(kinds.map(\.kind) == [.tab] && kinds[0].url == "https://second.test/")
+        #expect(await model.browserSuggestions(typed: "a.test", pane: pane).isEmpty, "the tab being edited")
+    }
+
+    @Test func searchRowsComeLastAndAreTheEnginesOwn() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        let rows = await model.browserSuggestions(typed: "swift", pane: pane, search: ["swift ui", "swift nio"])
+        #expect(rows.map(\.kind) == [.search, .search] && rows.map(\.url) == ["swift ui", "swift nio"])
+    }
+
+    @Test func bookmarksAreLoadedWhenTheOrganisationIsActivated() async throws {
+        let (model, pane, home, panes) = try await homedBrowser()
+        let org = model.organization
+        let files = try BrowserOrgFiles(home: home, org: org)
+        try files.setBookmark(url: "https://marked.test/", title: "Marked", on: true, now: Date())
+        await model.refreshBrowserSites()
+        #expect(await panes.browserBookmarks(org: org).map(\.url) == ["https://marked.test/"])
+        #expect(await model.browserSuggestions(typed: "marked", pane: pane).map(\.kind) == [.bookmark])
+    }
+
+    @Test func anUnreadableBookmarksFileLoadsAsNothingAndIsNotWritten() async throws {
+        let (model, _, home, panes) = try await homedBrowser()
+        let org = model.organization
+        let files = try BrowserOrgFiles(home: home, org: org)
+        try FileManager.default.createDirectory(at: files.directory, withIntermediateDirectories: true)
+        let file = files.directory.appendingPathComponent("bookmarks.json")
+        try Data("{ not json".utf8).write(to: file)
+        await model.refreshBrowserSites()
+        #expect(await panes.browserBookmarks(org: org).isEmpty)
+        #expect(try String(contentsOf: file, encoding: .utf8) == "{ not json")
+    }
+
+    /// A settings value with suggestions on or off, over a fetch that counts its calls.
+    private func engineWindow(on: Bool, reply: String = #"["q",["a"]]"#) async throws
+        -> (WindowModel, FetchLog) {
+        let (model, _, _, _) = try await homedBrowser()
+        model.browserSettings = SettingsBrowser(searchEngine: "google", startPage: "", searchSuggestions: on)
+        let log = FetchLog()
+        model.browserSuggestFetch = { url in log.add(url); return Data(reply.utf8) }
+        return (model, log)
+    }
+
+    @Test func noEngineIsAskedWhileTheSettingIsOff() async throws {
+        let (model, log) = try await engineWindow(on: false)
+        #expect(await model.browserEngineSuggestions(typed: "swift").isEmpty)
+        #expect(log.urls.isEmpty)
+    }
+
+    @Test func anAddressIsNeverSentToTheEngine() async throws {
+        let (model, log) = try await engineWindow(on: true)
+        #expect(await model.browserEngineSuggestions(typed: "localhost:3000").isEmpty)
+        #expect(log.urls.isEmpty)
+    }
+
+    @Test func engineSuggestionsComeBackWhenOn() async throws {
+        let (model, log) = try await engineWindow(on: true)
+        #expect(await model.browserEngineSuggestions(typed: "swift ui") == ["a"])
+        #expect(log.urls.count == 1 && log.urls[0].absoluteString.hasSuffix("q=swift%20ui"))
+    }
+
+    @Test func noEndpointOrAFailedFetchGivesNothing() async throws {
+        let (model, log) = try await engineWindow(on: true)
+        model.browserSettings = SettingsBrowser(searchEngine: "kagi", startPage: "", searchSuggestions: true)
+        #expect(await model.browserEngineSuggestions(typed: "swift").isEmpty)
+        #expect(log.urls.isEmpty)
+        model.browserSettings = SettingsBrowser(searchEngine: "google", startPage: "", searchSuggestions: true)
+        model.browserSuggestFetch = { _ in throw URLError(.timedOut) }
+        #expect(await model.browserEngineSuggestions(typed: "swift").isEmpty)
+    }
+
     @Test func theWindowHandsOutTheActiveOrganisationsFilesOnly() async throws {
         let (model, _, _, _, _) = await browserWindow()
         let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
@@ -565,4 +725,12 @@ private func reachWindow(
         #expect(agent.toolNames.isEmpty, "the thread was cleared, so were its tool names")
         await model.shutdown()
     }
+}
+
+/// The URLs a stubbed engine fetch was asked for.
+final class FetchLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [URL] = []
+    func add(_ url: URL) { lock.withLock { stored.append(url) } }
+    var urls: [URL] { lock.withLock { stored } }
 }

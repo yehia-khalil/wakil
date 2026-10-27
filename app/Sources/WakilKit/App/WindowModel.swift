@@ -5824,6 +5824,67 @@ public final class WindowModel {
         await panes.browserPageDidReport(paneId: pane, tab: tab, report)
         await refreshBrowser(pane: pane)
         if before?.url != report.url || before?.title != report.title { scheduleBrowserTabsWrite(pane: pane) }
+        recordVisit(scope: scope, before: before, report)
+    }
+
+    /// 3c-iii ruling 1: a finished load without a failure is a visit; a new title on a finished page
+    /// updates the row without counting. Written to the organisation of `scope`, never the active one.
+    private func recordVisit(scope: LayoutScope, before: BrowserTab?, _ report: BrowserPageReport) {
+        guard let before, !report.isLoading, report.failure == nil else { return }
+        let newVisit = before.isLoading
+        guard newVisit || (before.url == report.url && before.title != report.title),
+              let history = browserOrgFiles(for: scope)?.history else { return }
+        let (url, title, now) = (report.url, report.title, Date())
+        let previous = browserHistoryTail
+        browserHistoryTail = Task.detached {
+            await previous?.value
+            try? history.record(url: url, title: title, at: now, newVisit: newVisit)
+        }
+    }
+
+    /// The history writes run one after another, so a title update never overtakes its visit.
+    @ObservationIgnored private var browserHistoryTail: Task<Void, Never>?
+
+    /// TEST-ONLY: waits for the history writes started so far.
+    func settleBrowserHistory() async { await browserHistoryTail?.value }
+
+    /// The engine's suggestion fetch; nil asks through the window's one ephemeral session.
+    @ObservationIgnored var browserSuggestFetch: (@Sendable (URL) async throws -> Data)?
+    @ObservationIgnored private let browserSuggestSession = BrowserEngineSuggest.session()
+
+    /// The rows under the address field for `typed` in `pane`: the active organisation's open tabs
+    /// (of every browser pane on the canvas; `pane`'s active tab is the one being edited), bookmarks
+    /// and history, with `search` (the engine's words) last. Ruling 7.
+    public func browserSuggestions(typed: String, pane: String, search: [String] = []) async -> [BrowserSuggestion] {
+        let words = BrowserSuggestions.words(BrowserSuggestions.normalised(typed))
+        guard !words.isEmpty else { return [] }
+        var tabs: [BrowserTab] = []
+        for p in layoutSnapshot.panes where p.kind == "browser" { tabs += browser(p.id)?.tabs ?? [] }
+        let editing = browser(pane)?.active
+        let bookmarks = organization.isEmpty ? [] : await panes.browserBookmarks(org: organization)
+        var history: [BrowserHistoryEntry] = []
+        if let files = browserOrgFiles {
+            history = await Task.detached {
+                (try? files.history.matching(words, limit: 8)) ?? []
+            }.value
+        }
+        return BrowserSuggestions.rank(
+            typed, tabs: tabs, editing: editing, bookmarks: bookmarks, history: history, search: search)
+    }
+
+    /// The engine's own suggestions for `typed` (ruling 10): empty when the setting is off, the text
+    /// is an address, the engine has no endpoint, or the fetch fails.
+    public func browserEngineSuggestions(typed: String) async -> [String] {
+        let query = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard browserSettings.searchSuggestions, !query.isEmpty, !BrowserAddress.looksLikeAddress(query),
+              let url = BrowserEngineSuggest.url(engine: browserSettings.searchEngine, query: query)
+        else { return [] }
+        do {
+            let data: Data
+            if let fetch = browserSuggestFetch { data = try await fetch(url) }
+            else { data = try await browserSuggestSession.data(from: url).0 }
+            return BrowserEngineSuggest.parse(data)
+        } catch { return [] }
     }
 
     /// The find bar's match count from the page.
@@ -9666,11 +9727,22 @@ public final class WindowModel {
         agent(for: place).appendRow(label: "speech", detail: message, isError: true)
     }
 
+    /// 3c-iii: the active organisation's `bookmarks.json` into the store. A file that does not parse
+    /// loads as none; nothing here writes, so the file stays as it is.
+    private func loadBrowserBookmarks() async {
+        let org = organization
+        guard !org.isEmpty, let files = browserOrgFiles else { return }
+        let marks = (try? files.bookmarks()) ?? []
+        guard org == organization else { return }
+        await panes.browserSetBookmarks(org: org, marks)
+    }
+
     /// 3c-ii: reads the config tree once and refreshes the sites from it. Called at launch and after
     /// an org, project or environment switch (`refreshContext`); a settings refresh applies the tree
     /// it already read instead (`applyBrowserSites`), with no second dispatch.
     func refreshBrowserSites() async {
         let asked = browserSitesKey
+        await loadBrowserBookmarks()
         guard !asked.org.isEmpty,
               let result = try? await registry.dispatch(
                 name: "ctx_config_tree", params: .object([:]), origin: .ui,

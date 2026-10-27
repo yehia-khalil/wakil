@@ -33,6 +33,18 @@ public enum BrowserSuggestions {
         return String(bare)
     }
 
+    /// The typed text as a bare URL is read: trimmed, without a leading `http://` or `https://` and
+    /// a leading `www.` (case-insensitive), so `https://git` and `www.git` both mean `git`.
+    public static func normalised(_ typed: String) -> String {
+        var text = Substring(typed.trimmingCharacters(in: .whitespacesAndNewlines))
+        for scheme in ["https://", "http://"] where text.lowercased().hasPrefix(scheme) {
+            text = text.dropFirst(scheme.count)
+            break
+        }
+        if text.lowercased().hasPrefix("www.") { text = text.dropFirst(4) }
+        return String(text)
+    }
+
     /// The typed text trimmed and split on whitespace.
     public static func words(_ typed: String) -> [String] {
         typed.split(whereSeparator: \.isWhitespace).map(String.init)
@@ -42,9 +54,9 @@ public enum BrowserSuggestions {
         _ typed: String, tabs: [BrowserTab], editing: String?,
         bookmarks: [BrowserBookmark], history: [BrowserHistoryEntry], search: [String]
     ) -> [BrowserSuggestion] {
-        let typedWords = words(typed).map { $0.lowercased() }
+        let wholeTyped = normalised(typed).lowercased()
+        let typedWords = words(wholeTyped)
         guard let first = typedWords.first else { return [] }
-        let wholeTyped = typed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         /// nil when a word is missing from both the bare URL and the title.
         func score(url: String, title: String) -> Int? {
@@ -103,7 +115,9 @@ public enum BrowserSuggestions {
     /// The text to add after what was typed: to the end of the host, or to the end of the whole bare
     /// URL once the typed text holds a `/`. Nil with whitespace or when no page row starts with it.
     public static func completion(_ typed: String, in rows: [BrowserSuggestion]) -> String? {
-        guard !typed.isEmpty, !typed.contains(where: \.isWhitespace) else { return nil }
+        guard !typed.contains(where: \.isWhitespace) else { return nil }
+        let typed = normalised(typed)
+        guard !typed.isEmpty else { return nil }
         let lower = typed.lowercased()
         for row in rows where row.kind != .search {
             let bare = bareURL(row.url)
