@@ -3,6 +3,7 @@ package wakilcore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +30,11 @@ type PullRequestsResult struct {
 	Absent       string        `json:"absent,omitempty"`
 	Host         string        `json:"host,omitempty"`
 }
+
+// githubPullRequestsBudget is both searches' total time. It stays under the app's read timeout
+// for this call (MCPClient.readReplyTimeout, 10 s), so a host that hangs reads "<host> did not
+// answer: …" rather than the app's own timeout. Overridable by tests.
+var githubPullRequestsBudget = 8 * time.Second
 
 // githubAPIBase is where a GitHub host's REST API lives (overridable by tests).
 var githubAPIBase = func(host string) string {
@@ -70,12 +76,16 @@ func GitHubPullRequests(ctx context.Context, org string) (PullRequestsResult, er
 			" uses an SSH key, which can't read pull requests — add a token or Sign in under Settings → Organisation → Git."
 		return none, nil
 	}
-	token, _ := SecretGetFor(org, gitTokenRef(a.Host))
+	// Only a missing item is "no token": a locked or denied Keychain is an error, whole.
+	token, err := SecretGetFor(org, gitTokenRef(a.Host))
+	if err != nil && !errors.Is(err, ErrSecretNotFound) {
+		return none, err
+	}
 	if token == "" {
 		none.Absent = "No pull-request group: no token is kept for " + a.Host + " in " + org + "."
 		return none, nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, githubPullRequestsBudget)
 	defer cancel()
 	base := githubAPIBase(a.Host)
 	type found struct {

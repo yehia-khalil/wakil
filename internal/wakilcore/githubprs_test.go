@@ -2,11 +2,15 @@ package wakilcore
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func prBase(t *testing.T, fn func(host string) string) {
@@ -44,6 +48,59 @@ func TestPullRequestsAbsentWithNoToken(t *testing.T) {
 	got, err := GitHubPullRequests(context.Background(), "initech")
 	if err != nil || got.Absent != "No pull-request group: no token is kept for github.com in initech." {
 		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+// A Keychain that holds the item but will not hand it over (locked, a denied prompt) is an error
+// whole, never "no token is kept".
+func TestPullRequestsAnUnreadableKeychainIsAnError(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	AddGitAccount("initech", GitAccount{Host: "github.com", Provider: "github", Method: "token"})
+	path := filepath.Join(t.TempDir(), "security")
+	script := "#!/bin/sh\necho 'security: SecKeychainSearchCopyNext: User interaction is not allowed.' >&2\nexit 36\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	previous := securityBinary
+	securityBinary = keychainTool(path)
+	t.Cleanup(func() { securityBinary = previous })
+	got, err := GitHubPullRequests(context.Background(), "initech")
+	if err == nil || got.Absent != "" || !strings.Contains(err.Error(), "could not read keychain") ||
+		!strings.Contains(err.Error(), "User interaction is not allowed") {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if errors.Is(err, ErrSecretNotFound) {
+		t.Fatalf("a locked keychain is not a missing item: %v", err)
+	}
+}
+
+// A host that does not answer within the budget reads "<host> did not answer: …", the spec's copy,
+// before the app's own read timeout would.
+func TestPullRequestsAHostThatHangsDidNotAnswer(t *testing.T) {
+	localOrg(t)
+	fakeKeychain(t)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+	prBase(t, func(string) string { return srv.URL })
+	old := githubPullRequestsBudget
+	githubPullRequestsBudget = 50 * time.Millisecond
+	t.Cleanup(func() { githubPullRequestsBudget = old })
+	AddGitAccount("initech", GitAccount{Host: "github.com", Provider: "github", Method: "token"})
+	SetGitToken("initech", "github.com", "tok")
+	_, err := GitHubPullRequests(context.Background(), "initech")
+	if err == nil || !strings.HasPrefix(err.Error(), "github.com did not answer: ") {
+		t.Fatalf("err = %v", err)
+	}
+	if old >= 10*time.Second {
+		t.Fatalf("the budget %v must stay under the app's 10 s read timeout", old)
 	}
 }
 
