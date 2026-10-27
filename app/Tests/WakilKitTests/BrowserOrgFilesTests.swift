@@ -149,3 +149,30 @@ private func writeState(_ files: BrowserOrgFiles, _ scope: LayoutScope, _ pane: 
     #expect(FileManager.default.fileExists(atPath: ten.path))
     #expect(FileManager.default.fileExists(atPath: elsewhere.path))
 }
+
+@Test func clearingRemovesHistoryAndKeepsBookmarksAndProfile() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "acme")
+    let id = try files.identifier()
+    try files.history.record(url: "https://example.com/", title: "Example", at: Date(), newVisit: true)
+    try files.setZoom(1.5, host: "example.com")
+    let bookmarks = files.directory.appendingPathComponent("bookmarks.json")
+    try Data("[]".utf8).write(to: bookmarks)
+    let dbPath = files.directory.appendingPathComponent("history.sqlite").path
+    #expect(FileManager.default.fileExists(atPath: dbPath))
+    // stray WAL and SHM files from a crashed writer go too
+    try Data("x".utf8).write(to: URL(fileURLWithPath: dbPath + "-wal"))
+    try Data("x".utf8).write(to: URL(fileURLWithPath: dbPath + "-shm"))
+
+    try files.removeEverythingButTheProfile()
+
+    for suffix in ["", "-wal", "-shm"] { #expect(!FileManager.default.fileExists(atPath: dbPath + suffix)) }
+    #expect(try files.history.matching(["example"], limit: 5).isEmpty)
+    #expect(FileManager.default.fileExists(atPath: bookmarks.path))
+    #expect(files.zoom(host: "example.com") == 1.0)
+    #expect(try files.identifier() == id)
+}
+
+@Test func theClearQuestionSaysHistoryGoesAndBookmarksStay() {
+    #expect(BrowserClearDataQuestion.text(org: "initech")
+        == "Delete initech's browsing data? Every site signs you out, in every project, and its history is deleted. Bookmarks stay.")
+}

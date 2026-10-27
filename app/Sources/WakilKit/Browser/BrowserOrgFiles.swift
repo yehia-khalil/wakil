@@ -17,7 +17,7 @@ public enum BrowserOrgFilesError: Error, Sendable, Equatable, CustomStringConver
 /// The copy of the clear-data question (global constraints), for the view that asks it.
 public enum BrowserClearDataQuestion {
     public static func text(org: String) -> String {
-        "Delete \(org)'s browsing data? Every site signs you out, in every project."
+        "Delete \(org)'s browsing data? Every site signs you out, in every project, and its history is deleted. Bookmarks stay."
     }
     /// The receipt after Delete: the organisation the question named (`asked`), else the current one.
     public static func receipt(asked: String?, current: String) -> String {
@@ -34,6 +34,8 @@ public enum BrowserClearDataQuestion {
 ///   `WKWebsiteDataStore(forIdentifier:)`. WebKit keeps the store itself under `~/Library/WebKit/`,
 ///   outside Wakil's reach; this id is the only handle on it.
 /// - `zoom.json`: `{"<host>": <factor>}`, the page zoom per host.
+/// - `history.sqlite` (with `-wal`, `-shm`): the browsing history, 90 days (`BrowserHistory`).
+/// - `bookmarks.json`: the bookmarks; clearing browsing data keeps them.
 /// - `tabs/`: per-tab state, `tabs/<tab-id>.state`.
 public struct BrowserOrgFiles: Sendable, Equatable {
     public let home: URL
@@ -58,7 +60,11 @@ public struct BrowserOrgFiles: Sendable, Equatable {
 
     private var profileURL: URL { directory.appendingPathComponent("profile.json") }
     private var zoomURL: URL { directory.appendingPathComponent("zoom.json") }
+    private var historyURL: URL { directory.appendingPathComponent("history.sqlite") }
     private var tabsDirectory: URL { directory.appendingPathComponent("tabs", isDirectory: true) }
+
+    /// The organisation's history, at `history.sqlite`.
+    public var history: BrowserHistory { BrowserHistory(url: historyURL) }
 
     private struct Profile: Codable { var identifier: UUID }
 
@@ -159,9 +165,11 @@ public struct BrowserOrgFiles: Sendable, Equatable {
         try? FileManager.default.removeItem(at: stateURL(tab: tab))
     }
 
-    /// Deletes `tabs/` and `zoom.json`; `profile.json` stays, so the organisation keeps its id.
+    /// Deletes `tabs/`, `zoom.json` and the history (`history.sqlite`, `-wal`, `-shm`); `profile.json`
+    /// stays, so the organisation keeps its id, and `bookmarks.json` stays, as Safari's Clear History keeps them.
     func removeEverythingButTheProfile() throws {
-        for url in [tabsDirectory, zoomURL] where FileManager.default.fileExists(atPath: url.path) {
+        let historyFiles = ["", "-wal", "-shm"].map { URL(fileURLWithPath: historyURL.path + $0) }
+        for url in [tabsDirectory, zoomURL] + historyFiles where FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
     }
