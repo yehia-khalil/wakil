@@ -5986,8 +5986,8 @@ public final class WindowModel {
             }
             let s = await panes.browserSnapshot(paneId: pane)
             if s.tabs != before.tabs || s.groups != before.groups {
-                await layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active, groups: s.groups,
-                                            columnHidden: s.tabColumnHidden)
+                await layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: browserSavedActive(s),
+                    groups: s.groups, columnHidden: s.tabColumnHidden)
                 changed = true
             }
         }
@@ -6222,8 +6222,8 @@ public final class WindowModel {
             guard !Task.isCancelled, let self else { return }
             self.browserTabsWrites[pane] = nil
             let s = await self.panes.browserSnapshot(paneId: pane)
-            await self.layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active, groups: s.groups,
-                                             columnHidden: s.tabColumnHidden)
+            await self.layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: browserSavedActive(s),
+                groups: s.groups, columnHidden: s.tabColumnHidden)
             self.browserTabsWriteCount += 1
             await self.refreshLayout()
         }

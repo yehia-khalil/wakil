@@ -864,6 +864,36 @@ private func groupedFixture() async throws -> BrowserFixture {
     #expect(await !f.panes.holdsContents(paneId: f.pane))
 }
 
+/// A pull-request tab is never saved, so it is never the saved active tab: the nearest saved tab
+/// before it is, else the first saved tab, else none.
+@Test func aSelectedPullRequestTabIsNotSavedAsActive() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs.append(BrowserTab(id: "t3", url: "https://github.com/initech/app/pull/4", title: "Fix · initech/app#4",
+                                 group: "pr", pullRequest: "https://github.com/initech/app/pull/4"))
+        s.groups = [BrowserGroup(id: "pr", name: "Pull Requests", colour: .blue, kind: .pullRequests, named: true)]
+        s.nextTab = 4
+        s.arrange()
+    }
+    try await f.dispatch("browser_select_tab", ["tab": .string("t3")])
+    #expect(await f.snapshot().active == "t3")
+    let saved = try #require(await f.layout.browserTabs(id: f.pane))
+    #expect(saved.active == "t1", "the PR group leads, so the first saved tab stands in")
+    #expect(!saved.tabs.contains { $0.id == "t3" })
+
+    var s = BrowserSnapshot(tabs: [
+        BrowserTab(id: "t1", url: "https://a.test/", title: "a"),
+        BrowserTab(id: "t2", url: "https://github.com/x/y/pull/1", title: "p", pullRequest: "https://github.com/x/y/pull/1"),
+        BrowserTab(id: "t3", url: "https://b.test/", title: "b"),
+    ], active: "t2", find: nil, downloads: [], closed: [], nextTab: 4)
+    #expect(browserSavedActive(s) == "t1", "the nearest saved tab before it")
+    s.tabs.removeAll { $0.pullRequest == nil }
+    #expect(browserSavedActive(s) == nil, "no saved tab: none")
+    s.active = "t2"
+    s.tabs[0].pullRequest = nil
+    #expect(browserSavedActive(s) == "t2")
+}
+
 @Test func thePullRequestGroupRefusesRename() async throws {
     let f = try await withTabs(["https://a.test/"])
     await f.panes.updateBrowser(paneId: f.pane) { s in

@@ -97,6 +97,14 @@ func browserSavedTabs(_ s: BrowserSnapshot) -> [BrowserSavedTab] {
     }
 }
 
+/// The active tab a browser pane saves: its own id, unless that is a pull-request tab, which is
+/// never saved — then the nearest saved tab before it, else the first saved tab, else nil.
+func browserSavedActive(_ s: BrowserSnapshot) -> String? {
+    guard let active = s.active, let i = s.tabs.firstIndex(where: { $0.id == active }) else { return s.active }
+    if s.tabs[i].pullRequest == nil { return active }
+    return s.tabs[..<i].last { $0.pullRequest == nil }?.id ?? s.tabs.first { $0.pullRequest == nil }?.id
+}
+
 /// What `browser_pin` and `browser_unpin` act on: a tab or a group, by id.
 private enum BrowserPinTarget: Sendable {
     case tab(String), group(String)
@@ -282,8 +290,8 @@ func browserActions(
 
     @Sendable func persist(_ pane: String) async {
         let s = await panes.browserSnapshot(paneId: pane)
-        await layout?.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active, groups: s.groups,
-                                     columnHidden: s.tabColumnHidden)
+        await layout?.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: browserSavedActive(s),
+            groups: s.groups, columnHidden: s.tabColumnHidden)
     }
 
     /// The place's pins file and project (ruling 13): refused when the place has no project, or the
