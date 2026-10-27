@@ -47,8 +47,9 @@ These settle what the spec left open or where it contradicts itself. Each is a *
    panes' active tabs as candidates.
 4. **A floating video replaced while its tab is away is paused.** WebKit keeps one picture-in-picture
    window, so when B floats, A goes back inline in a tab nobody sees. Task 1 found WebKit already
-   pauses A then, muted or not; the pause stays as a guard that does not depend on it. A video whose float ends while its tab is not on screen is paused, unless that end came from
-   Restore. Close in the system window already pauses.
+   pauses A then, muted or not; the pause stays as a guard that does not depend on it. A video whose
+   float ends while its tab is not on screen is paused, unless that end came from Restore. Close in
+   the system window already pauses.
 5. **Restore puts the web view back synchronously by docking it.** The place may be off screen and the
    SwiftUI pane may not exist when `_webViewFullscreenMayReturnToInline:` arrives. So, inside that call,
    a web view with no window is added to the window's content view, below every sibling, at its last
@@ -173,7 +174,7 @@ These settle what the spec left open or where it contradicts itself. Each is a *
 
   | # | Question | Plan assumes |
   |---|---|---|
-  | a | Closing a tab whose video floats: the view `stopLoading`, `removeFromSuperview`, released. Does the window go, and does `hasVideoInPictureInPictureDidChange:false` arrive? | Window goes. If it lingers, `release` must await the inline script before dropping (ruling 11) |
+  | a | Closing a tab whose video floats: the view `stopLoading`, `removeFromSuperview`, released. Does the window go, and does `hasVideoInPictureInPictureDidChange:false` arrive? | Window goes. If it lingers, `release` must await the inline script before dropping (ruling 11) (answered: it does not linger; see ruling 11) |
   | b | `video-frame.html`: the handler's message carries the iframe's `WKFrameInfo`. Does `callAsyncJavaScript(…, in: thatFrame, in: wakil.pip)` float the cross-origin video with no gesture? | Yes |
   | c | `two-videos.html`: does the per-frame `Date.now()` stamp pick `second`? Then a second tab's video floats while the first's floats: does the first get `false` and go on playing inline? | Yes, and yes: hence ruling 4's pause |
   | d | Can a script in the isolated world `wakil.pip` call `webkitSetPresentationMode` (the spike's ran in another world)? | Yes. Fallback `.defaultClient` |
@@ -241,8 +242,8 @@ These settle what the spec left open or where it contradicts itself. Each is a *
     - `public mutating func didChange(_ ref: BrowserTabRef, floating on: Bool) -> [Effect]`
     - `public mutating func restore(_ ref: BrowserTabRef) -> [Effect]`, which answers `[.goTo(ref)]`
     - `public mutating func restoreEnded(_ ref: BrowserTabRef, reached: Bool) -> [Effect]`
-    - `public mutating func closed(_ ref: BrowserTabRef) -> [Effect]`, which answers `[.inline(ref)]`
-      when it floats, else `[]`
+    - `public mutating func closed(_ ref: BrowserTabRef) -> [Effect]`, which clears `floating` when
+      `ref` floats and answers `[]` (the released view ends the float; ruling 11)
     - `public mutating func rehome(from: LayoutScope, to: LayoutScope)`
     - `public static func unavailableLine(missing: [String]) -> String?`, which is nil for `[]` and
       otherwise the Global Constraints copy
@@ -265,7 +266,7 @@ These settle what the spec left open or where it contradicts itself. Each is a *
   `aFloatThatEndsOnScreenIsNotPaused`;
   `aRestoredVideoIsNotPaused` (`restore(t1)` → `[.goTo(t1)]`, then `didChange(t1, false)` → `[]`);
   `aRestoreThatCannotArrivePausesIt` (`restoreEnded(t1, reached: false)` → `[.pause(t1)]`; `true` → `[]`);
-  `closingTheFloatingTabSendsItInline`;
+  `closingTheFloatingTabClearsIt` (`closed(t1)` → `[]`, then `floating == nil`);
   `aRehomedPlaceKeepsItsFloatingTab` (floating and shown under `here`, `rehome(here → there)`, then show
   `there`'s t2 → `[.float([there t1])]`, and `floating?.scope == there`);
   `theUnavailableLineNamesWhatIsMissing` (the exact copy for two names; nil for none).
@@ -333,7 +334,8 @@ These settle what the spec left open or where it contradicts itself. Each is a *
     snapshot, cleared on visible and on `enter`/`leavepictureinpicture`) and `pagehide`. It also scans once at
     injection, for a video already playing. On each it posts `{frame: String, playing: Bool, since:
     Number}` for the frame's newest qualifying video (`since` from its `playing` stamp, an expando set in
-    this world). `enter` floats the frame's newest qualifying video and returns whether it did. `inline`
+    this world). `enter` floats the frame's newest qualifying video (hidden-time snapshot candidates count, per the
+    amended candidate rule), calls `play()` on it if it is paused, and returns whether it did. `inline`
     sends back every video whose `webkitPresentationMode` is `'picture-in-picture'`. `pause` pauses every
     playing video.
   - `BrowserTabDelegate` gains `var pictureInPicture = false`, carried in every report, and two private
@@ -359,7 +361,7 @@ These settle what the spec left open or where it contradicts itself. Each is a *
 **Files:**
 - Create: `app/Sources/WakilApp/BrowserPictureInPictureHost.swift`
 - Modify: `app/Sources/WakilApp/BrowserTabHost.swift` (`let pictureInPicture`, `evictBeyondLimit`
-  skips the floating key, `rehome` forwards, `release(scope:pane:tab:)` applies `closed` before `drop`,
+  skips the floating key, `rehome` forwards, `release(scope:pane:tab:)` applies `closed` before `drop` without waiting,
   `key(of: WKWebView) -> Key?`), `app/Sources/WakilApp/BrowserPane.swift` (`isCovered`, show and hide
   calls, `BrowserPageHost`'s container records the window), `app/Sources/WakilApp/Canvas.swift` (passes
   `isCovered`)
@@ -372,7 +374,7 @@ These settle what the spec left open or where it contradicts itself. Each is a *
     `didMiniaturizeNotification` and `didDeminiaturizeNotification` and calls `setMinimized`.
   - `func show(scope: LayoutScope, pane: String, tab: String?)`, `func hide(scope: LayoutScope, pane: String, closing: Bool)`
   - `func didChange(_ key: BrowserTabHost.Key, _ on: Bool)`, `func restore(_ key: BrowserTabHost.Key, view: WKWebView)`
-  - `func closed(_ key: BrowserTabHost.Key) async`, `func rehome(from: LayoutScope, to: LayoutScope)`, `func forgetFrames(_ key: BrowserTabHost.Key)`
+  - `func closed(_ key: BrowserTabHost.Key)` (synchronous), `func rehome(from: LayoutScope, to: LayoutScope)`, `func forgetFrames(_ key: BrowserTabHost.Key)`
   - `var floatingKey: BrowserTabHost.Key?`
   - Each entry point sets `machine.enabled = (model?.browserSettings.pictureInPicture ?? true) &&
     BrowserPictureInPictureSupport.available`, calls the machine and applies the effects.
@@ -386,7 +388,7 @@ These settle what the spec left open or where it contradicts itself. Each is a *
       is still docked after it, it is taken out of the dock.
 
 - [ ] **Step 1: Build the host class** to the Interfaces. Use Task 1's recorded answer for the dock
-  (below siblings, or `alphaValue = 0`) and for whether `closed` must await `inline` before the drop.
+  (below siblings, or `alphaValue = 0`) and ruling 11 (`closed` runs before the drop, without awaiting).
 - [ ] **Step 2: Wire the pane.** `BrowserPane` gains `let isCovered: Bool`.
   - At the end of `sync`, when `!isCovered`: `host.pictureInPicture.show(scope:pane:tab: now.active)`.
   - `onAppear` already syncs.
