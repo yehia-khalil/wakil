@@ -1000,6 +1000,29 @@ private func pinFixture() async throws -> (f: BrowserFixture, other: String, fil
     #expect(await f.snapshot().tabs.allSatisfy { $0.pin == nil })
 }
 
+@Test func anUnreadablePinsFileRefusesAnUnpinOfAPinnedTab() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let url = files.pinsURL(project: "web")
+    let bytes = Data("{\"items\": [oops".utf8)
+    try bytes.write(to: url)
+    let why = await refusal { try await f.dispatch("browser_unpin") }
+    #expect(why?.hasPrefix("browser_unpin: pins/web.json can't be read (") == true)
+    #expect(try Data(contentsOf: url) == bytes)
+    #expect(await f.snapshot().tabs.first?.pin != nil)
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.first?.pin != nil)
+}
+
+@Test func aRestoreThatLeavesAPaneWithNoTabClosesIt() async throws {
+    let (f, _, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    #expect(await f.snapshot().tabs.count == 1)
+    try files.setPins([], project: "web")
+    let reply = try await f.dispatch("browser_restore", ["pane": .string(f.pane)], named: false)
+    #expect(reply == .object(["pane": .string(f.pane), "closed": .bool(true)]))
+    #expect(await !f.layout.snapshot().panes.contains { $0.id == f.pane })
+}
+
 @Test func pinningRefusesWithNoProject() async throws {
     let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "initech")
     let f = try await browserFixture(orgFiles: files)

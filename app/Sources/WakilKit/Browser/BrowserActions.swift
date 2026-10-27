@@ -268,14 +268,14 @@ func browserActions(
     }
 
     /// Full reconcile (ruling 14) of `pane` with its project's pins, when a pane is opened or
-    /// restored. Nothing without a project or an organisation.
-    @Sendable func reconcile(_ pane: String) async {
-        guard let place = try? await pinsPlace("browser_restore") else { return }
+    /// restored. Nothing without a project or an organisation (nil); else how many tabs the pane has after.
+    @Sendable @discardableResult func reconcile(_ pane: String, action: String) async -> Int? {
+        guard let place = try? await pinsPlace(action) else { return nil }
         let pins: Result<[BrowserPin], BrowserPinsUnreadable>
         do { pins = .success(try place.files.pins(project: place.project)) }
         catch let error as BrowserPinsUnreadable { pins = .failure(error) }
         catch { pins = .failure(BrowserPinsUnreadable(reason: error.localizedDescription)) }
-        await panes.browserReconcilePins(paneId: pane, pins: pins)
+        return await panes.browserReconcilePins(paneId: pane, pins: pins)
     }
 
     /// Delta reconcile (ruling 14) of every other browser pane on the canvas — `layout.snapshot()`,
@@ -322,7 +322,7 @@ func browserActions(
     /// `pane_open` did — and first takes its project's pins (ruling 14's full reconcile), behind the
     /// new tab, which stays the selected one.
     @Sendable func addTab(_ pane: String, url: String?, opener: String? = nil) async {
-        if !(await panes.holdsContents(paneId: pane)) { await reconcile(pane) }
+        if !(await panes.holdsContents(paneId: pane)) { await reconcile(pane, action: "browser_new_tab") }
         var target = url
         if target == nil {
             let start = await settings().startPage.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -954,8 +954,14 @@ func browserActions(
             }
             // Ruling 14: a restored pane takes the pins added since and drops the ones gone.
             let before = await panes.browserSnapshot(paneId: pane)
-            await reconcile(pane)
-            if await panes.browserSnapshot(paneId: pane).tabs != before.tabs { await persist(pane) }
+            // A pane the reconcile leaves with no tab closes, as closing its last tab does.
+            if let left = await reconcile(pane, action: "browser_restore"), left == 0 {
+                try await layout?.close(id: pane)
+                await panes.drop(paneId: pane)
+                return .object(["pane": .string(pane), "closed": .bool(true)])
+            }
+            let after = await panes.browserSnapshot(paneId: pane)
+            if after.tabs != before.tabs || after.groups != before.groups { await persist(pane) }
             return await reply(pane)
         }))
 
