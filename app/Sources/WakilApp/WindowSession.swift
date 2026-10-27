@@ -507,19 +507,25 @@ private final class ScreenPlace {
     }
 }
 
-/// Removes the WebKit store `id`. A web view released a moment ago still holds it until WebKit has
-/// torn its page down, which happens after the release returns: WebKit answers "Data store is in
-/// use" (WKWebSiteDataStore code 1) meanwhile, so that answer is asked again, for up to two seconds.
-/// Found by 3c-i-settings.jsonl: with a browser pane open, Delete was refused every time.
+/// Empties the WebKit store `id`, then removes it. A web view released a moment ago still holds the
+/// store until WebKit has torn its page down, so "Data store is in use" (WKWebSiteDataStore code 1)
+/// is asked again, for up to two seconds (3c-i-settings.jsonl: with a browser pane open, Delete was
+/// refused every time). Some pages (YouTube; its service worker, likely) keep the store in WebKit's
+/// network process for as long as Wakil runs, so the removal can be refused to the end: the data
+/// goes first, every record of every type, and a store still refused after that is left empty, not
+/// an error (3c-iii walk: Delete answered "in use (by network process)" with every web view gone).
 @MainActor
 private func removeWebsiteDataStore(_ id: UUID) async throws {
+    await WKWebsiteDataStore(forIdentifier: id)
+        .removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
     var attempt = 0
     while true {
         do {
             try await WKWebsiteDataStore.remove(forIdentifier: id)
             return
-        } catch let error as NSError where error.domain == "WKWebSiteDataStore" && error.code == 1 && attempt < 20 {
+        } catch let error as NSError where error.domain == "WKWebSiteDataStore" && error.code == 1 {
             attempt += 1
+            if attempt > 20 { return }
             try await Task.sleep(for: .milliseconds(100))
         }
     }
