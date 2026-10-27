@@ -362,6 +362,13 @@ e2e-full: app-bundle axresolve e2e-agent
 
 # e2e-run — the one loop both targets share. The launch comes from the
 # directory, as it always has.
+#
+# The checks stop at the first red file unless E2E_KEEP_GOING is set. The night
+# run (e2e/cmd/wakil-e2e-night) sets it, so one night finds every red file
+# rather than the first. E2E_RUNNER is the driver, replaceable only so the
+# loop itself can be tested (scripts/makefile_test.go).
+E2E_KEEP_GOING ?=
+E2E_RUNNER ?= go run ./e2e/cmd/wakil-e2e
 e2e-run:
 	@test -d "$(E2E_BUNDLE)" || { \
 	    echo "make e2e: no bundle at $(E2E_BUNDLE) — run \`make app-bundle\`"; exit 1; }
@@ -382,8 +389,8 @@ e2e-run:
 	        *",$${check##*/},"*) flags="$$flags --quarantine $${check##*/}"; label="$$label, quarantined";; \
 	    esac; \
 	    echo "== $$check ($$label)"; \
-	    go run ./e2e/cmd/wakil-e2e --bundle "$(E2E_BUNDLE)" $$flags $(E2E_SETTLE_ARG) "$$check" \
-	        || { status=1; break; }; \
+	    $(E2E_RUNNER) --bundle "$(E2E_BUNDLE)" $$flags $(E2E_SETTLE_ARG) "$$check" \
+	        || { status=1; [ -n "$(E2E_KEEP_GOING)" ] || break; }; \
 	done; \
 	echo "== coverage"; \
 	$(MAKE) --no-print-directory e2e-cover || status=1; \
