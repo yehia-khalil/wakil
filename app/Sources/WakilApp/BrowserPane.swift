@@ -33,6 +33,9 @@ struct BrowserPane: View {
     /// Whether the pane has been closed (not merely taken off the canvas by a switch), asked a
     /// moment after it leaves the screen: a closed pane's web views are released.
     let isClosed: @MainActor () -> Bool
+    /// Another pane is maximised in front of this one (3d-iii ruling 1): its active tab is not on
+    /// screen, so a playing video there floats.
+    let isCovered: Bool
     /// 3c-ii: the organisation's sites (the tags), the sites the on-screen conversation let the agent
     /// use (the mark), and the mark's ×.
     let sites: BrowserSites
@@ -150,8 +153,18 @@ struct BrowserPane: View {
                 input = BrowserAddressInput()
             }
         }
+        // Covered or uncovered by a maximised pane: the tab leaves the screen or comes back to it.
+        .onChange(of: isCovered) { _, covered in
+            if covered {
+                host.pictureInPicture.hide(scope: scope, pane: pane.id, closing: false)
+            } else {
+                host.pictureInPicture.show(scope: scope, pane: pane.id, tab: snapshot.active)
+            }
+        }
         .onDisappear {
             let pane = pane.id, scope = scope, host = host, isClosed = isClosed
+            // Read at once (ruling 2): a closed pane's tabs are released in a second, so none floats.
+            host.pictureInPicture.hide(scope: scope, pane: pane, closing: isClosed())
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
                 if isClosed() { host.release(scope: scope, pane: pane) }
@@ -491,7 +504,7 @@ struct BrowserPane: View {
                     // `browser.page` is the web view's own identifier (`BrowserTabHost.prepare`),
                     // so a focus read and a frame read both resolve to the one element; the web
                     // view fills this host, so its frame is the page area's.
-                    BrowserPageHost(webView: page)
+                    BrowserPageHost(webView: page) { [host] window in host.pictureInPicture.window = window }
                         .accessibilityElement(children: .contain)
                 } else {
                     Color(nsColor: .textBackgroundColor)
@@ -647,6 +660,8 @@ struct BrowserPane: View {
         // `browser_download_cancel` asked: the host stops each, and reports it once WebKit has.
         host.cancelRequested(now.downloads, scope: scope, pane: pane.id)
         host.prune(now.downloads, scope: scope, pane: pane.id)
+        // What the pane shows now: a tab that left floats, a floating tab that came back goes inline.
+        if !isCovered { host.pictureInPicture.show(scope: scope, pane: pane.id, tab: now.active) }
     }
 
     /// The find bar's state to the active tab's page, and the keyboard: ⌘F (a `browser_find` —
@@ -707,16 +722,22 @@ struct BrowserPane: View {
 /// more (`GitDiffHostView`'s shape).
 struct BrowserPageHost: NSViewRepresentable {
     let webView: WKWebView
+    /// The window the container joined: picture in picture minimises with it and docks in it.
+    let onWindow: (NSWindow) -> Void
 
     func makeNSView(context: Context) -> NSView {
-        let container = NSView()
+        let container = BrowserPageContainer()
+        container.onWindow = onWindow
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
         attach(to: container)
         return container
     }
 
-    func updateNSView(_ container: NSView, context: Context) { attach(to: container) }
+    func updateNSView(_ container: NSView, context: Context) {
+        (container as? BrowserPageContainer)?.onWindow = onWindow
+        attach(to: container)
+    }
 
     static func dismantleNSView(_ container: NSView, coordinator: ()) {
         container.subviews.forEach { $0.removeFromSuperview() }
@@ -728,7 +749,20 @@ struct BrowserPageHost: NSViewRepresentable {
         webView.removeFromSuperview()
         webView.frame = container.bounds
         webView.autoresizingMask = [.width, .height]
+        // A view docked for Restore is invisible (`BrowserPictureInPictureHost.dock`); taken, it shows.
+        webView.alphaValue = 1
         container.addSubview(webView)
+    }
+}
+
+/// `BrowserPageHost`'s container: says which window it joined, so picture in picture minimises with
+/// that window and docks in it (3d-iii), with no pane reference.
+final class BrowserPageContainer: NSView {
+    var onWindow: ((NSWindow) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window { onWindow?(window) }
     }
 }
 

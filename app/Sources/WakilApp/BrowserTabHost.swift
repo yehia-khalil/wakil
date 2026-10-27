@@ -126,6 +126,15 @@ final class BrowserTabHost {
 
     // MARK: Web views
 
+    /// The tab a live web view is filed under, read now: a pop-up's view moves from its predicted
+    /// key to its tab's (`adoptPopup`), and a place's new name moves every key (`rehome`).
+    func key(of view: WKWebView) -> Key? {
+        views.first { $0.value === view }?.key
+    }
+
+    /// Whether `scope` is a place's old name that the canvas may still draw a moment after `rehome`.
+    func isOldName(_ scope: LayoutScope) -> Bool { renamed[scope] != nil }
+
     /// The tab's web view if it is live, without making one or touching its recency.
     func existing(scope: LayoutScope, pane: String, tab: String) -> BrowserWebView? {
         views[Key(scope: scope, pane: pane, tab: tab)]
@@ -272,6 +281,7 @@ final class BrowserTabHost {
             guard let id else {
                 delegate.detach()
                 view.stopLoading()
+                self.pictureInPicture.forget(view: view)
                 return
             }
             let key = Key(scope: scope, pane: pane, tab: id)
@@ -279,6 +289,7 @@ final class BrowserTabHost {
             guard self.file(view, delegate, under: key, placeholder: false) else {
                 delegate.detach()
                 view.stopLoading()
+                self.pictureInPicture.forget(view: view)
                 return
             }
             delegate.tab = id
@@ -344,6 +355,7 @@ final class BrowserTabHost {
         for tracker in downloads.values where tracker.scope == from { tracker.scope = to }
         renamed = renamed.mapValues { $0 == from ? to : $0 }
         renamed[from] = to
+        pictureInPicture.rehome(from: from, to: to)
         if let drawn = model?.drawnScope, drawn == from || drawn == to {
             for key in views.keys where key.scope == to { renamedPanes.insert(Key(scope: to, pane: key.pane, tab: "")) }
         }
@@ -789,6 +801,9 @@ final class BrowserTabHost {
         let key = Key(scope: scope, pane: pane, tab: tab)
         let files = delegates[key]?.files
             ?? model?.browserHome.flatMap { try? BrowserOrgFiles(home: $0, org: scope.organization) }
+        // Releasing the view ends a float with no word from WebKit (ruling 11): said first, and the
+        // drop does not wait.
+        pictureInPicture.closed(key)
         drop(key, mode: .forget)
         files.map { try? FileManager.default.removeItem(at: stateURL($0, scope: scope, pane: pane, tab: tab)) }
     }
@@ -844,7 +859,9 @@ final class BrowserTabHost {
     }
 
     private func evictBeyondLimit(keeping kept: Key) {
-        while views.count > Self.limit, let oldest = recency.first(where: { $0 != kept }) {
+        // The floating tab's view is never evicted (ruling 11): evicting it would end the float.
+        let floating = pictureInPicture.floatingKey
+        while views.count > Self.limit, let oldest = recency.first(where: { $0 != kept && $0 != floating }) {
             drop(oldest, mode: .evict)
         }
     }
@@ -858,7 +875,10 @@ final class BrowserTabHost {
         dismissPrompts(key)
         certificates[key] = nil
         crashed.remove(key)
+        // A store cleared under a floating view ends its float as a close does.
+        if mode == .discard, key == pictureInPicture.floatingKey { pictureInPicture.closed(key) }
         if let view {
+            pictureInPicture.forget(view: view)
             if mode == .evict { saveState(of: view, scope: key.scope, pane: key.pane, tab: key.tab, files: delegate?.files) }
             delegate?.detach()
             view.stopLoading()

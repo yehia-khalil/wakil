@@ -12,6 +12,14 @@ import WebKit
 final class BrowserWebView: WKWebView {
     /// Esc while the page loads: the tab's `browser_stop` (Rule 4). Answers whether it was used.
     var stopOnEscape: (@MainActor () -> Bool)?
+    /// Where the page last stood in its window, in window coordinates, kept as it leaves: Restore
+    /// docks a view with no window there (3d-iii ruling 5).
+    private(set) var lastPageFrame: NSRect?
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, window != nil { lastPageFrame = convert(bounds, to: nil) }
+        super.viewWillMove(toWindow: newWindow)
+    }
 
     /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, and ⌘⇧W (global constraints), **by physical key**
     /// (`kVK_ANSI_*`), so they are Wakil's on every keyboard layout — a character match fails on a
