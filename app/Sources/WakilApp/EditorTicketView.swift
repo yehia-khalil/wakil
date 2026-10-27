@@ -35,6 +35,9 @@ struct EditorTicketView: View {
     /// A write's refusal, whole (Rule 8), until the next write.
     @State private var writeError: String?
     @FocusState private var fieldFocus: String?
+    /// The record line under the pointer, and the one whose ✕ holds the keyboard: where ✕ shows.
+    @State private var hoveredLine: String?
+    @FocusState private var removeFocus: String?
 
     private var root: String? { ticketFollowedRoot(tab: tab, roots: state.roots) }
     private var branch: TicketBranchState? { root.flatMap { state.branches[$0] } }
@@ -401,14 +404,22 @@ struct EditorTicketView: View {
             browsed = t.root + "/" + t.path
             Task { await dispatch("review_open", ["thread": .string(t.id)]) }
         } label: {
-            HStack(spacing: 7) {
-                TicketAvatar(name: t.comments.first?.author ?? "")
-                Text(row.place).font(.system(size: 10.5, design: .monospaced)).opacity(0.6)
-                    .lineLimit(1).truncationMode(.head)
-                Text(row.words).font(.system(size: 11.5)).lineLimit(1)
-                Spacer(minLength: Space.s)
-                if let replies = row.replies { Text(replies).dimmed().font(.system(size: 10.5)) }
+            // Two lines so a narrow column reads the row whole (walk, 2026-10-27): the avatar, the
+            // place — cut from the middle, so the line number always shows — and the replies; then
+            // the comment's first words, wrapping to two lines.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 7) {
+                    TicketAvatar(name: t.comments.first?.author ?? "")
+                    Text(row.place).font(.system(size: 10.5, design: .monospaced)).opacity(0.6)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: Space.s)
+                    if let replies = row.replies { Text(replies).dimmed().font(.system(size: 10.5)).fixedSize() }
+                }
+                Text(row.words).font(.system(size: 11.5)).lineLimit(2).truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 23)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 3).padding(.horizontal, 4)
             .modifier(TicketRowTint(selected: selected))
             .contentShape(Rectangle())
@@ -435,12 +446,14 @@ struct EditorTicketView: View {
     /// kind. Empty, it says what the record is for instead of drawing five empty headings.
     private func record(_ r: TicketRecordState) -> some View {
         let count = ticketRecordCount(r)
-        return VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("Record").microLabel()
                 if let count {
+                    // Wraps rather than cut (walk, 2026-10-27): every kind's count is read.
                     Text(count).font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(EditorPaneStyle.text.opacity(0.7)).lineLimit(1).truncationMode(.tail)
+                        .foregroundStyle(EditorPaneStyle.text.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if count == nil && adding == nil {
@@ -456,7 +469,7 @@ struct EditorTicketView: View {
                 // (Rule 2); left empty it goes, and Esc drops it.
                 recordRow(section) {
                     TicketField(value: "", placeholder: section.placeholder, id: "editor.ticket.new:\(section.rawValue)",
-                                focus: $fieldFocus, arrivesFocused: true, left: { adding = nil },
+                                focus: $fieldFocus, wraps: true, arrivesFocused: true, left: { adding = nil },
                                 cancel: { adding = nil }) { text in
                         adding = nil
                         write(["key": .string(r.key), "section": .string(section.rawValue), "op": .string("add"),
@@ -505,38 +518,47 @@ struct EditorTicketView: View {
         .padding(.top, 2)
     }
 
-    /// One row of the record: its kind in the label column, then `content`, then `trailing`.
+    /// One entry of the record, stacked full width (walk, 2026-10-27): its kind as a micro-label in
+    /// its hue with `trailing` at the right, then `content` under it. Entries are set apart by the
+    /// list's spacing, never by a label column — that column cut every line at a normal width.
     private func recordRow(_ section: TicketSection, @ViewBuilder _ content: () -> some View,
                            @ViewBuilder trailing: () -> some View) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 7) {
-            Text(section.kind).font(.system(size: 9, weight: .semibold)).tracking(1.44).textCase(.uppercase)
-                .foregroundStyle(TicketKindStyle.colour(section))
-                .frame(width: 64, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 1) { content() }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            trailing()
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(section.kind).font(.system(size: 9, weight: .semibold)).tracking(1.44).textCase(.uppercase)
+                    .foregroundStyle(TicketKindStyle.colour(section))
+                    .lineLimit(1).fixedSize()
+                Spacer(minLength: Space.s)
+                trailing()
+            }
+            content()
         }
-        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// One line: its fields editable and kept on blur, removable without a question (Rule 1: the
-    /// record's log keeps it), and who wrote it — when, and any edit, under the pointer.
+    /// record's log keeps it), and who wrote it — when, and any edit, under the pointer. The detail
+    /// (why, how, what) shows only when it holds something or the line is being edited, so an empty
+    /// one never draws a placeholder; ✕ shows under the pointer or while the line has the keyboard.
     private func recordLine(_ key: String, _ section: TicketSection, _ line: TicketLineState) -> some View {
-        recordRow(section) {
+        let rowID = "editor.ticket.line:\(section.rawValue):\(line.id)"
+        let editing = fieldFocus.map { $0 == rowID || $0.hasPrefix(rowID + ":") } ?? false
+        let active = editing || hoveredLine == rowID || removeFocus == rowID
+        return recordRow(section) {
             TicketField(value: line.value(section.mainField), placeholder: section.placeholder,
-                        id: "editor.ticket.line:\(section.rawValue):\(line.id)", focus: $fieldFocus) { now in
+                        id: rowID, focus: $fieldFocus, wraps: true) { now in
                 edit(key, section, line, field: section.mainField, now)
             }
             if let second = section.secondField {
-                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                    Text(second.label).dimmed().font(.system(size: 11))
-                    TicketField(value: line.value(second.field), placeholder: second.label,
-                                id: "editor.ticket.line:\(section.rawValue):\(line.id):\(second.field)", focus: $fieldFocus) { now in
-                        edit(key, section, line, field: second.field, now)
-                    }
-                    .font(.system(size: 11))
+                // Folded away rather than removed while empty, so leaving it still keeps what was
+                // typed (Rule 2) and Tab from the line still reaches it.
+                TicketField(value: line.value(second.field), placeholder: second.label,
+                            id: "\(rowID):\(second.field)", focus: $fieldFocus, wraps: true) { now in
+                    edit(key, section, line, field: second.field, now)
                 }
+                .font(.system(size: 11))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.6))
+                .modifier(TicketFolded(folded: !editing && line.value(second.field).isEmpty))
             }
         } trailing: {
             Text(ticketLineWho(line)).font(.system(size: 10, design: .monospaced))
@@ -544,12 +566,20 @@ struct EditorTicketView: View {
                 .help(ticketLineCaption(line))
                 .accessibilityIdentifier("editor.ticket.by:\(section.rawValue):\(line.id)")
             Button { write(["key": .string(key), "section": .string(section.rawValue), "op": .string("remove"),
-                            "id": .string(line.id)]) } label: { Image(systemName: "xmark") }
-                .buttonStyle(.plain).font(.system(size: 9)).opacity(0.6)
+                            "id": .string(line.id)]) } label: { Image(systemName: "xmark").foregroundStyle(xmark(active)) }
+                .buttonStyle(.plain).font(.system(size: 9))
+                .focused($removeFocus, equals: rowID)
                 .help("Remove this line (the record's log keeps it)")
                 .accessibilityIdentifier("editor.ticket.remove:\(section.rawValue):\(line.id)")
         }
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { hoveredLine = rowID } else if hoveredLine == rowID { hoveredLine = nil }
+        }
     }
+
+    /// ✕'s colour: shown at 0.6, or clear — hidden by colour, not opacity, so it stays in the tree.
+    private func xmark(_ shown: Bool) -> Color { EditorPaneStyle.text.opacity(shown ? 0.6 : 0) }
 
     // MARK: - Writes
 
@@ -672,6 +702,9 @@ private struct TicketField: View {
     let placeholder: String
     let id: String
     var focus: FocusState<String?>.Binding
+    /// A long value wraps at the column's edge instead of scrolling inside the field; Return still
+    /// commits, and a line break from Option-Return or a paste never reaches the record.
+    var wraps = false
     var arrivesFocused = false
     var left: () -> Void = {}
     /// Esc drops what was typed, unsent, when given; without it Esc is not the field's.
@@ -683,7 +716,8 @@ private struct TicketField: View {
     @State private var cancelled = false
 
     var body: some View {
-        TextField(placeholder, text: $text)
+        TextField(placeholder, text: $text, axis: wraps ? .vertical : .horizontal)
+            .lineLimit(wraps ? 1...Int.max : 1...1)
             .textFieldStyle(.plain)
             .focused(focus, equals: id)
             .onSubmit { send(leaving: false) }
@@ -708,7 +742,8 @@ private struct TicketField: View {
     /// Once per edit: Enter then leaving sends the text once (`TicketFieldCommits`).
     private func send(leaving: Bool) {
         guard !cancelled else { return }
-        if let now = commits.commit(text, value: value) { commit(now) }
+        let typed = wraps ? apiSingleLineText(text) : text
+        if let now = commits.commit(typed, value: value) { commit(now) }
         if leaving { left() }
     }
 }
@@ -781,6 +816,16 @@ private struct TicketAvatar: View {
             .frame(width: 16, height: 16)
             .background(Circle().fill(Color(red: 0x2a / 255, green: 0x2f / 255, blue: 0x44 / 255)))
             .accessibilityHidden(true)
+    }
+}
+
+/// An empty detail field folded to nothing while its line is not being edited: still there, so
+/// its commit on leaving runs and the keyboard can reach it, but drawing no placeholder.
+private struct TicketFolded: ViewModifier {
+    let folded: Bool
+    func body(content: Content) -> some View {
+        // One branch, so folding never replaces the field and the keyboard stays in it.
+        content.frame(height: folded ? 0 : nil).clipped().opacity(folded ? 0 : 1).accessibilityHidden(folded)
     }
 }
 
