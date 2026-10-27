@@ -483,6 +483,23 @@ back on GitHub; production red on a handed chip; narrow widths.
 - **my call:** a handed agent starts in the project whose roots hold the branch; In flight gains
   "a live handed conversation".
 
+### After the builder check (2026-10-27, my calls)
+
+- **A PR with no ticket key counts, and is reachable.** It is a row named by its PR (`#215 · repo`)
+  in Waiting on you on the Landing and under `#` in ⌘P; opening it shows that branch in the Ticket
+  view's no-ticket case; Hand to agent works from it with the PR as the brief's subject. So the rail's
+  count always equals the rows a person can reach.
+- **One row per PR carries every reason.** A PR with two waiting threads and a failing check is one
+  row that counts 3 toward the rail; its words are its most urgent tier, then "+N more"
+  ("2 comments · +1 more"). The Go row gains the counts beside the state words.
+- **A review request on a repository no project holds** counts and shows; opening it says "Not open in
+  any project of this organisation" with **Open on GitHub ↗**, and Hand to agent is not offered for
+  it (an agent needs a root).
+- **A handed agent's draft and record writes name their place.** `review_reply_draft` and
+  `ticket_record_update` take an optional root and branch (validated against the place's roots, as
+  `ticket_show` already does); a background conversation passes them, so a draft lands without an
+  editor pane on screen. This is the plan's first task.
+
 ## Open questions
 
 1. A handed agent's push asks on the plane, though an ordinary agent's push is *allow* everywhere
