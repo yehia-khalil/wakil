@@ -36,7 +36,8 @@ struct BrowserFixture {
 /// A layout with one browser pane (no tabs yet) and the browser actions over it — `editorFixture`'s
 /// shape. `open` false leaves the canvas empty.
 func browserFixture(startPage: String = "", open: Bool = true, orgFiles: BrowserOrgFiles? = nil,
-                    removeData: BrowserDataRemover? = nil) async throws -> BrowserFixture {
+                    removeData: BrowserDataRemover? = nil,
+                    pullRequests: @escaping BrowserPullRequestsRead = { nil }) async throws -> BrowserFixture {
     let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
@@ -45,7 +46,7 @@ func browserFixture(startPage: String = "", open: Bool = true, orgFiles: Browser
     let panes = PaneStore(kinds: PaneKinds.standard)
     let settings = BrowserSettingsBox(SettingsBrowser(searchEngine: "google", startPage: startPage))
     await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { settings.current },
-                                 orgFiles: { orgFiles }, removeData: removeData)
+                                 orgFiles: { orgFiles }, removeData: removeData, pullRequests: pullRequests)
     return BrowserFixture(registry: registry, panes: panes, layout: layout, settings: settings, pane: pane)
 }
 
@@ -1131,4 +1132,257 @@ private func pinFixture() async throws -> (f: BrowserFixture, other: String, fil
     try files.setPins([], project: "web")
     try await f.dispatch("browser_restore", ["pane": .string(pane)], named: false)
     #expect(await f.panes.browserSnapshot(paneId: pane).tabs.map(\.url) == ["https://example.org/"])
+}
+
+// MARK: - The pull-request group (3d-i Task 11)
+
+/// What `ctx_github_pull_requests` answers in a test: a list, an absent reason, or a failure; counts
+/// the reads, and holds each until released when gated.
+final class PullRequestsReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reply: Result<JSONValue, Error>
+    private var gated: Bool
+    private var count = 0
+    init(_ items: [BrowserPullRequest] = [], gated: Bool = false) {
+        reply = .success(Self.reply(items))
+        self.gated = gated
+    }
+    static func reply(_ items: [BrowserPullRequest], absent: String? = nil) -> JSONValue {
+        var o: [String: JSONValue] = ["pullRequests": .array(items.map { pr in .object([
+            "number": .integer(Int64(pr.number)), "title": .string(pr.title), "url": .string(pr.url),
+            "repository": .string(pr.repository), "reason": .string(pr.reason),
+        ]) })]
+        if let absent { o["absent"] = .string(absent) }
+        return .object(["structuredContent": .object(o)])
+    }
+    func answer(_ items: [BrowserPullRequest]) { lock.withLock { reply = .success(Self.reply(items)) } }
+    func answer(absent: String) { lock.withLock { reply = .success(Self.reply([], absent: absent)) } }
+    func fail(_ error: Error) { lock.withLock { reply = .failure(error) } }
+    func release() { lock.withLock { gated = false } }
+    func hold() { lock.withLock { gated = true } }
+    var reads: Int { lock.withLock { count } }
+    var read: BrowserPullRequestsRead {
+        { [self] in
+            lock.withLock { count += 1 }
+            for _ in 0..<5_000 where lock.withLock({ gated }) { try await Task.sleep(nanoseconds: 1_000_000) }
+            return try lock.withLock { try reply.get() }
+        }
+    }
+}
+
+func pr(_ n: Int, _ title: String = "Fix", repo: String = "initech/app") -> BrowserPullRequest {
+    BrowserPullRequest(number: n, title: "\(title) \(n)", url: "https://github.com/\(repo)/pull/\(n)",
+                       repository: repo, reason: "author")
+}
+
+/// A browser pane on organisation `initech`'s canvas with one loaded loose tab, its pull requests
+/// read by `reader`.
+private func prFixture(_ reader: PullRequestsReader) async throws -> BrowserFixture {
+    var f = try await browserFixture(open: false, pullRequests: reader.read)
+    let scope = LayoutScope(organization: "initech", project: "web", environment: "e")
+    await f.layout.switchScope(to: scope)
+    await f.panes.switchScope(to: scope)
+    f.pane = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    await f.panes.updateBrowser(paneId: f.pane) { s in for i in s.tabs.indices { s.tabs[i].loaded = true } }
+    return f
+}
+
+private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.group == "pr" } }
+
+@Test func pullRequestsFillAGroupCollapsedOfUnloadedTabs() async throws {
+    let reader = PullRequestsReader([pr(4), pr(9, repo: "initech/api")])
+    let f = try await prFixture(reader)
+    let reply = try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(reply == .object(["org": .string("initech"), "count": .integer(2), "absent": .null, "error": .null,
+                              "refreshing": .bool(false)]))
+    let s = await f.snapshot()
+    let group = try #require(s.group("pr"))
+    #expect(group.kind == .pullRequests && group.name == "Pull Requests" && group.collapsed)
+    let tabs = prTabs(s)
+    #expect(tabs.map(\.title) == ["Fix 4 · initech/app#4", "Fix 9 · initech/api#9"])
+    #expect(tabs.map(\.pullRequest) == [pr(4).url, pr(9, repo: "initech/api").url])
+    #expect(tabs.allSatisfy { !$0.loaded && $0.command == nil })
+    #expect(s.activeTab?.url == "https://example.com/a", "a new pull-request tab never becomes the selected one")
+    // Not saved as tabs; the group is, collapsed.
+    let saved = try #require(await f.layout.browserTabs(id: f.pane))
+    #expect(saved.tabs.map(\.url) == ["https://example.com/a"])
+    #expect(saved.groups.first { $0.id == "pr" }?.collapsed == true)
+    // read_pane carries the group's error and refreshing.
+    let group2 = replyGroups(try await f.dispatch("browser_find_close")).first { $0["id"] == .string("pr") }
+    #expect(group2?["error"] == .null && group2?["refreshing"] == .bool(false))
+}
+
+@Test func aRefreshKeepsListedTabsAddsNewDropsGone() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let first = prTabs(await f.snapshot())
+    // Tab of #1 has loaded its page.
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        if let i = s.tabs.firstIndex(where: { $0.pullRequest == pr(1).url }) {
+            s.tabs[i].loaded = true
+            s.tabs[i].title = "Fix 1 by someone · Pull Request #1 · initech/app"
+        }
+    }
+    reader.answer([pr(3), pr(1, "Renamed")])
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let after = prTabs(await f.snapshot())
+    #expect(after.map(\.pullRequest) == [pr(3).url, pr(1).url], "the list's order")
+    #expect(after[1].id == first[0].id, "a listed tab stays")
+    #expect(after[1].title == "Fix 1 by someone · Pull Request #1 · initech/app", "with its page")
+    #expect(!after.contains { $0.id == first[1].id }, "a gone one goes")
+    #expect(after[0].loaded == false && after[0].title == "Fix 3 · initech/app#3")
+}
+
+@Test func theActivePullRequestTabStaysAsALooseTab() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let tab = try #require(prTabs(await f.snapshot()).last)
+    try await f.dispatch("browser_select_tab", ["tab": .string(tab.id)])
+    reader.answer([pr(1)])
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let s = await f.snapshot()
+    let kept = try #require(s.tabs.first { $0.id == tab.id })
+    #expect(s.active == tab.id, "Rule 6: the operator stays where they were")
+    #expect(kept.group == nil && kept.pullRequest == nil, "a plain loose tab now")
+    #expect(prTabs(s).map(\.pullRequest) == [pr(1).url])
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.contains { $0.id == tab.id }, "and saved as one")
+}
+
+@Test func aFailedRefreshKeepsTheListAndShowsTheErrorWhole() async throws {
+    let reader = PullRequestsReader([pr(1)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let why = "github.com refused the pull-request search (HTTP 401): Bad credentials"
+    reader.fail(StandardActionError.serverError(action: "ctx_github_pull_requests", message: why))
+    let reply = try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    guard case .object(let o) = reply else { Issue.record("no reply"); return }
+    #expect(o["error"] == .string(why) && o["count"] == .integer(1))
+    #expect(prTabs(await f.snapshot()).map(\.pullRequest) == [pr(1).url], "the last list is kept")
+    let group = try #require(replyGroups(try await f.dispatch("browser_find_close")).first { $0["id"] == .string("pr") })
+    #expect(group["error"] == .string(why) && group["refreshing"] == .bool(false))
+    // The next good read clears it.
+    reader.answer([pr(1)])
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(await f.panes.browserPullRequests(org: "initech")?.error == nil)
+}
+
+@Test func aRefreshWhileOneRunsFetchesOnce() async throws {
+    let reader = PullRequestsReader([pr(1)], gated: true)
+    let f = try await prFixture(reader)
+    let first = Task { try await f.dispatch("browser_pull_requests_refresh", [:], named: false) }
+    for _ in 0..<5_000 where reader.reads == 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+    let second = try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    guard case .object(let o) = second else { Issue.record("no reply"); return }
+    #expect(o["refreshing"] == .bool(true), "returned at once")
+    let group = replyGroups(try await f.dispatch("browser_find_close")).first { $0["id"] == .string("pr") }
+    #expect(group == nil, "no list yet, so no group")
+    let other = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.org/"), "pane": .string(other)])
+    #expect(await f.panes.browserSnapshot(paneId: other).group("pr") == nil, "a pane opened meanwhile neither")
+    reader.release()
+    _ = try await first.value
+    #expect(reader.reads == 1)
+    #expect(prTabs(await f.snapshot()).count == 1)
+    #expect(prTabs(await f.panes.browserSnapshot(paneId: other)).count == 1, "the answer fills both")
+}
+
+@Test func absentMeansNoGroupAndNoError() async throws {
+    let reader = PullRequestsReader([pr(1)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(await f.snapshot().group("pr") != nil)
+    let why = "No pull-request group: initech has no GitHub account."
+    reader.answer(absent: why)
+    let reply = try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(reply == .object(["org": .string("initech"), "count": .integer(0), "absent": .string(why), "error": .null,
+                              "refreshing": .bool(false)]))
+    let s = await f.snapshot()
+    #expect(s.group("pr") == nil && prTabs(s).isEmpty)
+    #expect(s.tabs.map(\.url) == ["https://example.com/a"])
+}
+
+@Test func aNewPaneGetsTheCachedList() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let other = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.org/"), "pane": .string(other)])
+    let o = await f.panes.browserSnapshot(paneId: other)
+    #expect(prTabs(o).map(\.pullRequest) == [pr(1).url, pr(2).url])
+    #expect(o.group("pr")?.collapsed == true)
+    #expect(o.activeTab?.url == "https://example.org/")
+    #expect(reader.reads == 1, "from the list kept, not a read")
+}
+
+@Test func pullRequestTabsAreNeverGrouped() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    // Both pages finish loading on github.com: the site rule leaves them in the pull-request group.
+    for tab in prTabs(await f.snapshot()) {
+        for loading in [true, false] {
+            await f.panes.browserPageDidReport(paneId: f.pane, tab: tab.id, BrowserPageReport(
+                url: tab.url, title: "PR", isLoading: loading, progress: loading ? 0.5 : 1, canGoBack: false,
+                canGoForward: false, failure: nil))
+        }
+    }
+    let s = await f.snapshot()
+    #expect(prTabs(s).count == 2 && s.groups.map(\.id) == ["pr"])
+    // A tab opened from one waits for the site rule rather than joining the pull-request group.
+    let opener = try #require(prTabs(s).first?.id)
+    try await f.dispatch("browser_new_tab", ["url": .string("https://github.com/initech/app/pull/1/files"),
+                                             "opener": .string(opener)])
+    let after = await f.snapshot()
+    #expect(prTabs(after).count == 2)
+}
+
+@Test func aPaneWhoseOnlyTabsWerePullRequestsIsRestoredWithItsGroup() async throws {
+    let reader = PullRequestsReader([pr(1)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    try await f.dispatch("browser_group", ["action": .string("expand"), "group": .string("pr")])
+    try await f.dispatch("browser_tab_column", ["hidden": .bool(true)])
+    let loose = try #require(await f.snapshot().tabs.first { $0.group == nil }?.id)
+    try await f.dispatch("browser_close_tab", ["tab": .string(loose)])
+    let saved = try #require(await f.layout.browserTabs(id: f.pane))
+    #expect(saved.tabs.isEmpty && saved.groups.map(\.id) == ["pr"])
+    // A relaunch: nothing in the store, no list read yet.
+    await f.panes.drop(paneId: f.pane)
+    await f.panes.browserSetPullRequests(org: "initech", BrowserPullRequests())
+    let pane = try #require(await f.layout.snapshot().panes.first { $0.id == f.pane })
+    #expect(BrowserPaneKind.restoreStep(for: pane) != nil)
+    try await f.dispatch("browser_restore", ["pane": .string(f.pane)], named: false)
+    let s = await f.snapshot()
+    #expect(s.group("pr")?.collapsed == false && s.tabColumnHidden, "its group and column came back")
+    #expect(await f.layout.snapshot().panes.contains { $0.id == f.pane }, "an empty pr group keeps the pane")
+}
+
+@Test func aListReadAcrossAnOrganisationSwitchIsDropped() async throws {
+    let reader = PullRequestsReader([pr(1)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    reader.hold()
+    reader.answer([pr(7)])
+    let registry = f.registry
+    let running = Task {
+        try await registry.dispatch(name: "browser_pull_requests_refresh", params: .object([:]), origin: .agent,
+                                    caller: .test("staging"), confirmation: nil)
+    }
+    for _ in 0..<5_000 where reader.reads < 2 { try await Task.sleep(nanoseconds: 1_000_000) }
+    let globex = LayoutScope(organization: "globex", project: "web", environment: "e")
+    await f.layout.switchScope(to: globex)
+    await f.panes.switchScope(to: globex)
+    reader.release()
+    _ = try await running.value
+    #expect(await f.panes.browserPullRequests(org: "globex") == nil, "the answer is filed under no organisation")
+    let acme = try #require(await f.panes.browserPullRequests(org: "initech"))
+    #expect(acme.items.map(\.number) == [1] && !acme.refreshing)
+    #expect(await !f.panes.holdsContents(paneId: f.pane), "globex's canvas is untouched")
+    let initech = LayoutScope(organization: "initech", project: "web", environment: "e")
+    await f.layout.switchScope(to: initech)
+    await f.panes.switchScope(to: initech)
+    #expect(prTabs(await f.snapshot()).map(\.pullRequest) == [pr(1).url], "nor initech's panes")
 }

@@ -7,7 +7,8 @@ import Testing
 @MainActor
 private func browserWindow(
     orgFiles: BrowserOrgFiles? = nil, removeData: BrowserDataRemover? = nil,
-    context: (any ToolCaller)? = nil, quickModel: (any QuickModel)? = nil
+    context: (any ToolCaller)? = nil, quickModel: (any QuickModel)? = nil,
+    pullRequests: @escaping BrowserPullRequestsRead = { nil }
 ) async -> (WindowModel, FakeFiles, LayoutStore, journal: URL, panes: PaneStore) {
     let journalDir = testScratchRoot.appendingPathComponent("browser-window-\(UUID().uuidString)")
     let registry = ActionRegistry(journalDirectory: journalDir, sessionId: "browser-window")
@@ -31,7 +32,7 @@ private func browserWindow(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
         gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })
     await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { .defaults },
-                                 orgFiles: { orgFiles }, removeData: removeData)
+                                 orgFiles: { orgFiles }, removeData: removeData, pullRequests: pullRequests)
     return (model, files, layout, journalDir.appendingPathComponent("browser-window.jsonl"), panes)
 }
 
@@ -687,12 +688,14 @@ private func browserWindow(
 /// one local quick provider serving `respond` (`WindowModelCommitDraftTests`' shape).
 private actor NamingContext: ToolCaller {
     private var project = "alpha"
+    private var org = "acme"
     func switchTo(project: String) { self.project = project }
+    func switchTo(org: String) { self.org = org }
     func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
         switch name {
         case "get_context":
             return .object(["structuredContent": .object([
-                "Org": .string("acme"), "Environment": .string("staging"),
+                "Org": .string(org), "Environment": .string("staging"),
                 "Project": .object(["name": .string(project)]), "RootPaths": .array([]),
             ])])
         case "config_tree":
@@ -979,6 +982,129 @@ private actor NamingModel: QuickModel {
         try files.setPins([], project: "alpha")
         await show(window, context, "alpha")
         #expect(!window.layoutSnapshot.panes.contains { $0.id == pane }, "its last tab went, and the pane with it")
+    }
+}
+
+// MARK: - 3d-i Task 11: the pull-request group's refresh
+
+@Suite @MainActor struct WindowModelBrowserPullRequestsTests {
+    /// A window on organisation `acme` reading pull requests from `reader`, its loop's interval
+    /// `interval`, and no browser pane yet.
+    private func window(_ reader: PullRequestsReader, interval: Duration = .seconds(300)) async -> WindowModel {
+        let (window, _, _, _, _) = await browserWindow(context: NamingContext(), pullRequests: reader.read)
+        window.browserPullRequestsInterval = interval
+        window.browserTabsDelay = .milliseconds(1)
+        await window.refreshContext()
+        return window
+    }
+
+    private func openBrowser(_ window: WindowModel) async throws -> String {
+        await window.dispatchFromSurface("browser_open", .object(["url": .string("https://example.com/")]))
+        await window.refreshLayout()
+        return try #require(window.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
+    }
+
+    /// Waits (up to 5 s) until `reader` has read `count` times.
+    private func waitFor(_ reader: PullRequestsReader, reads count: Int) async {
+        for _ in 0..<5_000 where reader.reads < count { try? await Task.sleep(nanoseconds: 1_000_000) }
+    }
+
+    @Test func theLoopRefreshesWhenTheFirstBrowserPaneOpensAndStopsWithTheLast() async throws {
+        let reader = PullRequestsReader([pr(1)])
+        let window = await window(reader, interval: .milliseconds(20))
+        try await Task.sleep(nanoseconds: 60_000_000)
+        #expect(reader.reads == 0, "no browser pane, no read")
+        #expect(!window.browserPullRequestsLoopRuns)
+        let pane = try await openBrowser(window)
+        #expect(window.browserPullRequestsLoopRuns)
+        await waitFor(reader, reads: 3)
+        #expect(reader.reads >= 3, "a refresh at once, then one each interval")
+        await waitFor(reader, reads: 4)
+        await window.refreshPanes()
+        #expect(window.browser(pane)?.tabs.contains { $0.pullRequest == pr(1).url } == true)
+        await window.closePane(id: pane)
+        await window.refreshLayout()
+        #expect(!window.browserPullRequestsLoopRuns, "it ends with the last browser pane")
+        let after = reader.reads
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(reader.reads <= after + 1, "at most the read already under way")
+    }
+
+    @Test func cmdRWithTheHeaderFocusedRefreshes() async throws {
+        let reader = PullRequestsReader([pr(1)])
+        let window = await window(reader)
+        let pane = try await openBrowser(window)
+        await window.focusPane(id: pane)
+        await waitFor(reader, reads: 1)
+        for _ in 0..<5_000 where window.browser(pane)?.group("pr") == nil {
+            try await Task.sleep(nanoseconds: 1_000_000)
+            await window.refreshPanes()
+        }
+        #expect(reader.reads == 1)
+        // ⌘R with the keyboard on the page reloads it, and reads nothing.
+        #expect(await window.browserKey(.reload))
+        #expect(reader.reads == 1)
+        window.browserHeaderFocus = BrowserHeaderFocus(pane: pane, group: "pr")
+        let seq = window.browser(pane)?.activeTab?.command?.seq
+        #expect(await window.browserKey(.reload))
+        #expect(reader.reads == 2, "the header's ⌘R refreshes the list")
+        #expect(window.browser(pane)?.activeTab?.command?.seq == seq, "and reloads no page")
+    }
+
+    @Test func anOrganisationChangeEndsTheLoopUntilTheSwitchIsOver() async throws {
+        let reader = PullRequestsReader([pr(1)])
+        let window = await window(reader, interval: .milliseconds(20))
+        _ = try await openBrowser(window)
+        await waitFor(reader, reads: 2)
+        await window.invalidateForOrgChange()
+        #expect(!window.browserPullRequestsLoopRuns)
+        await window.refreshLayout()
+        #expect(!window.browserPullRequestsLoopRuns, "held while the switch runs, though the canvas still shows the pane")
+    }
+
+    @Test func anOrganisationSwitchStopsTheLoop() async throws {
+        let reader = PullRequestsReader([pr(1)])
+        let context = NamingContext()
+        let (window, _, _, _, panes) = await browserWindow(context: context, pullRequests: reader.read)
+        window.browserPullRequestsInterval = .milliseconds(20)
+        window.browserTabsDelay = .milliseconds(1)
+        await window.refreshContext()
+        let pane = try await openBrowser(window)
+        await waitFor(reader, reads: 2)
+        window.browserHeaderFocus = BrowserHeaderFocus(pane: pane, group: "pr")
+        // A read under way when the switch begins: it answers the incoming organisation's list.
+        reader.hold()
+        let held = reader.reads
+        await waitFor(reader, reads: held + 1)
+        await context.switchTo(org: "globex")
+        await window.setOrganization("globex")
+        #expect(window.organization == "globex")
+        #expect(!window.browserPullRequestsLoopRuns, "globex's canvas shows no browser pane")
+        #expect(window.browserHeaderFocus == nil && window.browserPullRequestsAbsent == nil)
+        reader.answer([pr(7)])
+        reader.release()
+        let after = reader.reads
+        try await Task.sleep(nanoseconds: 150_000_000)
+        #expect(reader.reads == after, "no read after the switch")
+        #expect(await panes.browserPullRequests(org: "globex") == nil, "the late answer is filed under no one")
+        #expect(await panes.browserPullRequests(org: "acme")?.items.map(\.number) == [1], "nor over acme's")
+        // Back on acme, whose canvas shows the browser pane: once the switch is over, the loop runs again.
+        await context.switchTo(org: "acme")
+        await window.setOrganization("acme")
+        #expect(window.layoutSnapshot.panes.contains { $0.id == pane })
+        #expect(window.browserPullRequestsLoopRuns)
+        await waitFor(reader, reads: after + 1)
+        #expect(reader.reads > after)
+    }
+
+    @Test func settingsReadsWhyThereIsNoGroup() async throws {
+        let reader = PullRequestsReader()
+        let why = "No pull-request group: acme has no GitHub account."
+        reader.answer(absent: why)
+        let window = await window(reader)
+        _ = try await openBrowser(window)
+        for _ in 0..<5_000 where window.browserPullRequestsAbsent == nil { try await Task.sleep(nanoseconds: 1_000_000) }
+        #expect(window.browserPullRequestsAbsent == why)
     }
 }
 

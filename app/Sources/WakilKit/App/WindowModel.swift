@@ -2312,6 +2312,14 @@ public final class WindowModel {
         browserNamingAsked = []
         for task in browserNamingTasks.values { task.cancel() }
         browserNamingTasks = [:]
+        // 3d-i ruling 19: the pull-request loop reads the outgoing organisation; it ends here, and
+        // is held until `setOrganization` has shown the incoming canvas — a read started between
+        // would name the incoming organisation while the store still files the outgoing one's.
+        // The header focus names a pane of the screen being left (pane ids repeat).
+        stopBrowserPullRequestsLoop()
+        browserPullRequestsHeld = true
+        browserPullRequestsAbsent = nil
+        browserHeaderFocus = nil
         // The store's copy for the outgoing org goes too: coming back before a re-read must not
         // price from a list that may be stale (`organization` still names the outgoing org here).
         if !organization.isEmpty { await panes.browserSetSites(org: organization, .unread) }
@@ -4993,6 +5001,8 @@ public final class WindowModel {
         // or `readLayoutSnapshot`, so the watchers follow the editor panes from these two.
         await syncGitWatcher()
         await syncEditorWatcher()
+        // 3d-i ruling 19: the pull-request loop follows whether a browser pane is on the canvas.
+        syncBrowserPullRequestsLoop()
         if layoutSnapshot.withoutTransientState != before.withoutTransientState {
             await persistLayout()
         } else {
@@ -5793,7 +5803,14 @@ public final class WindowModel {
         case .focusAddress:
             guard s.activeTab != nil else { return true }
             name = "browser_focus_address"
-        case .reload: name = "browser_reload"
+        case .reload:
+            // ⌘R with the pull-request group's header focused refreshes the list now (ruling 19).
+            if let header = browserHeaderFocus, header.pane == pane, header.group == "pr",
+               s.groups.contains(where: { $0.id == "pr" && $0.kind == .pullRequests }) {
+                await refreshBrowserPullRequests()
+                return true
+            }
+            name = "browser_reload"
         case .back: name = "browser_back"
         case .forward: name = "browser_forward"
         case .find:
@@ -5950,7 +5967,8 @@ public final class WindowModel {
             guard await browserScopeIsShown(scope) else { break }
             guard await panes.holds(BrowserPaneKind.self, pane) else { continue }
             let before = await panes.browserSnapshot(paneId: pane)
-            if await panes.browserReconcilePins(paneId: pane, pins: pins) == 0 {
+            await panes.browserReconcilePins(paneId: pane, pins: pins)
+            if await panes.browserSnapshot(paneId: pane).isEmptyOfTabsAndPullRequests {
                 try? await layout.close(id: pane)
                 await panes.drop(paneId: pane)
                 changed = true
@@ -5966,6 +5984,61 @@ public final class WindowModel {
         if changed { await refreshLayout() }
         await refreshPanes()
     }
+
+    // MARK: 3d-i: the pull-request group's refresh (ruling 19)
+
+    /// The group header the keyboard is on, set by the view: ⌘R on the pull-request group's
+    /// refreshes it. Org-derived: pane ids repeat from place to place.
+    public var browserHeaderFocus: BrowserHeaderFocus?
+    /// Why the active organisation has no pull-request group, for Settings (ruling 18); nil when
+    /// it has one or the list has not been read.
+    public private(set) var browserPullRequestsAbsent: String?
+    /// How often the loop refreshes: five minutes (shortened by tests).
+    @ObservationIgnored var browserPullRequestsInterval: Duration = .seconds(300)
+    /// The loop, while a browser pane is on the canvas.
+    @ObservationIgnored private var browserPullRequestsLoop: Task<Void, Never>?
+    /// An organisation switch is under way: the loop does not start (`invalidateForOrgChange` sets
+    /// it, `setOrganization` clears it once the incoming canvas is shown).
+    @ObservationIgnored private var browserPullRequestsHeld = false
+
+    /// Starts the loop when the canvas shows a browser pane and none runs — a refresh now, then
+    /// one every `browserPullRequestsInterval` — and ends it with the last browser pane.
+    private func syncBrowserPullRequestsLoop() {
+        let wanted = browserScope != nil && layoutSnapshot.panes.contains { $0.kind == "browser" }
+        if !wanted { return stopBrowserPullRequestsLoop() }
+        // Not while an organisation switch holds it (`setOrganization` releases it and syncs when
+        // it ends), and not from the last refresh of a loop just ended.
+        guard browserPullRequestsLoop == nil, !browserPullRequestsHeld, !Task.isCancelled else { return }
+        browserPullRequestsLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.refreshBrowserPullRequests()
+                let interval = self.browserPullRequestsInterval
+                try? await Task.sleep(for: interval)
+            }
+        }
+    }
+
+    private func stopBrowserPullRequestsLoop() {
+        browserPullRequestsLoop?.cancel()
+        browserPullRequestsLoop = nil
+    }
+
+    /// One refresh through the action (Invariant 2), the canvas re-read after; Settings' `absent`
+    /// from its answer. A loop ended meanwhile (an organisation switch) re-reads nothing, so its last
+    /// refresh never starts it again.
+    func refreshBrowserPullRequests() async {
+        guard case .object(let o)? = await dispatch("browser_pull_requests_refresh", .object([:])),
+              !Task.isCancelled else { return }
+        if case .string(let org)? = o["org"], org == organization {
+            if case .string(let why)? = o["absent"] { browserPullRequestsAbsent = why } else { browserPullRequestsAbsent = nil }
+        }
+        await refreshLayout()
+        await refreshPanes()
+    }
+
+    /// TEST-ONLY: whether the loop runs.
+    var browserPullRequestsLoopRuns: Bool { browserPullRequestsLoop != nil }
 
     /// 3c-iii ruling 1: a finished load without a failure is a visit, and so is a new address on a
     /// page that is not loading (`pushState`, an SPA router) unless only its `#fragment` moved; a
@@ -8880,6 +8953,8 @@ public final class WindowModel {
             organization = ""
             await activateLayout()
             switching = false
+            browserPullRequestsHeld = false
+            syncBrowserPullRequestsLoop()
             openShownSocket()
             // The reservation that just minted renames the Landing told about mid-switch.
             tellScreenChange()
@@ -8906,6 +8981,9 @@ public final class WindowModel {
         await refreshContext(probe: true)
         // The place landed on is shown, and the switch is over: its socket (`openShownSocket`).
         switching = false
+        // 3d-i ruling 19: the incoming canvas's pull-request loop, held while the switch ran.
+        browserPullRequestsHeld = false
+        syncBrowserPullRequestsLoop()
         openShownSocket()
         // The reservation that just minted renames the Landing told about mid-switch.
         tellScreenChange()
@@ -10533,6 +10611,7 @@ public final class WindowModel {
     public func shutdown() async {
         socketsClosed = true
         stopBackgroundFetch()
+        stopBrowserPullRequestsLoop()
         for agent in conversations.values { agent.eventPump?.cancel() }
         confirmationPump?.cancel()
         observationPump?.cancel()

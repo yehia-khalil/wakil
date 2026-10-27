@@ -141,6 +141,47 @@ extension PaneStore {
         }
     }
 
+    // MARK: - 3d-i: the pull-request group (ruling 18)
+
+    /// Organisation `org`'s pull-request list; nil until a refresh has begun for it.
+    public func browserPullRequests(org: String) -> BrowserPullRequests? {
+        kindState(BrowserPaneKind.self).pullRequests[org]
+    }
+
+    public func browserSetPullRequests(org: String, _ list: BrowserPullRequests) {
+        var shared = kindState(BrowserPaneKind.self)
+        shared.pullRequests[org] = list
+        setKindState(BrowserPaneKind.self, shared)
+    }
+
+    /// Marks `org`'s list refreshing, in one actor turn; false, and nothing changes, when a refresh
+    /// already runs (Rule 5: a second one is not started).
+    public func browserBeginPullRequestsRefresh(org: String) -> Bool {
+        var list = browserPullRequests(org: org) ?? BrowserPullRequests()
+        guard !list.refreshing else { return false }
+        list.refreshing = true
+        browserSetPullRequests(org: org, list)
+        return true
+    }
+
+    /// Puts organisation `org`'s list into pane `paneId` (ruling 18): no list leaves the pane as it
+    /// is; `absent` takes the `pr` group away; else the group — made collapsed when the pane has
+    /// none, an existing one kept with its pin and `collapsed` — holds one tab per pull request,
+    /// matched by `pullRequest`. Nothing for a pane this store holds nothing for. Answers whether
+    /// the pane's tabs or groups changed.
+    @discardableResult
+    public func browserApplyPullRequests(paneId: String, org: String) -> Bool {
+        guard holds(BrowserPaneKind.self, paneId), let list = browserPullRequests(org: org) else { return false }
+        // The first refresh has begun but read nothing yet: still no list (an empty list refreshing
+        // again changes nothing here either — the refresh applies its answer to every pane).
+        if list.refreshing, list.items.isEmpty, list.absent == nil, list.error == nil { return false }
+        return updateBrowser(paneId: paneId) { s -> Bool in
+            let before = (s.tabs, s.groups)
+            s.applyPullRequests(list)
+            return before.0 != s.tabs || before.1 != s.groups
+        }
+    }
+
     // MARK: - 3c-ii: the organisation's sites, each tab's read and the per-conversation allow-list
 
     public func browserSetSites(org: String, _ sites: BrowserSites) {
@@ -222,5 +263,45 @@ extension PaneStore {
             guard let i = s.tabs.firstIndex(where: { $0.id == tab }) else { return }
             s.tabs[i].lastRead = nil
         }
+    }
+}
+
+extension BrowserSnapshot {
+    /// Ruling 18's refresh. Listed tabs stay with their pages (an unloaded one takes the new title),
+    /// new ones are added unloaded and never selected, gone ones are removed — except the selected
+    /// tab, which leaves the group as a plain loose tab (Rule 6). The group's tabs follow the list's
+    /// order. `absent` removes the group the same way; a pinned group stays, empty. Ends in `arrange()`.
+    mutating func applyPullRequests(_ list: BrowserPullRequests) {
+        let wanted: [BrowserPullRequest] = list.absent == nil ? list.items : []
+        let urls = Set(wanted.map(\.url))
+        var kept: [String: BrowserTab] = [:]
+        for tab in tabs where tab.group == "pr" && tab.pullRequest != nil {
+            guard let url = tab.pullRequest else { continue }
+            if urls.contains(url), kept[url] == nil { kept[url] = tab; continue }
+            if tab.id == active, let i = tabs.firstIndex(where: { $0.id == tab.id }) {
+                tabs[i].group = nil
+                tabs[i].pullRequest = nil
+            }
+        }
+        // Everything else of the group goes: listed tabs come back below in the list's order.
+        tabs.removeAll { $0.group == "pr" && $0.pullRequest != nil }
+        if list.absent != nil {
+            if let g = groups.firstIndex(where: { $0.id == "pr" }), groups[g].pin == nil { groups.remove(at: g) }
+            return arrange()
+        }
+        if !groups.contains(where: { $0.id == "pr" }) {
+            groups.append(BrowserGroup(id: "pr", name: "Pull Requests", colour: nextColour(), collapsed: true,
+                                       kind: .pullRequests, named: true))
+        }
+        var placed = Set<String>()
+        for pr in wanted where placed.insert(pr.url).inserted {
+            if var tab = kept[pr.url] {
+                if !tab.loaded { tab.title = pr.tabTitle }
+                tabs.append(tab)
+            } else {
+                tabs.append(BrowserTab(id: takeTabId(), url: pr.url, title: pr.tabTitle, group: "pr", pullRequest: pr.url))
+            }
+        }
+        arrange()
     }
 }

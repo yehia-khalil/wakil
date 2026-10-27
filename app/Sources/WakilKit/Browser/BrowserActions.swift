@@ -173,6 +173,41 @@ extension BrowserSnapshot {
 /// write one.
 public typealias BrowserDataRemover = @Sendable (_ store: UUID, _ deleteFiles: @Sendable () throws -> Void) async throws -> Void
 
+/// Reads the active organisation's open pull requests (`ctx_github_pull_requests`, ruling 17) and
+/// answers its reply; nil when nothing reads them (a fixture, a headless `--dispatch`). A failure is
+/// thrown, its text shown whole.
+public typealias BrowserPullRequestsRead = @Sendable () async throws -> JSONValue?
+
+/// `ctx_github_pull_requests`' reply — `{pullRequests, absent?, host?}` under `structuredContent` —
+/// as the list and why there is none; nil when it is not one.
+func decodeBrowserPullRequests(fromResult result: JSONValue) -> (items: [BrowserPullRequest], absent: String?)? {
+    struct Reply: Decodable {
+        var pullRequests: [BrowserPullRequest]?
+        var absent: String?
+    }
+    guard case .object(let object) = result, let structured = object["structuredContent"],
+          let data = try? JSONEncoder().encode(structured),
+          let reply = try? JSONDecoder().decode(Reply.self, from: data) else { return nil }
+    let absent = reply.absent.flatMap { $0.isEmpty ? nil : $0 }
+    return (reply.pullRequests ?? [], absent)
+}
+
+/// A refresh's failure as the operator reads it (Rule 8): a context server's refusal is its own
+/// sentence (`<host> refused the pull-request search (HTTP <code>): <message>`), whole; anything
+/// else its description.
+func browserPullRequestsFailure(_ error: Error) -> String {
+    if case StandardActionError.serverError(_, let message) = error { return message }
+    return String(describing: error)
+}
+
+extension BrowserSnapshot {
+    /// The pane holds no tab and no pull-request group: a reconcile that leaves it so closes it, as
+    /// closing its last tab does. An empty `pr` group keeps it — the next list refills it.
+    var isEmptyOfTabsAndPullRequests: Bool {
+        tabs.isEmpty && !groups.contains { $0.kind == .pullRequests }
+    }
+}
+
 /// The clear's order (Task 10 fix round 1 ruling): the store first, then the files. A store that
 /// will not go deletes nothing — cookies and zoom stay together — and its error is thrown as it came.
 public func browserRemoveStoreThenFiles(
@@ -198,10 +233,11 @@ public func registerBrowserActions(
     settings: @escaping @Sendable () async -> SettingsBrowser,
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
     removeData: BrowserDataRemover? = nil,
-    driver: (any BrowserPageDriver)? = nil
+    driver: (any BrowserPageDriver)? = nil,
+    pullRequests: @escaping BrowserPullRequestsRead = { nil }
 ) async {
     for action in browserActions(panes: panes, layout: layout, settings: settings, orgFiles: orgFiles,
-                                 removeData: removeData, driver: driver) {
+                                 removeData: removeData, driver: driver, pullRequests: pullRequests) {
         await registry.register(action)
     }
 }
@@ -214,7 +250,8 @@ func browserActions(
     settings: @escaping @Sendable () async -> SettingsBrowser,
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
     removeData: BrowserDataRemover? = nil,
-    driver: (any BrowserPageDriver)? = nil
+    driver: (any BrowserPageDriver)? = nil,
+    pullRequests: @escaping BrowserPullRequestsRead = { nil }
 ) -> [Action] {
     var actions: [Action] = []
     let kind = BrowserPaneKind.names[0]
@@ -284,8 +321,8 @@ func browserActions(
     @Sendable func reconcileOthers(_ pane: String, add: BrowserPin?, remove: String?) async {
         guard let layout else { return }
         for other in await layout.snapshot().panes where other.kind == kind && other.id != pane {
-            guard let left = await panes.browserApplyPin(paneId: other.id, add: add, remove: remove) else { continue }
-            if left == 0 {
+            guard await panes.browserApplyPin(paneId: other.id, add: add, remove: remove) != nil else { continue }
+            if await panes.browserSnapshot(paneId: other.id).isEmptyOfTabsAndPullRequests {
                 try? await layout.close(id: other.id)
                 await panes.drop(paneId: other.id)
             } else {
@@ -322,7 +359,8 @@ func browserActions(
     /// `pane_open` did — and first takes its project's pins (ruling 14's full reconcile), behind the
     /// new tab, which stays the selected one.
     @Sendable func addTab(_ pane: String, url: String?, opener: String? = nil) async {
-        if !(await panes.holdsContents(paneId: pane)) { await reconcile(pane, action: "browser_new_tab") }
+        let isNew = !(await panes.holdsContents(paneId: pane))
+        if isNew { await reconcile(pane, action: "browser_new_tab") }
         var target = url
         if target == nil {
             let start = await settings().startPage.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -340,6 +378,8 @@ func browserActions(
                 s.arrange()
             }
         }
+        // Ruling 19: a pane opened while the list is kept gets it now, not at the next refresh.
+        if isNew { await panes.browserApplyPullRequests(paneId: pane, org: await panes.activeScope.organization) }
     }
 
     /// Issues `verb` to the named or active tab; nil `verb` lets `make` decide from the tab.
@@ -809,6 +849,66 @@ func browserActions(
         }))
 
     actions.append(Action(
+        name: "browser_pull_requests_refresh",
+        description: "Refresh the pull-request group (pr) of every browser pane on the canvas from the active "
+            + "organisation's open GitHub pull requests — those it wrote and those awaiting its review. A listed "
+            + "pull request's tab keeps its page, a new one is added unloaded, a gone one closes; the selected "
+            + "tab stays, as a loose tab. absent says why there is no group; error is this refresh's failure, "
+            + "the list before it kept. While a refresh runs, another returns at once without reading again. "
+            + "Answers org, count, absent and error.",
+        kind: .control, audience: .agentReachable,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            let org = await panes.activeScope.organization
+            guard !org.isEmpty else { throw BrowserActionError.noOrganisation }
+            @Sendable func answer() async -> JSONValue {
+                let list = await panes.browserPullRequests(org: org)
+                return .object([
+                    "org": .string(org), "count": .integer(Int64(list?.absent == nil ? list?.items.count ?? 0 : 0)),
+                    "absent": list?.absent.map { .string($0) } ?? .null,
+                    "error": list?.error.map { .string($0) } ?? .null,
+                    "refreshing": .bool(list?.refreshing ?? false),
+                ])
+            }
+            // Rule 5: a refresh while one runs reads nothing again.
+            guard await panes.browserBeginPullRequestsRefresh(org: org) else { return await answer() }
+            var read: (items: [BrowserPullRequest], absent: String?)?
+            var failure: String?
+            do {
+                if let reply = try await pullRequests() {
+                    read = decodeBrowserPullRequests(fromResult: reply)
+                    if read == nil { failure = "browser_pull_requests_refresh: the reply was not a pull-request list" }
+                }
+            } catch where error is CancellationError || Task.isCancelled {
+                // The loop that asked ended (its last pane closed, a switch): not a failure.
+            } catch {
+                failure = browserPullRequestsFailure(error)
+            }
+            var list = await panes.browserPullRequests(org: org) ?? BrowserPullRequests()
+            list.refreshing = false
+            // The organisation changed while it read: the list may be the incoming one's, so it is
+            // kept for no one, and no pane is touched.
+            guard await panes.activeScope.organization == org else {
+                await panes.browserSetPullRequests(org: org, list)
+                return await answer()
+            }
+            if let read {
+                list.items = read.items
+                list.absent = read.absent
+                list.error = nil
+            } else if let failure {
+                list.error = failure   // the last list is kept (Rule 8: the failure whole)
+            }
+            await panes.browserSetPullRequests(org: org, list)
+            if read != nil || failure != nil, let layout {
+                for pane in await layout.snapshot().panes where pane.kind == kind {
+                    if await panes.browserApplyPullRequests(paneId: pane.id, org: org) { await persist(pane.id) }
+                }
+            }
+            return await answer()
+        }))
+
+    actions.append(Action(
         name: "browser_find",
         description: "Open the find bar on the active tab's page and look for query (empty opens the bar "
             + "with nothing to find). read_pane's find answers the match count.",
@@ -948,14 +1048,20 @@ func browserActions(
         handler: { params in
             let pane = try requireString(params, "pane", action: "browser_restore")
             _ = try await browserPane(params, action: "browser_restore")
-            if let saved = await layout?.browserTabs(id: pane), !saved.tabs.isEmpty {
+            // A pane whose only tabs were pull requests saved its `pr` group alone: restored too, so
+            // the group keeps `collapsed` and the pane its column; the list refills it.
+            if let saved = await layout?.browserTabs(id: pane), !saved.tabs.isEmpty || !saved.groups.isEmpty {
                 await panes.browserRestore(paneId: pane, tabs: saved.tabs, active: saved.active,
                                            groups: saved.groups, columnHidden: saved.columnHidden)
             }
             // Ruling 14: a restored pane takes the pins added since and drops the ones gone.
             let before = await panes.browserSnapshot(paneId: pane)
-            // A pane the reconcile leaves with no tab closes, as closing its last tab does.
-            if let left = await reconcile(pane, action: "browser_restore"), left == 0 {
+            // Ruling 19: and the pull-request list kept, when there is one.
+            await panes.browserApplyPullRequests(paneId: pane, org: await panes.activeScope.organization)
+            // A pane the reconcile leaves with no tab (and no pull-request group) closes, as closing
+            // its last tab does.
+            if await reconcile(pane, action: "browser_restore") != nil,
+               await panes.browserSnapshot(paneId: pane).isEmptyOfTabsAndPullRequests {
                 try await layout?.close(id: pane)
                 await panes.drop(paneId: pane)
                 return .object(["pane": .string(pane), "closed": .bool(true)])
@@ -1032,4 +1138,15 @@ public enum BrowserKey: Sendable, Equatable {
     case zoomIn, zoomOut, zoomReset, nextTab, previousTab, bookmark
     /// ⌘1–8 tab N; ⌘9 the last tab.
     case tab(Int)
+}
+
+/// The group header the keyboard is on in a browser pane (3d-i), set by the view:
+/// `WindowModel.browserKey(.reload)` refreshes the pull-request list when it is the `pr` group's.
+public struct BrowserHeaderFocus: Sendable, Equatable {
+    public var pane: String
+    public var group: String
+    public init(pane: String, group: String) {
+        self.pane = pane
+        self.group = group
+    }
 }
