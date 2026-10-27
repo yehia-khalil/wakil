@@ -6939,6 +6939,21 @@ public final class WindowModel {
         }
     }
 
+    /// Every tab of every browser pane on the canvas, read as ⌘P lists them.
+    func paletteBrowserTabs() -> [(pane: String, tab: BrowserTab)] {
+        var rows: [(pane: String, tab: BrowserTab)] = []
+        for p in layoutSnapshot.panes where p.kind == "browser" {
+            for tab in browser(p.id)?.tabs ?? [] { rows.append((pane: p.id, tab: tab)) }
+        }
+        return rows
+    }
+
+    /// The drawn place's organisation's bookmarks: the same place the address-field suggestions read.
+    func paletteBookmarks() async -> [BrowserBookmark] {
+        guard let scope = browserScope else { return [] }
+        return await panes.browserBookmarks(org: scope.organization)
+    }
+
     /// ⌘P's sources, in group order.
     private func paletteOpenSources(tables: TablesSource?) -> [any PaletteSource] {
         // Read now, on the main actor: the live set as the palette opens.
@@ -6953,6 +6968,8 @@ public final class WindowModel {
             let environment = environment
             sources.append(ApiEntriesSource(http: http, environment: { environment }))
         }
+        sources.append(BrowserTabsSource(tabs: { [weak self] in await self?.paletteBrowserTabs() ?? [] }))
+        sources.append(BookmarksSource(bookmarks: { [weak self] in await self?.paletteBookmarks() ?? [] }))
         let changed = ChangedFilesSource(status: { [weak self] in await self?.paletteGitStatus() ?? [] })
         let fileSource = paletteFilesSource()
         // An editor in focus puts the project's files first: sources keep their own order within a group.

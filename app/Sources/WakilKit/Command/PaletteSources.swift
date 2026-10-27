@@ -459,6 +459,52 @@ public struct ApiEntriesSource: PaletteSource {
     }
 }
 
+// MARK: - Open tabs and bookmarks
+
+/// Every tab of every browser pane on the canvas. A row switches to the tab and focuses its pane.
+public struct BrowserTabsSource: PaletteSource {
+    public let id = "browsertabs"
+    public let group = PaletteGroup.resources
+    private let tabs: @Sendable () async -> [(pane: String, tab: BrowserTab)]
+
+    public init(tabs: @escaping @Sendable () async -> [(pane: String, tab: BrowserTab)]) {
+        self.tabs = tabs
+    }
+
+    public func entries() async -> [PaletteEntry] {
+        await tabs().map { pane, tab in
+            PaletteEntry(
+                id: "browsertab:\(pane)/\(tab.id)", group: group, title: tab.label,
+                subtitle: BrowserSuggestions.bareURL(tab.url), kindLabel: "tab", verb: "switch to",
+                action: .dispatch(action: "browser_select_tab", params: .object([
+                    "pane": .string(pane), "tab": .string(tab.id), "focus": .bool(true),
+                ])))
+        }
+    }
+}
+
+/// The organisation's bookmarks, newest first. A row opens the page in a new tab.
+public struct BookmarksSource: PaletteSource {
+    public let id = "bookmarks"
+    public let group = PaletteGroup.resources
+    private let bookmarks: @Sendable () async -> [BrowserBookmark]
+
+    public init(bookmarks: @escaping @Sendable () async -> [BrowserBookmark]) {
+        self.bookmarks = bookmarks
+    }
+
+    public func entries() async -> [PaletteEntry] {
+        await bookmarks().sorted { $0.added > $1.added }.map { mark in
+            PaletteEntry(
+                id: "bookmark:\(mark.url)", group: group, title: mark.title,
+                subtitle: BrowserSuggestions.bareURL(mark.url), kindLabel: "bookmark", verb: "open",
+                action: .dispatch(action: "browser_open", params: .object([
+                    "url": .string(mark.url), "newTab": .bool(true),
+                ])))
+        }
+    }
+}
+
 // MARK: - Changed files
 
 /// Changed files, one row per file per group — a partly staged file is two rows, as it is two

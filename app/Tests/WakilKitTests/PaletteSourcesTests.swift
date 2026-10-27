@@ -212,6 +212,51 @@ private func gitRoot(_ name: String, _ files: [GitFileRow]) -> GitRootState {
         #expect(await ApiEntriesSource(http: http, environment: { "staging" }).entries().isEmpty)
     }
 
+    // Open tabs and bookmarks (3c-iii, ruling 11)
+    @Test func openTabsRowSwitchesToTheTabAndFocusesItsPane() async {
+        let tab = BrowserTab(id: "t2", url: "https://www.example.com/docs", title: "Docs")
+        let rows = await BrowserTabsSource(tabs: { [(pane: "p1", tab: tab)] }).entries()
+        #expect(rows.count == 1)
+        let row = rows[0]
+        #expect(row.id == "browsertab:p1/t2")
+        #expect(row.group == .resources)
+        #expect(row.title == "Docs")
+        #expect(row.subtitle == "example.com/docs")
+        #expect(row.kindLabel == "tab")
+        #expect(row.verb == "switch to")
+        #expect(row.action == .dispatch(action: "browser_select_tab", params: .object([
+            "pane": .string("p1"), "tab": .string("t2"), "focus": .bool(true),
+        ])))
+    }
+
+    @Test func bookmarkRowOpensInANewTab() async {
+        let mark = BrowserBookmark(url: "https://www.example.com/a", title: "Example A", added: Date(timeIntervalSince1970: 1))
+        let rows = await BookmarksSource(bookmarks: { [mark] }).entries()
+        #expect(rows.count == 1)
+        let row = rows[0]
+        #expect(row.id == "bookmark:https://www.example.com/a")
+        #expect(row.group == .resources)
+        #expect(row.title == "Example A")
+        #expect(row.subtitle == "example.com/a")
+        #expect(row.kindLabel == "bookmark")
+        #expect(row.verb == "open")
+        #expect(row.action == .dispatch(action: "browser_open", params: .object([
+            "url": .string("https://www.example.com/a"), "newTab": .bool(true),
+        ])))
+    }
+
+    @Test func bookmarksAreListedNewestFirst() async {
+        let old = BrowserBookmark(url: "https://example.com/old", title: "Old", added: Date(timeIntervalSince1970: 10))
+        let new = BrowserBookmark(url: "https://example.com/new", title: "New", added: Date(timeIntervalSince1970: 20))
+        let rows = await BookmarksSource(bookmarks: { [old, new] }).entries()
+        #expect(rows.map(\.title) == ["New", "Old"])
+    }
+
+    @Test func noBrowserPaneGivesNoTabRows() async {
+        #expect(await BrowserTabsSource(tabs: { [] }).entries().isEmpty)
+        #expect(await BookmarksSource(bookmarks: { [] }).entries().isEmpty)
+    }
+
     // 7
     @Test func changedFilesFromTheWindowsStatus() async {
         let roots = [gitRoot("walk-a", [
