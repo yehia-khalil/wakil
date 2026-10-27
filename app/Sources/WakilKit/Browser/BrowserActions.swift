@@ -134,7 +134,7 @@ extension BrowserSnapshot {
         guard tabs.contains(where: { ids.contains($0.id) }) else { return 0 }
         let gone = tabs.filter { ids.contains($0.id) }
         for tab in gone {
-            closed.append(BrowserSavedTab(id: tab.id, url: tab.url, title: tab.title, group: tab.group))
+            closed.append(BrowserSavedTab(id: tab.id, url: tab.url, title: tab.title, group: tab.group, pin: tab.pin))
         }
         if closed.count > browserClosedLimit { closed.removeFirst(closed.count - browserClosedLimit) }
         removeTabs(ids)
@@ -559,9 +559,15 @@ func browserActions(
                 guard let saved = s.closed.popLast() else { return false }
                 var tab = BrowserTab(id: s.takeTabId(), url: saved.url, title: saved.title)
                 if saved.url.isEmpty { tab.issue(.focusAddress) } else { tab.issue(.load(saved.url)) }
+                // A pinned tab comes back pinned, so a full reconcile does not add its pin a second
+                // time; when the pane holds that pin again meanwhile, it comes back plain.
+                if let pin = saved.pin, !s.tabs.contains(where: { $0.pin == pin }),
+                   !s.groups.contains(where: { $0.pin == pin }) {
+                    tab.pin = pin
+                    s.tabs.append(tab)
                 // Ruling 22: back to its group while the pane has it (never the pull-request group,
                 // whose tabs are the read's); else loose, for the site rule when it loads.
-                if let gid = saved.group, let g = s.group(gid), g.kind != .pullRequests {
+                } else if let gid = saved.group, let g = s.group(gid), g.kind != .pullRequests {
                     tab.group = gid
                     if let last = s.tabs.lastIndex(where: { $0.group == gid }) {
                         s.tabs.insert(tab, at: last + 1)

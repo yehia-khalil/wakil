@@ -936,6 +936,34 @@ private func groupedFixture() async throws -> BrowserFixture {
     #expect(s.tabs.first { $0.url == "https://other.org/c" }?.group == nil)
 }
 
+/// A closed pinned tab reopened with ⌘⇧T keeps its pin, so the next full reconcile finds the pin
+/// held and adds no second copy — unless the pane already holds that pin again, then it is plain.
+@Test func aReopenedPinnedTabKeepsItsPin() async throws {
+    let f = try await withTabs(["https://example.com/a", "https://example.com/b"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs[1].pin = "p1234abcd"
+        s.arrange()
+    }
+    try await f.dispatch("browser_close_tab", ["tab": .string("t2")])
+    try await f.dispatch("browser_reopen_tab")
+    var s = await f.snapshot()
+    let back = try #require(s.tabs.first { $0.url == "https://example.com/b" })
+    #expect(back.pin == "p1234abcd", "the pin comes back with it")
+    #expect(s.tabs.first?.id == back.id, "into the pinned section")
+    #expect(back.group == nil)
+
+    // Closed again; meanwhile the pane holds that pin once more (a reconcile put it back).
+    try await f.dispatch("browser_close_tab", ["tab": .string(back.id)])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs.append(BrowserTab(id: s.takeTabId(), url: "https://example.com/b", title: "b", pin: "p1234abcd"))
+        s.arrange()
+    }
+    try await f.dispatch("browser_reopen_tab")
+    s = await f.snapshot()
+    #expect(s.tabs.filter { $0.pin == "p1234abcd" }.count == 1, "never two tabs of one pin")
+    #expect(s.tabs.filter { $0.url == "https://example.com/b" }.count == 2)
+}
+
 /// Rule 6: no grouping rule or action changes the selection; a tab moved into a group stays selected.
 @Test func groupingNeverChangesTheActiveTab() async throws {
     let f = try await groupedFixture()
