@@ -245,7 +245,7 @@ struct EditorColumn: View {
             .buttonStyle(.plain).opacity(column.view == view ? 1 : 0.5)
             .help(name)
             .accessibilityLabel(name)
-            .accessibilityIdentifier("editor.column." + id)
+            .accessibilityIdentifier("editor.column.\(id)")
     }
 
     private var edge: some View {
