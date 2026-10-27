@@ -35,9 +35,9 @@ During the day nothing changes: sessions still run only new and affected checks
 ## Decided
 
 **By the operator:**
-- Night window is **23:00 to 08:00**; the Mac stays unlocked and awake. The screen must
-  be free by 08:00: a step that cannot finish by then is not started (a re-run is skipped,
-  a waiting start gives up), and a run still going at 08:00 is stopped and reported as
+- Night window is **23:00 to 07:00**; the Mac stays unlocked and awake. The screen must
+  be free by 07:00: a step that cannot finish by then is not started (a re-run is skipped,
+  a waiting start gives up), and a run still going at 07:00 is stopped and reported as
   cut short, never as green or red.
 - On the Mac. The Pi is out because the checks drive this Mac's window.
 - One run per night, on `main`, and only when `main` has pending e2e.
@@ -114,7 +114,7 @@ like a quiet green.
 ## Anti-goals (failure even if it works)
 
 - A check made green by retrying, quarantining or weakening it.
-- Two runs on the screen at once, or a run outside 23:00–08:00.
+- Two runs on the screen at once, or a run outside 23:00–07:00.
 - A morning where "green", "red" and "never ran" can be confused.
 - Fix commits the operator cannot easily see and drop.
 
