@@ -395,4 +395,16 @@ struct BrowserGroupingTests {
         s.arrange()
         #expect(s.group("g1")?.lastOpen == "a")
     }
+
+    /// Ruling 20: the column is 220 pt wide by default and a drag keeps it within 160–360.
+    @Test func columnWidthClampsTo160Through360() {
+        #expect(BrowserTabColumnRules.width == 220)
+        #expect(BrowserTabColumnRules.clamp(100) == 160)
+        #expect(BrowserTabColumnRules.clamp(160) == 160)
+        #expect(BrowserTabColumnRules.clamp(250) == 250)
+        #expect(BrowserTabColumnRules.clamp(360) == 360)
+        #expect(BrowserTabColumnRules.clamp(900) == 360)
+        #expect(BrowserTabColumnRules.edge == 6)
+        #expect(BrowserTabColumnRules.peekDelay == .milliseconds(150))
+    }
 }

@@ -21,6 +21,7 @@ final class BrowserWebView: WKWebView {
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if mods == .command { return commandKeys.contains(event.keyCode) }
         if mods == [.command, .shift] { return event.keyCode == 13 }   // W
+        if mods == [.control, .command] { return event.keyCode == 1 }  // S: Toggle Tab Column (3d-i)
         return false
     }
 

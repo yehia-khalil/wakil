@@ -637,7 +637,8 @@ extension WakilWindow {
                         setHeaderFocus: { group in
                             model.browserHeaderFocus = group.map { BrowserHeaderFocus(pane: pane.id, group: $0) }
                         },
-                        refreshPullRequests: { Task { await model.refreshBrowserPullRequests() } })
+                        refreshPullRequests: { Task { await model.refreshBrowserPullRequests() } },
+                        verticalTabs: model.browserSettings.tabs == "vertical")
                     // **One view per place and pane.** Pane ids repeat from place to place, so
                     // without this a switch from A's `browser-1` to B's would keep the view: no
                     // appearance (no re-report of B's pages) and A's snapshot as B's `old`.
@@ -663,6 +664,7 @@ extension WakilWindow {
                     saveEditorSettings: { fields in await model.saveEditorSettings(fields) },
                     saveBrowserSettings: { fields in await model.saveBrowserSettings(fields) },
                     clearBrowserData: { org in await model.clearBrowserData(org: org) },
+                    browserPullRequestsAbsent: model.browserPullRequestsAbsent,
                     saveProjectEditorSettings: { path, fields in
                         await model.saveProjectEditorSettings(projectPath: path, fields)
                     },

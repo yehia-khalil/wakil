@@ -56,6 +56,9 @@ struct BrowserPane: View {
     let headerFocus: String?
     let setHeaderFocus: (String?) -> Void
     let refreshPullRequests: () -> Void
+    /// 3d-i: Settings → Browser → Tabs is *Vertical*: the tabs are the column at the pane's left
+    /// (`BrowserTabColumn`), and the strip row keeps the glyph and the count.
+    var verticalTabs = false
 
     @FocusState private var addressFocused: Bool
     @FocusState private var findFocused: Bool
@@ -100,26 +103,39 @@ struct BrowserPane: View {
                 siteMarks
             }
             PaneHairline()
-            if let find = snapshot.find {
-                findBar(find)
-                    .padding(.horizontal, BrowserPaneStyle.rowInset)
-                    .frame(height: BrowserPaneStyle.rowHeight)
-                PaneHairline()
-            }
-            pageArea
-                .overlay(alignment: .top) { progressLine }
-                // The page's bottom corners are the pane's, unless the downloads sit under it.
-                .clipShape(UnevenRoundedRectangle(
-                    bottomLeadingRadius: snapshot.downloads.isEmpty ? BrowserPaneStyle.paneRadius : 0,
-                    bottomTrailingRadius: snapshot.downloads.isEmpty ? BrowserPaneStyle.paneRadius : 0,
-                    style: .continuous))
-            if !snapshot.downloads.isEmpty {
-                PaneHairline()
-                BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
-                    .padding(.leading, BrowserPaneStyle.rowInset)
-                    // Its × clear of the pane's resize handle, drawn over this corner.
-                    .padding(.trailing, PaneStripStyle.resizeCorner)
-                    .padding(.vertical, BrowserPaneStyle.rowPadding)
+            // 3d-i: in vertical mode the column sits at the left, under the address row, full
+            // height; hidden, its 6 pt edge peeks it over the page.
+            HStack(spacing: 0) {
+                if columnShown { tabColumn }
+                VStack(spacing: 0) {
+                    if let find = snapshot.find {
+                        findBar(find)
+                            .padding(.horizontal, BrowserPaneStyle.rowInset)
+                            .frame(height: BrowserPaneStyle.rowHeight)
+                        PaneHairline()
+                    }
+                    pageArea
+                        .overlay(alignment: .top) { progressLine }
+                        // The page's bottom corners are the pane's, unless the downloads sit under
+                        // it (or, at the left, the column beside it).
+                        .clipShape(UnevenRoundedRectangle(
+                            bottomLeadingRadius: snapshot.downloads.isEmpty && !columnShown ? BrowserPaneStyle.paneRadius : 0,
+                            bottomTrailingRadius: snapshot.downloads.isEmpty ? BrowserPaneStyle.paneRadius : 0,
+                            style: .continuous))
+                    if !snapshot.downloads.isEmpty {
+                        PaneHairline()
+                        BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
+                            .padding(.leading, BrowserPaneStyle.rowInset)
+                            // Its × clear of the pane's resize handle, drawn over this corner.
+                            .padding(.trailing, PaneStripStyle.resizeCorner)
+                            .padding(.vertical, BrowserPaneStyle.rowPadding)
+                    }
+                }
+                .overlay(alignment: .leading) {
+                    if verticalTabs, snapshot.tabColumnHidden {
+                        BrowserTabColumnPeek(holding: renamingGroup != nil) { tabColumn }
+                    }
+                }
             }
         }
         // The rows under the address field, over the page: inside the pane, so the field keeps the
@@ -187,7 +203,11 @@ struct BrowserPane: View {
     /// name), then the tabs and their count; too narrow for the list, the ⌄ menu holds both.
     private var tabStrip: some View {
         PaneStripRow(glyph: "safari", name: "Browser") {
-            if listMode != .hidden {
+            if verticalTabs {
+                // The column holds the entries; the row keeps the glyph and the count.
+                Spacer(minLength: 0)
+                BrowserTabCount(snapshot: snapshot, listMode: listMode, dispatch: send)
+            } else if listMode != .hidden {
                 BrowserTabList(
                     snapshot: snapshot, mode: listMode,
                     favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
@@ -206,6 +226,23 @@ struct BrowserPane: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    /// The vertical column, docked at the pane's left (3d-i).
+    private var columnShown: Bool { verticalTabs && !snapshot.tabColumnHidden }
+
+    /// The vertical column (3d-i): the strip's entries, chip, menus and rename, in rows.
+    private var tabColumn: some View {
+        BrowserTabColumn(
+            snapshot: snapshot,
+            favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
+            sites: sites, dispatch: send, menus: groupMenus, renaming: $renamingGroup,
+            headerFocus: headerFocus, setHeaderFocus: setHeaderFocus,
+            closeArmed: closeArm.flatMap { $0.pane == pane.id ? $0.tab : nil },
+            renameEnded: { explicit in
+                // As the strip's: Return or Esc gives the keyboard back to the page (Rule 6).
+                if explicit { DispatchQueue.main.async { focusPage() } }
+            })
     }
 
     /// The tab and group menus' context (3d-i).

@@ -228,3 +228,18 @@ extension BrowserSnapshot {
         return words.isEmpty ? nil : words.joined(separator: " ")
     }
 }
+
+/// The vertical tab column's numbers (ruling 20): 220 pt wide by default, a drag of its edge keeps it
+/// within 160–360 pt; hidden, a 6 pt zone at the pane's left shows it after the pointer rests 150 ms.
+public enum BrowserTabColumnRules {
+    public static let width: Double = 220
+    public static let minWidth: Double = 160
+    public static let maxWidth: Double = 360
+    /// The hover zone at the pane's left edge while the column is hidden.
+    public static let edge: Double = 6
+    /// How long the pointer rests in the zone before the column slides out.
+    public static let peekDelay: Duration = .milliseconds(150)
+
+    /// A width within 160–360.
+    public static func clamp(_ width: Double) -> Double { min(maxWidth, max(minWidth, width)) }
+}
