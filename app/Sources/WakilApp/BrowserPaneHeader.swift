@@ -349,7 +349,7 @@ struct BrowserTabList: View {
             .padding(.horizontal, 3)
             .padding(.vertical, 2)
             .overlay {
-                if headerFocus == g.id {
+                if headerFocus == g.id, g.kind == .pullRequests {
                     RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius - 1, style: .continuous)
                         .strokeBorder(BrowserPaneStyle.tick.opacity(BrowserPaneStyle.fieldEditingEdge), lineWidth: 1)
                 }
@@ -371,7 +371,9 @@ struct BrowserTabList: View {
         case .chip(let g):
             // A click in the open name field is the field's.
             guard renaming != g.id else { return }
-            setHeaderFocus(g.id)
+            // Only the pull-request group's header is under ⌘R (ruling 19). Set unconditionally: the
+            // mouse-down cleared it (`canvasMouseDown`), whatever this view last drew.
+            setHeaderFocus(g.kind == .pullRequests ? g.id : nil)
             pendingToggle?.cancel()
             pendingToggle = nil
             if (NSApp.currentEvent?.clickCount ?? 1) >= 2 {

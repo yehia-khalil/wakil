@@ -54,6 +54,24 @@ private func browserWindow(
         return (model, pane, layout, journal, panes)
     }
 
+    // MARK: 3d-i Task 12: New Group… opens the field of the group the call made
+
+    @Test func aSurfaceCallAnswersTheGroupItMadeAndNothingWhenRefused() async throws {
+        let (model, pane, _, _) = try await focusedBrowser()
+        let tab = try #require(model.browser(pane)?.tabs.first?.id)
+        let made = await model.dispatchFromSurfaceAnswer("browser_group", .object([
+            "pane": .string(pane), "action": .string("create"), "tabs": .array([.string(tab)])]))
+        guard case .object(let o)? = made, case .string(let group)? = o["group"] else {
+            Issue.record("no group in \(String(describing: made))")
+            return
+        }
+        #expect(model.browser(pane)?.group(group) != nil, "the group answered is the one drawn")
+        let refused = await model.dispatchFromSurfaceAnswer("browser_group", .object([
+            "pane": .string(pane), "action": .string("create"), "tabs": .array([.string("no-such-tab")])]))
+        #expect(refused == nil, "a refusal answers nothing: no name field opens")
+        #expect(!model.status.isEmpty, "and is on the status line, as for any control")
+    }
+
     // MARK: 3d-i Task 9: ⌘W twice on a pinned tab, the tab column
 
     /// A fixed, steppable clock for `browserNow`.
@@ -1122,6 +1140,24 @@ private actor NamingModel: QuickModel {
         #expect(window.browserPullRequestsOnScreen?.error == why, "the failure whole")
         await window.invalidateForOrgChange()
         #expect(window.browserPullRequestsOnScreen == nil, "another organisation's list is not drawn")
+    }
+
+    @Test func theFirstRefreshShowsItsRefreshBeforeAnyListWasRead() async throws {
+        let reader = PullRequestsReader([pr(1)], gated: true)
+        let window = await window(reader)
+        #expect(window.browserPullRequestsOnScreen == nil, "nothing read yet")
+        _ = try await openBrowser(window)
+        await waitFor(reader, reads: 1)
+        #expect(window.browserPullRequestsOnScreen?.refreshing == true, "the first refresh shows its refresh too")
+        await window.refreshPanes()
+        #expect(window.browserPullRequestsOnScreen?.refreshing == true, "a re-read while it runs keeps it")
+        reader.release()
+        for _ in 0..<5_000 where window.browserPullRequestsOnScreen?.refreshing != false {
+            try await Task.sleep(nanoseconds: 1_000_000)
+            await window.refreshPanes()
+        }
+        #expect(window.browserPullRequestsOnScreen?.refreshing == false)
+        #expect(window.browserPullRequestsOnScreen?.items.count == 1)
     }
 
     @Test func settingsReadsWhyThereIsNoGroup() async throws {

@@ -251,6 +251,10 @@ extension WakilWindow {
             }
             return drawn
         }
+        // A click anywhere — the page, the address field, another pane — takes the keyboard from a
+        // browser group header, so ⌘R reloads the page again. A click on the `pr` chip sets it back
+        // on its mouse-up (`BrowserTabList`), after this.
+        if model.browserHeaderFocus != nil { model.browserHeaderFocus = nil }
         let landed = paneAt(
             x: point.x, y: point.y, panes: drawn, focusedId: snapshot.focusedId, overLanding: overLanding != nil)
         guard let id = paneClickFocusTarget(target: landed, focusedId: snapshot.focusedId, landsOnInput: landsOnInput)
@@ -592,6 +596,11 @@ extension WakilWindow {
                             var withPane = params
                             withPane["pane"] = .string(pane.id)
                             await model.dispatchFromSurface(name, .object(withPane))
+                        },
+                        dispatchAnswer: { name, params in
+                            var withPane = params
+                            withPane["pane"] = .string(pane.id)
+                            return await model.dispatchFromSurfaceAnswer(name, .object(withPane))
                         },
                         isFocusedPane: model.layoutSnapshot.focusedId == pane.id,
                         isKeyboardOwner: !(

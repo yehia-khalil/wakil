@@ -4833,7 +4833,15 @@ public final class WindowModel {
             await dispatchLayout(name, params)
             return true
         }
-        let ran = await dispatch(name, params) != nil
+        return await dispatchFromSurfaceAnswer(name, params) != nil
+    }
+
+    /// `dispatchFromSurface` answering the action's result — nil when it did not run, its refusal
+    /// on `status` as for any control. For a control that acts on what the call made: *New Group…*
+    /// opens the name field of the group `browser_group create` answers, and none when it failed.
+    @discardableResult
+    public func dispatchFromSurfaceAnswer(_ name: String, _ params: JSONValue) async -> JSONValue? {
+        let result = await dispatch(name, params)
         await refreshPanes()
         // `pane_sort`, `db_page` and `db_refetch` all write `Pane.fetch`,
         // which lives in `LayoutStore` and which `refreshPanes` cannot
@@ -4843,7 +4851,7 @@ public final class WindowModel {
         if name == "pane_sort" || name.hasPrefix("db_") || name.hasPrefix("browser_") {
             await refreshLayout()
         }
-        return ran
+        return result
     }
 
     /// The operator's drop of one grid row on an api pane: `api_bind`, and what it said.
@@ -6036,7 +6044,12 @@ public final class WindowModel {
     /// refresh never starts it again.
     public func refreshBrowserPullRequests() async {
         browserPullRequestsRefreshes += 1
-        browserPullRequestsOnScreen?.refreshing = true
+        // Never read yet (the first refresh): an empty list, so the ↻ shows for it too.
+        if browserScope?.organization.isEmpty == false {
+            var list = browserPullRequestsOnScreen ?? BrowserPullRequests()
+            list.refreshing = true
+            if list != browserPullRequestsOnScreen { browserPullRequestsOnScreen = list }
+        }
         let answer = await dispatch("browser_pull_requests_refresh", .object([:]))
         browserPullRequestsRefreshes -= 1
         guard case .object(let o)? = answer, !Task.isCancelled else {
@@ -6058,7 +6071,10 @@ public final class WindowModel {
     private func readBrowserPullRequestsOnScreen() async {
         let org = browserScope?.organization ?? ""
         var list = org.isEmpty ? nil : await panes.browserPullRequests(org: org)
-        if browserPullRequestsRefreshes > 0 { list?.refreshing = true }
+        if browserPullRequestsRefreshes > 0, !org.isEmpty {
+            list = list ?? BrowserPullRequests()
+            list?.refreshing = true
+        }
         if list != browserPullRequestsOnScreen { browserPullRequestsOnScreen = list }
     }
 

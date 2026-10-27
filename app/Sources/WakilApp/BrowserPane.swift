@@ -20,6 +20,8 @@ struct BrowserPane: View {
     let host: BrowserTabHost
     /// A `browser_*` action on this pane (`pane` already folded in).
     let dispatch: (String, [String: JSONValue]) async -> Void
+    /// The same, answering the action's result: nil when it did not run (its refusal on the status line).
+    let dispatchAnswer: (String, [String: JSONValue]) async -> JSONValue?
     let isFocusedPane: Bool
     let isKeyboardOwner: Bool
     let keyboardHeld: () -> Bool
@@ -156,6 +158,8 @@ struct BrowserPane: View {
         .onChange(of: keyboardReturns) { _, _ in if isFocusedPane { takeKeyboard() } }
         .onChange(of: addressFocused) { _, focused in
             if focused {
+                // The address field has the keyboard: ⌘R reloads the page, not the group header.
+                if headerFocus != nil { setHeaderFocus(nil) }
                 // The whole URL selected, so typing replaces it (⌘L's promise), once the field's
                 // editor holds the keyboard — and only if it is still this field's.
                 selectAddress()
@@ -211,11 +215,11 @@ struct BrowserPane: View {
             dispatch: send, refreshPullRequests: refreshPullRequests,
             rename: { renamingGroup = $0 },
             newGroup: { tab in
-                // `browser_group create` names the group `g<nextGroup>`; its field opens once it is drawn.
-                let id = "g\(snapshot.nextGroup)"
+                // The field opens on the group `browser_group create` answers it made; a refusal opens none.
                 Task {
-                    await dispatch("browser_group", ["action": .string("create"), "tabs": .array([.string(tab)])])
-                    renamingGroup = id
+                    let made = await dispatchAnswer(
+                        "browser_group", ["action": .string("create"), "tabs": .array([.string(tab)])])
+                    if case .object(let o)? = made, case .string(let id)? = o["group"] { renamingGroup = id }
                 }
             })
     }
@@ -697,6 +701,7 @@ struct BrowserPane: View {
             // window as this update applies, so the page takes it a turn later — taken now, it
             // would be taken straight back.
             addressFocused = false
+            if headerFocus != nil { setHeaderFocus(nil) }
             DispatchQueue.main.async { focusPage() }
         }
         syncFind(old: old, now: now)
