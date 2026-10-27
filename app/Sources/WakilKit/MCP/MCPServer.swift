@@ -453,6 +453,16 @@ private let readPaneToolListEntry = JSONValue.object([
         + "replace_in_flight while a replace runs; last_replace is the latest replace — replaced, files, "
         + "failures (each path and error), undoable, undone, restored and cancelled — or null.\n"
         + "\n"
+        + "kind \"browser\" — a web browser. tabs lists the open tabs in order, each its id, url, "
+        + "title, whether it is loading and whether it is the active one. active is the active "
+        + "tab's id, or null. url, title, loading, canGoBack, canGoForward and zoom describe the "
+        + "active tab, or are null when there is none. bookmarked is whether the active tab's url is "
+        + "bookmarked (false when there is no tab). find is the find bar — query, current "
+        + "match and total — or null while it is closed. downloads lists this pane's downloads "
+        + "in the order they began, each its id, filename, state (running, finished, failed or "
+        + "cancelled), bytes received and bytes expected. Never the page's text. failure is the "
+        + "active tab's load failure, or null.\n"
+        + "\n"
         + "The grid-only actions (pane_select_cell, pane_select_rows, pane_set_column_width, "
         + "pane_scroll_to_row, pane_scroll_clear) refuse a terminal pane and an api pane by "
         + "name. Use term_scroll for a terminal pane's history."),
@@ -719,7 +729,9 @@ private let confirmationBusyCode = -32005
 ///
 /// The re-dispatch passes `arguments` unchanged rather than rebuilding them
 /// from the parked projection: the operator confirmed a specific statement,
-/// and anything reconstructed could differ from what they read.
+/// and anything reconstructed could differ from what they read. The action's own proposal travels
+/// with it (`asked`), so an action whose arguments resolve against live state (a browser act that
+/// names no tab) can refuse an approval that would now land somewhere other than what was asked.
 ///
 /// **`caller` is re-read after the park, never captured across it.**
 /// The gate must judge the environment as it stands at the moment of
@@ -774,8 +786,19 @@ private func parkForConfirmation(
     // description.
     // A mutation's own statement (SQL, an HTTP request) when it has one; a git write the agent price
     // gates (3a-iv) has none, and is described in a sentence instead.
-    let ownStatement = isMutation ? stringArgument(arguments, "statement") : nil
-    let statement = ownStatement
+    // 3c-ii: an action's own proposal comes first — its statement and what the plane asks —
+    // read in the parker's own canvas (ruling C5b). Without one, nothing below changes.
+    let parker = await caller()
+    let own = await surface.registry.proposal(name: name, params: arguments, caller: parker)
+    // An action that describes its own proposals and now cannot (a browser act whose page moved on
+    // between the gate's price and this park) parks nothing: the agent is told to read again,
+    // rather than asked for a statement it never sends.
+    if own == nil, await surface.registry.declaresProposal(name: name) {
+        return JSONRPCMessage(id: id, error: JSONRPCError(
+            code: -32603, message: pageChangedRefusal(action: name)))
+    }
+    let ownStatement = own == nil && isMutation ? stringArgument(arguments, "statement") : nil
+    let statement = own?.statement ?? ownStatement
         ?? (isMutation ? (confirmationDescription(action: name, params: arguments) ?? "")
             : (confirmationDescription(action: name, params: arguments)
                 ?? describeProposal(action: name, arguments: arguments)))
@@ -785,7 +808,7 @@ private func parkForConfirmation(
             message: "\(name): no statement to confirm — nothing was parked and nothing ran. "
                 + "Send a non-empty \"statement\" argument."))
     }
-    let parker = await caller()
+    let ask = own?.ask ?? .change
     let proposal = PendingMutation(
         action: name,
         params: arguments,
@@ -795,7 +818,8 @@ private func parkForConfirmation(
         origin: .agent,
         // The session's own place, so it waits there beside other places' proposals.
         place: parker.place,
-        conversation: parker.conversation)
+        conversation: parker.conversation,
+        ask: ask)
 
     switch await surface.confirmations.request(proposal) {
     case .approved:
@@ -807,7 +831,7 @@ private func parkForConfirmation(
         do {
             let result = try await surface.registry.dispatch(
                 name: name, params: arguments, origin: .agent,
-                caller: judged, confirmation: "confirm")
+                caller: judged, confirmation: "confirm", asked: own)
             return JSONRPCMessage(id: id, result: toolResultEnvelope(result))
         } catch let error as ActionError {
             return JSONRPCMessage(id: id, error: jsonRPCError(for: error))
@@ -818,6 +842,14 @@ private func parkForConfirmation(
             return JSONRPCMessage(id: id, error: JSONRPCError(code: -32603, message: "\(error)"))
         }
     case .cancelled:
+        // Don't Allow on a site question is about the site, not this one change: say so, so the
+        // agent stops asking there rather than retrying the act.
+        if case .site(let site) = ask {
+            return JSONRPCMessage(id: id, error: JSONRPCError(
+                code: -32002,
+                message: "\(name): the operator did not allow the agent on \(site) — "
+                    + "don't act there again unless they ask."))
+        }
         return JSONRPCMessage(id: id, error: JSONRPCError(
             code: -32002, message: "\(name) requires confirmation"))
     case .expired:

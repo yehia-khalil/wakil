@@ -69,6 +69,10 @@ struct SettingsPane: View {
     let saveOrganisationField: (WindowModel.OrganisationField, String, String) async -> String?
     /// Saves app-wide editor fields (3b-v) and answers the refusal's sentence, or nil.
     var saveEditorSettings: ([String: JSONValue]) async -> String? = { _ in nil }
+    /// Saves app-wide browser fields (3c-i) and answers the refusal's sentence, or nil.
+    var saveBrowserSettings: ([String: JSONValue]) async -> String? = { _ in nil }
+    /// Deletes this organisation's browsing data, after the form's own confirmation. Answers the refusal or nil.
+    var clearBrowserData: (_ org: String) async -> String? = { _ in nil }
     /// Saves one project's editor fields: the project file's path, then the fields.
     var saveProjectEditorSettings: (String, [String: JSONValue]) async -> String? = { _, _ in nil }
     /// 3a-iii-b: saves one of a project's agent boxes — the project file's path, then general, commits
@@ -397,6 +401,7 @@ struct SettingsPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
                 row(.editor, label: "Editor", depth: 0)
+                row(.browser, label: "Browser", depth: 0)
                 row(.organisation, label: tree?.org.label ?? "Organisation", depth: 0)
                 row(.providers, label: "Providers", depth: 0, badge: tree.map { "\($0.providers.count)" })
 
@@ -562,7 +567,7 @@ struct SettingsPane: View {
     /// never on appear, so a selection left inside a branch the operator closed stays hidden.
     private func revealSelection() {
         switch selection {
-        case .organisation, .providers, .editor, .projects: return
+        case .organisation, .providers, .editor, .browser, .projects: return
         case .project: expansion.projectsOpen = true
         case .projectEditor(let project), .environment(let project, _):
             expansion.reveal(project: project)
@@ -1037,6 +1042,12 @@ struct SettingsPane: View {
             }
         case .editor:
             EditorAppSettingsForm(editor: tree.editor, error: tree.editorError, save: saveEditorSettings)
+        case .browser:
+            BrowserSettingsForm(
+                browser: tree.browser,
+                organisation: tree.org.displayName.isEmpty ? tree.org.id : tree.org.displayName,
+                organisationId: tree.org.id,
+                save: saveBrowserSettings, clearData: clearBrowserData)
         case .projectEditor(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {
                 EditorProjectSettingsForm(
@@ -2905,6 +2916,7 @@ enum SettingsNode: Hashable {
     case organisation
     case providers
     case editor
+    case browser
     case projectEditor(String)
 
     /// A stable fragment for this node's accessibility identifier.
@@ -2919,6 +2931,7 @@ enum SettingsNode: Hashable {
         case .providers: return "providers"
         case .projects: return "projects"
         case .editor: return "editor"
+        case .browser: return "browser"
         case .projectEditor(let name): return "projectEditor.\(name)"
         case .project(let name): return "project.\(name)"
         case .environment(let project, let environment):
@@ -2970,6 +2983,8 @@ enum SettingsNode: Hashable {
             return [organisation, "Projects"]
         case .editor:
             return ["Wakil", "Editor"]
+        case .browser:
+            return ["Wakil", "Browser"]
         case .projectEditor(let name):
             return [organisation, "Projects", name, "Editor"]
         case .project(let name):

@@ -31,6 +31,8 @@ public struct PendingMutation: Sendable, Equatable, Identifiable {
     public let place: Place
     /// The conversation within `place` that proposed it; nil when none is named.
     public let conversation: String?
+    /// What the plane asks about it: one change (every proposal before 3c-ii), or a site.
+    public let ask: PendingAsk
 
     /// Where the broker parks it: an agent's proposal in its conversation's slot, the
     /// operator's in the place's own slot (conversation nil), whatever conversation is named.
@@ -48,7 +50,8 @@ public struct PendingMutation: Sendable, Equatable, Identifiable {
         affectsEveryRow: Bool,
         origin: ActionOrigin,
         place: Place,
-        conversation: String? = nil
+        conversation: String? = nil,
+        ask: PendingAsk = .change
     ) {
         self.id = id
         self.action = action
@@ -59,6 +62,7 @@ public struct PendingMutation: Sendable, Equatable, Identifiable {
         self.origin = origin
         self.place = place
         self.conversation = conversation
+        self.ask = ask
     }
 }
 

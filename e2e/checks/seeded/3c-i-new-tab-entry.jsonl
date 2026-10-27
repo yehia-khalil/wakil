@@ -1,0 +1,7 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"do":{"click":"browser.newTab"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].id","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"focus":"browser.address"}}

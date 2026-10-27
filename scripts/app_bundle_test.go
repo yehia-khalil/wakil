@@ -197,6 +197,35 @@ func TestBundleInfoPlistNamesTheExecutableThatIsThere(t *testing.T) {
 	}
 }
 
+// The browser pane asks for the camera and microphone on a page's behalf and
+// loads plain-http pages; without these keys macOS kills the app on the prompt
+// or WebKit refuses the page.
+func TestBundleInfoPlistCarriesTheBrowserKeys(t *testing.T) {
+	root := bundleTree(t)
+	if out, err := runBundleScript(t, root); err != nil {
+		t.Fatalf("make-app-bundle.sh: %v\n%s", err, out)
+	}
+	plutil, err := exec.LookPath("plutil")
+	if err != nil {
+		t.Skipf("plutil is not on PATH, so the Info.plist cannot be parsed: %v", err)
+	}
+	plist := filepath.Join(root, "app", "Wakil.app", "Contents", "Info.plist")
+	for key, want := range map[string]string{
+		"NSCameraUsageDescription":                                  "A web page in Wakil's browser asked to use the camera.",
+		"NSMicrophoneUsageDescription":                              "Wakil listens while you hold ⌥, and when a web page in its browser asks and you allow it. Audio for speech never leaves this Mac.",
+		"NSAppTransportSecurity.NSAllowsArbitraryLoadsInWebContent": "true",
+	} {
+		out, err := exec.Command(plutil, "-extract", key, "raw", "-o", "-", plist).Output()
+		if err != nil {
+			t.Errorf("plutil -extract %s: %v", key, err)
+			continue
+		}
+		if got := strings.TrimSpace(string(out)); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+}
+
 // A missing Go binary must fail the build rather than produce a bundle that
 // looks complete. `binaryURL` has no fallback out of a bundle, so the
 // alternative is an app that silently cannot reach wakil-ctx.

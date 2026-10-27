@@ -1254,3 +1254,141 @@ private actor EnvironmentBox {
                                     params: .object(["root": .string("/p/api"), "branch": .string("x"), "force": .bool(true)]))
             == "delete branch x in api, and the commits only it has")
 }
+
+// MARK: - A proposal of the action's own (3c-ii)
+
+/// A registry holding one `.mutate` the gate always parks, whose own proposal names a site
+/// question — the shape a browser act takes on a site not yet allowed.
+private func proposingSurface(
+    proposal: (@Sendable (JSONValue) async -> ActionProposal?)?
+) async -> (MCPSurface, ConfirmationBroker, ActionRegistry) {
+    let dir = testScratchRoot.appendingPathComponent("wakil-test-\(UUID().uuidString)")
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
+    let broker = ConfirmationBroker(timeout: .seconds(60))
+    var action = Action(
+        name: "test_act", description: "test", kind: .mutate,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in .object(["ok": .bool(true)]) })
+    action.proposal = proposal
+    await registry.register(action)
+    let surface = MCPSurface(
+        registry: registry, panes: PaneStore(), layout: LayoutStore(), confirmations: broker)
+    return (surface, broker, registry)
+}
+
+private func actCall(_ arguments: JSONValue) -> JSONRPCMessage {
+    JSONRPCMessage(
+        id: .number(1), method: "tools/call",
+        params: .object(["name": .string("test_act"), "arguments": arguments]))
+}
+
+@Test func aProposalSuppliesTheStatementAndTheAsk() async throws {
+    let (surface, broker, _) = await proposingSurface { _ in
+        ActionProposal(statement: "click \"Save\"", ask: .site("staging.initech.dev"))
+    }
+    async let reply = handle(
+        actCall(.object(["ref": .string("e1")])), surface: surface,
+        caller: { .test("staging", conversation: "conv") })
+    while await broker.all().isEmpty { await Task.yield() }
+    let parked = await broker.all().values.first
+    #expect(parked?.statement == "click \"Save\"")
+    #expect(parked?.ask == .site("staging.initech.dev"))
+    #expect(parked?.affectsEveryRow == false)
+    await broker.approve(id: parked!.id)
+    #expect(await reply?.error == nil)
+}
+
+@Test func aDeniedSiteQuestionSaysTheSiteWasNotAllowed() async throws {
+    let (surface, broker, registry) = await proposingSurface { _ in
+        ActionProposal(statement: "click \"Save\"", ask: .site("staging.initech.dev"))
+    }
+    async let reply = handle(
+        actCall(.object(["ref": .string("e1")])), surface: surface,
+        caller: { .test("staging", conversation: "conv") })
+    while await broker.all().isEmpty { await Task.yield() }
+    await broker.cancel(id: (await broker.all().values.first)!.id)
+    let answered = await reply
+    #expect(answered?.error?.code == -32002)
+    #expect(answered?.error?.message
+        == "test_act: the operator did not allow the agent on staging.initech.dev — don't act there again unless they ask.")
+    #expect(try await registry.journalEntries().map(\.outcome) == ["gated"])
+}
+
+@Test func anActionWithoutAProposalParksAsBefore() async throws {
+    let (surface, broker, _) = await proposingSurface(proposal: nil)
+    async let reply = handle(
+        actCall(.object(["statement": .string("DELETE FROM t")])), surface: surface,
+        caller: { .test("staging", conversation: "conv") })
+    while await broker.all().isEmpty { await Task.yield() }
+    let parked = await broker.all().values.first
+    #expect(parked?.statement == "DELETE FROM t")
+    #expect(parked?.ask == .change)
+    #expect(parked?.affectsEveryRow == true)
+    await broker.cancel(id: parked!.id)
+    #expect(await reply?.error?.message == "test_act requires confirmation")
+}
+
+/// The gate priced the call `.gate`, but by the park the action can no longer say what it would do —
+/// its page moved on. Nothing parks, and the agent is told to read again (Task 5's carry to Task 7).
+@Test func aDeclaredProposalThatAnswersNilSaysThePageChanged() async throws {
+    let (surface, broker, registry) = await proposingSurface { _ in nil }
+    let reply = await handle(
+        actCall(.object(["ref": .string("e1")])), surface: surface,
+        caller: { .test("staging", conversation: "conv") })
+    #expect(await broker.all().isEmpty)
+    #expect(reply?.error?.message
+        == "test_act: the page changed since it was read — read it again (browser_read_page).")
+    #expect(try await registry.journalEntries().map(\.outcome) == ["gated"])
+}
+
+/// Task 5's deferred MCP-level test, and final review I1: the park asks the proposal in the parker's own
+/// session and canvas, and the approved re-dispatch carries that same proposal — the target and the
+/// question the operator answered — to the handler (`ActionRegistry.dispatchAsked`).
+@Test func theParkAsksInTheParkersCanvasAndTheApprovalCarriesWhatItAsked() async throws {
+    let dir = testScratchRoot.appendingPathComponent("wakil-test-\(UUID().uuidString)")
+    let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
+    let home = LayoutScope(organization: "initech", project: "b", environment: "staging")
+    registry.setScopeLookup { caller in caller.session == nil ? nil : home }
+    registry.setScreenScope { LayoutScope(organization: "initech", project: "a", environment: "staging") }
+    let broker = ConfirmationBroker(timeout: .seconds(60))
+    var action = Action(
+        name: "test_act", description: "test", kind: .mutate,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            guard let asked = ActionRegistry.dispatchAsked else { return .object(["asked": .null]) }
+            return .object([
+                "asked": .string(asked.statement),
+                "pane": .string(asked.target?.pane ?? "-"), "tab": .string(asked.target?.tab ?? "-"),
+                "site": .string(asked.ask == .site("staging.initech.dev") ? "staging.initech.dev" : "-"),
+            ])
+        })
+    action.proposal = { _ in
+        let where_ = "\(ScopeRouting.home?.project ?? "-")/\(ActionRegistry.dispatchCaller?.session ?? "-")"
+        return ActionProposal(statement: "click \"Save\" \(where_)", ask: .site("staging.initech.dev"),
+                              target: ProposalTarget(pane: "pane-\(where_)", tab: "t1"))
+    }
+    await registry.register(action)
+    let surface = MCPSurface(
+        registry: registry, panes: PaneStore(), layout: LayoutStore(), confirmations: broker)
+
+    async let reply = handle(
+        actCall(.object(["ref": .string("e1"), "statement": .string("DELETE FROM t")])), surface: surface,
+        caller: { .test("staging", session: "bg-1", conversation: "conv") })
+    while await broker.all().isEmpty { await Task.yield() }
+    let parked = try #require(await broker.all().values.first)
+    // The proposal's own statement wins over a "statement" argument, read in the parker's canvas.
+    #expect(parked.statement == "click \"Save\" b/bg-1")
+    #expect(parked.ask == .site("staging.initech.dev"))
+    await broker.approve(id: parked.id)
+    let answered = await reply
+    #expect(answered?.error == nil)
+    guard case .object(let envelope)? = answered?.result,
+          case .object(let ran)? = envelope["structuredContent"] else {
+        Issue.record("no structured result: \(String(describing: answered))")
+        return
+    }
+    #expect(ran["asked"] == .string("click \"Save\" b/bg-1"))
+    #expect(ran["pane"] == .string("pane-b/bg-1"))
+    #expect(ran["tab"] == .string("t1"))
+    #expect(ran["site"] == .string("staging.initech.dev"))
+}

@@ -39,6 +39,8 @@ struct WakilWindow: View {
     /// The window's undo, where a landed commit-message draft registers its ⌘Z (3a-ii-b).
     @Environment(\.undoManager) private var undoManager
     @State private var session: WindowSession?
+    /// The window's browser web views (3c-i), which outlive every rebuild of a browser pane.
+    var browserHost: BrowserTabHost? { session?.browserTabs }
     /// 2d-ii: Task 13 binds this into the thread view; the composer bar's
     /// Esc that listening did not consume folds it.
     @State private var threadDisclosure = ThreadDisclosure()

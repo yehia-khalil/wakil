@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/3c-ii-spoken-act.jsonl",
+  "baseCommit": "5feb2f5e5892308cc712bebd2ac05ddeccec792a",
+  "provedAt": "2026-10-26T19:00:23.185368Z",
+  "checkBlob": "d2a056fdeaf50afb9c912fba6cf72d7ba338c005"
+}

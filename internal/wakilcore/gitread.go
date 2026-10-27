@@ -61,7 +61,8 @@ var gitAllowedFlags = map[string][]string{
 	"show":         {"--name-only", "--format=", "-z", "--"},
 	"rev-parse":    {"--show-toplevel", "--abbrev-ref", "--verify", "--short", "--absolute-git-dir", "--"},
 	"for-each-ref": {"--sort=", "--format="},
-	"rev-list":     {"--count"},
+	// --not --remotes=<remote>: 3c-i's blame asks which commits none of origin's branches holds.
+	"rev-list": {"--count", "--not", "--remotes="},
 	// --contents=- only: any other value is a file path, read from anywhere on the disk.
 	"blame": {"--porcelain", "--contents=-", "--"},
 	"log":   {"-g", "--format=", "-z", "--follow", "--max-count=", "--skip=", "--name-status", "--"},

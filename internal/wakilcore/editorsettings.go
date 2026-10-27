@@ -50,7 +50,8 @@ func HeavyNames(folders []string) []string {
 // AppSettings is ~/.wakil/settings.json. Keys this build does not know are dropped on a write,
 // as SaveProject drops them.
 type AppSettings struct {
-	Editor EditorAppSettings `json:"editor"`
+	Editor  EditorAppSettings  `json:"editor"`
+	Browser BrowserAppSettings `json:"browser"` // 3c-i; see browsersettings.go
 }
 
 // EditorAppSettings is the app-wide tier as stored: zero values mean "the default".

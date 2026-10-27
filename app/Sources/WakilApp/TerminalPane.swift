@@ -56,6 +56,10 @@ struct TerminalPane: View {
     /// arithmetic that turns a measured pixel size into cols/rows is
     /// `terminalGridSize` (`WakilKit`); this view only measures and calls.
     let resize: (Int, Int) -> Void
+    /// Opens a URL the operator ⌘-clicked in the pane's output: `(url, systemBrowser)`, where
+    /// `systemBrowser` is ⌥ held too — `WakilLinks.open`, the closure the editor gets (3c-iii
+    /// ruling 14).
+    let openLink: (String, Bool) -> Void
     /// `Send to thread` on a block — `WindowModel.send`, the thought
     /// thread's own entry point, the same one the operator's compose field
     /// calls.
@@ -168,12 +172,20 @@ struct TerminalPane: View {
     @FocusState private var searchFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // The compact chrome (2026-10-26): one 32 pt header row and a hairline, ⌘F's row under it
+        // while it is open, then the shell's surface to the pane's border with a 6 pt gutter inside
+        // it, so its text never meets the border (the canvas pads no terminal pane).
+        VStack(alignment: .leading, spacing: 0) {
             header()
+            PaneHairline()
             if searchOpen {
                 searchBar()
+                    .padding(.horizontal, PaneStripStyle.rowInset)
+                    .frame(height: PaneStripStyle.rowHeight)
+                PaneHairline()
             }
             content()
+                .padding([.horizontal, .top], PaneStripStyle.gutter)
             footer()
         }
         .focusable()
@@ -190,6 +202,9 @@ struct TerminalPane: View {
         // ring in a different colour would still be the third hue the
         // design refuses, just a quieter one.
         .focusEffectDisabled()
+        // A link in the output (3c-iii ruling 14) opens only on ⌘-click. A plain click is
+        // discarded, so it selects text as it always has.
+        .environment(\.openURL, openLinkAction)
         .onAppear { focused = true }
         .onChange(of: isFocusedPane) { _, nowFocused in
             // Only ever takes focus, never gives it up: a pane that lost
@@ -249,6 +264,22 @@ struct TerminalPane: View {
     /// nothing here re-parses one.
     @ViewBuilder
     private func header() -> some View {
+        // The terminal glyph in the label's place, the pane's own title beside it — a terminal pane
+        // is named for where it opened — then the live line and the controls, all in one row.
+        PaneStripRow(glyph: "terminal", name: "Terminal") {
+            HStack(spacing: 8) {
+                PaneTitle(title: pane.title)
+                    .lineLimit(1)
+                    .fixedSize()
+                headerLine()
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("pane.\(pane.id).header")
+        }
+    }
+
+    @ViewBuilder
+    private func headerLine() -> some View {
         HStack(spacing: 8) {
             Text(headerCwd)
                 .font(.system(size: 11, design: .monospaced))
@@ -257,14 +288,18 @@ struct TerminalPane: View {
                 .truncationMode(.head)
             Text("·")
                 .foregroundStyle(Self.text.opacity(0.25))
+            // One line each, so a narrow pane truncates the row rather than stacking it.
             Text(headerShell)
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(Self.text.opacity(0.45))
+                .lineLimit(1)
             Text("·")
                 .foregroundStyle(Self.text.opacity(0.25))
             Text("\(snapshot.cols)×\(snapshot.rows)")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(Self.text.opacity(0.45))
+                .lineLimit(1)
+                .fixedSize()
             // Walk-defects B2: a pane restored after `clearForOrgSwitch`
             // comes back with `snapshot.shell.isEmpty` — the operator's
             // "dead pane" — and nothing before this let them start a new
@@ -304,6 +339,8 @@ struct TerminalPane: View {
             } label: {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Self.text.opacity(searchOpen ? 0.85 : 0.45))
+                    .frame(width: PaneStripStyle.glyphBox, height: PaneStripStyle.glyphBox)
+                    .contentShape(Rectangle())
             }
             // The glyph is the whole control, so without a spoken name this
             // button is unreachable by VoiceOver as well as by a check.
@@ -350,6 +387,19 @@ struct TerminalPane: View {
         matchingTerminalBlockIds(snapshot.blocks, query: searchQuery)
     }
 
+    /// What a click on a link in the pane's output does: nothing without ⌘ (`.discarded`), else
+    /// `openLink`, with ⌥ sending it to the system browser. The modifiers are the click's own,
+    /// read from the event SwiftUI is handling as it calls this.
+    private var openLinkAction: OpenURLAction {
+        let openLink = openLink
+        return OpenURLAction { url in
+            let flags = NSApp.currentEvent?.modifierFlags ?? []
+            guard flags.contains(.command) else { return .discarded }
+            openLink(url.absoluteString, flags.contains(.option))
+            return .handled
+        }
+    }
+
     // MARK: - Content: the live grid, or the block history
 
     @ViewBuilder
@@ -389,6 +439,8 @@ struct TerminalPane: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("pane.\(pane.id).screen")
             .onPreferenceChange(ParkedStripHeightKey.self) { height in
                 parkedStripHeight = height
             }
@@ -626,7 +678,14 @@ struct TerminalPane: View {
             }
             Spacer()
         }
+        // Its own row under the surface, inside the gutter; the resize handle sits over the corner
+        // to its right.
+        .padding(.horizontal, PaneStripStyle.gutter + 2)
+        .frame(height: Self.footerHeight)
     }
+
+    /// The footer's row: its 9 pt line with room above and below.
+    private static let footerHeight: CGFloat = 20
 
     // MARK: - Keystrokes
 
@@ -861,17 +920,18 @@ struct TerminalPane: View {
 /// a program's OWN colour, legible against the pane's own near-black
 /// field; a coloured background is the rarer case and is left for the
 /// day a real pane is measured needing it.
+///
+/// **Drawn by `TerminalSelectableText`** (3c-iii walk): SwiftUI's selectable `Text` swallowed a
+/// ⌘-click on a link. The rows are one attributed string, one line each at the 15 pt row height,
+/// in the same 12 pt monospaced font `TerminalPane.cellSize` measures.
 private struct LiveGrid: View {
     let rows: [[TerminalStyleRun]]
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(rows.indices, id: \.self) { index in
-                terminalStyledRowText(rows[index], dimmedDefault: TerminalPane.text.opacity(0.55))
-                    .font(.system(size: 12, design: .monospaced))
-                    .frame(height: 15, alignment: .leading)
-            }
-        }
-        .textSelection(.enabled)
+        TerminalSelectableText(
+            text: terminalAttributedLines(
+                rows, fontSize: 12, lineHeight: TerminalPane.cellSize.height, defaultColor: TerminalPane.text,
+                dimmedDefault: TerminalPane.text.opacity(0.55), linkDefault: TerminalPane.text),
+            layout: .rows(lineHeight: TerminalPane.cellSize.height))
     }
 }
 
@@ -891,10 +951,36 @@ private struct LiveGrid: View {
 /// different ways. `dimmedDefault` stays a parameter: each surface's own
 /// existing default (`terminalRunText`'s own doc comment) differs, and
 /// nothing here should have to guess which one a caller wants.
-private func terminalStyledRowText(_ runs: [TerminalStyleRun], dimmedDefault: Color) -> Text {
-    runs.reduce(Text("")) { partial, run in
-        partial + terminalRunText(run, dimmedDefault: dimmedDefault)
+///
+/// **Links (3c-iii ruling 14).** The row goes through `TerminalLinks.split` first, so a URL is its
+/// own piece carrying `.link`, still concatenated into the row's one `Text`. `linkDefault` is the
+/// colour a link with no colour of its own is drawn in: the surface's own text colour, so a link
+/// keeps the colour the text around it has rather than taking the system's link blue.
+private func terminalStyledRowText(_ runs: [TerminalStyleRun], dimmedDefault: Color, linkDefault: Color) -> Text {
+    TerminalLinks.split(runs).reduce(Text("")) { partial, piece in
+        partial + terminalRunText(
+            piece.run, link: piece.link, dimmedDefault: dimmedDefault, linkDefault: linkDefault)
     }
+}
+
+/// A block's output as one multi-line `Text`: each line's runs when `runs` is present and
+/// matches `output` line for line, else each line as one default-style run, so links are found
+/// either way. Lines are joined with a literal `"\n"`, as the plain `Text(output.joined(…))` was.
+private func terminalLinkedOutputText(
+    _ output: [String], runs: [[TerminalStyleRun]]?, dimmedDefault: Color, linkDefault: Color
+) -> Text {
+    let lines: [[TerminalStyleRun]]
+    if let runs, runs.count == output.count {
+        lines = runs
+    } else {
+        lines = output.map { [TerminalStyleRun(text: $0, style: .plain)] }
+    }
+    var result = Text("")
+    for (index, line) in lines.enumerated() {
+        if index > 0 { result = result + Text("\n") }
+        result = result + terminalStyledRowText(line, dimmedDefault: dimmedDefault, linkDefault: linkDefault)
+    }
+    return result
 }
 
 /// One style run as SwiftUI `Text` — the one place `TerminalCellStyle`
@@ -906,19 +992,38 @@ private func terminalStyledRowText(_ runs: [TerminalStyleRun], dimmedDefault: Co
 /// text stepped down, or the block history's already-dimmed output
 /// stepped down again, each surface's own existing default rather than
 /// one hard-coded value that would disagree with either.
-private func terminalRunText(_ run: TerminalStyleRun, dimmedDefault: Color) -> Text {
-    var text = Text(run.text)
+///
+/// **A link** (`link` non-nil, 3c-iii ruling 14) is `Text(AttributedString)` whose `.link` is the
+/// URL, drawn in the run's own colour (`linkDefault` when the run has none) with an underline at
+/// 0.35 of that colour. Colour and underline are attributes of the link run itself, so the link
+/// does not fall back to the view's tint. Opening it is the pane's `openURL` handler's call
+/// (`TerminalPane.openLinkAction`).
+private func terminalRunText(
+    _ run: TerminalStyleRun, link: URL? = nil, dimmedDefault: Color, linkDefault: Color
+) -> Text {
     let (foreground, _) = run.style.resolvedColors
+    var color: Color?
     if let foreground {
-        var color = Color(red: foreground.r, green: foreground.g, blue: foreground.b)
-        if run.style.dim { color = color.opacity(0.7) }
-        text = text.foregroundColor(color)
+        color = Color(red: foreground.r, green: foreground.g, blue: foreground.b)
+        if run.style.dim { color = color?.opacity(0.7) }
     } else if run.style.dim {
         // ANSI black and SGR 2 (faint) alike land here with no colour of
         // their own — design-language.md §5's own rule for dimming:
         // stepped down by opacity, never by a different hue.
-        text = text.foregroundColor(dimmedDefault)
+        color = dimmedDefault
     }
+    if let link {
+        let linkColor = color ?? linkDefault
+        var attributed = AttributedString(run.text)
+        attributed.link = link
+        attributed.swiftUI.foregroundColor = linkColor
+        attributed.swiftUI.underlineStyle = Text.LineStyle(pattern: .solid, color: linkColor.opacity(0.35))
+        var text = Text(attributed)
+        if run.style.bold { text = text.bold() }
+        return text
+    }
+    var text = Text(run.text)
+    if let color { text = text.foregroundColor(color) }
     if run.style.bold { text = text.bold() }
     if run.style.underline { text = text.underline() }
     return text
@@ -1129,7 +1234,9 @@ private struct BlockHistory: View {
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(liveRows.indices, id: \.self) { index in
-                            terminalStyledRowText(liveRows[index], dimmedDefault: TerminalPane.text.opacity(0.90))
+                            terminalStyledRowText(
+                                liveRows[index], dimmedDefault: TerminalPane.text.opacity(0.90),
+                                linkDefault: TerminalPane.text.opacity(0.90))
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(TerminalPane.text.opacity(0.90))
                                 .frame(height: 15, alignment: .leading)
@@ -1272,11 +1379,8 @@ private struct OperatorRow: View {
                 StructuredOutputView(
                     paneId: paneId, blockId: block.id, structured: structured, basePath: cwd)
             } else if !block.output.isEmpty {
-                outputText
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(TerminalPane.text.opacity(0.55))
-                    .textSelection(.enabled)
-                    .lineLimit(12)
+                // `TerminalSelectableText`, not selectable `Text`, so a ⌘-click reaches a link.
+                TerminalSelectableText(text: outputText, layout: .wrapping(maximumLines: 12))
             }
             actions()
         }
@@ -1291,34 +1395,22 @@ private struct OperatorRow: View {
         status == .failed ? TerminalPane.red.opacity(0.85) : TerminalPane.text.opacity(0.35)
     }
 
-    /// `block.output`, coloured when `block.outputRuns` is present and
-    /// trustworthy — one `Text` for the whole block, exactly as the plain
-    /// path already was, built by joining each line's runs with `+` and a
-    /// literal `"\n"` between lines rather than switching to one `Text`
-    /// per LINE: this block already draws as a single multi-line `Text`
-    /// today, and widening that to a `Text` per line would be a second,
-    /// unmeasured drawing shape this task was not asked to introduce.
+    /// `block.output`, coloured when `block.outputRuns` is present and trustworthy, as one
+    /// attributed string for `TerminalSelectableText`, a `"\n"` between lines.
     ///
-    /// **Falls back to the plain join whenever `outputRuns` cannot be
-    /// trusted** — absent (the common, uncoloured case;
-    /// `TerminalBlock.outputRuns`'s own doc comment on why that is `nil`
-    /// rather than a trivial array) or, defensively, misaligned with
-    /// `block.output` (a line count that disagrees is treated as "no
-    /// runs" rather than zipped against the wrong line). Either way this
-    /// produces the exact same `Text` the pane drew before this pane knew
-    /// about colour.
-    private var outputText: Text {
-        guard let runs = block.outputRuns, runs.count == block.output.count else {
-            return Text(block.output.joined(separator: "\n"))
-        }
-        var result = Text("")
-        for (index, line) in runs.enumerated() {
-            if index > 0 { result = result + Text("\n") }
-            for run in line {
-                result = result + terminalRunText(run, dimmedDefault: TerminalPane.text.opacity(0.55))
-            }
-        }
-        return result
+    /// **Falls back to one default-style run per line whenever `outputRuns` cannot be trusted** —
+    /// absent (the common, uncoloured case; `TerminalBlock.outputRuns`'s own doc comment on why that
+    /// is `nil` rather than a trivial array) or, defensively, misaligned with `block.output` (a line
+    /// count that disagrees is treated as "no runs" rather than zipped against the wrong line).
+    ///
+    /// **Links (3c-iii ruling 14):** both paths go through `TerminalLinks.split`, so a URL links
+    /// whichever one drew it.
+    private var outputText: NSAttributedString {
+        let runs = block.outputRuns.flatMap { $0.count == block.output.count ? $0 : nil }
+            ?? block.output.map { [TerminalStyleRun(text: $0, style: .plain)] }
+        return terminalAttributedLines(
+            runs, fontSize: 10, defaultColor: TerminalPane.text.opacity(0.55),
+            dimmedDefault: TerminalPane.text.opacity(0.55), linkDefault: TerminalPane.text.opacity(0.55))
     }
 
     @ViewBuilder
@@ -1426,7 +1518,11 @@ private struct MirroredRow: View {
                 StructuredOutputView(
                     paneId: paneId, blockId: block.id, structured: structured, basePath: rootPath)
             } else if !block.output.isEmpty {
-                Text(block.output.joined(separator: "\n"))
+                // Plain lines, one default-style run each, so a URL in an agent's output links
+                // as one in the operator's does (3c-iii ruling 14).
+                terminalLinkedOutputText(
+                    block.output, runs: nil, dimmedDefault: TerminalPane.text.opacity(0.45),
+                    linkDefault: TerminalPane.text.opacity(0.45))
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(TerminalPane.text.opacity(0.45))
                     .lineLimit(10)

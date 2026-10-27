@@ -1607,6 +1607,56 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* an operator loses resolutions or uncommitted work to a conflict left in place that
     Abort or Undo Apply could not bring back — then a clash goes back to being put back by default.
 
+48. **The browser is WebKit, a profile per organisation; a web view belongs to its place; the page is
+    the second exception to dual-drive; the agent acts in it by ref, at a price per site.**
+    *(2026-10-25, operator, during the 3c design —
+    `docs/superpowers/specs/2026-10-25-3c-browser-design.md`.)*
+    The browser pane is a `WKWebView` per tab — no new dependency, no second engine. Each
+    organisation gets its own `WKWebsiteDataStore(forIdentifier:)`, its id in
+    `~/.wakil/orgs/<org>/browser/profile.json`, so a site signed in under one organisation is signed
+    out under another (Invariant 4); the store itself is WebKit's, under `~/Library/WebKit/`, and
+    Settings → Browser → Clear deletes it — only the organisation its question named. `wakil org rm`
+    cannot (Go has no WebKit, and the id goes with the folder): it names the store it leaves behind
+    as residue and says to clear it in Settings first, as it leaves the Keychain. A link to an app
+    (`mailto:`, `zoommtg:`) is asked about in place before macOS opens it, and `browser_open` takes
+    web pages and files only. **A web view
+    belongs to a place**: the window keys it by (place, pane, tab), drops a report from a place not on
+    screen, and keeps tab state per place, since pane and tab ids repeat. **The page is the second
+    exception to dual-drive**, after the editor's text: clicks and typing inside a page are the
+    operator's; tabs, address, navigation, find, zoom and downloads are `browser_*` actions either
+    side can dispatch. A page's own prompts (alert, sign-in, camera) are answered in place by the
+    operator and are not store state. 3c-i gave the agent the pane's actions and `read_pane`
+    (tabs, address, title — never page text).
+    **3c-ii (2026-10-25, 2026-10-26) gives the agent the page, at a price per site.** `browser_read_page`
+    returns the page's text and its visible controls as untrusted data, each control with a ref;
+    `browser_click`, `browser_type`, `browser_select`, `browser_press` and `browser_scroll` act on a ref
+    from the last read, and refuse when the page has changed since. The price is the call's, not the
+    action's (`Action.callPrice`): **the first act on a site asks "Let the agent use <site>?", and an
+    Allow lasts for that conversation only** — kept in memory in the pane store by conversation id
+    (`PlaceAgent.id`, which never moves across a resume), never on disk, forgotten when the
+    conversation closes and by the × on the *agent allowed* mark. **Every act on a production site asks,
+    every time**, naming the element (`click "Delete booking" on api.initech.com`). A site is production
+    when it is the `baseUrl` host of an API entry in any environment of any project of the organisation
+    that is production: the config tree carries the flag (`ConfigTreeEnvironment.Production`, from
+    `EnvironmentIsProduction`), since the organisation-wide view Swift has is that tree. Until the tree
+    is read, every site is treated as production; `www.` is forgiven for production and never for
+    consent.
+    *Why per site, and not per submit:* a page's script can send from any click, so a price on the
+    submit button prices nothing; the site is the unit the operator can reason about. A password, card
+    or one-time-code field is never typed by the agent whatever the price (Invariant 6): the never-list
+    reads the field's type, autocomplete, name, id and label at the read, at the describe and again in
+    the page at the act.
+    **The operator's ruling of 2026-10-26, over the spec's Voice bullet:** the site question is answered
+    by a click when the request was typed and by a typed `confirm` when it was spoken (Invariant 7's text
+    is unchanged); every production act asks for the typed word whoever asked. An operator act in the page
+    is not an action; the operator's `.ui` browser acts on a production site have no surface in 3c-ii. A
+    later surface gives a proposal an `origin:` parameter and `parkAndAwait` proposal support.
+    *Why:* WebKit is the system's engine, already sandboxed per profile; a profile per organisation
+    is the credential boundary the rest of Wakil keeps; and a page the agent could drive before its
+    price exists would be a write with no gate.
+    *Reverse if:* a site the operator needs will not work in WebKit — then a second engine is argued
+    for, not the profile model.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,
@@ -1837,3 +1887,17 @@ CLI permission layer, since each needs a shell command or a file edit by the ope
 - **`Wakil --dispatch <file> [--environment <name>]`** (`main.swift`) runs a script of actions
   with origin `.debug` in every build, production included, against the real `$HOME`. It is the
   older of the two and needs no relaunch.
+### 2026-10-25 — acting in a web page
+
+`browser_click`, `browser_type`, `browser_select`, `browser_press` and `browser_scroll` (`.mutate`,
+agent-reachable, each with a price per call) in a tab's web page, after `browser_read_page` (`.read`)
+issues refs; `browser_revoke_site` (`.control`, operator-only) withdraws a site for the conversation.
+Priced by the site, Decision 48: asked once per site per conversation, every time on a production host
+(operator-typed request: a click; spoken: the typed word, ruled 2026-10-26). The page's text is data,
+never a request: every reply that carries page text names the site and says so. The agent acts only in
+http and https pages, only on a ref from the last read of that tab at that address, and never on a
+password, card or one-time-code field. Its script runs in the isolated world `wakil.agent`, takes the
+agent's text only as an argument and runs no string the agent sent. A page over 200 KB is cut and says
+where. The operator typing in the page holds an act for up to 10 s. Still refused: a password, card or
+one-time-code field typed by the agent, an act in a page that is not http or https, a script the agent
+supplies, and the operator's own `.ui` acts in the page on a production site (no surface yet).

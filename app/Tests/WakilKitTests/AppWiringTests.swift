@@ -237,7 +237,10 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
             ["api_bind", "api_cancel", "api_fill_from_curl", "api_open", "api_remove_entry",
              "api_render_curl", "api_reopen", "api_request", "api_send", "api_set_entry",
              "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
-             "capacity_record", "ctx_add_provider", "ctx_adopt_provider", "ctx_capacity",
+             // 3c-i: the browser's actions.
+             // 3c-ii: the agent's reach into the page (read_page, click, press, revoke_site, scroll, select, type).
+             "browser_back", "browser_bookmark", "browser_clear_data", "browser_click", "browser_close_tab", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_press", "browser_print", "browser_read_page", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_revoke_site", "browser_scroll", "browser_select", "browser_select_tab", "browser_stop", "browser_type", "browser_zoom",
+             "capacity_record", "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_capacity",
              "ctx_config_tree", "ctx_config_tree_for",
              "ctx_connection_add", "ctx_connection_allow_set", "ctx_connection_catalog", "ctx_connection_remove",
              "ctx_connection_secrets_set", "ctx_connection_signin_start", "ctx_connection_signin_wait",
@@ -250,7 +253,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs",
              "ctx_list_projects", "ctx_list_providers", "ctx_provider_login", "ctx_remove_environment",
              "ctx_remove_project", "ctx_rename_environment", "ctx_rename_project",
-             "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
+             "ctx_set_browser_settings", "ctx_set_editor_settings", "ctx_set_environment", "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
              "ctx_set_project_editor_settings", "ctx_set_provider",
              "ctx_unlink_provider", "ctx_update_org", "db_cancel", "db_classify_statement",
              "db_describe_table",

@@ -41,6 +41,33 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         #expect(tree.projects.first?.editor == SettingsProjectEditor(tabSize: 2, insertSpaces: false))
     }
 
+    /// 3c-i. The browser tier rides in the same tree; an older answer without it reads as the defaults.
+    @Test func theTreeDecodesTheBrowserTier() throws {
+        func tree(_ extra: String) throws -> SettingsTree {
+            let json = """
+            {"structuredContent":{"org":{"id":"acme","displayName":"","jiraBase":"","defaultProvider":""},
+             "providers":[],"projects":[]\(extra)}}
+            """
+            let value = try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
+            return try #require(decodeSettingsTree(fromResult: value))
+        }
+        #expect(try tree(#","browser":{"searchEngine":"kagi","startPage":"https://example.com"}"#).browser
+            == SettingsBrowser(searchEngine: "kagi", startPage: "https://example.com"))
+        #expect(try tree("").browser == SettingsBrowser.defaults)
+        #expect(SettingsBrowser.defaults == SettingsBrowser(searchEngine: "google", startPage: ""))
+    }
+
+    /// 3c-i. The browser setting is the operator's to write, as its editor twin is; the agent may read it.
+    @Test func theBrowserSettingWriteIsOperatorOnlyAndTheReadIsNot() async throws {
+        let (registry, _) = try await registryWithRecordingContext()
+        let set = try #require(await registry.all().first { $0.name == "ctx_set_browser_settings" })
+        let read = try #require(await registry.all().first { $0.name == "ctx_browser_settings" })
+        #expect(set.audience == .operatorOnly && set.kind == .control)
+        #expect(read.audience == .agentReachable && read.kind == .read)
+        #expect(operatorOnlyActions.contains("ctx_set_browser_settings"))
+        #expect(!operatorOnlyActions.contains("ctx_browser_settings"))
+    }
+
     /// An older wakil-ctx answers no editor keys: the tree still decodes, with the defaults.
     @Test func aTreeWithNoEditorKeysDecodesToTheDefaults() throws {
         let json = """
@@ -83,6 +110,20 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         }
         #expect(calls[0].tool == "set_editor_settings")
         #expect(arguments == ["fontSize": .integer(14)])
+    }
+
+    /// 3c-iii. A call that sets only `searchSuggestions` reaches the tool; it was dropped silently.
+    @Test func theBrowserWriteForwardsSearchSuggestionsAlone() async throws {
+        let (registry, caller) = try await registryWithRecordingContext()
+        _ = try await registry.dispatch(
+            name: "ctx_set_browser_settings", params: .object(["searchSuggestions": .bool(true)]),
+            origin: .ui, caller: .test("staging"), confirmation: nil)
+        let calls = await caller.recorded()
+        guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
+            Issue.record("expected one call, got \(calls)"); return
+        }
+        #expect(calls[0].tool == "set_browser_settings")
+        #expect(arguments == ["searchSuggestions": .bool(true)])
     }
 
     // 3a-v-a e2e audit: Inline blame's Off never reached Go.
@@ -325,4 +366,40 @@ private actor GhostRecordingCaller: ToolCaller {
     #expect(org.agentGeneral == "G" && org.gitCommitInstructions == "C" && org.gitPRInstructions == "P")
     let project = try JSONDecoder().decode(SettingsProject.self, from: Data(#"{"name":"api","agent":{"commits":"K"}}"#.utf8))
     #expect(project.agent == SettingsAgentTexts(general: "", commits: "K", pullRequests: ""))
+}
+
+/// 3c-i. The browser actions read a cache the window keeps, so a new tab reads memory and writes
+/// no journal line.
+@Suite @MainActor struct WindowBrowserSettingsTests {
+    @Test func aReadThatFailsKeepsTheDefaultsAndLeavesTheCacheEmpty() async throws {
+        let (model, _, _) = await editorWindowParts(roots: ["/p/api"])
+        await model.refreshBrowserSettings()
+        #expect(model.browserSettings == .defaults)
+        #expect(model.browserSettingsCache.current == nil)
+    }
+
+    @Test func aRefusedWriteAnswersItsSentence() async throws {
+        let (model, _, _) = await editorWindowParts(roots: ["/p/api"])
+        let refusal = await model.saveBrowserSettings(["searchEngine": .string("kagi")])
+        #expect(refusal?.isEmpty == false)
+    }
+
+    @Test func theCacheReadsOnceThenServesWhatItHolds() async throws {
+        let cache = BrowserSettingsCache()
+        let count = ReadCounter()
+        let first = await cache.value { count.bump(); return SettingsBrowser(searchEngine: "bing", startPage: "") }
+        let second = await cache.value { count.bump(); return nil }
+        #expect(first.searchEngine == "bing")
+        #expect(second.searchEngine == "bing")
+        #expect(count.value == 1)
+        cache.current = SettingsBrowser(searchEngine: "kagi", startPage: "")
+        #expect(await cache.value { nil }.searchEngine == "kagi")
+    }
+}
+
+private final class ReadCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func bump() { lock.withLock { n += 1 } }
+    var value: Int { lock.withLock { n } }
 }

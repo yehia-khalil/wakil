@@ -62,6 +62,8 @@ struct TerminalContents {
 /// The terminal pane: a live shell's blocks, screen and input line (2c-iii).
 enum TerminalPaneKind: PaneKind {
     static let names = ["terminal"]
+    /// Edge to edge: the shell's surface runs to the slab's border, a 6 pt gutter inside it (the compact chrome, 2026-10-26).
+    static let edgeToEdge = true
     static var emptyContents: TerminalContents { TerminalContents() }
     static var emptySnapshot: TerminalSnapshot? { .empty }
     // `rerunsSubjectOnRestore` stays false: a terminal's scrollback is session state with nothing to re-run.

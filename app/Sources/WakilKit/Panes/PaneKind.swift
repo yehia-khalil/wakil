@@ -23,6 +23,10 @@ public protocol PaneKind: SendableMetatype {
     /// Whether a restored pane of this kind re-runs its subject (a read). Never true for a kind whose
     /// subject can be a write: an api pane's last request may have been a `POST`.
     static var rerunsSubjectOnRestore: Bool { get }
+    /// Whether the canvas draws this kind's content to the slab's border (2026-10-26, the compact
+    /// chrome): no inset, no title row and no resize row — the kind's own 32 pt header names it with
+    /// a glyph, and the resize handle sits over the bottom-right corner. False for most kinds.
+    static var edgeToEdge: Bool { get }
 
     static func snapshot(of contents: Contents, in store: isolated PaneStore) -> Snapshot
     static func failure(of contents: Contents) -> String?
@@ -39,6 +43,7 @@ public protocol PaneKind: SendableMetatype {
 
 extension PaneKind {
     public static var rerunsSubjectOnRestore: Bool { false }
+    public static var edgeToEdge: Bool { false }
     public static func failure(of contents: Contents) -> String? { nil }
     public static func sharedAfterSwitchingScope(_ shared: Shared) -> Shared { shared }
     public static func sharedAfterAdoptingScope(

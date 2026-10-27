@@ -61,6 +61,9 @@ the checks is described in `docs/agents/e2e.md`; read it before writing one.
 - **Gates:** `make e2e` runs the checks against a fresh bundle, then the coverage step; `make e2e-new`
   proves each new check fails against the merge-base; `make e2e-cover` and `make e2e-backlog` report
   coverage.
+- **The night run:** `e2e/cmd/wakil-e2e-night` with `e2e/night/`, a launchd job that runs
+  `make e2e-full` on `main` between 23:00 and 07:00, fixes what went red on `e2e-night/<date>` and
+  re-runs it. It replaces a pre-merge full run.
 - **It uses the screen.** Ask the operator before running it.
 
 ## Acceptance runbooks
@@ -89,6 +92,8 @@ the checks is described in `docs/agents/e2e.md`; read it before writing one.
 | `make e2e-runbook` | Renders the machine half of an acceptance runbook |
 | `make e2e-agent-checks` | Only the scripted-agent checks |
 | `make e2e-retrodict` | Re-introduces past defects to prove the harness sees them |
+| `make e2e-night-install` | Builds the night run and loads its launchd job (23:00) |
+| `make e2e-night-status` | Last night's result; fails if the night did not run |
 | `make controls` | Lists every accessibility identifier and the gate's verdict; no GUI |
 | `make captures`, `make captures-motion` | `WakilApp --capture` into `.context/2b-iv`, `--capture-motion` into `.context/2b-iv/motion` |
 | `make bench-surface` | `WakilApp --bench-surface 50000`, release build |

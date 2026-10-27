@@ -56,7 +56,7 @@ BINS := wakil wakil-ctx wakil-db wakil-git wakil-http wakil-pm wakil-recall waki
 # `test` did.
 export CGO_ENABLED := 0
 
-.PHONY: build test test-live e2e e2e-full e2e-run e2e-new e2e-runbook e2e-agent e2e-agent-checks e2e-retrodict e2e-cover e2e-backlog controls axresolve docs-check vet fmt clean shaders app-build app-test app-bundle captures captures-motion bench-surface
+.PHONY: build test test-live e2e e2e-full e2e-run e2e-new e2e-night-install e2e-night-status e2e-runbook e2e-agent e2e-agent-checks e2e-retrodict e2e-cover e2e-backlog controls axresolve docs-check vet fmt clean shaders app-build app-test app-bundle captures captures-motion bench-surface
 
 build:
 	@mkdir -p bin
@@ -362,6 +362,13 @@ e2e-full: app-bundle axresolve e2e-agent
 
 # e2e-run — the one loop both targets share. The launch comes from the
 # directory, as it always has.
+#
+# The checks stop at the first red file unless E2E_KEEP_GOING is set. The night
+# run (e2e/cmd/wakil-e2e-night) sets it, so one night finds every red file
+# rather than the first. E2E_RUNNER is the driver, replaceable only so the
+# loop itself can be tested (scripts/makefile_test.go).
+E2E_KEEP_GOING ?=
+E2E_RUNNER ?= go run ./e2e/cmd/wakil-e2e
 e2e-run:
 	@test -d "$(E2E_BUNDLE)" || { \
 	    echo "make e2e: no bundle at $(E2E_BUNDLE) — run \`make app-bundle\`"; exit 1; }
@@ -382,8 +389,8 @@ e2e-run:
 	        *",$${check##*/},"*) flags="$$flags --quarantine $${check##*/}"; label="$$label, quarantined";; \
 	    esac; \
 	    echo "== $$check ($$label)"; \
-	    go run ./e2e/cmd/wakil-e2e --bundle "$(E2E_BUNDLE)" $$flags $(E2E_SETTLE_ARG) "$$check" \
-	        || { status=1; break; }; \
+	    $(E2E_RUNNER) --bundle "$(E2E_BUNDLE)" $$flags $(E2E_SETTLE_ARG) "$$check" \
+	        || { status=1; [ -n "$(E2E_KEEP_GOING)" ] || break; }; \
 	done; \
 	echo "== coverage"; \
 	$(MAKE) --no-print-directory e2e-cover || status=1; \
@@ -501,6 +508,24 @@ E2E_TRUNK ?= origin/main
 # avoids, and it is the same reason both tools are resolved before the build.
 e2e-new: axresolve e2e-agent
 	go run ./e2e/cmd/wakil-e2e-new --trunk "$(E2E_TRUNK)" $(E2E_NEW_ARGS)
+
+# ---------------------------------------------------------------------
+# e2e-night — the full suite on main, once a night
+# ---------------------------------------------------------------------
+#
+# A launchd job runs `make e2e-full` on origin/main between 23:00 and 07:00
+# when main has moved since the last green night, fixes what went red on
+# e2e-night/<date> (local commits, never pushed) and re-runs it. It replaces
+# a pre-merge e2e-full. Install once, from a checkout of main, then grant the
+# binary it names Accessibility, Screen Recording and Desktop access (launchd
+# has no terminal to borrow them from; a night without them reports "did not
+# start"). Read the morning's result from any worktree. See
+# e2e/cmd/wakil-e2e-night.
+e2e-night-install:
+	go run ./e2e/cmd/wakil-e2e-night install
+
+e2e-night-status:
+	@go run ./e2e/cmd/wakil-e2e-night status
 
 # ---------------------------------------------------------------------
 # e2e-runbook — the machine half of an acceptance runbook, rendered

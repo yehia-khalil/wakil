@@ -1,0 +1,14 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"browser_open","params":{"url":"zoommtg://zoom.us/join?confno=1"},"refuses":"not zoommtg: links"}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/applink.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"App link"}}
+{"expect":{"tree":"contains","text":"Open in"}}
+{"expect":{"pane":"browser-1","field":"url","contains":"/applink.html"}}
+{"do":{"click":"browser.prompt.cancel"}}
+{"expect":{"tree":"absent","text":"Open in"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"App link"}}
+{"dispatch":{"action":"pane_focus","params":{"id":"browser-1"}}}
+{"do":{"hotkey":"cmd+k"}}
+{"expect":{"tree":"contains","text":"RUN A COMMAND"}}
+{"do":{"type":{"into":"palette.query","text":"Print page"}}}
+{"expect":{"tree":"contains","text":"1 of "}}

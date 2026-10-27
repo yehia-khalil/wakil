@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3c-i-prompt.jsonl",
+  "baseCommit": "8f7c616ab831b65c26cfec51730d94e5406ca004",
+  "provedAt": "2026-10-26T03:38:16.445541Z",
+  "checkBlob": "a60bffdb52038ba538cd5ab2fbdff648f462b5ad"
+}

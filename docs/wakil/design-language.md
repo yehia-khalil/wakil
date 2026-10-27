@@ -207,7 +207,7 @@ sphere's four-hue gradient is gone with the sphere.)*
 | Hue | Meaning |
 |-----|---------|
 | Green `#8be0c8` | Local / staging · healthy · completed |
-| Amber `#e8b45a` | Pending · caution |
+| Amber `#e8b45a` | Pending · caution · untrusted site text in the thread |
 | Red `#e85c5c` | **Production** · destructive · failed |
 
 **Red's value was assigned 2026-09-09**, during 2b-ii's implementation — this table named
@@ -439,19 +439,60 @@ Three ways to reach anything, all equivalent: the rail / a keystroke / ⌘P or �
 
 ## 11. Panes
 
-Every pane is dual-driven (Invariant 2) except the editor's text surface. Some pane
+Every pane is dual-driven (Invariant 2) except the editor's text surface and the browser's page. Some pane
 *types* hold multiple tabs internally; the app itself has no tab bar.
 
 | Pane | Multi-tab? | Notes |
 |------|-----------|-------|
-| **Editor** | Yes (files, ⌘T) | Native, Monaco-based — see below. The one partial exception to dual-drive. ⌘T opens a scratch tab; files open from ⌘P (Resources) or the left column (⌘B, 3b-ii). Unsaved edits ask before anything drops them. A file in a repository shows gutter marks against the index — a green bar for added lines, amber for changed, a muted triangle where lines were deleted — and a click on one opens the peek: the change's old lines over its new, with ↑ ↓, Revert (an undoable buffer edit) and ×. The Files tree shows a changed file's status letter. |
+| **Editor** | Yes (files, ⌘T) | Native, Monaco-based — see below. The one partial exception to dual-drive. ⌘T opens a scratch tab; files open from ⌘P (Resources) or the left column (⌘B, 3b-ii). Unsaved edits ask before anything drops them. A file in a repository shows gutter marks against the index — a green bar for added lines, amber for changed, a muted triangle where lines were deleted — and a click on one opens the peek: the change's old lines over its new, with ↑ ↓, Revert (an undoable buffer edit) and ×. The Files tree shows a changed file's status letter. **Its chrome is the compact chrome below** (2026-10-26): Monaco runs edge to edge under one 32 pt row — the editor glyph (*Editor*), the column's toggle, then the shared tab strip with ＋ for ⌘T's scratch tab. |
 | **Git** | No | Folded into the editor (3b-iii, Decision 40): the editor's left column's **Changes** view (⌘⇧G) — one header per root, Staged / Changes / Untracked, status letters in §5's tones — opens read-only inline diff tabs in the editor. No pane of its own. |
-| **Browser** | Yes (⌘T) | Embedded web view; agent can read the active tab. |
-| **Terminal** | No | One shell, on one PTY, opened **at a path** — not per-root. A second shell is a second pane, exactly as for the database pane below; §10's canvas is what running two of them is for. **Corrected 2026-09-16** — this row read *"Yes (sessions) · Per-root shells"*, and both halves were wrong. `Terminal.dc.html:127` had forbidden a tab bar all along (§1's first principle names tab bars in what has been removed), and the operator ruled the roots out on the same day: sub-phase 2c-iii. |
+| **Browser** | Yes (⌘T) | WebKit, one profile per organisation (3c-i, Decision 48). The page is the **second exception to dual-drive**: clicks and typing inside it are the operator's alone; everything around it — tabs, address, ‹ ›, reload, find, zoom, downloads — is a `browser_*` action. **The agent may read the page and click, type, select, press and scroll in it (3c-ii, Decision 48)**, a site at a time: the first act on a site asks *Let the agent use <site>?* (**Don’t Allow** / **Allow for this conversation**), and every act on a production site asks, in the red plane, naming the element. It never types into a password, card or one-time-code field. Three marks tell the operator: a **tag** on the tab — a chip at the address row’s right for the active tab (*In staging* in green, *Production* in red) and a 6 pt dot on every tagged tab’s strip entry, so a background tab wears it too; the **agent allowed** mark, with a × that withdraws the site; and, in the thread, a read as *1 page · untrusted text from <site>* in amber, which also marks untrusted site text. **Its chrome is the compact chrome below**, in two 32 pt rows over a page that runs edge to edge (2026-10-26, the operator's ruling). Row one is the shared tab strip with the browser glyph (*Browser*), its entries in the browser's own width rule — 200 pt while they fit, then shrinking evenly to 96 pt, title truncated and favicon kept, the active one to no less than 140 pt, about fourteen characters of title, before the strip scrolls — and, pinned at the right after the ＋, the tab count: tabular digits without the micro-label's tracking, so 15 reads as one number, and a press opens the ⌄ menu of every tab. Narrow, entries shrink to favicon and ×, then fold into the count menu, which then carries the ⌄. Row two is ‹ › ↻ and the address field, always drawn as a field: rounded, a 1 px edge in the border token, the URL in mono, and the padlock — or the open lock and NOT SECURE for http beyond loopback — inside it at the left; its hover names the host, the transport and, for a certificate not trusted, why. There is no footer. The find bar and the downloads each take a row across the page's top or bottom edge, a hairline round each. **The address field suggests as you type (3c-iii)**: open tabs, then bookmarks, then history, in a list under the field — ↓ ↑ move through it, Return opens the row, Esc closes it and restores what was typed — and it completes the host inline; the search engine's own suggestions are a setting, off by default. The **★** at the address row’s right is the bookmarks menu (*Bookmark This Page* or *Remove Bookmark*, then the bookmarks); ⌘D toggles. ⌘P lists open tabs and bookmarks. ⌘-click a URL in the terminal or the editor opens it here, ⌘⌥-click in the system browser. **Updated 2026-10-27.** |
+| **Terminal** | No | One shell, on one PTY, opened **at a path** — not per-root. A second shell is a second pane, exactly as for the database pane below; §10's canvas is what running two of them is for. **Corrected 2026-09-16** — this row read *"Yes (sessions) · Per-root shells"*, and both halves were wrong. `Terminal.dc.html:127` had forbidden a tab bar all along (§1's first principle names tab bars in what has been removed), and the operator ruled the roots out on the same day: sub-phase 2c-iii. **Its chrome is the compact chrome below** (2026-10-26): one shell, so no strip — one 32 pt row of the terminal glyph (*Terminal*), the pane's title, the live cwd · shell · size, Reopen on a dead pane and the ⌘F toggle; ⌘F's field takes a 32 pt row of its own under it. The surface runs to the border with a 6 pt gutter inside it, so no text meets the edge, and the bound (*last 200 commands · 500 lines each*) is one line under it. |
 | **Database** | No | The canonical data surface (§8), above it the pane's own query — the database it runs against and the statement, editable, run with Return. A second query is a second pane; §10's canvas is what comparing two of them is for. |
 | **API client** | No | Request/response; consumes values from other panes. |
 | **PM** | No | Kanban over the active project's issues, scoped to the active `(org, project)`. Columns are the Jira board's own; a card is §8's row drawn small, on §8's surface rather than a second grid. Dual-driven; the one write it carries is a status transition (Invariant 6, amended 2026-09-14). **Added 2026-09-14** — this row used to read *"PM · Recall — surfaced through the agent, not (yet) standalone panes"*, and the parenthetical *(yet)* is what this change spends. Sub-phase 2c-vi. |
 | Recall | — | Surfaced through the agent, not a standalone pane. Unchanged. |
+
+### The compact chrome — the browser, the editor and the terminal
+
+*The operator's ruling, 2026-10-26: first for the browser (3c-i), then — approved after using it —
+for the editor and the terminal.* A pane of these three kinds (`PaneKind.edgeToEdge`) runs its
+content to the slab's border: the canvas pads it with nothing, draws no title over it and no resize
+row under it. Everything else here follows from that.
+
+- **The slab.** The content is clipped to the slab's corners and takes its 10 pt bottom corners;
+  the pane's own 1 px edge is drawn in the border token over it, so the outline holds against any
+  content. The resize handle sits on a small chip in the bottom-right corner, over the content.
+- **The header row: 32 pt.** The kind's glyph stands in the title's place at the row's left — the
+  browser's compass, the editor's `</>`, the terminal's prompt — at the micro-label's opacity, the
+  kind's name as its help and its spoken name. A hairline runs under the row, across the pane.
+- **Two tokens, both cool white.** This is where §1's "no outline" and §8's "whitespace, not rules"
+  give way, because content that meets its border needs a line to stop against: **the border
+  token, 0.14** (the settings form's field edge) — an edge-to-edge pane's border, the active tab's
+  raised chip, the browser's address field; and **the hairline, 0.08** (the editor's rule between
+  Changes roots) — under a header row, between two tabs at rest, and under each compact row.
+- **The tab strip** (the browser's and the editor's; `PaneTabStrip`). Entries 26 pt high in the
+  rail's language: the rail's 2 pt tick on the active one, which is a raised chip — a 0.08 lift and
+  the border token's edge — with a 1 px hairline between two entries at rest and none against the
+  chip or an entry lifted under the pointer (the rail's row lift). An entry drags along its own
+  strip to reorder, a line in the tick's colour marking the drop. **More entries than fit:** the
+  strip scrolls, and while it does, a side with entries out of sight fades over 24 pt and shows how
+  many, `‹ 3` or `8 ›`; a press pages the strip toward them, and a side with none hidden shows
+  nothing. The ＋ (and the browser's count) are pinned at the right, outside the scrolling. The
+  active entry is scrolled into view whenever it changes — a click, a key, a menu, the agent, a new
+  tab — and only when some of it is out of sight, so a click on an entry already shown never moves
+  the strip (Rule 6). How wide an entry is stays the kind's: the browser's shrink (its row above);
+  the editor's keep their own width, because a tab is a file's name and a shrunk one hides which
+  file it is.
+- **Compact rows.** Any other row a pane draws across its content — the editor's notice, *changed
+  on disk*, Compare's header, a diff tab's line, Stage Selected Ranges, the save-as field, a tab's
+  unsaved prompt; the editor column's Files · Search · Changes header; the terminal's ⌘F field;
+  the browser's find bar — is at most 32 pt for one line, at the row's 8 pt inset, with a hairline
+  under it. A line that has to say more wraps rather than being cut (Rule 8). The editor column's
+  header is 32 pt, so it and the strip beside it meet in one line.
+- **Focus is unchanged.** Nothing in the chrome takes the keyboard: the glyph is not a control,
+  and a press on an entry, a count or the ＋ moves the keyboard only where the action itself
+  always has (a new tab arriving takes it, Rule 3).
 
 **The database pane has no schema browser and no sidebar,** and §1 is why.
 A table list is one row per table and a column list is one row per column
@@ -485,7 +526,7 @@ no full debugger.
     file's language, in the name's own colour; folders keep their chevron.
   - **The preview tab** — a single click opens a file in one italic tab that the next
     single click replaces; a double-click or an edit keeps it. Tabs move by dragging along
-    their own strip (a violet line marks the drop) and close on a middle-click, as ⌘W closes
+    their own strip (a line in the tick's colour marks the drop) and close on a middle-click, as ⌘W closes
     them.
   - **Search** — across the project's files, literal or regex, with case and whole-word
     switches; it runs on a pause in typing, groups results by root and file (groups

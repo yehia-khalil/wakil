@@ -1,0 +1,20 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/form.html","newTab":false}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].site","contains":"127.0.0.1:"}}
+{"dispatch":{"action":"browser_read_page","params":{"pane":"browser-1"}}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_read_page\""}}}
+{"dispatch":{"action":"browser_type","params":{"pane":"browser-1","ref":"e3","text":"4242 4242 4242 4242"},"refuses":"that field is yours to fill"}}
+{"dispatch":{"action":"browser_type","params":{"pane":"browser-1","ref":"e4","text":"hunter2"},"refuses":"that field is yours to fill"}}
+{"dispatch":{"action":"browser_click","params":{"pane":"browser-1","ref":"e99"},"refuses":"read the page first"}}
+{"dispatch":{"action":"browser_select","params":{"pane":"browser-1","ref":"e2","option":"Nine nights"},"refuses":"has no option"}}
+{"dispatch":{"action":"browser_press","params":{"pane":"browser-1","ref":"e1","key":"F5"},"refuses":"key is one of"}}
+{"dispatch":{"action":"browser_type","params":{"pane":"browser-1","ref":"e5","text":"x"},"refuses":"is a button"}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page B"}}
+{"dispatch":{"action":"browser_click","params":{"pane":"browser-1","ref":"e5"},"refuses":"the page changed since it was read"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"browser_click","params":{"pane":"browser-1","ref":"e1"},"refuses":"read the page first"}}

@@ -159,8 +159,8 @@ func (w MachineWalk) Markdown() string {
 		if owed := w.Owed(); len(owed) > 0 {
 			fmt.Fprintf(&out, "**The machine walk is green for the checks this branch reaches:** "+
 				"the %d `make e2e` selected ran green against this build, %s, and the surface it "+
-				"added carries checks. **%d check(s) are owed to `make e2e-full`**, which runs once, "+
-				"on the head that merges.\n\n", len(w.Corpus)-len(owed), proved, len(owed))
+				"added carries checks. **%d check(s) are owed to `make e2e-full`**, which the night run covers on "+
+				"`main` after the merge (`make e2e-night-status`).\n\n", len(w.Corpus)-len(owed), proved, len(owed))
 			if len(w.Selection.Unmapped) > 0 {
 				out.WriteString("Changed files no check maps to, which only the full run covers:\n\n")
 				for _, file := range w.Selection.Unmapped {

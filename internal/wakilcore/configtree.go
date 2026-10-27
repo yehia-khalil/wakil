@@ -206,6 +206,10 @@ type ConfigTreeDatabase struct {
 // `Databases` and `API`, not a project (`config.go`).
 type ConfigTreeEnvironment struct {
 	Name string `json:"name"`
+	// Production is `EnvironmentIsProduction(name, env)` — the explicit flag,
+	// else the name — never the raw `*bool`, so every reader of the tree
+	// prices a production host the way the rest of Wakil does. Read-only.
+	Production bool `json:"production"`
 	// Databases is never nil, so an environment with none marshals to []
 	// rather than null. An environment that declares no databases and one
 	// that could not be read are different facts and must not share a
@@ -275,6 +279,9 @@ type ConfigTree struct {
 	// holds the defaults.
 	Editor      EditorAppValues `json:"editor"`
 	EditorError string          `json:"editorError,omitempty"`
+	// Browser is the app-wide browser tier (3c-i), from the same file, so a failure to read it is
+	// EditorError too.
+	Browser BrowserSettings `json:"browser"`
 
 	// Misfiled names registry entries whose project.json declares another
 	// organisation. Same field, same meaning, as ProjectListing's.
@@ -316,6 +323,7 @@ func LoadConfigTreeFor(org string) (ConfigTree, error) {
 		tree.EditorError = err.Error()
 	}
 	tree.Editor = app.Editor.Resolved()
+	tree.Browser = app.Browser.Resolved()
 
 	record, err := LoadOrgFor(org)
 	if err != nil {
@@ -427,7 +435,8 @@ func configTreeProject(name, path string, project *Project) ConfigTreeProject {
 			api = []ApiConfig{}
 		}
 		out.Environments = append(out.Environments, ConfigTreeEnvironment{
-			Name: environmentName, Databases: databases, API: api,
+			Name: environmentName, Production: EnvironmentIsProduction(environmentName, environment),
+			Databases: databases, API: api,
 		})
 	}
 	return out
@@ -439,6 +448,7 @@ func emptyConfigTree(org string) ConfigTree {
 		Providers: []ConfigTreeProvider{},
 		Projects:  []ConfigTreeProject{},
 		Editor:    EditorAppSettings{}.Resolved(),
+		Browser:   BrowserAppSettings{}.Resolved(),
 	}
 }
 

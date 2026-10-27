@@ -121,6 +121,14 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
         operatorOnly == [
             // 2e-iii. An API token travels in `api_set_entry`'s parameters; the rest edit beside it.
             "api_remove_entry", "api_set_entry", "api_update_entry",
+            // 3c-i: signing the organisation out of every site is the operator's.
+            "browser_clear_data",
+            // 3c-i (final review I6): printing raises the system's print panel on the operator's window.
+            "browser_print",
+            // 3c-i: the window's own relaunch step for a browser pane's saved tabs.
+            "browser_restore",
+            // 3c-ii: which sites the agent may act on is the operator's consent.
+            "browser_revoke_site",
             // Provider capacity: the agent may not forge a reading.
             "capacity_record",
             "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree_for",
@@ -148,7 +156,7 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             "ctx_remove_environment", "ctx_remove_project", "ctx_rename_environment",
             "ctx_rename_project",
             // 3b-v (Decision 38): Decision 30 kept — the agent reads editor settings, never writes them.
-            "ctx_set_editor_settings", "ctx_set_environment",
+            "ctx_set_browser_settings", "ctx_set_editor_settings", "ctx_set_environment",
             // 3b-viii (Decision 42): which model reads the operator's code is theirs to choose.
             "ctx_set_local_provider", "ctx_set_project", "ctx_set_project_agent_instructions",
             "ctx_set_project_editor_settings",
