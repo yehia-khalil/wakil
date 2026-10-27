@@ -383,6 +383,7 @@ extension WakilWindow {
                     resize: { cols, rows in
                         Task { await model.resizeTerminal(pane: pane.id, cols: cols, rows: rows) }
                     },
+                    openLink: { url, alt in WakilLinks.open(url, systemBrowser: alt, model: model) },
                     // `Send to thread` on a block: straight into the
                     // thought thread, the same entry point the operator's
                     // own compose field calls. It used to stop at the
