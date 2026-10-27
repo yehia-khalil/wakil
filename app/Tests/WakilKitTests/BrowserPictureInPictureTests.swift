@@ -126,6 +126,7 @@ private func showingT1(enabled: Bool = true) -> BrowserPictureInPicture {
     #expect(pip.restoreEnded(ref("t1"), reached: false) == [.pause(ref("t1"))])
     #expect(pip.restore(ref("t1")) == [.goTo(ref("t1"))])
     #expect(pip.restoreEnded(ref("t1"), reached: true) == [])
+    #expect(pip.didChange(ref("t1"), floating: false) == [])
 }
 
 @Test func closingTheFloatingTabClearsIt() {
@@ -147,4 +148,13 @@ private func showingT1(enabled: Bool = true) -> BrowserPictureInPicture {
     #expect(BrowserPictureInPicture.unavailableLine(missing: []) == nil)
     #expect(BrowserPictureInPicture.unavailableLine(missing: ["a:", "b:"])
         == "Picture in picture is off: this Mac's WebKit has no a:, b: — Wakil floats a video only through them.")
+}
+
+@Test func deminiaturisingLeavesAnOffScreenFloatingTabFloating() {
+    var pip = showingT1()
+    _ = pip.hide(scope: here, pane: "browser-1", closing: false)
+    _ = pip.didChange(ref("t1"), floating: true)
+    _ = pip.setMinimized(true)
+    #expect(pip.setMinimized(false) == [])
+    #expect(pip.floating == ref("t1"))
 }

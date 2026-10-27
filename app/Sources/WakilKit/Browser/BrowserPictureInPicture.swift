@@ -44,16 +44,16 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
     }
 
     public func isShown(_ ref: BrowserTabRef) -> Bool {
-        shown[PaneKey(scope: ref.scope, pane: ref.pane)] == ref.tab
+        !minimized && shown[PaneKey(scope: ref.scope, pane: ref.pane)] == ref.tab
     }
 
     /// The pane is on screen showing `tab` (nil: none). Called on every sync, so the same tab again is `[]`.
     public mutating func show(scope: LayoutScope, pane: String, tab: String?) -> [Effect] {
-        guard !minimized else { return [] }
         let key = PaneKey(scope: scope, pane: pane)
         let before = shown[key]
         shown[key] = tab
-        guard before != tab else { return [] }
+        // Recorded while minimised so that deminiaturising sees it, but nothing floats or returns now.
+        guard !minimized, before != tab else { return [] }
         var effects: [Effect] = []
         if let before, enabled {
             effects.append(.float([BrowserTabRef(scope: scope, pane: pane, tab: before)]))
@@ -80,10 +80,12 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
             let candidates = shown
                 .sorted { ($0.key.pane, $0.key.scope.description) < ($1.key.pane, $1.key.scope.description) }
                 .map { BrowserTabRef(scope: $0.key.scope, pane: $0.key.pane, tab: $0.value) }
-            shown = [:]
             return enabled && !candidates.isEmpty ? [.float(candidates)] : []
         }
-        return floating.map { [.inline($0)] } ?? []
+        // Only a tab that is on screen again comes back; one floating from a place switched away or a
+        // covered pane stays floating.
+        guard let floating, shown[PaneKey(scope: floating.scope, pane: floating.pane)] == floating.tab else { return [] }
+        return [.inline(floating)]
     }
 
     /// WebKit reported that `ref`'s video entered or left picture-in-picture.
@@ -104,8 +106,11 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
     }
 
     public mutating func restoreEnded(_ ref: BrowserTabRef, reached: Bool) -> [Effect] {
+        // On arrival the token stays: WebKit's end-of-float report consumes it, however early or late
+        // the pane's `show` runs.
+        guard !reached else { return [] }
         restoring.remove(ref)
-        return reached ? [] : [.pause(ref)]
+        return [.pause(ref)]
     }
 
     /// The tab was closed; releasing its view ends the float without WebKit saying so (ruling 11).
