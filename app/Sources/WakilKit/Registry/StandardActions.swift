@@ -1556,7 +1556,8 @@ public func registerStandardActions(
     await registry.register(Action(
         name: "ctx_set_browser_settings",
         description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing "
-            + "or kagi) and startPage (an http or https URL, or empty for a blank page). "
+            + "or kagi), startPage (an http or https URL, or empty for a blank page), and "
+            + "searchSuggestions (true or false; off by default). "
             + "Read-modify-write: omit a field to leave it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
@@ -1568,6 +1569,7 @@ public func registerStandardActions(
                     "enum": .array([.string("google"), .string("duckduckgo"), .string("bing"), .string("kagi")]),
                 ]),
                 "startPage": .object(["type": .string("string")]),
+                "searchSuggestions": .object(["type": .string("boolean")]),
             ]),
         ]),
         handler: { params in
@@ -1580,6 +1582,7 @@ public func registerStandardActions(
             var arguments: [String: JSONValue] = [:]
             if case .string? = fields["searchEngine"] { arguments["searchEngine"] = fields["searchEngine"] }
             if case .string? = fields["startPage"] { arguments["startPage"] = fields["startPage"] }
+            if case .bool? = fields["searchSuggestions"] { arguments["searchSuggestions"] = fields["searchSuggestions"] }
             return try await callChecked(
                 context, tool: "set_browser_settings", arguments: .object(arguments),
                 action: "ctx_set_browser_settings", timeout: MCPClient.readReplyTimeout)
