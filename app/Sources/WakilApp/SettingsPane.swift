@@ -1039,7 +1039,9 @@ struct SettingsPane: View {
                 browser: tree.browser,
                 organisation: tree.org.displayName.isEmpty ? tree.org.id : tree.org.displayName,
                 organisationId: tree.org.id,
-                save: saveBrowserSettings, clearData: clearBrowserData)
+                save: saveBrowserSettings, clearData: clearBrowserData,
+                pictureInPictureUnavailable: BrowserPictureInPicture.unavailableLine(
+                    missing: BrowserPictureInPictureSupport.missing))
         case .projectEditor(let name):
             if let project = tree.projects.first(where: { $0.name == name }) {
                 EditorProjectSettingsForm(
