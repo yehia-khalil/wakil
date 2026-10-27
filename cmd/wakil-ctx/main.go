@@ -716,6 +716,21 @@ func newServer() *mcp.Server {
 			return nil, v, nil
 		})
 
+	// Added by 3d-i (Ruling 17): the active organisation's open pull requests, read only. It takes
+	// no organisation and returns no credential.
+	mcp.AddTool(s, &mcp.Tool{Name: "github_pull_requests", Description: "Read the active organisation's open GitHub pull requests: those it wrote (reason author) and those awaiting its review (reason review-requested), newest update first, from the organisation's GitHub account (github.com first). absent says why there is no list (no GitHub account, an SSH account, no token kept); a refusal or an unreachable host is an error. Read only; no credential is returned."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.PullRequestsResult, error) {
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.PullRequest{}}, nil
+			}
+			out, err := wakilcore.GitHubPullRequests(ctx, org)
+			if err != nil {
+				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.PullRequest{}}, nil
+			}
+			return nil, out, nil
+		})
+
 	mcp.AddTool(s, &mcp.Tool{Name: "set_browser_settings", Description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing or kagi), startPage (an http or https URL, or empty for a blank page), searchSuggestions (true or false; off by default), tabs (horizontal or vertical), and nameGroups (true or false; on by default). Read-modify-write: omit a field to leave it unchanged. Refuses an unknown engine, a tabs value other than horizontal or vertical, or a start page that is not an http or https URL, and refuses to write over a settings.json that does not parse."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setBrowserSettingsArgs) (*mcp.CallToolResult, empty, error) {
 			if err := wakilcore.WriteBrowserSettings(wakilcore.BrowserSettingsPatch{SearchEngine: a.SearchEngine, StartPage: a.StartPage, SearchSuggestions: a.SearchSuggestions, Tabs: a.Tabs, NameGroups: a.NameGroups}); err != nil {

@@ -1553,6 +1553,27 @@ public func registerStandardActions(
         }
     ))
 
+    // 3d-i (Ruling 17). The active organisation's open pull requests, read only. It takes no
+    // organisation and no id, and the reply carries no credential.
+    await registry.register(Action(
+        name: "ctx_github_pull_requests",
+        description: "Read the active organisation's open GitHub pull requests: those it wrote "
+            + "(reason author) and those awaiting its review (reason review-requested), newest "
+            + "update first. absent says why there is no list (no GitHub account, an SSH account, "
+            + "no token kept). Read only; no credential is returned.",
+        kind: .read,
+        audience: .agentReachable,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_github_pull_requests", role: "context")
+            }
+            return try await callChecked(
+                context, tool: "github_pull_requests", arguments: .object([:]),
+                action: "ctx_github_pull_requests", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
     await registry.register(Action(
         name: "ctx_set_browser_settings",
         description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing "
