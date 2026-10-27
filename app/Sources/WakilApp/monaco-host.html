@@ -498,7 +498,9 @@
     // same capture-phase press as the blame `web` command.
     monaco.editor.registerLinkOpener({
       open: function (resource) {
-        const url = String(resource);
+        // As Monaco's own external opener builds it: a URI's default toString() would percent-encode
+        // `= & : +` in the query. A string is passed through as given.
+        const url = typeof resource === 'string' ? resource : encodeURI(resource.toString(true));
         if (!/^https?:\/\//i.test(url)) return false;
         post({ type: 'link', url: url, alt: pressAlt });
         pressAlt = false;
