@@ -30,6 +30,10 @@ struct EditorTicketView: View {
     @State private var picking = false
     /// The kind + Add is adding a line of, with its focused field (Rule 3).
     @State private var adding: TicketSection?
+    /// What the new line's fields hold so far: it is written once, with both, when the keyboard
+    /// leaves the new row (Rule 2) — a decision's why is typed with it, not after (walk, 2026-10-27).
+    @State private var addingMain = ""
+    @State private var addingSecond = ""
     @State private var linking = false
     @State private var linkNote: String?
     /// A write's refusal, whole (Rule 8), until the next write.
@@ -465,15 +469,28 @@ struct EditorTicketView: View {
                 ForEach(section.lines(r), id: \.id) { line in recordLine(r.key, section, line) }
             }
             if let section = adding {
-                // A new line arrives focused (Rule 3), is kept when focus leaves it or on Enter, once
-                // (Rule 2); left empty it goes, and Esc drops it.
+                // A new line arrives focused (Rule 3). Its main field and, for a kind that has one,
+                // its detail (why, how, what) are typed together; Tab moves between them, and the
+                // line is written once when the keyboard leaves the row or on Enter (Rule 2). Left
+                // empty it goes, and Esc drops it.
                 recordRow(section) {
                     TicketField(value: "", placeholder: section.placeholder, id: "editor.ticket.new:\(section.rawValue)",
-                                focus: $fieldFocus, wraps: true, arrivesFocused: true, left: { adding = nil },
-                                cancel: { adding = nil }) { text in
-                        adding = nil
-                        write(["key": .string(r.key), "section": .string(section.rawValue), "op": .string("add"),
-                               section.mainField: .string(text)])
+                                focus: $fieldFocus, wraps: true, arrivesFocused: true, left: { finishAdding(r.key) },
+                                submitted: {
+                                    // Enter goes on to the why when the kind has one, else writes the line.
+                                    if let f = section.secondField?.field {
+                                        fieldFocus = "editor.ticket.new:\(section.rawValue):\(f)"
+                                    } else { fieldFocus = nil }
+                                },
+                                cancel: { cancelAdding() }) { text in addingMain = text }
+                    if let second = section.secondField {
+                        TicketField(value: "", placeholder: second.label,
+                                    id: "editor.ticket.new:\(section.rawValue):\(second.field)",
+                                    focus: $fieldFocus, wraps: true, left: { finishAdding(r.key) },
+                                    submitted: { fieldFocus = nil },
+                                    cancel: { cancelAdding() }) { text in addingSecond = text }
+                            .font(.system(size: 11))
+                            .foregroundStyle(EditorPaneStyle.text.opacity(0.6))
                     }
                 } trailing: { EmptyView() }
             }
@@ -499,6 +516,7 @@ struct EditorTicketView: View {
             ForEach(TicketSection.allCases, id: \.self) { section in
                 Button {
                     picking = false
+                    cancelAdding()
                     adding = section
                 } label: {
                     Text(section.kind).font(.system(size: 12))
@@ -580,6 +598,30 @@ struct EditorTicketView: View {
 
     /// ✕'s colour: shown at 0.6, or clear — hidden by colour, not opacity, so it stays in the tree.
     private func xmark(_ shown: Bool) -> Color { EditorPaneStyle.text.opacity(shown ? 0.6 : 0) }
+
+    /// Writes the new line once the keyboard has left both of its fields; a hop from one field
+    /// to the other is not a leave. Empty main text drops it.
+    private func finishAdding(_ key: String) {
+        Task { @MainActor in
+            // A turn later: focus has landed on the next field by then.
+            if let f = fieldFocus, f.hasPrefix("editor.ticket.new:") { return }
+            guard let section = adding else { return }
+            let main = addingMain.trimmingCharacters(in: .whitespacesAndNewlines)
+            let second = addingSecond.trimmingCharacters(in: .whitespacesAndNewlines)
+            cancelAdding()
+            guard !main.isEmpty else { return }
+            var params: [String: JSONValue] = ["key": .string(key), "section": .string(section.rawValue),
+                                               "op": .string("add"), section.mainField: .string(main)]
+            if let field = section.secondField?.field, !second.isEmpty { params[field] = .string(second) }
+            write(params)
+        }
+    }
+
+    private func cancelAdding() {
+        adding = nil
+        addingMain = ""
+        addingSecond = ""
+    }
 
     // MARK: - Writes
 
@@ -707,6 +749,8 @@ private struct TicketField: View {
     var wraps = false
     var arrivesFocused = false
     var left: () -> Void = {}
+    /// Enter, after the text is sent: where the keyboard goes next, when the caller says.
+    var submitted: () -> Void = {}
     /// Esc drops what was typed, unsent, when given; without it Esc is not the field's.
     var cancel: (() -> Void)?
     let commit: (String) -> Void
@@ -720,7 +764,7 @@ private struct TicketField: View {
             .lineLimit(wraps ? 1...Int.max : 1...1)
             .textFieldStyle(.plain)
             .focused(focus, equals: id)
-            .onSubmit { send(leaving: false) }
+            .onSubmit { send(leaving: false); submitted() }
             .onKeyPress(.escape) {
                 guard let cancel else { return .ignored }
                 cancelled = true
