@@ -274,7 +274,7 @@ live app; *accepted* means it was marked met without one.
 | **3a-v** | Conflicts, history and blame — accept current or incoming, the Timeline, inline blame | — | 3a-ii |
 | **3c** | Browser | — | — |
 | **3c-i** | Pane, tabs, a profile per organisation | — | — |
-| **3c-ii** | Agent reach | — | 3c-i |
+| **3c-ii** | Agent reach | **2026-10-27**, walked | 3c-i |
 | **3c-iii** | History, bookmarks, links | — | 3c-i |
 | **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
