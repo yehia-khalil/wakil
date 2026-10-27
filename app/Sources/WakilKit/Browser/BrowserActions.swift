@@ -493,7 +493,8 @@ func browserActions(
         description: "Open a new tab at the end of a browser pane's tabs and select it: url when given, "
             + "else (url left out) the start page; a blank start page leaves the address field focused. Opens a browser "
             + "pane when none is open. opener, a tab id, is the tab it was opened from (a ⌘-click): it "
-            + "joins the opener's group, or forms one with a loose opener of another site.",
+            + "joins the opener's group, or forms one with a loose opener of another site. A pinned "
+            + "group, the pull-request group or a pinned opener takes no new tab: it waits to be grouped by site.",
         kind: .control, audience: .agentReachable,
         schema: schema(["url": string, "opener": string]),
         handler: { params in

@@ -15,14 +15,15 @@ extension BrowserSnapshot {
     }
 
     /// Ruling 8, run when `tab` is made from `opener`: it joins the opener's group (not the
-    /// pull-request group); or a loose, unpinned, not-kept-loose opener of another site forms an
-    /// automatic chain group with it; otherwise it gets no opener and waits for the site rule.
+    /// pull-request group, nor a pinned group: a pinned group is closed to pop-ups, as a pinned
+    /// opener is); or a loose, unpinned, not-kept-loose opener of another site forms an automatic
+    /// chain group with it; otherwise it gets no opener and waits for the site rule.
     public mutating func placeOpened(tab: String, opener: String) {
         defer { arrange() }
         guard let t = tabIndex(tab), let o = tabIndex(opener), t != o, tabs[t].pullRequest == nil else { return }
         let openerTab = tabs[o]
         if let gid = openerTab.group, let g = group(gid) {
-            if g.kind != .pullRequests {
+            if g.kind != .pullRequests, g.pin == nil {
                 tabs[t].group = gid
                 tabs[t].opener = opener
                 tabs[t].keptLoose = false

@@ -125,6 +125,22 @@ struct BrowserGroupingTests {
         #expect(groupOf(s, "p1") == "pr")
     }
 
+    @Test func aPopupOfAPinnedGroupWaitsForTheSiteRule() {
+        let pinned = BrowserGroup(id: "g1", name: "Work", colour: .teal, kind: .own, pin: "p1234abcd")
+        var s = pane([
+            tab("t1", "https://github.com/initech/a", group: "g1"),
+            tab("t2", "https://initech.atlassian.net/browse/X-1"),
+        ], groups: [pinned], nextGroup: 2)
+        s.tabs.append(tab("t3", "https://initech.atlassian.net/browse/X-2"))
+        s.placeOpened(tab: "t3", opener: "t1")
+        #expect(groupOf(s, "t3") == nil, "a pinned group takes no pop-up")
+        #expect(s.tabs.first { $0.id == "t3" }?.opener == nil)
+        #expect(s.groups.map(\.id) == ["g1"], "and starts no chain group")
+        s.placeLoaded(tab: "t3")
+        #expect(groupOf(s, "t3") == groupOf(s, "t2") && groupOf(s, "t3") != nil, "the site rule groups it")
+        #expect(groupOf(s, "t1") == "g1")
+    }
+
     @Test func aTabNavigatingToAnotherSiteLeavesItsSiteGroup() {
         var s = pane([tab("t1", yt1, group: "g1"), tab("t2", yt2, group: "g1")],
                      groups: [auto("g1", "family:youtube")], nextGroup: 2)
