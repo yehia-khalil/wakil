@@ -429,6 +429,10 @@ public final class WindowModel {
     /// re-read from the store in `refreshPanes`. Empty with no conversation on screen.
     public private(set) var browserAllowedOnScreen: Set<String> = []
 
+    /// 3c-iii: the drawn place's organisation's bookmarks, as the store holds them (the ★ menu's),
+    /// re-read in `refreshPanes`. Empty with no place drawn.
+    public private(set) var browserBookmarksOnScreen: [BrowserBookmark] = []
+
     /// Every account on this machine, as the settings pane's flat table
     /// draws it — or `nil` when it has not been read yet or the read
     /// failed.
@@ -2301,6 +2305,7 @@ public final class WindowModel {
         // prices as production until the incoming org's tree is read.
         browserSites = .unread
         browserAllowedOnScreen = []
+        browserBookmarksOnScreen = []
         // The store's copy for the outgoing org goes too: coming back before a re-read must not
         // price from a list that may be stale (`organization` still names the outgoing org here).
         if !organization.isEmpty { await panes.browserSetSites(org: organization, .unread) }
@@ -4643,6 +4648,7 @@ public final class WindowModel {
         } else {
             browserAllowedOnScreen = []
         }
+        await readBrowserBookmarksOnScreen()
         gitRoots = await gitStatus?.roots ?? []
         await changesFollowStatus()
         // The dictionary itself changes only when a pane opens or closes.
@@ -5756,6 +5762,9 @@ public final class WindowModel {
         case .zoomIn, .zoomOut, .zoomReset:
             name = "browser_zoom"
             params["step"] = .string(key == .zoomIn ? "in" : key == .zoomOut ? "out" : "reset")
+        case .bookmark:
+            guard s.activeTab != nil else { return true }
+            name = "browser_bookmark"
         case .nextTab, .previousTab:
             guard let i = s.tabs.firstIndex(where: { $0.id == s.active }), s.tabs.count > 1 else { return true }
             name = "browser_select_tab"
@@ -5821,6 +5830,98 @@ public final class WindowModel {
         await panes.browserPageDidReport(paneId: pane, tab: tab, report)
         await refreshBrowser(pane: pane)
         if before?.url != report.url || before?.title != report.title { scheduleBrowserTabsWrite(pane: pane) }
+        recordVisit(scope: scope, before: before, report)
+    }
+
+    /// 3c-iii ruling 1: a finished load without a failure is a visit, and so is a new address on a
+    /// page that is not loading (`pushState`, an SPA router) unless only its `#fragment` moved; a
+    /// new title on a finished page updates the row without counting. Written to the organisation
+    /// of `scope`, never the active one.
+    private func recordVisit(scope: LayoutScope, before: BrowserTab?, _ report: BrowserPageReport) {
+        guard let before, !report.isLoading, report.failure == nil else { return }
+        func withoutFragment(_ url: String) -> Substring { url.prefix { $0 != "#" } }
+        let newVisit = before.isLoading || withoutFragment(before.url) != withoutFragment(report.url)
+        guard newVisit || (before.url == report.url && before.title != report.title),
+              let history = browserOrgFiles(for: scope)?.history else { return }
+        let (url, title, now) = (report.url, report.title, Date())
+        let previous = browserHistoryTail
+        browserHistoryTail = Task.detached {
+            await previous?.value
+            try? history.record(url: url, title: title, at: now, newVisit: newVisit)
+        }
+    }
+
+    /// The history writes run one after another, so a title update never overtakes its visit.
+    @ObservationIgnored private var browserHistoryTail: Task<Void, Never>?
+
+    /// TEST-ONLY: waits for the history writes started so far.
+    func settleBrowserHistory() async { await browserHistoryTail?.value }
+
+    /// The engine's suggestion fetch; nil asks through the window's one ephemeral session.
+    @ObservationIgnored var browserSuggestFetch: (@Sendable (URL) async throws -> Data)?
+    @ObservationIgnored private let browserSuggestSession = BrowserEngineSuggest.session()
+
+    /// The rows under the address field for `typed` in `pane`: the active organisation's open tabs
+    /// (of every browser pane on the canvas except `pane`'s active tab, the one being edited), bookmarks
+    /// and history, with `search` (the engine's words) last. Ruling 7.
+    public func browserSuggestions(typed: String, pane: String, search: [String] = []) async -> [BrowserSuggestion] {
+        let words = BrowserSuggestions.words(BrowserSuggestions.normalised(typed))
+        // Every read keys on the place drawn when the call began; a switch landing mid-call answers nothing.
+        guard !words.isEmpty, let scope = browserScope else { return [] }
+        // Ids repeat from pane to pane (`t1`), so the tab being edited is the (pane, tab) pair.
+        let editing = browser(pane)?.active
+        var tabs: [BrowserTab] = []
+        for p in layoutSnapshot.panes where p.kind == "browser" {
+            tabs += (browser(p.id)?.tabs ?? []).filter { !(p.id == pane && $0.id == editing) }
+        }
+        let bookmarks = await panes.browserBookmarks(org: scope.organization)
+        var history: [BrowserHistoryEntry] = []
+        if let files = browserOrgFiles(for: scope) {
+            // Wide, so `rank` scores before it cuts: a prefix match with few visits must not lose to
+            // eight busier pages that merely contain the word (rulings 7 and 8).
+            history = await Task.detached {
+                (try? files.history.matching(words, limit: 200)) ?? []
+            }.value
+        }
+        await browserSuggestionsAfterReads?()
+        guard browserScope == scope else { return [] }
+        return BrowserSuggestions.rank(
+            typed, tabs: tabs, bookmarks: bookmarks, history: history, search: search)
+    }
+
+    /// A tab row chosen under the address field of `pane` (ruling 9): `browser_select_tab` in the
+    /// pane that holds it — `pane` itself first, where the keyboard stays; a tab of another browser
+    /// pane on the canvas brings that pane forward with it, as ⌘P's open tabs do (ruling 11).
+    public func browserChooseTab(_ tab: String, url: String, from pane: String) async {
+        let browsers = layoutSnapshot.panes.filter { $0.kind == "browser" }.map(\.id)
+        let holder = ([pane] + browsers.filter { $0 != pane }).first { id in
+            browser(id)?.tabs.contains { $0.id == tab && $0.url == url } == true
+        }
+        guard let holder else { return }
+        var params: [String: JSONValue] = ["pane": .string(holder), "tab": .string(tab)]
+        if holder != pane { params["focus"] = .bool(true) }
+        await dispatchFromSurface("browser_select_tab", .object(params))
+    }
+
+    /// TEST-ONLY: runs after `browserSuggestions` has read, before it answers.
+    @ObservationIgnored var browserSuggestionsAfterReads: (@MainActor () async -> Void)?
+
+    /// TEST-ONLY: names another place as drawn.
+    func setDrawnScopeForTesting(_ scope: LayoutScope?) { drawnScope = scope }
+
+    /// The engine's own suggestions for `typed` (ruling 10): empty when the setting is off, the text
+    /// is an address, the engine has no endpoint, or the fetch fails.
+    public func browserEngineSuggestions(typed: String) async -> [String] {
+        let query = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard browserSettings.searchSuggestions, !query.isEmpty, !BrowserAddress.looksLikeAddress(query),
+              let url = BrowserEngineSuggest.url(engine: browserSettings.searchEngine, query: query)
+        else { return [] }
+        do {
+            let data: Data
+            if let fetch = browserSuggestFetch { data = try await fetch(url) }
+            else { data = try await browserSuggestSession.data(from: url).0 }
+            return BrowserEngineSuggest.parse(data)
+        } catch { return [] }
     }
 
     /// The find bar's match count from the page.
@@ -6864,6 +6965,26 @@ public final class WindowModel {
         }
     }
 
+    /// Every tab of every browser pane on the canvas, read as ⌘P lists them.
+    func paletteBrowserTabs() -> [PaletteBrowserTab] {
+        var rows: [PaletteBrowserTab] = []
+        for p in layoutSnapshot.panes where p.kind == "browser" {
+            for tab in browser(p.id)?.tabs ?? [] {
+                rows.append(PaletteBrowserTab(
+                    pane: p.id, tab: tab.id, title: tab.label, subtitle: BrowserSuggestions.bareURL(tab.url)))
+            }
+        }
+        return rows
+    }
+
+    /// The drawn place's organisation's bookmarks: the same place the address-field suggestions read.
+    func paletteBookmarks() async -> [PaletteBookmark] {
+        guard let scope = browserScope else { return [] }
+        return await panes.browserBookmarks(org: scope.organization).sorted { $0.added > $1.added }.map {
+            PaletteBookmark(url: $0.url, title: $0.title, subtitle: BrowserSuggestions.bareURL($0.url))
+        }
+    }
+
     /// ⌘P's sources, in group order.
     private func paletteOpenSources(tables: TablesSource?) -> [any PaletteSource] {
         // Read now, on the main actor: the live set as the palette opens.
@@ -6878,6 +6999,8 @@ public final class WindowModel {
             let environment = environment
             sources.append(ApiEntriesSource(http: http, environment: { environment }))
         }
+        sources.append(BrowserTabsSource(tabs: { [weak self] in await self?.paletteBrowserTabs() ?? [] }))
+        sources.append(BookmarksSource(bookmarks: { [weak self] in await self?.paletteBookmarks() ?? [] }))
         let changed = ChangedFilesSource(status: { [weak self] in await self?.paletteGitStatus() ?? [] })
         let fileSource = paletteFilesSource()
         // An editor in focus puts the project's files first: sources keep their own order within a group.
@@ -9663,11 +9786,35 @@ public final class WindowModel {
         agent(for: place).appendRow(label: "speech", detail: message, isError: true)
     }
 
+    /// 3c-iii: the active organisation's `bookmarks.json` into the store. A file that does not parse
+    /// loads as none; nothing here writes, so the file stays as it is.
+    private func loadBrowserBookmarks() async {
+        let org = organization
+        guard !org.isEmpty, let files = browserOrgFiles else { return }
+        let marks = (try? files.bookmarks()) ?? []
+        guard org == organization else { return }
+        await panes.browserSetBookmarks(org: org, marks)
+        await readBrowserBookmarksOnScreen()
+    }
+
+    /// The drawn place's organisation's bookmarks out of the store, for the ★ menu.
+    private func readBrowserBookmarksOnScreen() async {
+        guard let scope = browserScope else {
+            browserBookmarksOnScreen = []
+            return
+        }
+        let marks = await panes.browserBookmarks(org: scope.organization)
+        // A switch that landed during the read: the next refresh reads the new place's.
+        guard browserScope == scope, marks != browserBookmarksOnScreen else { return }
+        browserBookmarksOnScreen = marks
+    }
+
     /// 3c-ii: reads the config tree once and refreshes the sites from it. Called at launch and after
     /// an org, project or environment switch (`refreshContext`); a settings refresh applies the tree
     /// it already read instead (`applyBrowserSites`), with no second dispatch.
     func refreshBrowserSites() async {
         let asked = browserSitesKey
+        await loadBrowserBookmarks()
         guard !asked.org.isEmpty,
               let result = try? await registry.dispatch(
                 name: "ctx_config_tree", params: .object([:]), origin: .ui,

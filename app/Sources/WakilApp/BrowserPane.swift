@@ -38,6 +38,13 @@ struct BrowserPane: View {
     let sites: BrowserSites
     let agentAllowed: Set<String>
     let revokeSite: (String) -> Void
+    /// 3c-iii: the drawn place's organisation's bookmarks (the ★ menu), the rows under the address
+    /// field for what is typed (`search`, the engine's words, last), the engine's words, and a tab
+    /// row chosen (`tab`, `url`).
+    let bookmarks: [BrowserBookmark]
+    let suggestions: (_ typed: String, _ search: [String]) async -> [BrowserSuggestion]
+    let engineSuggestions: (_ typed: String) async -> [String]
+    let chooseTab: (_ tab: String, _ url: String) async -> Void
 
     @FocusState private var addressFocused: Bool
     @FocusState private var findFocused: Bool
@@ -54,6 +61,12 @@ struct BrowserPane: View {
     /// Raised when the pane takes the keyboard while its active tab's page is asking: the question
     /// takes it, not the page under it (`BrowserPromptCard`, Rule 6).
     @State private var promptFocusTurn = 0
+    /// What was typed, the rows under the field, the highlight and the inline completion
+    /// (rulings 8 and 9); `draft` is what it shows.
+    @State private var input = BrowserAddressInput()
+    /// While the field editor is being given a completion's text and selection: the selection it
+    /// passes through on the way is not the caret leaving the end.
+    @State private var placingCompletion = false
 
     private var active: BrowserTab? { snapshot.activeTab }
     private var listMode: BrowserTabListMode { BrowserTabListMode(paneWidth: width) }
@@ -66,6 +79,8 @@ struct BrowserPane: View {
             tabStrip
             BrowserHeader(tab: active, dispatch: send) {
                 addressField
+                BrowserBookmarkMenu(
+                    choices: BrowserBookmarkChoices(url: active?.url, bookmarks: bookmarks), dispatch: send)
                 siteMarks
             }
             PaneHairline()
@@ -85,8 +100,22 @@ struct BrowserPane: View {
             if !snapshot.downloads.isEmpty {
                 PaneHairline()
                 BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
-                    .padding(.horizontal, BrowserPaneStyle.rowInset)
+                    .padding(.leading, BrowserPaneStyle.rowInset)
+                    // Its × clear of the pane's resize handle, drawn over this corner.
+                    .padding(.trailing, PaneStripStyle.resizeCorner)
                     .padding(.vertical, BrowserPaneStyle.rowPadding)
+            }
+        }
+        // The rows under the address field, over the page: inside the pane, so the field keeps the
+        // keyboard while they show (Rule 3).
+        .overlayPreferenceValue(BrowserAddressAnchor.self) { anchor in
+            GeometryReader { geometry in
+                if editingAddress, !input.rows.isEmpty, let anchor {
+                    let field = geometry[anchor]
+                    BrowserSuggestionList(rows: input.rows, highlight: input.highlight, choose: choose)
+                        .frame(width: field.width)
+                        .offset(x: field.minX, y: field.maxY + 2)
+                }
             }
         }
         .onAppear {
@@ -116,8 +145,9 @@ struct BrowserPane: View {
                 selectAddress()
             } else {
                 // Rule 2's stated exception: leaving without Return puts the address back — the
-                // field goes, and the line shows the tab's URL.
+                // field goes, and the line shows the tab's URL; its rows go with it.
                 editingAddress = false
+                input = BrowserAddressInput()
             }
         }
         .onDisappear {
@@ -181,7 +211,30 @@ struct BrowserPane: View {
                     .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.addressOpacity))
                     .focused($addressFocused)
                     .onSubmit { submit() }
+                    // ↓ ↑ move through the rows (ruling 9); with none they keep their meaning.
+                    .onKeyPress(.downArrow) { move(down: true) }
+                    .onKeyPress(.upArrow) { move(down: false) }
+                    .onChange(of: draft) { _, text in edited(text) }
+                    .onReceive(NotificationCenter.default.publisher(for: NSTextView.didChangeSelectionNotification)) {
+                        caretMoved($0)
+                    }
+                    // Local rows at once on each edit; the engine's 150 ms after the last keystroke,
+                    // so a newer keystroke cancels an older ask (rulings 7 and 10).
+                    .task(id: input.query) {
+                        guard let typed = input.query else { return }
+                        showRows(await suggestions(typed, []), for: typed)
+                        try? await Task.sleep(for: .milliseconds(150))
+                        guard !Task.isCancelled else { return }
+                        let words = await engineSuggestions(typed)
+                        guard !Task.isCancelled, !words.isEmpty else { return }
+                        showRows(await suggestions(typed, words), for: typed)
+                    }
                     .onExitCommand {
+                        // Esc with rows showing hides them and puts back what was typed (ruling 9).
+                        if input.escape() {
+                            showInput()
+                            return
+                        }
                         // As a tab switch does (⌘1): the field lets the keyboard go to the window
                         // as this applies, so the page takes it a turn later — taken now, it
                         // would be taken straight back.
@@ -220,6 +273,7 @@ struct BrowserPane: View {
                     lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture { beginEditingAddress() }
+        .anchorPreference(key: BrowserAddressAnchor.self, value: .bounds) { $0 }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("browser.addressField")
     }
@@ -284,26 +338,105 @@ struct BrowserPane: View {
             if addressFocused { selectAddress() } else { addressFocused = true }
             return
         }
-        draft = active?.url ?? ""
+        let url = active?.url ?? ""
+        input = BrowserAddressInput(url)
+        draft = url
         editingAddress = true
     }
 
     /// Selects the address field's whole text, in that field's own editor: the window's first
-    /// responder when it is the field editor of an `NSTextField` named `browser.address` and this
-    /// pane's field still has focus. The editor is the field's a turn or two after focus moves, so
-    /// this asks again briefly; anything else holding the keyboard by then is left alone.
+    /// responder while this pane's field has focus. The editor is the field's a turn or two after
+    /// focus moves, so this asks again briefly; anything else holding the keyboard by then is left
+    /// alone.
     private func selectAddress(tries: Int = 10) {
         guard addressFocused else { return }
-        guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
-              let field = editor.delegate as? NSTextField, field.accessibilityIdentifier() == "browser.address",
-              editor.string == draft
-        else {
+        guard let editor = addressEditor(), editor.string == draft else {
             if tries > 0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { selectAddress(tries: tries - 1) }
             }
             return
         }
         editor.selectAll(nil)
+    }
+
+    /// The field editor of this pane's address field while it has the keyboard: the window's first
+    /// responder, editing an `NSTextField`, while `addressFocused` says the field is this pane's.
+    /// SwiftUI's `accessibilityIdentifier` never reaches the `NSTextField` itself (its own is
+    /// empty), so the focus state is what names it; callers also match the editor's text.
+    private func addressEditor() -> NSTextView? {
+        guard addressFocused, let editor = NSApp.keyWindow?.firstResponder as? NSTextView,
+              editor.delegate is NSTextField
+        else { return nil }
+        return editor
+    }
+
+    // MARK: Rows and inline completion (rulings 7–9)
+
+    /// The field's text changed: an edit of the operator's unless it is what `input` put there.
+    private func edited(_ text: String) {
+        let caretAtEnd = addressEditor().map { editor in
+            let selection = editor.selectedRange()
+            return selection.length == 0 && selection.location == (editor.string as NSString).length
+        } ?? true
+        let before = input
+        input.fieldChanged(to: text, caretAtEnd: caretAtEnd)
+        if input != before { showInput() }
+    }
+
+    private func showRows(_ rows: [BrowserSuggestion], for typed: String) {
+        input.rowsArrived(rows, for: typed)
+        showInput()
+    }
+
+    private func move(down: Bool) -> KeyPress.Result {
+        guard input.move(down: down) else { return .ignored }
+        showInput()
+        return .handled
+    }
+
+    /// The field shows what `input` says; a completion is then selected in the field's editor, so
+    /// the next keystroke replaces it (ruling 8). The editor takes the text a turn after `draft`
+    /// changes, so the selection is asked again briefly.
+    private func showInput() {
+        let shown = input.shown
+        guard draft != shown else { return }
+        draft = shown
+        guard let range = input.completionRange else { return }
+        placingCompletion = true
+        selectCompletion(range, shown: shown)
+    }
+
+    private func selectCompletion(_ range: NSRange, shown: String, tries: Int = 10) {
+        guard input.shown == shown, input.completionRange == range else {
+            placingCompletion = false
+            return
+        }
+        guard let editor = addressEditor(), editor.string == shown else {
+            if tries > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                    selectCompletion(range, shown: shown, tries: tries - 1)
+                }
+            } else {
+                placingCompletion = false
+            }
+            return
+        }
+        editor.setSelectedRange(range)
+        placingCompletion = false
+    }
+
+    /// The selection moved off the completion while it showed — left, or collapsed at the end: the
+    /// completion is dropped, and what shows stays (ruling 8).
+    private func caretMoved(_ note: Notification) {
+        guard !placingCompletion, input.completionRange != nil, let editor = note.object as? NSTextView,
+              editor === addressEditor() else { return }
+        input.selectionChanged(editor.selectedRange(), in: editor.string)
+    }
+
+    /// A press on a row: the same as Return on it.
+    private func choose(_ row: BrowserSuggestion) {
+        guard !input.rows.isEmpty else { return }
+        open(BrowserAddressInput.choice(row))
     }
 
     /// The tab's URL as the line shows it: whole, and nothing for a blank or `about:` page.
@@ -313,13 +446,23 @@ struct BrowserPane: View {
         return tab.url
     }
 
-    /// Return: the typed text goes to `browser_navigate`, which holds it to the address rule, and the
-    /// page takes the keyboard. A second Return replaces the load (Rule 5): it is one more command.
+    /// Return: the highlighted row, else what the field shows — the typed text and any completion —
+    /// to `browser_navigate`, which holds it to the address rule; the page takes the keyboard. A
+    /// second Return replaces the load (Rule 5): it is one more command.
     private func submit() {
-        let typed = draft
+        open(input.highlight != nil ? input.choice : .navigate(draft))
+    }
+
+    /// A tab row selects that tab (in this pane, or brings its own pane forward); anything else is
+    /// `browser_navigate`. The rows go, and the page takes the keyboard.
+    private func open(_ choice: BrowserAddressInput.Choice) {
+        input = BrowserAddressInput()
         addressFocused = false
         Task {
-            await dispatch("browser_navigate", ["input": .string(typed)])
+            switch choice {
+            case .navigate(let text): await dispatch("browser_navigate", ["input": .string(text)])
+            case .tab(let id, let url): await chooseTab(id, url)
+            }
             focusPage()
         }
     }
@@ -478,7 +621,11 @@ struct BrowserPane: View {
         // The tab leaving the front keeps its scroll and its last moves for a relaunch (I8).
         if switched, let left = old?.active { host.saveState(scope: scope, pane: pane.id, tab: left) }
         // An edit left in the field was the other tab's: the field holds this one's URL.
-        if switched, editingAddress { draft = now.activeTab?.url ?? "" }
+        if switched, editingAddress {
+            let url = now.activeTab?.url ?? ""
+            input = BrowserAddressInput(url)
+            draft = url
+        }
         // A new tab (⌘T, the agent's) takes the keyboard to its address field (Rule 3). Not one a
         // page opened, nor one ⌘⇧T brought back: those arrive with a page to read, as in Safari.
         if switched, let id = now.active, let old, !old.tabs.contains(where: { $0.id == id }),

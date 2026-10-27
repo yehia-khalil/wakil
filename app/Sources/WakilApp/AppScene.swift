@@ -516,6 +516,11 @@ struct WakilApplication: App {
                 Button("Forward") { browserKey(.forward) }
                     .keyboardShortcut("]", modifiers: .command)
                 Divider()
+                // Outside a browser pane ⌘D goes on to what holds the keyboard (the editor's own
+                // ⌘D, select the next match), as the other browser keys do (ruling 13).
+                Button("Add Bookmark") { browserKey(.bookmark) }
+                    .keyboardShortcut("d", modifiers: .command)
+                Divider()
                 Button("Find…") { browserKey(.find) }
                     .keyboardShortcut("f", modifiers: .command)
                 Button("Find Next") { browserKey(.findNext) }

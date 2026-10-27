@@ -48,6 +48,16 @@ struct BrowserSettingsForm: View {
                         return await save(["searchEngine": .string(key)])
                     })
                 startPageRow
+                ChoiceSettingRow(
+                    label: "Search suggestions", options: ["Off", "On"],
+                    selected: browser.searchSuggestions ? "On" : "Off",
+                    identifier: { option in "settings.browser.searchSuggestions.\(option.lowercased())" },
+                    refusalIdentifier: "settings.browser.searchSuggestions.refusal",
+                    hint: "Sends what you type in the address bar to the search engine as you type. Off, nothing "
+                        + "leaves the Mac until you press Return. Kagi gives none.",
+                    save: { option in await save(["searchSuggestions": .bool(option == "On")]) })
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("settings.browser.searchSuggestions")
             }
             SettingsSection("Browsing data") {
                 clearSection

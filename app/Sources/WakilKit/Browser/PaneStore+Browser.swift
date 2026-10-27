@@ -107,6 +107,17 @@ extension PaneStore {
         setKindState(BrowserPaneKind.self, shared)
     }
 
+    public func browserSetBookmarks(org: String, _ b: [BrowserBookmark]) {
+        var shared = kindState(BrowserPaneKind.self)
+        shared.bookmarks[org] = b
+        setKindState(BrowserPaneKind.self, shared)
+    }
+
+    /// `[]` when never set.
+    public func browserBookmarks(org: String) -> [BrowserBookmark] {
+        kindState(BrowserPaneKind.self).bookmarks[org] ?? []
+    }
+
     /// `.unread` when never set: every site then counts as production.
     public func browserSites(org: String) -> BrowserSites {
         kindState(BrowserPaneKind.self).sites[org] ?? .unread

@@ -290,21 +290,24 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     #expect(await layout.preferredPane(kind: "browser") == c)
 }
 
-/// Fix round M7 (Rule 6): browser_open with keepFocus — openLinkInWakil's — opens a needed pane without
-/// taking focus; without it (the agent's, the palette's) the new pane is focused as before.
-@Test func browserOpenWithKeepFocusOpensAPaneWithoutTakingFocus() async throws {
+/// 3c-iii walk: browser_open with focus — openLinkInWakil's — brings the pane it used forward, the one
+/// it opened and one already open alike; without it (the agent's, the palette's) a pane it opens is
+/// focused and one already open is left where it is.
+@Test func browserOpenWithFocusFocusesThePaneItUsed() async throws {
     let f = try await browserFixture(open: false)
     let editor = await f.layout.open(kind: "editor", title: "Editor").id
-    try await f.dispatch("browser_open", ["url": .string("https://a.test/"), "keepFocus": .bool(true)], named: false)
-    let snap = await f.layout.snapshot()
-    let browser = try #require(snap.panes.first { $0.kind == "browser" }).id
-    #expect(snap.focusedId == editor)
-    #expect(await f.panes.browserSnapshot(paneId: browser).tabs.count == 1)
-    try await f.dispatch("browser_open", ["url": .string("https://b.test/"), "keepFocus": .bool(true)], named: false)
-    #expect(await f.layout.snapshot().focusedId == editor)
+    try await f.dispatch("browser_open", ["url": .string("https://a.test/"), "focus": .bool(true)], named: false)
+    let browser = try #require(await f.layout.snapshot().panes.first { $0.kind == "browser" }).id
+    #expect(await f.layout.snapshot().focusedId == browser)
+    try await f.layout.focus(id: editor)
+    try await f.dispatch("browser_open", ["url": .string("https://b.test/"), "focus": .bool(true)], named: false)
+    #expect(await f.layout.snapshot().focusedId == browser)
     #expect(await f.panes.browserSnapshot(paneId: browser).tabs.count == 2)
-    try await f.layout.close(id: browser)
+    try await f.layout.focus(id: editor)
     try await f.dispatch("browser_open", ["url": .string("https://c.test/")], named: false)
+    #expect(await f.layout.snapshot().focusedId == editor)
+    try await f.layout.close(id: browser)
+    try await f.dispatch("browser_open", ["url": .string("https://d.test/")], named: false)
     let after = await f.layout.snapshot()
     #expect(after.focusedId != editor && after.panes.first { $0.id == after.focusedId }?.kind == "browser")
 }
@@ -628,4 +631,95 @@ private struct StoreInUse: Error, CustomStringConvertible {
     let seq = await f.active()?.command?.seq ?? 0
     try await f.dispatch("browser_print", origin: .ui)
     #expect(await f.active()?.command == BrowserCommand(seq: seq + 1, verb: .print))
+}
+
+@Test func browserSettingsDecodeSearchSuggestions() throws {
+    let off = try JSONDecoder().decode(SettingsBrowser.self, from: Data("{}".utf8))
+    #expect(off.searchSuggestions == false)
+    let on = try JSONDecoder().decode(SettingsBrowser.self, from: Data(#"{"searchSuggestions": true}"#.utf8))
+    #expect(on.searchSuggestions == true)
+}
+
+// MARK: - Bookmarks (3c-iii Task 3)
+
+private func bookmarkFixture(org: String = "initech") async throws -> (BrowserFixture, BrowserOrgFiles) {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: org)
+    return (try await browserFixture(orgFiles: files), files)
+}
+
+
+private func bookmarkFixture() async throws -> (BrowserFixture, BrowserOrgFiles) {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "initech")
+    var f = try await browserFixture(open: false, orgFiles: files)
+    let scope = LayoutScope(organization: "initech", project: "p", environment: "e")
+    await f.layout.switchScope(to: scope)
+    await f.panes.switchScope(to: scope)
+    f.pane = await f.layout.open(kind: "browser", title: "Browser").id
+    return (f, files)
+}
+
+private func bookmarked(_ reply: JSONValue) -> Bool? {
+    guard case .object(let o) = reply, case .bool(let b)? = o["bookmarked"] else { return nil }
+    return b
+}
+
+@Test func browserBookmarkTogglesTheActiveTabAndReadPaneSaysSo() async throws {
+    let (f, files) = try await bookmarkFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    #expect(bookmarked(await f.panes.readPane(paneId: f.pane, kind: "browser")) == false)
+    #expect(bookmarked(try await f.dispatch("browser_bookmark")) == true)
+    #expect(try files.bookmarks().map(\.url) == ["https://example.com/a"])
+    #expect(await f.panes.browserBookmarks(org: "initech").map(\.url) == ["https://example.com/a"])
+    #expect(bookmarked(await f.panes.readPane(paneId: f.pane, kind: "browser")) == true)
+    #expect(bookmarked(try await f.dispatch("browser_bookmark", ["on": .bool(true)])) == true)
+    #expect(try files.bookmarks().count == 1)
+    #expect(bookmarked(try await f.dispatch("browser_bookmark")) == false)
+    #expect(await f.panes.browserBookmarks(org: "initech") == [])
+}
+
+@Test func browserBookmarkRefusesANonWebPage() async throws {
+    let (f, files) = try await bookmarkFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("about:blank")])
+    await #expect(throws: BrowserActionError.notBookmarkable(scheme: "about")) {
+        try await f.dispatch("browser_bookmark")
+    }
+    #expect(BrowserActionError.notBookmarkable(scheme: "about").description
+            == "browser_bookmark: only a web page can be bookmarked, not about:")
+    #expect(try files.bookmarks() == [])
+}
+
+@Test func browserBookmarkRefusesAnUnreadableFileWithTheCopy() async throws {
+    let (f, files) = try await bookmarkFixture()
+    try FileManager.default.createDirectory(at: files.directory, withIntermediateDirectories: true)
+    try Data("oops".utf8).write(to: files.directory.appendingPathComponent("bookmarks.json"))
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    do { try await f.dispatch("browser_bookmark"); Issue.record("should refuse") }
+    catch let error as BrowserActionError {
+        let text = error.description
+        #expect(text.hasPrefix("browser_bookmark: bookmarks.json can't be read ("))
+        #expect(text.hasSuffix(") — fix or move it; Wakil won't write over it."))
+    }
+}
+
+@Test func readPaneAlwaysCarriesBookmarked() async throws {
+    let (f, _) = try await bookmarkFixture()
+    #expect(bookmarked(await f.panes.readPane(paneId: f.pane, kind: "browser")) == false)
+}
+
+@Test func selectTabWithFocusFocusesThePane() async throws {
+    let f = try await browserFixture()
+    let editor = await f.layout.open(kind: "editor", title: "Editor").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://a.test/")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://b.test/")])
+    try await f.layout.focus(id: editor)
+    try await f.dispatch("browser_select_tab", ["index": .integer(0)])
+    #expect(await f.layout.snapshot().focusedId == editor)
+    try await f.dispatch("browser_select_tab", ["index": .integer(1), "focus": .bool(true)])
+    #expect(await f.layout.snapshot().focusedId == f.pane)
+}
+
+@Test func tabLabelFallsBackToHostThenNewTab() {
+    #expect(BrowserTab(id: "t1", url: "https://example.com/x", title: "Docs").label == "Docs")
+    #expect(BrowserTab(id: "t1", url: "https://www.example.com/x", title: "").label == BrowserAddress.displayHost(URL(string: "https://www.example.com/x")!))
+    #expect(BrowserTab(id: "t1", url: "", title: "").label == "New Tab")
 }

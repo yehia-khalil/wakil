@@ -383,6 +383,7 @@ extension WakilWindow {
                     resize: { cols, rows in
                         Task { await model.resizeTerminal(pane: pane.id, cols: cols, rows: rows) }
                     },
+                    openLink: { url, alt in WakilLinks.open(url, systemBrowser: alt, model: model) },
                     // `Send to thread` on a block: straight into the
                     // thought thread, the same entry point the operator's
                     // own compose field calls. It used to stop at the
@@ -613,7 +614,13 @@ extension WakilWindow {
                         },
                         sites: model.browserSites,
                         agentAllowed: model.browserAllowedOnScreen,
-                        revokeSite: { site in Task { await model.revokeBrowserSite(site) } })
+                        revokeSite: { site in Task { await model.revokeBrowserSite(site) } },
+                        bookmarks: model.browserBookmarksOnScreen,
+                        suggestions: { typed, search in
+                            await model.browserSuggestions(typed: typed, pane: pane.id, search: search)
+                        },
+                        engineSuggestions: { typed in await model.browserEngineSuggestions(typed: typed) },
+                        chooseTab: { tab, url in await model.browserChooseTab(tab, url: url, from: pane.id) })
                     // **One view per place and pane.** Pane ids repeat from place to place, so
                     // without this a switch from A's `browser-1` to B's would keep the view: no
                     // appearance (no re-report of B's pages) and A's snapshot as B's `old`.

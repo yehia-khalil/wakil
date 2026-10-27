@@ -4,6 +4,7 @@ import Foundation
 /// organisation's sites, and each conversation's allowed site keys (`BrowserSite.key`).
 public struct BrowserShared: Sendable, Equatable {
     public var sites: [String: BrowserSites] = [:]
+    public var bookmarks: [String: [BrowserBookmark]] = [:]
     public var allowed: [String: Set<String>] = [:]
     public init() {}
 }
@@ -26,6 +27,9 @@ enum BrowserPaneKind: PaneKind {
     static func readPane(_ s: BrowserSnapshot, in store: isolated PaneStore) -> [String: JSONValue] {
         let tab = s.activeTab
         let sites = store.browserSites(org: store.activeScope.organization)
+        let bookmarked = tab.map { t in
+            store.browserBookmarks(org: store.activeScope.organization).contains { $0.url == t.url }
+        } ?? false
         return [
             "tabs": .array(s.tabs.map { t in
                 let site = BrowserSite.key(t.url)
@@ -46,6 +50,7 @@ enum BrowserPaneKind: PaneKind {
             "loading": tab.map { .bool($0.isLoading) } ?? .null,
             "canGoBack": tab.map { .bool($0.canGoBack) } ?? .null,
             "canGoForward": tab.map { .bool($0.canGoForward) } ?? .null,
+            "bookmarked": .bool(bookmarked),
             "zoom": tab.map { .number($0.zoom) } ?? .null,
             "find": s.find.map { f in .object([
                 "query": .string(f.query), "current": .number(Double(f.current)), "total": .number(Double(f.total)),

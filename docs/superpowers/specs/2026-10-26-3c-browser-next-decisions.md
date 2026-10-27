@@ -27,6 +27,29 @@ video, they are a developer, and they keep work, local testing, study and home b
    - **A pull-request group fills itself**, one per organisation, from that organisation's GitHub
      account. It holds the PRs you opened and the ones your review is requested on, adds and drops
      them as they open and close, and only reads from GitHub.
+   - **Smart grouping, like Dia's** (operator, 2026-10-27, a future step): Wakil groups open tabs by
+     topic automatically, without asking first. Still open, for the tab-groups phase's brainstorm: what a
+     topic is read from (title and address, or page text, which would send it to a model), whether
+     automatic groups sit beside the ones you make or replace them, and whether a tab you move by hand
+     stays where you put it.
+   - **Collapsed, a group takes little room** (operator, 2026-10-27): it shows only its title and the
+     group's open tab (the one showing its page), and expanding it shows all its tabs. Still open: while
+     a tab outside the group is showing, which tab the collapsed group shows (my pick: the one last open
+     in it).
+   - **Pinning** (operator, 2026-10-27): a tab can be pinned, and so can a group. **Pinning is per
+     project**, of tabs and of groups alike: a pinned tab belongs to the project and shows in every
+     browser pane of that project's places (each environment and conversation); pinning a group puts that
+     organisation-wide group first in this project only, so the same group can be pinned in one project
+     and not another. Groups themselves stay per organisation (operator, 2026-10-27, on my
+     recommendation). A group that only makes sense for one project is left out for now: a pinned tab or
+     two covers it, revisited if it bites. Pinned tabs and
+     groups sit **first in the strip**. **⌘W on a pinned tab closes it only on a second press**: the first
+     shows a tip on the tab, `Press ⌘W again to close`, and the second closes it (operator, 2026-10-27).
+     This is a deliberate exception to PRODUCT.md's Rule 1 (confirm only what destroys), so the spec must
+     name it. The second press
+     counts within **2 s**; after that the tip goes and the next ⌘W starts over. A pinned tab's **×
+     closes it in one click** (operator, 2026-10-27): the double press guards only the keyboard, where
+     ⌘W aimed at the pane or another tab can land on a pinned one.
 4. **Spaces are organisations.** Wakil keeps cookies and cache per organisation already, so no
    separate spaces are added.
 5. **Identities inside an organisation**, like Firefox containers. Each identity is its own WebKit
@@ -57,7 +80,7 @@ video, they are a developer, and they keep work, local testing, study and home b
      operator's.
 7. **No forced dark mode.** Wakil runs in dark appearance, so sites with a dark theme already show it.
    Pages without one stay as they are.
-8. **Address-bar suggestions** as 3c-iii plans them: open tabs, then bookmarks, then history, with the
+8. **Address-bar suggestions (built, 3c-iii)** as it planned them: open tabs, then bookmarks, then history, with the
    address completed inline. Suggestions from the search engine come as a setting, off by default,
    because they send every keystroke to the engine.
 
@@ -67,7 +90,7 @@ video, they are a developer, and they keep work, local testing, study and home b
 - A question typed in the address field goes to the conversation, not the search engine.
 - Quick tasks that know the current page ("Summarise this page").
 - Opt-in browsing history as the agent's context, per organisation (3c-iii's store).
-- Pinned tabs, a peek window for a quick lookup, and focus mode.
+- A peek window for a quick lookup, and focus mode. (Pinned tabs moved to decision 3, confirmed.)
 - Left out on purpose: Dia's Slack, Notion and Gmail integrations, and its writing help in any text
   field (it would conflict with the never-list).
 

@@ -34,7 +34,14 @@ public enum BrowserAddress {
         return search(text, searchEngine: searchEngine)
     }
 
-    /// `https`, `file`, and `http` to a loopback host.
+    /// Whether `resolve` would open `typed` as an address rather than search for it. It asks the same
+    /// pieces `resolve` does, so the two cannot disagree.
+    public static func looksLikeAddress(_ typed: String) -> Bool {
+        let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.contains(where: \.isWhitespace) else { return false }
+        return (hasScheme(text) && URL(string: text) != nil) || urlForHost(text) != nil
+    }
+
     /// Whether a page shows `url` itself. Any other scheme (`mailto:`, `zoommtg:`) belongs to an app
     /// on the Mac, and the tab asks in place before handing it over (final review I4, Rule 7).
     public static func opensInPage(_ url: URL) -> Bool {

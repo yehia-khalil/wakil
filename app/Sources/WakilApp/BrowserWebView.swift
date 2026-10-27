@@ -24,8 +24,8 @@ final class BrowserWebView: WKWebView {
         return false
     }
 
-    /// K P N T W L , and 1–9.
-    private static let commandKeys: Set<UInt16> = [40, 35, 45, 17, 13, 37, 43, 18, 19, 20, 21, 23, 22, 26, 28, 25]
+    /// K P N T W L , D and 1–9.
+    private static let commandKeys: Set<UInt16> = [40, 35, 45, 17, 13, 37, 43, 2, 18, 19, 20, 21, 23, 22, 26, 28, 25]
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if Self.isWakilKey(event), NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }

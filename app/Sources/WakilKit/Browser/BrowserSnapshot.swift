@@ -201,3 +201,12 @@ public struct BrowserPageReport: Sendable, Equatable {
         self.failure = failure
     }
 }
+
+extension BrowserTab {
+    /// What a tab is called in lists: its title, else its host, else New Tab.
+    public var label: String {
+        if !title.isEmpty { return title }
+        if let parsed = URL(string: url), !url.isEmpty { return BrowserAddress.displayHost(parsed) }
+        return "New Tab"
+    }
+}

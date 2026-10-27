@@ -184,7 +184,7 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   else the one most recently focused, else the last opened (`LayoutStore.preferredPane`, one call over
   the arrangement and its in-memory focus order): the spec's call 11, where a link from elsewhere in
   Wakil opens. That link's one path is `WindowModel.openLinkInWakil` (`App/WindowModel+Links.swift`,
-  `browser_open` with `newTab` and `keepFocus`, so a pane it has to open does not take focus, Rule 6);
+  `browser_open` with `newTab` and `focus`, so the browser pane comes forward with the keyboard);
   the app's `WakilLinks.open` sends it there, or to the system browser on ⌥-click. 3c-i routes the
   blame hover's Open on GitHub through it; 3c-iii routes the terminal's, the editor's and an API entry's
   links. Each command bumps its tab's `command.seq`; tab changes write the layout's
@@ -206,10 +206,19 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   while none is active; the registered actions ask for the caller's own. WebKit keeps the store's own
   files under `~/Library/WebKit/`, outside Wakil's reach, so deleting them goes through `removeData`.
   `BrowserClearDataQuestion` is the Settings confirmation's copy and its Keep it / Delete labels.
+  3c-iii adds `bookmarks.json` here (matched by exact URL, never written over when unreadable) and
+  `history.sqlite`; clearing browsing data deletes the history and keeps the bookmarks.
+- `BrowserHistory.swift` — `BrowserHistory` (3c-iii): one organisation's visits in SQLite, kept 90 days;
+  `record` on load, `matching` for the address field.
+- `BrowserSuggestions.swift` — `BrowserSuggestions` (3c-iii): the ranking (open tabs, bookmarks, history,
+  scored before they are cut) and the inline `completion`; `BrowserEngineSuggest`, the search engine's
+  own suggestions, behind the `searchSuggestions` setting (off by default).
+- `BrowserAddressInput.swift` — `BrowserAddressInput` (3c-iii): the address field's key and completion
+  state machine (↓ ↑ Return Esc, ⌫ after a completion); `BrowserBookmarkChoices` is the ★ menu.
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `WindowModelBrowserTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 
@@ -219,7 +228,9 @@ The palettes' state machine and their lists, pure so the window only feeds keys 
 - `CommandCatalog.swift` — `CommandCatalog`: the curated ⌘K list, each row pinned to a registered
   action.
 - `PaletteSources.swift` — `PaletteSource` and its sources (`OpenPanesSource`, `NewPaneSource`,
-  `TablesSource`, `ApiEntriesSource`, `ChangedFilesSource`), `PaletteClients`. `FilesSource` does the same
+  `TablesSource`, `ApiEntriesSource`, `BrowserTabsSource` and `BookmarksSource` (open tabs and bookmarks, fed plain
+  `PaletteBrowserTab` / `PaletteBookmark` rows by `WindowModel` so Command stays clear of Browser),
+  `ChangedFilesSource`), `PaletteClients`. `FilesSource` does the same
   as the tree when `showIgnored` is false.
 - `PaletteEntry.swift`, `PaletteItem.swift` (`fuzzyScore`), `PaletteSearch.swift`,
   `PaletteFocusReturn.swift`.
@@ -583,6 +594,8 @@ Tests: `ListeningMachineTests`, `ScriptedSpeechProviderTests`, `SpeechRegistryTe
 - `ShellIntegration.swift` — `shellLaunch`, `terminalChildEnvironment`.
 - `ActiveShellContext.swift` — `ActiveShellContext`: the window's live org, project and environment
   for a new shell.
+- `TerminalLinks.swift` — `TerminalLinks` (3c-iii): the URLs in a terminal row, cut in UTF-16 units over
+  the joined row so a link can span style runs; ⌘-click opens one in Wakil's browser, ⌘⌥ in the system's.
 - `TerminalMirror.swift` (`TerminalMirrorFeed`: the agent's `Bash` calls mirrored into panes),
   `TerminalBlock.swift`, `TerminalLineEdit.swift`, `TerminalMarkScanner.swift`,
   `TerminalAnsiColor.swift`, `TerminalPaneSupport.swift`.

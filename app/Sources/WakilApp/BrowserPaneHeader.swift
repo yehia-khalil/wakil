@@ -23,13 +23,6 @@ enum BrowserTabListMode: Equatable {
     }
 }
 
-/// What a tab is called in the list and the count menu: its title, else its host, else New Tab.
-func browserTabLabel(_ tab: BrowserTab) -> String {
-    if !tab.title.isEmpty { return tab.title }
-    if let url = URL(string: tab.url), !tab.url.isEmpty { return BrowserAddress.displayHost(url) }
-    return "New Tab"
-}
-
 /// The browser pane's drawing (3c-i, Task 8b): `Browser.dc.html`'s numbers, each read from the
 /// token another pane already draws with where one exists — the editor's colours, the rail's tick
 /// and row lift, the settings form's micro-label and field — and named here only where the browser
@@ -113,6 +106,8 @@ enum BrowserPaneStyle {
     static let promptButtonGap: CGFloat = 14
     /// A download's entries, side by side.
     static let downloadSpacing: CGFloat = 14
+    /// A running download's bar: wide enough to read how far it is, narrow enough for its row.
+    static let downloadBarWidth: CGFloat = 72
     /// The certificate page's lock.
     static let pageGlyph: CGFloat = 22
     /// What the page under a prompt is dimmed by while it waits (it takes the page's clicks).
@@ -196,7 +191,7 @@ struct BrowserTabCount: View {
     var body: some View {
         Menu {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { _, t in
-                Button(browserTabLabel(t)) { dispatch("browser_select_tab", ["tab": .string(t.id)]) }
+                Button(t.label) { dispatch("browser_select_tab", ["tab": .string(t.id)]) }
             }
         } label: {
             HStack(spacing: 3) {
@@ -253,7 +248,7 @@ struct BrowserTabList: View {
                             }
                         }
                     if mode == .full {
-                        Text(browserTabLabel(tabs[index]))
+                        Text(tabs[index].label)
                             .font(.system(size: BrowserPaneStyle.tabTitleSize))
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -261,7 +256,7 @@ struct BrowserTabList: View {
                     }
                 }
             },
-            label: { browserTabLabel(tabs[$0]) },
+            label: { tabs[$0].label },
             tap: { select(tabs[$0]) },
             activate: { select(tabs[$0]) },
             move: { from, to in
@@ -273,6 +268,50 @@ struct BrowserTabList: View {
 
     private func select(_ tab: BrowserTab) {
         dispatch("browser_select_tab", ["tab": .string(tab.id)])
+    }
+}
+
+// MARK: 3c-iii — the ★ menu
+
+/// ★ at the address row's right, before the tag chip (ruling 12): one menu — Bookmark This Page or
+/// Remove Bookmark, then the organisation's bookmarks, newest first, each opening in the active tab.
+/// The glyph is filled in amber while the active tab's page is bookmarked. ⌘D is the menu bar's
+/// `Add Bookmark` (ruling 13); it is not bound here too, so the key has one owner, which acts on the
+/// focused browser pane and passes the key on anywhere else.
+struct BrowserBookmarkMenu: View {
+    let choices: BrowserBookmarkChoices
+    let dispatch: (String, [String: JSONValue]) -> Void
+
+    var body: some View {
+        Menu {
+            Button(choices.toggleTitle) { dispatch("browser_bookmark", ["on": .bool(!choices.bookmarked)]) }
+                .disabled(!choices.canToggle)
+                .accessibilityIdentifier("browser.bookmark.toggle")
+            Divider()
+            if choices.entries.isEmpty {
+                Text(BrowserBookmarkChoices.none)
+            } else {
+                ForEach(choices.entries, id: \.url) { mark in
+                    Button(mark.title.isEmpty ? BrowserSuggestions.bareURL(mark.url) : mark.title) {
+                        dispatch("browser_navigate", ["input": .string(mark.url)])
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: choices.bookmarked ? "star.fill" : "star")
+                .font(.system(size: BrowserPaneStyle.controlGlyph, weight: .medium))
+                .foregroundStyle(choices.bookmarked
+                                 ? BrowserPaneStyle.amber : BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
+                .frame(width: BrowserPaneStyle.controlSize, height: BrowserPaneStyle.controlSize)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(choices.bookmarked ? "Bookmarked — Remove Bookmark (⌘D)" : "Bookmarks — Bookmark This Page (⌘D)")
+        .accessibilityLabel("Bookmarks")
+        .accessibilityValue(choices.bookmarked ? "bookmarked" : "")
+        .accessibilityIdentifier("browser.bookmarks")
     }
 }
 

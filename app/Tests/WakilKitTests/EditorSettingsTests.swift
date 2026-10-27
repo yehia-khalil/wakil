@@ -112,6 +112,20 @@ private func registryWithRecordingContext() async throws -> (ActionRegistry, Rec
         #expect(arguments == ["fontSize": .integer(14)])
     }
 
+    /// 3c-iii. A call that sets only `searchSuggestions` reaches the tool; it was dropped silently.
+    @Test func theBrowserWriteForwardsSearchSuggestionsAlone() async throws {
+        let (registry, caller) = try await registryWithRecordingContext()
+        _ = try await registry.dispatch(
+            name: "ctx_set_browser_settings", params: .object(["searchSuggestions": .bool(true)]),
+            origin: .ui, caller: .test("staging"), confirmation: nil)
+        let calls = await caller.recorded()
+        guard calls.count == 1, case .object(let arguments) = calls[0].arguments else {
+            Issue.record("expected one call, got \(calls)"); return
+        }
+        #expect(calls[0].tool == "set_browser_settings")
+        #expect(arguments == ["searchSuggestions": .bool(true)])
+    }
+
     // 3a-v-a e2e audit: Inline blame's Off never reached Go.
     @Test func theAppWriteForwardsInlineBlame() async throws {
         let (registry, caller) = try await registryWithRecordingContext()

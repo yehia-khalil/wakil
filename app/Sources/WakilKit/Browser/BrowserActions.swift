@@ -24,6 +24,9 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     /// `browser_open` was handed an app's link (`zoommtg:`, `mailto:`): it opens web pages and files
     /// only, so no app on the Mac is launched from an action (final review I4).
     case notAWebPage(scheme: String)
+    /// `browser_bookmark` was asked for a page that is not http, https or file.
+    case notBookmarkable(scheme: String)
+    case bookmarksUnreadable(String)
 
     public var description: String {
         switch self {
@@ -40,11 +43,19 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .noOrganisation: "No organisation is active."
         case .clearOnlyFromTheApp: "Browsing data can only be cleared from the app."
         case .organisationChanged: "The organisation changed; ask again."
+        case .notBookmarkable(let scheme): "browser_bookmark: only a web page can be bookmarked, not \(scheme):"
+        case .bookmarksUnreadable(let error):
+            "browser_bookmark: bookmarks.json can't be read (\(error)) — fix or move it; Wakil won't write over it."
         case .notAWebPage(let scheme):
             "browser_open opens web pages and files (http, https, file), not \(scheme): links — an app's "
                 + "link opens from a page, after the operator allows it."
         }
     }
+}
+
+private func optionalBool(_ params: JSONValue, _ key: String) -> Bool? {
+    guard case .object(let o) = params, case .bool(let b)? = o[key] else { return nil }
+    return b
 }
 
 /// The zoom ladder (global constraints): `in` and `out` move one rung; reset is 1.0.
@@ -96,8 +107,9 @@ extension BrowserSnapshot {
 }
 
 /// Deletes an organisation's WebKit store by id (`browser_clear_data`), which only the app can. It
-/// is handed `deleteFiles` — the organisation's tab states and zoom — to call once the store is gone
-/// (`browserRemoveStoreThenFiles`), with no web view left on it to write one.
+/// is handed `deleteFiles` — the organisation's tab states, zoom and history (its bookmarks stay) —
+/// to call once the store is gone (`browserRemoveStoreThenFiles`), with no web view left on it to
+/// write one.
 public typealias BrowserDataRemover = @Sendable (_ store: UUID, _ deleteFiles: @Sendable () throws -> Void) async throws -> Void
 
 /// The clear's order (Task 10 fix round 1 ruling): the store first, then the files. A store that
@@ -228,17 +240,18 @@ func browserActions(
         name: "browser_open",
         description: "Open url in the browser: a new tab (newTab, default true) in the focused browser "
             + "pane, else the one most recently focused, else the last opened, or in its active tab with newTab false. Opens a browser "
-            + "pane when none is open; keepFocus true leaves focus where it is even then (a link from another surface). url follows the address bar's rule: a host or URL loads, words search.",
+            + "pane, focused, when none is open; focus true focuses the pane it used either way (a link from another surface). url follows the address bar's rule: a host or URL loads, words search.",
         kind: .control, audience: .agentReachable,
         schema: schema(["url": string, "newTab": .object(["type": .string("boolean")]),
-                        "keepFocus": .object(["type": .string("boolean")])], required: ["url"]),
+                        "focus": .object(["type": .string("boolean")])], required: ["url"]),
         handler: { params in
             let url = try await address(try requireString(params, "url", action: "browser_open"))
             let scheme = URL(string: url)?.scheme?.lowercased() ?? ""
             guard ["http", "https", "file"].contains(scheme) else { throw BrowserActionError.notAWebPage(scheme: scheme) }
             let newTab: Bool = { if case .object(let o) = params, case .bool(let b)? = o["newTab"] { b } else { true } }()
-            let keepFocus: Bool = { if case .object(let o) = params, case .bool(let b)? = o["keepFocus"] { b } else { false } }()
-            let pane = try await browserPane(params, action: "browser_open", open: true, focus: !keepFocus).id
+            let focus: Bool = { if case .object(let o) = params, case .bool(let b)? = o["focus"] { b } else { false } }()
+            let pane = try await browserPane(params, action: "browser_open", open: true).id
+            if focus { try await layout?.focus(id: pane) }
             let loaded = newTab ? false : await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
                 guard let i = s.tabIndex(nil) else { return false }
                 s.tabs[i].url = url
@@ -376,9 +389,10 @@ func browserActions(
     actions.append(Action(
         name: "browser_select_tab",
         description: "Select a tab, by id (tab) or by position (index, 0 first, -1 the last). A tab that "
-            + "has not loaded yet loads when selected.",
+            + "has not loaded yet loads when selected. With focus true the pane takes the focus too.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["tab": string, "index": .object(["type": .string("integer")])]),
+        schema: schema(["tab": string, "index": .object(["type": .string("integer")]),
+                        "focus": .object(["type": .string("boolean")])]),
         handler: { params in
             let pane = try await browserPane(params, action: "browser_select_tab").id
             let tab = optionalString(params, "tab")
@@ -395,6 +409,7 @@ func browserActions(
                 return true
             }
             guard ok else { throw BrowserActionError.noTab(action: "browser_select_tab", tab: tab ?? index.map { "at \($0)" }) }
+            if optionalBool(params, "focus") == true { try await layout?.focus(id: pane) }
             await persist(pane)
             return await reply(pane)
         }))
@@ -498,6 +513,31 @@ func browserActions(
         }))
 
     actions.append(Action(
+        name: "browser_bookmark",
+        description: "Bookmark the active tab's page for the organisation, or remove its bookmark. With on "
+            + "omitted it toggles; true adds, false removes. Only http, https and file pages can be "
+            + "bookmarked. read_pane's bookmarked says where it stands.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["tab": string, "on": .object(["type": .string("boolean")])]),
+        handler: { params in
+            let pane = try await browserPane(params, action: "browser_bookmark").id
+            let wanted = optionalBool(params, "on")
+            let snapshot = await panes.browserSnapshot(paneId: pane)
+            let target = snapshot.tabIndex(optionalString(params, "tab")).map { snapshot.tabs[$0] }
+            guard let target else { throw BrowserActionError.noTab(action: "browser_bookmark", tab: optionalString(params, "tab")) }
+            let scheme = URL(string: target.url)?.scheme?.lowercased() ?? "about"
+            guard ["http", "https", "file"].contains(scheme) else { throw BrowserActionError.notBookmarkable(scheme: scheme) }
+            guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
+            do {
+                try files.setBookmark(url: target.url, title: target.label, on: wanted, now: Date())
+                await panes.browserSetBookmarks(org: files.org, try files.bookmarks())
+            } catch let error as BrowserBookmarksUnreadable {
+                throw BrowserActionError.bookmarksUnreadable(error.reason)
+            }
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
         name: "browser_download_cancel",
         description: "Ask a running download to stop (download, its id in read_pane's downloads); its state "
             + "reads cancelled once the page has stopped it. One that already ended is left as it is.",
@@ -545,7 +585,7 @@ func browserActions(
     actions.append(Action(
         name: "browser_clear_data",
         description: "Delete the active organisation's browsing data: every site's cookies, logins and storage, "
-            + "in every project, and the saved zoom. `org` is the organisation the operator was asked "
+            + "in every project, the saved zoom and the organisation's browsing history; bookmarks are kept. `org` is the organisation the operator was asked "
             + "about; refused when it is no longer the active one. Asks the operator first. Operator-only.",
         kind: .mutate, audience: .operatorOnly,
         schema: schema(["org": string], required: ["org"]),
@@ -606,7 +646,7 @@ public func decodeBrowserSettings(fromResult result: JSONValue?) -> SettingsBrow
 /// on them. Elsewhere each keeps today's meaning.
 public enum BrowserKey: Sendable, Equatable {
     case newTab, closeTab, reopenTab, focusAddress, reload, back, forward, find, findNext, findPrevious
-    case zoomIn, zoomOut, zoomReset, nextTab, previousTab
+    case zoomIn, zoomOut, zoomReset, nextTab, previousTab, bookmark
     /// ⌘1–8 tab N; ⌘9 the last tab.
     case tab(Int)
 }

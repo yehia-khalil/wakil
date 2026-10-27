@@ -67,8 +67,8 @@ only that view depends on `paneView`'s call site in `Canvas.swift` (unchanged, u
 `PaneSnapshotCellTests` pins the write.
 
 **A link the operator clicks elsewhere in Wakil** goes through `WakilLinks.open` (`WakilLinks.swift`):
-`WindowModel.openLinkInWakil` (`browser_open`, a new tab in the place's browser pane, focus left
-where it is), or the system browser on ⌥-click — the modifier as the clicked surface saw it at the
+`WindowModel.openLinkInWakil` (`browser_open`, a new tab in the place's browser pane, which comes
+forward with the keyboard), or the system browser on ⌥-click — the modifier as the clicked surface saw it at the
 press (`monaco-host.html` records `altKey` from a capture-phase mousedown and posts it with `web`). 3c-i's one caller
 is the blame hover's Open on GitHub (`EditorPane`'s `openLink`).
 

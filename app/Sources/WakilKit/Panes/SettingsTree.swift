@@ -156,21 +156,25 @@ public struct SettingsBrowser: Sendable, Equatable, Decodable {
     public var searchEngine: String
     /// An http or https URL a new tab opens; empty is blank.
     public var startPage: String
+    /// Whether the address bar asks the search engine for suggestions as the operator types. Off by default.
+    public var searchSuggestions: Bool
 
     public static let defaults = SettingsBrowser(searchEngine: "google", startPage: "")
 
-    public init(searchEngine: String, startPage: String) {
+    public init(searchEngine: String, startPage: String, searchSuggestions: Bool = false) {
         self.searchEngine = searchEngine
         self.startPage = startPage
+        self.searchSuggestions = searchSuggestions
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         searchEngine = try c.decodeIfPresent(String.self, forKey: .searchEngine) ?? Self.defaults.searchEngine
         startPage = try c.decodeIfPresent(String.self, forKey: .startPage) ?? Self.defaults.startPage
+        searchSuggestions = try c.decodeIfPresent(Bool.self, forKey: .searchSuggestions) ?? false
     }
 
-    private enum CodingKeys: String, CodingKey { case searchEngine, startPage }
+    private enum CodingKeys: String, CodingKey { case searchEngine, startPage, searchSuggestions }
 }
 
 /// One project's editor tier (`project.json`'s `editor`), defaults filled by Go.
