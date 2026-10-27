@@ -38,6 +38,9 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
     public private(set) var minimized = false
     private var shown: [PaneKey: String] = [:]
     private var restoring: Set<BrowserTabRef> = []
+    /// Tabs Wakil asked to float whose float WebKit has not reported yet: one that lands after the
+    /// operator came back goes inline. A page's own button asks nothing, so its float stays (ruling 8).
+    private var requested: Set<BrowserTabRef> = []
 
     public init(enabled: Bool = true) {
         self.enabled = enabled
@@ -53,10 +56,14 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
         let before = shown[key]
         shown[key] = tab
         // Recorded while minimised so that deminiaturising sees it, but nothing floats or returns now.
-        guard !minimized, before != tab else { return [] }
+        guard !minimized else { return [] }
+        // On screen, a Restore has arrived: a token WebKit's end never consumed must not spare a later
+        // float's end from its pause. Its end, if it comes now, finds the tab shown and pauses nothing.
+        if let tab { restoring.remove(BrowserTabRef(scope: scope, pane: pane, tab: tab)) }
+        guard before != tab else { return [] }
         var effects: [Effect] = []
         if let before, enabled {
-            effects.append(.float([BrowserTabRef(scope: scope, pane: pane, tab: before)]))
+            effects.append(request([BrowserTabRef(scope: scope, pane: pane, tab: before)]))
         }
         if let tab {
             let ref = BrowserTabRef(scope: scope, pane: pane, tab: tab)
@@ -70,7 +77,7 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
     public mutating func hide(scope: LayoutScope, pane: String, closing: Bool) -> [Effect] {
         guard let tab = shown.removeValue(forKey: PaneKey(scope: scope, pane: pane)) else { return [] }
         guard !closing, enabled, !minimized else { return [] }
-        return [.float([BrowserTabRef(scope: scope, pane: pane, tab: tab)])]
+        return [request([BrowserTabRef(scope: scope, pane: pane, tab: tab)])]
     }
 
     public mutating func setMinimized(_ on: Bool) -> [Effect] {
@@ -80,7 +87,7 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
             let candidates = shown
                 .sorted { ($0.key.pane, $0.key.scope.description) < ($1.key.pane, $1.key.scope.description) }
                 .map { BrowserTabRef(scope: $0.key.scope, pane: $0.key.pane, tab: $0.value) }
-            return enabled && !candidates.isEmpty ? [.float(candidates)] : []
+            return enabled && !candidates.isEmpty ? [request(candidates)] : []
         }
         // Only a tab that is on screen again comes back; one floating from a place switched away or a
         // covered pane stays floating.
@@ -90,13 +97,20 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
 
     /// WebKit reported that `ref`'s video entered or left picture-in-picture.
     public mutating func didChange(_ ref: BrowserTabRef, floating on: Bool) -> [Effect] {
+        let wasRequested = requested.remove(ref) != nil
         if on {
             floating = ref
-            return []
+            // Asked for as the tab left, landed after it came back.
+            return wasRequested && isShown(ref) ? [.inline(ref)] : []
         }
         if floating == ref { floating = nil }
         let fromRestore = restoring.remove(ref) != nil
         return fromRestore || isShown(ref) ? [] : [.pause(ref)]
+    }
+
+    /// The host tried `refs` and none of them floated: a later float of one is not Wakil's.
+    public mutating func floatSettled(_ refs: [BrowserTabRef]) {
+        requested.subtract(refs)
     }
 
     /// The operator pressed Restore on the floating window.
@@ -117,6 +131,7 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
     public mutating func closed(_ ref: BrowserTabRef) -> [Effect] {
         if floating == ref { floating = nil }
         restoring.remove(ref)
+        requested.remove(ref)
         let key = PaneKey(scope: ref.scope, pane: ref.pane)
         if shown[key] == ref.tab { shown[key] = nil }
         return []
@@ -129,11 +144,17 @@ public struct BrowserPictureInPicture: Sendable, Equatable {
         }
         floating = floating.map(moved)
         restoring = Set(restoring.map(moved))
+        requested = Set(requested.map(moved))
         var next: [PaneKey: String] = [:]
         for (key, tab) in shown {
             next[key.scope == from ? PaneKey(scope: to, pane: key.pane) : key] = tab
         }
         shown = next
+    }
+
+    private mutating func request(_ refs: [BrowserTabRef]) -> Effect {
+        requested.formUnion(refs)
+        return .float(refs)
     }
 
     /// The Settings line when WebKit lacks what floating needs; nil when nothing is missing (ruling 7).

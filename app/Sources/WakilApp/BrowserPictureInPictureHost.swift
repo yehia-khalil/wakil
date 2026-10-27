@@ -43,13 +43,17 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
 
     private var observers: [NSObjectProtocol] = []
 
+    /// The window is closing: every pane's `onDisappear` that follows is its close, not a leaving, so
+    /// nothing floats as the window goes.
+    private var windowClosing = false
+
     /// The window the panes are drawn in; set by the page container when it joins it. Its minimise
-    /// and deminiaturise are the machine's `setMinimized`.
+    /// and deminiaturise are the machine's `setMinimized`; its close makes every `hide` a closing one.
     weak var window: NSWindow? {
         didSet {
             guard window !== oldValue else { return }
-            observers.forEach(NotificationCenter.default.removeObserver)
-            observers = []
+            removeObservers()
+            windowClosing = false
             guard let window else { return }
             let center = NotificationCenter.default
             for (name, on) in [(NSWindow.didMiniaturizeNotification, true), (NSWindow.didDeminiaturizeNotification, false)] {
@@ -57,11 +61,21 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
                     MainActor.assumeIsolated { self?.setMinimized(on) }
                 })
             }
+            observers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.windowClosing = true }
+            })
         }
     }
 
     init(host: BrowserTabHost) {
         self.host = host
+    }
+
+    isolated deinit { removeObservers() }
+
+    private func removeObservers() {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
     }
 
     /// The tab whose video floats, if any.
@@ -79,7 +93,7 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
 
     /// The pane left the screen or was covered; `closing`: it was closed (ruling 2).
     func hide(scope: LayoutScope, pane: String, closing: Bool) {
-        run { $0.hide(scope: scope, pane: pane, closing: closing) }
+        run { $0.hide(scope: scope, pane: pane, closing: closing || windowClosing) }
     }
 
     private func setMinimized(_ on: Bool) {
@@ -169,20 +183,25 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
         switch effect {
         case .float(let refs):
             // Every kept frame of every tab that left, newest `playing` first (ruling 3).
-            var candidates: [(view: WKWebView, frame: Frame)] = []
+            var candidates: [(ref: BrowserTabRef, view: WKWebView, frame: Frame)] = []
             for ref in refs {
                 guard let view = liveView(ref), let kept = frames[ObjectIdentifier(view)] else { continue }
-                candidates += kept.values.map { (view, $0) }
+                candidates += kept.values.map { (ref, view, $0) }
             }
             candidates.sort { $0.frame.since > $1.frame.since }
-            guard !candidates.isEmpty else { return }
+            guard !candidates.isEmpty else { return machine.floatSettled(refs) }
             Task { @MainActor in
                 // Refused or gone: the next newest. None floats: the video plays on in the page (ruling 9).
-                for candidate in candidates
-                where await Self.call(BrowserPictureInPictureScript.enter, in: candidate.view, frame: candidate.frame.info) {
+                // A tab that is back on screen before its turn is skipped: it has not left any more.
+                for candidate in candidates where !self.machine.isShown(candidate.ref) {
+                    guard await Self.call(BrowserPictureInPictureScript.enter, in: candidate.view, frame: candidate.frame.info)
+                    else { continue }
                     self.floated[ObjectIdentifier(candidate.view)] = candidate.frame.info
+                    // The others were asked for and will not float.
+                    self.machine.floatSettled(refs.filter { $0 != candidate.ref })
                     return
                 }
+                self.machine.floatSettled(refs)
             }
         case .inline(let ref):
             everyFrame(of: ref, BrowserPictureInPictureScript.inline)
@@ -212,18 +231,38 @@ final class BrowserPictureInPictureHost: NSObject, WKScriptMessageHandler {
     /// pane's page host takes the view from the dock when it draws.
     private func goTo(_ ref: BrowserTabRef, view: WKWebView) {
         if view.window == nil { dock(view) }
+        bringWindowForward()
         Task { @MainActor [weak self] in
             let reached = await self?.host?.model?.browserReturn(to: ref) ?? false
             guard let self else { return }
             self.run { $0.restoreEnded(ref, reached: reached) }
             if reached {
                 // The pane draws a turn or more after the store moves, and WebKit's own end of the
-                // float lands about half a second after Restore (probe f): a pane that takes the view
-                // in that time leaves nothing in the dock.
-                try? await Task.sleep(for: .seconds(1))
+                // float lands about half a second after Restore (probe f). The dock is emptied when a
+                // pane takes the view; a slow organisation switch gets five seconds before it is
+                // emptied anyway.
+                let clock = ContinuousClock(), deadline = clock.now + .seconds(5)
+                while self.isDocked(view), clock.now < deadline {
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
             }
             self.undock(view)
         }
+    }
+
+    /// Restore from a minimised window, or while another app is active: the window comes back and
+    /// Wakil comes forward, so the video goes inline where the operator can see it.
+    private func bringWindowForward() {
+        guard let window else { return }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
+    /// Still in the dock: no pane has taken it.
+    private func isDocked(_ view: WKWebView) -> Bool {
+        guard let docked, docked.view === view else { return false }
+        return view.superview === docked.parent
     }
 
     /// Below every sibling in the window's content view, at the view's last page frame, **and**

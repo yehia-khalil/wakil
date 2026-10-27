@@ -158,3 +158,50 @@ private func showingT1(enabled: Bool = true) -> BrowserPictureInPicture {
     #expect(pip.setMinimized(false) == [])
     #expect(pip.floating == ref("t1"))
 }
+
+@Test func aFloatThatLandsAfterComingBackGoesInline() {
+    // Wakil asked for the float, the operator came back before WebKit said it floats.
+    var pip = showingT1()
+    #expect(pip.show(scope: here, pane: "browser-1", tab: "t2") == [.float([ref("t1")])])
+    #expect(pip.show(scope: here, pane: "browser-1", tab: "t1") == [.float([ref("t2")])])
+    #expect(pip.didChange(ref("t1"), floating: true) == [.inline(ref("t1"))])
+}
+
+@Test func aPagesOwnFloatOnScreenStaysFloating() {
+    // Ruling 8: the page's own button floats a tab on screen; Wakil did not ask, so it stays.
+    var pip = showingT1()
+    #expect(pip.didChange(ref("t1"), floating: true) == [])
+    #expect(pip.floating == ref("t1"))
+}
+
+@Test func aFloatThatLandsAfterItsRequestSettledStaysFloating() {
+    // The host tried every candidate and none floated: a later float of that tab on screen is the
+    // page's own.
+    var pip = showingT1()
+    _ = pip.show(scope: here, pane: "browser-1", tab: "t2")
+    _ = pip.show(scope: here, pane: "browser-1", tab: "t1")
+    pip.floatSettled([ref("t1")])
+    #expect(pip.didChange(ref("t1"), floating: true) == [])
+}
+
+@Test func aFloatAnsweredOnceIsNotAnsweredAgain() {
+    var pip = showingT1()
+    _ = pip.show(scope: here, pane: "browser-1", tab: "t2")
+    _ = pip.show(scope: here, pane: "browser-1", tab: "t1")
+    #expect(pip.didChange(ref("t1"), floating: true) == [.inline(ref("t1"))])
+    _ = pip.didChange(ref("t1"), floating: false)
+    // Later the page's own button floats it.
+    #expect(pip.didChange(ref("t1"), floating: true) == [])
+}
+
+@Test func showingTheRestoredTabClearsItsRestoreToken() {
+    // A Restore that arrived but whose end WebKit never reported must not spare a later float's end.
+    var pip = showingT1()
+    _ = pip.hide(scope: here, pane: "browser-1", closing: false)
+    _ = pip.restore(ref("t1"))
+    _ = pip.restoreEnded(ref("t1"), reached: true)
+    _ = pip.show(scope: here, pane: "browser-1", tab: "t1")
+    _ = pip.hide(scope: here, pane: "browser-1", closing: false)
+    _ = pip.didChange(ref("t1"), floating: true)
+    #expect(pip.didChange(ref("t1"), floating: false) == [.pause(ref("t1"))])
+}

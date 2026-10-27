@@ -413,6 +413,12 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The page's process ended: the crash page, until the tab reloads.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard !tab.isEmpty else { return }
+        // A floating video goes with its process, and WebKit says nothing (3d-iii): the tab no
+        // longer floats, so it can be evicted and `read_pane` stops naming it.
+        if pictureInPicture {
+            pictureInPicture = false
+            host?.pictureInPicture.closed(key)
+        }
         host?.pageCrashed(key: key)
         scheduleReport()
     }
