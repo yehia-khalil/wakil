@@ -356,12 +356,16 @@ func layoutActions(
 
         Action(
             name: "pane_restore",
-            description: "Un-maximize whichever pane is filling the canvas. Does nothing if none is.",
+            description: "Un-maximize a pane: id, else the maximized pane in front. Other maximized panes stay "
+                + "maximized. Does nothing if that pane is not maximized.",
             kind: .control,
             audience: .agentReachable,
-            schema: .object(["type": .string("object"), "properties": .object([:])]),
-            handler: { _ in
-                await layout.restore()
+            schema: .object([
+                "type": .string("object"),
+                "properties": .object(["id": .object(["type": .string("string")])]),
+            ]),
+            handler: { params in
+                await layout.restore(id: optionalString(params, "id"))
                 return .object([:])
             }
         ),
