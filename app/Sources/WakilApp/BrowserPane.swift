@@ -171,7 +171,13 @@ struct BrowserPane: View {
             }
         }
         .onChange(of: keyboardFocusRequests) { _, _ in if isFocusedPane { takeKeyboard() } }
-        .onChange(of: keyboardReturns) { _, _ in if isFocusedPane { takeKeyboard() } }
+        .onChange(of: keyboardReturns) { _, _ in
+            guard isFocusedPane else { return }
+            // The palette (or another overlay) gave the keyboard back to the page: ⌘R reloads it
+            // again. A chip click never raises this, unlike `keyboardFocusRequests` (below).
+            if headerFocus != nil { setHeaderFocus(nil) }
+            takeKeyboard()
+        }
         .onChange(of: addressFocused) { _, focused in
             if focused {
                 // The address field has the keyboard: ⌘R reloads the page, not the group header.
