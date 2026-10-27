@@ -90,6 +90,12 @@ type Runner struct {
 	// ChatStub is this launch's chat stub origin (StartChatStub), which
 	// `ChatStubToken` expands to. Empty without a seed.
 	ChatStub string
+	// PageStub is this launch's page stub origin (StartPageStub), which
+	// `PageStubToken` expands to, in params and in typed text. Empty without a seed.
+	PageStub string
+	// PageStubLive is the same stub under the name `localhost` (PageStubLiveToken), the origin of
+	// the seeded production project's site. Empty without a seed.
+	PageStubLive string
 
 	Processes ProcessTable
 	// Journal answers what the app recorded about its own actions. Nil means
@@ -264,7 +270,10 @@ func (r Result) For(name string) Result {
 // Run executes every check and reports what was proved.
 // tokens are the values a check's dispatch and parity params may name.
 func (r *Runner) tokens() map[string]string {
-	return map[string]string{FixtureRootToken: r.FixtureRoot, ChatStubToken: r.ChatStub}
+	return map[string]string{
+		FixtureRootToken: r.FixtureRoot, ChatStubToken: r.ChatStub, PageStubToken: r.PageStub,
+		PageStubLiveToken: r.PageStubLive,
+	}
 }
 
 func (r *Runner) Run(checks []Check) Result {
@@ -513,7 +522,7 @@ func (r *Runner) act(do *Do) (unconfirmed string, err error) {
 	// that reaches a PTY — a terminal grid is a canvas with no identifier,
 	// and `AXPress` and `set-value` both mean nothing to a shell.
 	case do.Keys != "":
-		response, err = r.Orca.TypeText(r.PID, do.Keys)
+		response, err = r.Orca.TypeText(r.PID, ExpandText(do.Keys, r.tokens()))
 	case do.Press != "":
 		response, err = r.Orca.PressKey(r.PID, do.Press)
 	case do.Hotkey != "":
@@ -630,7 +639,7 @@ func (r *Runner) typeInto(into *TypeInto) (Response, error) {
 		return Response{}, fmt.Errorf(
 			"%s could not be focused, so there is nowhere for the text to go: %w", into.Into, err)
 	}
-	return r.Orca.TypeText(r.PID, into.Text)
+	return r.Orca.TypeText(r.PID, ExpandText(into.Text, r.tokens()))
 }
 
 // focus gives a control keyboard focus, through the accessibility API.
@@ -691,9 +700,9 @@ func (r *Runner) redo(do *Do) (Response, error) {
 // time a redo runs that field is already focused.
 func (r *Runner) textOf(do *Do) string {
 	if do.Type != nil {
-		return do.Type.Text
+		return ExpandText(do.Type.Text, r.tokens())
 	}
-	return do.Keys
+	return ExpandText(do.Keys, r.tokens())
 }
 
 // describeFrontmost names what has the screen, so a focus refusal points at

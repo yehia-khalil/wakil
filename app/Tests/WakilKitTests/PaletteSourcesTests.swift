@@ -96,7 +96,7 @@ private func gitRoot(_ name: String, _ files: [GitFileRow]) -> GitRootState {
     @Test func newPaneRowsComeFromPaneKinds() async {
         let rows = newPaneEntries(kinds: Pane.kinds)
         #expect(Set(rows.map(\.id)) == Set(Pane.kinds.subtracting([Pane.settingsKind]).map { "newpane:\($0)" }))
-        #expect(rows.map(\.title) == ["New Database pane", "New Terminal", "New API client", "New Editor pane"])
+        #expect(rows.map(\.title) == ["New Database pane", "New Terminal", "New API client", "New Editor pane", "New Browser pane"])
         let db = rows.first { $0.id == "newpane:db" }
         #expect(db?.kindLabel == "db")
         #expect(db?.group == .newPane)
@@ -210,6 +210,44 @@ private func gitRoot(_ name: String, _ files: [GitFileRow]) -> GitRootState {
     @Test func noApiEntriesHidesTheGroup() async {
         let http = RecordingToolCaller(always: .object(["structuredContent": .object(["apis": .array([])])]))
         #expect(await ApiEntriesSource(http: http, environment: { "staging" }).entries().isEmpty)
+    }
+
+    // Open tabs and bookmarks (3c-iii, ruling 11)
+    @Test func openTabsRowSwitchesToTheTabAndFocusesItsPane() async {
+        let tab = PaletteBrowserTab(pane: "p1", tab: "t2", title: "Docs", subtitle: "example.com/docs")
+        let rows = await BrowserTabsSource(tabs: { [tab] }).entries()
+        #expect(rows.count == 1)
+        let row = rows[0]
+        #expect(row.id == "browsertab:p1/t2")
+        #expect(row.group == .resources)
+        #expect(row.title == "Docs")
+        #expect(row.subtitle == "example.com/docs")
+        #expect(row.kindLabel == "tab")
+        #expect(row.verb == "switch to")
+        #expect(row.action == .dispatch(action: "browser_select_tab", params: .object([
+            "pane": .string("p1"), "tab": .string("t2"), "focus": .bool(true),
+        ])))
+    }
+
+    @Test func bookmarkRowOpensInANewTab() async {
+        let mark = PaletteBookmark(url: "https://www.example.com/a", title: "Example A", subtitle: "example.com/a")
+        let rows = await BookmarksSource(bookmarks: { [mark] }).entries()
+        #expect(rows.count == 1)
+        let row = rows[0]
+        #expect(row.id == "bookmark:https://www.example.com/a")
+        #expect(row.group == .resources)
+        #expect(row.title == "Example A")
+        #expect(row.subtitle == "example.com/a")
+        #expect(row.kindLabel == "bookmark")
+        #expect(row.verb == "open")
+        #expect(row.action == .dispatch(action: "browser_open", params: .object([
+            "url": .string("https://www.example.com/a"), "newTab": .bool(true),
+        ])))
+    }
+
+    @Test func noBrowserPaneGivesNoTabRows() async {
+        #expect(await BrowserTabsSource(tabs: { [] }).entries().isEmpty)
+        #expect(await BookmarksSource(bookmarks: { [] }).entries().isEmpty)
     }
 
     // 7

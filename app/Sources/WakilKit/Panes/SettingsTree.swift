@@ -39,6 +39,8 @@ public struct SettingsTree: Sendable, Equatable, Decodable {
     public var providersSkipped: [String]
     public var editor: SettingsEditor
     public var editorError: String?
+    /// The app-wide browser tier (3c-i), from the same settings.json; its read error is `editorError`.
+    public var browser: SettingsBrowser
 
     public init(
         org: SettingsOrg,
@@ -48,7 +50,8 @@ public struct SettingsTree: Sendable, Equatable, Decodable {
         unreadable: [String] = [],
         providersSkipped: [String] = [],
         editor: SettingsEditor = .defaults,
-        editorError: String? = nil
+        editorError: String? = nil,
+        browser: SettingsBrowser = .defaults
     ) {
         self.org = org
         self.providers = providers
@@ -58,6 +61,7 @@ public struct SettingsTree: Sendable, Equatable, Decodable {
         self.providersSkipped = providersSkipped
         self.editor = editor
         self.editorError = editorError
+        self.browser = browser
     }
 
     /// Every optional-on-the-wire collection decodes to empty rather than
@@ -75,10 +79,11 @@ public struct SettingsTree: Sendable, Equatable, Decodable {
         providersSkipped = try container.decodeIfPresent([String].self, forKey: .providersSkipped) ?? []
         editor = try container.decodeIfPresent(SettingsEditor.self, forKey: .editor) ?? .defaults
         editorError = try container.decodeIfPresent(String.self, forKey: .editorError)
+        browser = try container.decodeIfPresent(SettingsBrowser.self, forKey: .browser) ?? .defaults
     }
 
     private enum CodingKeys: String, CodingKey {
-        case org, providers, projects, misfiled, unreadable, providersSkipped, editor, editorError
+        case org, providers, projects, misfiled, unreadable, providersSkipped, editor, editorError, browser
     }
 
     /// Whether anything could not be read. The pane draws a line saying so
@@ -142,6 +147,34 @@ public struct SettingsEditor: Sendable, Equatable, Decodable {
     }
 
     private enum CodingKeys: String, CodingKey { case fontSize, wordWrap, autosave, showIgnored, ghostText, inlineBlame }
+}
+
+/// The app-wide browser tier (`~/.wakil/settings.json`'s `browser`), defaults filled by Go (3c-i).
+/// An absent key decodes to the default, so an older answer still draws.
+public struct SettingsBrowser: Sendable, Equatable, Decodable {
+    /// `google`, `duckduckgo`, `bing` or `kagi`.
+    public var searchEngine: String
+    /// An http or https URL a new tab opens; empty is blank.
+    public var startPage: String
+    /// Whether the address bar asks the search engine for suggestions as the operator types. Off by default.
+    public var searchSuggestions: Bool
+
+    public static let defaults = SettingsBrowser(searchEngine: "google", startPage: "")
+
+    public init(searchEngine: String, startPage: String, searchSuggestions: Bool = false) {
+        self.searchEngine = searchEngine
+        self.startPage = startPage
+        self.searchSuggestions = searchSuggestions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        searchEngine = try c.decodeIfPresent(String.self, forKey: .searchEngine) ?? Self.defaults.searchEngine
+        startPage = try c.decodeIfPresent(String.self, forKey: .startPage) ?? Self.defaults.startPage
+        searchSuggestions = try c.decodeIfPresent(Bool.self, forKey: .searchSuggestions) ?? false
+    }
+
+    private enum CodingKeys: String, CodingKey { case searchEngine, startPage, searchSuggestions }
 }
 
 /// One project's editor tier (`project.json`'s `editor`), defaults filled by Go.
@@ -432,11 +465,16 @@ public struct SettingsEnvironment: Sendable, Equatable, Decodable {
     /// NAMED entries, so one request can run against staging and then
     /// production. Read-only is what kept the cost to a shape change.
     public var api: [SettingsAPI]
+    /// Whether the org counts this environment as production (the Go side's `EnvironmentIsProduction`:
+    /// the explicit flag, else the name). nil when the `wakil-ctx` that wrote the tree predates the field —
+    /// a reader treats nil as "not known" and fails toward asking.
+    public var production: Bool?
 
-    public init(name: String, databases: [SettingsDatabase] = [], api: [SettingsAPI] = []) {
+    public init(name: String, databases: [SettingsDatabase] = [], api: [SettingsAPI] = [], production: Bool? = nil) {
         self.name = name
         self.databases = databases
         self.api = api
+        self.production = production
     }
 
     public init(from decoder: Decoder) throws {
@@ -444,9 +482,10 @@ public struct SettingsEnvironment: Sendable, Equatable, Decodable {
         name = try container.decode(String.self, forKey: .name)
         databases = try container.decodeIfPresent([SettingsDatabase].self, forKey: .databases) ?? []
         api = try container.decodeIfPresent([SettingsAPI].self, forKey: .api) ?? []
+        production = try container.decodeIfPresent(Bool.self, forKey: .production)
     }
 
-    private enum CodingKeys: String, CodingKey { case name, databases, api }
+    private enum CodingKeys: String, CodingKey { case name, databases, api, production }
 }
 
 /// A database row: its name, driver, and the Keychain entry NAMES of its

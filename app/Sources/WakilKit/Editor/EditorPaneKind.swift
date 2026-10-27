@@ -4,6 +4,8 @@ import Foundation
 /// its snapshot. The store owns every tab's text; Monaco mirrors it (`EditorRenderer`).
 enum EditorPaneKind: PaneKind {
     static let names = ["editor"]
+    /// Edge to edge: Monaco and the tab strip run to the slab's border (the compact chrome, 2026-10-26).
+    static let edgeToEdge = true
     static var emptyContents: EditorSnapshot { .empty }
     static var emptyShared: EditorShared { EditorShared() }
     static var emptySnapshot: EditorSnapshot? { .empty }

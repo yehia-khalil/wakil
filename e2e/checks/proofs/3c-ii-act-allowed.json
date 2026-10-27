@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/agent/3c-ii-act-allowed.jsonl",
+  "baseCommit": "5feb2f5e5892308cc712bebd2ac05ddeccec792a",
+  "provedAt": "2026-10-26T19:00:23.185368Z",
+  "checkBlob": "15b5da0bfd41c5bce9da995e0ac6972789e66441"
+}

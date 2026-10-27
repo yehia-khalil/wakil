@@ -1,0 +1,17 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"editor"}}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].scratch","equals":"1"}}
+{"expect":{"pane":"browser-1","field":"tabs[1]","present":false}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"pane":"editor-2","field":"tabs","equals":"[]"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"editor-2","field":"tabs[0].scratch","present":true}}
+{"do":{"hotkey":"cmd+w"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"journal":{"contains":"\"action\":\"pane_close\""}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"expect":{"pane":"browser-1","field":"tabs[1]","present":false}}

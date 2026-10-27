@@ -3,6 +3,7 @@ package driver
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -82,6 +83,17 @@ type rpcError struct {
 }
 
 func (e *rpcError) Error() string { return fmt.Sprintf("%d: %s", e.Code, e.Message) }
+
+// RefusalText is what the window said when it refused a `Call`, without the driver's envelope:
+// a JSON-RPC error's message (not `tools/call: <code>: …`), or an `isError` result's text (not
+// `the action was refused: …`). Any other failure is answered whole.
+func RefusalText(err error) string {
+	var rpc *rpcError
+	if errors.As(err, &rpc) {
+		return rpc.Message
+	}
+	return strings.TrimPrefix(err.Error(), "the action was refused: ")
+}
 
 type rpcReply struct {
 	ID     int             `json:"id"`

@@ -1,0 +1,12 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"type":{"into":"browser.address","text":"http://127.0.0.1:2/"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Couldn't reach 127.0.0.1 — "}}
+{"expect":{"tree":"contains","text":"(NSURLErrorCannotConnectToHost)"}}
+{"expect":{"frame":"browser.tryAgain","inside":"browser.pane"}}
+{"expect":{"pane":"browser-1","field":"url","contains":"127.0.0.1:2"}}
+{"do":{"click":"browser.tryAgain"}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_reload\""}}}
+{"expect":{"tree":"contains","text":"(NSURLErrorCannotConnectToHost)"}}

@@ -1,0 +1,22 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStub}/form.html","newTab":false}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"dispatch":{"action":"browser_read_page","params":{"pane":"browser-1"}}}
+{"do":{"hold":"option"}}
+{"expect":{"tree":"contains","text":"say hello from the microphone"}}
+{"do":{"release":"option"}}
+{"expect":{"tree":"contains","text":"HEARD · RETURN SENDS · EDIT FIRST"}}
+{"do":{"keys":" then fill the guest name"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Let the agent use 127.0.0.1:"}}
+{"expect":{"tree":"contains","text":"type confirm"}}
+{"expect":{"focus":"confirmation.field"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"Let the agent use 127.0.0.1:"}}
+{"expect":{"tree":"absent","text":"typed into \"Guest name\""}}
+{"do":{"type":{"into":"confirmation.field","text":"confirm"}}}
+{"do":{"click":"confirmation.allow"}}
+{"expect":{"tree":"contains","text":"typed into \"Guest name\""}}
+{"expect":{"tree":"contains","text":"agent allowed"}}
+{"expect":{"tree":"absent","text":"Let the agent use"}}

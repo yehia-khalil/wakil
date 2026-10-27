@@ -171,7 +171,7 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) string {
 // has the reads alone; a write reaches git only through the registry's editor_changes_* actions.
 func TestWithoutTheWritesFlagTheToolListIsTheReadsAlone(t *testing.T) {
 	t.Setenv(gitWritesEnv, "")
-	if got := toolNames(t, connectedClient(t)); got != "git_blame,git_blob,git_branches,git_diff,git_file_history,git_identity,git_show,git_stashes,git_status" {
+	if got := toolNames(t, connectedClient(t)); got != "git_blame,git_blob,git_branches,git_diff,git_file_history,git_identity,git_origin,git_show,git_stashes,git_status" {
 		t.Fatalf("tools %s", got)
 	}
 }
@@ -189,7 +189,7 @@ func TestToolListIsTheReadsAndTheWrites(t *testing.T) {
 	}
 	sort.Strings(names)
 	want := []string{"git_amend", "git_blame", "git_blob", "git_branch_delete", "git_branch_rename", "git_branches", "git_clone",
-		"git_commit", "git_diff", "git_discard", "git_fetch", "git_file_history", "git_identity", "git_publish", "git_pull", "git_push",
+		"git_commit", "git_diff", "git_discard", "git_fetch", "git_file_history", "git_identity", "git_origin", "git_publish", "git_pull", "git_push",
 		"git_show", "git_stage", "git_stage_hunk", "git_stash", "git_stash_apply", "git_stash_drop",
 		"git_stash_drop_all", "git_stash_pop", "git_stash_undo_apply", "git_stashes", "git_status", "git_switch", "git_sync",
 		"git_undo_commit", "git_unstage"}

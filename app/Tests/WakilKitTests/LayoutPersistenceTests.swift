@@ -868,3 +868,36 @@ private func oneNamedPane(_ title: String) -> LayoutSnapshot {
     #expect(store.load(for: chat("dev", "root-1")).snapshot == nil)
     #expect(store.load(for: chat("prod", "root-1")).snapshot == oneNamedPane("prod chat"))
 }
+
+// MARK: - 3c-i: a browser pane's tabs
+
+@Test func aBrowserPaneRoundTripsItsTabs() throws {
+    let tabs = [
+        BrowserSavedTab(id: "b", url: "https://b.example/", title: "B"),
+        BrowserSavedTab(id: "a", url: "https://a.example/", title: "A"),
+    ]
+    var pane = Pane(id: "browser-1", kind: "browser", title: "Browser", frame: PaneFrame(x: 1, y: 2, width: 3, height: 4))
+    pane.browserTabs = tabs
+    pane.browserActiveTab = "a"
+    let back = try JSONDecoder().decode(Pane.self, from: JSONEncoder().encode(pane))
+    #expect(back.browserTabs == tabs)
+    #expect(back.browserActiveTab == "a")
+}
+
+@Test func aMalformedBrowserTabsFieldDropsOnlyThatField() throws {
+    let json = #"{"id":"p","kind":"browser","title":"Browser","frame":{"x":1,"y":2,"width":3,"height":4},"browserTabs":"nope","browserActiveTab":"x"}"#
+    let pane = try JSONDecoder().decode(Pane.self, from: Data(json.utf8))
+    #expect(pane.browserTabs == nil)
+    #expect(pane.id == "p" && pane.kind == "browser")
+}
+
+@Test func theLayoutStoreKeepsABrowserPanesTabs() async {
+    let store = LayoutStore()
+    #expect(await store.browserTabs(id: "none") == nil)
+    let pane = await store.open(kind: "browser", title: "Browser")
+    #expect(await store.browserTabs(id: pane.id) == nil)
+    let tabs = [BrowserSavedTab(id: "t", url: "https://t.example/", title: "T")]
+    await store.setBrowserTabs(id: pane.id, to: tabs, active: "t")
+    let got = await store.browserTabs(id: pane.id)
+    #expect(got?.tabs == tabs && got?.active == "t")
+}

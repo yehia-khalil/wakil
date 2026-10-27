@@ -1,0 +1,14 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"type":{"into":"browser.address","text":"{pageStub}/alert-later.html"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Alert later"}}
+{"do":{"focus":"window.composer"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"tree":"contains","text":"Hello later"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"tree":"absent","text":"Answered later"}}
+{"do":{"click":"browser.prompt.ok"}}
+{"expect":{"tree":"absent","text":"Hello later"}}
+{"expect":{"tree":"contains","text":"Answered later"}}

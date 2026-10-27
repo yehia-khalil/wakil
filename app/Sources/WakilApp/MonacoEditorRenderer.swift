@@ -25,7 +25,10 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
     /// A mark clicked in `key`'s gutter, on `line`.
     var onMark: ((String, Int) -> Void)?
     /// 3a-v-a: the blame hover's links: (key, "open" | "copy", commit id).
-    var onBlame: ((String, String, String) -> Void)?
+    /// (key, op, commit id, ⌥ held at the press — sent with `web` only).
+    var onBlame: ((String, String, String, Bool) -> Void)?
+    /// 3c-iii: a URL ⌘-clicked in the text: (url, ⌥ held at the press). Only http(s) reaches it.
+    var onLink: ((String, Bool) -> Void)?
     /// 3a-v-b: an actions-row press in `key`: (key, the block's `<<<<<<<` line, "current" | "incoming"
     /// | "both" | "compare").
     var onConflict: ((String, Int, String) -> Void)?
@@ -265,7 +268,15 @@ final class MonacoEditorRenderer: NSObject, EditorRenderer {
         case "mark":
             if let key = body["key"] as? String, let line = Self.int(body["line"]) { onMark?(key, line) }
         case "blame":
-            if let key = body["key"] as? String, let op = body["op"] as? String, let id = body["id"] as? String { onBlame?(key, op, id) }
+            if let key = body["key"] as? String, let op = body["op"] as? String, let id = body["id"] as? String {
+                onBlame?(key, op, id, (body["alt"] as? Bool) ?? false)
+            }
+        case "link":
+            // A file's text is not Wakil's own: the page filters, and this checks again.
+            if let url = body["url"] as? String, let scheme = URL(string: url)?.scheme?.lowercased(),
+               scheme == "http" || scheme == "https" {
+                onLink?(url, (body["alt"] as? Bool) ?? false)
+            }
         case "conflict":
             guard let key = body["key"] as? String, let block = Self.int(body["block"]),
                   let op = body["op"] as? String else { return }

@@ -1,0 +1,32 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"focus":"browser.address"}}
+{"do":{"type":{"into":"browser.address","text":"{pageStub}/find.html"}}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Find"}}
+{"expect":{"pane":"browser-1","field":"find","equals":"null"}}
+{"do":{"hotkey":"cmd+f"}}
+{"expect":{"focus":"browser.find.field"}}
+{"do":{"keys":"needle"}}
+{"expect":{"pane":"browser-1","field":"find.query","equals":"needle"}}
+{"expect":{"pane":"browser-1","field":"find.total","equals":"3"}}
+{"expect":{"pane":"browser-1","field":"find.current","equals":"1"}}
+{"expect":{"tree":"contains","text":"1 of 3"}}
+{"do":{"hotkey":"cmd+g"}}
+{"expect":{"pane":"browser-1","field":"find.current","equals":"2"}}
+{"expect":{"tree":"contains","text":"2 of 3"}}
+{"do":{"click":"browser.find.next"}}
+{"expect":{"pane":"browser-1","field":"find.current","equals":"3"}}
+{"do":{"click":"browser.find.next"}}
+{"expect":{"pane":"browser-1","field":"find.current","equals":"1"}}
+{"do":{"click":"browser.find.previous"}}
+{"expect":{"pane":"browser-1","field":"find.current","equals":"3"}}
+{"do":{"focus":"browser.find.field"}}
+{"do":{"press":"Escape"}}
+{"expect":{"pane":"browser-1","field":"find","equals":"null"}}
+{"expect":{"focus":"browser.page"}}
+{"do":{"hotkey":"cmd+f"}}
+{"expect":{"focus":"browser.find.field"}}
+{"do":{"click":"browser.find.close"}}
+{"expect":{"pane":"browser-1","field":"find","equals":"null"}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_find_close\""}}}

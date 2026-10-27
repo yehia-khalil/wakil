@@ -496,8 +496,17 @@ if frontmostOnly {
 }
 
 let app = AXUIElementCreateApplication(pid)
+// **The first window that is a window, not the first entry.** A tooltip is an
+// `AXHelpTag` in the app's window list, and it comes FIRST. AppKit shows one
+// whenever the pointer rests on a control with help text, and the pointer
+// does not move during a run. So a layout that puts such a control under it
+// (3c-i-narrow's resize, measured 2026-10-26, pointer at 551,818) leaves the
+// tooltip in front for about fifty seconds. For that long, a resolver reading
+// `windows.first` finds zero identifiers and every check reads "not found".
 guard let windows = copyAttribute(app, kAXWindowsAttribute as String) as? [AXUIElement],
-    let window = windows.first
+    let window = windows.first(where: {
+        stringAttribute($0, kAXRoleAttribute as String) == kAXWindowRole as String
+    })
 else {
     fail(
         "no_window",

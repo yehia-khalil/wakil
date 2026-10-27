@@ -1,0 +1,27 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"browser_open","params":{"url":"{pageStubLive}/form.html","newTab":false}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booking form"}}
+{"expect":{"pane":"browser-1","field":"loading","equals":"false"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].production","equals":"true"}}
+{"dispatch":{"action":"browser_read_page","params":{"pane":"browser-1"}}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"click confirm on the live form"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"click \"Confirm\" on localhost:"}}
+{"expect":{"tree":"contains","text":"PRODUCTION"}}
+{"expect":{"tree":"contains","text":"type confirm"}}
+{"expect":{"focus":"confirmation.field"}}
+{"do":{"click":"confirmation.cancel"}}
+{"expect":{"tree":"contains","text":"requires confirmation"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"tree":"absent","text":"click \"Confirm\" on localhost:"}}
+{"do":{"focus":"window.composer"}}
+{"do":{"keys":"click confirm on the live form"}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"click \"Confirm\" on localhost:"}}
+{"expect":{"focus":"confirmation.field"}}
+{"do":{"type":{"into":"confirmation.field","text":"confirm"}}}
+{"do":{"click":"confirmation.run"}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Booked: no name, 1 night"}}
+{"expect":{"focus":"window.composer"}}
+{"expect":{"tree":"absent","text":"agent allowed"}}

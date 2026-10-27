@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/3c-ii-tags.jsonl",
+  "baseCommit": "5feb2f5e5892308cc712bebd2ac05ddeccec792a",
+  "provedAt": "2026-10-26T19:00:23.185368Z",
+  "checkBlob": "c349b3a699cd23cf0ad4f1ef43fe4eaac59641ab"
+}

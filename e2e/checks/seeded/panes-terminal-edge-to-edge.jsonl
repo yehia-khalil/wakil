@@ -1,0 +1,26 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"terminal"}}}
+{"expect":{"pane":"terminal-1","field":"kind","equals":"terminal"}}
+{"do":{"resize":{"width":1000,"height":888}}}
+{"dispatch":{"action":"pane_resize","params":{"id":"terminal-1","width":700,"height":400}}}
+{"expect":{"frame":"pane.terminal-1.screen","minWidth":686}}
+{"expect":{"frame":"pane.terminal-1.screen","maxWidth":690}}
+{"expect":{"frame":"pane.terminal-1.screen","minHeight":336}}
+{"expect":{"frame":"pane.terminal-1.header","maxHeight":32}}
+{"expect":{"frame":"pane.terminal-1.searchToggle","inside":"pane.terminal-1.header"}}
+{"expect":{"frame":"pane.terminal-1.header","clear":"pane.terminal-1.screen"}}
+{"do":{"click":"pane.terminal-1.searchToggle"}}
+{"expect":{"frame":"pane.terminal-1.searchQuery","clear":"pane.terminal-1.header"}}
+{"expect":{"frame":"pane.terminal-1.searchQuery","clear":"pane.terminal-1.screen"}}
+{"expect":{"frame":"pane.terminal-1.searchQuery","maxHeight":32}}
+{"do":{"click":"pane.terminal-1.searchToggle"}}
+{"do":{"click":"rail.terminal-1"}}
+{"do":{"keys":"echo edge"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-1","field":"blocks[-1].output","contains":"edge"}}
+{"dispatch":{"action":"pane_resize","params":{"id":"terminal-1","width":420,"height":400}}}
+{"expect":{"frame":"pane.terminal-1.screen","minWidth":406}}
+{"expect":{"frame":"pane.terminal-1.screen","maxWidth":410}}
+{"expect":{"frame":"pane.terminal-1.header","maxHeight":32}}
+{"expect":{"frame":"pane.terminal-1.searchToggle","inside":"pane.terminal-1.header"}}
+{"expect":{"frame":"pane.terminal-1.header","clear":"pane.terminal-1.screen"}}

@@ -1,0 +1,6 @@
+{
+  "check": "e2e/checks/seeded/panes-maximize-per-pane.jsonl",
+  "baseCommit": "296fe44e37e96bc092185636e85453f4ff06b6f8",
+  "provedAt": "2026-10-27T06:16:21.777329Z",
+  "checkBlob": "f438d5f25485e11738544f7f8fa4e8c2cd3a0e11"
+}

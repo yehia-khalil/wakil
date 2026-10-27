@@ -2289,6 +2289,7 @@ private func decodeConfig(_ json: String) throws -> [String: JSONValue] {
         // below. It reports a database's Keychain entry NAME and never a
         // credential's value, which is what puts it beside
         // `ctx_list_providers` rather than beside the org-plane four.
+        "mcp__wakil__ctx_browser_settings",
         "mcp__wakil__ctx_config_tree",
         // ctx_editor_settings, added by 3b-v (Decision 38): `.read` and
         // agent-reachable. Its two writes, `ctx_set_editor_settings` and

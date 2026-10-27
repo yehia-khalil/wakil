@@ -142,3 +142,40 @@ func TestMakefileTargetsDoNotOverrideCgo(t *testing.T) {
 		t.Errorf("found %d CGO_ENABLED assignments in the Makefile, want exactly 1 (the exported one)", assignments)
 	}
 }
+
+// e2eRunWith runs the shared `e2e-run` loop over two check files with a stub
+// runner that logs each file it is handed and goes red, and returns the files
+// the loop reached and whether make exited non-zero.
+func e2eRunWith(t *testing.T, extra ...string) ([]string, bool) {
+	t.Helper()
+	makeBin, err := exec.LookPath("make")
+	if err != nil {
+		t.Skipf("make is not on PATH: %v", err)
+	}
+	dir := t.TempDir()
+	log := filepath.Join(dir, "ran.log")
+	runner := filepath.Join(dir, "runner.sh")
+	body := "#!/bin/sh\nfor last; do :; done\necho \"$last\" >> " + log + "\nexit 1\n"
+	if err := os.WriteFile(runner, []byte(body), 0o755); err != nil {
+		t.Fatalf("write runner: %v", err)
+	}
+	args := append([]string{"-C", repoRoot(t), "--no-print-directory", "e2e-run",
+		"E2E_BUNDLE=" + dir, "E2E_FILES=a.jsonl b.jsonl", "E2E_RUNNER=" + runner}, extra...)
+	runErr := exec.Command(makeBin, args...).Run()
+	ran, _ := os.ReadFile(log)
+	return strings.Fields(string(ran)), runErr != nil
+}
+
+func TestE2ERunStopsAtTheFirstRedFileByDefault(t *testing.T) {
+	ran, failed := e2eRunWith(t)
+	if strings.Join(ran, " ") != "a.jsonl" || !failed {
+		t.Fatalf("ran %v, failed %v; want only a.jsonl and a red exit", ran, failed)
+	}
+}
+
+func TestE2ERunKeepsGoingWhenAsked(t *testing.T) {
+	ran, failed := e2eRunWith(t, "E2E_KEEP_GOING=1")
+	if strings.Join(ran, " ") != "a.jsonl b.jsonl" || !failed {
+		t.Fatalf("ran %v, failed %v; want a.jsonl then b.jsonl and a red exit", ran, failed)
+	}
+}

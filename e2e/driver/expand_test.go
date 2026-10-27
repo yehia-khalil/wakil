@@ -90,3 +90,20 @@ func TestExpandParamsReplacesEachToken(t *testing.T) {
 		t.Errorf("expanded to %#v\nwant %#v", got, want)
 	}
 }
+
+// TestExpandTextReachesOnlyThePageStub — an operator types a URL into the
+// address field, so the page stub's origin is the one token typed text
+// carries; the fixture root and the chat stub stay out of keystrokes.
+func TestExpandTextReachesOnlyThePageStub(t *testing.T) {
+	tokens := map[string]string{
+		FixtureRootToken: "/tmp/r", ChatStubToken: "http://127.0.0.1:5", PageStubToken: "http://127.0.0.1:7",
+	}
+	got := ExpandText(PageStubToken+"/a.html "+FixtureRootToken+" "+ChatStubToken, tokens)
+	want := "http://127.0.0.1:7/a.html " + FixtureRootToken + " " + ChatStubToken
+	if got != want {
+		t.Errorf("expanded to %q, want %q", got, want)
+	}
+	if got := ExpandText(PageStubToken, map[string]string{}); got != PageStubToken {
+		t.Errorf("no stub expanded to %q, want the token untouched", got)
+	}
+}

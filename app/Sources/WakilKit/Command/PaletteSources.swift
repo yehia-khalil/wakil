@@ -217,7 +217,7 @@ public struct RunningConversationsSource: PaletteSource {
 
 /// The kinds the palette may open, in the order they are offered. `pane_open` refuses
 /// `settings`, so it is never one.
-private let paneKindOrder = ["db", "terminal", "api", "editor"]
+private let paneKindOrder = ["db", "terminal", "api", "editor", "browser"]
 
 private func offeredKinds(_ kinds: Set<String>) -> [String] {
     let offered = kinds.subtracting([Pane.settingsKind])
@@ -231,6 +231,7 @@ public func paneKindTitle(kind: String) -> String {
     case "terminal": "Terminal"
     case "api": "API client"
     case "editor": "Editor"
+    case "browser": "Browser"
     default: kind
     }
 }
@@ -242,6 +243,7 @@ public func newPaneTitle(kind: String) -> String {
     case "terminal": "New Terminal"
     case "api": "New API client"
     case "editor": "New Editor pane"
+    case "browser": "New Browser pane"
     default: "New \(kind) pane"
     }
 }
@@ -453,6 +455,73 @@ public struct ApiEntriesSource: PaletteSource {
                              kindLabel: "api", verb: "open",
                              action: .dispatch(action: "api_open", params: .object(["entry": .string(entry.name)])))
             }
+        }
+    }
+}
+
+// MARK: - Open tabs and bookmarks
+
+/// One open browser tab as ⌘P shows it: the window has already chosen the title and subtitle.
+public struct PaletteBrowserTab: Sendable, Equatable {
+    public let pane: String
+    public let tab: String
+    public let title: String
+    public let subtitle: String
+    public init(pane: String, tab: String, title: String, subtitle: String) {
+        self.pane = pane; self.tab = tab; self.title = title; self.subtitle = subtitle
+    }
+}
+
+/// One bookmark as ⌘P shows it.
+public struct PaletteBookmark: Sendable, Equatable {
+    public let url: String
+    public let title: String
+    public let subtitle: String
+    public init(url: String, title: String, subtitle: String) {
+        self.url = url; self.title = title; self.subtitle = subtitle
+    }
+}
+
+/// Every tab of every browser pane on the canvas. A row switches to the tab and focuses its pane.
+public struct BrowserTabsSource: PaletteSource {
+    public let id = "browsertabs"
+    public let group = PaletteGroup.resources
+    private let tabs: @Sendable () async -> [PaletteBrowserTab]
+
+    public init(tabs: @escaping @Sendable () async -> [PaletteBrowserTab]) {
+        self.tabs = tabs
+    }
+
+    public func entries() async -> [PaletteEntry] {
+        await tabs().map { row in
+            PaletteEntry(
+                id: "browsertab:\(row.pane)/\(row.tab)", group: group, title: row.title,
+                subtitle: row.subtitle, kindLabel: "tab", verb: "switch to",
+                action: .dispatch(action: "browser_select_tab", params: .object([
+                    "pane": .string(row.pane), "tab": .string(row.tab), "focus": .bool(true),
+                ])))
+        }
+    }
+}
+
+/// The organisation's bookmarks, in the order given (newest first). A row opens the page in a new tab.
+public struct BookmarksSource: PaletteSource {
+    public let id = "bookmarks"
+    public let group = PaletteGroup.resources
+    private let bookmarks: @Sendable () async -> [PaletteBookmark]
+
+    public init(bookmarks: @escaping @Sendable () async -> [PaletteBookmark]) {
+        self.bookmarks = bookmarks
+    }
+
+    public func entries() async -> [PaletteEntry] {
+        await bookmarks().map { mark in
+            PaletteEntry(
+                id: "bookmark:\(mark.url)", group: group, title: mark.title,
+                subtitle: mark.subtitle, kindLabel: "bookmark", verb: "open",
+                action: .dispatch(action: "browser_open", params: .object([
+                    "url": .string(mark.url), "newTab": .bool(true),
+                ])))
         }
     }
 }

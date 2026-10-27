@@ -8,6 +8,7 @@ Api -> MCP
 Api -> Panes
 Api -> Registry
 App -> Api
+App -> Browser
 App -> Command
 App -> Context
 App -> Editor
@@ -23,6 +24,9 @@ App -> Registry
 App -> Speech
 App -> Terminal
 App -> Visual
+Browser -> Layout
+Browser -> Panes
+Browser -> Registry
 Command -> Api
 Command -> Context
 Command -> Git

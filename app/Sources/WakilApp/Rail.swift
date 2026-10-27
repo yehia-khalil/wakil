@@ -286,18 +286,35 @@ struct Rail: View {
             ? Color(RailTreatment.workingTickColour)
             : (isActive ? Color(RailTreatment.activeTickColour) : nil)
 
+        // The glow. A working pane keeps it in both states — it is the
+        // periphery §10 is talking about, and at 0.30 the fill alone
+        // composites to ≈2.05:1, which is a cue and not a reading. The
+        // active tick's glow arrives with promotion, matching the
+        // artboard: at rest the rail says *what is open*, and which one
+        // is focused is the canvas's own news.
+        LuminousTick(
+            colour: colour,
+            glow: pane.busy ? 0.85 : (promoted ? 0.70 : 0),
+            glowRadius: pane.busy ? 5 : 4)
+            .padding(.vertical, 8)
+    }
+}
+
+/// The rail's luminous left tick (§10) as one mark: a 2 pt rounded bar in `colour` with its glow, or
+/// nothing where `colour` is nil. The rail draws it against a row's height; a pane's own tabs — the
+/// editor's strip and the browser's list (3c-i) — draw it at a fixed `height`, so a tab and a rail
+/// row read as one kind of thing (`Browser.dc.html`'s `.tab .tick`).
+struct LuminousTick: View {
+    let colour: Color?
+    /// Fixed, for a tab; nil fills the row the rail sizes it to.
+    var height: CGFloat?
+    var glow: Double = 0.70
+    var glowRadius: CGFloat = 4
+
+    var body: some View {
         RoundedRectangle(cornerRadius: 1)
             .fill(colour ?? .clear)
-            .frame(width: 2)
-            .padding(.vertical, 8)
-            // The glow. A working pane keeps it in both states — it is the
-            // periphery §10 is talking about, and at 0.30 the fill alone
-            // composites to ≈2.05:1, which is a cue and not a reading. The
-            // active tick's glow arrives with promotion, matching the
-            // artboard: at rest the rail says *what is open*, and which one
-            // is focused is the canvas's own news.
-            .shadow(
-                color: (colour ?? .clear).opacity(pane.busy ? 0.85 : (promoted ? 0.70 : 0)),
-                radius: pane.busy ? 5 : 4)
+            .frame(width: 2, height: height)
+            .shadow(color: (colour ?? .clear).opacity(glow), radius: glowRadius)
     }
 }
