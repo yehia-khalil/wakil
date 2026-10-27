@@ -34,9 +34,13 @@ func onlySchemedHttpUrlsAreLinks(line: String, expected: [String]) {
 }
 
 @Test func aLinkRangeCountsCharactersNotUtf16() {
-    // "é" and "→" are one Character each; the range must say 4..<25, not a UTF-16 offset.
-    let line = "é → https://example.com/a"
-    #expect(TerminalLinks.find(in: line).map(\.range) == [4..<25])
+    // Before the URL: an emoji (two UTF-16 units), a ZWJ family (eight), a flag (four) and a
+    // decomposed é (two), each one Character. Inside it: another decomposed é and an emoji. In
+    // Characters the URL is 8..<36; in UTF-16 units it would start at 20.
+    let url = "https://example.com/cafe\u{301}?q=\u{1F600}"
+    let line = "\u{1F600} \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} \u{1F1EF}\u{1F1F5} e\u{301} \(url) x"
+    #expect(TerminalLinks.find(in: line).map(\.range) == [8..<36])
+    #expect(linkedTexts(line) == [url])
 }
 
 @Test func splitCutsRunsAtLinkEdges() {
@@ -69,4 +73,25 @@ func onlySchemedHttpUrlsAreLinks(line: String, expected: [String]) {
     let pieces = TerminalLinks.split(runs)
     #expect(pieces.map(\.run) == runs)
     #expect(pieces.allSatisfy { $0.link == nil })
+}
+
+/// A grapheme whose scalars a style change splits across two runs is one Character in the row but
+/// would count as two if each run were counted alone, shifting every cut after it.
+@Test(arguments: [
+    ("e", "\u{301} see "),  // a base and its combining mark
+    ("\u{1F1EF}", "\u{1F1F5} see "),  // the two regional indicators of one flag
+    ("\u{1F468}\u{200D}", "\u{1F469} see "),  // a ZWJ sequence
+])
+func aGraphemeAcrossARunBoundaryDoesNotShiftTheLink(head: String, tail: String) {
+    let pieces = TerminalLinks.split([
+        TerminalStyleRun(text: head, style: red),
+        TerminalStyleRun(text: tail + "https://example.com/z ok", style: .plain),
+    ])
+    #expect(pieces.map(\.run) == [
+        TerminalStyleRun(text: head, style: red),
+        TerminalStyleRun(text: tail, style: .plain),
+        TerminalStyleRun(text: "https://example.com/z", style: .plain),
+        TerminalStyleRun(text: " ok", style: .plain),
+    ])
+    #expect(pieces.map(\.link) == [nil, nil, URL(string: "https://example.com/z"), nil])
 }
