@@ -254,7 +254,7 @@ live app; *accepted* means it was marked met without one.
 | **integer fidelity** | `JSONValue.integer(Int64)` — a fix, not a sub-phase | **2026-09-13** | — |
 | **conversation layouts** | Pane arrangements keyed by conversation and project — cross-cutting, not a sub-phase | **2026-09-21**, walked | — |
 | **2c-ii-b** | Editing records from the DB pane | **2026-09-15** — *walked 2026-09-14, its three open checks accepted* | — |
-| **2c-ii-c** | DB pane copy, cancel and row detail | **2026-10-15**, walked | — |
+| **2c-ii-c** | DB pane copy, cancel and row detail — ⌘C and Copy as JSON, `db_cancel` and a per-pane read flight, the row detail strip | **2026-10-15**, walked | — |
 | **2c-iii** | Terminal pane — PTY, a shell opened at a path, the write-gate boundary for a shell | **2026-09-18**, walked | — |
 | **2c-iv** | API client pane; `wakil-http` gains a gated write method | **2026-10-04**, walked ×3 | — |
 | ~~**2c-v**~~ | Session browser — **cut 2026-09-16** (`phase-log.md`) | — | — |
