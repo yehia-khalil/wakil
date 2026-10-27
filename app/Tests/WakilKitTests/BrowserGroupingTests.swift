@@ -226,6 +226,35 @@ struct BrowserGroupingTests {
         #expect(groupOf(v, "a") == nil)
     }
 
+    @Test func aPullRequestTabTakenOutOfItsGroupIsAPlainTabAndARefreshLeavesItAlone() {
+        let url = "https://github.com/initech/a/pull/1"
+        let pr = BrowserGroup(id: "pr", name: "Pull Requests", colour: .blue, kind: .pullRequests)
+        var s = pane([tab("p", url, group: "pr", pullRequest: url), tab("q", url + "0", group: "pr", pullRequest: url + "0")],
+                     groups: [pr])
+        s.moveTab("p", into: nil, at: nil)
+        #expect(s.tabs.first { $0.id == "p" }?.pullRequest == nil)
+        #expect(groupOf(s, "p") == nil)
+        #expect(browserSavedTabs(s).map(\.id) == ["p"])
+
+        // The refresh lists the same page again: the loose tab stays as it is, and the loose area gets no copy.
+        s.applyPullRequests(BrowserPullRequests(items: [
+            BrowserPullRequest(number: 1, title: "t", url: url, repository: "initech/a", reason: "r")]))
+        #expect(s.tabs.first { $0.id == "p" }?.group == nil)
+        #expect(s.tabs.first { $0.id == "p" }?.pullRequest == nil)
+        #expect(s.tabs.filter { $0.group == nil && $0.url == url }.count == 1)
+        #expect(!s.tabs.contains { $0.id == "q" })
+    }
+
+    @Test func aPullRequestTabTakenIntoAnOwnGroupIsAPlainTab() {
+        let url = "https://github.com/initech/a/pull/1"
+        let pr = BrowserGroup(id: "pr", name: "Pull Requests", colour: .blue, kind: .pullRequests)
+        var s = pane([tab("p", url, group: "pr", pullRequest: url), tab("a", yt1)], groups: [pr])
+        let g = s.newGroup(tabs: ["p", "a"], name: "Mine", kind: .own, siteKey: nil)
+        #expect(groupOf(s, "p") == g)
+        #expect(s.tabs.first { $0.id == "p" }?.pullRequest == nil)
+        #expect(browserSavedTabs(s).map(\.id).contains("p"))
+    }
+
     @Test func makeOwnTurnsAnAutomaticGroupOwnAndKeepsItsPlace() {
         var s = pane([
             tab("a", yt1, group: "g1"), tab("b", yt2, group: "g1"),

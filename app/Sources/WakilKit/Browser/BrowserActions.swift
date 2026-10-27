@@ -855,7 +855,7 @@ func browserActions(
             + "pull request's tab keeps its page, a new one is added unloaded, a gone one closes; the selected "
             + "tab stays, as a loose tab. absent says why there is no group; error is this refresh's failure, "
             + "the list before it kept. While a refresh runs, another returns at once without reading again. "
-            + "Answers org, count, absent and error.",
+            + "Answers org, count, absent, error and refreshing.",
         kind: .control, audience: .agentReachable,
         schema: .object(["type": .string("object"), "properties": .object([:])]),
         handler: { _ in

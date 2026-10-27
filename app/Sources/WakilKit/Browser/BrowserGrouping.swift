@@ -86,11 +86,18 @@ extension BrowserSnapshot {
                 if let old = tabs[i].group { makeOwnOnly(old) }
                 tabs[i].keptLoose = false
             }
+            leavePullRequests(i)
             tabs[i].group = id
             tabs[i].opener = nil
         }
         arrange()
         return id
+    }
+
+    /// A tab taken out of the pull-request group by hand is a plain tab: it stops being a listed
+    /// pull request, so a refresh neither duplicates it nor leaves it out of the saved layout.
+    private mutating func leavePullRequests(_ i: Int) {
+        if let g = tabs[i].group, group(g)?.kind == .pullRequests { tabs[i].pullRequest = nil }
     }
 
     /// Ruling 11: an automatic group becomes the operator's, in the same place.
@@ -114,6 +121,7 @@ extension BrowserSnapshot {
             if let old { makeOwnOnly(old) }
             if let target { makeOwnOnly(target) }
         }
+        leavePullRequests(i)
         var moved = tabs.remove(at: i)
         moved.group = target
         moved.opener = nil
