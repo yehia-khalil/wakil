@@ -67,6 +67,14 @@ public struct LayoutSnapshot: Sendable, Equatable, Codable {
         editorColumnDefault = try container.decodeIfPresent(EditorColumnState.self, forKey: .editorColumnDefault)
     }
 
+    /// Puts `id` in front. **Maximize is each pane's own** (the operator, 2026-10-27): every pane in
+    /// `preMaximizeFrames` fills the canvas, and `maximizedId` is only the one in front — the focused
+    /// pane when it is maximized, else none, so the rail and Core come back over a pane that is not.
+    public mutating func setFocus(_ id: String?) {
+        focusedId = id
+        maximizedId = id.flatMap { preMaximizeFrames[$0] == nil ? nil : $0 }
+    }
+
     /// The same arrangement with every pane's transient `busy` flag
     /// cleared.
     ///
@@ -148,7 +156,7 @@ public func layoutDroppingUnknownPaneKinds(
         cleaned.preMaximizeFrames.removeValue(forKey: id)
     }
     if let focused = cleaned.focusedId, ids.contains(focused) {
-        cleaned.focusedId = cleaned.panes.last?.id
+        cleaned.setFocus(cleaned.panes.last?.id)
     }
     if let maximized = cleaned.maximizedId, ids.contains(maximized) {
         cleaned.maximizedId = nil
@@ -214,7 +222,7 @@ public func layoutWithoutOverlayPanes(_ snapshot: LayoutSnapshot) -> LayoutSnaps
         cleaned.preMaximizeFrames.removeValue(forKey: id)
     }
     if let focused = cleaned.focusedId, ids.contains(focused) {
-        cleaned.focusedId = cleaned.panes.last?.id
+        cleaned.setFocus(cleaned.panes.last?.id)
     }
     if let maximized = cleaned.maximizedId, ids.contains(maximized) {
         cleaned.maximizedId = nil
@@ -333,12 +341,13 @@ public actor LayoutStore {
     }
 
     /// Tells the store how big the canvas is. Called by the window on
-    /// resize; a maximized pane follows.
+    /// resize; every maximized pane follows.
     public func setVoid(_ frame: PaneFrame) {
         void = frame
-        guard var current = byScope[scope], let maximizedId = current.maximizedId else { return }
-        guard let index = current.panes.firstIndex(where: { $0.id == maximizedId }) else { return }
-        current.panes[index].frame = frame
+        guard var current = byScope[scope], !current.preMaximizeFrames.isEmpty else { return }
+        for index in current.panes.indices where current.preMaximizeFrames[current.panes[index].id] != nil {
+            current.panes[index].frame = frame
+        }
         byScope[scope] = current
     }
 
@@ -375,7 +384,7 @@ public actor LayoutStore {
         current.panes.append(pane)
         // 3c-i (spec call 11, Rule 6): a link from another surface opens its pane with `focus` false,
         // so the pane the operator was in keeps focus. The new pane is in no focus order yet.
-        if focus { current.focusedId = id }
+        if focus { current.setFocus(id) }
         byScope[scope] = current
         if focus { noteFocused(id) }
         return pane
@@ -553,9 +562,9 @@ public actor LayoutStore {
         var current = try requirePane(id)
         current.panes.removeAll { $0.id == id }
         current.graph.removeAll(for: id)
-        if current.focusedId == id { current.focusedId = current.panes.last?.id }
-        if current.maximizedId == id { current.maximizedId = nil }
         current.preMaximizeFrames[id] = nil
+        if current.focusedId == id { current.setFocus(current.panes.last?.id) }
+        if current.maximizedId == id { current.maximizedId = nil }
         byScope[scope] = current
     }
 
@@ -564,7 +573,7 @@ public actor LayoutStore {
     /// a click on an unfocused pane dispatches.
     public func focus(id: String) throws {
         var current = try requirePane(id)
-        current.focusedId = id
+        current.setFocus(id)
         noteFocused(id)
         // **Raised before the pane is even known to exist? No — after.**
         // `requirePane` throws for an unknown id, and a refused focus is not
@@ -804,12 +813,12 @@ public actor LayoutStore {
     /// Maximizes `id` into the void, remembering its frame so `restore` can
     /// put it back.
     ///
-    /// Maximizing while another pane is already maximized restores that
-    /// one first, so only ever one frame is being held back at a time —
-    /// there is exactly one `maximizedId` per scope, so there could
-    /// never be two frames to restore anyway.
+    /// **Each pane keeps its own maximize** (the operator, 2026-10-27): maximizing a second pane
+    /// leaves the first filling the canvas behind it, and selecting the first brings it back in
+    /// front, still full. Every pane in `preMaximizeFrames` is maximized; `maximizedId` is the one in
+    /// front.
     ///
-    /// Maximizing an already-maximized `id` is a no-op. Without this
+    /// Maximizing an already-maximized `id` only brings it to the front. Without this
     /// guard, a second call would overwrite `preMaximizeFrames[id]` with
     /// `void` — the frame the first call already set — destroying the
     /// pane's true original geometry and making `restore()` put it back
@@ -819,34 +828,27 @@ public actor LayoutStore {
     public func maximize(id: String) throws {
         var current = try requirePane(id)
         guard let index = current.panes.firstIndex(where: { $0.id == id }) else { return }
-        guard current.maximizedId != id else { return }
-
-        if let previous = current.maximizedId,
-           let previousIndex = current.panes.firstIndex(where: { $0.id == previous }),
-           let frame = current.preMaximizeFrames[previous] {
-            current.panes[previousIndex].frame = frame
-            current.preMaximizeFrames[previous] = nil
+        if current.preMaximizeFrames[id] == nil {
+            current.preMaximizeFrames[id] = current.panes[index].frame
+            current.panes[index].frame = void
         }
-
-        current.preMaximizeFrames[id] = current.panes[index].frame
-        current.panes[index].frame = void
-        current.maximizedId = id
-        current.focusedId = id
+        current.setFocus(id)
         byScope[scope] = current
         noteFocused(id)
     }
 
-    /// Puts the maximized pane back to the frame it held before
-    /// `maximize`, and clears `maximizedId`. A no-op when nothing is
-    /// maximized — `restore` is the safe default a window can call
-    /// without first checking whether there is anything to restore.
-    public func restore() {
-        guard var current = byScope[scope], let id = current.maximizedId else { return }
-        if let index = current.panes.firstIndex(where: { $0.id == id }), let frame = current.preMaximizeFrames[id] {
+    /// Puts a maximized pane back to the frame it held before `maximize`: `id`, else the one in
+    /// front (`maximizedId`). Other maximized panes stay as they are. A no-op when that pane is not
+    /// maximized — `restore` is the safe default a window can call without first checking whether
+    /// there is anything to restore.
+    public func restore(id: String? = nil) {
+        guard var current = byScope[scope], let id = id ?? current.maximizedId,
+              let frame = current.preMaximizeFrames[id] else { return }
+        if let index = current.panes.firstIndex(where: { $0.id == id }) {
             current.panes[index].frame = frame
         }
         current.preMaximizeFrames[id] = nil
-        current.maximizedId = nil
+        if current.maximizedId == id { current.maximizedId = nil }
         byScope[scope] = current
     }
 
