@@ -6,7 +6,8 @@ import Testing
 /// browser's), its start page blank. `journal` is its registry's journal file.
 @MainActor
 private func browserWindow(
-    orgFiles: BrowserOrgFiles? = nil, removeData: BrowserDataRemover? = nil
+    orgFiles: BrowserOrgFiles? = nil, removeData: BrowserDataRemover? = nil,
+    orgSwitcher: @escaping @Sendable (String) async -> [String] = { _ in [] }
 ) async -> (WindowModel, FakeFiles, LayoutStore, journal: URL, panes: PaneStore) {
     let journalDir = testScratchRoot.appendingPathComponent("browser-window-\(UUID().uuidString)")
     let registry = ActionRegistry(journalDirectory: journalDir, sessionId: "browser-window")
@@ -22,6 +23,7 @@ private func browserWindow(
         harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in EditorWindowLookup() },
+        orgSwitcher: orgSwitcher,
         rootWatcher: nil, editorRootWatcher: RecordingRootWatcher(), fileLists: fileLists, gitStatus: nil,
         paletteClients: PaletteClients(files: fileLists), placeClients: nil,
         agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
@@ -49,6 +51,55 @@ private func browserWindow(
         let pane = try #require(model.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
         await model.focusPane(id: pane)
         return (model, pane, layout, journal, panes)
+    }
+
+    // MARK: 3d-iii Task 4: Restore goes back to the floating tab
+
+    @Test func returnToATabInThisPlaceSelectsItAndFocusesItsPane() async throws {
+        let (model, pane, _, _) = try await focusedBrowser()
+        await model.dispatchFromSurface("browser_new_tab", .object(["pane": .string(pane), "url": .string("https://b.test/")]))
+        await model.refreshLayout()
+        let scope = try #require(model.browserScope)
+        let first = try #require(model.browser(pane)?.tabs.first?.id)
+        let second = try #require(model.browser(pane)?.active)
+        #expect(first != second)
+        // Another pane is focused when Restore is pressed.
+        await model.dispatchFromSurface("pane_open", .object(["kind": .string("browser")]))
+        await model.refreshLayout()
+        let other = try #require(model.layoutSnapshot.panes.first { $0.kind == "browser" && $0.id != pane }?.id)
+        await model.focusPane(id: other)
+        await model.refreshLayout()
+        #expect(model.layoutSnapshot.focusedId == other)
+        let went = await model.browserReturn(to: BrowserTabRef(scope: scope, pane: pane, tab: first))
+        #expect(went)
+        await model.refreshLayout()
+        #expect(model.browser(pane)?.active == first)
+        #expect(model.layoutSnapshot.focusedId == pane)
+        await model.shutdown()
+    }
+
+    @Test func returnToAPlaceThatCannotBeReachedSelectsNothing() async throws {
+        let (model, _, _, journal, _) = await browserWindow(orgSwitcher: { _ in ["globex is down"] })
+        await model.refreshContext()
+        await model.dispatchFromSurface("browser_open", .object(["url": .string("https://a.test/")]))
+        await model.refreshLayout()
+        let paneId = try #require(model.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
+        await model.dispatchFromSurface("browser_new_tab", .object(["pane": .string(paneId), "url": .string("https://b.test/")]))
+        await model.refreshLayout()
+        let scope = try #require(model.browserScope)
+        let active = try #require(model.browser(paneId)?.active)
+        let first = try #require(model.browser(paneId)?.tabs.first?.id)
+        #expect(first != active)
+        let elsewhere = LayoutScope(organization: "globex", project: scope.project, environment: scope.environment,
+                                    lineageRoot: scope.lineageRoot)
+        let journalBefore = (try? String(contentsOf: journal, encoding: .utf8)) ?? ""
+        let went = await model.browserReturn(to: BrowserTabRef(scope: elsewhere, pane: paneId, tab: first))
+        #expect(!went)
+        #expect(model.browserScope != elsewhere, "the refused switch left the screen elsewhere")
+        let journalAfter = (try? String(contentsOf: journal, encoding: .utf8)) ?? ""
+        #expect(!journalAfter.dropFirst(journalBefore.count).contains("browser_select_tab"),
+                "no tab was selected anywhere: the pane id here is another place's")
+        await model.shutdown()
     }
 
     // MARK: 3c-iii Task 5: visits recorded, suggestions answered
