@@ -50,8 +50,10 @@ public enum BrowserSuggestions {
         typed.split(whereSeparator: \.isWhitespace).map(String.init)
     }
 
+    /// `tabs` are the open tabs to offer (the caller leaves out the one being edited, whose id
+    /// repeats from pane to pane); a tab with no address yet is never offered.
     public static func rank(
-        _ typed: String, tabs: [BrowserTab], editing: String?,
+        _ typed: String, tabs: [BrowserTab],
         bookmarks: [BrowserBookmark], history: [BrowserHistoryEntry], search: [String]
     ) -> [BrowserSuggestion] {
         let wholeTyped = normalised(typed).lowercased()
@@ -74,7 +76,7 @@ public enum BrowserSuggestions {
 
         // Open tabs: strip order on ties (the sort is stable).
         let tabHits = tabs.enumerated().compactMap { index, tab -> (Int, Int, BrowserTab)? in
-            guard tab.id != editing, let s = score(url: tab.url, title: tab.label) else { return nil }
+            guard !tab.url.isEmpty, let s = score(url: tab.url, title: tab.label) else { return nil }
             return (s, index, tab)
         }.sorted { $0.0 != $1.0 ? $0.0 > $1.0 : $0.1 < $1.1 }
         for (_, _, tab) in tabHits where rows.count < tabLimit && seen.insert(tab.url).inserted {

@@ -16,10 +16,10 @@ import Foundation
     private func hist(_ url: String, _ title: String = "", count: Int = 1, _ age: TimeInterval = 0) -> BrowserHistoryEntry {
         BrowserHistoryEntry(url: url, title: title, count: count, last: Date(timeIntervalSince1970: 1_000_000 + age))
     }
-    private func rank(_ typed: String, tabs: [BrowserTab] = [], editing: String? = nil,
+    private func rank(_ typed: String, tabs: [BrowserTab] = [],
                       bookmarks: [BrowserBookmark] = [], history: [BrowserHistoryEntry] = [],
                       search: [String] = []) -> [BrowserSuggestion] {
-        BrowserSuggestions.rank(typed, tabs: tabs, editing: editing, bookmarks: bookmarks, history: history, search: search)
+        BrowserSuggestions.rank(typed, tabs: tabs, bookmarks: bookmarks, history: history, search: search)
     }
 
     @Test func groupsComeTabsBookmarksHistorySearch() {
@@ -59,9 +59,9 @@ import Foundation
         #expect(rows.map(\.kind) == [.tab, .bookmark, .history])
     }
 
-    @Test func theTabBeingEditedIsNotSuggested() {
-        let rows = rank("ex", tabs: [tab("t1", "https://ex.com/a"), tab("t2", "https://ex.com/b")], editing: "t1")
-        #expect(rows.map(\.tab) == ["t2"])
+    @Test func aTabWithNoAddressIsNotSuggested() {
+        let rows = rank("new", tabs: [tab("t1", "")])
+        #expect(rows.isEmpty)
     }
 
     @Test func aPrefixOfTheBareUrlOutranksATitleWordOutranksContains() {

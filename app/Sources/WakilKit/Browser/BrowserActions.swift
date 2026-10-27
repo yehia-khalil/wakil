@@ -107,8 +107,9 @@ extension BrowserSnapshot {
 }
 
 /// Deletes an organisation's WebKit store by id (`browser_clear_data`), which only the app can. It
-/// is handed `deleteFiles` — the organisation's tab states and zoom — to call once the store is gone
-/// (`browserRemoveStoreThenFiles`), with no web view left on it to write one.
+/// is handed `deleteFiles` — the organisation's tab states, zoom and history (its bookmarks stay) —
+/// to call once the store is gone (`browserRemoveStoreThenFiles`), with no web view left on it to
+/// write one.
 public typealias BrowserDataRemover = @Sendable (_ store: UUID, _ deleteFiles: @Sendable () throws -> Void) async throws -> Void
 
 /// The clear's order (Task 10 fix round 1 ruling): the store first, then the files. A store that
@@ -583,7 +584,7 @@ func browserActions(
     actions.append(Action(
         name: "browser_clear_data",
         description: "Delete the active organisation's browsing data: every site's cookies, logins and storage, "
-            + "in every project, and the saved zoom. `org` is the organisation the operator was asked "
+            + "in every project, the saved zoom and the organisation's browsing history; bookmarks are kept. `org` is the organisation the operator was asked "
             + "about; refused when it is no longer the active one. Asks the operator first. Operator-only.",
         kind: .mutate, audience: .operatorOnly,
         schema: schema(["org": string], required: ["org"]),

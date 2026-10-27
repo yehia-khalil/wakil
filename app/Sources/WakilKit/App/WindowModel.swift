@@ -5833,11 +5833,14 @@ public final class WindowModel {
         recordVisit(scope: scope, before: before, report)
     }
 
-    /// 3c-iii ruling 1: a finished load without a failure is a visit; a new title on a finished page
-    /// updates the row without counting. Written to the organisation of `scope`, never the active one.
+    /// 3c-iii ruling 1: a finished load without a failure is a visit, and so is a new address on a
+    /// page that is not loading (`pushState`, an SPA router) unless only its `#fragment` moved; a
+    /// new title on a finished page updates the row without counting. Written to the organisation
+    /// of `scope`, never the active one.
     private func recordVisit(scope: LayoutScope, before: BrowserTab?, _ report: BrowserPageReport) {
         guard let before, !report.isLoading, report.failure == nil else { return }
-        let newVisit = before.isLoading
+        func withoutFragment(_ url: String) -> Substring { url.prefix { $0 != "#" } }
+        let newVisit = before.isLoading || withoutFragment(before.url) != withoutFragment(report.url)
         guard newVisit || (before.url == report.url && before.title != report.title),
               let history = browserOrgFiles(for: scope)?.history else { return }
         let (url, title, now) = (report.url, report.title, Date())
@@ -5859,15 +5862,18 @@ public final class WindowModel {
     @ObservationIgnored private let browserSuggestSession = BrowserEngineSuggest.session()
 
     /// The rows under the address field for `typed` in `pane`: the active organisation's open tabs
-    /// (of every browser pane on the canvas; `pane`'s active tab is the one being edited), bookmarks
+    /// (of every browser pane on the canvas except `pane`'s active tab, the one being edited), bookmarks
     /// and history, with `search` (the engine's words) last. Ruling 7.
     public func browserSuggestions(typed: String, pane: String, search: [String] = []) async -> [BrowserSuggestion] {
         let words = BrowserSuggestions.words(BrowserSuggestions.normalised(typed))
         // Every read keys on the place drawn when the call began; a switch landing mid-call answers nothing.
         guard !words.isEmpty, let scope = browserScope else { return [] }
-        var tabs: [BrowserTab] = []
-        for p in layoutSnapshot.panes where p.kind == "browser" { tabs += browser(p.id)?.tabs ?? [] }
+        // Ids repeat from pane to pane (`t1`), so the tab being edited is the (pane, tab) pair.
         let editing = browser(pane)?.active
+        var tabs: [BrowserTab] = []
+        for p in layoutSnapshot.panes where p.kind == "browser" {
+            tabs += (browser(p.id)?.tabs ?? []).filter { !(p.id == pane && $0.id == editing) }
+        }
         let bookmarks = await panes.browserBookmarks(org: scope.organization)
         var history: [BrowserHistoryEntry] = []
         if let files = browserOrgFiles(for: scope) {
@@ -5880,7 +5886,7 @@ public final class WindowModel {
         await browserSuggestionsAfterReads?()
         guard browserScope == scope else { return [] }
         return BrowserSuggestions.rank(
-            typed, tabs: tabs, editing: editing, bookmarks: bookmarks, history: history, search: search)
+            typed, tabs: tabs, bookmarks: bookmarks, history: history, search: search)
     }
 
     /// A tab row chosen under the address field of `pane` (ruling 9): `browser_select_tab` in the

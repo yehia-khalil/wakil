@@ -88,6 +88,61 @@ private func browserWindow(
         #expect(rows[0].url == "https://example.com/")
     }
 
+    @Test func aLoadOfAnotherPageCountsOnceNotTwice() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        try await report(model, pane, loading: true)
+        try await report(model, pane, title: "Example", loading: false)
+        try await report(model, pane, url: "https://example.com/b", title: "B", loading: true)
+        try await report(model, pane, url: "https://example.com/b", title: "B", loading: false)
+        let rows = try await visits(model)
+        #expect(rows.map(\.url).sorted() == ["https://example.com/", "https://example.com/b"])
+        #expect(rows.allSatisfy { $0.count == 1 })
+    }
+
+    @Test func anAddressChangeWithoutALoadIsAVisit() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        try await report(model, pane, loading: true)
+        try await report(model, pane, title: "Example", loading: false)
+        try await report(model, pane, url: "https://example.com/spa", title: "Spa Page", loading: false)
+        let rows = try await visits(model)
+        let spa = rows.filter { $0.url == "https://example.com/spa" }
+        #expect(spa.count == 1 && spa[0].count == 1 && spa[0].title == "Spa Page")
+    }
+
+    @Test func aFragmentOnlyChangeIsNotAVisit() async throws {
+        let (model, pane, _, _) = try await homedBrowser()
+        try await report(model, pane, loading: true)
+        try await report(model, pane, title: "Example", loading: false)
+        try await report(model, pane, url: "https://example.com/#section", title: "Example", loading: false)
+        let rows = try await visits(model)
+        #expect(rows.map(\.url) == ["https://example.com/"] && rows[0].count == 1)
+    }
+
+    @Test func aTabWithNoAddressIsNeverSuggested() async throws {
+        let (model, pane, _, panes) = try await homedBrowser()
+        await panes.updateBrowser(paneId: pane) { s in s.tabs.append(BrowserTab(id: "t9", url: "", title: "")) }
+        try await report(model, pane, url: "https://a.test/", loading: false)   // re-reads the pane
+        #expect(model.browser(pane)?.tabs.contains { $0.url.isEmpty } == true, "a blank tab is open")
+        let rows = await model.browserSuggestions(typed: "new", pane: pane)
+        #expect(rows.isEmpty, "\(rows)")
+    }
+
+    @Test func theEditedTabIsExcludedByPaneAndTabNotByTabAlone() async throws {
+        let (model, paneA, _, _) = try await homedBrowser()
+        await model.dispatchFromSurface("pane_open", .object(["kind": .string("browser")]))
+        await model.refreshLayout()
+        let browsers = model.layoutSnapshot.panes.filter { $0.kind == "browser" }.map(\.id)
+        let paneB = try #require(browsers.first { $0 != paneA })
+        await model.dispatchFromSurface("browser_open", .object(["pane": .string(paneB), "url": .string("https://b.test/")]))
+        await model.refreshLayout()
+        let a = try #require(model.browser(paneA)?.active)
+        let b = try #require(model.browser(paneB)?.active)
+        #expect(a == b, "both panes number their first tab alike")
+        let rows = await model.browserSuggestions(typed: "b.test", pane: paneA)
+        #expect(rows.map(\.kind) == [.tab] && rows[0].url == "https://b.test/")
+        #expect(await model.browserSuggestions(typed: "a.test", pane: paneA).isEmpty)
+    }
+
     @Test func aFailedLoadIsNotRecorded() async throws {
         let (model, pane, _, _) = try await homedBrowser()
         try await report(model, pane, loading: true)
