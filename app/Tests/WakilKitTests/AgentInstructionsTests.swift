@@ -84,4 +84,14 @@ import Testing
             a password, card or one-time-code field is theirs to fill — say so instead of trying.
             """))
     }
+
+    /// The walk's row 10: asked to summarise "this page" with a new tab active, the agent answered
+    /// from an earlier read of another tab.
+    @Test func thePromptTellsTheAgentToReadThisPageAgain() {
+        #expect(agentSystemPrompt.contains("""
+            The operator moves between tabs and pages \
+            without telling you, so when they ask about "this page", call browser_read_page again — it reads the \
+            active tab and costs nothing — rather than answering from an earlier read.
+            """))
+    }
 }
