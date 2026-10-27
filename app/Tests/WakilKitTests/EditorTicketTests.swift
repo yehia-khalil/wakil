@@ -140,10 +140,13 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(ticketNext(TicketBranchState(root: "/p/api", tickets: [TicketRefState(key: "INI-1", marked: true)])) == nil)
     }
 
-    @Test func foldLineCounts() {
-        let r = TicketRecordState(key: "INI-142", decisions: [line("a"), line("b"), line("c")], notDone: [line("d"), line("e")],
+    @Test func recordCountNamesOnlyKindsThatHoldALine() {
+        let r = TicketRecordState(key: "INI-142", decisions: [line("a"), line("b")], notDone: [line("d")],
                                   verified: [line("f")])
-        #expect(ticketFoldLine(r) == "Decisions 3 · Not done 2 · Verified 1 ▸")
+        #expect(ticketRecordCount(r) == "2 decisions · 1 not done · 1 verified")
+        #expect(ticketRecordCount(TicketRecordState(key: "INI-142", waitingOn: [line("a"), line("b")], rulings: [line("c")]))
+                == "2 waiting on · 1 ruling")
+        #expect(ticketRecordCount(TicketRecordState(key: "INI-142")) == nil)
     }
 
     @Test func openThreadsSkipOutdatedAndResolvedInFileThenLineOrder() {
@@ -291,6 +294,9 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(ticketLineCaption(TicketLineState(by: "operator", at: "2026-10-26T10:00:00Z"), now: now) == "you · 2 hours ago")
         #expect(ticketLineCaption(TicketLineState(by: "agent", at: "2026-10-26T11:59:30Z"), now: now).hasPrefix("agent · "))
         #expect(ticketLineCaption(TicketLineState(by: "wakil", at: ""), now: now) == "Wakil")
+        #expect(ticketLineWho(TicketLineState(by: "operator")) == "you")
+        #expect(ticketLineWho(TicketLineState(by: "agent")) == "agent")
+        #expect(ticketLineWho(TicketLineState(by: "wakil")) == "Wakil")
         #expect(ticketLineCaption(TicketLineState(by: "operator", at: "2026-10-26T10:00:00Z", edited: "agent"), now: now)
                 == "you · 2 hours ago · edited by agent")
     }

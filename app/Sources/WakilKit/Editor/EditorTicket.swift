@@ -327,9 +327,16 @@ public func ticketNext(_ b: TicketBranchState) -> (text: String, key: String?)? 
     return (newest.line.text, newest.key)
 }
 
-/// The folded section's one line.
-public func ticketFoldLine(_ r: TicketRecordState) -> String {
-    "Decisions \(r.decisions.count) · Not done \(r.notDone.count) · Verified \(r.verified.count) ▸"
+/// The record's count beside its label: each kind that holds a line, in the record's order —
+/// `2 decisions · 1 not done` — and nil for an empty record, which says so in words instead.
+public func ticketRecordCount(_ r: TicketRecordState) -> String? {
+    let kinds: [(Int, String, String)] = [
+        (r.decisions.count, "decision", "decisions"), (r.notDone.count, "not done", "not done"),
+        (r.waitingOn.count, "waiting on", "waiting on"), (r.verified.count, "verified", "verified"),
+        (r.rulings.count, "ruling", "rulings"),
+    ]
+    let parts = kinds.filter { $0.0 > 0 }.map { "\($0.0) \($0.0 == 1 ? $0.1 : $0.2)" }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
 }
 
 /// The branch's open threads — unresolved and not outdated — in file order, then line order. A
@@ -532,15 +539,19 @@ public func ticketPartialLines(_ b: TicketBranchState) -> [String] {
     return out
 }
 
-/// Who wrote a record line and when: `you · 2 hours ago`, `agent · …`, `Wakil`, and
-/// `edited by agent` when an agent changed the operator's line.
-public func ticketLineCaption(_ l: TicketLineState, now: Date = Date()) -> String {
-    let who = switch l.by {
+/// Who wrote a record line, as its row names it: `you`, `agent`, `Wakil`.
+public func ticketLineWho(_ l: TicketLineState) -> String {
+    switch l.by {
     case "operator": "you"
     case "wakil": "Wakil"
     default: l.by
     }
-    var parts = [who].filter { !$0.isEmpty }
+}
+
+/// Who wrote a record line and when: `you · 2 hours ago`, `agent · …`, `Wakil`, and
+/// `edited by agent` when an agent changed the operator's line.
+public func ticketLineCaption(_ l: TicketLineState, now: Date = Date()) -> String {
+    var parts = [ticketLineWho(l)].filter { !$0.isEmpty }
     let when = editorRelativeAge(l.at, now: now)
     if !when.isEmpty { parts.append(when) }
     if !l.edited.isEmpty { parts.append("edited by \(l.edited)") }

@@ -3,12 +3,12 @@ import WakilKit
 import SwiftUI
 
 /// The editor column's fourth view, **Ticket** (Ticket view, piece 2 of Ticket work): the branch's
-/// ticket header and **Next**, its pull requests with failing checks and open threads, the record's
-/// lists folded under one line, the three non-ticket cases, and every source that could not be read,
+/// ticket header and **Next**, its pull requests with failing checks and open threads, the record as
+/// one list with **+ Add**, the three non-ticket cases, and every source that could not be read,
 /// whole. It decides nothing — the case, every line's words and the thread ⌥↓ steps to come from
 /// WakilKit (`ticketViewCase`, `ticketPRLine`, `ticketThreadRow`, `reviewStep` …) — and every change
 /// is a registry action through `dispatch` (Invariant 2). Its own state is what is being typed, the
-/// fold, and the link field's answer.
+/// + Add menu, and the link field's answer.
 struct EditorTicketView: View {
     let state: EditorTicketViewState
     let column: EditorColumnState
@@ -26,9 +26,9 @@ struct EditorTicketView: View {
     /// The file a thread row or ⌥↓ opens: browsing, so the keyboard stays in the column (Rule 6).
     @Binding var browsed: String?
 
-    /// The record's lists, open under their fold line: the pane's, for the column's life.
-    @State private var recordOpen = false
-    /// The list whose **+** is adding a line, with its focused field (Rule 3).
+    /// The record's **+ Add** menu is open.
+    @State private var picking = false
+    /// The kind + Add is adding a line of, with its focused field (Rule 3).
     @State private var adding: TicketSection?
     @State private var linking = false
     @State private var linkNote: String?
@@ -82,6 +82,12 @@ struct EditorTicketView: View {
             // 2026-10-26); without ⌥ the keys are the scroll view's.
             guard press.modifiers.intersection([.command, .control, .option, .shift]) == .option else { return .ignored }
             step(press.key == .downArrow ? 1 : -1)
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            // Esc closes + Add's menu (a field's own Esc drops its new line).
+            guard picking else { return .ignored }
+            picking = false
             return .handled
         }
         .onChange(of: fieldFocus) { _, now in fieldHasKeyboard = now != nil }
@@ -203,20 +209,28 @@ struct EditorTicketView: View {
     private func inFlightList(_ title: String, _ rows: [InFlightRowState], id: String) -> some View {
         VStack(alignment: .leading, spacing: Space.s) {
             Text(title).microLabel()
-            if rows.isEmpty { Text("None").dimmed() }
+            if rows.isEmpty { Text("None").font(.system(size: 11)).dimmed() }
             ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                 Button {
                     // The row's own root and branch: two rows can carry one key.
                     Task { await dispatch("ticket_show", ["key": .string(r.key), "root": .string(r.root), "branch": .string(r.branch)]) }
                 } label: {
-                    HStack(spacing: Space.s) {
-                        Text(r.key).ticketKey()
-                        Text(r.title).lineLimit(1)
-                        Spacer(minLength: Space.s)
-                        Text(r.status).dimmed()
-                        // Go composes the row's one state in words; it shows as it came.
-                        Text(r.state).foregroundStyle(EditorPaneStyle.amber).lineLimit(1)
+                    // Two lines so a narrow column never breaks the key (walk, 2026-10-27): the key
+                    // whole and the title truncating, then the status pill and Go's state words.
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: Space.s) {
+                            Text(r.key).ticketKey().lineLimit(1).fixedSize()
+                            Text(r.title).font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
+                        }
+                        HStack(spacing: Space.s) {
+                            TicketPill(label: r.status, hue: ticketStatusHue(r.status))
+                            // Go composes the row's one state in words; it shows as it came.
+                            Text(r.state).font(.system(size: 10.5, design: .monospaced)).dimmed()
+                                .lineLimit(1).truncationMode(.tail)
+                        }
                     }
+                    .padding(.vertical, 3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -416,64 +430,103 @@ struct EditorTicketView: View {
 
     // MARK: - The record
 
-    @ViewBuilder
+    /// The record as one list (walk, 2026-10-27): its label and a count of the kinds that hold a
+    /// line, every line together with its kind and who wrote it, and one **+ Add** that asks which
+    /// kind. Empty, it says what the record is for instead of drawing five empty headings.
     private func record(_ r: TicketRecordState) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("Record").microLabel()
-            Button {
-                recordOpen.toggle()
-            } label: {
-                Text(recordOpen ? ticketFoldLine(r).replacingOccurrences(of: "▸", with: "▾") : ticketFoldLine(r))
-                    .font(.system(size: 11)).foregroundStyle(EditorPaneStyle.text.opacity(0.7))
+        let count = ticketRecordCount(r)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Record").microLabel()
+                if let count {
+                    Text(count).font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(EditorPaneStyle.text.opacity(0.7)).lineLimit(1).truncationMode(.tail)
+                }
+            }
+            if count == nil && adding == nil {
+                Text("Nothing noted yet. Decisions, open work and checks you or an agent note on this ticket stay here for the next session.")
+                    .font(.system(size: 11.5)).dimmed().lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(TicketSection.allCases, id: \.self) { section in
+                ForEach(section.lines(r), id: \.id) { line in recordLine(r.key, section, line) }
+            }
+            if let section = adding {
+                // A new line arrives focused (Rule 3), is kept when focus leaves it or on Enter, once
+                // (Rule 2); left empty it goes, and Esc drops it.
+                recordRow(section) {
+                    TicketField(value: "", placeholder: section.placeholder, id: "editor.ticket.new:\(section.rawValue)",
+                                focus: $fieldFocus, arrivesFocused: true, left: { adding = nil },
+                                cancel: { adding = nil }) { text in
+                        adding = nil
+                        write(["key": .string(r.key), "section": .string(section.rawValue), "op": .string("add"),
+                               section.mainField: .string(text)])
+                    }
+                } trailing: { EmptyView() }
+            }
+            Button { picking.toggle() } label: {
+                Text("+ Add").font(.system(size: 11)).foregroundStyle(TicketKindStyle.addText)
+                    .padding(.horizontal, 8).padding(.vertical, 1)
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(EditorPaneStyle.violet.opacity(0.5)))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("editor.ticket.fold")
-        }
-        if recordOpen {
-            ForEach(TicketSection.allCases, id: \.self) { section in recordList(r, section) }
-        }
-    }
-
-    private func recordList(_ r: TicketRecordState, _ section: TicketSection) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(section.title).microLabel()
-                Button { adding = section } label: { Image(systemName: "plus") }
-                    .buttonStyle(.plain).font(.system(size: 10))
-                    .help("Add a line to \(section.title)")
-                    .accessibilityIdentifier("editor.ticket.add:\(section.rawValue)")
-            }
-            ForEach(section.lines(r), id: \.id) { line in recordLine(r.key, section, line) }
-            if adding == section {
-                // A new line arrives focused (Rule 3) and is kept when focus leaves it (Rule 2); left
-                // empty, it goes.
-                TicketField(value: "", placeholder: section.placeholder, id: "editor.ticket.new:\(section.rawValue)",
-                            focus: $fieldFocus, arrivesFocused: true, left: { adding = nil }) { text in
-                    adding = nil
-                    write(["key": .string(r.key), "section": .string(section.rawValue), "op": .string("add"),
-                           section.mainField: .string(text)])
-                }
-            }
+            .help("Note a decision, open work, a wait, a check or a ruling on this ticket")
+            .padding(.top, count == nil ? 4 : 2)
+            .accessibilityIdentifier("editor.ticket.add")
+            if picking { kindMenu }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("editor.ticket.list:\(section.rawValue)")
+        .accessibilityIdentifier("editor.ticket.record")
+    }
+
+    /// The kinds + Add offers; picking one opens its focused field (Rule 3), Esc closes it.
+    private var kindMenu: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(TicketSection.allCases, id: \.self) { section in
+                Button {
+                    picking = false
+                    adding = section
+                } label: {
+                    Text(section.kind).font(.system(size: 12))
+                        .padding(.horizontal, 10).padding(.vertical, 3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .modifier(TicketRowTint(selected: false))
+                .accessibilityIdentifier("editor.ticket.add:\(section.rawValue)")
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(width: 170, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(TicketKindStyle.menu))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(EditorPaneStyle.text.opacity(0.12)))
+        .padding(.top, 2)
+    }
+
+    /// One row of the record: its kind in the label column, then `content`, then `trailing`.
+    private func recordRow(_ section: TicketSection, @ViewBuilder _ content: () -> some View,
+                           @ViewBuilder trailing: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text(section.kind).font(.system(size: 9, weight: .semibold)).tracking(1.44).textCase(.uppercase)
+                .foregroundStyle(TicketKindStyle.colour(section))
+                .frame(width: 64, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 1) { content() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            trailing()
+        }
+        .padding(.vertical, 3)
     }
 
     /// One line: its fields editable and kept on blur, removable without a question (Rule 1: the
-    /// record's log keeps it), and who wrote it when.
+    /// record's log keeps it), and who wrote it — when, and any edit, under the pointer.
     private func recordLine(_ key: String, _ section: TicketSection, _ line: TicketLineState) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                TicketField(value: line.value(section.mainField), placeholder: section.placeholder,
-                            id: "editor.ticket.line:\(section.rawValue):\(line.id)", focus: $fieldFocus) { now in
-                    edit(key, section, line, field: section.mainField, now)
-                }
-                Button { write(["key": .string(key), "section": .string(section.rawValue), "op": .string("remove"),
-                                "id": .string(line.id)]) } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).font(.system(size: 9)).opacity(0.6)
-                    .help("Remove this line (the record's log keeps it)")
-                    .accessibilityIdentifier("editor.ticket.remove:\(section.rawValue):\(line.id)")
+        recordRow(section) {
+            TicketField(value: line.value(section.mainField), placeholder: section.placeholder,
+                        id: "editor.ticket.line:\(section.rawValue):\(line.id)", focus: $fieldFocus) { now in
+                edit(key, section, line, field: section.mainField, now)
             }
             if let second = section.secondField {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
@@ -482,11 +535,19 @@ struct EditorTicketView: View {
                                 id: "editor.ticket.line:\(section.rawValue):\(line.id):\(second.field)", focus: $fieldFocus) { now in
                         edit(key, section, line, field: second.field, now)
                     }
+                    .font(.system(size: 11))
                 }
-                .padding(.leading, Space.m)
             }
-            Text(ticketLineCaption(line)).dimmed().font(.system(size: 10))
+        } trailing: {
+            Text(ticketLineWho(line)).font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.45)).lineLimit(1).fixedSize()
+                .help(ticketLineCaption(line))
                 .accessibilityIdentifier("editor.ticket.by:\(section.rawValue):\(line.id)")
+            Button { write(["key": .string(key), "section": .string(section.rawValue), "op": .string("remove"),
+                            "id": .string(line.id)]) } label: { Image(systemName: "xmark") }
+                .buttonStyle(.plain).font(.system(size: 9)).opacity(0.6)
+                .help("Remove this line (the record's log keeps it)")
+                .accessibilityIdentifier("editor.ticket.remove:\(section.rawValue):\(line.id)")
         }
     }
 
@@ -543,17 +604,18 @@ struct EditorTicketView: View {
     }
 }
 
-/// The record's five lists, with the field each line leads with and the one under it.
+/// The record's five kinds, with the field each line leads with and the one under it.
 enum TicketSection: String, CaseIterable {
     case decisions, notDone, waitingOn, verified, rulings
 
-    var title: String {
+    /// The kind one line is, as its row and + Add's menu name it.
+    var kind: String {
         switch self {
-        case .decisions: "Decisions"
+        case .decisions: "Decision"
         case .notDone: "Not done"
         case .waitingOn: "Waiting on"
         case .verified: "Verified"
-        case .rulings: "Rulings"
+        case .rulings: "Ruling"
         }
     }
 
@@ -612,16 +674,25 @@ private struct TicketField: View {
     var focus: FocusState<String?>.Binding
     var arrivesFocused = false
     var left: () -> Void = {}
+    /// Esc drops what was typed, unsent, when given; without it Esc is not the field's.
+    var cancel: (() -> Void)?
     let commit: (String) -> Void
 
     @State private var text = ""
     @State private var commits = TicketFieldCommits()
+    @State private var cancelled = false
 
     var body: some View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
             .focused(focus, equals: id)
             .onSubmit { send(leaving: false) }
+            .onKeyPress(.escape) {
+                guard let cancel else { return .ignored }
+                cancelled = true
+                cancel()
+                return .handled
+            }
             .onChange(of: text) { commits.edited() }
             .onAppear {
                 text = value
@@ -636,6 +707,7 @@ private struct TicketField: View {
 
     /// Once per edit: Enter then leaving sends the text once (`TicketFieldCommits`).
     private func send(leaving: Bool) {
+        guard !cancelled else { return }
         if let now = commits.commit(text, value: value) { commit(now) }
         if leaving { left() }
     }
@@ -682,6 +754,21 @@ private struct TicketPill: View {
         .padding(.horizontal, 7).padding(.vertical, 1)
         .overlay(Capsule().strokeBorder(EditorPaneStyle.text.opacity(0.14)))
         .opacity(0.85)
+    }
+}
+
+/// The record's hues: a kind that waits (Not done, Waiting on) in §5's amber, Verified in its
+/// green, the rest neutral; + Add's violet text and its menu's surface.
+private enum TicketKindStyle {
+    static let addText = Color(red: 0xcf / 255, green: 0xc3 / 255, blue: 0xff / 255)
+    static let menu = Color(red: 0x0e / 255, green: 0x10 / 255, blue: 0x19 / 255)
+
+    static func colour(_ s: TicketSection) -> Color {
+        switch s {
+        case .notDone, .waitingOn: EditorPaneStyle.amber.opacity(0.9)
+        case .verified: Color(TerminalPalette.green).opacity(0.9)
+        case .decisions, .rulings: EditorPaneStyle.text.opacity(0.45)
+        }
     }
 }
 

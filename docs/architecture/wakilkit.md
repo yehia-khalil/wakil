@@ -248,7 +248,7 @@ The `editor` kind (3b-i; the left column, search and find from 3b-ii):
   repo and root, `ReviewCommentState`, `TicketRecordState`, `TicketLineState`, `InFlightState`,
   `SourceNoteState`) and the view's pure decisions: `ticketBy` (who wrote a record line, from the
   dispatch's origin), `ticketFollowedRoot`, `ticketStale` (60 s), `ticketWaitingOn`, `ticketNext`,
-  `ticketFoldLine`, `reviewOpenThreads`, `reviewStep`, `reviewPosition` and the reply's plane statement.
+  `ticketRecordCount`, `ticketLineWho`, `reviewOpenThreads`, `reviewStep`, `reviewPosition` and the reply's plane statement.
 - `EditorTicketStore.swift` — `EditorTicketStore`, the window's ticket reads per (root, branch): one in
   flight per pair, cancelled past 20 s, dropped by generation after an org switch (`reset`), with the
   review drafts and the sends in flight beside them.

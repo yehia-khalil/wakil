@@ -23,8 +23,9 @@
 {"expect":{"frame":"editor.ticket.pr:212","inside":"editor.ticket","maxHeight":20}}
 {"expect":{"frame":"editor.ticket.thread:T_1","inside":"editor.ticket","maxHeight":24}}
 {"expect":{"frame":"editor.ticket.thread:T_1","clear":"editor.ticket.thread:T_2"}}
-{"expect":{"frame":"editor.ticket.fold","inside":"editor.ticket","maxHeight":24}}
-{"do":{"click":"editor.ticket.fold"}}
+{"expect":{"frame":"editor.ticket.record","inside":"editor.ticket"}}
+{"expect":{"frame":"editor.ticket.add","inside":"editor.ticket","maxHeight":24}}
+{"do":{"click":"editor.ticket.add"}}
 {"expect":{"tree":"contains","text":"Tokens live in the Keychain"}}
 {"expect":{"frame":"editor.ticket.add:notDone","inside":"editor.ticket"}}
 {"expect":{"frame":"editor.ticket.line:decisions:d1","inside":"editor.ticket","minWidth":60}}
