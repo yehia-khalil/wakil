@@ -40,6 +40,9 @@ private let orgDerived: Set<String> = [
     "browserSites", "browserAllowedOnScreen", "browserCloseArm",
     // 3c-iii: the ★ menu's bookmarks are the drawn org's, re-read from the store after the switch.
     "browserBookmarksOnScreen",
+    // 3d-i: the groups asked a name for, and the requests in flight, are the outgoing org's places';
+    // `invalidateForOrgChange` empties both, and the quick-tasks generation drops a late reply.
+    "browserNamingAsked", "browserNamingTasks",
     // 3b-v: the settings in force include the active project's tabs, so they follow the org.
     "editorSettings",
     // 3b-viii: the quick tasks route to the org's providers on its credentials, and each pane's

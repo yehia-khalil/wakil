@@ -2307,6 +2307,11 @@ public final class WindowModel {
         clearBrowserCloseArm()
         browserAllowedOnScreen = []
         browserBookmarksOnScreen = []
+        // 3d-i ruling 12: a group asked about in the outgoing organisation is another's; a reply in
+        // flight is dropped by the generation bumped above.
+        browserNamingAsked = []
+        for task in browserNamingTasks.values { task.cancel() }
+        browserNamingTasks = [:]
         // The store's copy for the outgoing org goes too: coming back before a re-read must not
         // price from a list that may be stale (`organization` still names the outgoing org here).
         if !organization.isEmpty { await panes.browserSetSites(org: organization, .unread) }
@@ -2688,6 +2693,8 @@ public final class WindowModel {
         } else if returning {
             await catchUpReturnedCanvas()
         }
+        // Ruling 14: the canvas shown takes the pins added, and drops the ones removed, while it was away.
+        await browserReconcilePins()
         layoutActivating = false
         let waiters = layoutSwapWaiters
         layoutSwapWaiters = []
@@ -2746,6 +2753,7 @@ public final class WindowModel {
         layoutSwapInFlight = outerSwap
         await readLayoutSnapshot()
         await refreshPanes()
+        await browserReconcilePins()
     }
 
     // MARK: Controls
@@ -5862,11 +5870,101 @@ public final class WindowModel {
     /// `scope` is not the place on screen.
     public func browserPageDidReport(scope: LayoutScope, pane: String, tab: String, _ report: BrowserPageReport) async {
         guard await browserScopeIsShown(scope) else { return }
-        let before = browser(pane)?.tabs.first { $0.id == tab }
+        let shown = browser(pane)
+        let before = shown?.tabs.first { $0.id == tab }
         await panes.browserPageDidReport(paneId: pane, tab: tab, report)
         await refreshBrowser(pane: pane)
-        if before?.url != report.url || before?.title != report.title { scheduleBrowserTabsWrite(pane: pane) }
+        // A finished load may have moved tabs into, out of or between groups (the site rule): saved too.
+        let after = browser(pane)
+        let regrouped = shown?.groups != after?.groups
+            || shown?.tabs.map { [$0.id, $0.group ?? ""] } != after?.tabs.map { [$0.id, $0.group ?? ""] }
+        if before?.url != report.url || before?.title != report.title || regrouped {
+            scheduleBrowserTabsWrite(pane: pane)
+        }
         recordVisit(scope: scope, before: before, report)
+        nameDueGroups(scope: scope, pane: pane)
+    }
+
+    // MARK: 3d-i: groups named by the quick model, pins of the place shown
+
+    /// The groups the window has asked a name for this launch (ruling 12: once per group), each
+    /// `<place>/<pane>/<group>`: pane and group ids repeat from place to place. Emptied on an
+    /// organisation change.
+    @ObservationIgnored var browserNamingAsked: Set<String> = []
+    /// The naming requests in flight, by the same key; ended on an organisation change.
+    @ObservationIgnored private var browserNamingTasks: [String: Task<Void, Never>] = [:]
+
+    /// Ruling 12: asks the `respond` quick task to name each of `pane`'s due groups (automatic,
+    /// unnamed, two titled tabs) not asked before — only when `nameGroups` is on and a provider is
+    /// built. The model is sent titles only. The reply lands only while `scope` is still the place
+    /// shown and the quick tasks are the ones asked (`quickTasksGeneration`), and then only on a
+    /// group still automatic and unnamed (`PaneStore.browserNameGroup`). A model failure is kept by
+    /// `QuickTasks`; a reply that does not parse is recorded there whole.
+    private func nameDueGroups(scope: LayoutScope, pane: String) {
+        guard browserSettings.nameGroups, let tasks = quickTasks, let s = browser(pane) else { return }
+        let generation = quickTasksGeneration
+        let place = [scope.project, scope.environment, scope.lineageRoot ?? ""].joined(separator: "\u{1F}")
+        for group in BrowserGroupNames.due(s) {
+            let key = "\(place)/\(pane)/\(group)"
+            guard browserNamingAsked.insert(key).inserted else { continue }
+            let request = BrowserGroupNames.request(titles: BrowserGroupNames.titles(of: group, in: s))
+            browserNamingTasks[key] = Task { [weak self] in
+                defer { self?.browserNamingTasks[key] = nil }
+                guard let reply = try? await tasks.respond(request) else { return }
+                let name: String
+                do { name = try BrowserGroupNames.parse(reply) } catch {
+                    await tasks.recordFailure("\(error)", for: .respond)
+                    return
+                }
+                guard let self, !Task.isCancelled, generation == self.quickTasksGeneration,
+                      await self.browserScopeIsShown(scope), generation == self.quickTasksGeneration,
+                      await self.panes.browserNameGroup(paneId: pane, group: group, name: name) else { return }
+                await self.refreshBrowser(pane: pane)
+                self.scheduleBrowserTabsWrite(pane: pane)
+            }
+        }
+    }
+
+    /// TEST-ONLY: waits for the naming requests in flight.
+    func settleBrowserNaming() async {
+        while let task = browserNamingTasks.values.first { await task.value }
+    }
+
+    /// Ruling 14's full reconcile of every browser pane on the canvas shown with its project's pins,
+    /// read off the main actor from the place's own organisation (`browserOrgFiles(for:)`) — never the
+    /// context's, which may be another place mid-switch. An unreadable file removes nothing (its reason
+    /// goes on each pane); a pane left with no tab closes, as closing its last tab does. A pane the
+    /// store holds nothing for yet waits for its own restore, which reconciles it.
+    func browserReconcilePins() async {
+        guard let scope = browserScope, !scope.project.isEmpty, let files = browserOrgFiles(for: scope) else { return }
+        let browsers = layoutSnapshot.panes.filter { $0.kind == "browser" }.map(\.id)
+        guard !browsers.isEmpty else { return }
+        let project = scope.project
+        let pins = await Task.detached { () -> Result<[BrowserPin], BrowserPinsUnreadable> in
+            do { return .success(try files.pins(project: project)) }
+            catch let error as BrowserPinsUnreadable { return .failure(error) }
+            catch { return .failure(BrowserPinsUnreadable(reason: error.localizedDescription)) }
+        }.value
+        var changed = false
+        for pane in browsers {
+            guard await browserScopeIsShown(scope) else { break }
+            guard await panes.holds(BrowserPaneKind.self, pane) else { continue }
+            let before = await panes.browserSnapshot(paneId: pane)
+            if await panes.browserReconcilePins(paneId: pane, pins: pins) == 0 {
+                try? await layout.close(id: pane)
+                await panes.drop(paneId: pane)
+                changed = true
+                continue
+            }
+            let s = await panes.browserSnapshot(paneId: pane)
+            if s.tabs != before.tabs || s.groups != before.groups {
+                await layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active, groups: s.groups,
+                                            columnHidden: s.tabColumnHidden)
+                changed = true
+            }
+        }
+        if changed { await refreshLayout() }
+        await refreshPanes()
     }
 
     /// 3c-iii ruling 1: a finished load without a failure is a visit, and so is a new address on a

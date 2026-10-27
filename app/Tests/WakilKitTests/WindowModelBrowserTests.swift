@@ -6,7 +6,8 @@ import Testing
 /// browser's), its start page blank. `journal` is its registry's journal file.
 @MainActor
 private func browserWindow(
-    orgFiles: BrowserOrgFiles? = nil, removeData: BrowserDataRemover? = nil
+    orgFiles: BrowserOrgFiles? = nil, removeData: BrowserDataRemover? = nil,
+    context: (any ToolCaller)? = nil, quickModel: (any QuickModel)? = nil
 ) async -> (WindowModel, FakeFiles, LayoutStore, journal: URL, panes: PaneStore) {
     let journalDir = testScratchRoot.appendingPathComponent("browser-window-\(UUID().uuidString)")
     let registry = ActionRegistry(journalDirectory: journalDir, sessionId: "browser-window")
@@ -18,13 +19,14 @@ private func browserWindow(
         into: registry, layout: layout, panes: panes, unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes))
     let model = WindowModel(
         registry: registry, panes: panes, layout: layout, persistence: nil,
-        context: ContextStore(client: GitRootsContext(roots: ["/p/api"])),
+        context: ContextStore(client: context ?? GitRootsContext(roots: ["/p/api"])),
         harnessFactory: { _, _, _ in nil }, resumes: ResumeBroker(),
         rootPath: "/tmp", providerId: "",
         lookupFactory: { _ in EditorWindowLookup() },
         rootWatcher: nil, editorRootWatcher: RecordingRootWatcher(), fileLists: fileLists, gitStatus: nil,
         paletteClients: PaletteClients(files: fileLists), placeClients: nil,
-        agentSocketFactory: { _, _ in NoAgentSocket() }, quickModelFactory: nil)
+        agentSocketFactory: { _, _ in NoAgentSocket() },
+        quickModelFactory: quickModel.map { model in { @Sendable _, _ in model } })
     await registerEditorActions(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
         gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })
@@ -676,6 +678,307 @@ private func browserWindow(
         #expect(model.browser(pane)?.active == model.browser(pane)?.tabs[0].id, "wraps to the first")
         #expect(await model.browserKey(.tab(9)))
         #expect(model.browser(pane)?.active == model.browser(pane)?.tabs[1].id)
+    }
+}
+
+// MARK: - 3d-i Task 10: groups named by the quick model, pins of the place shown
+
+/// `get_context` for organisation `acme` and a project that can be switched, and a `config_tree` with
+/// one local quick provider serving `respond` (`WindowModelCommitDraftTests`' shape).
+private actor NamingContext: ToolCaller {
+    private var project = "alpha"
+    func switchTo(project: String) { self.project = project }
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        switch name {
+        case "get_context":
+            return .object(["structuredContent": .object([
+                "Org": .string("acme"), "Environment": .string("staging"),
+                "Project": .object(["name": .string(project)]), "RootPaths": .array([]),
+            ])])
+        case "config_tree":
+            return .object(["structuredContent": .object([
+                "org": .object(["id": .string("acme"), "quickProvider": .string("qwen")]),
+                "providers": .array([.object(["id": .string("qwen"), "kind": .string("local"),
+                                              "baseURL": .string("http://127.0.0.1:8012"),
+                                              "serves": .array([.string("respond")])])]),
+                "projects": .array([]),
+            ])])
+        default:
+            return .object(["structuredContent": .object([:])])
+        }
+    }
+}
+
+/// Answers `respond` with `reply`, held until `release()` when `gated`; counts and keeps every input.
+private actor NamingModel: QuickModel {
+    nonisolated let serves: Set<QuickOperation> = [.respond]
+    let reply: String
+    private var open: Bool
+    private(set) var inputs: [String] = []
+    init(reply: String, gated: Bool = false) {
+        self.reply = reply
+        open = !gated
+    }
+    func infill(_ r: InfillRequest) async throws -> String { "" }
+    func respond(_ r: RespondRequest) async throws -> String {
+        inputs.append(r.input)
+        for _ in 0..<10_000 where !open { try await Task.sleep(nanoseconds: 1_000_000) }
+        return reply
+    }
+    func release() { open = true }
+    /// Waits (up to 5 s) for the first request.
+    func waitUntilAsked() async {
+        for _ in 0..<5_000 where inputs.isEmpty { try? await Task.sleep(nanoseconds: 1_000_000) }
+    }
+    func shutdown() async {}
+}
+
+@Suite @MainActor struct WindowModelBrowserNamingTests {
+    /// A window in project `alpha` of `acme` with quick tasks built on `model`, and one browser pane of
+    /// two loose tabs on `docs.example.com`, neither loaded yet.
+    private func twoTabsOneSite(_ model: NamingModel, context: NamingContext = NamingContext())
+        async throws -> (WindowModel, String, LayoutStore, PaneStore)
+    {
+        let (window, _, layout, _, panes) = await browserWindow(context: context, quickModel: model)
+        window.browserTabsDelay = .milliseconds(1)
+        await window.refreshContext()
+        await window.rebuildQuickTasks()
+        await window.dispatchFromSurface("browser_open", .object(["url": .string("https://docs.example.com/std")]))
+        await window.refreshLayout()
+        let pane = try #require(window.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
+        await window.dispatchFromSurface("browser_new_tab", .object(["pane": .string(pane),
+                                                                     "url": .string("https://docs.example.com/book")]))
+        await window.refreshPanes()
+        return (window, pane, layout, panes)
+    }
+
+    /// Tab `tab` of `pane` finishing a load of `url` titled `title`: loading, then done.
+    private func load(_ window: WindowModel, _ pane: String, _ tab: String, _ url: String, _ title: String) async throws {
+        let scope = try #require(window.browserScope)
+        for loading in [true, false] {
+            await window.browserPageDidReport(scope: scope, pane: pane, tab: tab, BrowserPageReport(
+                url: url, title: title, isLoading: loading, progress: loading ? 0.5 : 1, canGoBack: false,
+                canGoForward: false, failure: nil))
+        }
+    }
+
+    /// Both tabs loaded with titles: the site rule forms their group, which is then due a name.
+    private func formGroup(_ window: WindowModel, _ pane: String) async throws -> String {
+        try await load(window, pane, "t1", "https://docs.example.com/std", "Rust std library")
+        try await load(window, pane, "t2", "https://docs.example.com/book", "The Rust Book")
+        return try #require(window.browser(pane)?.groups.first?.id)
+    }
+
+    @Test func aReportThatRegroupsTabsIsSaved() async throws {
+        let (window, pane, layout, _) = try await twoTabsOneSite(NamingModel(reply: #"{"name":"x"}"#))
+        window.browserSettings.nameGroups = false
+        let scope = try #require(window.browserScope)
+        for tab in ["t1", "t2"] {   // titles and addresses first, so only the grouping changes below
+            await window.browserPageDidReport(scope: scope, pane: pane, tab: tab, BrowserPageReport(
+                url: "https://docs.example.com/\(tab)", title: tab, isLoading: true, progress: 0.5,
+                canGoBack: false, canGoForward: false, failure: nil))
+        }
+        await window.settleBrowserTabsWrite(pane: pane)
+        #expect(await layout.browserTabs(id: pane)?.groups.isEmpty == true)
+        await window.browserPageDidReport(scope: scope, pane: pane, tab: "t1", BrowserPageReport(
+            url: "https://docs.example.com/t1", title: "t1", isLoading: false, progress: 1,
+            canGoBack: false, canGoForward: false, failure: nil))
+        #expect(window.browser(pane)?.groups.count == 1, "the site rule formed the group")
+        await window.settleBrowserTabsWrite(pane: pane)
+        #expect(await layout.browserTabs(id: pane)?.groups.count == 1, "and the layout saved it")
+    }
+
+    @Test func aFormedGroupIsNamedByTheQuickTask() async throws {
+        let model = NamingModel(reply: #"{"name":"Rust docs"}"#)
+        let (window, pane, layout, _) = try await twoTabsOneSite(model)
+        let group = try await formGroup(window, pane)
+        await window.settleBrowserNaming()
+        let named = try #require(window.browser(pane)?.groups.first { $0.id == group })
+        #expect(named.name == "Rust docs")
+        #expect(named.named)
+        let input = try #require(await model.inputs.first)
+        #expect(input.contains("Rust std library") && input.contains("The Rust Book"))
+        #expect(!input.contains("example.com") && !input.contains("https"), "titles only, never addresses")
+        await window.settleBrowserTabsWrite(pane: pane)
+        #expect(await layout.browserTabs(id: pane)?.groups.first?.name == "Rust docs", "and saved")
+    }
+
+    @Test func namingIsAskedOncePerGroup() async throws {
+        let model = NamingModel(reply: "no name here")   // stays unnamed, so still due
+        let (window, pane, _, _) = try await twoTabsOneSite(model)
+        _ = try await formGroup(window, pane)
+        await window.settleBrowserNaming()
+        try await load(window, pane, "t1", "https://docs.example.com/std", "Rust std library, again")
+        try await load(window, pane, "t2", "https://docs.example.com/book", "The Rust Book, again")
+        await window.settleBrowserNaming()
+        #expect(await model.inputs.count == 1)
+    }
+
+    @Test func namingOffKeepsTheSiteName() async throws {
+        let model = NamingModel(reply: #"{"name":"Rust docs"}"#)
+        let (window, pane, _, _) = try await twoTabsOneSite(model)
+        window.browserSettings.nameGroups = false
+        let group = try await formGroup(window, pane)
+        await window.settleBrowserNaming()
+        #expect(await model.inputs.isEmpty)
+        let kept = try #require(window.browser(pane)?.groups.first { $0.id == group })
+        #expect(kept.name == "Example" && !kept.named)
+    }
+
+    @Test func aReplyThatDoesNotParseReachesTheStatus() async throws {
+        let (window, pane, _, _) = try await twoTabsOneSite(NamingModel(reply: "I think: Rust"))
+        let group = try await formGroup(window, pane)
+        await window.settleBrowserNaming()
+        let errors = await window.quickTaskStatus().errors
+        #expect(errors.values.contains("the model's reply was not a group name: I think: Rust"))
+        #expect(window.browser(pane)?.groups.first { $0.id == group }?.named == false)
+    }
+
+    @Test func aLateNameNeverOverwritesTheOperatorsName() async throws {
+        let model = NamingModel(reply: #"{"name":"Rust docs"}"#, gated: true)
+        let (window, pane, _, _) = try await twoTabsOneSite(model)
+        let group = try await formGroup(window, pane)
+        await model.waitUntilAsked()
+        await window.dispatchFromSurface("browser_group", .object([
+            "pane": .string(pane), "action": .string("rename"), "group": .string(group), "name": .string("Mine")]))
+        await model.release()
+        await window.settleBrowserNaming()
+        await window.refreshPanes()
+        #expect(window.browser(pane)?.groups.first { $0.id == group }?.name == "Mine")
+    }
+
+    @Test func aNameForADissolvedGroupIsDropped() async throws {
+        let model = NamingModel(reply: #"{"name":"Rust docs"}"#, gated: true)
+        let (window, pane, _, _) = try await twoTabsOneSite(model)
+        _ = try await formGroup(window, pane)
+        await model.waitUntilAsked()
+        await window.dispatchFromSurface("browser_close_tab", .object(["pane": .string(pane), "tab": .string("t2")]))
+        await window.refreshPanes()
+        #expect(window.browser(pane)?.groups.isEmpty == true, "an automatic group dissolves at one")
+        await model.release()
+        await window.settleBrowserNaming()
+        await window.refreshPanes()
+        #expect(window.browser(pane)?.groups.isEmpty == true)
+        #expect(window.browser(pane)?.tabs.map(\.group) == [nil])
+    }
+
+    @Test func aNameAfterASwitchIsDropped() async throws {
+        let model = NamingModel(reply: #"{"name":"Rust docs"}"#, gated: true)
+        let context = NamingContext()
+        let (window, pane, layout, _) = try await twoTabsOneSite(model, context: context)
+        let group = try await formGroup(window, pane)
+        await model.waitUntilAsked()
+        // Project beta holds a pane of the same id with the same unnamed group, restored as a relaunch would.
+        await window.settleBrowserTabsWrite(pane: pane)
+        await window.refreshLayout()
+        let alphaPane = try #require(window.layoutSnapshot.panes.first { $0.id == pane })
+        await layout.load(LayoutSnapshot(panes: [alphaPane]), for: LayoutScope(
+            organization: "acme", project: "beta", environment: "staging"))
+        await context.switchTo(project: "beta")
+        await window.refreshContext()
+        #expect(window.browserScope?.project == "beta")
+        await window.dispatchFromSurface("browser_restore", .object(["pane": .string(pane)]))
+        await window.refreshPanes()
+        #expect(window.browser(pane)?.groups.first { $0.id == group }?.named == false)
+        await model.release()
+        await window.settleBrowserNaming()
+        await window.refreshPanes()
+        let beta = try #require(window.browser(pane)?.groups.first { $0.id == group })
+        #expect(beta.name == "Example" && !beta.named, "another place's reply never lands in this one's group")
+        await context.switchTo(project: "alpha")
+        await window.refreshContext()
+        let kept = try #require(window.browser(pane)?.groups.first { $0.id == group })
+        #expect(kept.name == "Example" && !kept.named, "the reply landed while another place was shown")
+    }
+
+    // MARK: Pins of the place shown
+
+    /// A window with a home in project `alpha` of `acme`, its actions reading the same organisation's files.
+    private func pinnedWindow(_ context: NamingContext) async throws -> (WindowModel, LayoutStore, BrowserOrgFiles) {
+        let home = testScratchRoot.appendingPathComponent(UUID().uuidString)
+        let files = try BrowserOrgFiles(home: home, org: "acme")
+        let (window, _, layout, _, _) = await browserWindow(orgFiles: files, context: context)
+        window.browserHome = home
+        await window.refreshContext()
+        return (window, layout, files)
+    }
+
+    private func pin(_ id: String, _ url: String) -> BrowserPin { BrowserPin(id: id, kind: .tab, url: url, title: id) }
+
+    private func pinIds(_ window: WindowModel, _ pane: String) -> Set<String> {
+        Set(window.browser(pane)?.tabs.compactMap(\.pin) ?? [])
+    }
+
+    private func show(_ window: WindowModel, _ context: NamingContext, _ project: String) async {
+        await context.switchTo(project: project)
+        await window.refreshContext()
+    }
+
+    @Test func pinsAreReadForThePlaceShownOnly() async throws {
+        let context = NamingContext()
+        let (window, layout, files) = try await pinnedWindow(context)
+        try files.setPins([pin("pa1", "https://a.example.com/")], project: "alpha")
+        try files.setPins([pin("pb1", "https://b.example.com/")], project: "beta")
+        await window.dispatchFromSurface("browser_open", .object(["url": .string("https://example.com/")]))
+        await window.refreshLayout()
+        let pane = try #require(window.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
+        #expect(pinIds(window, pane) == ["pa1"])
+        // Project beta holds a browser pane of the same id, restored as a relaunch restores it.
+        let alphaPane = try #require(window.layoutSnapshot.panes.first { $0.id == pane })
+        let beta = LayoutScope(organization: "acme", project: "beta", environment: "staging")
+        await layout.load(LayoutSnapshot(panes: [alphaPane]), for: beta)
+        await show(window, context, "beta")
+        #expect(window.browserScope == beta)
+        await window.dispatchFromSurface("browser_restore", .object(["pane": .string(pane)]))
+        await window.refreshPanes()
+        #expect(pinIds(window, pane) == ["pb1"])
+        // Both projects pin more while away; each canvas shown takes its own file's only.
+        try files.setPins([pin("pa1", "https://a.example.com/"), pin("pa2", "https://a2.example.com/")],
+                          project: "alpha")
+        try files.setPins([pin("pb1", "https://b.example.com/"), pin("pb2", "https://b2.example.com/")],
+                          project: "beta")
+        await show(window, context, "alpha")
+        #expect(pinIds(window, pane) == ["pa1", "pa2"])
+        await show(window, context, "beta")
+        #expect(pinIds(window, pane) == ["pb1", "pb2"])
+    }
+
+    @Test func showingACanvasReconcilesItsPins() async throws {
+        let context = NamingContext()
+        let (window, layout, files) = try await pinnedWindow(context)
+        try files.setPins([pin("pa1", "https://a.example.com/")], project: "alpha")
+        await window.dispatchFromSurface("browser_open", .object(["url": .string("https://example.com/")]))
+        await window.refreshLayout()
+        let pane = try #require(window.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
+        #expect(pinIds(window, pane) == ["pa1"])
+        await show(window, context, "beta")
+        try files.setPins([pin("pa2", "https://a2.example.com/")], project: "alpha")
+        await show(window, context, "alpha")
+        #expect(pinIds(window, pane) == ["pa2"], "the pin added came in, the one removed went")
+        #expect(await layout.browserTabs(id: pane)?.tabs.compactMap(\.pin) == ["pa2"], "and the layout saved it")
+        // An unreadable file removes nothing, and says why on the pane.
+        await show(window, context, "beta")
+        try Data("{".utf8).write(to: files.pinsURL(project: "alpha"))
+        await show(window, context, "alpha")
+        #expect(pinIds(window, pane) == ["pa2"])
+        #expect(window.browser(pane)?.pinsError != nil)
+    }
+
+    @Test func aCanvasShownWithNoTabLeftClosesThePane() async throws {
+        let context = NamingContext()
+        let (window, _, files) = try await pinnedWindow(context)
+        try files.setPins([pin("pa1", "https://a.example.com/")], project: "alpha")
+        await window.dispatchFromSurface("browser_open", .object(["url": .string("https://example.com/")]))
+        await window.refreshLayout()
+        let pane = try #require(window.layoutSnapshot.panes.first { $0.kind == "browser" }?.id)
+        let unpinned = try #require(window.browser(pane)?.tabs.first { $0.pin == nil }?.id)
+        await window.dispatchFromSurface("browser_close_tab", .object(["pane": .string(pane), "tab": .string(unpinned)]))
+        await window.refreshPanes()
+        #expect(pinIds(window, pane) == ["pa1"] && window.browser(pane)?.tabs.count == 1)
+        await show(window, context, "beta")
+        try files.setPins([], project: "alpha")
+        await show(window, context, "alpha")
+        #expect(!window.layoutSnapshot.panes.contains { $0.id == pane }, "its last tab went, and the pane with it")
     }
 }
 
