@@ -14,6 +14,7 @@ import WebKit
 /// - `.notShown` unless the screen's place is one of `org`'s and the tab has a live web view there;
 /// - `.siteChanged` unless the live view's URL has the asked site key;
 /// - `.failed(noPressReason)` unless the key's list is open on that tab — no fill without a press;
+/// - `.insecure` when the page or the pressed field's origin is http on a site that is not local;
 /// - and, in the page, `moved` when `location.origin` is not the origin of the field the key was
 ///   pressed in (ruling 13), `nofield` when there is no field.
 ///
@@ -34,7 +35,8 @@ final class BrowserPasswordAgent: BrowserPasswordPage, @unchecked Sendable {
         let (view, origin, key) = try await MainActor.run { try self.target(pane: pane, tab: tab, org: org, site: site) }
         try await run(view, BrowserPasswordScript.suggestCall, ["origin": origin, "password": password])
         // A form sent with it is saved with no bar (ruling 7).
-        await MainActor.run { self.host?.pendingSuggestion[key] = password }
+        let suggestion = BrowserPasswordSuggestion(site: site, password: password)
+        await MainActor.run { self.host?.pendingSuggestion[key] = suggestion }
     }
 
     /// The tab's live web view on the screen's place, on `site`, with the key's list open: the view,
@@ -53,14 +55,18 @@ final class BrowserPasswordAgent: BrowserPasswordPage, @unchecked Sendable {
         }
         // The press was on another site's document: the page has moved since.
         guard BrowserPasswords.siteKey(origin) == site else { throw BrowserPasswordPageError.siteChanged(now: now) }
+        // A login saved on https never goes into the same site's http page (local servers aside).
+        guard BrowserPasswords.fillsOn(view.url?.absoluteString ?? ""), BrowserPasswords.fillsOn(origin) else {
+            throw BrowserPasswordPageError.insecure
+        }
         return (view, origin, key)
     }
 
-    /// The tab's site key as Wakil reads it from the view's URL, or the URL itself when it has none.
+    /// The tab's site key as Wakil reads it from the view's URL, or a fixed phrase when it has none —
+    /// never the URL, which reaches the journal.
     @MainActor
     private static func site(of view: WKWebView) -> String {
-        let url = view.url?.absoluteString ?? ""
-        return BrowserPasswords.siteKey(url) ?? (url.isEmpty ? "a blank tab" : url)
+        BrowserPasswords.siteLabel(view.url?.absoluteString ?? "")
     }
 
     /// Runs a fixed call in the page's `wakil.passwords` world with `arguments` as values; answered by

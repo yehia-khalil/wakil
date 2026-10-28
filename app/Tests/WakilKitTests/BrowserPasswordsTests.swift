@@ -84,6 +84,47 @@ import Testing
         #expect(offer() == .askSave)
     }
 
+    @Test func onlyASecureOrLocalPageIsFilled() {
+        #expect(BrowserPasswords.fillsOn("https://example.com/login"))
+        #expect(BrowserPasswords.fillsOn("HTTPS://www.example.com:8443/"))
+        #expect(!BrowserPasswords.fillsOn("http://example.com/login"))
+        #expect(!BrowserPasswords.fillsOn("http://www.example.com:8080/"))
+        #expect(BrowserPasswords.fillsOn("http://127.0.0.1:8123/login.html"))
+        #expect(BrowserPasswords.fillsOn("http://localhost:8123/"))
+        #expect(BrowserPasswords.fillsOn("http://app.localhost/"))
+        #expect(BrowserPasswords.fillsOn("http://wakil.test/"))
+        #expect(BrowserPasswords.fillsOn("http://[::1]:8123/"))
+        #expect(BrowserPasswords.fillsOn("http://10.0.0.5/"))
+        #expect(!BrowserPasswords.fillsOn("http://localhost.example.com/"))
+        #expect(!BrowserPasswords.fillsOn("file:///x"))
+        #expect(!BrowserPasswords.fillsOn("about:blank"))
+        #expect(!BrowserPasswords.fillsOn(""))
+    }
+
+    @Test func aSentFormReadsTheSavedValueOnlyWhenTheOfferNeedsIt() {
+        func read(_ password: String = "pw2", username: String = "jo", saved: [String] = ["jo"],
+                  never: Set<String> = [], suggested: String? = nil) -> String? {
+            BrowserPasswords.savedPasswordToRead(password: password, username: username, site: "github.com",
+                                                 savedUsernames: saved, never: never, suggested: suggested)
+        }
+        #expect(read() == "jo")
+        #expect(read("") == nil)
+        #expect(read(never: ["github.com"]) == nil)
+        #expect(read(suggested: "pw2") == nil)
+        #expect(read(suggested: "other") == "jo")
+        #expect(read(saved: []) == nil)
+        #expect(read(saved: ["al"]) == nil)
+        #expect(read(username: "", saved: ["al"]) == "al")
+        #expect(read(username: "", saved: ["al", "bo"]) == nil)
+    }
+
+    @Test func aSiteLabelIsTheKeyOrAFixedPhrase() {
+        #expect(BrowserPasswords.siteLabel("https://www.github.com/login") == "github.com")
+        #expect(BrowserPasswords.siteLabel("") == "a blank tab")
+        #expect(BrowserPasswords.siteLabel("data:text/html,secret") == "a page that is not a website")
+        #expect(BrowserPasswords.siteLabel("file:///Users/x/secret.html") == "a page that is not a website")
+    }
+
     @Test func barQuestionCopy() {
         #expect(BrowserPasswords.barQuestion(.askSave, username: "jo", site: "github.com")
                 == "Save the password for jo on github.com?")

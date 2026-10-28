@@ -291,7 +291,9 @@ struct BrowserPasswordsSettings: View {
         }
     }
 
-    /// Marked concealed (`org.nspasteboard.ConcealedType`), so clipboard managers that honour it keep no copy.
+    /// Marked concealed (`org.nspasteboard.ConcealedType`), so clipboard managers that honour it keep no
+    /// copy, and cleared after 90 s unless something was copied since (the pasteboard's `changeCount`
+    /// is still the one this copy made). The clearing outlives the section: it is not this view's task.
     private func copy(_ login: BrowserLogin) {
         let key = rowKey(login)
         withValue(login, reason: BrowserPasswordSettings.copyReason(username: login.username, site: login.site)) {
@@ -302,6 +304,11 @@ struct BrowserPasswordsSettings: View {
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.writeObjects([item])
+            let written = pasteboard.changeCount
+            Task { @MainActor in
+                try? await Task.sleep(for: BrowserPasswordSettings.copyClearsAfter)
+                if NSPasteboard.general.changeCount == written { NSPasteboard.general.clearContents() }
+            }
             copied = key
         }
     }

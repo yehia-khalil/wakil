@@ -156,6 +156,37 @@ private func fill(_ username: String, site: String = "example.com") -> [String: 
     }
 }
 
+@Test func anInsecurePageIsNeitherFilledNorSuggested() async throws {
+    try await withFixture(url: "http://example.com/login") { f in
+        try f.store.save(org: "initech", site: "example.com", username: "ann", password: "walk-test-pass-1")
+        let why = await refusal { try await f.dispatch("browser_password_fill", fill("ann")) }
+        #expect(why == "browser_password_fill: example.com is not a secure page (http), so the password was not filled.")
+        #expect(await f.page.fills.isEmpty)
+        // Refused before the Keychain was read: nothing is remembered.
+        let read = await f.scrub.scrub(BrowserPageRead(url: "", title: "", text: "walk-test-pass-1", elements: []))
+        #expect(read.text == "walk-test-pass-1")
+
+        let suggest = await refusal {
+            try await f.dispatch("browser_password_suggest", ["pane": .string(paneId), "tab": .string(tabId)])
+        }
+        #expect(suggest == "browser_password_suggest: example.com is not a secure page (http), so no password was suggested.")
+        #expect(await f.page.suggestions.isEmpty)
+    }
+    // A local page on http is the operator's own server: it fills.
+    try await withFixture(url: "http://127.0.0.1:8123/login.html") { f in
+        try f.store.save(org: "initech", site: "127.0.0.1:8123", username: "ann", password: "walk-test-pass-1")
+        try await f.dispatch("browser_password_fill", fill("ann", site: "127.0.0.1:8123"))
+        #expect(await f.page.fills.count == 1)
+    }
+}
+
+@Test func aMovedRefusalNamesNoAddress() async throws {
+    try await withFixture(url: "data:text/html,secret-page") { f in
+        let why = await refusal { try await f.dispatch("browser_password_fill", fill("ann")) }
+        #expect(why == "browser_password_fill: the tab is on a page that is not a website now, so the password for example.com was not filled.")
+    }
+}
+
 @Test func fillRefusesAMissingLoginNamingTheOrg() async throws {
     try await withFixture { f in
         // Only another organisation has it.

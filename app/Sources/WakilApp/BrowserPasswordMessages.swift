@@ -40,6 +40,8 @@ final class BrowserPasswordMessages: NSObject, WKScriptMessageHandler {
         else { return }
         switch parsed {
         case .field(let role, let rect):
+            // An http page that is not local gets no key: nothing is filled or suggested there.
+            guard BrowserPasswords.fillsOn(page) else { return }
             host.passwordFieldReported(key, BrowserPasswordField(role: role, rect: rect, origin: page, site: site))
         case .blur:
             host.passwordFieldBlurred(key)
@@ -61,6 +63,13 @@ struct BrowserPasswordField: Equatable {
     /// when it could not be read (the key then shows, and its list says why).
     var hasLogins: Bool?
     var read = false
+}
+
+/// The strong password the operator chose in a tab, and the site it was suggested on: a form sent
+/// with it on that site is saved with no bar.
+struct BrowserPasswordSuggestion: Equatable {
+    let site: String
+    let password: String
 }
 
 /// A sent form's question for the bar (ruling 14): the host's, in memory only, never the store's.
@@ -115,8 +124,14 @@ extension BrowserTabHost {
         }
     }
 
-    /// A new document in the tab: its field report and any press go; the bar stays (ruling 14).
-    func passwordPageCommitted(_ key: Key) {
+    /// A new document in the tab: its field report and any press go; the bar stays (ruling 14). A
+    /// suggestion stays only while the tab is on the site it was suggested on.
+    func passwordPageCommitted(_ key: Key, site: String?) {
+        passwordPageLeft(key)
+        if let suggestion = pendingSuggestion[key], suggestion.site != site { pendingSuggestion[key] = nil }
+    }
+
+    private func passwordPageLeft(_ key: Key) {
         passwordBlurs.removeValue(forKey: key)?.cancel()
         if passwordFields[key] != nil { passwordFields[key] = nil }
         passwordPress[key] = nil
@@ -141,13 +156,15 @@ extension BrowserTabHost {
     // MARK: A sent form
 
     /// A form was sent with a password (ruling 7's order, through `BrowserPasswords.offer`). The
-    /// password the operator chose from *Suggest Strong Password* is saved with no bar. Otherwise the
-    /// site's logins are read, and the saved password of a matching one, and the bar asks — a newer
-    /// sent form replacing an older question.
+    /// password the operator chose from *Suggest Strong Password* on this site is saved with no bar.
+    /// Otherwise the never list and the site's logins (attributes only) are read first, and the saved
+    /// password only for a matching login on a site not never-listed (`savedPasswordToRead`), so a
+    /// page's own submit can't make the Keychain ask; then the bar asks — a newer sent form replacing
+    /// an older question.
     func passwordFormSent(_ key: Key, site: String, username: String, password: String) {
         guard !password.isEmpty, let model, let store = passwordStore else { return }
         let org = key.scope.organization
-        let suggested = pendingSuggestion[key]
+        let suggested = pendingSuggestion[key].flatMap { $0.site == site ? $0.password : nil }
         passwordSubmits += 1
         let id = passwordSubmits
         passwordLatestSubmit[key] = id
@@ -162,13 +179,17 @@ extension BrowserTabHost {
         }
         let home = model.browserHome
         Task { [weak self] in
-            let known = await Task.detached { () -> (names: [String], saved: String?, never: Set<String>) in
+            let known = await Task.detached { () -> (names: [String], saved: String?, never: Set<String>)? in
+                let never = Set(home.flatMap { try? BrowserOrgFiles(home: $0, org: org).neverSave() } ?? [])
+                if never.contains(site) { return nil }
                 let names = ((try? store.logins(org: org, site: site)) ?? []).map(\.username)
-                let match = names.contains(username) ? username : (username.isEmpty && names.count == 1 ? names[0] : nil)
+                let match = BrowserPasswords.savedPasswordToRead(
+                    password: password, username: username, site: site, savedUsernames: names,
+                    never: never, suggested: suggested)
                 let saved = match.flatMap { try? store.password(org: org, site: site, username: $0) }
-                let never = home.flatMap { try? BrowserOrgFiles(home: $0, org: org).neverSave() } ?? []
-                return (names, saved, Set(never))
+                return (names, saved, never)
             }.value
+            guard let known else { return }
             guard let self, self.passwordLatestSubmit[key] == id else { return }
             let offer = BrowserPasswords.offer(
                 password: password, username: username, site: site, savedUsernames: known.names,
@@ -194,7 +215,7 @@ extension BrowserTabHost {
 
     /// The tab's web view goes; with `tabClosed`, its question and suggestion go too.
     func forgetPasswords(_ key: Key, tabClosed: Bool) {
-        passwordPageCommitted(key)
+        passwordPageLeft(key)
         passwordListOpen.remove(key)
         guard tabClosed else { return }
         passwordOffers[key] = nil

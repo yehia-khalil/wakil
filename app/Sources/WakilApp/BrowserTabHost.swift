@@ -95,7 +95,7 @@ final class BrowserTabHost {
     /// A sent form's question per tab: the bar, until it is answered or its tab closes.
     var passwordOffers: [Key: BrowserPasswordOfferState] = [:]
     /// The strong password the operator chose per tab: a form sent with it is saved with no bar.
-    @ObservationIgnored var pendingSuggestion: [Key: String] = [:]
+    @ObservationIgnored var pendingSuggestion: [Key: BrowserPasswordSuggestion] = [:]
     /// The origin of the field whose key's list is open, per tab: the only origin a fill may land on.
     @ObservationIgnored var passwordPress: [Key: String] = [:]
     @ObservationIgnored var passwordListOpen: Set<Key> = []

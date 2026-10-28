@@ -18,6 +18,8 @@ public enum BrowserPasswordPageError: Error, Sendable, Equatable, CustomStringCo
     case siteChanged(now: String)
     /// The page has no field to put it in.
     case noField
+    /// The page, or the field the key was pressed in, is http on a site that is not local.
+    case insecure
     case failed(String)
 
     public var description: String {
@@ -25,6 +27,7 @@ public enum BrowserPasswordPageError: Error, Sendable, Equatable, CustomStringCo
         case .notShown: "the tab is not on screen, so nothing was filled."
         case .siteChanged(let now): "the tab is on \(now) now."
         case .noField: "the page has no field to fill."
+        case .insecure: "the page is not secure (http), so nothing was put in the page."
         case .failed(let why): why
         }
     }
@@ -133,6 +136,8 @@ public enum BrowserPasswordActionError: Error, Sendable, Equatable, CustomString
     case noLogin(site: String, username: String, org: String)
     case moved(now: String, site: String)
     case suggestMoved(now: String, site: String)
+    /// An http page on a site that is not local (`BrowserPasswords.fillsOn`).
+    case insecure(action: String, site: String)
     case unknownOrganisation(action: String, org: String)
     case notAWebPage(action: String, url: String)
     case notASite(action: String, site: String)
@@ -150,6 +155,10 @@ public enum BrowserPasswordActionError: Error, Sendable, Equatable, CustomString
             return "browser_password_fill: the tab is on \(now) now, so the password for \(site) was not filled."
         case .suggestMoved(let now, let site):
             return "browser_password_suggest: the tab is on \(now) now, so no password was suggested for \(site)."
+        case .insecure(let action, let site):
+            let outcome = action == "browser_password_suggest"
+                ? "no password was suggested" : "the password was not filled"
+            return "\(action): \(site) is not a secure page (http), so \(outcome)."
         case .unknownOrganisation(let action, let org):
             return "\(action): \"\(org)\" is not an organisation on this Mac."
         case .notAWebPage(let action, let url):
@@ -269,7 +278,12 @@ func browserPasswordActions(
             guard let page else { throw BrowserPasswordActionError.noPage(action: action) }
             // Ruling 13: the login's site, and nowhere else. The page checks its origin again.
             let now = BrowserPasswords.siteKey(url)
-            guard now == site else { throw BrowserPasswordActionError.moved(now: now ?? url, site: site) }
+            guard now == site else {
+                throw BrowserPasswordActionError.moved(now: BrowserPasswords.siteLabel(url), site: site)
+            }
+            guard BrowserPasswords.fillsOn(url) else {
+                throw BrowserPasswordActionError.insecure(action: action, site: site)
+            }
             let password: String
             do {
                 password = try store.password(org: org, site: site, username: username)
@@ -284,6 +298,8 @@ func browserPasswordActions(
                 try await page.fill(pane: pane, tab: tab, org: org, site: site, username: username, password: password)
             } catch BrowserPasswordPageError.siteChanged(let moved) {
                 throw BrowserPasswordActionError.moved(now: moved, site: site)
+            } catch BrowserPasswordPageError.insecure {
+                throw BrowserPasswordActionError.insecure(action: action, site: site)
             } catch let error as BrowserPasswordPageError {
                 throw BrowserPasswordActionError.page(action: action, error)
             }
@@ -304,12 +320,17 @@ func browserPasswordActions(
             guard let site = BrowserPasswords.siteKey(url) else {
                 throw BrowserPasswordActionError.notAWebPage(action: action, url: url)
             }
+            guard BrowserPasswords.fillsOn(url) else {
+                throw BrowserPasswordActionError.insecure(action: action, site: site)
+            }
             let password = BrowserPasswords.strongPassword()
             await scrub.remember(password)
             do {
                 try await page.suggest(pane: pane, tab: tab, org: org, site: site, password: password)
             } catch BrowserPasswordPageError.siteChanged(let moved) {
                 throw BrowserPasswordActionError.suggestMoved(now: moved, site: site)
+            } catch BrowserPasswordPageError.insecure {
+                throw BrowserPasswordActionError.insecure(action: action, site: site)
             } catch let error as BrowserPasswordPageError {
                 throw BrowserPasswordActionError.page(action: action, error)
             }

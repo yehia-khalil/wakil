@@ -82,12 +82,30 @@ public enum BrowserPasswords {
     /// Ruling 5: the registrable domain, never a family. Nil off http and https.
     public static func siteKey(_ url: String) -> String? {
         guard let key = BrowserSite.key(url) else { return nil }
-        var host = key
-        if key.hasPrefix("["), let end = key.firstIndex(of: "]") { host = String(key[...end]) }
-        else if key.filter({ $0 == ":" }).count == 1, let colon = key.lastIndex(of: ":") {
-            host = String(key[..<colon])
-        }
+        let host = host(ofKey: key)
         return isLocal(host) ? key : BrowserSiteKey.registrableDomain(host)
+    }
+
+    /// Whether a password may be put in a page at `url`: https, or http on a local host (loopback,
+    /// `localhost`, `*.localhost`, `*.test`, an IP literal — `siteKey`'s local rule). A site key drops
+    /// the scheme, so without this a login saved on https would fill on the same site's http page.
+    public static func fillsOn(_ url: String) -> Bool {
+        guard let key = BrowserSite.key(url),
+              let scheme = URLComponents(string: url)?.scheme?.lowercased() else { return false }
+        return scheme == "https" || isLocal(host(ofKey: key))
+    }
+
+    /// What a refusal names for the page at `url`: its site key, else a fixed phrase — never the
+    /// address itself, which may be a `data:` page's content or a file's path, and reaches the journal.
+    public static func siteLabel(_ url: String) -> String {
+        siteKey(url) ?? (url.isEmpty ? "a blank tab" : "a page that is not a website")
+    }
+
+    /// `BrowserSite.key` without its port.
+    private static func host(ofKey key: String) -> String {
+        if key.hasPrefix("["), let end = key.firstIndex(of: "]") { return String(key[...end]) }
+        if key.filter({ $0 == ":" }).count == 1, let colon = key.lastIndex(of: ":") { return String(key[..<colon]) }
+        return key
     }
 
     private static func isLocal(_ host: String) -> Bool {
@@ -128,6 +146,20 @@ public enum BrowserPasswords {
             return savedPassword == password ? .nothing : .askUpdate(username: only)
         }
         return .askSave
+    }
+
+    /// The saved login whose password `offer` will compare, or nil when its answer needs none: an
+    /// empty password, the suggested one, a never-saved site, or no matching login. A sent form reads
+    /// the Keychain's value only for this one, so a page's submit can't make it ask for one otherwise.
+    public static func savedPasswordToRead(password: String, username: String, site: String,
+                                           savedUsernames: [String], never: Set<String>, suggested: String?)
+        -> String? {
+        if password.isEmpty { return nil }
+        if let suggested, !suggested.isEmpty, password == suggested { return nil }
+        if never.contains(site) { return nil }
+        if savedUsernames.contains(username) { return username }
+        if username.isEmpty, savedUsernames.count == 1 { return savedUsernames.first }
+        return nil
     }
 
     public static func barQuestion(_ offer: BrowserPasswordOffer, username: String, site: String) -> String? {

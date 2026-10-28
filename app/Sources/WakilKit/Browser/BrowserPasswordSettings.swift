@@ -90,6 +90,8 @@ public enum BrowserPasswordSettings {
     public static let deleteLabel = "Delete"
     public static let keepLabel = "Keep it"
     public static let noUsername = "(no username)"
+    /// A copied password is taken off the pasteboard after this, unless something was copied since.
+    public static let copyClearsAfter: Duration = .seconds(90)
 
     public static func empty(org: String) -> String { "No passwords saved for \(org) yet." }
 
