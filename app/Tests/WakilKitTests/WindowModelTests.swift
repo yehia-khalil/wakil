@@ -1721,8 +1721,10 @@ private func registerFakeReadSession(
     let details = await model.thoughts.map(\.detail)
     #expect(details.contains("run the query"))
     #expect(details.contains { $0.contains("parent-1") })
-    // The seam is last, so the six-row window shows it (design-language §9).
-    #expect(await model.thoughts.last!.detail.contains("parent-1"))
+    // The seam is last, so the six-row window shows it (design-language §9) — after it only the
+    // note that this window, with no ticket client, cannot tell whether the session was handed.
+    #expect(await model.thoughts.last!.label == "hand-off")
+    #expect(await model.thoughts.last { $0.label != "hand-off" }!.detail.contains("parent-1"))
 }
 
 /// Guards FIX 7's removal of `nextThoughtId = 0` from `rebuiltThread`: with

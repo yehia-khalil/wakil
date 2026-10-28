@@ -132,7 +132,9 @@ private struct FixedContextCaller: ToolCaller {
 
     await model.resume(sessionId: "parent-1")
 
-    let rows = model.thoughts.map { ($0.label, $0.detail) }
+    // This window has no ticket client, so the resume also notes it cannot tell whether the
+    // session was handed (F16); that row is not the rebuilt turn's.
+    let rows = model.thoughts.filter { $0.label != "hand-off" }.map { ($0.label, $0.detail) }
     try #require(rows.count == 4, "\(rows)")
     #expect(rows[0] == ("you", typed))
     #expect(rows[1] == ("resolved", TurnNote.row(resolutions)))

@@ -8534,17 +8534,20 @@ public final class WindowModel {
         // F16: a session from another conversation may be a handed one's. It is handed with May
         // push off from before its session is installed — before any message can reach it — and
         // the carry below then sets what the stored hand-off says, or lifts it when there is none.
-        // A lineage that could not be read keeps the mark: whose session it is cannot be told. A
-        // session of this conversation's own chain is its own, handed or not. A resume that stops
-        // short puts back what was there.
-        let handOffFrom: String?, lineageUnread: String?
+        // A lineage that could not be read keeps the mark: whose session it is cannot be told. So
+        // does a window with no `wakil-ticket` client (`carryHandOff`). A session of this
+        // conversation's own chain is its own, handed or not. A resume that stops short puts back
+        // what was there.
+        let handOffFrom: String?, lineageUnread: String?, recordedParent: Bool
         switch lineage {
-        case .root(let root): (handOffFrom, lineageUnread) = (root, nil)
-        // A session with no recorded parent is its own root.
-        case .none: (handOffFrom, lineageUnread) = (parent, nil)
-        case .unread(let why): (handOffFrom, lineageUnread) = (nil, why)
+        case .root(let root) where root != parent: (handOffFrom, lineageUnread, recordedParent) = (root, nil, true)
+        // A session with no recorded parent is its own root — but it may be a later session of a
+        // handed conversation whose `session_record_parent` failed, so finding no hand-off from it
+        // cannot lift the mark.
+        case .root, .none: (handOffFrom, lineageUnread, recordedParent) = (parent, nil, false)
+        case .unread(let why): (handOffFrom, lineageUnread, recordedParent) = (nil, why, false)
         }
-        let provisional = agent.handoff == nil && ticket != nil && !agent.sessionIds.contains(parent)
+        let provisional = agent.handoff == nil && !agent.sessionIds.contains(parent)
             && (lineageUnread != nil || handOffFrom != agent.id)
         var carried = false
         if provisional {
@@ -8621,7 +8624,7 @@ public final class WindowModel {
         if provisional {
             carried = true
             if let handOffFrom {
-                await carryHandOff(from: handOffFrom, to: agent, root: thread.cwd)
+                await carryHandOff(from: handOffFrom, to: agent, root: thread.cwd, recordedParent: recordedParent)
             } else {
                 noteHandOffUnknown(lineageUnread ?? "no answer", in: agent)
             }

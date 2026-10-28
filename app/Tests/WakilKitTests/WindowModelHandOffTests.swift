@@ -24,11 +24,11 @@ private func until(_ done: @MainActor () async -> Bool) async {
 /// the doubles a resume reads (`session_read`, `session_get`: the parent's lineage root is `root`).
 @MainActor
 private func handOffWindow(root: @escaping @Sendable () -> String = { "" }, holding: HoldingTicket? = nil,
-                           sessionGet: (@Sendable () throws -> JSONValue)? = nil)
+                           sessionGet: (@Sendable () throws -> JSONValue)? = nil, noTicket: Bool = false)
     async -> (WindowModel, Harnesses, FakeTicket) {
     let harnesses = Harnesses()
     let fake = holding?.fake ?? FakeTicket()
-    let store = EditorTicketStore(ticket: holding ?? fake)
+    let store = noTicket ? nil : EditorTicketStore(ticket: holding ?? fake)
     let window = WindowModel.forTesting(
         scratchRoot: testScratchRoot, organization: org, harnessFactory: { place, _ in harnesses.make(place) },
         ticket: store)
@@ -449,6 +449,76 @@ private func agentRuns(_ window: WindowModel, _ name: String, conversation: Stri
             for name in gitWrites {
                 #expect(!(try await agentRuns(window, name, conversation: resumed.id)), "\(name) \(answer)")
             }
+        }
+    }
+
+    /// I1(a): a window with no `wakil-ticket` client cannot ask whose session it resumed, so the
+    /// resumed conversation is handed with May push off, and its chip says why.
+    @Test func aResumeWithNoTicketClientStaysHanded() async throws {
+        let (window, _, _) = await handOffWindow(root: { "c-handed-before" }, noTicket: true)
+        await window.resume(sessionId: "s-parent")
+        let resumed = try #require(window.currentAgent)
+        #expect(resumed.harness != nil)
+        #expect(resumed.handoff?.mayPush == false)
+        #expect(resumed.handoffFailure?.contains("no ticket client") == true, "\(String(describing: resumed.handoffFailure))")
+        for name in gitWrites {
+            #expect(!(try await agentRuns(window, name, conversation: resumed.id)), "\(name)")
+        }
+    }
+
+    /// I1(b): a session with no recorded parent — its lineage root is itself, or none — may be a
+    /// later session of a handed conversation whose parent record failed. "Nothing to carry" from
+    /// it is not "never handed": it stays handed with May push off, and says why.
+    @Test func aSessionWithNoRecordedParentStaysHanded() async throws {
+        for root in ["s-parent", ""] {
+            let (window, _, fake) = await handOffWindow(root: { root })
+            await fake.set("ticket_handoff_write", .object(["carried": .bool(false)]))
+            await fake.set("ticket_handoff_may_push", .object(["mayPush": .bool(true)]))
+            await window.resume(sessionId: "s-parent")
+            let resumed = try #require(window.currentAgent)
+            let carry = try #require(await writes(fake, op: "carry").last, "root \(root)")
+            #expect(carry["from"] == .string("s-parent"))
+            #expect(resumed.handoff?.mayPush == false, "root \(root)")
+            #expect(resumed.handoffFailure?.contains("no recorded parent") == true,
+                    "root \(root): \(String(describing: resumed.handoffFailure))")
+            for name in gitWrites {
+                #expect(!(try await agentRuns(window, name, conversation: resumed.id)), "\(name) root \(root)")
+            }
+        }
+    }
+
+    /// A session with no recorded parent that a hand-off names (a handed conversation's first
+    /// session) still carries that hand-off and its May push.
+    @Test func aSessionWithNoRecordedParentCarriesWhatNamesIt() async throws {
+        let (window, _, fake) = await handOffWindow(root: { "c-handed" })
+        await fake.set("ticket_handoff_write", .object([
+            "carried": .bool(true), "key": .string("INI-142"),
+            "handoff": .object(["id": .string("h2"), "conversation": .string("new"), "mayPush": .bool(true)]),
+        ]))
+        await fake.set("ticket_handoff_may_push", .object(["mayPush": .bool(true)]))
+        await window.resume(sessionId: "c-handed")
+        let resumed = try #require(window.currentAgent)
+        #expect(await writes(fake, op: "carry").last?["from"] == .string("c-handed"))
+        #expect(resumed.handoff?.key == "INI-142")
+        #expect(resumed.handoff?.mayPush == true)
+        #expect(resumed.handoffFailure == nil)
+    }
+
+    /// The conversation's own session, resumed again, is its own: no recorded parent asks nothing.
+    @Test func theConversationsOwnSessionWithNoRecordedParentStaysOrdinary() async throws {
+        let root = Locked("c-never-handed")
+        let (window, _, fake) = await handOffWindow(root: { root.value })
+        await fake.set("ticket_handoff_write", .object(["carried": .bool(false)]))
+        await window.resume(sessionId: "s-parent")
+        let resumed = try #require(window.currentAgent)
+        #expect(resumed.handoff == nil)
+        root.value = "s-parent"
+        await window.resume(sessionId: "s-parent")
+        #expect(window.currentAgent === resumed)
+        #expect(resumed.handoff == nil)
+        #expect(await writes(fake, op: "carry").count == 1)
+        for name in gitWrites {
+            #expect(try await agentRuns(window, name, conversation: resumed.id), "\(name)")
         }
     }
 

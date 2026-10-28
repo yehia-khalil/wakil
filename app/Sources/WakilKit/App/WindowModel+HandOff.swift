@@ -114,12 +114,21 @@ extension WindowModel {
     /// F16: `agent` resumed a session of conversation `from` (its lineage root), and `resume` has
     /// already marked it handed with May push off. When `from` was handed, its hand-off is carried
     /// to `agent`'s id, so its git writes stay priced as handed with the stored May push; when it
-    /// was not, the mark is lifted. A carry that fails leaves `agent` handed with May push off —
-    /// fail closed — and says why.
-    func carryHandOff(from: String, to agent: PlaceAgent, root: String) async {
-        guard let ticket else { return }
+    /// was not, the mark is lifted — only when `from` is a root reached through a recorded parent:
+    /// a session with no recorded parent may be a handed conversation's whose parent record
+    /// failed, so nothing to carry from it is not "never handed". A carry that fails, or a window
+    /// with no ticket client, leaves `agent` handed with May push off — fail closed — and says why.
+    func carryHandOff(from: String, to agent: PlaceAgent, root: String, recordedParent: Bool) async {
+        guard let ticket else {
+            noteHandOffUnknown("no ticket client", in: agent)
+            return
+        }
         do {
             guard let (key, h) = try await ticket.carryHandoff(from: from, to: agent.id, as: handOffCaller(agent)) else {
+                guard recordedParent else {
+                    noteHandOffUnknown("the session has no recorded parent, and no hand-off names it", in: agent)
+                    return
+                }
                 // Never handed: the provisional hand-off `resume` set is lifted.
                 agent.handoff = nil
                 return
