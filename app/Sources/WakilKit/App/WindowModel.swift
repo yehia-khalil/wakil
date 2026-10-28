@@ -2304,8 +2304,24 @@ public final class WindowModel {
         // 3c-ii: the sites describe the outgoing organisation's environments; unread, every site
         // prices as production until the incoming org's tree is read.
         browserSites = .unread
+        clearBrowserCloseArm()
+        clearBrowserCopiedTip()
         browserAllowedOnScreen = []
         browserBookmarksOnScreen = []
+        // 3d-i ruling 12: a group asked about in the outgoing organisation is another's; a reply in
+        // flight is dropped by the generation bumped above.
+        browserNamingAsked = []
+        for task in browserNamingTasks.values { task.cancel() }
+        browserNamingTasks = [:]
+        // 3d-i ruling 19: the pull-request loop reads the outgoing organisation; it ends here, and
+        // is held until `setOrganization` has shown the incoming canvas — a read started between
+        // would name the incoming organisation while the store still files the outgoing one's.
+        // The header focus names a pane of the screen being left (pane ids repeat).
+        stopBrowserPullRequestsLoop()
+        browserPullRequestsHeld = true
+        browserPullRequestsAbsent = nil
+        browserPullRequestsOnScreen = nil
+        browserHeaderFocus = nil
         // The store's copy for the outgoing org goes too: coming back before a re-read must not
         // price from a list that may be stale (`organization` still names the outgoing org here).
         if !organization.isEmpty { await panes.browserSetSites(org: organization, .unread) }
@@ -2687,6 +2703,8 @@ public final class WindowModel {
         } else if returning {
             await catchUpReturnedCanvas()
         }
+        // Ruling 14: the canvas shown takes the pins added, and drops the ones removed, while it was away.
+        await browserReconcilePins()
         layoutActivating = false
         let waiters = layoutSwapWaiters
         layoutSwapWaiters = []
@@ -2745,6 +2763,7 @@ public final class WindowModel {
         layoutSwapInFlight = outerSwap
         await readLayoutSnapshot()
         await refreshPanes()
+        await browserReconcilePins()
     }
 
     // MARK: Controls
@@ -4649,6 +4668,7 @@ public final class WindowModel {
             browserAllowedOnScreen = []
         }
         await readBrowserBookmarksOnScreen()
+        await readBrowserPullRequestsOnScreen()
         gitRoots = await gitStatus?.roots ?? []
         await changesFollowStatus()
         // The dictionary itself changes only when a pane opens or closes.
@@ -4814,7 +4834,15 @@ public final class WindowModel {
             await dispatchLayout(name, params)
             return true
         }
-        let ran = await dispatch(name, params) != nil
+        return await dispatchFromSurfaceAnswer(name, params) != nil
+    }
+
+    /// `dispatchFromSurface` answering the action's result — nil when it did not run, its refusal
+    /// on `status` as for any control. For a control that acts on what the call made: *New Group…*
+    /// opens the name field of the group `browser_group create` answers, and none when it failed.
+    @discardableResult
+    public func dispatchFromSurfaceAnswer(_ name: String, _ params: JSONValue) async -> JSONValue? {
+        let result = await dispatch(name, params)
         await refreshPanes()
         // `pane_sort`, `db_page` and `db_refetch` all write `Pane.fetch`,
         // which lives in `LayoutStore` and which `refreshPanes` cannot
@@ -4824,7 +4852,7 @@ public final class WindowModel {
         if name == "pane_sort" || name.hasPrefix("db_") || name.hasPrefix("browser_") {
             await refreshLayout()
         }
-        return ran
+        return result
     }
 
     /// The operator's drop of one grid row on an api pane: `api_bind`, and what it said.
@@ -4984,6 +5012,8 @@ public final class WindowModel {
         // or `readLayoutSnapshot`, so the watchers follow the editor panes from these two.
         await syncGitWatcher()
         await syncEditorWatcher()
+        // 3d-i ruling 19: the pull-request loop follows whether a browser pane is on the canvas.
+        syncBrowserPullRequestsLoop()
         if layoutSnapshot.withoutTransientState != before.withoutTransientState {
             await persistLayout()
         } else {
@@ -5722,6 +5752,53 @@ public final class WindowModel {
 
     // MARK: Browser (3c-i)
 
+    /// A first ⌘W on a pinned tab, until the second, 2 s, or any close (ruling 15). Observed: the
+    /// view draws the tip while it is set. Org-derived: `invalidateForOrgChange` clears it.
+    public private(set) var browserCloseArm: BrowserCloseArm?
+    /// The clock ⌘W's two presses are timed by (a test seam).
+    @ObservationIgnored var browserNow: @Sendable () -> Date = { Date() }
+    @ObservationIgnored private var browserCloseArmTask: Task<Void, Never>?
+
+    private func armBrowserClose(_ arm: BrowserCloseArm) {
+        browserCloseArmTask?.cancel()
+        browserCloseArm = arm
+        browserCloseArmTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(BrowserPinnedClose.window))
+            guard !Task.isCancelled, let self, self.browserCloseArm == arm else { return }
+            self.browserCloseArm = nil
+        }
+    }
+
+    /// The `Copied` tip under a browser pane's address field, for `BrowserCopyURL.tipDuration` after
+    /// ⌘⇧C. Observed: the view draws it while it is set. Org-derived: `invalidateForOrgChange` clears it.
+    public private(set) var browserCopiedTip: BrowserCopiedTip?
+    @ObservationIgnored private var browserCopiedTipTask: Task<Void, Never>?
+    @ObservationIgnored private var browserCopiedSerial = 0
+
+    private func showBrowserCopiedTip(pane: String) {
+        browserCopiedTipTask?.cancel()
+        browserCopiedSerial += 1
+        let tip = BrowserCopiedTip(pane: pane, serial: browserCopiedSerial)
+        browserCopiedTip = tip
+        browserCopiedTipTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(BrowserCopyURL.tipDuration))
+            guard !Task.isCancelled, let self, self.browserCopiedTip == tip else { return }
+            self.browserCopiedTip = nil
+        }
+    }
+
+    private func clearBrowserCopiedTip() {
+        browserCopiedTipTask?.cancel()
+        browserCopiedTipTask = nil
+        browserCopiedTip = nil
+    }
+
+    private func clearBrowserCloseArm() {
+        browserCloseArmTask?.cancel()
+        browserCloseArmTask = nil
+        browserCloseArm = nil
+    }
+
     /// The pane the browser's keys act on: the focused pane if it is a browser.
     var focusedBrowser: String? {
         guard let id = layoutSnapshot.focusedId,
@@ -5744,12 +5821,31 @@ public final class WindowModel {
                 _ = await closePane(id: pane)
                 return true
             }
+            // Ruling 15: a pinned tab (or a tab of a pinned group) takes two presses within 2 s.
+            if let active = s.activeTab, s.isPinned(active) {
+                let now = browserNow()
+                if BrowserPinnedClose.press(browserCloseArm, pane: pane, tab: active.id, now: now) == .arm {
+                    armBrowserClose(BrowserCloseArm(pane: pane, tab: active.id, at: now))
+                    return true
+                }
+            }
+            clearBrowserCloseArm()
             name = "browser_close_tab"
+        case .toggleTabColumn:
+            guard browserSettings.tabs == "vertical" else { return false }
+            name = "browser_tab_column"
         case .reopenTab: name = "browser_reopen_tab"
         case .focusAddress:
             guard s.activeTab != nil else { return true }
             name = "browser_focus_address"
-        case .reload: name = "browser_reload"
+        case .reload:
+            // ⌘R with the pull-request group's header focused refreshes the list now (ruling 19).
+            if let header = browserHeaderFocus, header.pane == pane, header.group == "pr",
+               s.groups.contains(where: { $0.id == "pr" && $0.kind == .pullRequests }) {
+                await refreshBrowserPullRequests()
+                return true
+            }
+            name = "browser_reload"
         case .back: name = "browser_back"
         case .forward: name = "browser_forward"
         case .find:
@@ -5765,6 +5861,12 @@ public final class WindowModel {
         case .bookmark:
             guard s.activeTab != nil else { return true }
             name = "browser_bookmark"
+        case .copyURL:
+            // ⌘⇧C: the page you are on, with a tip under the address field. Nothing moves: focus stays
+            // where it was and the page is untouched (Rule 6).
+            guard let active = s.activeTab, BrowserCopyURL.copyable(active.url) != nil else { return true }
+            if await dispatch("browser_copy_url", .object(params)) != nil { showBrowserCopiedTip(pane: pane) }
+            return true
         case .nextTab, .previousTab:
             guard let i = s.tabs.firstIndex(where: { $0.id == s.active }), s.tabs.count > 1 else { return true }
             name = "browser_select_tab"
@@ -5826,12 +5928,189 @@ public final class WindowModel {
     /// `scope` is not the place on screen.
     public func browserPageDidReport(scope: LayoutScope, pane: String, tab: String, _ report: BrowserPageReport) async {
         guard await browserScopeIsShown(scope) else { return }
-        let before = browser(pane)?.tabs.first { $0.id == tab }
+        let shown = browser(pane)
+        let before = shown?.tabs.first { $0.id == tab }
         await panes.browserPageDidReport(paneId: pane, tab: tab, report)
         await refreshBrowser(pane: pane)
-        if before?.url != report.url || before?.title != report.title { scheduleBrowserTabsWrite(pane: pane) }
+        // A finished load may have moved tabs into, out of or between groups (the site rule): saved too.
+        let after = browser(pane)
+        let regrouped = shown?.groups != after?.groups
+            || shown?.tabs.map { [$0.id, $0.group ?? ""] } != after?.tabs.map { [$0.id, $0.group ?? ""] }
+        if before?.url != report.url || before?.title != report.title || regrouped {
+            scheduleBrowserTabsWrite(pane: pane)
+        }
         recordVisit(scope: scope, before: before, report)
+        nameDueGroups(scope: scope, pane: pane)
     }
+
+    // MARK: 3d-i: groups named by the quick model, pins of the place shown
+
+    /// The groups the window has asked a name for this launch (ruling 12: once per group), each
+    /// `<place>/<pane>/<group>`: pane and group ids repeat from place to place. Emptied on an
+    /// organisation change.
+    @ObservationIgnored var browserNamingAsked: Set<String> = []
+    /// The naming requests in flight, by the same key; ended on an organisation change.
+    @ObservationIgnored private var browserNamingTasks: [String: Task<Void, Never>] = [:]
+
+    /// Ruling 12: asks the `respond` quick task to name each of `pane`'s due groups (automatic,
+    /// unnamed, two titled tabs) not asked before — only when `nameGroups` is on and a provider is
+    /// built. The model is sent titles only. The reply lands only while `scope` is still the place
+    /// shown and the quick tasks are the ones asked (`quickTasksGeneration`), and then only on a
+    /// group still automatic and unnamed (`PaneStore.browserNameGroup`). A model failure is kept by
+    /// `QuickTasks`; a reply that does not parse is recorded there whole.
+    private func nameDueGroups(scope: LayoutScope, pane: String) {
+        guard browserSettings.nameGroups, let tasks = quickTasks, let s = browser(pane) else { return }
+        let generation = quickTasksGeneration
+        let place = [scope.project, scope.environment, scope.lineageRoot ?? ""].joined(separator: "\u{1F}")
+        for group in BrowserGroupNames.due(s) {
+            let key = "\(place)/\(pane)/\(group)"
+            guard browserNamingAsked.insert(key).inserted else { continue }
+            let request = BrowserGroupNames.request(titles: BrowserGroupNames.titles(of: group, in: s))
+            browserNamingTasks[key] = Task { [weak self] in
+                defer { self?.browserNamingTasks[key] = nil }
+                guard let reply = try? await tasks.respond(request) else { return }
+                let name: String
+                do { name = try BrowserGroupNames.parse(reply) } catch {
+                    await tasks.recordFailure("\(error)", for: .respond)
+                    return
+                }
+                guard let self, !Task.isCancelled, generation == self.quickTasksGeneration,
+                      await self.browserScopeIsShown(scope), generation == self.quickTasksGeneration,
+                      await self.panes.browserNameGroup(paneId: pane, group: group, name: name) else { return }
+                await self.refreshBrowser(pane: pane)
+                self.scheduleBrowserTabsWrite(pane: pane)
+            }
+        }
+    }
+
+    /// TEST-ONLY: waits for the naming requests in flight.
+    func settleBrowserNaming() async {
+        while let task = browserNamingTasks.values.first { await task.value }
+    }
+
+    /// Ruling 14's full reconcile of every browser pane on the canvas shown with its project's pins,
+    /// read off the main actor from the place's own organisation (`browserOrgFiles(for:)`) — never the
+    /// context's, which may be another place mid-switch. An unreadable file removes nothing (its reason
+    /// goes on each pane); a pane left with no tab closes, as closing its last tab does. A pane the
+    /// store holds nothing for yet waits for its own restore, which reconciles it.
+    func browserReconcilePins() async {
+        guard let scope = browserScope, !scope.project.isEmpty, let files = browserOrgFiles(for: scope) else { return }
+        let browsers = layoutSnapshot.panes.filter { $0.kind == "browser" }.map(\.id)
+        guard !browsers.isEmpty else { return }
+        let project = scope.project
+        let pins = await Task.detached { () -> Result<[BrowserPin], BrowserPinsUnreadable> in
+            do { return .success(try files.pins(project: project)) }
+            catch let error as BrowserPinsUnreadable { return .failure(error) }
+            catch { return .failure(BrowserPinsUnreadable(reason: error.localizedDescription)) }
+        }.value
+        var changed = false
+        for pane in browsers {
+            guard await browserScopeIsShown(scope) else { break }
+            guard await panes.holds(BrowserPaneKind.self, pane) else { continue }
+            let before = await panes.browserSnapshot(paneId: pane)
+            await panes.browserReconcilePins(paneId: pane, pins: pins)
+            if await panes.browserSnapshot(paneId: pane).isEmptyOfTabsAndPullRequests {
+                try? await layout.close(id: pane)
+                await panes.drop(paneId: pane)
+                changed = true
+                continue
+            }
+            let s = await panes.browserSnapshot(paneId: pane)
+            if s.tabs != before.tabs || s.groups != before.groups {
+                await layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: browserSavedActive(s),
+                    groups: s.groups, columnHidden: s.tabColumnHidden)
+                changed = true
+            }
+        }
+        if changed { await refreshLayout() }
+        await refreshPanes()
+    }
+
+    // MARK: 3d-i: the pull-request group's refresh (ruling 19)
+
+    /// The group header the keyboard is on, set by the view: ⌘R on the pull-request group's
+    /// refreshes it. Org-derived: pane ids repeat from place to place.
+    public var browserHeaderFocus: BrowserHeaderFocus?
+    /// Why the active organisation has no pull-request group, for Settings (ruling 18); nil when
+    /// it has one or the list has not been read.
+    public private(set) var browserPullRequestsAbsent: String?
+    /// The drawn organisation's pull-request list as the strip's `pr` header draws it: whether a
+    /// refresh runs (Rule 5) and its last failure, whole (Rule 8). Read after every dispatch
+    /// (`refreshPanes`), and marked refreshing the moment this window starts one, so the header
+    /// shows it while the read runs. Org-derived: `invalidateForOrgChange` clears it.
+    public private(set) var browserPullRequestsOnScreen: BrowserPullRequests?
+    /// How often the loop refreshes: five minutes (shortened by tests).
+    @ObservationIgnored var browserPullRequestsInterval: Duration = .seconds(300)
+    /// The loop, while a browser pane is on the canvas.
+    @ObservationIgnored private var browserPullRequestsLoop: Task<Void, Never>?
+    /// An organisation switch is under way: the loop does not start (`invalidateForOrgChange` sets
+    /// it, `setOrganization` clears it once the incoming canvas is shown).
+    @ObservationIgnored private var browserPullRequestsHeld = false
+
+    /// Starts the loop when the canvas shows a browser pane and none runs — a refresh now, then
+    /// one every `browserPullRequestsInterval` — and ends it with the last browser pane.
+    private func syncBrowserPullRequestsLoop() {
+        let wanted = browserScope != nil && layoutSnapshot.panes.contains { $0.kind == "browser" }
+        if !wanted { return stopBrowserPullRequestsLoop() }
+        // Not while an organisation switch holds it (`setOrganization` releases it and syncs when
+        // it ends), and not from the last refresh of a loop just ended.
+        guard browserPullRequestsLoop == nil, !browserPullRequestsHeld, !Task.isCancelled else { return }
+        browserPullRequestsLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.refreshBrowserPullRequests()
+                let interval = self.browserPullRequestsInterval
+                try? await Task.sleep(for: interval)
+            }
+        }
+    }
+
+    private func stopBrowserPullRequestsLoop() {
+        browserPullRequestsLoop?.cancel()
+        browserPullRequestsLoop = nil
+    }
+
+    /// One refresh through the action (Invariant 2), the canvas re-read after; Settings' `absent`
+    /// from its answer. A loop ended meanwhile (an organisation switch) re-reads nothing, so its last
+    /// refresh never starts it again.
+    public func refreshBrowserPullRequests() async {
+        browserPullRequestsRefreshes += 1
+        // Never read yet (the first refresh): an empty list, so the ↻ shows for it too.
+        if browserScope?.organization.isEmpty == false {
+            var list = browserPullRequestsOnScreen ?? BrowserPullRequests()
+            list.refreshing = true
+            if list != browserPullRequestsOnScreen { browserPullRequestsOnScreen = list }
+        }
+        let answer = await dispatch("browser_pull_requests_refresh", .object([:]))
+        browserPullRequestsRefreshes -= 1
+        guard case .object(let o)? = answer, !Task.isCancelled else {
+            await readBrowserPullRequestsOnScreen()
+            return
+        }
+        if case .string(let org)? = o["org"], org == organization {
+            if case .string(let why)? = o["absent"] { browserPullRequestsAbsent = why } else { browserPullRequestsAbsent = nil }
+        }
+        await refreshLayout()
+        await refreshPanes()
+    }
+
+    /// How many of this window's refreshes are under way: a pane re-read while one runs keeps the
+    /// header's ↻, whatever the store said when that read began.
+    @ObservationIgnored private var browserPullRequestsRefreshes = 0
+
+    /// The store's list for the drawn organisation, into `browserPullRequestsOnScreen` when it changed.
+    private func readBrowserPullRequestsOnScreen() async {
+        let org = browserScope?.organization ?? ""
+        var list = org.isEmpty ? nil : await panes.browserPullRequests(org: org)
+        if browserPullRequestsRefreshes > 0, !org.isEmpty {
+            list = list ?? BrowserPullRequests()
+            list?.refreshing = true
+        }
+        if list != browserPullRequestsOnScreen { browserPullRequestsOnScreen = list }
+    }
+
+    /// TEST-ONLY: whether the loop runs.
+    var browserPullRequestsLoopRuns: Bool { browserPullRequestsLoop != nil }
 
     /// 3c-iii ruling 1: a finished load without a failure is a visit, and so is a new address on a
     /// page that is not loading (`pushState`, an SPA router) unless only its `#fragment` moved; a
@@ -5997,7 +6276,8 @@ public final class WindowModel {
             guard !Task.isCancelled, let self else { return }
             self.browserTabsWrites[pane] = nil
             let s = await self.panes.browserSnapshot(paneId: pane)
-            await self.layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: s.active)
+            await self.layout.setBrowserTabs(id: pane, to: browserSavedTabs(s), active: browserSavedActive(s),
+                groups: s.groups, columnHidden: s.tabColumnHidden)
             self.browserTabsWriteCount += 1
             await self.refreshLayout()
         }
@@ -8768,6 +9048,8 @@ public final class WindowModel {
             organization = ""
             await activateLayout()
             switching = false
+            browserPullRequestsHeld = false
+            syncBrowserPullRequestsLoop()
             openShownSocket()
             // The reservation that just minted renames the Landing told about mid-switch.
             tellScreenChange()
@@ -8794,6 +9076,9 @@ public final class WindowModel {
         await refreshContext(probe: true)
         // The place landed on is shown, and the switch is over: its socket (`openShownSocket`).
         switching = false
+        // 3d-i ruling 19: the incoming canvas's pull-request loop, held while the switch ran.
+        browserPullRequestsHeld = false
+        syncBrowserPullRequestsLoop()
         openShownSocket()
         // The reservation that just minted renames the Landing told about mid-switch.
         tellScreenChange()
@@ -10421,6 +10706,7 @@ public final class WindowModel {
     public func shutdown() async {
         socketsClosed = true
         stopBackgroundFetch()
+        stopBrowserPullRequestsLoop()
         for agent in conversations.values { agent.eventPump?.cancel() }
         confirmationPump?.cancel()
         observationPump?.cancel()

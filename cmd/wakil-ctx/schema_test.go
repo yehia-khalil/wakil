@@ -89,6 +89,7 @@ func TestOutputSchemasAreObjects(t *testing.T) {
 		// part 1 — the editor's two settings tiers (Decision 38).
 		"editor_settings",
 		"browser_settings",
+		"github_pull_requests",
 		"git_account_add", "git_account_remove", "git_host_suggestions",
 		"git_ssh_keys", "git_key_generate", "git_token_set", "git_key_passphrase_set", "git_account_test",
 		"git_device_start", "git_device_poll", "git_gh_logins", "git_gh_import",

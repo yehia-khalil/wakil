@@ -20,6 +20,8 @@ struct BrowserPane: View {
     let host: BrowserTabHost
     /// A `browser_*` action on this pane (`pane` already folded in).
     let dispatch: (String, [String: JSONValue]) async -> Void
+    /// The same, answering the action's result: nil when it did not run (its refusal on the status line).
+    let dispatchAnswer: (String, [String: JSONValue]) async -> JSONValue?
     let isFocusedPane: Bool
     let isKeyboardOwner: Bool
     let keyboardHeld: () -> Bool
@@ -48,6 +50,20 @@ struct BrowserPane: View {
     let suggestions: (_ typed: String, _ search: [String]) async -> [BrowserSuggestion]
     let engineSuggestions: (_ typed: String) async -> [String]
     let chooseTab: (_ tab: String, _ url: String) async -> Void
+    /// 3d-i: the active project's name (*Pin to <project>*; empty with none), the pinned tab
+    /// waiting for ⌘W's second press, the drawn organisation's pull-request list (the `pr` header's
+    /// ↻ and error), the group header ⌘R acts on in this pane and how to set it, and *Refresh*.
+    let project: String
+    let closeArm: BrowserCloseArm?
+    /// 3d-i walk: the `Copied` tip after ⌘⇧C, drawn under the address field while it is this pane's.
+    let copiedTip: BrowserCopiedTip?
+    let pullRequests: BrowserPullRequests?
+    let headerFocus: String?
+    let setHeaderFocus: (String?) -> Void
+    let refreshPullRequests: () -> Void
+    /// 3d-i: Settings → Browser → Tabs is *Vertical*: the tabs are the column at the pane's left
+    /// (`BrowserTabColumn`), the glyph leads the address row and the count is the column's footer.
+    var verticalTabs = false
 
     @FocusState private var addressFocused: Bool
     @FocusState private var findFocused: Bool
@@ -70,6 +86,8 @@ struct BrowserPane: View {
     /// While the field editor is being given a completion's text and selection: the selection it
     /// passes through on the way is not the caret leaving the end.
     @State private var placingCompletion = false
+    /// The group whose name field is open (3d-i): *Rename…* or *New Group…*.
+    @State private var renamingGroup: String?
 
     private var active: BrowserTab? { snapshot.activeTab }
     private var listMode: BrowserTabListMode { BrowserTabListMode(paneWidth: width) }
@@ -78,35 +96,58 @@ struct BrowserPane: View {
         VStack(spacing: 0) {
             // Two 32 pt rows — the tab strip, then ‹ › ↻ and the address field — a hairline, and
             // the page edge to edge to the pane's border (the canvas pads no browser pane). The
-            // find bar and the downloads take a row of their own, each across a hairline.
-            tabStrip
-            BrowserHeader(tab: active, dispatch: send) {
+            // find bar and the downloads take a row of their own, each across a hairline. With the
+            // tabs in the column (3d-i walk) the strip row goes: the glyph leads the address row,
+            // the count is the column's footer, and the page gains the row.
+            if !verticalTabs {
+                tabStrip
+                    // The pinned tab's tip hangs over the row below.
+                    .zIndex(1)
+                stripErrors(closing: true)
+            }
+            BrowserHeader(tab: active, glyph: verticalTabs, dispatch: send) {
                 addressField
+                    // At a narrow width the field gives way first; the controls, ★ and the marks keep theirs.
+                    .layoutPriority(-1)
                 BrowserBookmarkMenu(
                     choices: BrowserBookmarkChoices(url: active?.url, bookmarks: bookmarks), dispatch: send)
                 siteMarks
             }
+            if verticalTabs { stripErrors(closing: false) }
             PaneHairline()
-            if let find = snapshot.find {
-                findBar(find)
-                    .padding(.horizontal, BrowserPaneStyle.rowInset)
-                    .frame(height: BrowserPaneStyle.rowHeight)
-                PaneHairline()
-            }
-            pageArea
-                .overlay(alignment: .top) { progressLine }
-                // The page's bottom corners are the pane's, unless the downloads sit under it.
-                .clipShape(UnevenRoundedRectangle(
-                    bottomLeadingRadius: snapshot.downloads.isEmpty ? BrowserPaneStyle.paneRadius : 0,
-                    bottomTrailingRadius: snapshot.downloads.isEmpty ? BrowserPaneStyle.paneRadius : 0,
-                    style: .continuous))
-            if !snapshot.downloads.isEmpty {
-                PaneHairline()
-                BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
-                    .padding(.leading, BrowserPaneStyle.rowInset)
-                    // Its × clear of the pane's resize handle, drawn over this corner.
-                    .padding(.trailing, PaneStripStyle.resizeCorner)
-                    .padding(.vertical, BrowserPaneStyle.rowPadding)
+            // 3d-i: in vertical mode the column sits at the left, under the address row, full
+            // height; hidden, its 6 pt edge peeks it over the page.
+            HStack(spacing: 0) {
+                if columnShown { tabColumn }
+                VStack(spacing: 0) {
+                    if let find = snapshot.find {
+                        findBar(find)
+                            .padding(.horizontal, BrowserPaneStyle.rowInset)
+                            .frame(height: BrowserPaneStyle.rowHeight)
+                        PaneHairline()
+                    }
+                    pageArea
+                        .overlay(alignment: .top) { progressLine }
+                        // The page's bottom corners are the pane's, unless the downloads sit under
+                        // it (or, at the left, the column beside it).
+                        .clipShape(UnevenRoundedRectangle(
+                            bottomLeadingRadius: snapshot.downloads.isEmpty && !columnShown ? BrowserPaneStyle.paneRadius : 0,
+                            bottomTrailingRadius: snapshot.downloads.isEmpty ? BrowserPaneStyle.paneRadius : 0,
+                            style: .continuous))
+                    if !snapshot.downloads.isEmpty {
+                        PaneHairline()
+                        BrowserDownloadStrip(downloads: snapshot.downloads, dispatch: send)
+                            .padding(.leading, BrowserPaneStyle.rowInset)
+                            // Its × clear of the pane's resize handle, drawn over this corner.
+                            .padding(.trailing, PaneStripStyle.resizeCorner)
+                            .padding(.vertical, BrowserPaneStyle.rowPadding)
+                    }
+                }
+                .overlay(alignment: .leading) {
+                    if verticalTabs, snapshot.tabColumnHidden {
+                        BrowserTabColumnPeek(holding: renamingGroup != nil) { tabColumn }
+                    }
+                }
             }
         }
         // The rows under the address field, over the page: inside the pane, so the field keeps the
@@ -118,9 +159,28 @@ struct BrowserPane: View {
                     BrowserSuggestionList(rows: input.rows, highlight: input.highlight, choose: choose)
                         .frame(width: field.width)
                         .offset(x: field.minX, y: field.maxY + 2)
+                } else if copiedTip?.pane == pane.id, let anchor {
+                    // Where the pinned tab's tip hangs, under the field: it fades, takes no click and
+                    // moves nothing (Rule 6).
+                    let field = geometry[anchor]
+                    Text(BrowserCopyURL.tip)
+                        .font(.system(size: BrowserPaneStyle.tabTitleSize, weight: .medium))
+                        .foregroundStyle(BrowserPaneStyle.text)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
+                            .fill(.regularMaterial))
+                        .overlay(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
+                            .strokeBorder(BrowserPaneStyle.text.opacity(PaneStripStyle.hairline), lineWidth: 1))
+                        .fixedSize()
+                        .offset(x: field.minX, y: field.maxY + 4)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("browser.copiedTip")
                 }
             }
         }
+        .animation(.easeOut(duration: 0.3), value: copiedTip)
         .onAppear {
             sync(old: nil, now: snapshot)
             // What its web views said while this place was off screen was dropped (the seam's
@@ -137,12 +197,22 @@ struct BrowserPane: View {
             if now { takeKeyboard() } else {
                 addressFocused = false
                 host.resignKeyboard(scope: scope, pane: pane.id)
+                // ⌘R acts on the focused pane: a header left behind here would not be under it.
+                if headerFocus != nil { setHeaderFocus(nil) }
             }
         }
         .onChange(of: keyboardFocusRequests) { _, _ in if isFocusedPane { takeKeyboard() } }
-        .onChange(of: keyboardReturns) { _, _ in if isFocusedPane { takeKeyboard() } }
+        .onChange(of: keyboardReturns) { _, _ in
+            guard isFocusedPane else { return }
+            // The palette (or another overlay) gave the keyboard back to the page: ⌘R reloads it
+            // again. A chip click never raises this, unlike `keyboardFocusRequests` (below).
+            if headerFocus != nil { setHeaderFocus(nil) }
+            takeKeyboard()
+        }
         .onChange(of: addressFocused) { _, focused in
             if focused {
+                // The address field has the keyboard: ⌘R reloads the page, not the group header.
+                if headerFocus != nil { setHeaderFocus(nil) }
                 // The whole URL selected, so typing replaces it (⌘L's promise), once the field's
                 // editor holds the keyboard — and only if it is still this field's.
                 selectAddress()
@@ -184,13 +254,75 @@ struct BrowserPane: View {
                 BrowserTabList(
                     snapshot: snapshot, mode: listMode,
                     favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
-                    sites: sites, dispatch: send)
-                BrowserTabCount(tabs: snapshot.tabs, listMode: listMode, dispatch: send)
+                    sites: sites, dispatch: send, menus: groupMenus, renaming: $renamingGroup,
+                    headerFocus: headerFocus, setHeaderFocus: setHeaderFocus,
+                    closeArmed: closeArm.flatMap { $0.pane == pane.id ? $0.tab : nil },
+                    renameEnded: { explicit in
+                        // Return or Esc gives the keyboard back to the page; focus the operator moved
+                        // elsewhere stays there (Rule 6).
+                        if explicit { DispatchQueue.main.async { focusPage() } }
+                    },
+                    middleClickEnabled: isKeyboardOwner)
+                BrowserTabCount(snapshot: snapshot, listMode: listMode, dispatch: send)
                     .padding(.leading, BrowserPaneStyle.gap)
             } else {
-                BrowserTabCount(tabs: snapshot.tabs, listMode: listMode, dispatch: send)
+                BrowserTabCount(snapshot: snapshot, listMode: listMode, dispatch: send)
                 Spacer(minLength: 0)
             }
+        }
+    }
+
+    /// The vertical column, docked at the pane's left (3d-i).
+    private var columnShown: Bool { verticalTabs && !snapshot.tabColumnHidden }
+
+    /// The vertical column (3d-i): the strip's entries, chip, menus and rename, in rows.
+    private var tabColumn: some View {
+        BrowserTabColumn(
+            snapshot: snapshot,
+            favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
+            sites: sites, dispatch: send, menus: groupMenus, renaming: $renamingGroup,
+            headerFocus: headerFocus, setHeaderFocus: setHeaderFocus,
+            closeArmed: closeArm.flatMap { $0.pane == pane.id ? $0.tab : nil },
+            renameEnded: { explicit in
+                // As the strip's: Return or Esc gives the keyboard back to the page (Rule 6).
+                if explicit { DispatchQueue.main.async { focusPage() } }
+            },
+            middleClickEnabled: isKeyboardOwner,
+            // The tab count, the strip row's in the horizontal mode, is the footer's here.
+            count: { BrowserTabCount(snapshot: snapshot, listMode: .full, footer: true, dispatch: send) })
+    }
+
+    /// The tab and group menus' context (3d-i).
+    private var groupMenus: BrowserGroupMenuContext {
+        BrowserGroupMenuContext(
+            snapshot: snapshot, project: project, refreshing: pullRequests?.refreshing == true,
+            dispatch: send, refreshPullRequests: refreshPullRequests,
+            rename: { renamingGroup = $0 },
+            newGroup: { tab in
+                // The field opens on the group `browser_group create` answers it made; a refusal opens none.
+                Task {
+                    let made = await dispatchAnswer(
+                        "browser_group", ["action": .string("create"), "tabs": .array([.string(tab)])])
+                    if case .object(let o)? = made, case .string(let id)? = o["group"] { renamingGroup = id }
+                }
+            })
+    }
+
+    /// Under the strip, each whole and wrapping (Rule 8): why the project's pins can't be read, and
+    /// the pull-request group's last refresh failure. Neither blocks anything. In the vertical mode
+    /// they sit under the one header row, whose own hairline closes them (`closing` false).
+    @ViewBuilder private func stripErrors(closing: Bool) -> some View {
+        let prError = snapshot.groups.contains { $0.kind == .pullRequests } ? pullRequests?.error : nil
+        if snapshot.pinsError != nil || prError != nil {
+            PaneHairline()
+            if let pinsError = snapshot.pinsError {
+                BrowserStripErrorRow(text: pinsError, identifier: "browser.pinsError")
+                if prError != nil { PaneHairline() }
+            }
+            if let prError {
+                BrowserStripErrorRow(text: prError, identifier: "browser.group.pr.error")
+            }
+            if closing { PaneHairline() }
         }
     }
 
@@ -654,9 +786,15 @@ struct BrowserPane: View {
             // window as this update applies, so the page takes it a turn later — taken now, it
             // would be taken straight back.
             addressFocused = false
+            if headerFocus != nil { setHeaderFocus(nil) }
             DispatchQueue.main.async { focusPage() }
         }
         syncFind(old: old, now: now)
+        // A name field for a group that was made and is gone (or never made) closes.
+        if let renaming = renamingGroup, now.group(renaming) == nil, let n = Int(renaming.dropFirst()),
+           now.nextGroup > n {
+            renamingGroup = nil
+        }
         // `browser_download_cancel` asked: the host stops each, and reports it once WebKit has.
         host.cancelRequested(now.downloads, scope: scope, pane: pane.id)
         host.prune(now.downloads, scope: scope, pane: pane.id)

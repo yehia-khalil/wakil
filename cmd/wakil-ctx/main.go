@@ -249,6 +249,8 @@ type setBrowserSettingsArgs struct {
 	SearchEngine      *string `json:"searchEngine,omitempty" jsonschema:"google, duckduckgo, bing or kagi; omit to leave unchanged"`
 	StartPage         *string `json:"startPage,omitempty" jsonschema:"an http or https URL a new tab opens, or empty for a blank page; omit to leave unchanged"`
 	SearchSuggestions *bool   `json:"searchSuggestions,omitempty" jsonschema:"true sends what you type in the address bar to the search engine for suggestions; false (the default) sends nothing until Return; omit to leave unchanged"`
+	Tabs              *string `json:"tabs,omitempty" jsonschema:"horizontal or vertical: where the tab strip sits; omit to leave unchanged"`
+	NameGroups        *bool   `json:"nameGroups,omitempty" jsonschema:"false stops the model naming automatic tab groups; true (the default) lets it; omit to leave unchanged"`
 	PictureInPicture  *bool   `json:"pictureInPicture,omitempty" jsonschema:"true (the default) floats a playing video when you leave its tab; false never does; omit to leave unchanged"`
 }
 
@@ -709,15 +711,30 @@ func newServer() *mcp.Server {
 
 	// Added by 3c-i: the browser's app-wide setting, beside the editor's in settings.json. The
 	// read is the agent's as much as the operator's; the write is operator-only on the Swift side.
-	mcp.AddTool(s, &mcp.Tool{Name: "browser_settings", Description: "Read the browser settings in force: the search engine the address bar uses for words that are not a URL (google, duckduckgo, bing or kagi) and the start page a new tab opens (empty is blank), searchSuggestions (true or false; off by default), and pictureInPicture (true or false; on by default — a playing video floats when you leave its tab). Defaults fill anything unset. appError carries settings.json's error, whole, when it cannot be read; the defaults are then in force."},
+	mcp.AddTool(s, &mcp.Tool{Name: "browser_settings", Description: "Read the browser settings in force: the search engine the address bar uses for words that are not a URL (google, duckduckgo, bing or kagi) and the start page a new tab opens (empty is blank), searchSuggestions (true or false; off by default), tabs (horizontal or vertical), nameGroups (true or false; on by default), and pictureInPicture (true or false; on by default — a playing video floats when you leave its tab). Defaults fill anything unset. appError carries settings.json's error, whole, when it cannot be read; the defaults are then in force."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.BrowserSettings, error) {
 			v, _ := wakilcore.ReadBrowserSettings()
 			return nil, v, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "set_browser_settings", Description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing or kagi), startPage (an http or https URL, or empty for a blank page), searchSuggestions (true or false; off by default), and pictureInPicture (true or false; on by default — a playing video floats when you leave its tab). Read-modify-write: omit a field to leave it unchanged. Refuses an unknown engine or a start page that is not an http or https URL, and refuses to write over a settings.json that does not parse."},
+	// Added by 3d-i (Ruling 17): the active organisation's open pull requests, read only. It takes
+	// no organisation and returns no credential.
+	mcp.AddTool(s, &mcp.Tool{Name: "github_pull_requests", Description: "Read the active organisation's open GitHub pull requests: those it wrote (reason author) and those awaiting its review (reason review-requested), newest update first, from the organisation's GitHub account (github.com first). absent says why there is no list (no GitHub account, an SSH account, no token kept); a refusal or an unreachable host is an error. Read only; no credential is returned."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, wakilcore.PullRequestsResult, error) {
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.PullRequest{}}, nil
+			}
+			out, err := wakilcore.GitHubPullRequests(ctx, org)
+			if err != nil {
+				return toolErr(err), wakilcore.PullRequestsResult{PullRequests: []wakilcore.PullRequest{}}, nil
+			}
+			return nil, out, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "set_browser_settings", Description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing or kagi), startPage (an http or https URL, or empty for a blank page), searchSuggestions (true or false; off by default), tabs (horizontal or vertical), nameGroups (true or false; on by default), and pictureInPicture (true or false; on by default — a playing video floats when you leave its tab). Read-modify-write: omit a field to leave it unchanged. Refuses an unknown engine, a tabs value other than horizontal or vertical, or a start page that is not an http or https URL, and refuses to write over a settings.json that does not parse."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a setBrowserSettingsArgs) (*mcp.CallToolResult, empty, error) {
-			if err := wakilcore.WriteBrowserSettings(wakilcore.BrowserSettingsPatch{SearchEngine: a.SearchEngine, StartPage: a.StartPage, SearchSuggestions: a.SearchSuggestions, PictureInPicture: a.PictureInPicture}); err != nil {
+			if err := wakilcore.WriteBrowserSettings(wakilcore.BrowserSettingsPatch{SearchEngine: a.SearchEngine, StartPage: a.StartPage, SearchSuggestions: a.SearchSuggestions, Tabs: a.Tabs, NameGroups: a.NameGroups, PictureInPicture: a.PictureInPicture}); err != nil {
 				return toolErr(err), empty{}, nil
 			}
 			return nil, empty{}, nil

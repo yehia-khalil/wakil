@@ -311,7 +311,10 @@ public struct WakilWiring: Sendable {
         removeBrowserData: BrowserDataRemover? = nil,
         // 3c-ii. Reads and acts on a tab's page; WebKit's, so only the app can. Nil leaves the
         // agent's browser tools answering "no page driver", as `--dispatch` and tests want.
-        browserPageDriver: (any BrowserPageDriver)? = nil
+        browserPageDriver: (any BrowserPageDriver)? = nil,
+        // 3d-i walk. Writes the system pasteboard, which only the app can (`browser_copy_url`); nil
+        // leaves that action answering the address with `copied: false`, as `--dispatch` and tests want.
+        copyBrowserText: BrowserTextCopier? = nil
     ) async -> WakilWiring {
         var diagnostics: [String] = []
         // `environment["WAKIL_PROVIDER"]` here, not a live pick: every
@@ -446,7 +449,16 @@ public struct WakilWiring: Sendable {
                 return org.isEmpty ? nil : try BrowserOrgFiles(home: browserHome, org: org)
             },
             removeData: removeBrowserData,
-            driver: browserPageDriver)
+            driver: browserPageDriver,
+            // 3d-i ruling 17: the active organisation's pull requests, read by wakil-ctx (which
+            // reads the organisation itself and returns no credential).
+            pullRequests: {
+                try await browserSettingsRegistry.dispatch(
+                    name: "ctx_github_pull_requests", params: .object([:]), origin: .ui,
+                    caller: DispatchCaller(place: Place(organization: "", project: "", environment: ""), session: nil),
+                    confirmation: nil)
+            },
+            copyText: copyBrowserText)
         await registerLayoutActions(
             into: registry, layout: layout, panes: panes, terminals: terminals,
             unsavedEditorTabs: unsavedEditorTabsProbe(panes: panes),

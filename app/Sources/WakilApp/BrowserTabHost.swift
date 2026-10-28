@@ -47,9 +47,13 @@ final class BrowserTabHost {
     /// Lazy only because it is made with `self`; it lives as long as the host.
     @ObservationIgnored private(set) lazy var pictureInPicture = BrowserPictureInPictureHost(host: self)
 
-    /// The icon a page names in its `link rel=icon`, per tab — only a `data:` one, decoded here:
-    /// nothing is fetched for it, so no request leaves outside the organisation's own store.
+    /// The icon a page names in its `link rel=icon` (else its `/favicon.ico`), per tab, in memory: a
+    /// `data:` one decoded here, an http(s) one fetched with no cookies or credentials
+    /// (`BrowserFaviconLoader`).
     private(set) var favicons: [Key: NSImage] = [:]
+    /// The network icon each tab last asked for, so a reply for a page it has left is dropped.
+    @ObservationIgnored private var faviconSources: [Key: URL] = [:]
+    @ObservationIgnored private let faviconLoader = BrowserFaviconLoader()
     /// Raised when live web views were dropped under panes that may be on screen (clearing an
     /// organisation's data), so those panes draw again and rebuild their pages.
     private(set) var rebuilds = 0
@@ -347,6 +351,7 @@ final class BrowserTabHost {
         openedByPage = Set(openedByPage.map(moved))
         pendingPopups = Set(pendingPopups.map(moved))
         favicons = move(favicons)
+        faviconSources = move(faviconSources)
         prompts = move(prompts)
         certificates = move(certificates)
         crashed = Set(crashed.map(moved))
@@ -527,8 +532,10 @@ final class BrowserTabHost {
         return view.backForwardList.currentItem != nil
     }
 
-    /// The page's own `link rel=icon`, read in an isolated world after it loads, kept only when it
-    /// is a `data:` URL — decoded here, never fetched. Any other icon is drawn as a globe.
+    /// The page's own `link rel=icon` (else `<origin>/favicon.ico`), read in an isolated world after
+    /// it loads. A `data:` icon is decoded here; an http(s) one is fetched by `faviconLoader` with no
+    /// cookies and no credentials (the page has already contacted that site: see
+    /// `BrowserFaviconLoader`). Anything else, or any failure, is drawn as a globe.
     func readFavicon(of view: WKWebView, scope: LayoutScope, pane: String, tab: String) {
         guard !tab.isEmpty else { return }
         let key = Key(scope: scope, pane: pane, tab: tab)
@@ -537,7 +544,28 @@ final class BrowserTabHost {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let href = (try? result.get()) as? String
-                self.favicons[key] = href.flatMap(browserDataIcon)
+                if let href, BrowserFaviconRules.isData(href) {
+                    self.faviconSources[key] = nil
+                    self.favicons[key] = browserDataIcon(href)
+                    return
+                }
+                guard let url = BrowserFaviconRules.url(href: href, pageURL: view.url?.absoluteString ?? "") else {
+                    self.faviconSources[key] = nil
+                    self.favicons[key] = nil
+                    return
+                }
+                self.faviconSources[key] = url
+                if let hit = self.faviconLoader.cached(url) {
+                    self.favicons[key] = hit
+                    return
+                }
+                // The last page's icon is not this page's while this one's is on its way.
+                self.favicons[key] = nil
+                Task { @MainActor [weak self] in
+                    guard let self, let image = await self.faviconLoader.load(url),
+                          self.faviconSources[key] == url else { return }
+                    self.favicons[key] = image
+                }
             }
         }
     }
@@ -893,6 +921,7 @@ final class BrowserTabHost {
             applied[key] = nil
             openedByPage.remove(key)
             favicons[key] = nil
+            faviconSources[key] = nil
         }
     }
 }
