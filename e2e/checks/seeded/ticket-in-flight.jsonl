@@ -24,7 +24,7 @@
 {"expect":{"frame":"editor.ticket.inflight:INI-170","inside":"editor.ticket"}}
 {"expect":{"frame":"editor.ticket.inflight:INI-150","inside":"editor.ticket"}}
 {"dispatch":{"action":"ticket_in_flight","params":{}}}
-{"parity":{"action":"ticket_show","params":{"pane":"editor-2","key":"INI-142"},"click":"editor.ticket.inflight:INI-142","assert":"read_pane"}}
+{"parity":{"action":"ticket_show","params":{"pane":"editor-2","key":"INI-142"},"click":"editor.ticket.waiting:INI-142","assert":"read_pane"}}
 {"expect":{"pane":"editor-2","field":"column.ticket_shown","equals":"INI-142"}}
 {"expect":{"pane":"editor-2","field":"ticket.branch","equals":"main"}}
 {"expect":{"tree":"contains","text":"#212  ini-142-login → main      open · checks 1/2 · 1 failing"}}

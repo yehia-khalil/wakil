@@ -303,7 +303,7 @@ struct EditorTicketView: View {
     private var longLived: some View {
         if let s = state.inFlight {
             inFlightList("Waiting on you", s.waitingOnYou, id: "waiting")
-            inFlightList("In flight", s.inFlight, id: "inflight")
+            inFlightList("In flight", ticketInFlightNotWaiting(s), id: "inflight")
             ForEach(ticketPartialLine(s.partial), id: \.self) { whole($0, id: "editor.ticket.partial") }
         } else {
             Text("Reading In flight…").dimmed().accessibilityIdentifier("editor.ticket.inflightLoading")

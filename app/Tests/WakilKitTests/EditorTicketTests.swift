@@ -581,3 +581,14 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
     await #expect { try await withClient.loadDrafts() } throws: { _ in true }
     #expect(await withClient.draftsFailure() == "Reply drafts could not be read: drafts are not readable: unexpected end of JSON input")
 }
+
+/// A ticket that needs the operator is listed once, under Waiting on you (walk, 2026-10-28).
+@Test func aTicketWaitingOnYouIsNotListedAgainInFlight() {
+        let waiting = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142-login")
+        let other = InFlightRowState(key: "INI-150", root: "/r/api", branch: "ini-150-search")
+        let s = InFlightState(waitingOnYou: [waiting], inFlight: [waiting, other])
+        #expect(ticketInFlightNotWaiting(s) == [other])
+        // The same key on another branch is another row, and stays.
+        let elsewhere = InFlightRowState(key: "INI-142", root: "/r/api", branch: "ini-142-hotfix")
+    #expect(ticketInFlightNotWaiting(InFlightState(waitingOnYou: [waiting], inFlight: [elsewhere])) == [elsewhere])
+}
