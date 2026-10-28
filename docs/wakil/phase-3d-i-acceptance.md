@@ -35,6 +35,7 @@ two places (two environments).
 | 8 | Wakil | ⌘, → **Browser** → **Tabs** → **Vertical**. Drag the column's edge to 360 and to 160. Press ⌃⌘S. Rest the pointer at the left edge, then move away | The column is on the left: pinned, then groups, then loose. The width stops at 360 and at 160. ⌃⌘S hides it. At the edge it slides out, and back when you leave | |
 | 9 | Wakil | Hide the column in a narrow pane and show it in a wide one. Relaunch | Each pane keeps its own hidden or shown state. The width is the same in both | |
 | 10 | Wakil | ⌘, → **Browser** → **Name groups with AI** → Off. Form a new group. Break the quick-tasks provider, turn it On and form another group | With it Off the group keeps its site name. With a broken provider the group keeps its site name and Settings → Providers shows the error whole | |
+| 11 | Wakil | Open a few real sites (`github.com`, `wikipedia.org`, a site naming no icon) and a page with a `data:` icon. Go offline and open another | Each tab shows its site's own icon, from the page's `link rel=icon` or `/favicon.ico`; the `data:` page keeps its icon. Offline, or with a missing or oversized icon, the tab keeps the globe. The request carries no cookies: the page has already contacted that site | |
 
 ## 2. Known and not fixed
 
