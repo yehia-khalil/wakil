@@ -158,7 +158,7 @@ struct EditorPane: View {
         GeometryReader { geo in
             HStack(spacing: 0) {
                 if column.shown {
-                    EditorColumn(column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
+                    EditorColumn(openLink: openLink, column: column, rows: treeRows, pendingRoots: roots.filter { files.listings[$0] == nil },
                                  gitRoots: gitRoots,
                                  search: snapshot.search, paneWidth: geo.size.width, dispatch: dispatch,
                                  dispatchThrowing: dispatchThrowing,

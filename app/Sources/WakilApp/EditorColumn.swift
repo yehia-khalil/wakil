@@ -7,6 +7,8 @@ import SwiftUI
 /// Its own state is the query being typed, the type-ahead prefix and the live drag width. The selected
 /// row and result are the pane's (`EditorPane`), so they outlive the column being hidden (Rule 6).
 struct EditorColumn: View {
+    /// Where a link in the Ticket view opens (`WakilLinks.open`).
+    var openLink: (String, Bool) -> Void = { _, _ in }
     let column: EditorColumnState
     /// The tree's rows, built once by `EditorPane` (`treeRows`), which also reads them for save-as.
     let rows: [EditorTreeRow]
@@ -157,7 +159,7 @@ struct EditorColumn: View {
                 case .search: searchView
                 case .changes: changesView
                 case .ticket:
-                    EditorTicketView(state: ticket, column: column, tab: timelineTab, reviews: reviews,
+                    EditorTicketView(openLink: openLink, state: ticket, column: column, tab: timelineTab, reviews: reviews,
                                      dispatch: dispatch, dispatchReply: dispatchReply, focused: $ticketFocused,
                                      fieldHasKeyboard: $ticketFieldHasKeyboard, browsed: $browsed,
                                      handOffAnchored: handOffAnchored)

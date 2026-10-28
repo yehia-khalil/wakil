@@ -10,6 +10,8 @@ import SwiftUI
 /// is a registry action through `dispatch` (Invariant 2). Its own state is what is being typed, the
 /// + Add menu, and the link field's answer.
 struct EditorTicketView: View {
+    /// Where a link opens (`WakilLinks.open`): Wakil's browser pane, the system browser on ⌥-click.
+    var openLink: (String, Bool) -> Void = { _, _ in }
     let state: EditorTicketViewState
     let column: EditorColumnState
     /// The pane's front tab: the view follows its root, else the project's first.
@@ -212,7 +214,9 @@ struct EditorTicketView: View {
             Text(ticketOutsideLine).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("editor.ticket.outside")
             if let link = URL(string: url), !url.isEmpty {
-                Link("Open on GitHub ↗", destination: link).foregroundStyle(EditorPaneStyle.violet)
+                Button("Open on GitHub ↗") { openLink(link.absoluteString, NSEvent.modifierFlags.contains(.option)) }
+                    .buttonStyle(.plain).foregroundStyle(EditorPaneStyle.violet)
+                    .help("Opens in Wakil's browser; ⌥-click for your system browser")
                     .accessibilityIdentifier("editor.ticket.outside.github")
             }
         }
@@ -495,7 +499,9 @@ struct EditorTicketView: View {
                     Text("✗ \(c.name)").foregroundStyle(TicketPill.colour(.red)).lineLimit(1)
                     Spacer()
                     if let s = c.url, let url = URL(string: s) {
-                        Link("details ↗", destination: url).font(.system(size: 11))
+                        Button("details ↗") { openLink(url.absoluteString, NSEvent.modifierFlags.contains(.option)) }
+                            .buttonStyle(.plain).font(.system(size: 11))
+                            .help("Opens in Wakil's browser; ⌥-click for your system browser")
                             .accessibilityIdentifier("editor.ticket.check:\(pr.number):\(c.name)")
                     }
                 }
