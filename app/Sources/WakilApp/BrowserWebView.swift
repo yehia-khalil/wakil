@@ -281,6 +281,10 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         failure = nil
+        // 3d-iv: the old document's login field is gone with it; a sent form's bar stays.
+        if !tab.isEmpty {
+            host?.passwordPageCommitted(key, site: webView.url.flatMap { BrowserPasswords.siteKey($0.absoluteString) })
+        }
         host?.saveState(of: webView, scope: scope, pane: pane, tab: tab, files: files)
         // A page on another host takes that host's remembered zoom, and the store hears it.
         if let site = webView.url.flatMap(BrowserOrgFiles.zoomHost(of:)), site != zoomHost {

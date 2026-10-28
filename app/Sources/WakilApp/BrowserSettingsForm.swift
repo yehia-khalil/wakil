@@ -91,6 +91,7 @@ struct BrowserSettingsForm: View {
             SettingsSection("Browsing data") {
                 clearSection
             }
+            SettingsSection("Passwords") { BrowserPasswordsSettings(org: organisationId, name: organisation) }
             Text("Search and start page are yours across every organisation — stored in ~/.wakil/settings.json. "
                  + "Browsing data is this organisation's.")
                 .font(.system(size: SettingsScale.meta))

@@ -113,9 +113,12 @@ the operator back to Dia every day:
 11. **Picture-in-picture uses WebKit's own** (the spike, below), with one private preference.
 12. **Passwords are saved per organisation and identity** in the login Keychain under Invariant 4's
     naming: service `wakil:<org>:browser-login:<identity>` (`default` for the default identity),
-    account `<site> <username>`. The site key is the registrable domain, as for groups. They are read
-    and written from WakilKit, not through Go: only the window fills a page, and the org in the name is
-    checked on every read as `Resolve()` checks it, so another organisation's item is never returned.
+    account `<site> <username>`, label `<site> — Wakil (<org>)`. The site key is the registrable domain with
+    no families, and `host:port` for a local host (amendment 2026-10-27, ruling 5). They are read and
+    written from WakilKit in-process through Security.framework, not through Go and not by running
+    `/usr/bin/security` (ruling 1): an item the app creates trusts the app alone, so the agent's bare
+    shell cannot read it without a system prompt. The org in the name is checked on every read as
+    `Resolve()` checks it, so another organisation's item is never returned.
     Lane C uses only the default identity, since 3d-ii is dropped (amendment 2026-10-28); the name
     still carries `default`, so identities, if they ever come back, need no migration.
 13. **Clearing an organisation's browsing data** (3c-i) clears every identity's store too. Passwords
@@ -214,7 +217,8 @@ As the notes' decision 6 "now", with these calls:
   `Save the password for <user> on <site>?` — **Save**, **Not Now**, **Never for This Site**. An
   update to a saved login asks `Update the password…`. The bar never blocks the page.
 - **Suggest:** a field with `autocomplete="new-password"` gets a strong password offered in the key's
-  list (20 characters, Safari's shape: letters and digits in four groups of five with hyphens).
+  list (23 characters: four groups of five letters and digits joined by hyphens, Safari's shape; amendment
+  2026-10-27, ruling 6).
   Choosing it fills both new-password fields and saves when the form is submitted.
 - **Import once from the Passwords app's CSV export** (Settings → Browser → Passwords → *Import…*):
   every row listed by site, each with an organisation picker defaulting to the current organisation,
@@ -366,6 +370,35 @@ settles two edges.
   clears the floating tab itself. Edited under Errors and edges.
 - **A cross-origin iframe's video** floats through its frame from the `wakil.pip` world. Edited under
   Errors and edges.
+
+## Amendment 2026-10-27 (3d-iv probe)
+
+Written 2026-10-28 from `docs/wakil/3d-iv-keychain-probe.md`, and from the 3d-iv plan's rulings. Body lines
+above (call 12, Lane C's Suggest) are edited to match.
+
+**Findings (2026-10-28, unattended run, throwaway keychain).**
+- An item added with `SecItemAdd` and `kSecUseKeychain` from a Swift binary lists (attributes only) and
+  reads back in-process with no prompt. Its `decrypt` ACL entry trusts that binary alone;
+  `/usr/bin/security` is not trusted. `find-generic-password` without `-w` shows attributes with exit 0,
+  and an absent service exits 44. A keychain made by `create-keychain` is not in the user search list.
+- **Provisional:** (b), whether `security ... -w` prompts and prints nothing, (e), what a rebuild shows,
+  and (f), whether a tab's `.state` holds a typed password, need the operator and are not yet measured.
+  The operator runs (b) before Cover; if it prints the value, ruling 1 falls and Task 3 waits.
+
+**Rulings.**
+1. Swift reads and writes these items in-process through Security.framework, not by running
+   `/usr/bin/security`. The spec wins over the code's header, `CONTRIBUTING.md` and `state.md`, which are
+   amended for browser passwords only. The reason: Go's items trust `/usr/bin/security`, so the agent could
+   read them with no prompt; an app-created item trusts the app only.
+2. On an ad-hoc signed build each rebuild changes the code hash, so the first read of each item after a
+   rebuild raises the system prompt; Always Allow holds until the next build. Listing reads attributes only
+   and never asks.
+5. The site key is nothing off http and https; `host:port` for a local host; otherwise the registrable
+   domain, with no families (one family pairs `github.com` with `githubusercontent.com`, which serves
+   user content).
+6. The strong password is 23 characters: four groups of five from `[A-Za-z0-9]` joined by `-`, with at
+   least one upper case, one lower case and one digit. "20 characters" and "four groups of five with
+   hyphens" cannot both hold; the shape wins.
 
 ## Amendment, 2026-10-28 — 3d-ii dropped
 

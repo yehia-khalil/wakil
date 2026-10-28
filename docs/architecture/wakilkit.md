@@ -144,6 +144,15 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   `BrowserPageDriver` seam WakilApp's `BrowserPageAgent` fills, `browserFitToCap` (the 204,800-byte cap:
   says where it cut, never splits a character), `browserIdleWait` (the 1 s quiet after the operator
   types) and the copy helpers: labels trimmed to 60 characters, `browserThreadLine`, `browserStatement`.
+- **Browser passwords (3d-iv, Decision 49)** — `BrowserSiteKey.swift` and `BrowserPublicSuffixes.swift` (the
+  registrable domain, from a bundled public-suffix list); `BrowserPasswords.swift` (the Keychain names, the
+  site key with no families, the 23-character strong password, `offer`: save, update or nothing, and the
+  org check); `BrowserPasswordStore.swift` (Security.framework: list by attributes, read, save, delete; a
+  value never reaches an error); `BrowserPasswordActions.swift` (`browser_password_fill | suggest | save |
+  delete | never`, all operator-only, `password` a `secretParams` key; the scrub that hides a password the
+  page has held); `BrowserPasswordPageRules.swift` (the page's messages, the key's frame);
+  `BrowserOrgFiles+Passwords.swift` (`passwords-never.json`); `BrowserPasswordCSV.swift` (the Passwords
+  app's export); `BrowserPasswordSettings.swift` (the Settings rules and the import plan).
 - `BrowserFieldRules.swift` — `BrowserFieldRules` (3c-ii): the never-list of fields that are the
   operator's to fill (password, card number and code, one-time code), read from a field's type,
   autocomplete, name, id and label with camelCase split; `scriptSource` generates the same rules as

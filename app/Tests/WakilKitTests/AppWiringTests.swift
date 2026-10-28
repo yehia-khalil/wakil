@@ -239,7 +239,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
              // 3c-i: the browser's actions.
              // 3c-ii: the agent's reach into the page (read_page, click, press, revoke_site, scroll, select, type).
-             "browser_back", "browser_bookmark", "browser_clear_data", "browser_click", "browser_close_tab", "browser_copy_url", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_group", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_pin", "browser_press", "browser_print", "browser_pull_requests_refresh", "browser_read_page", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_revoke_site", "browser_scroll", "browser_select", "browser_select_tab", "browser_stop", "browser_tab_column", "browser_type", "browser_unpin", "browser_zoom",
+             "browser_back", "browser_bookmark", "browser_clear_data", "browser_click", "browser_close_tab", "browser_copy_url", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_group", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_password_delete", "browser_password_fill", "browser_password_never", "browser_password_save", "browser_password_suggest", "browser_pin", "browser_press", "browser_print", "browser_pull_requests_refresh", "browser_read_page", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_revoke_site", "browser_scroll", "browser_select", "browser_select_tab", "browser_stop", "browser_tab_column", "browser_type", "browser_unpin", "browser_zoom",
              "capacity_record", "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_capacity",
              "ctx_config_tree", "ctx_create_environment", "ctx_create_org", "ctx_create_project",
              "ctx_editor_settings", "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
@@ -1074,4 +1074,45 @@ private final class ManagedAtomicFlag: @unchecked Sendable {
     private var value = false
     func set() { lock.lock(); value = true; lock.unlock() }
     var isSet: Bool { lock.lock(); defer { lock.unlock() }; return value }
+}
+
+// MARK: - 3d-iv: browser passwords
+
+/// The wiring's password store is the one `WAKIL_KEYCHAIN` names, and the actions write through it.
+/// Every write here is to the test's own temporary keychain, and only after the store is proved to be
+/// scoped to it: a store that ignored the variable would write to the login keychain.
+@Test func theStoreTakesWakilKeychainFromTheEnvironment() async throws {
+    let home = try scratch()
+    let emptyBin = try scratch()
+
+    // A named file that is missing is refused, never the login keychain in its place.
+    let missing = home.appendingPathComponent("missing.keychain-db").path
+    let refused = await WakilWiring.build(
+        journalDirectory: try scratch(), sessionId: "kc-missing", executableDirectory: emptyBin,
+        environment: ["HOME": home.path, "WAKIL_BIN_DIR": emptyBin.path, "WAKIL_KEYCHAIN": missing])
+    await refused.shutdown()
+    try #require(refused.browserPasswords.keychainFile == missing)
+    #expect(throws: BrowserPasswordError.noKeychainFile(missing)) {
+        try refused.browserPasswords.logins(org: "initech", site: nil)
+    }
+
+    let keychain = try TemporaryKeychain()
+    defer { keychain.remove() }
+    try FileManager.default.createDirectory(
+        at: home.appendingPathComponent(".wakil/orgs/initech"), withIntermediateDirectories: true)
+    let wiring = await WakilWiring.build(
+        journalDirectory: try scratch(), sessionId: "kc", executableDirectory: emptyBin,
+        environment: ["HOME": home.path, "WAKIL_BIN_DIR": emptyBin.path, "WAKIL_KEYCHAIN": keychain.path])
+    await wiring.shutdown()
+    try #require(wiring.browserPasswords.keychainFile == keychain.path)
+
+    // Through the registry's action, so the action's store is the wiring's too.
+    _ = try await wiring.registry.dispatch(
+        name: "browser_password_save",
+        params: .object(["org": .string("initech"), "site": .string("example.com"),
+                         "username": .string("ann"), "password": .string("walk-test-pass-1")]),
+        origin: .ui, caller: DispatchCaller(place: Place(organization: "", project: "", environment: ""), session: nil),
+        confirmation: nil)
+    let onFile = BrowserPasswordStore(keychainFile: keychain.path)
+    #expect(try onFile.logins(org: "initech", site: nil).map(\.username) == ["ann"])
 }

@@ -81,7 +81,8 @@ Rules no phase may break.
    avoided. A **provider** (a Claude subscription, Codex, a local model) owns its own
    authentication; for Claude Code that is a config dir and an OAuth token. One
    organisation may hold several providers, and one provider may serve several
-   organisations.
+   organisations. A saved browser password is a credential too: only in the Keychain, never the
+   agent's, the store's, a file's or a log's.
 
    **Both halves are delivered.** Two Claude accounts on one org since Phase 1; and one
    provider serving several orgs, because `buildLaunch` always passes `--strict-mcp-config`,
@@ -111,7 +112,7 @@ Rules no phase may break.
    mutation, every `wakil-pm` write but the transition, any request leaving the `baseUrl`
    of the API entry it targets, a command the **agent** runs in a terminal pane — the
    agent already has a bare shell, so a terminal run adds the organisation's credentials,
-   not reach, and the refusal defends Invariant 4 — and a password, card or one-time-code field typed by the agent.
+   not reach, and the refusal defends Invariant 4 — and a password, card or one-time-code field typed or filled by the agent.
 
    **Each write declares its own price** rather than inheriting one from its kind; see
    §9 and Decision 25.
