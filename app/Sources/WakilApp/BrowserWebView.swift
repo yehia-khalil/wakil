@@ -18,6 +18,9 @@ final class BrowserWebView: WKWebView {
     /// Docked for Restore (`BrowserPictureInPictureHost.dock`): invisible, so it takes no click either
     /// — `hitTest` ignores alpha.
     var docked = false
+    /// Whether ⌃⌘S is Wakil's in this page: only with the tabs vertical, where it hides and shows the
+    /// column (3d-i). With the tabs horizontal it is the page's, so it is not offered to the menu first.
+    var tabColumnKey: (@MainActor () -> Bool)?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         docked ? nil : super.hitTest(point)
@@ -28,15 +31,15 @@ final class BrowserWebView: WKWebView {
         super.viewWillMove(toWindow: newWindow)
     }
 
-    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, ⌘⇧W and ⌘⇧C (global constraints), **by physical key**
-    /// (`kVK_ANSI_*`), so they are Wakil's on every keyboard layout — a character match fails on a
-    /// non-Latin one (`QueryLineKeys`' note).
-    static func isWakilKey(_ event: NSEvent) -> Bool {
+    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, ⌘⇧W and ⌘⇧C (global constraints), and ⌃⌘S when `tabColumn`,
+    /// **by physical key** (`kVK_ANSI_*`), so they are Wakil's on every keyboard layout — a character
+    /// match fails on a non-Latin one (`QueryLineKeys`' note).
+    static func isWakilKey(_ event: NSEvent, tabColumn: Bool) -> Bool {
         guard event.type == .keyDown else { return false }
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if mods == .command { return commandKeys.contains(event.keyCode) }
         if mods == [.command, .shift] { return event.keyCode == 13 || event.keyCode == 8 }   // W; C: Copy Page Address
-        if mods == [.control, .command] { return event.keyCode == 1 }  // S: Toggle Tab Column (3d-i)
+        if mods == [.control, .command] { return tabColumn && event.keyCode == 1 }  // S: Toggle Tab Column (3d-i)
         return false
     }
 
@@ -44,7 +47,7 @@ final class BrowserWebView: WKWebView {
     private static let commandKeys: Set<UInt16> = [40, 35, 45, 17, 13, 37, 43, 2, 18, 19, 20, 21, 23, 22, 26, 28, 25]
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if Self.isWakilKey(event), NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
+        if Self.isWakilKey(event, tabColumn: tabColumnKey?() ?? false), NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
 
@@ -207,6 +210,7 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             webView.observe(\.canGoForward) { view, _ in report(view) },
             webView.observe(\.isLoading) { view, _ in report(view) },
         ]
+        webView.tabColumnKey = { [weak self] in self?.host?.model?.browserSettings.tabs == "vertical" }
         webView.stopOnEscape = { [weak self] in
             guard let self, !self.tab.isEmpty, self.isShown else { return false }
             self.dispatch("browser_stop")
