@@ -47,8 +47,14 @@ extension WindowModel {
                 "provider": provider.map(JSONValue.string) ?? .null,
                 "messageChars": .integer(Int64(chars.0)), "replyChars": .integer(Int64(chars.1)),
             ])
-            try? await self.registry.journalQuickTask(
-                action: "conversation_named", params: params, caller: agent.caller, outcome: line)
+            // Into the journal table with no suspension in between, so `settleConversationNaming` always
+            // finds the one or the other (Ruling R9). The line's task leaves the table as it ends.
+            let registry = self.registry, caller = agent.caller, key = UUID()
+            self.conversationNamingJournals[key] = Task { [weak self] in
+                try? await registry.journalQuickTask(
+                    action: "conversation_named", params: params, caller: caller, outcome: line)
+                self?.conversationNamingJournals[key] = nil
+            }
         }
     }
 
@@ -70,7 +76,57 @@ extension WindowModel {
 
     /// TEST-ONLY: waits for every naming in flight, its journal line included.
     func settleConversationNaming() async {
-        while let task = conversationNamingTasks.values.first { await task.value }
+        while let task = conversationNamingTasks.values.first ?? conversationNamingJournals.values.first {
+            await task.value
+        }
+    }
+
+    /// `conversation_rename`, drained from `ConversationBroker` (names, call 3): `name` — already
+    /// cleaned, nil clears — becomes `id`'s operator name, or the screen's conversation's when `id` is
+    /// nil; on a Landing, or for a conversation closed since the handler checked it, nothing. It goes
+    /// to disk under the lineage root, or is held until `send` sets one. The screen never moves (Rule 6).
+    public func renameConversation(_ id: String?, to name: String?) async {
+        guard let agent = id.map({ conversations[$0] }) ?? currentAgent else { return }
+        let name = name.flatMap(cleanConversationName)
+        agent.operatorName = name
+        if let root = agent.lineageRoot {
+            saveNames(of: agent, root: root, operator: .some(name), ai: .none)
+        } else {
+            agent.namesUnsaved = true
+        }
+    }
+
+    /// A name — the operator's or the model's — that landed before `agent` had a lineage root, written
+    /// once it has one (`send`). Both slots are written; the root is new, so nothing on disk is lost.
+    func saveUnsavedNames(of agent: PlaceAgent) {
+        guard agent.namesUnsaved, let root = agent.lineageRoot else { return }
+        if saveNames(of: agent, root: root, operator: .some(agent.operatorName), ai: .some(agent.aiName)) {
+            agent.namesUnsaved = false
+        }
+    }
+
+    /// A resume into a root `agent` did not have: names held in memory are written there first (the
+    /// later value wins, Rule 7), then the root's stored names become the conversation's — a resume
+    /// is the conversation it inherits. A held name whose write failed stays (its status said so); a
+    /// file that cannot be read says so and changes nothing.
+    func adoptStoredNames(of agent: PlaceAgent) {
+        guard let root = agent.lineageRoot, let file = conversationNameFile(org: agent.place.organization) else { return }
+        let held = agent.namesUnsaved && !saveNames(
+            of: agent, root: root, operator: agent.operatorName.map { .some($0) } ?? .none,
+            ai: agent.aiName.map { .some($0) } ?? .none)
+        agent.namesUnsaved = false
+        do {
+            let stored = try file.read()[root]
+            if held {
+                agent.operatorName = agent.operatorName ?? stored?.operator
+                agent.aiName = agent.aiName ?? stored?.ai
+            } else {
+                agent.operatorName = stored?.operator
+                agent.aiName = stored?.ai
+            }
+        } catch {
+            status = "\(error)"
+        }
     }
 
     /// The organisation's names file, or nil without a home.
@@ -86,7 +142,7 @@ extension WindowModel {
         case .success(let name):
             agent.aiName = name
             if let root = agent.lineageRoot {
-                saveAIName(name, root: root, of: agent)
+                saveNames(of: agent, root: root, operator: .none, ai: .some(name))
             } else {
                 agent.namesUnsaved = true
             }
@@ -97,15 +153,18 @@ extension WindowModel {
     }
 
     /// Written with the conversation's own organisation, never the window's (Invariant 4). A write
-    /// refused over an unreadable file says so in that file's own sentence.
-    private func saveAIName(_ name: String, root: String, of agent: PlaceAgent) {
-        guard let file = conversationNameFile(org: agent.place.organization) else { return }
+    /// refused over an unreadable file says so in that file's own sentence. True when it was written.
+    @discardableResult
+    private func saveNames(of agent: PlaceAgent, root: String, operator: String??, ai: String??) -> Bool {
+        guard let file = conversationNameFile(org: agent.place.organization) else { return false }
         do {
-            try file.set(root: root, operator: .none, ai: .some(name))
+            try file.set(root: root, operator: `operator`, ai: ai)
+            return true
         } catch let error as ConversationNamesUnreadable {
             status = error.description
         } catch {
             status = "conversation names: could not save \(file.path): \(error) — the name holds until Wakil quits"
         }
+        return false
     }
 }

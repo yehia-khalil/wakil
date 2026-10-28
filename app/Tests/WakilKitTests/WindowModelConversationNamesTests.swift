@@ -169,6 +169,24 @@ private struct Fixture {
         #expect(agent.aiName == "Fixture")
     }
 
+    /// Ruling R9 (a): an errored turn's text is not the reply sent; REPLY is the first clean exchange's.
+    @Test func anErroredTurnsTextIsNotTheReplySent() async throws {
+        let f = try await Fixture()
+        try await f.turn(reply: "Something went wrong", isError: true)
+        try await f.turn("try again", reply: "Looking at auth")
+        #expect(await f.quick.requests.map(\.input) == ["MESSAGE: fix the login test\n\nREPLY: Looking at auth"])
+    }
+
+    /// Ruling R9 (b): settling waits for the journal line too, not only the name.
+    @Test func settlingWaitsForTheJournalLine() async throws {
+        for _ in 0..<5 {
+            let f = try await Fixture()
+            try await f.turn()
+            #expect(f.model.conversationNamingTasks.isEmpty && f.model.conversationNamingJournals.isEmpty)
+            #expect(try await f.namingEntries().count == 1)
+        }
+    }
+
     @Test func offAsksNothing() async throws {
         let f = try await Fixture(names: false)
         let agent = try await f.turn()

@@ -585,6 +585,9 @@ public final class WindowModel {
     /// The naming quick task in flight, by conversation id (`nameIfDue`). Org-derived: an org switch
     /// cancels each and clears its conversation's `namingAsked`, so it is asked again on return.
     @ObservationIgnored var conversationNamingTasks: [String: Task<Void, Never>] = [:]
+    /// A landed name's journal line being written, so `settleConversationNaming` waits for it too. Not
+    /// org-derived: the name has landed, and nothing an org switch does undoes it or its line.
+    @ObservationIgnored var conversationNamingJournals: [UUID: Task<Void, Never>] = [:]
     private let panes: PaneStore
     private let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per
@@ -1417,6 +1420,8 @@ public final class WindowModel {
                     await self.switchToConversation(conversation, in: place)
                 case .close(let conversation):
                     await self.closeConversation(conversation)
+                case .rename(let conversation, let name):
+                    await self.renameConversation(conversation, to: name)
                 }
             }
         }
@@ -1728,7 +1733,9 @@ public final class WindowModel {
         paletteClients: PaletteClients = PaletteClients(),
         gitStatus: GitStatus? = nil,
         claudeLocator: ClaudeExecutableLocator? = nil,
-        apiHTTP: (any ToolCaller)? = nil
+        apiHTTP: (any ToolCaller)? = nil,
+        // Names: a test that registers `conversationRenameAction` parks on the broker this drains.
+        conversationRequests: ConversationBroker = ConversationBroker()
     ) -> WindowModel {
         let scratch = scratchRoot
             .appendingPathComponent("wakil-window-model-for-testing-\(UUID().uuidString)")
@@ -1802,6 +1809,7 @@ public final class WindowModel {
             providerId: providerId,
             lookupFactory: resolvedLookupFactory,
             confirmations: confirmations,
+            conversationRequests: conversationRequests,
             orgSwitcher: orgSwitcher,
             terminals: terminals,
             claudeLocator: claudeLocator,
@@ -8000,6 +8008,9 @@ public final class WindowModel {
             }
             retainAgentPlace()
         }
+        // A name given before the conversation had a lineage root is written under the one it has now
+        // (names call 8).
+        saveUnsavedNames(of: agent)
         guard let harness = agent.harness else {
             // Unreachable today — `harness` and `sessionId` are only ever
             // set together, below — but `startHarness()` already set
@@ -8345,7 +8356,10 @@ public final class WindowModel {
         // workspace. `inheritedRoot` was read before the swap, from the
         // parent's own lineage, so a chain of any length resolves to the
         // same arrangement.
+        let previousRoot = agent.lineageRoot
         agent.lineageRoot = inheritedRoot
+        // Its names are the root's it inherits (names call 8); a revival keeps its own root, and them.
+        if inheritedRoot != previousRoot { adoptStoredNames(of: agent) }
         // A resume carries a past session, already named or not (names call 6) — never asked. Forking
         // the conversation's own ended session is its revival, not a resume.
         if !reviving { agent.namingAsked = true }
@@ -10080,6 +10094,9 @@ public final class WindowModel {
         case .result(false, _) where !agent.firstCleanTurnDone:
             agent.firstCleanTurnDone = true
             nameIfDue(agent)
+        case .result(true, _) where !agent.firstCleanTurnDone:
+            // An errored turn's text is not the reply sent: REPLY is the first clean exchange's.
+            agent.replyStart = ""
         default:
             break
         }
