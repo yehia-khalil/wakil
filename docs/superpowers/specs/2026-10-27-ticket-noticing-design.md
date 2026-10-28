@@ -254,8 +254,8 @@ control, and the agent is a model reading it.
 
 | From | First line | Body |
 |---|---|---|
-| A review thread | `INI-142 · src/auth/token.go:41 — <first words>` | ticket key, title and status; root, branch and PR; the thread's file:line and **every comment** in it, author and text; then: make the change on this branch, draft a reply on this thread with `review_reply_draft`, do not send it, write decisions, not-done and verified lines with `ticket_record_update` |
-| The Ticket header | `INI-142 · <Next, or the title>` | key, title, status, Next; each open thread waiting on the operator (file:line, author, first words) and each failing check by name; the record's Not done lines; then: work toward Next on this branch, draft replies on the threads you answer, do not send them, write to the record |
+| A review thread | `INI-142 · src/auth/token.go:41 — "<first words>"` (others' words and titles in a first line are quoted) | ticket key, title and status; root, branch and PR; the thread's file:line and **every comment** in it, author and text; then: make the change on this branch, draft a reply on this thread with `review_reply_draft`, do not send it, write decisions, not-done and verified lines with `ticket_record_update` |
+| The Ticket header | `INI-142 · <the operator's Next, or "the title">` (a Next or Not done line an agent wrote or edited is quoted, marked not the operator's) | key, title, status, Next; each open thread waiting on the operator (file:line, author, first words) and each failing check by name; the record's Not done lines; then: work toward Next on this branch, draft replies on the threads you answer, do not send them, write to the record |
 | ⌘P | as the header | as the header |
 
 The instructions name Wakil's actions, not any harness's skills or tools (Invariant 1): any harness
