@@ -94,7 +94,7 @@ private let readPaneKeys: Set<String> = [
         Issue.record("tabs"); return
     }
     #expect(Set(t0.keys) == ["id", "url", "title", "loading", "active", "site", "environment", "production",
-                             "group", "pinned"])
+                             "group", "pinned", "name"])
     #expect(t0["active"] == .bool(true))
     guard case .array(let downloads) = o["downloads"], case .object(let d0) = downloads.first else {
         Issue.record("downloads"); return
@@ -527,4 +527,43 @@ private func pipOf(_ store: PaneStore) async -> JSONValue? {
     #expect(s.tabs[0].pictureInPicture)
     #expect(browserSavedTabs(s).count == 2)
     #expect(!String(decoding: try JSONEncoder().encode(browserSavedTabs(s)), as: UTF8.self).contains("pictureInPicture"))
+}
+
+// MARK: - Names (Task 12): a tab may carry the operator's name
+
+@Test func aNamedTabIsCalledByItsName() {
+    var t = BrowserTab(id: "t1", url: "https://dashboard.stripe.com/", title: "Stripe Dashboard")
+    #expect(t.label == "Stripe Dashboard" && t.pageLabel == "Stripe Dashboard" && t.tooltip == "Stripe Dashboard")
+    t.name = "Billing"
+    #expect(t.label == "Billing")
+    #expect(t.pageLabel == "Stripe Dashboard")
+    #expect(t.tooltip == "Billing — Stripe Dashboard")
+    // The page label's own rule is today's: title, else host, else New Tab.
+    let untitled = BrowserTab(id: "t2", url: "https://example.com/a", title: "", name: "Mine")
+    #expect(untitled.label == "Mine" && untitled.pageLabel == "example.com" && untitled.tooltip == "Mine — example.com")
+    #expect(BrowserTab(id: "t3", url: "", title: "").pageLabel == "New Tab")
+}
+
+@Test func aPageReportKeepsTheName() async {
+    let store = await browserStore()
+    await store.updateBrowser(paneId: pane) { s in s.tabs[1].name = "Billing" }
+    await store.browserPageDidReport(paneId: pane, tab: "t2", report("https://b.test/", title: "B", loading: true))
+    await store.browserPageDidReport(paneId: pane, tab: "t2", report("https://c.test/other", title: "Other"))
+    let t = await store.browserSnapshot(paneId: pane).tabs[1]
+    #expect(t.name == "Billing" && t.title == "Other" && t.label == "Billing")
+}
+
+@Test func aSavedTabRoundTripsItsName() async throws {
+    let saved = [BrowserSavedTab(id: "t1", url: "https://a.test/", title: "A", name: "Billing"),
+                 BrowserSavedTab(id: "t2", url: "https://b.test/", title: "B")]
+    var p = Pane(id: "b1", kind: "browser", title: "Browser", frame: PaneFrame(x: 0, y: 0, width: 1, height: 1))
+    p.browserTabs = saved
+    let back = try JSONDecoder().decode(Pane.self, from: JSONEncoder().encode(p))
+    #expect(back.browserTabs?.map(\.name) == ["Billing", nil])
+
+    let store = PaneStore(kinds: PaneKinds.standard)
+    await store.browserRestore(paneId: pane, tabs: saved, active: "t1", groups: [], columnHidden: false)
+    let s = await store.browserSnapshot(paneId: pane)
+    #expect(s.tabs.map(\.name) == ["Billing", nil])
+    #expect(browserSavedTabs(s).map(\.name) == ["Billing", nil])
 }

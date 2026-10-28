@@ -38,7 +38,7 @@ extension PaneStore {
                            command: saved.id == chosen ? BrowserCommand(seq: 1, verb: .load(saved.url)) : nil,
                            fromSavedLayout: true,
                            group: saved.group.flatMap { groupIds.contains($0) ? $0 : nil }, opener: saved.opener,
-                           pin: saved.pin, keptLoose: saved.keptLoose)
+                           pin: saved.pin, keptLoose: saved.keptLoose, name: saved.name)
             }
             s.active = chosen
             s.nextTab = highestTab + 1
@@ -61,7 +61,7 @@ extension PaneStore {
 
     /// A tab's page state after a navigation event. A tab that is gone, or a pane that holds no
     /// browser, drops it. Marks the tab loaded; takes the zoom only when the report names one;
-    /// leaves `command` and `active` alone.
+    /// leaves `command`, `active` and the tab's `name` alone (a name is kept across navigations).
     ///
     /// A report that **ends a load** (loading before, not now, no failure) runs the site rule on the
     /// tab's address then (ruling 7), which may group it; no other report moves a tab, so a redirect

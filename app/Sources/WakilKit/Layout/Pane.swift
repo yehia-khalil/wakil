@@ -399,11 +399,14 @@ public struct BrowserSavedTab: Codable, Sendable, Equatable {
     public var pin: String?
     /// The operator took it out of a group: the site rule never groups it again (ruling 10).
     public var keptLoose: Bool
+    /// The operator's name for the tab (names call 13); nil when it has none.
+    public var name: String?
 
     public init(
         id: String, url: String, title: String, group: String? = nil, opener: String? = nil,
-        pin: String? = nil, keptLoose: Bool = false
+        pin: String? = nil, keptLoose: Bool = false, name: String? = nil
     ) {
+        self.name = name
         self.id = id
         self.url = url
         self.title = title
@@ -413,9 +416,10 @@ public struct BrowserSavedTab: Codable, Sendable, Equatable {
         self.keptLoose = keptLoose
     }
 
-    private enum CodingKeys: String, CodingKey { case id, url, title, group, opener, pin, keptLoose }
+    private enum CodingKeys: String, CodingKey { case id, url, title, group, opener, pin, keptLoose, name }
 
-    /// Tolerant of a 3c layout, which has none of the 3d-i fields: an absent `keptLoose` is false.
+    /// Tolerant of a 3c layout, which has none of the 3d-i fields: an absent `keptLoose` is false;
+    /// and of a 3c or 3d-i one, which has no names: an absent `name` is nil.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -425,6 +429,7 @@ public struct BrowserSavedTab: Codable, Sendable, Equatable {
         opener = try c.decodeIfPresent(String.self, forKey: .opener)
         pin = try c.decodeIfPresent(String.self, forKey: .pin)
         keptLoose = try c.decodeIfPresent(Bool.self, forKey: .keptLoose) ?? false
+        name = try c.decodeIfPresent(String.self, forKey: .name)
     }
 }
 

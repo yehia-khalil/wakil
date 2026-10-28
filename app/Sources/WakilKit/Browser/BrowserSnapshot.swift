@@ -98,6 +98,10 @@ public struct BrowserTab: Sendable, Equatable, Codable {
     /// This tab's video floats in the system's picture-in-picture window. Reported by the host
     /// (`BrowserPageReport`), never saved: it is not in `CodingKeys` or `BrowserSavedTab`.
     public var pictureInPicture: Bool = false
+    /// The operator's name for the tab (names call 13); nil when it has none. Shown instead of the
+    /// page title (`label`), kept across navigations — a page report never touches it — and saved
+    /// with the tab in the layout and the ⌘⇧T stack.
+    public var name: String?
 
     public init(
         id: String, url: String, title: String, isLoading: Bool = false, progress: Double = 0,
@@ -105,8 +109,9 @@ public struct BrowserTab: Sendable, Equatable, Codable {
         loaded: Bool = false, command: BrowserCommand? = nil, fromSavedLayout: Bool = false,
         lastRead: BrowserReadStamp? = nil, refsIssued: Int = 0, group: String? = nil, opener: String? = nil,
         pin: String? = nil, keptLoose: Bool = false, pullRequest: String? = nil,
-        placedSite: String? = nil, pendingSite: String? = nil
+        placedSite: String? = nil, pendingSite: String? = nil, name: String? = nil
     ) {
+        self.name = name
         self.placedSite = placedSite
         self.pendingSite = pendingSite
         self.group = group
@@ -133,7 +138,7 @@ public struct BrowserTab: Sendable, Equatable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, url, title, isLoading, progress, canGoBack, canGoForward, failure, zoom, loaded
         case command, fromSavedLayout, lastRead, refsIssued, group, opener, pin, keptLoose, pullRequest
-        case placedSite, pendingSite
+        case placedSite, pendingSite, name
     }
 
     public init(from decoder: Decoder) throws {
@@ -159,6 +164,7 @@ public struct BrowserTab: Sendable, Equatable, Codable {
         pullRequest = try c.decodeIfPresent(String.self, forKey: .pullRequest)
         placedSite = try c.decodeIfPresent(String.self, forKey: .placedSite)
         pendingSite = try c.decodeIfPresent(String.self, forKey: .pendingSite)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
     }
 }
 
@@ -256,10 +262,18 @@ public struct BrowserPageReport: Sendable, Equatable {
 }
 
 extension BrowserTab {
-    /// What a tab is called in lists: its title, else its host, else New Tab.
-    public var label: String {
+    /// What a tab is called in lists: the operator's name, else its page label.
+    public var label: String { name ?? pageLabel }
+
+    /// What its page is called: its title, else its host, else New Tab. Bookmarks and history keep
+    /// this, never the name (names call 13): they are about the page.
+    public var pageLabel: String {
         if !title.isEmpty { return title }
         if let parsed = URL(string: url), !url.isEmpty { return BrowserAddress.displayHost(parsed) }
         return "New Tab"
     }
+
+    /// Its tooltip and spoken name where no title is drawn: `<name> — <page title>` when named, so
+    /// the page title stays in reach; else the page label.
+    public var tooltip: String { name.map { "\($0) — \(pageLabel)" } ?? pageLabel }
 }

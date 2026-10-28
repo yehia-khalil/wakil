@@ -914,3 +914,19 @@ private func oneNamedPane(_ title: String) -> LayoutSnapshot {
     #expect(tabs.count == 2)
     #expect(tabs.allSatisfy { $0.group == nil && $0.opener == nil && $0.pin == nil && !$0.keptLoose })
 }
+
+/// Names (Task 12): a 3c layout and a 3d-i layout, neither of which knew tab names, decode with none.
+@Test func a3cAnd3dILayoutDecodeWithNoName() throws {
+    let frame = #"{"id":"p","kind":"browser","title":"Browser","frame":{"x":1,"y":2,"width":3,"height":4},"#
+    let from3c = frame + #""browserTabs":[{"id":"t1","url":"https://a.example/","title":"A"}],"browserActiveTab":"t1"}"#
+    let from3dI = frame
+        + #""browserTabs":[{"id":"t1","url":"https://a.example/","title":"A","group":"g1","opener":"t2","pin":"p1234abcd","keptLoose":true}],"#
+        + #""browserActiveTab":"t1","browserGroups":[],"browserColumnHidden":false}"#
+    for json in [from3c, from3dI] {
+        let pane = try JSONDecoder().decode(Pane.self, from: Data(json.utf8))
+        let tabs = try #require(pane.browserTabs)
+        #expect(tabs.count == 1 && tabs[0].name == nil && tabs[0].title == "A")
+    }
+    let dI = try #require(try JSONDecoder().decode(Pane.self, from: Data(from3dI.utf8)).browserTabs?.first)
+    #expect(dI.group == "g1" && dI.pin == "p1234abcd" && dI.keptLoose)
+}

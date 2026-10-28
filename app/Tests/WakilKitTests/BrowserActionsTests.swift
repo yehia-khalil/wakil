@@ -1573,3 +1573,44 @@ private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.g
     let off = try JSONDecoder().decode(SettingsBrowser.self, from: Data(#"{"pictureInPicture": false}"#.utf8))
     #expect(off.pictureInPicture == false)
 }
+
+// MARK: - Names (Task 12): a tab's name is saved, reopened and read
+
+@Test func reopenBringsTheNameBack() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in s.tabs[1].name = "Billing" }
+    try await f.dispatch("browser_close_tab", ["tab": .string("t2")])
+    #expect(await f.snapshot().closed.map(\.name) == ["Billing"])
+    try await f.dispatch("browser_reopen_tab")
+    let back = try #require(await f.active())
+    #expect(back.url == "https://b.test/" && back.name == "Billing")
+    // Saved with the layout too.
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.first { $0.id == back.id }?.name == "Billing")
+}
+
+@Test func readPaneListsNameBesideTitle() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs[0].title = "Stripe Dashboard"; s.tabs[0].name = "Billing"
+        s.tabs[1].title = "B"
+    }
+    guard case .object(let o) = await f.panes.readPane(paneId: f.pane, kind: "browser"),
+          case .array(let tabs)? = o["tabs"],
+          case .object(let first) = tabs[0], case .object(let second) = tabs[1] else {
+        Issue.record("read_pane has no tabs"); return
+    }
+    #expect(first["name"] == .string("Billing") && first["title"] == .string("Stripe Dashboard"))
+    #expect(second["name"] == .null && second["title"] == .string("B"))
+    // The active tab's own `title` stays the page's.
+    #expect(o["title"] == .string("Stripe Dashboard"))
+}
+
+@Test func aBookmarkKeepsThePageTitle() async throws {
+    let (f, files) = try await bookmarkFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://dashboard.stripe.com/")])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs[0].title = "Stripe Dashboard"; s.tabs[0].name = "Billing"
+    }
+    try await f.dispatch("browser_bookmark")
+    #expect(try files.bookmarks().map(\.title) == ["Stripe Dashboard"])
+}

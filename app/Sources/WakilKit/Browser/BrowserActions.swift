@@ -90,13 +90,13 @@ func browserZoom(_ zoom: Double, stepIn: Bool) -> Double {
     return browserZoomSteps.last { $0 < zoom - 0.0001 } ?? zoom
 }
 
-/// What a browser pane saves in the layout as its tabs: each tab's id, URL, title, group, opener, pin
-/// and `keptLoose`, in order. A pull-request tab is skipped (ruling 18): the next refresh lists it
+/// What a browser pane saves in the layout as its tabs: each tab's id, URL, title, group, opener, pin,
+/// `keptLoose` and name, in order. A pull-request tab is skipped (ruling 18): the next refresh lists it
 /// again. Its group is saved with the rest of `groups`, without tabs, so its `collapsed` is kept.
 func browserSavedTabs(_ s: BrowserSnapshot) -> [BrowserSavedTab] {
     s.tabs.filter { $0.pullRequest == nil }.map {
         BrowserSavedTab(id: $0.id, url: $0.url, title: $0.title, group: $0.group, opener: $0.opener,
-                        pin: $0.pin, keptLoose: $0.keptLoose)
+                        pin: $0.pin, keptLoose: $0.keptLoose, name: $0.name)
     }
 }
 
@@ -145,7 +145,8 @@ extension BrowserSnapshot {
         guard tabs.contains(where: { ids.contains($0.id) }) else { return 0 }
         let gone = tabs.filter { ids.contains($0.id) }
         for tab in gone {
-            closed.append(BrowserSavedTab(id: tab.id, url: tab.url, title: tab.title, group: tab.group, pin: tab.pin))
+            closed.append(BrowserSavedTab(id: tab.id, url: tab.url, title: tab.title, group: tab.group, pin: tab.pin,
+                                          name: tab.name))
         }
         if closed.count > browserClosedLimit { closed.removeFirst(closed.count - browserClosedLimit) }
         removeTabs(ids)
@@ -593,7 +594,7 @@ func browserActions(
             let pane = try await browserPane(params, action: "browser_reopen_tab").id
             let ok = await panes.updateBrowser(paneId: pane, create: true) { s -> Bool in
                 guard let saved = s.closed.popLast() else { return false }
-                var tab = BrowserTab(id: s.takeTabId(), url: saved.url, title: saved.title)
+                var tab = BrowserTab(id: s.takeTabId(), url: saved.url, title: saved.title, name: saved.name)
                 if saved.url.isEmpty { tab.issue(.focusAddress) } else { tab.issue(.load(saved.url)) }
                 // A pinned tab comes back pinned, so a full reconcile does not add its pin a second
                 // time; when the pane holds that pin again meanwhile, it comes back plain.
@@ -1073,7 +1074,7 @@ func browserActions(
             guard ["http", "https", "file"].contains(scheme) else { throw BrowserActionError.notBookmarkable(scheme: scheme) }
             guard let files = try await orgFiles() else { throw BrowserActionError.noOrganisation }
             do {
-                try files.setBookmark(url: target.url, title: target.label, on: wanted, now: Date())
+                try files.setBookmark(url: target.url, title: target.pageLabel, on: wanted, now: Date())
                 await panes.browserSetBookmarks(org: files.org, try files.bookmarks())
             } catch let error as BrowserBookmarksUnreadable {
                 throw BrowserActionError.bookmarksUnreadable(error.reason)
