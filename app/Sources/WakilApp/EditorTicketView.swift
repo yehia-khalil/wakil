@@ -221,9 +221,11 @@ struct EditorTicketView: View {
     @ViewBuilder
     private func ownTicket(_ b: TicketBranchState) -> some View {
         let t = b.tickets[0]
-        header(key: t.key, title: t.title, status: t.status, waiting: ticketWaitingOn(b, record: t.record),
-               threads: ticketThreadsWaitingOnViewer(b), linked: b.linked)
-        nextField(b)
+        TicketBlock(first: true) {
+            header(key: t.key, title: t.title, status: t.status, waiting: ticketWaitingOn(b, record: t.record),
+                   threads: ticketThreadsWaitingOnViewer(b), linked: b.linked)
+            nextField(b)
+        }
         pullRequests(b)
         record(t.record)
     }
@@ -232,7 +234,8 @@ struct EditorTicketView: View {
     /// Picking one shows it (Rule 9), the branch unchanged.
     @ViewBuilder
     private func severalTickets(_ b: TicketBranchState) -> some View {
-        Text("Tickets").microLabel()
+        TicketBlock(first: true) {
+        Text("Tickets").microLabel(top: 0)
         VStack(alignment: .leading, spacing: Space.s) {
             ForEach(b.tickets, id: \.key) { t in
                 Button { Task { await dispatch("ticket_show", ["key": .string(t.key)]) } } label: {
@@ -255,6 +258,7 @@ struct EditorTicketView: View {
             if b.linked { unlinkButton(b) }
         }
         nextField(b)
+        }
         pullRequests(b)
         if let target = ticketNextTarget(b), let t = b.tickets.first(where: { $0.key == target.key }) { record(t.record) }
     }
@@ -352,12 +356,14 @@ struct EditorTicketView: View {
         let shownRecord = ticketShownRecord(state, key: key, ref: ref)
         let record: TicketRecordState? = if case .record(let r) = shownRecord { r } else { nil }
         backButton
-        header(key: key, title: [ref?.title, row?.title, record?.seen.title].compactMap { $0 }.first { !$0.isEmpty } ?? "",
-               status: [ref?.status, row?.status, record?.seen.status].compactMap { $0 }.first { !$0.isEmpty } ?? "",
-               waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record),
-               threads: own.map(ticketThreadsWaitingOnViewer) ?? 0, linked: false)
-        if let record {
-            nextLine(key: key, text: record.next?.text ?? "", labelled: false)
+        TicketBlock(first: true) {
+            header(key: key, title: [ref?.title, row?.title, record?.seen.title].compactMap { $0 }.first { !$0.isEmpty } ?? "",
+                   status: [ref?.status, row?.status, record?.seen.status].compactMap { $0 }.first { !$0.isEmpty } ?? "",
+                   waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record),
+                   threads: own.map(ticketThreadsWaitingOnViewer) ?? 0, linked: false)
+            if let record {
+                nextLine(key: key, text: record.next?.text ?? "", labelled: false)
+            }
         }
         if let own {
             pullRequests(own)
@@ -379,7 +385,7 @@ struct EditorTicketView: View {
 
     @ViewBuilder
     private func header(key: String, title: String, status: String, waiting: [String], threads: Int, linked: Bool) -> some View {
-        Text("Ticket").microLabel()
+        Text("Ticket").microLabel(top: 0)
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(key).ticketKey()
@@ -419,15 +425,18 @@ struct EditorTicketView: View {
         if let target = ticketNextTarget(b) { nextLine(key: target.key, text: target.text, labelled: target.labelled) }
     }
 
-    /// **Next:** a field — focused on click (Rule 3), kept on blur (Rule 2), Enter a shortcut.
+    /// **Next:** a field — focused on click (Rule 3), kept on blur (Rule 2), Enter a shortcut. It wraps
+    /// to as many lines as it holds, never cut (the calmer column, 2026-10-28).
     private func nextLine(key: String, text: String, labelled: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            Text(labelled ? "Next (\(key))" : "Next").dimmed()
-            TicketField(value: text, placeholder: "what happens next", id: "editor.ticket.next", focus: $fieldFocus) { now in
+            Text(labelled ? "Next (\(key))" : "Next").dimmed().fixedSize()
+            TicketField(value: text, placeholder: "what happens next", id: "editor.ticket.next", focus: $fieldFocus,
+                        wraps: true) { now in
                 write(["key": .string(key), "section": .string("next"), "op": .string("set"), "text": .string(now)])
             }
             .id("next|\(key)")
         }
+        .padding(.top, 2)
     }
 
     // MARK: - Pull requests
@@ -437,15 +446,26 @@ struct EditorTicketView: View {
     @ViewBuilder
     private func pullRequests(_ b: TicketBranchState) -> some View {
         if !b.prs.isEmpty {
-            Text("Pull requests").microLabel()
-            ForEach(b.prs, id: \.number) { pr in prCard(pr) }
+            TicketBlock {
+                Text("Pull requests").microLabel(top: 0)
+                ForEach(b.prs, id: \.number) { pr in prCard(pr) }
+            }
         }
         let threads = ticketBranchThreads(b.prs)
         if !threads.isEmpty {
-            Text("Threads · \(threads.count) open").microLabel()
-            let cursor = editorCursorThread(tab, reviews)
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(threads, id: \.id) { t in threadRow(t, selected: t.id == cursor, elsewhere: elsewhere) }
+            TicketBlock {
+                // The label and its count at either end; read aloud as one: "Threads · 2 open".
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Threads").microLabel(top: 0)
+                    Spacer(minLength: Space.s)
+                    Text("\(threads.count) open").microLabel(top: 0)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Threads · \(threads.count) open")
+                let cursor = editorCursorThread(tab, reviews)
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(threads, id: \.id) { t in threadRow(t, selected: t.id == cursor, elsewhere: elsewhere) }
+                }
             }
         }
     }
@@ -546,21 +566,14 @@ struct EditorTicketView: View {
 
     // MARK: - The record
 
-    /// The record as one list (walk, 2026-10-27): its label and a count of the kinds that hold a
-    /// line, every line together with its kind and who wrote it, and one **+ Add** that asks which
-    /// kind. Empty, it says what the record is for instead of drawing five empty headings.
+    /// The record grouped by kind (the calmer column, 2026-10-28): its label, each hand-off, then one
+    /// small heading per kind that holds a line (`Decisions 3`) with its lines as bullets under it,
+    /// and one **+ Add** that asks which kind. Empty, it says what the record is for instead of
+    /// drawing five empty headings.
     private func record(_ r: TicketRecordState) -> some View {
-        let count = ticketRecordCount(r)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Record").microLabel()
-                if let count {
-                    // Wraps rather than cut (walk, 2026-10-27): every kind's count is read.
-                    Text(count).font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(EditorPaneStyle.text.opacity(0.7))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+        let groups = ticketRecordGroups(r, including: adding?.rawValue)
+        return TicketBlock {
+            Text("Record").microLabel(top: 0)
             // Each hand-off as an entry by agent, newest first, above the lines (spec, *The hand-off in the record*).
             ForEach(r.handoffs.sorted { $0.at > $1.at }, id: \.id) { h in
                 VStack(alignment: .leading, spacing: 2) {
@@ -578,20 +591,50 @@ struct EditorTicketView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("editor.ticket.handoff:\(h.id)")
             }
-            if count == nil && adding == nil && r.handoffs.isEmpty {
+            if groups.isEmpty && r.handoffs.isEmpty {
                 Text("Nothing noted yet. Decisions, open work and checks you or an agent note on this ticket stay here for the next session.")
                     .font(.system(size: 11.5)).dimmed().lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(TicketSection.allCases, id: \.self) { section in
-                ForEach(section.lines(r), id: \.id) { line in recordLine(r.key, section, line) }
+            ForEach(groups, id: \.kind) { g in
+                if let section = TicketSection(rawValue: g.kind) { recordGroup(r, section, g) }
             }
-            if let section = adding {
+            Button { picking.toggle() } label: {
+                Text("+ Add").font(.system(size: 11)).foregroundStyle(TicketKindStyle.addText)
+                    .padding(.horizontal, 8).padding(.vertical, 1)
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(EditorPaneStyle.violet.opacity(0.5)))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Note a decision, open work, a wait, a check or a ruling on this ticket")
+            .padding(.top, 4)
+            .accessibilityIdentifier("editor.ticket.add")
+            if picking { kindMenu }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("editor.ticket.record")
+    }
+
+    /// One kind's group: its heading — a dot in its hue only where the kind means something (Not
+    /// done and Waiting on amber, Verified green), its name and count — then its lines as bullets,
+    /// and the new line + Add is typing when it is of this kind.
+    private func recordGroup(_ r: TicketRecordState, _ section: TicketSection, _ g: TicketRecordGroup) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                if let hue = g.hue { Circle().fill(TicketPill.colour(hue)).frame(width: 6, height: 6) }
+                Text(g.heading).foregroundStyle(EditorPaneStyle.text.opacity(0.7))
+                Text("\(g.count)").monospacedDigit().dimmed()
+            }
+            .font(.system(size: 11))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(g.heading) \(g.count)")
+            ForEach(section.lines(r), id: \.id) { line in recordLine(r.key, section, line) }
+            if adding == section {
                 // A new line arrives focused (Rule 3). Its main field and, for a kind that has one,
                 // its detail (why, how, what) are typed together; Tab moves between them, and the
                 // line is written once when the keyboard leaves the row or on Enter (Rule 2). Left
                 // empty it goes, and Esc drops it.
-                recordRow(section) {
+                bullet {
                     TicketField(value: "", placeholder: section.placeholder, id: "editor.ticket.new:\(section.rawValue)",
                                 focus: $fieldFocus, wraps: true, arrivesFocused: true, left: { finishAdding(r.key) },
                                 submitted: {
@@ -608,24 +651,13 @@ struct EditorTicketView: View {
                                     submitted: { fieldFocus = nil },
                                     cancel: { cancelAdding() }) { text in addingSecond = text }
                             .font(.system(size: 11))
-                            .foregroundStyle(EditorPaneStyle.text.opacity(0.6))
+                            .foregroundStyle(EditorPaneStyle.text.opacity(0.55))
                     }
                 } trailing: { EmptyView() }
             }
-            Button { picking.toggle() } label: {
-                Text("+ Add").font(.system(size: 11)).foregroundStyle(TicketKindStyle.addText)
-                    .padding(.horizontal, 8).padding(.vertical, 1)
-                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(EditorPaneStyle.violet.opacity(0.5)))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Note a decision, open work, a wait, a check or a ruling on this ticket")
-            .padding(.top, count == nil ? 4 : 2)
-            .accessibilityIdentifier("editor.ticket.add")
-            if picking { kindMenu }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("editor.ticket.record")
+        .padding(.top, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// The kinds + Add offers; picking one opens its focused field (Rule 3), Esc closes it.
@@ -654,33 +686,32 @@ struct EditorTicketView: View {
         .padding(.top, 2)
     }
 
-    /// One entry of the record, stacked full width (walk, 2026-10-27): its kind as a micro-label in
-    /// its hue with `trailing` at the right, then `content` under it. Entries are set apart by the
-    /// list's spacing, never by a label column — that column cut every line at a normal width.
-    private func recordRow(_ section: TicketSection, @ViewBuilder _ content: () -> some View,
-                           @ViewBuilder trailing: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(section.kind).font(.system(size: 9, weight: .semibold)).tracking(1.44).textCase(.uppercase)
-                    .foregroundStyle(TicketKindStyle.colour(section))
-                    .lineLimit(1).fixedSize()
-                Spacer(minLength: Space.s)
-                trailing()
-            }
-            content()
+    /// One line of a group as a bullet: a small quiet dot, `content` beside it — the line, its detail
+    /// dim under it — and `trailing` at the right. The text is one colour; the kind is the heading's.
+    private func bullet(@ViewBuilder _ content: () -> some View, @ViewBuilder trailing: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Circle().fill(EditorPaneStyle.text.opacity(0.35)).frame(width: 3, height: 3)
+                // Sat on the text's middle rather than its baseline.
+                .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 3 }
+                .padding(.leading, 3)
+            VStack(alignment: .leading, spacing: 1) { content() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            trailing()
         }
+        .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// One line: its fields editable and kept on blur, removable without a question (Rule 1: the
-    /// record's log keeps it), and who wrote it — when, and any edit, under the pointer. The detail
-    /// (why, how, what) shows only when it holds something or the line is being edited, so an empty
-    /// one never draws a placeholder; ✕ shows under the pointer or while the line has the keyboard.
+    /// record's log keeps it). Who wrote it, when, and any edit show under the pointer, as its
+    /// tooltip — never drawn. The detail (why, how, what) shows only when it holds something or the
+    /// line is being edited, so an empty one never draws a placeholder; ✕ shows under the pointer or
+    /// while the line has the keyboard.
     private func recordLine(_ key: String, _ section: TicketSection, _ line: TicketLineState) -> some View {
         let rowID = "editor.ticket.line:\(section.rawValue):\(line.id)"
         let editing = fieldFocus.map { $0 == rowID || $0.hasPrefix(rowID + ":") } ?? false
         let active = editing || hoveredLine == rowID || removeFocus == rowID
-        return recordRow(section) {
+        return bullet {
             TicketField(value: line.value(section.mainField), placeholder: section.placeholder,
                         id: rowID, focus: $fieldFocus, wraps: true) { now in
                 edit(key, section, line, field: section.mainField, now)
@@ -693,14 +724,10 @@ struct EditorTicketView: View {
                     edit(key, section, line, field: second.field, now)
                 }
                 .font(.system(size: 11))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.6))
+                .foregroundStyle(EditorPaneStyle.text.opacity(0.55))
                 .modifier(TicketFolded(folded: !editing && line.value(second.field).isEmpty))
             }
         } trailing: {
-            Text(ticketLineWho(line)).font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(EditorPaneStyle.text.opacity(0.45)).lineLimit(1).fixedSize()
-                .help(ticketLineCaption(line))
-                .accessibilityIdentifier("editor.ticket.by:\(section.rawValue):\(line.id)")
             Button { write(["key": .string(key), "section": .string(section.rawValue), "op": .string("remove"),
                             "id": .string(line.id)]) } label: { Image(systemName: "xmark").foregroundStyle(xmark(active)) }
                 .buttonStyle(.plain).font(.system(size: 9))
@@ -708,6 +735,7 @@ struct EditorTicketView: View {
                 .help("Remove this line (the record's log keeps it)")
                 .accessibilityIdentifier("editor.ticket.remove:\(section.rawValue):\(line.id)")
         }
+        .help(ticketLineCaption(line))
         .contentShape(Rectangle())
         .onHover { inside in
             if inside { hoveredLine = rowID } else if hoveredLine == rowID { hoveredLine = nil }
@@ -916,15 +944,32 @@ private extension View {
 
 private extension Text {
     /// §6's micro-label: uppercase, tracked .2em, 9 pt, low opacity — a section's name.
-    func microLabel() -> some View {
+    /// In a `TicketBlock` it sits at the block's top (`top: 0`): the hairline and its space set it off.
+    func microLabel(top: CGFloat = 6) -> some View {
         font(.system(size: 9, weight: .semibold)).tracking(1.8).textCase(.uppercase)
             .foregroundStyle(EditorPaneStyle.text.opacity(0.42))
-            .padding(.top, 6)
+            .padding(.top, top)
     }
 
     /// A ticket key: an identifier, so mono (§6), in the column's violet tick.
     func ticketKey() -> Text {
         font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(EditorPaneStyle.tick)
+    }
+}
+
+/// One section of the view as a block (the calmer column, 2026-10-28): a hairline above it, except
+/// the first, and room around it, so Ticket, Pull requests, Threads and Record read apart.
+private struct TicketBlock<Content: View>: View {
+    var first = false
+    @ViewBuilder let content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, first ? 0 : 10)
+            .padding(.bottom, 4)
+            .overlay(alignment: .top) {
+                if !first { Rectangle().fill(EditorPaneStyle.text.opacity(0.08)).frame(height: 1) }
+            }
     }
 }
 
@@ -954,19 +999,10 @@ private struct TicketPill: View {
     }
 }
 
-/// The record's hues: a kind that waits (Not done, Waiting on) in §5's amber, Verified in its
-/// green, the rest neutral; + Add's violet text and its menu's surface.
+/// + Add's violet text and its menu's surface. The kinds' hues are `ticketRecordGroups`'.
 private enum TicketKindStyle {
     static let addText = Color(red: 0xcf / 255, green: 0xc3 / 255, blue: 0xff / 255)
     static let menu = Color(red: 0x0e / 255, green: 0x10 / 255, blue: 0x19 / 255)
-
-    static func colour(_ s: TicketSection) -> Color {
-        switch s {
-        case .notDone, .waitingOn: EditorPaneStyle.amber.opacity(0.9)
-        case .verified: Color(TerminalPalette.green).opacity(0.9)
-        case .decisions, .rulings: EditorPaneStyle.text.opacity(0.45)
-        }
-    }
 }
 
 /// A commenter's initial in a quiet disc.

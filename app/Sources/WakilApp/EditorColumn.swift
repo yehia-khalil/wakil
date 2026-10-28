@@ -136,6 +136,9 @@ struct EditorColumn: View {
             controls: timeline, dispatch: dispatch)
     }
 
+    /// The first root row: the Files view's header line, where the reveal button sits.
+    private var firstRootID: String? { rows.first { $0.kind == .root }?.id }
+
     private func rowPath(_ row: EditorTreeRow) -> String {
         "\(rootName(row))\(row.relative.isEmpty ? "" : "/" + row.relative)"
     }
@@ -211,65 +214,61 @@ struct EditorColumn: View {
         }
     }
 
-    /// The four view names, or their icons when the column is too narrow for the names (a walk
-    /// found them wrapping letter by letter at the column's minimum width). Each keeps its name as
-    /// its accessibility label and tooltip, so the icon row reads the same to VoiceOver and checks.
+    /// The four view names, always as words (the calmer column, 2026-10-28): at a narrower width the
+    /// same names step down to a tighter face and spacing, never to icons and never wrapping (a walk
+    /// found them wrapping letter by letter at the column's minimum width). The reveal button lives
+    /// on the Files view's own root row, so the names have the whole row.
     private var header: some View {
-        HStack(spacing: 12) {
-            ViewThatFits(in: .horizontal) {
-                viewTabs(icons: false)
-                viewTabs(icons: true)
-            }
-            Spacer()
-            if column.view == .files {
-                Button(action: reveal) { Image(systemName: "scope").font(.system(size: 11)) }
-                    .buttonStyle(.plain)
-                    .disabled(!canReveal)
-                    .opacity(canReveal ? 0.9 : 0.35)
-                    .help(canReveal ? "Reveal Active File in Tree" : "No file tab in front: nothing to reveal")
-                    .accessibilityIdentifier("editor.tree.reveal")
-            }
+        ViewThatFits(in: .horizontal) {
+            viewTabs(.system(size: 11, weight: .medium, design: .monospaced), spacing: 12)
+            viewTabs(.system(size: 11, weight: .medium), spacing: 9)
+            viewTabs(.system(size: 10, weight: .medium).width(.condensed), spacing: 5)
         }
-        .font(.system(size: 11, weight: .medium, design: .monospaced))
         .foregroundStyle(EditorPaneStyle.text)
+        .frame(maxWidth: .infinity, alignment: .leading)
         // The compact chrome (2026-10-26): the strip's 32 pt beside it, so the two rows and their
         // hairlines meet in one line across the pane.
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .frame(height: PaneStripStyle.rowHeight)
     }
 
-    private func viewTabs(icons: Bool) -> some View {
-        HStack(spacing: icons ? 10 : 12) {
-            viewTab(.files, "Files", "doc.on.doc", "files", icons: icons)
-            viewTab(.search, "Search", "magnifyingglass", "search", icons: icons)
-            viewTab(.changes, "Changes", "arrow.triangle.branch", "changes", icons: icons)
-            viewTab(.ticket, "Ticket", "ticket", "ticket", icons: icons)
+    private func viewTabs(_ font: Font, spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            viewTab(.files, "Files", "files")
+            viewTab(.search, "Search", "search")
+            viewTab(.changes, "Changes", "changes")
+            viewTab(.ticket, "Ticket", "ticket")
         }
+        .font(font)
+        .fixedSize()
     }
 
-    /// The Ticket label carries the count (`Ticket · 4`); at icon width the icon carries a small `4`.
-    /// The tooltip and the spoken label say what it is made of.
-    private func viewTab(_ view: EditorColumnView, _ name: String, _ symbol: String, _ id: String, icons: Bool) -> some View {
+    /// The Ticket label carries the count as a word suffix (`Ticket · 4`); the tooltip and the
+    /// spoken label say what it is made of.
+    private func viewTab(_ view: EditorColumnView, _ name: String, _ id: String) -> some View {
         let count = view == .ticket ? RailTreatment.countSuffix(ticketCount) : nil
         let said = count.flatMap { _ in ticketCountLabel.map { "\(name), \($0)" } } ?? name
         return Button {
             focusWanted = view
             Task { await dispatch("editor_tree", ["view": .string(id), "shown": .bool(true)]) }
         } label: {
-            if icons {
-                HStack(spacing: 2) {
-                    Image(systemName: symbol).font(.system(size: 11))
-                    if count != nil { Text("\(ticketCount)").font(.system(size: 9, design: .monospaced)) }
-                }
-                .fixedSize()
-            } else {
-                Text(name + (count ?? "")).lineLimit(1).fixedSize()
-            }
+            Text(name + (count ?? "")).lineLimit(1).fixedSize()
         }
             .buttonStyle(.plain).opacity(column.view == view ? 1 : 0.5)
             .help(said)
             .accessibilityLabel(said)
             .accessibilityIdentifier("editor.column.\(id)")
+    }
+
+    /// Reveal Active File in Tree (3b-ii-b), on the Files view's first root row beside its **+**:
+    /// the view's own header line, so the tab row keeps the four names.
+    private var revealButton: some View {
+        Button(action: reveal) { Image(systemName: "scope").font(.system(size: 11)) }
+            .buttonStyle(.plain)
+            .disabled(!canReveal)
+            .opacity(canReveal ? 0.9 : 0.35)
+            .help(canReveal ? "Reveal Active File in Tree" : "No file tab in front: nothing to reveal")
+            .accessibilityIdentifier("editor.tree.reveal")
     }
 
     private var edge: some View {
@@ -448,6 +447,10 @@ struct EditorColumn: View {
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .help("New File or Folder")
                     .accessibilityIdentifier("editor.tree.add:\(root)")
+            }
+            if row.kind == .root, row.id == firstRootID {
+                if !(hovered == row.id || selected == row.id) { Spacer(minLength: 6) }
+                revealButton
             }
         }
         .foregroundStyle(EditorPaneStyle.text.opacity(row.kind == .root ? 0.62 : 0.86))

@@ -175,13 +175,20 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(ticketNext(TicketBranchState(root: "/p/api", tickets: [TicketRefState(key: "INI-1", marked: true)])) == nil)
     }
 
-    @Test func recordCountNamesOnlyKindsThatHoldALine() {
+    @Test func recordGroupsNameOnlyKindsThatHoldALineWithTheirCountAndMeaningfulHue() {
         let r = TicketRecordState(key: "INI-142", decisions: [line("a"), line("b")], notDone: [line("d")],
                                   verified: [line("f")])
-        #expect(ticketRecordCount(r) == "2 decisions · 1 not done · 1 verified")
-        #expect(ticketRecordCount(TicketRecordState(key: "INI-142", waitingOn: [line("a"), line("b")], rulings: [line("c")]))
-                == "2 waiting on · 1 ruling")
-        #expect(ticketRecordCount(TicketRecordState(key: "INI-142")) == nil)
+        let groups = ticketRecordGroups(r)
+        #expect(groups.map(\.heading) == ["Decisions", "Not done", "Verified"])
+        #expect(groups.map(\.count) == [2, 1, 1])
+        #expect(groups.map(\.hue) == [nil, .amber, .green])
+        let other = ticketRecordGroups(TicketRecordState(key: "INI-142", waitingOn: [line("a"), line("b")], rulings: [line("c")]))
+        #expect(other.map(\.kind) == ["waitingOn", "rulings"])
+        #expect(other.map(\.hue) == [.amber, nil])
+        #expect(ticketRecordGroups(TicketRecordState(key: "INI-142")).isEmpty)
+        // The kind + Add is adding a line of shows its heading before it holds one.
+        #expect(ticketRecordGroups(TicketRecordState(key: "INI-142"), including: "rulings").map(\.heading) == ["Rulings"])
+        #expect(ticketRecordGroups(r, including: "rulings").map(\.count) == [2, 1, 1, 0])
     }
 
     @Test func openThreadsSkipOutdatedAndResolvedInFileThenLineOrder() {

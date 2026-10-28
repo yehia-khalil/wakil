@@ -437,16 +437,27 @@ public func ticketNext(_ b: TicketBranchState) -> (text: String, key: String?)? 
     return (newest.line.text, newest.key)
 }
 
-/// The record's count beside its label: each kind that holds a line, in the record's order —
-/// `2 decisions · 1 not done` — and nil for an empty record, which says so in words instead.
-public func ticketRecordCount(_ r: TicketRecordState) -> String? {
-    let kinds: [(Int, String, String)] = [
-        (r.decisions.count, "decision", "decisions"), (r.notDone.count, "not done", "not done"),
-        (r.waitingOn.count, "waiting on", "waiting on"), (r.verified.count, "verified", "verified"),
-        (r.rulings.count, "ruling", "rulings"),
+/// One kind of the record as its group heading draws it (the calmer column, 2026-10-28): the
+/// record's key for the kind, its plural name and how many lines it holds, and a hue only where the
+/// kind means something — Not done and Waiting on wait (§5's amber), Verified is done (green).
+public struct TicketRecordGroup: Equatable, Sendable {
+    public let kind: String
+    public let heading: String
+    public let count: Int
+    public let hue: TicketHue?
+}
+
+/// The record's groups in the record's order: each kind that holds a line, plus `including` (the kind
+/// + Add is adding a line of) though it holds none yet. Empty, the record says so in words instead.
+public func ticketRecordGroups(_ r: TicketRecordState, including: String? = nil) -> [TicketRecordGroup] {
+    let kinds: [TicketRecordGroup] = [
+        .init(kind: "decisions", heading: "Decisions", count: r.decisions.count, hue: nil),
+        .init(kind: "notDone", heading: "Not done", count: r.notDone.count, hue: .amber),
+        .init(kind: "waitingOn", heading: "Waiting on", count: r.waitingOn.count, hue: .amber),
+        .init(kind: "verified", heading: "Verified", count: r.verified.count, hue: .green),
+        .init(kind: "rulings", heading: "Rulings", count: r.rulings.count, hue: nil),
     ]
-    let parts = kinds.filter { $0.0 > 0 }.map { "\($0.0) \($0.0 == 1 ? $0.1 : $0.2)" }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    return kinds.filter { $0.count > 0 || $0.kind == including }
 }
 
 /// The branch's open threads — unresolved and not outdated — in file order, then line order. A
