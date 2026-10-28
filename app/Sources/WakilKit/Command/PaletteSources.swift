@@ -208,10 +208,23 @@ public struct RunningConversationsSource: PaletteSource {
                 subtitle: "\(c.placeLabel) \u{00b7} \(c.state.rawValue)", kindLabel: "conversation",
                 verb: "switch to",
                 action: .dispatch(action: "session_switch", params: .object(["conversation": .string(c.id)])),
-                isProduction: c.isProduction, state: c.state)
+                isProduction: c.isProduction, state: c.state,
+                // Names, Calls made 11: ⌘R on the row, the name step for its conversation.
+                rename: conversationRename(id: c.id, current: c.title, fallback: c.fallbackTitle))
         }
     }
 }
+
+/// The name step's subject for a live conversation (names, Calls made 10–12): `conversation_rename`
+/// with its id, so the reply's `renaming` is that id wherever the operator is when it runs.
+public func conversationRename(id: String, current: String, fallback: String) -> PaletteRename {
+    PaletteRename(
+        action: "conversation_rename", params: .object(["conversation": .string(id)]),
+        current: current, fallback: fallback, placeholder: conversationNamePlaceholder)
+}
+
+/// The name step's placeholder for a conversation, ⌘K's and ⌘P's alike.
+public let conversationNamePlaceholder = "Conversation name"
 
 // MARK: - New pane
 

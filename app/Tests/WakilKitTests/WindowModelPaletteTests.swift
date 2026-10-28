@@ -1071,3 +1071,92 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__session_resume", "mcp__wakil__term_open", "mcp__wakil__term_propose",
     "mcp__wakil__term_scroll",
 ]
+
+// MARK: - Names: Rename Conversation… (names, Calls made 10, 11, 12)
+
+@MainActor
+private func untilTrue(_ condition: @MainActor () async -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(2 * testWaitLoadMultiplier)
+    while Date() < deadline {
+        if await condition() { return true }
+        try? await Task.sleep(nanoseconds: 2_000_000)
+    }
+    return await condition()
+}
+
+/// A window with one conversation on screen, titled by its first message, and the shipped
+/// `conversation_rename` on its registry over the window's own broker.
+@MainActor
+private func renameWindow() async throws -> (model: WindowModel, agent: PlaceAgent) {
+    let harnesses = Harnesses()
+    let requests = ConversationBroker()
+    let model = WindowModel.forTesting(
+        scratchRoot: testScratchRoot, organization: "initech",
+        harnessFactory: { place, _ in harnesses.make(place) }, conversationRequests: requests)
+    await model.registryForTesting.register(conversationRenameAction(
+        conversationRequests: requests,
+        liveConversations: { [weak model] place in await model?.liveConversationRows(in: place) ?? [] }))
+    let home = testScratchRoot.appendingPathComponent("palette-rename-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: home.appendingPathComponent(".wakil/orgs/initech", isDirectory: true), withIntermediateDirectories: true)
+    model.browserHome = home
+    model.seedForTesting(providerId: "test-provider", rootPath: "/tmp/wakil-window-model-for-testing", thoughts: 0,
+                         project: "api", environment: "staging")
+    #expect(await model.send("fix the login test"))
+    return (model, try #require(model.currentAgent))
+}
+
+@Suite @MainActor struct WindowModelPaletteRenameTests {
+    /// Calls made 10: the name step's run is `conversation_rename {conversation, name}`, origin ui,
+    /// and the title changes once the window drains it.
+    @Test func aRunNameDispatchesWithTheName() async throws {
+        let (model, agent) = try await renameWindow()
+        let effect = PaletteEffect.runName(
+            action: "conversation_rename", params: .object(["conversation": .string(agent.id)]), name: "Login bug")
+        #expect(await model.performPalette(effect) == nil)
+        #expect(await untilTrue { agent.title == "Login bug" })
+        let renames = try await model.registryForTesting.journalEntries().filter { $0.action == "conversation_rename" }
+        #expect(renames.count == 1)
+        #expect(renames.first?.origin == .ui)
+        #expect(renames.first?.params == .object(["conversation": .string(agent.id), "name": .string("Login bug")]))
+    }
+
+    /// A name step's run names its conversation by id: it is not refused as a row read for a list
+    /// the palette has since dropped — the close's run lands after `paletteClosed()` (Rule 2).
+    @Test func aRunNameAfterTheCloseStillDispatches() async throws {
+        let (model, agent) = try await renameWindow()
+        let root = await model.paletteRoot(mode: .commands) { _ in }
+        model.paletteClosed()
+        let effect = PaletteEffect.runName(
+            action: "conversation_rename", params: .object(["conversation": .string(agent.id)]), name: "Kept")
+        #expect(await model.performPalette(effect, shown: root.generation) == nil)
+        #expect(await untilTrue { agent.title == "Kept" })
+    }
+
+    /// ⌘K's context names the conversation on screen, with what clearing would show.
+    @Test func theContextNamesTheConversationOnScreen() async throws {
+        let (model, agent) = try await renameWindow()
+        await model.renameConversation(agent.id, to: "Mine")
+        let context = await model.paletteContext()
+        #expect(context.currentConversation == PaletteSubject(id: agent.id, name: "Mine", fallback: "fix the login test"))
+        #expect(model.liveConversationRows().first?.fallbackTitle == "fix the login test")
+        #expect(CommandCatalog.entries(for: context).contains { $0.id == "global.renameConversation" })
+    }
+
+    /// Calls made 12: a chip's Rename… opens ⌘P on the name step for its conversation.
+    @Test func openRenamePaletteStartsOnTheNameStep() async throws {
+        let (model, agent) = try await renameWindow()
+        model.openRenamePalette(conversation: agent.id)
+        let press = try #require(model.paletteKeyPress)
+        #expect(press.mode == .open)
+        let palette = model.makePalette(mode: press.mode, renaming: press.rename)
+        #expect(palette.mode == .open)
+        let step = try #require(palette.steps.last)
+        #expect(step.isName)
+        #expect(step.rename?.current == agent.title)
+        #expect(step.rename?.params == .object(["conversation": .string(agent.id)]))
+        // An id that names no live conversation opens nothing.
+        model.openRenamePalette(conversation: "nope")
+        #expect(model.paletteKeyPress == press)
+    }
+}

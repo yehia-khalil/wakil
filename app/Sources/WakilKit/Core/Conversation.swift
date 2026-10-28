@@ -80,6 +80,10 @@ public struct LiveConversation: Sendable, Equatable {
     public let place: Place
     public let title: String
     public let titleSource: ConversationTitleSource
+    /// What clearing its name would show (names, Calls made 10): the model's name, else the first
+    /// message's title — `conversationDisplayTitle` with no operator's name. The name step's
+    /// `Clear name — back to “<fallback>”`.
+    public let fallbackTitle: String
     public let state: ConversationState
     public let onScreen: Bool
     public let lastActivity: Date
@@ -89,7 +93,7 @@ public struct LiveConversation: Sendable, Equatable {
 
     public init(
         id: String, session: String?, place: Place, title: String,
-        titleSource: ConversationTitleSource = .message, state: ConversationState,
+        titleSource: ConversationTitleSource = .message, fallbackTitle: String? = nil, state: ConversationState,
         onScreen: Bool, lastActivity: Date, isProduction: Bool = false
     ) {
         self.id = id
@@ -97,6 +101,7 @@ public struct LiveConversation: Sendable, Equatable {
         self.place = place
         self.title = title
         self.titleSource = titleSource
+        self.fallbackTitle = fallbackTitle ?? title
         self.state = state
         self.onScreen = onScreen
         self.lastActivity = lastActivity

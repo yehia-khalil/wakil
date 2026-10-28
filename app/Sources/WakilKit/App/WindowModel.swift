@@ -6561,7 +6561,10 @@ public final class WindowModel {
             hasEnvironments: hasEnvironments, projectCount: projectCount, providerCount: providerCount,
             editorActiveIsFile: editorActiveIsFile, organisation: organisation, project: project,
             editorActiveDiff: editorActiveDiff, conversationOnScreen: conversationOnScreen,
-            activeGitRoot: activeBranchRoot?.root, editorActiveConflicted: editorActiveConflicted)
+            activeGitRoot: activeBranchRoot?.root, editorActiveConflicted: editorActiveConflicted,
+            currentConversation: currentAgent.map {
+                PaletteSubject(id: $0.id, name: $0.title, fallback: $0.fallbackTitle)
+            })
     }
 
     /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.
@@ -6643,6 +6646,14 @@ public final class WindowModel {
     public struct PaletteKeyPress: Sendable, Equatable {
         public let mode: PaletteMode
         public let serial: Int
+        /// Set by `openRenamePalette`: the palette opens on this name step (names, Calls made 12).
+        public let rename: PaletteRename?
+
+        public init(mode: PaletteMode, serial: Int, rename: PaletteRename? = nil) {
+            self.mode = mode
+            self.serial = serial
+            self.rename = rename
+        }
     }
 
     /// The last ⌘P / ⌘K. **Pressed through the menu** (`AppScene`), which is the one place a
@@ -6669,6 +6680,18 @@ public final class WindowModel {
         paletteKeyPress = PaletteKeyPress(mode: mode, serial: paletteKeySerial)
     }
 
+    /// A chip's (or pinned tile's) **Rename…** (names, Calls made 12): ⌘P opens directly on the
+    /// name step for `conversation`, whose Esc closes it straight back (Rule 6). Its run names the
+    /// conversation by id, so nothing switches to it. An id that names no live conversation opens
+    /// nothing.
+    public func openRenamePalette(conversation id: String) {
+        guard let agent = conversations[id] else { return }
+        paletteKeySerial += 1
+        paletteKeyPress = PaletteKeyPress(
+            mode: .open, serial: paletteKeySerial,
+            rename: conversationRename(id: agent.id, current: agent.title, fallback: agent.fallbackTitle))
+    }
+
     /// The plane went up. `paletteClosed()` is its other half, on every close path.
     public func paletteOpened() {
         paletteShowing = true
@@ -6686,9 +6709,10 @@ public final class WindowModel {
     }
 
     /// A fresh palette for one open, holding this window's recents.
-    public func makePalette(mode: PaletteMode) -> PaletteModel {
+    public func makePalette(mode: PaletteMode, renaming rename: PaletteRename? = nil) -> PaletteModel {
         var palette = PaletteModel(mode: mode)
         palette.recents = paletteRecents
+        if let rename { palette.openOnName(rename) }
         return palette
     }
 
@@ -6808,6 +6832,10 @@ public final class WindowModel {
     /// step read before the window left its organisation has none, and is refused. A root row
     /// answers to the build named by `shown`, else to the last one delivered.
     private func paletteRefusal(_ effect: PaletteEffect, shown: Int?) -> String? {
+        // A name step's run names its subject by id and reads no list: `conversation_rename` refuses
+        // one that is gone, whole (Rule 8). It also runs from the close (Rule 2), after
+        // `paletteClosed()` has dropped every build a `shown` could name.
+        if case .runName = effect { return nil }
         let orgChanged = "the organisation changed under the palette; reopen it"
         let step: String?
         switch effect {
@@ -8867,7 +8895,7 @@ public final class WindowModel {
             .map { agent in
                 LiveConversation(
                     id: agent.id, session: agent.sessionId, place: agent.place, title: agent.title,
-                    titleSource: agent.titleSource, state: .of(
+                    titleSource: agent.titleSource, fallbackTitle: agent.fallbackTitle, state: .of(
                         waiting: waiting.contains(agent.id), failed: agent.unseenFailure,
                         working: agent.turnInFlight, done: agent.unseenResult),
                     onScreen: agent === shown, lastActivity: agent.lastActivity,

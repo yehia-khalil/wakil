@@ -122,6 +122,10 @@ public final class PlaceAgent {
     var namesUnsaved = false
     /// The conversation's title: the operator's name, else the model's, else the first message's.
     public var title: String { displayTitle.title }
+    /// What clearing the operator's name would show: the model's name, else the first message's.
+    public var fallbackTitle: String {
+        conversationDisplayTitle(operatorName: nil, aiName: aiName, messageTitle: messageTitle).title
+    }
     /// Which of the three slots `title` came from.
     public var titleSource: ConversationTitleSource { displayTitle.source }
     private var displayTitle: (title: String, source: ConversationTitleSource) {

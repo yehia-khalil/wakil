@@ -798,3 +798,41 @@ private let runMine = PaletteEffect.runName(
     m.runFinished(entryId: m.steps.last!.commandId, error: "refused")
     #expect(m.confirm() == runMine)
 }
+
+// MARK: - Opened on the name step (names, Calls made 12)
+
+/// A chip's Rename… opens ⌘P on the name step: Esc closes the palette straight back (Rule 6), with
+/// nothing run on the close — Esc cancels, not keeps.
+@Test func aPaletteOpenedOnTheNameStepClosesOnEsc() {
+    var m = PaletteModel(mode: .open)
+    m.openOnName(conversationRename)
+    let step = try! #require(m.steps.last)
+    #expect(step.isName && step.selectAllOnShow)
+    #expect(m.query == "Old")
+    m.type("Mine")
+    #expect(m.escape() == .close)
+    #expect(m.steps.isEmpty)
+    #expect(m.closing() == nil)
+}
+
+/// Opened on the step, the close still keeps a changed name (Rule 2), and Return runs it once.
+@Test func aPaletteOpenedOnTheNameStepKeepsOnCloseAndRunsOnce() {
+    var m = PaletteModel(mode: .open)
+    m.openOnName(conversationRename)
+    m.type("Mine")
+    #expect(m.closing() == runMine)
+
+    var n = PaletteModel(mode: .open)
+    n.openOnName(conversationRename)
+    n.type("Mine")
+    #expect(n.confirm() == runMine)
+    n.runFinished(entryId: n.steps.last!.commandId, error: nil)
+    #expect(n.closing() == nil)
+}
+
+/// A name step pushed from a row (⌘K's Rename Conversation…, ⌘R) still drops back to the list.
+@Test func aPushedNameStepEscapesToTheList() {
+    var m = nameStep()
+    #expect(m.escape() == nil)
+    #expect(m.steps.isEmpty)
+}

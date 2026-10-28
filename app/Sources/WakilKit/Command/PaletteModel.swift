@@ -19,11 +19,15 @@ public struct PaletteStep: Sendable, Equatable {
     public let isDrill: Bool
     /// A name step's subject (names, Calls made 10); nil on every other step.
     public let rename: PaletteRename?
+    /// The palette was opened on this step (a chip's Rename…, names Calls made 12): Esc closes the
+    /// palette straight back rather than dropping to a list the operator never saw (Rule 6).
+    public let closesOnEscape: Bool
 
     public init(
         commandId: String, title: String, query: String = "", choices: [PaletteEntry] = [],
-        isText: Bool, isDrill: Bool = false, rename: PaletteRename? = nil
+        isText: Bool, isDrill: Bool = false, rename: PaletteRename? = nil, closesOnEscape: Bool = false
     ) {
+        self.closesOnEscape = closesOnEscape
         self.commandId = commandId
         self.title = title
         self.query = query
@@ -232,7 +236,8 @@ public struct PaletteModel: Sendable, Equatable {
     /// Esc: pops one step, restoring the parent's query and selection; at the root, `.close`.
     ///
     /// A text step's typed line is never thrown away (rule 2): popping it keeps the line as a
-    /// recent, so the next time the step opens it is there to choose.
+    /// recent, so the next time the step opens it is there to choose. A step the palette was
+    /// opened on closes it (`closesOnEscape`) — popped first, so the close runs nothing: Esc cancels.
     public mutating func escape() -> PaletteEffect? {
         guard !steps.isEmpty else { return .close }
         let popped = steps.removeLast()
@@ -240,7 +245,7 @@ public struct PaletteModel: Sendable, Equatable {
         remember(popped)
         restore(parentSelections.popLast())
         error = nil
-        return nil
+        return popped.closesOnEscape ? .close : nil
     }
 
     /// The palette is closing — Esc at the root, a click outside, a run that succeeded, a plane
@@ -254,6 +259,12 @@ public struct PaletteModel: Sendable, Equatable {
         steps.forEach { remember($0) }
         guard let step = steps.last, step.isName, !inFlight.contains(step.commandId) else { return nil }
         return runName(step, onClose: true)
+    }
+
+    /// Opens the palette on the name step for `rename` (names, Calls made 12: a chip's Rename…),
+    /// with no list under it to go back to: Esc closes the palette.
+    public mutating func openOnName(_ rename: PaletteRename) {
+        pushName(rename, closesOnEscape: true)
     }
 
     /// ⌘R: pushes the name step for the selected row's rename (names, Calls made 11). Nothing for
@@ -357,9 +368,10 @@ public struct PaletteModel: Sendable, Equatable {
         return .runName(action: rename.action, params: rename.params, name: name)
     }
 
-    private mutating func pushName(_ rename: PaletteRename) {
+    private mutating func pushName(_ rename: PaletteRename, closesOnEscape: Bool = false) {
         pushStep(PaletteStep(commandId: "name:\(rename.action)", title: rename.placeholder,
-                             query: rename.current, isText: false, rename: rename))
+                             query: rename.current, isText: false, rename: rename,
+                             closesOnEscape: closesOnEscape))
     }
 
     /// The first row, except a text step with a typed line selects the line (last).

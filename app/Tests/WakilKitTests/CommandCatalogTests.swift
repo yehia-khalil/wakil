@@ -223,3 +223,17 @@ private func paneKind(_ c: CatalogCommand) -> String? {
     #expect(!CommandCatalog.entries(for: PaletteContext(focusedPane: FocusedPane(id: "db-1", kind: "db")))
         .contains { $0.title == "Print page" })
 }
+
+// Names, Calls made 10: ⌘K's Rename Conversation… pushes the name step for the conversation on screen.
+@Test func renameConversationIsOfferedOnlyWithAConversationOnScreen() throws {
+    #expect(!CommandCatalog.entries(for: PaletteContext()).contains { $0.id == "global.renameConversation" })
+    let subject = PaletteSubject(id: "c1", name: "Mine", fallback: "Model")
+    let entry = try #require(CommandCatalog.entries(for: PaletteContext(conversationOnScreen: true, currentConversation: subject))
+        .first { $0.id == "global.renameConversation" })
+    #expect(entry.title == "Rename Conversation…")
+    #expect(entry.action == .pushName(PaletteRename(
+        action: "conversation_rename", params: .object(["conversation": .string("c1")]),
+        current: "Mine", fallback: "Model", placeholder: "Conversation name")))
+    let c = try #require(CommandCatalog.command(id: "global.renameConversation"))
+    #expect(c.input == .name(placeholder: "Conversation name"))
+}

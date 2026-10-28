@@ -23,6 +23,20 @@ public struct EditorActiveDiff: Sendable, Equatable {
     }
 }
 
+/// A conversation the palette can rename (names, Calls made 10): its id, the name shown, and what
+/// clearing would show instead (`LiveConversation.fallbackTitle`).
+public struct PaletteSubject: Sendable, Equatable {
+    public var id: String
+    public var name: String
+    public var fallback: String
+
+    public init(id: String, name: String, fallback: String) {
+        self.id = id
+        self.name = name
+        self.fallback = fallback
+    }
+}
+
 /// A snapshot of the window state the catalog's predicates and params read. Built by the
 /// window when ⌘K opens and again whenever that state moves, so a command appears or goes
 /// while the palette is open (a send starts → Cancel appears).
@@ -49,6 +63,8 @@ public struct PaletteContext: Sendable, Equatable {
     public var conversationOnScreen: Bool
     /// 3a-iv: the root the Branch segment is about (`WindowModel.activeBranchRoot`); nil with no git root.
     public var activeGitRoot: String?
+    /// Names: the conversation on screen, which *Rename Conversation…* renames; nil on a Landing.
+    public var currentConversation: PaletteSubject?
 
     public init(
         focusedPane: FocusedPane? = nil, apiSendInFlight: Bool = false,
@@ -56,8 +72,10 @@ public struct PaletteContext: Sendable, Equatable {
         hasEnvironments: Bool = false, projectCount: Int = 0, providerCount: Int = 0,
         editorActiveIsFile: Bool = false, organisation: String = "", project: String = "",
         editorActiveDiff: EditorActiveDiff? = nil, conversationOnScreen: Bool = false,
-        activeGitRoot: String? = nil, editorActiveConflicted: Bool = false
+        activeGitRoot: String? = nil, editorActiveConflicted: Bool = false,
+        currentConversation: PaletteSubject? = nil
     ) {
+        self.currentConversation = currentConversation
         self.activeGitRoot = activeGitRoot
         self.editorActiveConflicted = editorActiveConflicted
         self.focusedPane = focusedPane
@@ -222,6 +240,17 @@ public enum CommandCatalog {
             id: "global.closeConversation", label: "Close conversation", scope: .global,
             action: "session_close", input: nil,
             params: { _, _ in .object([:]) }, available: { $0.conversationOnScreen }),
+        // Names, Calls made 10: the name step for the conversation on screen. Its params name it by
+        // id, so the rename lands on it wherever the operator is when it runs; the step adds `name`.
+        CatalogCommand(
+            id: "global.renameConversation", label: "Rename Conversation…", scope: .global,
+            action: "conversation_rename", input: .name(placeholder: conversationNamePlaceholder),
+            params: { c, value in
+                var params: [String: JSONValue] = ["conversation": .string(c.currentConversation?.id ?? "")]
+                if let value { params["name"] = .string(value) }
+                return .object(params)
+            },
+            available: { $0.currentConversation != nil }),
     ]
 
     /// Focused pane's commands first (catalog order), then global; unavailable ones dropped.
@@ -232,10 +261,21 @@ public enum CommandCatalog {
         return (paneCommands + globalCommands).filter { $0.available(context) }.map { c in
             PaletteEntry(
                 id: c.id, group: .commands, title: c.label, subtitle: "", kindLabel: "command",
-                verb: c.input == nil ? "run" : "choose",
-                action: c.input == nil
-                    ? .dispatch(action: c.action, params: c.params(context, nil))
-                    : .pushStep(commandId: c.id))
+                verb: c.input == nil ? "run" : "choose", action: action(c, context))
+        }
+    }
+
+    /// A command's row action: a dispatch, a step to push, or — a name — the name step for the
+    /// subject the context names (only the window knows a name, so the row carries it).
+    private static func action(_ c: CatalogCommand, _ context: PaletteContext) -> PaletteAction {
+        switch c.input {
+        case nil: return .dispatch(action: c.action, params: c.params(context, nil))
+        case .name(let placeholder):
+            let subject = context.currentConversation
+            return .pushName(PaletteRename(
+                action: c.action, params: c.params(context, nil), current: subject?.name ?? "",
+                fallback: subject?.fallback ?? "", placeholder: placeholder))
+        case .choice?, .text?: return .pushStep(commandId: c.id)
         }
     }
 
