@@ -7665,16 +7665,19 @@ public final class WindowModel {
     /// for the same reason `SessionList.Skipped` exists on the Go side: an
     /// incomplete listing must say it is incomplete.
     private func sessionPaletteItems() async -> (items: [PaletteItem], note: String?) {
+        // The organisation the listing is asked in, taken before it suspends: the sessions are that
+        // organisation's, whatever the window has switched to by the time they arrive (Invariant 4).
+        let org = organization
         let source = await paletteSource("session_list")
         guard let structured = source.structured else { return ([], source.note) }
         guard case .array(let rows)? = structured["sessions"] else {
             return ([], "session_list: the result carried no \"sessions\" array")
         }
-        // Read once per listing, with the window's organisation (the sessions listed are its own).
+        // Read once per listing, with the organisation it was asked in (the sessions listed are its own).
         // Unreadable: today's titles, and the file's sentence in `status`.
         var names: [String: StoredConversationName] = [:]
         var unreadable: String?
-        if let file = conversationNameFile(org: organization) {
+        if let file = conversationNameFile(org: org) {
             do { names = try file.read() } catch { unreadable = "\(error)" }
         }
         let items = PaletteItems.sessionItems(from: rows, names: names)

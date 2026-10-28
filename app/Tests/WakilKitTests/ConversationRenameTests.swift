@@ -123,6 +123,25 @@ private struct Fixture {
     }
 }
 
+/// Holds a `session_list` double until `release()`, so the window can move while it is asked.
+private actor Gate {
+    private var waiter: CheckedContinuation<Void, Never>?
+    private var released = false
+    private(set) var asked = false
+
+    func wait() async {
+        asked = true
+        guard !released else { return }
+        await withCheckedContinuation { waiter = $0 }
+    }
+
+    func release() {
+        released = true
+        waiter?.resume()
+        waiter = nil
+    }
+}
+
 @Suite @MainActor struct ConversationRenameTests {
     @Test func theOperatorRenamesAndClearsBackToTheModelsName() async throws {
         let f = try await Fixture()
@@ -283,6 +302,35 @@ private struct Fixture {
         await f.model.setProvider("other-provider")
         #expect(agent.lineageRoot != nil)
         #expect(try f.file.read().isEmpty)
+    }
+
+    /// Continue's sessions are the organisation's they were listed in, so their names are read from
+    /// that organisation's file — not from one the window switched to while the listing was asked.
+    @Test func continueReadsTheNamesOfTheOrganisationTheListingWasAskedIn() async throws {
+        let f = try await Fixture()
+        try f.file.set(root: "r1", operator: .some("Mine"), ai: .none)
+        try FileManager.default.createDirectory(
+            at: f.wakil.appendingPathComponent("orgs/globex", isDirectory: true), withIntermediateDirectories: true)
+        try ConversationNameFile(org: "globex", home: f.wakil).set(root: "r1", operator: .some("Theirs"), ai: .none)
+        let gate = Gate()
+        await f.model.registryForTesting.register(Action(
+            name: "session_list", description: "test double", kind: .read,
+            schema: .object(["type": .string("object")]),
+            handler: { _ in
+                await gate.wait()
+                return .object(["structuredContent": .object(["sessions": .array([.object([
+                    "id": .string("s9"), "provider": .string("qwen"), "lineageRoot": .string("r1"),
+                    "title": .string("CLI title"),
+                ])])])])
+            }))
+
+        let listing = Task { await f.model.landingSessions() }
+        #expect(await waitUntil { await gate.asked })
+        f.model.setOrganizationForTesting("globex")
+        await gate.release()
+
+        let rows = await listing.value
+        #expect(rows.map(\.title) == ["Mine"])
     }
 
     @Test func renamingNeverSwitchesTheScreen() async throws {
