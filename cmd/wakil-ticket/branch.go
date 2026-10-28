@@ -121,18 +121,12 @@ type TicketBranch struct {
 	Partial   []SourceNote  `json:"partial"`
 }
 
-// HandoffRef is one open hand-off of a row's ticket (filled from the record by the hand-off task).
-type HandoffRef struct {
-	ID           string `json:"id"`
-	Conversation string `json:"conversation"`
-	Thread       string `json:"thread"`
-}
-
 // InFlightRow is one row of In flight or Waiting on you. State is the row's one state in words
 // ("#212 · 2 threads", "checks failing"), composed here for the window to show as is; a Waiting on
 // you row is one PR, and State names its most urgent reason. Key is "" for a PR that carries no
 // ticket. Repo is <host>/<owner>/<repo>; URL the PR's. Root is the first root on Repo, and Project
-// the project holding it; both "" for a repository no project holds.
+// the project holding it; both "" for a repository no project holds. Handoffs are the ticket's
+// (or a keyless PR's) open hand-offs; a ticket with one and no other row is In flight, State "agent".
 //
 // The numbers behind the words, so the window counts without parsing them: Threads are the
 // waiting threads' ids, Failing the failing checks' names on the last commit, Review whether the
@@ -140,22 +134,22 @@ type HandoffRef struct {
 // waiting threads' last comments, and Count the items they make — one per thread, one for any
 // failing check, one for the review request.
 type InFlightRow struct {
-	Key      string       `json:"key"`
-	Title    string       `json:"title"`
-	Status   string       `json:"status"`
-	State    string       `json:"state"`
-	Root     string       `json:"root"`
-	Branch   string       `json:"branch"`
-	Project  string       `json:"project"`
-	Repo     string       `json:"repo"`
-	URL      string       `json:"url"`
-	PR       int          `json:"pr"`
-	Threads  []string     `json:"threads"`
-	Failing  []string     `json:"failing"`
-	Review   bool         `json:"review"`
-	Activity string       `json:"activity"`
-	Handoffs []HandoffRef `json:"handoffs"`
-	Count    int          `json:"count"`
+	Key      string                 `json:"key"`
+	Title    string                 `json:"title"`
+	Status   string                 `json:"status"`
+	State    string                 `json:"state"`
+	Root     string                 `json:"root"`
+	Branch   string                 `json:"branch"`
+	Project  string                 `json:"project"`
+	Repo     string                 `json:"repo"`
+	URL      string                 `json:"url"`
+	PR       int                    `json:"pr"`
+	Threads  []string               `json:"threads"`
+	Failing  []string               `json:"failing"`
+	Review   bool                   `json:"review"`
+	Activity string                 `json:"activity"`
+	Handoffs []wakilcore.HandoffRef `json:"handoffs"`
+	Count    int                    `json:"count"`
 }
 
 // InFlight's Count is the items of Waiting on you: the sum of its rows' counts.
@@ -175,7 +169,7 @@ func newRow(r InFlightRow) InFlightRow {
 		r.Failing = []string{}
 	}
 	if r.Handoffs == nil {
-		r.Handoffs = []HandoffRef{}
+		r.Handoffs = []wakilcore.HandoffRef{}
 	}
 	return r
 }
@@ -873,8 +867,27 @@ func readInFlight(ctx context.Context, org string) InFlight {
 			row.Title, row.Status = rec.Seen.Title, rec.Seen.Status
 		}
 	}
+	// Each row carries its ticket's open hand-offs, a keyless PR's kept by its PR.
+	open, _ := wakilcore.OpenTicketHandoffs(org)
+	carried := map[string]bool{}
+	handoffsOf := func(row InFlightRow) []wakilcore.HandoffRef {
+		key := strings.ToUpper(row.Key)
+		if key == "" {
+			if row.PR == 0 || row.Repo == "" {
+				return []wakilcore.HandoffRef{}
+			}
+			key = wakilcore.PRHandoffKey(row.Repo, row.PR)
+		}
+		carried[key] = true
+		refs := []wakilcore.HandoffRef{}
+		for _, h := range open[key] {
+			refs = append(refs, h.Ref())
+		}
+		return refs
+	}
 	for _, r := range rows {
 		row := r.row
+		row.Handoffs = handoffsOf(row)
 		fill(&row)
 		out.InFlight = append(out.InFlight, row)
 	}
@@ -900,8 +913,46 @@ func readInFlight(ctx context.Context, org string) InFlight {
 			row.Count++
 		}
 		out.Count += row.Count
+		row.Handoffs = handoffsOf(row)
 		fill(&row)
 		out.WaitingOnYou = append(out.WaitingOnYou, row)
+	}
+	// A ticket (or keyless PR) with a live handed conversation and no other row is in flight too.
+	var handed []string
+	for key := range open {
+		if !carried[key] {
+			handed = append(handed, key)
+		}
+	}
+	sortStrings(handed)
+	for _, key := range handed {
+		hs := open[key]
+		last := hs[len(hs)-1]
+		var row InFlightRow
+		if repo, n, ok := wakilcore.ParsePRHandoffKey(key); ok {
+			root := rootOf[repo]
+			row = InFlightRow{Repo: repo, PR: n, URL: fmt.Sprintf("https://%s/pull/%d", repo, n), Root: root, Project: projectOf[root]}
+		} else {
+			row = InFlightRow{Key: key}
+			if rec, err := wakilcore.ReadTicketRecord(org, key); err == nil {
+				for _, b := range rec.Branches {
+					if root := rootOf[b.Repo]; root != "" {
+						row.Root, row.Branch, row.Repo, row.Project = root, b.Branch, b.Repo, projectOf[root]
+						break
+					}
+				}
+			}
+		}
+		if row.Project == "" {
+			row.Project = last.Place.Project
+		}
+		row = newRow(row)
+		row.State, row.Activity = "agent", last.At
+		for _, h := range hs {
+			row.Handoffs = append(row.Handoffs, h.Ref())
+		}
+		fill(&row)
+		out.InFlight = append(out.InFlight, row)
 	}
 	out.Partial = append(out.Partial, jira.notes()...)
 	if out.WaitingOnYou == nil {
@@ -989,5 +1040,5 @@ func (b TicketBranch) normalized() TicketBranch {
 func emptyRecord(key string) wakilcore.TicketRecord {
 	return wakilcore.TicketRecord{Key: key, Branches: []wakilcore.TicketBranchRef{}, PRs: []wakilcore.TicketPRRef{},
 		Decisions: []wakilcore.TicketLine{}, NotDone: []wakilcore.TicketLine{}, WaitingOn: []wakilcore.TicketLine{},
-		Verified: []wakilcore.TicketLine{}, Rulings: []wakilcore.TicketLine{}}
+		Verified: []wakilcore.TicketLine{}, Rulings: []wakilcore.TicketLine{}, Handoffs: []wakilcore.TicketHandoff{}}
 }

@@ -705,7 +705,7 @@ func TestInFlightBranchesAndMyPRs(t *testing.T) {
 	// Rows carry the root as the project names it, never with its symlinks resolved: the window
 	// matches them against its own roots (macOS's temp dir is under the /var -> /private/var link).
 	real := f.repo
-	none, refs := []string{}, []HandoffRef{}
+	none, refs := []string{}, []wakilcore.HandoffRef{}
 	at := func(r InFlightRow) InFlightRow {
 		r.Root, r.Project, r.Repo = real, "api", "github.com/initech/api"
 		if r.PR != 0 {
@@ -1143,5 +1143,151 @@ func TestInFlightActivityIsNewest(t *testing.T) {
 		if row.Activity != want[row.PR] {
 			t.Errorf("#%d activity = %q, want %q", row.PR, row.Activity, want[row.PR])
 		}
+	}
+}
+
+func handedTo(conversation string) wakilcore.TicketHandoff {
+	return wakilcore.TicketHandoff{Conversation: conversation, Title: "INI-142 · keep the org", Thread: "T_1", Harness: "claude-code",
+		Provider: "anthropic", Place: wakilcore.Place{Organization: "initech", Project: "api", Environment: "local"}}
+}
+
+// A row carries its ticket's open hand-offs, not the ended ones.
+func TestInFlightCarriesOpenHandoffs(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	now := time.Now()
+	if _, err := wakilcore.AddTicketHandoff("initech", "INI-142", handedTo("c1"), false, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wakilcore.AddTicketHandoff("initech", "INI-142", handedTo("c2"), false, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := wakilcore.EndTicketHandoffs("initech", []string{"c1"}, false, now); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := readInFlightTool(t)
+	if len(got.InFlight) != 1 || got.InFlight[0].Key != "INI-142" || got.InFlight[0].State != "local branch" {
+		t.Fatalf("in flight = %+v", got.InFlight)
+	}
+	want := []wakilcore.HandoffRef{{ID: "h2", Conversation: "c2", Thread: "T_1"}}
+	if !reflect.DeepEqual(got.InFlight[0].Handoffs, want) {
+		t.Errorf("handoffs = %+v, want %+v", got.InFlight[0].Handoffs, want)
+	}
+}
+
+// A ticket whose only sign of life is a live handed conversation is in flight, in state "agent";
+// so is a PR with no ticket key handed to an agent.
+func TestInFlightHandoffOnlyTicketIsInFlight(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "main", "")
+	now := time.Now()
+	if _, err := wakilcore.AddTicketHandoff("initech", "INI-160", handedTo("c1"), false, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wakilcore.AddTicketHandoff("initech", wakilcore.PRHandoffKey("github.com/initech/api", 215), handedTo("c2"), false, now); err != nil {
+		t.Fatal(err)
+	}
+	got, raw := readInFlightTool(t)
+	if len(got.InFlight) != 2 {
+		t.Fatalf("in flight = %+v", got.InFlight)
+	}
+	row := got.InFlight[0]
+	if row.Key != "INI-160" || row.State != "agent" || row.Title != "Retry the token refresh" || row.Project != "api" ||
+		len(row.Handoffs) != 1 || row.Handoffs[0].Conversation != "c1" {
+		t.Errorf("ticket row = %+v", row)
+	}
+	pr := got.InFlight[1]
+	if pr.Key != "" || pr.PR != 215 || pr.Repo != "github.com/initech/api" || pr.State != "agent" || len(pr.Handoffs) != 1 ||
+		pr.Handoffs[0].Conversation != "c2" {
+		t.Errorf("PR row = %+v", pr)
+	}
+	if got.Count != 0 {
+		t.Errorf("a hand-off counts %d, want 0", got.Count)
+	}
+	r := raw["inFlight"].([]any)[0].(map[string]any)
+	if _, ok := r["handoffs"].([]any)[0].(map[string]any)["conversation"]; !ok {
+		t.Errorf("row = %v", r)
+	}
+}
+
+func TestDraftAndHandoffWritesRefusedOutsideTheWindow(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	t.Setenv("WAKIL_IN_WINDOW", "")
+	cs := connect(t)
+	writes := map[string]map[string]any{
+		"ticket_draft_write":   {"thread": "T_1", "text": "Fixed", "by": "agent", "conversation": "c1"},
+		"ticket_handoff_write": {"op": "add", "key": "INI-142", "handoff": map[string]any{"conversation": "c1", "harness": "claude-code", "provider": "anthropic"}},
+	}
+	for tool, args := range writes {
+		if msg := callErr(t, cs, tool, args); !strings.Contains(msg, "Wakil window") {
+			t.Errorf("%s refused with %q, want it to name the Wakil window", tool, msg)
+		}
+	}
+	if m, _ := wakilcore.ReadTicketDrafts("initech"); len(m) != 0 {
+		t.Errorf("a refused draft was written: %+v", m)
+	}
+	if r, _ := wakilcore.ReadTicketRecord("initech", "INI-142"); len(r.Handoffs) != 0 {
+		t.Errorf("a refused hand-off was written: %+v", r.Handoffs)
+	}
+	call(t, cs, "ticket_drafts", map[string]any{})
+	call(t, cs, "ticket_handoff_defaults", map[string]any{})
+}
+
+func TestDraftToolsWriteReadAndRemove(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	cs := connect(t)
+	call(t, cs, "ticket_draft_write", map[string]any{"thread": "T_1", "text": "Will fix", "by": "operator"})
+	call(t, cs, "ticket_draft_write", map[string]any{"thread": "T_1", "text": "Fixed in 4f1c", "by": "agent", "conversation": "c1",
+		"root": "/r/api", "branch": "ini-142-login"})
+	var got struct {
+		Drafts map[string]wakilcore.TicketDraft `json:"drafts"`
+	}
+	if err := json.Unmarshal(call(t, cs, "ticket_drafts", map[string]any{}), &got); err != nil {
+		t.Fatal(err)
+	}
+	d := got.Drafts["T_1"]
+	if d.Text != "Fixed in 4f1c" || d.By != "agent" || d.Replaced != "Will fix" || d.Conversation != "c1" || d.Branch != "ini-142-login" {
+		t.Errorf("draft = %+v", d)
+	}
+	call(t, cs, "ticket_draft_write", map[string]any{"thread": "T_1", "by": "operator"})
+	b := call(t, cs, "ticket_drafts", map[string]any{})
+	if !strings.Contains(string(b), `"drafts":{}`) {
+		t.Errorf("after removing = %s", b)
+	}
+}
+
+func TestHandoffToolsAddEndAndDefaults(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	cs := connect(t)
+	b := call(t, cs, "ticket_handoff_defaults", map[string]any{})
+	if !strings.Contains(string(b), `"found":false`) {
+		t.Errorf("defaults before any = %s", b)
+	}
+	b = call(t, cs, "ticket_handoff_write", map[string]any{"op": "add", "key": "INI-142", "mayPush": true,
+		"handoff": map[string]any{"conversation": "c1", "title": "INI-142 · keep the org", "thread": "T_1", "harness": "claude-code",
+			"provider": "anthropic", "place": map[string]any{"organization": "initech", "project": "api", "environment": "local"}}})
+	var added struct {
+		Handoff wakilcore.TicketHandoff `json:"handoff"`
+	}
+	if err := json.Unmarshal(b, &added); err != nil {
+		t.Fatal(err)
+	}
+	if added.Handoff.ID != "h1" || !added.Handoff.MayPush || added.Handoff.Place.Project != "api" {
+		t.Errorf("added = %+v", added.Handoff)
+	}
+	var def struct {
+		Defaults wakilcore.HandoffDefaults `json:"defaults"`
+		Found    bool                      `json:"found"`
+	}
+	if err := json.Unmarshal(call(t, cs, "ticket_handoff_defaults", map[string]any{}), &def); err != nil {
+		t.Fatal(err)
+	}
+	if !def.Found || def.Defaults.Harness != "claude-code" || def.Defaults.Provider != "anthropic" || !def.Defaults.MayPush {
+		t.Errorf("defaults = %+v", def)
+	}
+	call(t, cs, "ticket_handoff_write", map[string]any{"op": "end", "conversations": []string{}, "keepLive": true})
+	if r, _ := wakilcore.ReadTicketRecord("initech", "INI-142"); len(r.Handoffs) != 1 || r.Handoffs[0].Ended == nil {
+		t.Errorf("after ending the stale = %+v", r.Handoffs)
+	}
+	if msg := callErr(t, cs, "ticket_handoff_write", map[string]any{"op": "move"}); !strings.Contains(msg, "move") {
+		t.Errorf("unknown op refused with %q", msg)
 	}
 }

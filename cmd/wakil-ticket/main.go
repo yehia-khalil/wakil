@@ -114,6 +114,50 @@ type resolveResult struct {
 	Resolved bool   `json:"resolved"`
 }
 
+type draftWriteArg struct {
+	Thread       string `json:"thread" jsonschema:"the review thread's GitHub node id"`
+	Text         string `json:"text,omitempty" jsonschema:"the draft reply; left out or empty removes the thread's draft"`
+	By           string `json:"by" jsonschema:"operator or agent: who the window's dispatch came from"`
+	Conversation string `json:"conversation,omitempty" jsonschema:"an agent draft's conversation"`
+	Root         string `json:"root,omitempty" jsonschema:"the root the draft was written in"`
+	Branch       string `json:"branch,omitempty" jsonschema:"the branch the draft was written on"`
+}
+
+type draftsResult struct {
+	Drafts map[string]wakilcore.TicketDraft `json:"drafts" jsonschema:"each review thread's draft, by thread id"`
+}
+
+// noDrafts is a refusal's output: drafts is an object even then, as the output schema says.
+func noDrafts() draftsResult { return draftsResult{Drafts: map[string]wakilcore.TicketDraft{}} }
+
+// handoffArg is the hand-off the window started; its id, time, May push and end are Wakil's.
+type handoffArg struct {
+	Conversation string          `json:"conversation" jsonschema:"the handed conversation's id"`
+	Title        string          `json:"title,omitempty" jsonschema:"the conversation's title, the brief's first line"`
+	Thread       string          `json:"thread,omitempty" jsonschema:"the review thread it was handed from; empty from the header or ⌘P"`
+	Harness      string          `json:"harness" jsonschema:"the harness Start ran"`
+	Provider     string          `json:"provider" jsonschema:"the provider binding Start used"`
+	Place        wakilcore.Place `json:"place,omitempty" jsonschema:"where the conversation runs"`
+}
+
+type handoffWriteArg struct {
+	Op            string      `json:"op" jsonschema:"add or end"`
+	Key           string      `json:"key,omitempty" jsonschema:"add: the ticket key, or pr:<host>/<owner>/<repo>#<n> for a PR with no ticket key"`
+	Handoff       *handoffArg `json:"handoff,omitempty" jsonschema:"add: the hand-off"`
+	MayPush       bool        `json:"mayPush,omitempty" jsonschema:"add: the operator's May push switch at Start"`
+	Conversations []string    `json:"conversations,omitempty" jsonschema:"end: the conversations whose hand-offs end, or with keepLive the live ones to keep"`
+	KeepLive      bool        `json:"keepLive,omitempty" jsonschema:"end: end every open hand-off whose conversation is not listed"`
+}
+
+type handoffWriteResult struct {
+	Handoff *wakilcore.TicketHandoff `json:"handoff,omitempty" jsonschema:"add: the hand-off as kept, with its id"`
+}
+
+type handoffDefaultsResult struct {
+	Defaults wakilcore.HandoffDefaults `json:"defaults"`
+	Found    bool                      `json:"found" jsonschema:"whether a Start was ever made in this organization"`
+}
+
 func toolErr(err error) *mcp.CallToolResult { return mcpx.ToolErr("wakil-ticket", err) }
 
 // assertWindow refuses a write from a process the window did not start, naming the window.
@@ -247,7 +291,91 @@ func newServer() *mcp.Server {
 				Resolved: t.Resolved, Outdated: t.Outdated, Author: t.Author, FirstWords: t.FirstWords}, nil
 		})
 
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_drafts", Description: "Read-only. The organization's reply drafts by review thread id: text, who wrote it (operator or agent), an agent's conversation, the root and branch it was written in, when, and the operator's text an agent's draft replaced."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, draftsResult, error) {
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return toolErr(err), noDrafts(), nil
+			}
+			m, err := wakilcore.ReadTicketDrafts(org)
+			if err != nil {
+				return toolErr(err), noDrafts(), nil
+			}
+			return nil, draftsResult{Drafts: m}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_draft_write", Description: "Writes. Sets a review thread's reply draft, or removes it when text is left out or empty. Only from the Wakil window. An agent's draft over the operator's keeps the operator's text as replaced; the operator's draft clears it. Answers every draft."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a draftWriteArg) (*mcp.CallToolResult, draftsResult, error) {
+			if err := assertWindow("ticket_draft_write"); err != nil {
+				return toolErr(err), noDrafts(), nil
+			}
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return toolErr(err), noDrafts(), nil
+			}
+			var d *wakilcore.TicketDraft
+			if a.Text != "" {
+				d = &wakilcore.TicketDraft{Text: a.Text, By: a.By, Conversation: a.Conversation, Root: a.Root, Branch: a.Branch}
+			}
+			m, err := wakilcore.WriteTicketDraft(org, a.Thread, d, time.Now())
+			if err != nil {
+				return toolErr(err), noDrafts(), nil
+			}
+			return nil, draftsResult{Drafts: m}, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_handoff_write", Description: "Writes. add keeps a hand-off in the ticket's record (a PR with no ticket key: by its PR, no record) with its May push, and makes its harness, provider and May push the organization's defaults; end marks open hand-offs ended: the conversations listed, or with keepLive every one not listed. Only from the Wakil window."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a handoffWriteArg) (*mcp.CallToolResult, handoffWriteResult, error) {
+			if err := assertWindow("ticket_handoff_write"); err != nil {
+				return toolErr(err), handoffWriteResult{}, nil
+			}
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return toolErr(err), handoffWriteResult{}, nil
+			}
+			out, err := writeHandoff(org, a, time.Now())
+			if err != nil {
+				return toolErr(err), handoffWriteResult{}, nil
+			}
+			return nil, out, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_handoff_defaults", Description: "Read-only. The harness, provider and May push the organization's last hand-off started with, and whether there was one."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, handoffDefaultsResult, error) {
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return toolErr(err), handoffDefaultsResult{}, nil
+			}
+			d, found, err := wakilcore.ReadHandoffDefaults(org)
+			if err != nil {
+				return toolErr(err), handoffDefaultsResult{}, nil
+			}
+			return nil, handoffDefaultsResult{Defaults: d, Found: found}, nil
+		})
+
 	return s
+}
+
+// writeHandoff is ticket_handoff_write: an add answers the hand-off as kept, its id assigned.
+func writeHandoff(org string, a handoffWriteArg, now time.Time) (handoffWriteResult, error) {
+	switch a.Op {
+	case "add":
+		if a.Handoff == nil {
+			return handoffWriteResult{}, wakilcore.UserError("an add needs its hand-off")
+		}
+		h := a.Handoff
+		r, err := wakilcore.AddTicketHandoff(org, strings.TrimSpace(a.Key), wakilcore.TicketHandoff{
+			Conversation: h.Conversation, Title: h.Title, Thread: h.Thread, Harness: h.Harness, Provider: h.Provider, Place: h.Place,
+		}, a.MayPush, now)
+		if err != nil {
+			return handoffWriteResult{}, err
+		}
+		added := r.Handoffs[len(r.Handoffs)-1]
+		return handoffWriteResult{Handoff: &added}, nil
+	case "end":
+		return handoffWriteResult{}, wakilcore.EndTicketHandoffs(org, a.Conversations, a.KeepLive, now)
+	}
+	return handoffWriteResult{}, wakilcore.UserError("a hand-off op is add or end, not " + strconvQuote(a.Op))
 }
 
 // githubForRoot is the organization's GitHub client for the root's remote host.
