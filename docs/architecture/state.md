@@ -19,6 +19,7 @@ both the Swift side and Go read the `HOME` variable, so an overridden `HOME` mov
 | The browser's sites and the agent's reach: the organisation's production sites, the active environment's tags, each conversation's allowed sites (`PlaceAgent.id` → site keys) and each tab's last read | **memory only**: `PaneStore`'s browser kind, rebuilt from the config tree and never written; a closed conversation and an org switch forget theirs, a relaunch asks again | Swift: `BrowserSites`, `browserAllow`, `browserRecordRead` |
 | Pane arrangement per project (a browser pane's `browserTabs` — id, URL and title per tab — and `browserActiveTab` are saved with it; only the active tab loads on restore) | `~/.wakil/layouts/<org>/<project>.json` | Swift: `LayoutPersistence` |
 | Pane arrangement per conversation | `~/.wakil/layouts/<org>/conversations/<lineageRoot>/<project>.json` | Swift: `LayoutPersistence` |
+| The window's own memory (`railCollapsed`: the rail put away to its spine; absent means shown) | `~/.wakil/layouts/window.json` | Swift: `LayoutPersistence.saveWindowState`, from `WindowModel` |
 | Action journal (append-only, one line per dispatch) | `~/.wakil/journal/<sessionId>.jsonl` | Swift: `ActionRegistry` (`JournalEntry`) |
 | Code-identifier cache | `~/.wakil/vocabulary/` | Swift: `CodeSource` |
 | Agent transcripts | `<provider configDir>/projects/…` | the `claude` CLI; read by Go `sessions.go`, `transcript.go` |

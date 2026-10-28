@@ -452,15 +452,19 @@ Tests: `IdentifierTests`, `IdentifierResolverTests`, `IdentifierSourcesTests`,
   screen raises no focus request); `LayoutSnapshot`; `layoutMigratingGitPanes` (a saved Git pane
   becomes an editor pane on Changes, 3b-iii) and `layoutDroppingUnknownPaneKinds`.
 - `LayoutPersistence.swift` — `LayoutPersistence`: reads and writes a scope's arrangement on disk
-  (see [state.md](state.md)).
+  (see [state.md](state.md)), and the window's own `WindowState` (`window.json`).
+- `RailSpine.swift` — the collapsed rail's rules, pure: `RailSpine.marks` (one per pane, active longer,
+  working green and winning), its accessibility label and value, the peek timings (150 ms in, 300 ms
+  out); `WindowState` (`railCollapsed`). `LayoutStore` holds the flag and `LayoutReading` carries it;
+  `WindowModel.railCollapsed` mirrors it and `toggleRail()` dispatches `rail_set`.
 - `LayoutActions.swift` — `registerLayoutActions` (`pane_open`, `pane_close`, `pane_move`,
   `pane_resize`, `pane_snap`, `pane_focus`, `pane_maximize`, `pane_restore`, `pane_set_density`,
-  `settings_open`). `pane_close` asks an injected `unsavedEditorTabs` closure for a pane's dirty
+  `settings_open`, `rail_set`). `pane_close` asks an injected `unsavedEditorTabs` closure for a pane's dirty
   editor tabs (wired in `App/AppWiring.swift`); Layout does not import Editor.
 - `SnapSolver.swift`, `SnapGraph.swift` — magnetic snapping, as pure functions.
 
 Uses: `Panes`, `Registry`, `Terminal`.
-Tests: `LayoutStoreTests`, `LayoutActionsTests`, `LayoutPersistenceTests`, `PaneTests`,
+Tests: `LayoutStoreTests`, `LayoutActionsTests`, `LayoutPersistenceTests`, `RailSpineTests`, `PaneTests`,
 `SnapSolverTests`, `SnapGraphTests`, `PaneDrawOriginTests`, `QueryTargetPaneTests`,
 `PaneKindClassificationTests` (which checks `Pane.kinds` against `PaneKinds.standard` and
 `PaneStore`).

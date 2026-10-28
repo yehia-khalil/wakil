@@ -144,6 +144,20 @@ pointer would be interactive far-plane content again at 1.28:1 — half the
 2.35:1 this section already forbids. `Rail.dc.html` draws the deferred state
 with no pointer on it and so does not rule on this; it was settled here.
 
+**The rail collapses, 2026-10-28.** ⌃⌘R puts the rail away to a *spine*: a slim stack of 2 pt
+horizontal marks at the window's right edge, one per open pane in the rail's order, with no label.
+The active pane's mark is longer and `#9e82ff`; a working pane's is §5's green and wins, as the
+ticks do; the rest stay on the far plane, so "what is open" and "what is working" are readable
+with the rail put away. Resting the pointer on the spine or the 6 pt edge for 150 ms slides the
+rail out *over* the canvas, never pushing a pane, promoted to the mid plane as hover does; it
+leaves 300 ms after the pointer does. The entrance is the plane releasing, opacity and blur
+together, plus a few points of travel from the right over §7's 400–600 ms; with Reduce Motion it
+is a crossfade. While a pane is maximized the spine fades as the rail does, and promotion
+outranks the fade. Out over the canvas the rail sits on a void-coloured slab, because its names
+are read against whatever pane is under them. Neither peeking nor toggling takes focus (Rule 6).
+The state is the window's, kept across relaunches, and moves only through `rail_set`
+(Invariant 2).
+
 **The Core left this plane on 2026-09-09** and the thought thread is what keeps it. Under
 §4's rewrite the room is behind everything, so the near plane holds only what rises out of
 it.

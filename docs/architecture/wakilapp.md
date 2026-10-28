@@ -106,6 +106,7 @@ is not the script's own fixed sentence with Wakil's, so no page text reaches the
 | View | File | What it is |
 |---|---|---|
 | `Rail` | `Rail.swift` | The list of pane names, one way to reach a pane; promoted on hover |
+| `RailPeek` | `RailPeek.swift` | The collapsed rail (⌃⌘R, `rail_set`): the spine of marks, the 6 pt edge zone and the rail sliding out over the canvas on a 150 ms rest |
 | `ContextLine` | `ContextLine.swift` | The active org, project and environment, drawn as one line |
 | `ComposerBar` | `ComposerBar.swift` | The bar typed and spoken text land in; Return sends |
 | `ThoughtThread` | `ThoughtThread.swift` | The agent's progress, rising from the bottom edge |
