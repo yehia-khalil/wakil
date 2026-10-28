@@ -580,6 +580,8 @@ public final class WindowModel {
     public internal(set) var fastPathEnabled = false
     /// The organisation's commit-drafts switch (3a-ii-b), read with the quick tasks.
     public internal(set) var commitDraftsEnabled = false
+    /// The organisation's conversation-naming switch (names phase), read with the quick tasks.
+    public internal(set) var conversationNamesEnabled = false
     private let panes: PaneStore
     private let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per

@@ -287,6 +287,28 @@ private func makeSettingsWindow(
         #expect(model.fastPathEnabled == true)
     }
 
+    @Test func rebuildReadsTheConversationNamesSwitch() async {
+        func tree(_ names: JSONValue?) -> JSONValue {
+            var org: [String: JSONValue] = ["id": .string("initech"), "quickProvider": .string("qwen")]
+            if let names { org["conversationNames"] = names }
+            return .object([
+                "org": .object(org),
+                "providers": .array([.object([
+                    "id": .string("qwen"), "kind": .string("local"), "baseURL": .string("http://127.0.0.1:8012"),
+                ])]),
+                "projects": .array([]),
+            ])
+        }
+        let off = await makeWindow(tree: tree(.bool(false)), providerId: "qwen") { _, _ in
+            ScriptedQuickModel(serves: [.respond], reply: "x")
+        }
+        #expect(off.conversationNamesEnabled == false)
+        let unset = await makeWindow(tree: tree(nil), providerId: "qwen") { _, _ in
+            ScriptedQuickModel(serves: [.respond], reply: "x")
+        }
+        #expect(unset.conversationNamesEnabled == true)
+    }
+
     @Test func commitDraftsFollowsTheOrgSwitch() async {
         func tree(_ drafts: JSONValue?) -> JSONValue {
             var org: [String: JSONValue] = ["id": .string("initech"), "quickProvider": .string("qwen")]

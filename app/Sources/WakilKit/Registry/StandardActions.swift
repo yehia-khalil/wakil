@@ -1389,6 +1389,7 @@ public func registerStandardActions(
                 "ghostText": .object(["type": .string("boolean")]),
                 "fastPath": .object(["type": .string("boolean")]),
                 "commitDrafts": .object(["type": .string("boolean")]),
+                "conversationNames": .object(["type": .string("boolean")]),
                 "pullStrategy": .object(["type": .string("string")]),
                 "agentGeneral": .object(["type": .string("string")]),
                 "gitCommitInstructions": .object(["type": .string("string")]),
@@ -1414,7 +1415,7 @@ public func registerStandardActions(
                         "agentGeneral", "gitCommitInstructions", "gitPRInstructions"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
-            for key in ["ghostText", "fastPath", "commitDrafts"] {
+            for key in ["ghostText", "fastPath", "commitDrafts", "conversationNames"] {
                 if let value = fields[key], case .bool = value { arguments[key] = value }
             }
             return try await callChecked(

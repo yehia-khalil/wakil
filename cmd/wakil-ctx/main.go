@@ -161,6 +161,7 @@ type updateOrgArgs struct {
 	GhostText             *bool   `json:"ghostText,omitempty" jsonschema:"ghost-text on or off for this organisation"`
 	FastPath              *bool   `json:"fastPath,omitempty" jsonschema:"the composer's fast path on or off for this organisation"`
 	CommitDrafts          *bool   `json:"commitDrafts,omitempty" jsonschema:"the commit box's drafted message (✨) on or off for this organisation"`
+	ConversationNames     *bool   `json:"conversationNames,omitempty" jsonschema:"naming conversations with the quick model on or off for this organisation"`
 	PullStrategy          *string `json:"pullStrategy,omitempty" jsonschema:"how Pull and Sync integrate: rebase, merge or ff-only"`
 	AgentGeneral          *string `json:"agentGeneral,omitempty" jsonschema:"the organisation's general agent instructions"`
 	GitCommitInstructions *string `json:"gitCommitInstructions,omitempty" jsonschema:"how the agent writes commit messages here"`
@@ -678,6 +679,7 @@ func newServer() *mcp.Server {
 				GhostText:             a.GhostText,
 				FastPath:              a.FastPath,
 				CommitDrafts:          a.CommitDrafts,
+				ConversationNames:     a.ConversationNames,
 				PullStrategy:          a.PullStrategy,
 				AgentGeneral:          a.AgentGeneral,
 				GitCommitInstructions: a.GitCommitInstructions,
