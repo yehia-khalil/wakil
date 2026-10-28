@@ -87,7 +87,14 @@ final class WindowSession {
                 await MainActor.run { browserTabsBox.host?.endClear(onStore: id) }
             },
             browserPageDriver: browserPageAgent,
-            browserPasswordPage: browserPasswordAgent)
+            browserPasswordPage: browserPasswordAgent,
+            // `browser_copy_url` (⌘⇧C): the address goes on the general pasteboard.
+            copyBrowserText: { text in
+                await MainActor.run {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+            })
         notes.append(contentsOf: wiring.diagnostics)
 
         // Each agent session has a socket of its own (background agents 3 of 4, Task 4), at

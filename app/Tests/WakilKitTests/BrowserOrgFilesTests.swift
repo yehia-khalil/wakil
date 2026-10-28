@@ -263,3 +263,57 @@ private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
     try files.removeEverythingButTheProfile()
     #expect(try files.neverSave() == ["example.com"])
 }
+
+// MARK: - Pins (3d-i Task 8)
+
+private let pinnedTab = BrowserPin(id: "p0000000a", kind: .tab, url: "https://example.com/a", title: "A")
+private let pinnedGroup = BrowserPin(
+    id: "p0000000b", kind: .group, name: "Docs", colour: .teal,
+    tabs: [BrowserPinTab(url: "https://example.com/1", title: "One"), BrowserPinTab(url: "https://example.com/2", title: "Two")])
+
+@Test func pinsFileRoundTripsInOrder() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    let prs = BrowserPin(id: "p0000000c", kind: .pullRequests)
+    try files.setPins([pinnedGroup, pinnedTab, prs], project: "web")
+    #expect(try files.pins(project: "web") == [pinnedGroup, pinnedTab, prs])
+    let url = files.directory.appendingPathComponent("pins/web.json")
+    let json = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    let items = try #require(json["items"] as? [[String: Any]])
+    #expect(items.map { $0["kind"] as? String } == ["group", "tab", "pullRequests"])
+    #expect(Set(items[1].keys) == ["id", "kind", "url", "title"])
+    #expect(Set(items[0].keys) == ["id", "kind", "name", "colour", "tabs"])
+    #expect(try files.pins(project: "other") == [])
+}
+
+@Test func aMissingPinsFileReadsEmpty() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    #expect(try files.pins(project: "web") == [])
+    #expect(!FileManager.default.fileExists(atPath: files.directory.path))
+}
+
+@Test func anUnreadablePinsFileIsNeverWrittenOverByTheFiles() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    let url = files.pinsURL(project: "web")
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let bytes = Data("{\"items\": [oops".utf8)
+    try bytes.write(to: url)
+    #expect(throws: BrowserPinsUnreadable.self) { try files.pins(project: "web") }
+    #expect(throws: BrowserPinsUnreadable.self) { try files.setPins([pinnedTab], project: "web") }
+    #expect(try Data(contentsOf: url) == bytes)
+}
+
+@Test func aProjectKeyWithASlashIsOneFileName() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try files.setPins([pinnedTab], project: "initech/web")
+    let pins = files.directory.appendingPathComponent("pins")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: pins.path) == ["initech%2Fweb.json"])
+    #expect(try files.pins(project: "initech/web") == [pinnedTab])
+    #expect(BrowserOrgFiles.pinsName(project: "initech/web") == "pins/initech%2Fweb.json")
+}
+
+@Test func clearingBrowsingDataKeepsPins() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try files.setPins([pinnedTab], project: "web")
+    try files.removeEverythingButTheProfile()
+    #expect(try files.pins(project: "web") == [pinnedTab])
+}

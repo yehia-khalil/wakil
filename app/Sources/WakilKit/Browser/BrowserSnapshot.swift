@@ -13,13 +13,27 @@ public struct BrowserSnapshot: Sendable, Equatable, Codable {
     public var closed: [BrowserSavedTab]
     /// The number in the next tab id; tab ids are `"t<n>"`.
     public var nextTab: Int
+    /// The pane's groups (3d-i), in the order they were made. Saved with the layout.
+    public var groups: [BrowserGroup]
+    /// The number in the next group id; group ids are `"g<n>"` (and `"pr"`). Not saved: a restore
+    /// sets it one past the highest `g<n>` it puts back.
+    public var nextGroup: Int
+    /// The vertical tab column is hidden in this pane (ruling 20). Saved with the layout.
+    public var tabColumnHidden: Bool
+    /// Why `pins/<project>.json` can't be read (ruling 13); nil when it can. Runtime only.
+    public var pinsError: String?
 
     public static let empty = BrowserSnapshot(tabs: [], active: nil, find: nil, downloads: [], closed: [], nextTab: 1)
 
     public init(
         tabs: [BrowserTab], active: String?, find: BrowserFind?, downloads: [BrowserDownload],
-        closed: [BrowserSavedTab], nextTab: Int
+        closed: [BrowserSavedTab], nextTab: Int, groups: [BrowserGroup] = [], nextGroup: Int = 1,
+        tabColumnHidden: Bool = false, pinsError: String? = nil
     ) {
+        self.groups = groups
+        self.nextGroup = nextGroup
+        self.tabColumnHidden = tabColumnHidden
+        self.pinsError = pinsError
         self.tabs = tabs
         self.active = active
         self.find = find
@@ -65,13 +79,41 @@ public struct BrowserTab: Sendable, Equatable, Codable {
     public var lastRead: BrowserReadStamp?
     /// Refs `e1…e<refsIssued>` have been given out in this tab; a ref is never reused.
     public var refsIssued: Int
+    /// The group it is in (3d-i), a `BrowserGroup.id`; nil when loose.
+    public var group: String?
+    /// The tab it was opened from, kept while it sits in that tab's group (ruling 8).
+    public var opener: String?
+    /// The entry in `pins/<project>.json` it is pinned as (ruling 3); nil when not pinned itself.
+    public var pin: String?
+    /// The operator took it out of a group: the site rule never groups it again (ruling 10).
+    public var keptLoose: Bool
+    /// The pull request this tab lists (ruling 18), its URL; such a tab is never saved.
+    public var pullRequest: String?
+    /// The site key the site rule last placed it by; nil until a finished load on a page with a site
+    /// key first places it. Not saved: a tab in an automatic site group is placed on that group's key.
+    public var placedSite: String?
+    /// A grouped tab's finished load on a site other than its group's, waiting for a second one on
+    /// the same site before the tab moves (a sign-in hop through another host comes back after one).
+    public var pendingSite: String?
+    /// This tab's video floats in the system's picture-in-picture window. Reported by the host
+    /// (`BrowserPageReport`), never saved: it is not in `CodingKeys` or `BrowserSavedTab`.
+    public var pictureInPicture: Bool = false
 
     public init(
         id: String, url: String, title: String, isLoading: Bool = false, progress: Double = 0,
         canGoBack: Bool = false, canGoForward: Bool = false, failure: String? = nil, zoom: Double = 1,
         loaded: Bool = false, command: BrowserCommand? = nil, fromSavedLayout: Bool = false,
-        lastRead: BrowserReadStamp? = nil, refsIssued: Int = 0
+        lastRead: BrowserReadStamp? = nil, refsIssued: Int = 0, group: String? = nil, opener: String? = nil,
+        pin: String? = nil, keptLoose: Bool = false, pullRequest: String? = nil,
+        placedSite: String? = nil, pendingSite: String? = nil
     ) {
+        self.placedSite = placedSite
+        self.pendingSite = pendingSite
+        self.group = group
+        self.opener = opener
+        self.pin = pin
+        self.keptLoose = keptLoose
+        self.pullRequest = pullRequest
         self.lastRead = lastRead
         self.refsIssued = refsIssued
         self.fromSavedLayout = fromSavedLayout
@@ -90,7 +132,8 @@ public struct BrowserTab: Sendable, Equatable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case id, url, title, isLoading, progress, canGoBack, canGoForward, failure, zoom, loaded
-        case command, fromSavedLayout, lastRead, refsIssued
+        case command, fromSavedLayout, lastRead, refsIssued, group, opener, pin, keptLoose, pullRequest
+        case placedSite, pendingSite
     }
 
     public init(from decoder: Decoder) throws {
@@ -109,6 +152,13 @@ public struct BrowserTab: Sendable, Equatable, Codable {
         fromSavedLayout = try c.decode(Bool.self, forKey: .fromSavedLayout)
         lastRead = try c.decodeIfPresent(BrowserReadStamp.self, forKey: .lastRead)
         refsIssued = try c.decodeIfPresent(Int.self, forKey: .refsIssued) ?? 0
+        group = try c.decodeIfPresent(String.self, forKey: .group)
+        opener = try c.decodeIfPresent(String.self, forKey: .opener)
+        pin = try c.decodeIfPresent(String.self, forKey: .pin)
+        keptLoose = try c.decodeIfPresent(Bool.self, forKey: .keptLoose) ?? false
+        pullRequest = try c.decodeIfPresent(String.self, forKey: .pullRequest)
+        placedSite = try c.decodeIfPresent(String.self, forKey: .placedSite)
+        pendingSite = try c.decodeIfPresent(String.self, forKey: .pendingSite)
     }
 }
 
@@ -186,12 +236,15 @@ public struct BrowserPageReport: Sendable, Equatable {
     /// nil leaves the tab's zoom as it is. Only a host change names one, so a report read before a
     /// `browser_zoom` applied never undoes it.
     public var zoom: Double?
+    /// This tab's video floats in picture-in-picture. Always carried, so a re-sent report keeps it.
+    public var pictureInPicture: Bool
 
     public init(
         url: String, title: String, isLoading: Bool, progress: Double, canGoBack: Bool,
-        canGoForward: Bool, failure: String?, zoom: Double? = nil
+        canGoForward: Bool, failure: String?, zoom: Double? = nil, pictureInPicture: Bool = false
     ) {
         self.zoom = zoom
+        self.pictureInPicture = pictureInPicture
         self.url = url
         self.title = title
         self.isLoading = isLoading

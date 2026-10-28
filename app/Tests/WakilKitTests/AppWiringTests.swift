@@ -239,12 +239,12 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
              // 3c-i: the browser's actions.
              // 3c-ii: the agent's reach into the page (read_page, click, press, revoke_site, scroll, select, type).
-             "browser_back", "browser_bookmark", "browser_clear_data", "browser_click", "browser_close_tab", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_password_delete", "browser_password_fill", "browser_password_never", "browser_password_save", "browser_password_suggest", "browser_press", "browser_print", "browser_read_page", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_revoke_site", "browser_scroll", "browser_select", "browser_select_tab", "browser_stop", "browser_type", "browser_zoom",
+             "browser_back", "browser_bookmark", "browser_clear_data", "browser_click", "browser_close_tab", "browser_copy_url", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_group", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_password_delete", "browser_password_fill", "browser_password_never", "browser_password_save", "browser_password_suggest", "browser_pin", "browser_press", "browser_print", "browser_pull_requests_refresh", "browser_read_page", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_revoke_site", "browser_scroll", "browser_select", "browser_select_tab", "browser_stop", "browser_tab_column", "browser_type", "browser_unpin", "browser_zoom",
              "capacity_record", "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_capacity",
              "ctx_config_tree", "ctx_create_environment", "ctx_create_org", "ctx_create_project",
              "ctx_editor_settings", "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
              "ctx_git_device_start", "ctx_git_gh_import", "ctx_git_gh_logins", "ctx_git_host_suggestions",
-             "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set", "ctx_list_accounts",
+             "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set", "ctx_github_pull_requests", "ctx_list_accounts",
              "ctx_list_environments", "ctx_list_machine_providers", "ctx_list_orgs",
              "ctx_list_projects", "ctx_list_providers", "ctx_provider_login", "ctx_remove_environment",
              "ctx_remove_project", "ctx_rename_environment", "ctx_rename_project",

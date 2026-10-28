@@ -84,9 +84,10 @@ Rules no phase may break.
    organisations. A saved browser password is a credential too: only in the Keychain, never the
    agent's, the store's, a file's or a log's.
 
-   **Both halves are delivered** (Phase 1; `phase-log.md`): two Claude accounts on one org, and one
-   provider serving several orgs, since `buildLaunch` passes `--strict-mcp-config` and ignores a
-   config dir's pinned `WAKIL_ORG` *(measured 2026-09-22)*.
+   **Both halves are delivered.** Two Claude accounts on one org since Phase 1; and one
+   provider serving several orgs, because `buildLaunch` always passes `--strict-mcp-config`,
+   so Wakil's sessions ignore the `WAKIL_ORG` a config dir pins and only plain `claude`
+   still reads it *(measured 2026-09-22)*. History in `phase-log.md`.
 5. **Exactly one place on screen; each agent keeps its own.** Implicit scope is the
    product; an explicit project argument would forfeit it. History: Decision 41.
 6. **Read-only until a write earns its way in.** Writes are added per adapter with
@@ -116,9 +117,13 @@ Rules no phase may break.
    **Each write declares its own price** rather than inheriting one from its kind; see
    §9 and Decision 25.
 7. **Writes are never voice-confirmable.** Voice may propose a mutation; only typed
-   confirmation may execute one — wherever the write's price is *gate*.
-   *(An adapter may declare *allow*, and then a spoken turn executes the write: Decision 25. The settings
-   pane is operator-only: Decision 30. The editor's file write is *allow*: Decision 36.)*
+   confirmation may execute one — wherever the write's price is *gate*. *(2026-09-17: the
+   per-adapter exception this invariant never had. An adapter may declare a price of
+   *allow*, and then a spoken turn does execute the write. Phase 2's exit criterion
+   required it. Decision 25 is the mechanism.)* *(2026-09-22: 2e's credential
+   writes declare no price; Decision 30 makes the settings pane operator-only, so voice
+   never reaches them. 2026-10-11: the editor's file write declares *allow*, voice
+   included — Decision 36.)*
 8. **Environment is always visible.** The active environment is on screen at all times.
    Production looks alarming.
 9. **MCP-first for actions, direct API for sync.** MCP is the default transport for
@@ -272,8 +277,10 @@ live app; *accepted* means it was marked met without one.
 | **3c-i** | Pane, tabs, a profile per organisation | — | — |
 | **3c-ii** | Agent reach | **2026-10-27**, walked | 3c-i |
 | **3c-iii** | History, bookmarks, links | — | 3c-i |
-| **3d** | Browser you live in | — | 3c |
-| **3d-iv** | Passwords: Keychain, fill key, save bar, import | — | 3c-ii |
+| **3d** | The browser you live in | — | 3c |
+| **3d-i** | Tab groups, automatic or your own; the pull-request group; pins per project; vertical tabs | — | 3c-iii |
+| **3d-iii** | Picture in picture | — | 3c-i |
+| **3d-iv** | Passwords in the Keychain | — | 3c-ii |
 | **Conversations** | Several live conversations per place: new (⌘N), switch (Running, ⌘P, chips), close (⌘⇧W); folds New conversation and Track | — | — |
 | **Phase 4** | Depth — proactivity, recall index, a second harness, earned write paths | — | demand-driven |
 

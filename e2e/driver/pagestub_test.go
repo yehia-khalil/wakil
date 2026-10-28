@@ -217,3 +217,24 @@ func TestPageStubServesTheFormSlowly(t *testing.T) {
 		t.Errorf("/slow-form.html cache-control = %q, want no-store", cc)
 	}
 }
+
+// TestPageStubServesTheClipAsVideo — WebKit plays clip.mp4 only when it arrives as video/mp4 and
+// a Range request answers 206 with that slice: the picture-in-picture checks' clip (3d-iii).
+func TestPageStubServesTheClipAsVideo(t *testing.T) {
+	origin, stop, err := StartPageStub(filepath.Join(repoRoot(t), PageFixtures))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	req, _ := http.NewRequest("GET", origin+"/clip.mp4", nil)
+	req.Header.Set("Range", "bytes=0-99")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusPartialContent || resp.Header.Get("Content-Type") != "video/mp4" || len(body) != 100 {
+		t.Errorf("clip.mp4 answered %d, %q, %d bytes; want 206, video/mp4, 100", resp.StatusCode, resp.Header.Get("Content-Type"), len(body))
+	}
+}

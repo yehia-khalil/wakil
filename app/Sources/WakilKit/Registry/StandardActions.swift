@@ -1553,11 +1553,34 @@ public func registerStandardActions(
         }
     ))
 
+    // 3d-i (Ruling 17). The active organisation's open pull requests, read only. It takes no
+    // organisation and no id, and the reply carries no credential.
+    await registry.register(Action(
+        name: "ctx_github_pull_requests",
+        description: "Read the active organisation's open GitHub pull requests: those it wrote "
+            + "(reason author) and those awaiting its review (reason review-requested), newest "
+            + "update first. absent says why there is no list (no GitHub account, an SSH account, "
+            + "no token kept). Read only; no credential is returned.",
+        kind: .read,
+        audience: .agentReachable,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_github_pull_requests", role: "context")
+            }
+            return try await callChecked(
+                context, tool: "github_pull_requests", arguments: .object([:]),
+                action: "ctx_github_pull_requests", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
     await registry.register(Action(
         name: "ctx_set_browser_settings",
         description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing "
             + "or kagi), startPage (an http or https URL, or empty for a blank page), and "
-            + "searchSuggestions (true or false; off by default). "
+            + "searchSuggestions (true or false; off by default), tabs (horizontal or vertical), "
+            + "nameGroups (true or false; on by default), and pictureInPicture "
+            + "(true or false; on by default — a playing video floats when you leave its tab). "
             + "Read-modify-write: omit a field to leave it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
@@ -1570,6 +1593,12 @@ public func registerStandardActions(
                 ]),
                 "startPage": .object(["type": .string("string")]),
                 "searchSuggestions": .object(["type": .string("boolean")]),
+                "tabs": .object([
+                    "type": .string("string"),
+                    "enum": .array([.string("horizontal"), .string("vertical")]),
+                ]),
+                "nameGroups": .object(["type": .string("boolean")]),
+                "pictureInPicture": .object(["type": .string("boolean")]),
             ]),
         ]),
         handler: { params in
@@ -1583,6 +1612,9 @@ public func registerStandardActions(
             if case .string? = fields["searchEngine"] { arguments["searchEngine"] = fields["searchEngine"] }
             if case .string? = fields["startPage"] { arguments["startPage"] = fields["startPage"] }
             if case .bool? = fields["searchSuggestions"] { arguments["searchSuggestions"] = fields["searchSuggestions"] }
+            if case .string? = fields["tabs"] { arguments["tabs"] = fields["tabs"] }
+            if case .bool? = fields["nameGroups"] { arguments["nameGroups"] = fields["nameGroups"] }
+            if case .bool? = fields["pictureInPicture"] { arguments["pictureInPicture"] = fields["pictureInPicture"] }
             return try await callChecked(
                 context, tool: "set_browser_settings", arguments: .object(arguments),
                 action: "ctx_set_browser_settings", timeout: MCPClient.readReplyTimeout)

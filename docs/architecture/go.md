@@ -67,6 +67,10 @@ Tools: `get_context`, `list_projects`, `set_project`, `set_environment`, `list_e
 `list_accounts`, `list_machine_providers`, `add_provider`, `unlink_provider`, `set_database_dsn`,
 `remove_database`, `adopt_provider`.
 
+`github_pull_requests` (3d-i) is read-only: the active organisation's open pull requests, written by
+it or awaiting its review, through its GitHub account; it says why there is no list (no account, an
+SSH account, no token) rather than failing. The browser's pull-request group reads it.
+
 The editor settings: `editor_settings` answers both tiers; `set_editor_settings` takes `showIgnored`
 (app-wide); `set_project_editor_settings` takes `heavyFolders`, the whole list (per project).
 

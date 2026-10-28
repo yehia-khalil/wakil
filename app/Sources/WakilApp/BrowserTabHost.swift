@@ -42,10 +42,18 @@ final class BrowserTabHost {
     /// Keys a pop-up's web view was filed under before the store named its tab: placeholders, the
     /// only views a later filing may replace.
     @ObservationIgnored private var pendingPopups: Set<Key> = []
+    /// The window's automatic picture in picture (3d-iii): the tabs' delegates report WebKit's
+    /// callbacks to it, and each configuration's `wakilPictureInPicture` handler reaches it weakly.
+    /// Lazy only because it is made with `self`; it lives as long as the host.
+    @ObservationIgnored private(set) lazy var pictureInPicture = BrowserPictureInPictureHost(host: self)
 
-    /// The icon a page names in its `link rel=icon`, per tab — only a `data:` one, decoded here:
-    /// nothing is fetched for it, so no request leaves outside the organisation's own store.
+    /// The icon a page names in its `link rel=icon` (else its `/favicon.ico`), per tab, in memory: a
+    /// `data:` one decoded here, an http(s) one fetched with no cookies or credentials
+    /// (`BrowserFaviconLoader`).
     private(set) var favicons: [Key: NSImage] = [:]
+    /// The network icon each tab last asked for, so a reply for a page it has left is dropped.
+    @ObservationIgnored private var faviconSources: [Key: URL] = [:]
+    @ObservationIgnored private let faviconLoader = BrowserFaviconLoader()
     /// Raised when live web views were dropped under panes that may be on screen (clearing an
     /// organisation's data), so those panes draw again and rebuild their pages.
     private(set) var rebuilds = 0
@@ -138,6 +146,21 @@ final class BrowserTabHost {
 
     // MARK: Web views
 
+    /// The tab a live web view is filed under, read now: a pop-up's view moves from its predicted
+    /// key to its tab's (`adoptPopup`), and a place's new name moves every key (`rehome`).
+    func key(of view: WKWebView) -> Key? {
+        views.first { $0.value === view }?.key
+    }
+
+    /// A pane under `scope` is on screen (picture in picture's `show`): answers whether `scope` is a
+    /// place's old name the canvas still draws a moment after `rehome`. A new name drawn ends its old
+    /// names, so the guard lasts only that moment (`BrowserRenamedPlaces.drawn`).
+    func isOldName(_ scope: LayoutScope) -> Bool {
+        let drawn = BrowserRenamedPlaces.drawn(scope, renamed: renamed)
+        renamed = drawn.renamed
+        return drawn.isOldName
+    }
+
     /// The tab's web view if it is live, without making one or touching its recency.
     func existing(scope: LayoutScope, pane: String, tab: String) -> BrowserWebView? {
         views[Key(scope: scope, pane: pane, tab: tab)]
@@ -192,7 +215,8 @@ final class BrowserTabHost {
         let files = model?.browserOrgFiles(for: scope)
         if !clearing.isEmpty, let id = try? files?.identifier(), clearing.contains(id) { return nil }
         return webView(scope: scope, pane: pane, tab: tab.id) {
-            let view = BrowserWebView(frame: .zero, configuration: Self.configuration(files: files))
+            let messages = BrowserPictureInPictureMessages(to: pictureInPicture)
+            let view = BrowserWebView(frame: .zero, configuration: Self.configuration(files: files, handler: messages))
             prepare(view)
             view.pageZoom = tab.zoom
             let delegate = BrowserTabDelegate(host: self, scope: scope, pane: pane, tab: tab.id, files: files)
@@ -216,8 +240,9 @@ final class BrowserTabHost {
     /// A new tab's configuration: the organisation's own store (`WKWebsiteDataStore(forIdentifier:)`),
     /// Safari's user agent, and a page may open a window (a tab) itself — said here rather than left
     /// to WebKit's macOS default. With no organisation, or a profile that cannot be read, an ephemeral
-    /// store: a page then keeps nothing, and shares nothing with any organisation.
-    private static func configuration(files: BrowserOrgFiles?) -> WKWebViewConfiguration {
+    /// store: a page then keeps nothing, and shares nothing with any organisation. `handler` hears
+    /// picture in picture's script (3d-iii).
+    private static func configuration(files: BrowserOrgFiles?, handler: any WKScriptMessageHandler) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         if let id = try? files?.identifier() {
             configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: id)
@@ -233,6 +258,18 @@ final class BrowserTabHost {
         // `isInspectable` only lets Safari's Develop menu attach; the page's own right-click
         // **Inspect Element** needs WebKit's developer extras, which have no public setter.
         configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        // 3d-iii: picture in picture, only where this WebKit has all it needs (ruling 7) — a KVC set
+        // of a key WebKit lacks would raise. Set whatever the setting says (ruling 8): Off only stops
+        // Wakil's own float. A pop-up keeps WebKit's copy of its opener's configuration, all of this
+        // included, and is not configured again.
+        if BrowserPictureInPictureSupport.available {
+            // Private: `WKPreferences`' KVC key (`_setAllowsPictureInPictureMediaPlayback:`).
+            configuration.preferences.setValue(true, forKey: BrowserPictureInPictureSupport.preferenceKey)
+            let content = configuration.userContentController
+            content.addUserScript(BrowserPictureInPictureScript.userScript())
+            content.add(handler, contentWorld: BrowserPictureInPictureScript.world,
+                        name: BrowserPictureInPictureScript.handlerName)
+        }
         return configuration
     }
 
@@ -272,6 +309,7 @@ final class BrowserTabHost {
             guard let id else {
                 delegate.detach()
                 view.stopLoading()
+                self.pictureInPicture.forget(view: view)
                 return
             }
             let key = Key(scope: scope, pane: pane, tab: id)
@@ -279,6 +317,7 @@ final class BrowserTabHost {
             guard self.file(view, delegate, under: key, placeholder: false) else {
                 delegate.detach()
                 view.stopLoading()
+                self.pictureInPicture.forget(view: view)
                 return
             }
             delegate.tab = id
@@ -330,6 +369,7 @@ final class BrowserTabHost {
         openedByPage = Set(openedByPage.map(moved))
         pendingPopups = Set(pendingPopups.map(moved))
         favicons = move(favicons)
+        faviconSources = move(faviconSources)
         prompts = move(prompts)
         certificates = move(certificates)
         crashed = Set(crashed.map(moved))
@@ -348,8 +388,8 @@ final class BrowserTabHost {
         }) { new, _ in new }
         for delegate in delegates.values where delegate.scope == from { delegate.scope = to }
         for tracker in downloads.values where tracker.scope == from { tracker.scope = to }
-        renamed = renamed.mapValues { $0 == from ? to : $0 }
-        renamed[from] = to
+        renamed = BrowserRenamedPlaces.rehome(renamed, from: from, to: to)
+        pictureInPicture.rehome(from: from, to: to)
         if let drawn = model?.drawnScope, drawn == from || drawn == to {
             for key in views.keys where key.scope == to { renamedPanes.insert(Key(scope: to, pane: key.pane, tab: "")) }
         }
@@ -516,8 +556,10 @@ final class BrowserTabHost {
         return view.backForwardList.currentItem != nil
     }
 
-    /// The page's own `link rel=icon`, read in an isolated world after it loads, kept only when it
-    /// is a `data:` URL — decoded here, never fetched. Any other icon is drawn as a globe.
+    /// The page's own `link rel=icon` (else `<origin>/favicon.ico`), read in an isolated world after
+    /// it loads. A `data:` icon is decoded here; an http(s) one is fetched by `faviconLoader` with no
+    /// cookies and no credentials (the page has already contacted that site: see
+    /// `BrowserFaviconLoader`). Anything else, or any failure, is drawn as a globe.
     func readFavicon(of view: WKWebView, scope: LayoutScope, pane: String, tab: String) {
         guard !tab.isEmpty else { return }
         let key = Key(scope: scope, pane: pane, tab: tab)
@@ -526,7 +568,28 @@ final class BrowserTabHost {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let href = (try? result.get()) as? String
-                self.favicons[key] = href.flatMap(browserDataIcon)
+                if let href, BrowserFaviconRules.isData(href) {
+                    self.faviconSources[key] = nil
+                    self.favicons[key] = browserDataIcon(href)
+                    return
+                }
+                guard let url = BrowserFaviconRules.url(href: href, pageURL: view.url?.absoluteString ?? "") else {
+                    self.faviconSources[key] = nil
+                    self.favicons[key] = nil
+                    return
+                }
+                self.faviconSources[key] = url
+                if let hit = self.faviconLoader.cached(url) {
+                    self.favicons[key] = hit
+                    return
+                }
+                // The last page's icon is not this page's while this one's is on its way.
+                self.favicons[key] = nil
+                Task { @MainActor [weak self] in
+                    guard let self, let image = await self.faviconLoader.load(url),
+                          self.faviconSources[key] == url else { return }
+                    self.favicons[key] = image
+                }
             }
         }
     }
@@ -795,6 +858,9 @@ final class BrowserTabHost {
         let key = Key(scope: scope, pane: pane, tab: tab)
         let files = delegates[key]?.files
             ?? model?.browserHome.flatMap { try? BrowserOrgFiles(home: $0, org: scope.organization) }
+        // Releasing the view ends a float with no word from WebKit (ruling 11): said first, and the
+        // drop does not wait.
+        pictureInPicture.closed(key)
         drop(key, mode: .forget)
         files.map { try? FileManager.default.removeItem(at: stateURL($0, scope: scope, pane: pane, tab: tab)) }
     }
@@ -850,7 +916,9 @@ final class BrowserTabHost {
     }
 
     private func evictBeyondLimit(keeping kept: Key) {
-        while views.count > Self.limit, let oldest = recency.first(where: { $0 != kept }) {
+        // The floating tab's view is never evicted (ruling 11): evicting it would end the float.
+        let floating = pictureInPicture.floatingKey
+        while views.count > Self.limit, let oldest = recency.first(where: { $0 != kept && $0 != floating }) {
             drop(oldest, mode: .evict)
         }
     }
@@ -865,7 +933,10 @@ final class BrowserTabHost {
         certificates[key] = nil
         crashed.remove(key)
         forgetPasswords(key, tabClosed: mode == .forget)
+        // A store cleared under a floating view ends its float as a close does.
+        if mode == .discard, key == pictureInPicture.floatingKey { pictureInPicture.closed(key) }
         if let view {
+            pictureInPicture.forget(view: view)
             if mode == .evict { saveState(of: view, scope: key.scope, pane: key.pane, tab: key.tab, files: delegate?.files) }
             delegate?.detach()
             view.stopLoading()
@@ -875,6 +946,7 @@ final class BrowserTabHost {
             applied[key] = nil
             openedByPage.remove(key)
             favicons[key] = nil
+            faviconSources[key] = nil
         }
     }
 }

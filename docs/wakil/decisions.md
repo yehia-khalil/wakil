@@ -1657,9 +1657,25 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* a site the operator needs will not work in WebKit — then a second engine is argued
     for, not the profile model.
 
-49. **Browser passwords (3d-iv) live in the Keychain, read in Swift, filled only on the operator's
-    press; the agent never holds one.** *(2026-10-27, the 3d-iv plan's rulings 1, 2, 5 and 10. This
-    is the passwords part only; 3d-i's other parts are written with that lane.)*
+49. **Groups are the pane's, automatic and yours alike, and pinning per project is the one way to
+    share them; picture-in-picture is WebKit's own through one private preference; Wakil keeps its own
+    passwords in the Keychain, read in Swift and filled only on the operator's press, and the agent never
+    holds one.**
+    *(2026-10-27, operator, during the 3d design —
+    `docs/superpowers/specs/2026-10-27-3d-browser-you-live-in-design.md`.)*
+    Every group, formed by site and opener or made by the operator, lives in its pane and is saved
+    with the pane's tabs in the layout. Wakil never regroups a group once it is the operator's (renamed,
+    recoloured, pinned, a tab dragged in or out, or made by hand). Pinning a tab or a group files it
+    under the project in `pins/<project>.json`, and every pane of the project shows it first: a static
+    list, read when a pane opens. A group is named once from its first tabs' titles by the quick task,
+    and never renamed. Vertical tabs are one Browser setting for every pane. There are no identities inside an
+    organisation: the design had them (3d-ii), and the operator dropped them on 2026-10-28, since an
+    organisation already keeps its cookies apart. Picture-in-picture is WebKit's
+    own, switched on through one private preference. Saved passwords are Wakil's own, in the Keychain
+    (Invariant 4). The one group that is organisation-wide is the pull-request group, filled from the
+    organisation's GitHub account through Go's read-only `github_pull_requests` and kept in memory
+    only. This overturns 3c's "no tab groups" and "no password manager of Wakil's own".
+    **Passwords (3d-iv, the 3d-iv plan's rulings 1, 2, 5 and 10).**
     *Where.* One Keychain item per login, service `wakil:<org>:browser-login:default`, account
     `<site> <username>` (split at the first space; a site key holds none), label
     `<site> — Wakil (<org>)`. `BrowserPasswordStore` reads and writes them **in-process through
@@ -1700,8 +1716,14 @@ Each entry: the call, why, and what would change our mind.
     and overwrite or delete logins with no prompt — the e2e driver needs `--dispatch`, so this lane does
     not refuse it; (c) rebuild the app, which raises the same *Always Allow* prompt as the operator's
     own rebuild. The fix is signing with the hardened runtime (sub-phase 2b-vii); the operator decides.
-    *Reverse if:* the agent can read a saved password by any route, or an organisation's login is
-    offered in another; then the store and the fill move out of the app process, to something the agent cannot start.
+    *Why groups are the pane's:* an organisation-wide automatic group would need every pane in every place kept in step
+    with every tab that joined it; a pin is a static list, so sharing costs nothing live.
+    *Reverse if:* the operator keeps re-making the same group in each place — then groups are argued
+    for at the project level.
+    For passwords: the agent can read a saved password by any route, or an organisation's login is
+    offered in another; then the store and the fill move out of the app process, to something the agent
+    cannot start.
+
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,
