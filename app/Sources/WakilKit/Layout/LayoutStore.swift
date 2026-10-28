@@ -290,7 +290,14 @@ public actor LayoutStore {
     /// end by pulling first responder into a pane nobody asked for.
     private var focusRequests: Int
 
-    public init(voidSize: PaneFrame = LayoutStore.defaultVoid) {
+    /// Whether the rail is put away (§10's spine). The window's, not a scope's: it is not in
+    /// `LayoutSnapshot`, so it is neither saved with an arrangement nor served by `read_layout`;
+    /// `WindowState` keeps it across a relaunch. Here because the layout actions already reach this
+    /// store, and `reading()` hands it to the window in the hop it already makes.
+    private var railCollapsed: Bool
+
+    public init(voidSize: PaneFrame = LayoutStore.defaultVoid, railCollapsed: Bool = false) {
+        self.railCollapsed = railCollapsed
         void = voidSize
         screen = .initial
         byScope = [.initial: LayoutSnapshot()]
@@ -323,7 +330,17 @@ public actor LayoutStore {
     /// named by the old `focusedId` would answer a request meant for the new
     /// one.
     public func reading() -> LayoutReading {
-        LayoutReading(snapshot: snapshot(), focusRequests: focusRequests, scope: scope)
+        LayoutReading(
+            snapshot: snapshot(), focusRequests: focusRequests, scope: scope,
+            railCollapsed: railCollapsed)
+    }
+
+    /// Puts the rail away or brings it back. Returns whether anything changed.
+    @discardableResult
+    public func setRailCollapsed(_ collapsed: Bool) -> Bool {
+        guard railCollapsed != collapsed else { return false }
+        railCollapsed = collapsed
+        return true
     }
 
     /// Records that an operator asked for the keyboard where it already is.
@@ -978,10 +995,16 @@ public struct LayoutReading: Sendable {
     /// The scope `snapshot` is the canvas of (3c-i): read in the same hop, so a window drawing the
     /// snapshot knows whose canvas it is drawing, not whose place its context already names.
     public let scope: LayoutScope?
+    /// Whether the rail is put away, read in the same hop (`LayoutStore.railCollapsed`).
+    public let railCollapsed: Bool
 
-    public init(snapshot: LayoutSnapshot, focusRequests: Int, scope: LayoutScope? = nil) {
+    public init(
+        snapshot: LayoutSnapshot, focusRequests: Int, scope: LayoutScope? = nil,
+        railCollapsed: Bool = false
+    ) {
         self.snapshot = snapshot
         self.focusRequests = focusRequests
         self.scope = scope
+        self.railCollapsed = railCollapsed
     }
 }

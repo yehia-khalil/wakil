@@ -35,6 +35,25 @@ public struct LayoutPersistence: Sendable {
             .appendingPathComponent("layouts", isDirectory: true)
     }
 
+    /// The window's own small memory (`WindowState`): beside the layouts, not in any of them, because
+    /// it belongs to the window and not to a project or a conversation. A missing or unreadable file
+    /// is the default state: nothing here is worth a note.
+    public func loadWindowState() -> WindowState {
+        guard let data = try? Data(contentsOf: windowStateURL),
+              let state = try? JSONDecoder().decode(WindowState.self, from: data)
+        else { return WindowState() }
+        return state
+    }
+
+    public func saveWindowState(_ state: WindowState) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        try encoder.encode(state).write(to: windowStateURL, options: .atomic)
+    }
+
+    private var windowStateURL: URL { directory.appendingPathComponent("window.json") }
+
     /// Writes the arrangement, and — for a conversation — refreshes the
     /// project's seed with it.
     ///

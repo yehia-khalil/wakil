@@ -340,6 +340,11 @@ final class WindowSession {
             }
         }
 
+        // The rail's collapse is remembered across a relaunch (`WindowState`): the store is seeded
+        // with it before the model's first read, which would otherwise overwrite the file.
+        let layoutPersistence = LayoutPersistence(
+            directory: LayoutPersistence.defaultDirectory(home: home))
+        await wiring.layout.setRailCollapsed(layoutPersistence.loadWindowState().railCollapsed)
         let model = WindowModel(
             registry: wiring.registry,
             panes: wiring.panes,
@@ -348,8 +353,7 @@ final class WindowSession {
             // is, so an overridden `HOME` moves both together. This is the
             // only place a `LayoutPersistence` is constructed against a
             // real home directory; every test builds its own scratch one.
-            persistence: LayoutPersistence(
-                directory: LayoutPersistence.defaultDirectory(home: home)),
+            persistence: layoutPersistence,
             context: wiring.contextClient.map(ContextStore.init(client:)),
             harnessFactory: harnessFactory,
             // One broker per window, shared with the agent's `session_resume`

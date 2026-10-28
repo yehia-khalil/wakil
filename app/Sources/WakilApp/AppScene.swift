@@ -499,6 +499,13 @@ struct WakilApplication: App {
                     withModel { model in Task { await model.openSettings() } }
                 }
                 .keyboardShortcut(",", modifiers: .command)
+                // §10's collapsible rail. ⌃⌘R is free (⌘R is Reload Page, a different chord; the
+                // system claims neither) and, like ⌘P, needs no focused pane. It dispatches
+                // `rail_set` through the model, so the agent's call and this press are one path.
+                Button("Toggle Rail") {
+                    withModel { model in Task { await model.toggleRail() } }
+                }
+                .keyboardShortcut("r", modifiers: [.control, .command])
             }
             // 3c-i. The browser's keys: each is the focused browser pane's action (`browserKey`), and
             // anywhere else the key goes on to whatever holds the keyboard, as if this menu were not

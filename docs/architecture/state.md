@@ -24,6 +24,7 @@ both the Swift side and Go read the `HOME` variable, so an overridden `HOME` mov
 | The organisation's open pull requests, behind the pull-request group (3d-i) | **memory only**: `PaneStore`'s browser kind, refreshed from `wakil-ctx`'s `github_pull_requests` every five minutes and by ⌘R; never written | Swift: `browserSetPullRequests` |
 | The vertical tab column's width (3d-i) | the user defaults key `browser.tabColumn.width`, one width for every pane | Swift: `BrowserTabColumn` |
 | Pane arrangement per conversation | `~/.wakil/layouts/<org>/conversations/<lineageRoot>/<project>.json` | Swift: `LayoutPersistence` |
+| The window's own memory (`railCollapsed`: the rail put away to its spine; absent means shown) | `~/.wakil/layouts/window.json` | Swift: `LayoutPersistence.saveWindowState`, from `WindowModel` |
 | Action journal (append-only, one line per dispatch) | `~/.wakil/journal/<sessionId>.jsonl` | Swift: `ActionRegistry` (`JournalEntry`) |
 | Code-identifier cache | `~/.wakil/vocabulary/` | Swift: `CodeSource` |
 | Agent transcripts | `<provider configDir>/projects/…` | the `claude` CLI; read by Go `sessions.go`, `transcript.go` |

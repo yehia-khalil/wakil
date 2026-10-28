@@ -31,7 +31,7 @@ final class BrowserWebView: WKWebView {
         super.viewWillMove(toWindow: newWindow)
     }
 
-    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, ⌘⇧W and ⌘⇧C (global constraints), and ⌃⌘S when `tabColumn`,
+    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, ⌘⇧W, ⌘⇧C and ⌃⌘R (global constraints), and ⌃⌘S when `tabColumn`,
     /// **by physical key** (`kVK_ANSI_*`), so they are Wakil's on every keyboard layout — a character
     /// match fails on a non-Latin one (`QueryLineKeys`' note).
     static func isWakilKey(_ event: NSEvent, tabColumn: Bool) -> Bool {
@@ -39,7 +39,9 @@ final class BrowserWebView: WKWebView {
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if mods == .command { return commandKeys.contains(event.keyCode) }
         if mods == [.command, .shift] { return event.keyCode == 13 || event.keyCode == 8 }   // W; C: Copy Page Address
-        if mods == [.control, .command] { return tabColumn && event.keyCode == 1 }  // S: Toggle Tab Column (3d-i)
+        if mods == [.control, .command] {   // R: the rail; S: Toggle Tab Column (3d-i)
+            return event.keyCode == 15 || (tabColumn && event.keyCode == 1)
+        }
         return false
     }
 

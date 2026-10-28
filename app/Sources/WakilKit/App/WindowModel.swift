@@ -508,6 +508,11 @@ public final class WindowModel {
     /// place would build a web view on the incoming organisation's store for the outgoing canvas's
     /// tab. Nil until the first read.
     public private(set) var drawnScope: LayoutScope?
+    /// Whether the rail is put away to its spine (§10), mirrored from `LayoutStore` in the same
+    /// read as `layoutSnapshot`. The window's own, not a scope's: it survives a project, an
+    /// environment and an org switch, and `WindowState` keeps it across a relaunch. Seeded from
+    /// that file in `init`, so the first frame is already the right one.
+    public private(set) var railCollapsed = false
 
     /// `LayoutStore.focusRequests`, mirrored: how many times *anything* has
     /// asked for a pane to be focused, counting the requests that named the
@@ -1136,6 +1141,7 @@ public final class WindowModel {
         self.capacity = CapacityFeed()
         self.terminals = terminals
         self.persistence = persistence
+        self.railCollapsed = persistence?.loadWindowState().railCollapsed ?? false
         self.context = context
         self.harnessFactory = harnessFactory
         self.resumes = resumes
@@ -5019,6 +5025,7 @@ public final class WindowModel {
         let reading = await layout.reading()
         layoutSnapshot = reading.snapshot
         drawnScope = reading.scope
+        adoptRail(reading.railCollapsed)
         // 3b-v: focus leaving an editor pane is `focus` mode's trigger.
         if let left = before.focusedId, left != layoutSnapshot.focusedId { autosaveFocusLeft(pane: left) }
         pruneApiSendRequests()
@@ -5063,11 +5070,32 @@ public final class WindowModel {
         let reading = await layout.reading()
         layoutSnapshot = reading.snapshot
         drawnScope = reading.scope
+        adoptRail(reading.railCollapsed)
         pruneApiSendRequests()
         pruneGhostSessions(before: before)
         keyboardFocusRequests = reading.focusRequests
         await syncGitWatcher()
         await syncEditorWatcher()
+    }
+
+    /// Takes the store's rail state and, when it changed, writes it so a relaunch finds it.
+    private func adoptRail(_ collapsed: Bool) {
+        guard collapsed != railCollapsed else { return }
+        railCollapsed = collapsed
+        guard let persistence else { return }
+        let state = WindowState(railCollapsed: collapsed)
+        Task.detached(priority: .utility) { try? persistence.saveWindowState(state) }
+    }
+
+    /// Puts the rail away or brings it back (⌃⌘R through `toggleRail`, the agent through the same
+    /// action). Dispatches, like every other control here (Invariant 2).
+    public func setRailCollapsed(_ collapsed: Bool) async {
+        await dispatchLayout("rail_set", .object(["collapsed": .bool(collapsed)]))
+    }
+
+    /// ⌃⌘R: shown becomes collapsed and collapsed becomes shown. A peeked rail is still collapsed.
+    public func toggleRail() async {
+        await setRailCollapsed(!railCollapsed)
     }
 
     // MARK: The git watcher (3a-i; the window's since 3b-iii)

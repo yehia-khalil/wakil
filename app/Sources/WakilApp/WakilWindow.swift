@@ -732,8 +732,15 @@ struct WakilWindow: View {
             .background(PaneClickWatcher { point, landsOnInput in
                 canvasMouseDown(model, at: point, landsOnInput: landsOnInput)
             })
+            .transaction(value: model.railCollapsed) { $0.animation = nil }
             rail(model)
         }
+        // §10's collapsed rail: the spine and its peek, over the row and not in it.
+        .overlay(alignment: .topTrailing) { railSpine(model) }
+        // The rail fades in and out of its slot over §7's plane transition; the canvas takes or
+        // gives back the slot's width at once, with no animation of its own, so panes are not
+        // resized frame by frame.
+        .animation(.easeOut(duration: RailTreatment.planeTransition), value: model.railCollapsed)
         // Task 14, `OrgPlane.dc.html`: the canvas behind the org plane is
         // visibly inert, not hidden — the operator must still be able to
         // see what they are leaving. Untouched when the plane is closed

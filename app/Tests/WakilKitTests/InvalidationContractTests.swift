@@ -189,6 +189,8 @@ private let keptPerPlace: Set<String> = [
 ]
 
 private let orgIndependent: Set<String> = [
+    // The rail's collapse is the window's own, kept in `window.json`; no switch changes it.
+    "railCollapsed",
     // Names: a landed name's journal line, written whichever organisation is on screen; awaited only by
     // `settleConversationNaming` (Ruling R9).
     "conversationNamingJournals",

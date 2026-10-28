@@ -14,8 +14,23 @@ extension WakilWindow {
     /// `body` reading like `canvas(model)` beside it. The rail itself is a
     /// view now rather than a function, because it holds the one piece of
     /// state it did not used to have: whether the pointer is on it.
+    @ViewBuilder
     func rail(_ model: WindowModel) -> some View {
-        Rail(model: model, parallax: farOffset, isMaximized: isMaximized)
+        // Collapsed, the rail leaves the row (the canvas takes its 220 pt) and its two stand-ins,
+        // the spine and the peeked rail, are `railSpine` — an overlay, so a peek never pushes a pane.
+        if !model.railCollapsed {
+            Rail(model: model, parallax: farOffset, isMaximized: isMaximized)
+                .transition(.opacity)
+        }
+    }
+
+    /// The collapsed rail: the spine, the edge zone, and the rail itself when peeked (`RailPeek`).
+    @ViewBuilder
+    func railSpine(_ model: WindowModel) -> some View {
+        if model.railCollapsed {
+            RailPeek(model: model, parallax: farOffset, isMaximized: isMaximized)
+                .transition(.opacity)
+        }
     }
 }
 
@@ -67,11 +82,34 @@ struct Rail: View {
     /// second derivation here would drift from the context line's.
     let parallax: (x: Double, y: Double)
     let isMaximized: Bool
+    /// True while the rail is peeked out of its spine (`RailPeek`): the operator asked for it, so it
+    /// is relevant by definition and is the mid plane whole, pointer or not — a rail that slid out
+    /// under a still pointer must not wait for a hover event to become legible.
+    var held = false
 
-    @State private var promoted = false
+    @State private var pointerOn = false
+    private var promoted: Bool { pointerOn || held }
     /// Which row the pointer is on, by pane id. Only drawn once promoted:
     /// at rest there is nothing to point at.
     @State private var hoveredRow: String?
+
+    /// Puts the rail away, or, peeked, keeps it out: ⌃⌘R by click. Its tooltip names the key.
+    private var collapseButton: some View {
+        Button {
+            Task { await model.setRailCollapsed(!held) }
+        } label: {
+            Image(systemName: "sidebar.right")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(Color(RailTreatment.textColour))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 8)
+        .help(held ? "Keep Panes Open  ⌃⌘R" : "Hide Panes  ⌃⌘R")
+        .accessibilityLabel(held ? "Keep panes open" : "Hide panes")
+        .accessibilityIdentifier("rail.collapse")
+    }
 
     var body: some View {
         // **A `List`, stripped of its chrome — not a `ScrollView` of rows,
@@ -94,15 +132,29 @@ struct Rail: View {
         //
         // The chrome goes by modifier instead: clear row backgrounds, zero
         // insets, no separators, plain style, hidden scroll background.
-        List(model.layoutSnapshot.panes) { pane in
-            row(pane)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
+        VStack(alignment: .trailing, spacing: 0) {
+            collapseButton
+            List(model.layoutSnapshot.panes) { pane in
+                row(pane)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
+        // Peeked only: the rail is as tall as its rows, on a slab, because out over the canvas its
+        // names are read against whatever pane is under them. Shown, both are no-ops by value.
+        .padding(.vertical, held ? 8 : 0)
         .frame(width: 220)
+        .frame(maxHeight: held ? CGFloat(model.layoutSnapshot.panes.count) * 40 + 16 + 24 : .infinity)
+        .background {
+            if held {
+                UnevenRoundedRectangle(topLeadingRadius: 10, bottomLeadingRadius: 10, style: .continuous)
+                    .fill(Color(RailTreatment.peekSlabColour).opacity(RailTreatment.peekSlabOpacity))
+                    .shadow(color: .black.opacity(0.35), radius: 14, x: -4)
+            }
+        }
         // Far plane (§3) at rest, mid plane promoted — the three channels
         // released together, never one alone. Parallax is kept in both
         // states: promotion changes how legible the rail is, not where in the
@@ -165,7 +217,7 @@ struct Rail: View {
         // two rows.
         .contentShape(Rectangle())
         .onHover { isHovering in
-            promoted = isHovering
+            pointerOn = isHovering
             if !isHovering { hoveredRow = nil }
         }
     }
