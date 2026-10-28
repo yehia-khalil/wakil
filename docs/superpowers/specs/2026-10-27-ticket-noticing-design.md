@@ -538,6 +538,21 @@ back on GitHub; production red on a handed chip; narrow widths.
   any branch of the place's roots, as any agent's are under Decision 44; it is not narrowed to the
   ticket's own branch and root.
 
+### Decided by the operator (2026-10-28, walk)
+
+- **The brief is the operator's words.** The field holds Next, Not done, the open threads and failing
+  checks; at Start Wakil appends, out of view, the whole record (each line marked who wrote it, others'
+  words quoted) and the tool instructions. The journal records the full text sent.
+- **The ticket shows its agent.** The header's Hand to agent becomes "With agent · working" (state dot;
+  opens the conversation), then "Agent finished · <what it left>"; a handed thread's box says "Agent on
+  it"; the chip reads `<KEY> · <first line>`.
+- **The agent writes Next; the operator overrides.** A handed agent sets Next at the end of each task,
+  shaped `<step> · <action or tool> · Blocked by <what>`; the header shows the tool and blocker as chips.
+  The operator's edit always applies; the latest write wins and the log keeps both.
+- **The view tabs always read as words**; a picked other-branch thread opens read-only at the PR head;
+  the Ticket view's links open in Wakil's browser (⌥-click: the system's); a ticket waiting on the
+  operator is listed once.
+
 ## Open questions
 
 1. Open question 15 (PM transition reversibility) is untouched; it applies to piece 5's Move.
