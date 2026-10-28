@@ -47,7 +47,7 @@ the operator back to Dia every day:
 - **Vertical tabs are one Browser setting for every pane, and the column tucks away like Dia's**
   (2026-10-27: "a setting for all panes, like dia"; "like dia").
 - **Identities inside an organisation, like Firefox containers** (2026-10-26, notes decision 5, kept
-  as written there).
+  as written there). **Dropped 2026-10-28** (amendment below).
 - **Passwords: Wakil's own, in the Keychain** (2026-10-26, notes decision 6 "now"). The operator has
   no paid Apple Developer account (2026-10-27), so the signed-build test of the Passwords app's
   autofill waits until there is one.
@@ -116,8 +116,8 @@ the operator back to Dia every day:
     account `<site> <username>`. The site key is the registrable domain, as for groups. They are read
     and written from WakilKit, not through Go: only the window fills a page, and the org in the name is
     checked on every read as `Resolve()` checks it, so another organisation's item is never returned.
-    Lane C starts on the default identity; identities need no migration, since the name already
-    carries one.
+    Lane C uses only the default identity, since 3d-ii is dropped (amendment 2026-10-28); the name
+    still carries `default`, so identities, if they ever come back, need no migration.
 13. **Clearing an organisation's browsing data** (3c-i) clears every identity's store too. Passwords
     are not browsing data and stay; they are deleted per login in Settings. `wakil org rm` names the
     identities' stores and the password items as residue to clear first, as it names the profile store
@@ -128,7 +128,8 @@ the operator back to Dia every day:
 
 ## What the operator gets
 
-Three lanes. A and B start together; C starts when a lane frees, on the default identity (call 12). Each lane is its own plan, branch,
+Three lanes. A and B start together; C starts when a lane frees, on the default identity only (call 12).
+3d-ii, identities, is dropped (amendment 2026-10-28). Each lane is its own plan, branch,
 review and walk. Lane A runs its two sub-phases in order because both change the tab model.
 
 ### Lane A, 3d-i: the tab model — groups, pinning, vertical tabs
@@ -150,9 +151,10 @@ review and walk. Lane A runs its two sub-phases in order because both change the
   collapse, ungroup, close), `browser_tab_move` gains a group, `browser_pin` / `browser_unpin`, and
   `read_pane` reports each tab's group and pin. Priced `.control`, allow, like the other tab actions.
 
-### Lane A, 3d-ii: identities
+### Lane A, 3d-ii: identities — DROPPED (operator, 2026-10-28)
 
-As the notes' decision 5, unchanged:
+Not built. Organisations already keep cookies apart, and there is no felt need for a second login
+inside one. Kept below as written, for the record only:
 - Right-click a tab → **Identity ▸** `Default · <each identity> · New Identity…`. Changing a tab's
   identity reloads its page in that identity. New Identity… opens a name field in the menu, focused,
   made when focus leaves it, no Enter (Rules 2, 3).
@@ -364,3 +366,11 @@ settles two edges.
   clears the floating tab itself. Edited under Errors and edges.
 - **A cross-origin iframe's video** floats through its frame from the `wakil.pip` world. Edited under
   Errors and edges.
+
+## Amendment, 2026-10-28 — 3d-ii dropped
+
+The operator dropped 3d-ii, identities: an organisation already isolates its cookies, and there is no
+felt need for two logins inside one. So 3d is three lanes, A (3d-i), B (3d-iii) and C (3d-iv). C uses
+only the default identity: its Keychain service stays `wakil:<org>:browser-login:default`. Every other
+mention of an identity above (the tab fields, `identities.json`, the Identities setting, the e2e check,
+`wakil org rm`'s residue, Decision 49) is void.
