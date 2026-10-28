@@ -60,6 +60,8 @@
 .wakil-review button.wakil-review-kbd{font:10px Menlo,monospace;line-height:14px;padding:0 4px;border-radius:3px;border-color:rgba(232,236,246,.2);color:rgba(232,236,246,.6)}
 .wakil-review button:focus-visible{outline:1px solid #7c5cff;outline-offset:1px}
 .wakil-review button[disabled]{cursor:default;color:rgba(232,236,246,.38);border-color:rgba(232,236,246,.08);background:none}
+/* Who wrote a draft: an agent's is captioned over its field, dim, as a head's time is. */
+.wakil-review-draft-by{margin:0 0 3px 23px;color:rgba(232,236,246,.45);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wakil-review textarea{display:block;box-sizing:border-box;width:calc(100% - 23px);min-height:54px;margin:2px 0 7px 23px;padding:6px 8px;resize:vertical;background:#0b0d14;color:#e8ecf6;caret-color:#9e82ff;border:1px solid rgba(232,236,246,.12);border-radius:5px;font:12.5px/1.45 -apple-system,BlinkMacSystemFont,sans-serif;outline:none}
 .wakil-review textarea::placeholder{color:rgba(232,236,246,.38)}
 .wakil-review textarea:focus{border-color:rgba(124,92,255,.6)}
@@ -844,6 +846,24 @@
       const drafting = reviewOpen[b.thread] || b.draft != null || reviewLive[b.thread] !== undefined;
       let field = null;
       if (drafting) {
+        // Who wrote the draft the field holds: an agent's is captioned, while the field still shows it.
+        const live = reviewLive[b.thread];
+        if (b.draftCaption && (live === undefined || live === b.draft)) {
+          card.appendChild(reviewEl('div', 'wakil-review-draft-by', b.draftCaption));
+        }
+        // An agent's draft replaced the operator's: Restore yours puts theirs back, one click, no question.
+        if (b.replaced && !b.sending) {
+          const back = reviewEl('div', 'wakil-review-actions');
+          back.appendChild(reviewEl('span', '', 'Agent replaced your draft ·'));
+          back.appendChild(reviewButton(node, 'Restore yours', 'Restore', function (el) {
+            el.disabled = true;
+            delete reviewLive[b.thread]; delete reviewAsking[b.thread];
+            reviewFocusField = b.thread;
+            reviewPost(key, b.thread, 'restore');
+          }));
+          back.style.marginBottom = '4px';
+          card.appendChild(back);
+        }
         field = document.createElement('textarea');
         field.value = reviewLive[b.thread] !== undefined ? reviewLive[b.thread] : (b.draft || '');
         field.setAttribute('aria-label', 'Reply to ' + b.author);
@@ -988,6 +1008,9 @@
         // A Send that ended with the store holding no draft was posted: the field closes.
         const was = reviewWas[b.thread];
         if (was && was.sending && !b.sending && b.draft == null) { delete reviewLive[b.thread]; delete reviewOpen[b.thread]; }
+        // A new draft from the store (an agent's, a Restore yours) over a field with nothing unsaved
+        // typed in it: the field shows the new one. Unsaved typing is the operator's and stays.
+        if (was && b.draft !== was.draft && reviewLive[b.thread] === (was.draft || '')) delete reviewLive[b.thread];
         reviewWas[b.thread] = b;
       });
       reviews[key] = boxes;

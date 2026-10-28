@@ -317,7 +317,64 @@ public struct InFlightState: Sendable, Equatable, Codable {
     }
 }
 
+/// One review thread's reply draft, as the organisation's `tickets/drafts.json` keeps it
+/// (`wakilcore.TicketDraft`). `by` is `operator` or `agent`; `replaced` is the operator's text an
+/// agent's draft replaced, kept for **Restore yours**. Go's empty strings read as nil.
+public struct TicketDraftState: Sendable, Equatable, Codable {
+    public var text, by, at: String
+    public var conversation, root, branch, replaced: String?
+
+    public init(text: String, by: String, at: String = "", conversation: String? = nil, root: String? = nil,
+                branch: String? = nil, replaced: String? = nil) {
+        self.text = text; self.by = by; self.at = at
+        self.conversation = conversation; self.root = root; self.branch = branch; self.replaced = replaced
+    }
+
+    private enum CodingKeys: String, CodingKey { case text, by, at, conversation, root, branch, replaced }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func some(_ k: CodingKeys) -> String? { let v = c.text(k); return v.isEmpty ? nil : v }
+        self.init(text: c.text(.text), by: c.text(.by), at: c.text(.at), conversation: some(.conversation),
+                  root: some(.root), branch: some(.branch), replaced: some(.replaced))
+    }
+}
+
+/// `ticket_drafts` and `ticket_draft_write` answer every draft of the organisation, by thread.
+struct TicketDraftsState: Decodable {
+    var drafts: [String: TicketDraftState]
+    private enum CodingKeys: String, CodingKey { case drafts }
+    init(from decoder: any Decoder) throws {
+        drafts = (try? decoder.container(keyedBy: CodingKeys.self).decodeIfPresent([String: TicketDraftState].self, forKey: .drafts)) ?? [:]
+    }
+}
+
 // MARK: - Pure decisions
+
+/// Who wrote a draft, from who dispatched the write: an agent's is `agent`; the operator's and the
+/// window's own channel (`.debug`, the e2e driver) are `operator` — a draft has no third author.
+public func ticketDraftBy(_ origin: ActionOrigin) -> String { origin == .agent ? "agent" : "operator" }
+
+/// An agent's draft's caption in its box: `Drafted by agent · 1 min ago`; nil for the operator's.
+public func ticketDraftCaption(_ d: TicketDraftState, now: Date) -> String? {
+    guard d.by == "agent" else { return nil }
+    let when = ticketDraftAge(d.at, now: now)
+    return when.isEmpty ? "Drafted by agent" : "Drafted by agent · \(when)"
+}
+
+/// The line over an agent's draft that replaced the operator's; its last words are **Restore yours**.
+public func ticketDraftReplacedLine(_ d: TicketDraftState) -> String? {
+    d.replaced == nil ? nil : "Agent replaced your draft · Restore yours"
+}
+
+/// How long ago a draft was written, short: `just now`, `1 min ago`, `5 min ago`, else as
+/// `editorRelativeAge` says it; empty when `at` is not a time.
+func ticketDraftAge(_ at: String, now: Date) -> String {
+    guard let date = ISO8601DateFormatter().date(from: at) else { return "" }
+    let s = max(0, Int(now.timeIntervalSince(date)))
+    if s >= 60, s < 3600 { return "\(s / 60) min ago" }
+    return editorRelativeAge(at, now: now)
+}
 
 /// Who wrote a record line, from who dispatched the write: never from the caller's params.
 public func ticketBy(_ origin: ActionOrigin) -> String {

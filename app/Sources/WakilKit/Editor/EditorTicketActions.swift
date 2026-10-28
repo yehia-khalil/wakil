@@ -20,7 +20,7 @@ struct EditorTicketHooks: Sendable {
 
 /// The Ticket view's readable state, kept store-wide for every editor pane (Invariant 3):
 /// `EditorPaneKind.readPane` picks the root a pane follows from its own front tab at read time.
-/// Draft text is never in it — only which threads have one.
+/// Draft text is never in it — only which threads have one, and who wrote it.
 public struct EditorTicketMirror: Sendable, Equatable {
     public struct PR: Sendable, Equatable { public let number: Int; public let state: String; public let openThreads: Int }
     public struct Root: Sendable, Equatable {
@@ -34,7 +34,9 @@ public struct EditorTicketMirror: Sendable, Equatable {
     /// The project's roots in order: the view follows the first when no file is in front.
     public var roots: [String]
     public var byRoot: [String: Root]
-    public var drafts: [String]
+    /// Which threads have a draft and who wrote it (`operator` or `agent`), by thread id; never the text.
+    public struct Draft: Sendable, Equatable { public let thread: String; public let by: String }
+    public var drafts: [Draft]
     public static let empty = EditorTicketMirror(roots: [], byRoot: [:], drafts: [])
 
     /// The `ticket` key of a pane whose front tab is in `front`.
@@ -49,7 +51,7 @@ public struct EditorTicketMirror: Sendable, Equatable {
             "prs": .array((r?.prs ?? []).map { p in
                 .object(["number": .integer(Int64(p.number)), "state": .string(p.state),
                          "openThreads": .integer(Int64(p.openThreads))]) }),
-            "drafts": .array(drafts.map { .string($0) }),
+            "drafts": .array(drafts.map { .object(["thread": .string($0.thread), "by": .string($0.by)]) }),
             "reading": .bool(r?.reading ?? false),
             "error": r?.error.map { .string($0) } ?? .null,
         ])
@@ -86,7 +88,8 @@ func registerTicketActions(
                 reading: await store.reading(root: root), error: await store.failure(root: root))
             if let b { reviews[root] = .init(viewer: b.viewer, threads: b.prs.flatMap(\.threads)) }
         }
-        let drafts = await store.allDrafts()
+        let records = await store.allDraftRecords()
+        let drafts = records.mapValues(\.text)
         var branches: [String: TicketBranchState] = [:]
         for root in byRoot.keys { if let b = await store.branch(root: root) { branches[root] = b } }
         let view = EditorTicketViewState(roots: rs, branches: branches, reading: await store.readingRoots(),
@@ -96,9 +99,10 @@ func registerTicketActions(
                                          shownBranches: await store.shownBranches(),
                                          shownBranchFailures: await store.shownBranchFailures())
         await panes.setEditorTicketMirror(
-            EditorTicketMirror(roots: rs, byRoot: byRoot, drafts: drafts.keys.sorted()),
+            EditorTicketMirror(roots: rs, byRoot: byRoot,
+                               drafts: records.keys.sorted().map { .init(thread: $0, by: records[$0]?.by ?? "") }),
             reviews: EditorReviewsState.Reads(byRoot: reviews, drafts: drafts, sending: await store.allSending(),
-                                              answers: await store.allAnswers()),
+                                              answers: await store.allAnswers(), draftRecords: records),
             view: view)
     }
     await store.setOnChange { await mirror() }
@@ -162,6 +166,33 @@ func registerTicketActions(
     /// Whether an agent session made the running dispatch: its reads go through its own place's
     /// client and answer it alone, never the window's cache, which holds the window's organisation.
     @Sendable func pinned() -> Bool { pinnedPlace(of: ActionRegistry.dispatchCaller) != nil }
+    /// Writes a thread's draft (nil text removes it), `by` from who dispatched and an agent's
+    /// conversation, never params. Into the window's store, through the window's own client, unless an
+    /// agent session of another organisation than the window's asked: then into its organisation's
+    /// drafts only, through its own place's wakil-ticket, the window's store untouched (Invariant 4).
+    @Sendable func writeDraft(thread: String, text: String?, place: (root: String, branch: String?)?,
+                              action: String) async throws {
+        let origin = ActionRegistry.dispatchOrigin
+        let by = ticketDraftBy(origin)
+        let conversation = origin == .agent ? ActionRegistry.dispatchCaller?.conversation : nil
+        if let away = pinnedPlace(of: ActionRegistry.dispatchCaller), away.organization != (await organization()) {
+            var args: [String: JSONValue] = ["thread": .string(thread), "by": .string(by)]
+            if let text, !text.isEmpty { args["text"] = .string(text) }
+            if let conversation, !conversation.isEmpty { args["conversation"] = .string(conversation) }
+            if let place {
+                args["root"] = .string(place.root)
+                if let b = place.branch { args["branch"] = .string(b) }
+            }
+            _ = try await call("ticket_draft_write", args, action: action, timeout: MCPClient.mutationReplyTimeout)
+            return
+        }
+        do {
+            try await store.setDraft(thread: thread, text: text, by: by, conversation: conversation,
+                                     root: place?.root, branch: place?.branch)
+        } catch let e as TicketReadError {
+            throw StandardActionError.serverError(action: action, message: e.description)
+        }
+    }
     /// The focused editor pane, else the first; nil when none is open (a read opens no pane).
     @Sendable func frontPane() async -> String? {
         guard let snap = await layout?.snapshot() else { return nil }
@@ -446,9 +477,11 @@ func registerTicketActions(
 
     await registry.register(Action(
         name: "review_reply_draft",
-        description: "Keep a review thread's reply draft for the window's life; empty or null text drops it. "
-            + "root and branch name the thread's place, so the draft lands with no editor pane open; a branch "
-            + "without a root is ignored. Nothing is posted: review_reply_send does that.",
+        description: "Keep a review thread's reply draft in the organization's drafts, kept across quits; empty "
+            + "or null text drops it. Who wrote it is set from who asked, never from params; an agent's draft "
+            + "over the operator's keeps theirs for Restore yours. root and branch name the thread's place, so "
+            + "the draft lands with no editor pane open; a branch without a root is ignored. Nothing is posted: "
+            + "review_reply_send does that.",
         kind: .control, audience: .agentReachable,
         schema: schema(["thread": string, "text": .object(["type": .array([.string("string"), .string("null")])]),
                         "root": string, "branch": string],
@@ -457,15 +490,28 @@ func registerTicketActions(
             let action = "review_reply_draft"
             let thread = try param(params, "thread", action)
             let place = try await namedPlace(params, action)
-            // An agent session's draft is kept by the window only while the window shows its
-            // organisation: the store holds the window's organisation alone (Invariant 4).
-            if let away = pinnedPlace(of: ActionRegistry.dispatchCaller), away.organization != (await organization()) {
-                throw TicketActionError(description: "\(action): this window shows another organisation than "
-                    + "\(away.organization); the draft was not kept, and nothing was written")
-            }
-            await store.setDraft(thread: thread, text: optionalString(params, "text"))
+            let text = optionalString(params, "text")
+            try await writeDraft(thread: thread, text: text, place: place, action: action)
             await mirror()
             if let place { await landed(at: place) }
+            return .object(["thread": .string(thread), "draft": .bool(!(text ?? "").isEmpty)])
+        }))
+
+    await registry.register(Action(
+        name: "review_reply_draft_restore",
+        description: "Restore yours: put back the operator's reply draft on a review thread that an agent's "
+            + "draft replaced, as the operator's. Refused when no draft of theirs was replaced. Nothing is posted.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["thread": string], required: ["thread"]),
+        handler: { params in
+            let action = "review_reply_draft_restore"
+            let thread = try param(params, "thread", action)
+            do {
+                try await store.restoreDraft(thread: thread)
+            } catch let e as TicketReadError {
+                throw TicketActionError(description: "\(action): \(e.description); nothing was written")
+            }
+            await mirror()
             return .object(["thread": .string(thread), "draft": .bool(await store.draft(thread: thread) != nil)])
         }))
 
@@ -513,14 +559,22 @@ func registerTicketActions(
                 throw error
             }
             await store.endSend(thread: thread)
-            await store.setDraft(thread: thread, text: nil)
             // GitHub's errors beside the posted comment: posted all the same, the errors shown whole.
             var said: [String] = []
             if case .array(let errs)? = out["errors"] {
                 for case .string(let e) in errs { said.append(e) }
             }
-            await store.setAnswer(thread: thread,
-                                  text: said.isEmpty ? nil : "Posted. GitHub also answered: " + said.joined(separator: "; "))
+            var answer = said.isEmpty ? nil : "Posted. GitHub also answered: " + said.joined(separator: "; ")
+            // Posted: the thread's entry leaves the organisation's file. A removal that fails is said
+            // beside the posted reply, whole, and the store forgets the draft all the same, so no box
+            // offers to send it twice.
+            do {
+                try await writeDraft(thread: thread, text: nil, place: nil, action: action)
+            } catch {
+                await store.forgetDraft(thread: thread)
+                answer = (answer ?? "Posted.") + " The draft could not be removed: \(error)"
+            }
+            await store.setAnswer(thread: thread, text: answer)
             await mirror()
             await store.invalidate(root: root)
             return .object(out)

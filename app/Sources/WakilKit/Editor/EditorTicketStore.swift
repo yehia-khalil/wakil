@@ -36,7 +36,8 @@ public actor EditorTicketStore {
     private var current: [String: String] = [:]
     private var flights: [ReadKey: Flight] = [:]
     private var failures: [String: String] = [:]
-    private var drafts: [String: String] = [:]
+    /// The window's organisation's reply drafts, as its `tickets/drafts.json` last answered them.
+    private var drafts: [String: TicketDraftState] = [:]
     private var sendingThreads: Set<String> = []
     /// What GitHub answered beside a reply it posted, by thread, whole: the reply is posted all the same.
     private var answers: [String: String] = [:]
@@ -349,14 +350,70 @@ public actor EditorTicketStore {
 
     // MARK: Drafts
 
-    public func draft(thread: String) -> String? { drafts[thread] }
+    /// A thread's draft text; nil when it has none.
+    public func draft(thread: String) -> String? { drafts[thread]?.text }
 
-    /// Keeps a thread's draft for the window's life (Rule 2); nil or empty text drops it.
-    public func setDraft(thread: String, text: String?) {
-        if let text, !text.isEmpty { drafts[thread] = text } else { drafts[thread] = nil }
+    /// Every draft's text, by thread.
+    public func allDrafts() -> [String: String] { drafts.mapValues(\.text) }
+
+    /// A thread's draft whole: who wrote it, when, and the operator's text it replaced.
+    public func draftRecord(thread: String) -> TicketDraftState? { drafts[thread] }
+
+    public func allDraftRecords() -> [String: TicketDraftState] { drafts }
+
+    /// Reads the window's organisation's drafts (`ticket_drafts`), as a relaunch or an org switch
+    /// finds them. A load from before an org switch lands on a newer generation and is dropped.
+    public func loadDrafts() async throws {
+        let gen = generation
+        let content = try await windowCall("ticket_drafts", [:], timeout: MCPClient.readReplyTimeout)
+        let read = try ticketDecode(TicketDraftsState.self, content, tool: "ticket_drafts")
+        guard gen == generation else { return }
+        drafts = read.drafts
+        await changed()
     }
 
-    public func allDrafts() -> [String: String] { drafts }
+    /// Writes a thread's draft to the window's organisation's file (`ticket_draft_write`); nil or
+    /// empty text removes it. The store then holds what the file answered — an agent's draft over
+    /// the operator's comes back with the operator's text as `replaced`. A refusal is thrown whole
+    /// and the store keeps what it had. `by` is the dispatcher's (`ticketDraftBy`), never params.
+    public func setDraft(thread: String, text: String?, by: String, conversation: String?, root: String?,
+                         branch: String?) async throws {
+        var args: [String: JSONValue] = ["thread": .string(thread), "by": .string(by)]
+        if let text, !text.isEmpty { args["text"] = .string(text) }
+        for (k, v) in [("conversation", conversation), ("root", root), ("branch", branch)] {
+            if let v, !v.isEmpty { args[k] = .string(v) }
+        }
+        let gen = generation
+        let content = try await windowCall("ticket_draft_write", args, timeout: MCPClient.mutationReplyTimeout)
+        let written = try ticketDecode(TicketDraftsState.self, content, tool: "ticket_draft_write")
+        guard gen == generation else { return }
+        drafts = written.drafts
+        await changed()
+    }
+
+    /// **Restore yours**: the operator's text an agent's draft replaced is written back, by
+    /// `operator`, which clears `replaced`. Refused, nothing written, when nothing was replaced.
+    public func restoreDraft(thread: String) async throws {
+        guard let d = drafts[thread], let mine = d.replaced, !mine.isEmpty else {
+            throw TicketReadError(description: "there is no draft of yours to restore on review thread \(thread)")
+        }
+        try await setDraft(thread: thread, text: mine, by: "operator", conversation: nil, root: d.root, branch: d.branch)
+    }
+
+    /// A posted reply whose file entry could not be removed: the store forgets it all the same, so
+    /// no box offers to send it again.
+    func forgetDraft(thread: String) { drafts[thread] = nil }
+
+    /// One `wakil-ticket` call on the window's own client, whoever dispatched: an agent's caller would
+    /// route it to its place's process, and the store holds the window's organisation (Invariant 4).
+    private func windowCall(_ tool: String, _ args: [String: JSONValue], timeout: TimeInterval) async throws -> [String: JSONValue] {
+        guard let ticket else {
+            throw TicketReadError(description: StandardActionError.missingClient(action: tool, role: "ticket").description)
+        }
+        return try await ActionRegistry.$dispatchCaller.withValue(nil) {
+            try await ticketCall(ticket, tool, args, timeout: timeout)
+        }
+    }
 
     public func sending(thread: String) -> Bool { sendingThreads.contains(thread) }
 

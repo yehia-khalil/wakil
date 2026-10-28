@@ -203,3 +203,15 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
     let descriptor = await registry.all().first { $0.name == "test.unclassified" }
     #expect(descriptor?.audience == nil)
 }
+
+/// Ticket noticing, Task 4: **Restore yours** is a control the agent may reach, as the draft it
+/// undoes is — it writes only the operator's own words back, by "operator".
+@Test func reviewReplyDraftRestoreIsAgentReachable() async throws {
+    let wiring = try await wiringWithNoBinaries()
+    await wiring.shutdown()
+
+    let restore = try #require(await wiring.registry.all().first { $0.name == "review_reply_draft_restore" })
+    #expect(restore.audience == .agentReachable)
+    #expect(restore.kind == .control)
+    #expect(!operatorOnlyActions.contains("review_reply_draft_restore"))
+}

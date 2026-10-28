@@ -480,10 +480,12 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         #expect(await f.editor.panes.editorReviews().fetched.contains(h))
     }
 
-    @Test func readPaneListsDraftsWithoutText() async throws {
+    @Test func readPaneListsDraftAuthorsWithoutText() async throws {
         let f = try await ticketFixture()
         _ = try await f.store.read(root: "/p/api")
         try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": .string("a secret-looking draft")])
+        try await f.dispatch("review_reply_draft", ["thread": .string("T1"), "text": .string("mine, also secret")],
+                             origin: .ui, confirmation: nil)
         let read = await f.editor.panes.readPane(paneId: f.editor.pane, kind: "editor")
         guard case .object(let o) = read, case .object(let t)? = o["ticket"] else { Issue.record("no ticket key: \(read)"); return }
         #expect(t["root"] == .string("/p/api"))
@@ -491,8 +493,10 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         #expect(t["tickets"] == .array([.string("INI-142")]))
         #expect(t["marked"] == .string("INI-142"))
         #expect(t["prs"] == .array([.object(["number": .integer(212), "state": .string("open"), "openThreads": .integer(2)])]))
-        #expect(t["drafts"] == .array([.string("T2")]))
+        #expect(t["drafts"] == .array([.object(["thread": .string("T1"), "by": .string("operator")]),
+                                       .object(["thread": .string("T2"), "by": .string("agent")])]))
         #expect(!"\(read)".contains("a secret-looking draft"))
+        #expect(!"\(read)".contains("mine, also secret"))
     }
 
     @Test(.timeLimit(.minutes(1))) func pushInvalidatesTheRootsRead() async throws {
@@ -519,7 +523,8 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         let kinds: [String: ActionKind] = [
             "ticket_read": .read, "ticket_refresh": .control, "ticket_show": .control, "ticket_in_flight": .read,
             "ticket_link": .mutate, "ticket_record_update": .mutate, "review_open": .control, "review_step": .control,
-            "review_reply_draft": .control, "review_reply_send": .mutate, "review_resolve": .mutate,
+            "review_reply_draft": .control, "review_reply_draft_restore": .control, "review_reply_send": .mutate,
+            "review_resolve": .mutate,
         ]
         for (name, kind) in kinds {
             let d = try #require(all.first { $0.name == name }, "\(name) is not registered")
@@ -722,17 +727,20 @@ private let draftText: JSONValue = .string("Thanks, fixed.")
     #expect(out == .object(["thread": .string("T2"), "draft": .bool(true)]))
 }
 
-/// Invariant 4: an agent of another organisation than the window's drafting leaves the window's
-/// store untouched.
+/// Invariant 4: an agent of another organisation than the window's drafting writes to its own
+/// organisation's drafts, through its own place's wakil-ticket (the routed caller), and leaves the
+/// window's store untouched.
 @Test func draftFromAnotherOrganisationLeavesTheWindowsStore() async throws {
     let f = try await ticketFixture(organization: "initech", editorPane: false)
     let umbrella = DispatchCaller(place: Place(organization: "umbrella", project: "api", environment: "staging"),
                                   session: "s1", conversation: "c1")
-    await #expect {
-        try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText,
-                                                    "root": .string("/p/api"), "branch": .string("ini-142-login")],
-                             caller: umbrella)
-    } throws: { "\($0)".contains("umbrella") }
+    let out = try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText,
+                                                          "root": .string("/p/api"), "branch": .string("ini-142-login")],
+                                   caller: umbrella)
+    #expect(out == .object(["thread": .string("T2"), "draft": .bool(true)]))
+    let args = try #require(await f.ticket.args("ticket_draft_write"))
+    #expect(args == ["thread": .string("T2"), "text": draftText, "by": .string("agent"), "conversation": .string("c1"),
+                     "root": .string("/p/api"), "branch": .string("ini-142-login")])
     #expect(await f.store.draft(thread: "T2") == nil)
     #expect(await f.store.allDrafts().isEmpty)
 }
@@ -763,4 +771,99 @@ private let draftText: JSONValue = .string("Thanks, fixed.")
         return false
     }
     #expect(await f.ticket.count("ticket_record_write") == writes)
+}
+
+// MARK: Ticket noticing, Task 4 — drafts survive a quit and say who wrote them
+
+/// `by` comes from who dispatched, never from params; an agent's names its conversation.
+@Test func draftByComesFromOriginNotParams() async throws {
+    let f = try await ticketFixture()
+    try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText, "by": .string("operator"),
+                                                "conversation": .string("forged")],
+                         caller: .test("staging", conversation: "c1"))
+    let args = try #require(await f.ticket.args("ticket_draft_write"))
+    #expect(args["by"] == .string("agent"))
+    #expect(args["conversation"] == .string("c1"))
+    #expect(await f.store.draftRecord(thread: "T2")?.by == "agent")
+
+    try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText, "by": .string("agent")],
+                         origin: .ui, caller: .test("staging", conversation: "c1"), confirmation: nil)
+    let mine = try #require(await f.ticket.args("ticket_draft_write"))
+    #expect(mine["by"] == .string("operator"))
+    #expect(mine["conversation"] == nil)
+}
+
+/// An agent's draft replaces the operator's (Rule 7) and the operator's text is kept as replaced.
+@Test func agentDraftOverOperatorsKeepsReplaced() async throws {
+    let f = try await ticketFixture()
+    try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": .string("my words")],
+                         origin: .ui, confirmation: nil)
+    try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": .string("the agent's words")],
+                         caller: agentInSession)
+    #expect(await f.store.draft(thread: "T2") == "the agent's words")
+    let d = try #require(await f.store.draftRecord(thread: "T2"))
+    #expect(d.by == "agent")
+    #expect(d.conversation == "c1")
+    #expect(d.replaced == "my words")
+}
+
+/// Restore yours: one click, the operator's text back as the operator's, replaced cleared.
+@Test func restorePutsTheOperatorsBack() async throws {
+    let f = try await ticketFixture()
+    try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": .string("my words")],
+                         origin: .ui, confirmation: nil)
+    try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": .string("the agent's words")],
+                         caller: agentInSession)
+    let out = try await f.dispatch("review_reply_draft_restore", ["thread": .string("T2")], origin: .ui, confirmation: nil)
+    #expect(out == .object(["thread": .string("T2"), "draft": .bool(true)]))
+    let args = try #require(await f.ticket.args("ticket_draft_write"))
+    #expect(args["text"] == .string("my words"))
+    #expect(args["by"] == .string("operator"))
+    #expect(await f.store.draft(thread: "T2") == "my words")
+    let d = try #require(await f.store.draftRecord(thread: "T2"))
+    #expect(d.by == "operator")
+    #expect(d.replaced == nil)
+
+    // Nothing replaced: nothing to restore, said whole, nothing written.
+    let writes = await f.ticket.count("ticket_draft_write")
+    await #expect { try await f.dispatch("review_reply_draft_restore", ["thread": .string("T2")], origin: .ui, confirmation: nil) }
+        throws: { "\($0)".contains("no draft of yours") }
+    #expect(await f.ticket.count("ticket_draft_write") == writes)
+}
+
+/// A posted reply removes the thread's entry from the organisation's file, not only from memory.
+@Test func sendSuccessRemovesTheDraftEntry() async throws {
+    let f = try await ticketFixture()
+    try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText], caller: agentInSession)
+    #expect(await f.ticket.drafts["T2"] != nil)
+    try await f.dispatch("review_reply_send", replyParams)
+    #expect(await f.ticket.drafts["T2"] == nil)
+    #expect(await f.store.draft(thread: "T2") == nil)
+    #expect(await f.store.draftRecord(thread: "T2") == nil)
+    let args = try #require(await f.ticket.args("ticket_draft_write"))
+    #expect(args["thread"] == .string("T2"))
+    #expect(args["text"] == nil)
+}
+
+/// A failed post keeps the draft in the file too: a quit after it loses nothing.
+@Test func sendFailureKeepsTheDraft() async throws {
+    let f = try await ticketFixture()
+    try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText], caller: agentInSession)
+    await f.ticket.fail("review_reply", "GitHub said: Resource not accessible by integration")
+    await #expect { try await f.dispatch("review_reply_send", replyParams) } throws: { _ in true }
+    #expect(await f.store.draft(thread: "T2") == "Thanks, fixed.")
+    #expect(await f.ticket.drafts["T2"] != nil)
+    let relaunched = EditorTicketStore(ticket: f.ticket)
+    try await relaunched.loadDrafts()
+    #expect(await relaunched.draftRecord(thread: "T2")?.by == "agent")
+}
+
+/// A write wakil-ticket refuses is said whole, and the store keeps what it had.
+@Test func aRefusedDraftWriteIsSaidWhole() async throws {
+    let f = try await ticketFixture()
+    await f.ticket.fail("ticket_draft_write", "drafts are not readable: unexpected end of JSON input")
+    await #expect { try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText], origin: .ui,
+                                         confirmation: nil) }
+        throws: { "\($0)".contains("unexpected end of JSON input") }
+    #expect(await f.store.draft(thread: "T2") == nil)
 }

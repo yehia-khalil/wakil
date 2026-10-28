@@ -100,6 +100,31 @@ private func thread(_ id: String, _ path: String, _ line: Int, sha: String = "ab
         #expect(boxes[1].draft == nil && boxes[1].sending)
     }
 
+    /// An agent's draft says who wrote it and when; one that replaced the operator's says so. The
+    /// operator's own draft carries no caption. Draft text is the store's, verbatim.
+    @Test func boxCarriesDraftAuthorAndReplaced() throws {
+        let head = text(lines(60))
+        let threads = [thread("T1", "a.go", 41), thread("T2", "a.go", 44), thread("T3", "a.go", 50)]
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-10-28T10:01:00Z"))
+        let records = [
+            "T1": TicketDraftState(text: "<b>agent</b>", by: "agent", at: "2026-10-28T10:00:00Z", conversation: "c1",
+                                   replaced: "my words"),
+            "T2": TicketDraftState(text: "mine", by: "operator", at: "2026-10-28T10:00:00Z"),
+        ]
+        let boxes = reviewBoxes(threads: threads, path: "/p/api/a.go", root: "/p/api", headTexts: ["abc": head],
+                                buffer: head, drafts: records.mapValues(\.text), sending: [], draftRecords: records, now: now)
+        #expect(boxes[0].draft == "<b>agent</b>")
+        #expect(boxes[0].draftBy == "agent")
+        #expect(boxes[0].draftAt == "1 min ago")
+        #expect(boxes[0].draftCaption == "Drafted by agent · 1 min ago")
+        #expect(boxes[0].replaced)
+        #expect(boxes[1].draftBy == "operator" && boxes[1].draftCaption == nil && !boxes[1].replaced)
+        #expect(boxes[2].draft == nil && boxes[2].draftBy == nil && boxes[2].draftAt == nil && !boxes[2].replaced)
+        // The operator's replaced text stays in the store: the page is handed only that there is one.
+        let json = String(decoding: try JSONEncoder().encode(boxes), as: UTF8.self)
+        #expect(!json.contains("my words"))
+    }
+
     /// GitHub's errors beside a reply it posted are drawn on the thread's box, whole.
     @Test func boxCarriesWhatGitHubAnsweredBesideAPostedReply() {
         let head = text(lines(60))

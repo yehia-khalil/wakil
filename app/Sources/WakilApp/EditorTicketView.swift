@@ -417,6 +417,11 @@ struct EditorTicketView: View {
                     Text(row.place).font(.system(size: 10.5, design: .monospaced)).opacity(0.6)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: Space.s)
+                    // A reply waits in the file's box to be sent, the operator's or an agent's.
+                    if reviews.reads.drafts[t.id] != nil {
+                        TicketPill(label: "draft", hue: .neutral).fixedSize()
+                            .accessibilityIdentifier("editor.ticket.draft:\(t.id)")
+                    }
                     if let replies = row.replies { Text(replies).dimmed().font(.system(size: 10.5)).fixedSize() }
                 }
                 Text(row.words).font(.system(size: 11.5)).lineLimit(2).truncationMode(.tail)

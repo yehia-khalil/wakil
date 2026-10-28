@@ -58,6 +58,15 @@ extension WindowModel {
         }
     }
 
+    /// Reads the organisation's reply drafts from its file (`ticket_drafts`), so a draft written
+    /// before a quit, or by a handed agent in the background, is in its box. The window being ready
+    /// and an org switch both end in `refreshContext`, which calls this; the store drops a load from
+    /// before a switch. Started, not awaited.
+    func ticketLoadDrafts() {
+        guard let ticket else { return }
+        Task { try? await ticket.loadDrafts() }
+    }
+
     /// One read of `root`, joined to one in flight; the default branch reads In flight too. A
     /// failure is kept in the store, whole, where the view reads it (Rule 8).
     private func ticketRead(_ root: String) {

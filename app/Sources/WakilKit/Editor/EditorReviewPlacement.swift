@@ -63,6 +63,14 @@ public struct ReviewBox: Sendable, Equatable, Encodable {
     public let sending: Bool
     /// What GitHub answered beside the reply it posted here, whole.
     public let answer: String?
+    /// Who wrote the draft (`operator`, `agent`) and how long ago, as shown; nil with no draft.
+    public let draftBy: String?
+    public let draftAt: String?
+    /// `Drafted by agent · 1 min ago` over an agent's draft (`ticketDraftCaption`); nil for the operator's.
+    public let draftCaption: String?
+    /// An agent's draft replaced the operator's: the box offers **Restore yours**. The operator's text
+    /// stays in the store; the page is handed only that there is one.
+    public let replaced: Bool
 }
 
 /// When a comment was written, as a box shows it: "24 Oct 09:00", local time; the text GitHub gave
@@ -83,7 +91,8 @@ func reviewTime(_ iso: String) -> String {
 /// `viewer` says "you".
 public func reviewBoxes(threads: [ReviewThreadState], path: String, root: String,
                         headTexts: [String: String], buffer: String, drafts: [String: String],
-                        sending: Set<String>, answers: [String: String] = [:], viewer: String = "") -> [ReviewBox] {
+                        sending: Set<String>, answers: [String: String] = [:], viewer: String = "",
+                        draftRecords: [String: TicketDraftState] = [:], now: Date = Date()) -> [ReviewBox] {
     let mine = threads.filter { $0.root == root }
     let open = reviewOpenThreads([PullRequestState(number: 0, threads: mine)])
     var seen: Set<String> = []
@@ -91,13 +100,16 @@ public func reviewBoxes(threads: [ReviewThreadState], path: String, root: String
         let p = reviewPlacement(headText: headTexts[t.headSHA], buffer: buffer, line: max(1, t.line))
         let first = t.comments.first
         let who = t.resolvedBy.map { !viewer.isEmpty && $0 == viewer ? "you" : $0 }
+        let record = drafts[t.id] == nil ? nil : draftRecords[t.id]
         return ReviewBox(
             thread: t.id, line: p.line, note: p.note, author: first?.author ?? "", time: first.map { reviewTime($0.createdAt) } ?? "",
             text: first?.body ?? "",
             replies: t.comments.dropFirst().map { ReviewCommentState(author: $0.author, body: $0.body, createdAt: reviewTime($0.createdAt)) },
             position: t.resolved ? "" : reviewPosition(open, id: t.id), resolved: t.resolved, resolvedBy: t.resolved ? who : nil,
             waiting: !t.resolved && !viewer.isEmpty && (t.comments.last.map { $0.author != viewer } ?? false),
-            draft: drafts[t.id], sending: sending.contains(t.id), answer: answers[t.id])
+            draft: drafts[t.id], sending: sending.contains(t.id), answer: answers[t.id],
+            draftBy: record?.by, draftAt: record.map { ticketDraftAge($0.at, now: now) },
+            draftCaption: record.flatMap { ticketDraftCaption($0, now: now) }, replaced: record?.replaced != nil)
     }
     return boxes.enumerated().sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }.map(\.element)
 }
@@ -129,9 +141,12 @@ public struct EditorReviewsState: Sendable, Equatable {
         public var sending: Set<String>
         /// What GitHub answered beside a reply it posted, by thread.
         public var answers: [String: String]
+        /// Each draft whole — its author, its time, whether it replaced the operator's — by thread.
+        public var draftRecords: [String: TicketDraftState]
         public init(byRoot: [String: Root] = [:], drafts: [String: String] = [:], sending: Set<String> = [],
-                    answers: [String: String] = [:]) {
+                    answers: [String: String] = [:], draftRecords: [String: TicketDraftState] = [:]) {
             self.byRoot = byRoot; self.drafts = drafts; self.sending = sending; self.answers = answers
+            self.draftRecords = draftRecords
         }
     }
     public var reads: Reads
@@ -194,7 +209,8 @@ public func editorReviewBoxes(_ tab: EditorTab, buffer: String? = nil, _ reviews
     for (h, text) in reviews.heads where h.root == f.root && h.path == f.rel { heads[h.sha] = text }
     return reviewBoxes(threads: root?.threads ?? [], path: f.path, root: f.root, headTexts: heads,
                        buffer: buffer ?? tab.text, drafts: reviews.reads.drafts, sending: reviews.reads.sending,
-                       answers: reviews.reads.answers, viewer: root?.viewer ?? "")
+                       answers: reviews.reads.answers, viewer: root?.viewer ?? "",
+                       draftRecords: reviews.reads.draftRecords)
 }
 
 /// The thread whose box is on the tab's cursor line, as placed (`read_pane`'s `cursorThread`, and

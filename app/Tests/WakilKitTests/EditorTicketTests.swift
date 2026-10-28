@@ -11,6 +11,9 @@ actor FakeTicket: ToolCaller {
     var slowBranch = false
     var hangBranch = false
     var slowReply = false
+    var slowDrafts = false
+    /// The organisation's drafts.json as `ticket_draft_write` keeps it, by thread, unless a reply is set.
+    var drafts: [String: JSONValue] = [:]
     private var released = false
     private var parked: [CheckedContinuation<Void, Never>] = []
 
@@ -19,6 +22,15 @@ actor FakeTicket: ToolCaller {
     func setSlowBranch(_ on: Bool) { slowBranch = on; released = false }
     func setHangBranch(_ on: Bool) { hangBranch = on }
     func setSlowReply(_ on: Bool) { slowReply = on; released = false }
+    func setSlowDrafts(_ on: Bool) { slowDrafts = on; released = false }
+    /// Puts a draft in the file, as another window or a quit-and-relaunch left it.
+    func seedDraft(_ thread: String, text: String, by: String, conversation: String = "", replaced: String = "",
+                   at: String = "2026-10-28T10:00:00Z") {
+        drafts[thread] = .object(["text": .string(text), "by": .string(by), "conversation": .string(conversation),
+                                  "root": .string(""), "branch": .string(""), "at": .string(at),
+                                  "replaced": .string(replaced)])
+    }
+    func clearDrafts() { drafts = [:] }
     func release() { released = true; parked.forEach { $0.resume() }; parked = [] }
     private func park(_ c: CheckedContinuation<Void, Never>) { if released { c.resume() } else { parked.append(c) } }
     func count(_ tool: String) -> Int { calls.filter { $0.name == tool }.count }
@@ -30,13 +42,34 @@ actor FakeTicket: ToolCaller {
     func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
         calls.append((name, arguments))
         if name == "ticket_branch", hangBranch { try await Task.sleep(for: .seconds(60)) }
-        if (name == "ticket_branch" && slowBranch) || (name == "review_reply" && slowReply) {
+        if (name == "ticket_branch" && slowBranch) || (name == "review_reply" && slowReply)
+            || (name == "ticket_drafts" && slowDrafts) {
             await withCheckedContinuation { c in Task { self.park(c) } }
         }
         if let e = errors[name] {
             return .object(["isError": .bool(true), "content": .array([.object(["type": .string("text"), "text": .string(e)])])])
         }
+        if replies[name] == nil, name == "ticket_draft_write" { writeDraft(arguments) }
+        if replies[name] == nil, name == "ticket_drafts" || name == "ticket_draft_write" {
+            return .object(["structuredContent": .object(["drafts": .object(drafts)])])
+        }
         return .object(["structuredContent": replies[name] ?? .object([:])])
+    }
+
+    /// `WriteTicketDraft`'s rule (internal/wakilcore/ticketdrafts.go): no text removes; an agent's draft
+    /// over the operator's keeps the operator's text in `replaced`, an operator's clears it.
+    private func writeDraft(_ arguments: JSONValue) {
+        guard case .object(let a) = arguments, case .string(let thread)? = a["thread"] else { return }
+        func text(_ o: [String: JSONValue]?, _ k: String) -> String { if case .string(let s)? = o?[k] { s } else { "" } }
+        let body = text(a, "text"), by = text(a, "by")
+        guard !body.isEmpty else { drafts[thread] = nil; return }
+        var replaced = ""
+        if by == "agent", case .object(let old)? = drafts[thread] {
+            replaced = text(old, "by") == "operator" ? text(old, "text") : text(old, "replaced")
+        }
+        drafts[thread] = .object(["text": .string(body), "by": .string(by), "conversation": .string(text(a, "conversation")),
+                                  "root": .string(text(a, "root")), "branch": .string(text(a, "branch")),
+                                  "at": .string(ISO8601DateFormatter().string(from: Date())), "replaced": .string(replaced)])
     }
 }
 
@@ -388,7 +421,8 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         await fake.set("ticket_branch", ticketBranchJSON())
         await fake.setSlowBranch(true)
         let store = EditorTicketStore(ticket: fake)
-        await store.setDraft(thread: "T2", text: "Fixed in the next push")
+        try await store.setDraft(thread: "T2", text: "Fixed in the next push", by: "operator", conversation: nil,
+                                 root: nil, branch: nil)
         let read = Task { try await store.read(root: "/p/api") }
         while await fake.count("ticket_branch") == 0 { await Task.yield() }
         await store.reset()
@@ -470,5 +504,56 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(ticketWaitingLine(["you"], threads: 0) == "waiting on you")
         #expect(ticketWaitingLine([], threads: 3) == nil)
         #expect(ticketBranchThreads([pr, pr]).map(\.id) == ["T1", "T2"])
+    }
+
+    // MARK: Ticket noticing, Task 4 — drafts survive a quit and say who wrote them
+
+    /// A relaunch is a new store: its drafts are read back from the organisation's file, author and
+    /// conversation with them; Go's empty strings read as absent.
+    @Test func draftsSurviveANewStore() async throws {
+        let fake = FakeTicket()
+        await fake.seedDraft("T2", text: "Named the host in the error", by: "agent", conversation: "c1")
+        let store = EditorTicketStore(ticket: fake)
+        try await store.loadDrafts()
+        #expect(await store.draft(thread: "T2") == "Named the host in the error")
+        #expect(await store.allDrafts() == ["T2": "Named the host in the error"])
+        let d = try #require(await store.draftRecord(thread: "T2"))
+        #expect(d.by == "agent")
+        #expect(d.conversation == "c1")
+        #expect(d.root == nil && d.branch == nil && d.replaced == nil)
+        #expect(d.at == "2026-10-28T10:00:00Z")
+        #expect(await store.allDraftRecords().keys.sorted() == ["T2"])
+    }
+
+    /// An org switch during a slow load: the old organisation's drafts never land; the next load
+    /// reads the new organisation's.
+    @Test(.timeLimit(.minutes(1))) func orgSwitchLoadsTheNewOrgsDrafts() async throws {
+        let fake = FakeTicket()
+        await fake.seedDraft("T2", text: "initech's draft", by: "operator")
+        await fake.setSlowDrafts(true)
+        let store = EditorTicketStore(ticket: fake)
+        let load = Task { try await store.loadDrafts() }
+        while await fake.count("ticket_drafts") == 0 { await Task.yield() }
+        await store.reset()
+        await fake.clearDrafts()
+        await fake.seedDraft("T9", text: "umbrella's draft", by: "operator")
+        await fake.release()
+        try? await load.value
+        #expect(await store.allDrafts()["T2"] == nil)
+        try await store.loadDrafts()
+        #expect(await store.allDrafts() == ["T9": "umbrella's draft"])
+    }
+
+    /// Only an agent's draft carries a caption; only a replaced one says so, with Restore yours.
+    @Test func captionForAgentDraftOnly() {
+        let now = ISO8601DateFormatter().date(from: "2026-10-28T10:01:00Z")!
+        let agent = TicketDraftState(text: "x", by: "agent", at: "2026-10-28T10:00:00Z", conversation: "c1")
+        let mine = TicketDraftState(text: "x", by: "operator", at: "2026-10-28T10:00:00Z")
+        #expect(ticketDraftCaption(agent, now: now) == "Drafted by agent · 1 min ago")
+        #expect(ticketDraftCaption(mine, now: now) == nil)
+        #expect(ticketDraftReplacedLine(agent) == nil)
+        var replaced = agent
+        replaced.replaced = "my words"
+        #expect(ticketDraftReplacedLine(replaced) == "Agent replaced your draft · Restore yours")
     }
 }

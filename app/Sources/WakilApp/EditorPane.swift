@@ -613,7 +613,8 @@ struct EditorPane: View {
     // MARK: - Review boxes
 
     /// A review box's control, as the registry action every caller uses (Invariant 2): the draft
-    /// kept on blur and dropped by Discard (`review_reply_draft`), Send (`review_reply_send`, gated:
+    /// kept on blur and dropped by Discard (`review_reply_draft`), Restore yours
+    /// (`review_reply_draft_restore`), Send (`review_reply_send`, gated:
     /// the plane shows the text and the thread's place), Resolve and Unresolve (`review_resolve`), and
     /// ⌥↓ / ⌥↑ from the box (`review_step` from that thread). A Send is drawn as sending from the press
     /// until its dispatch — the plane included — is over, and is not pressed twice (Rule 5).
@@ -625,6 +626,10 @@ struct EditorPane: View {
                 await dispatch("review_reply_draft", ["thread": .string(thread), "text": text.map { .string($0) } ?? .null])
             case "discard":
                 await dispatch("review_reply_draft", ["thread": .string(thread), "text": .null])
+            case "restore":
+                // **Restore yours**: one click, no question (Rule 1) — the agent's draft it replaces was
+                // the later value, and the operator's own words come back as theirs.
+                await dispatch("review_reply_draft_restore", ["thread": .string(thread)])
             case "send":
                 guard let t, let body = text, !body.isEmpty, host.beginReviewSend(thread) else { return }
                 // The text as sent is the draft until the post succeeds (a failed or refused Send keeps it).

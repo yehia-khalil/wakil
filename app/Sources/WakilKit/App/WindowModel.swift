@@ -2200,6 +2200,8 @@ public final class WindowModel {
             // Settings opens. Launch and an org switch both come here, so
             // this is the one that asks for a probe, after the canvas below.
             await capacity.refresh()
+            // Ticket noticing: the organisation's reply drafts, kept across quits and switches.
+            ticketLoadDrafts()
             contextRead = true
         } catch {
             status = "context: \(error)"
