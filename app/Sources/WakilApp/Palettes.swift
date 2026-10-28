@@ -101,6 +101,9 @@ final class PaletteController {
         case .runCommand(let commandId, _):
             keepRecents()
             run(effect, inFlight: commandId)
+        case .runName:
+            // In flight under the name step's `commandId` (`PaletteModel.inFlight`).
+            run(effect, inFlight: palette.steps.last?.commandId ?? selectedId)
         }
     }
 

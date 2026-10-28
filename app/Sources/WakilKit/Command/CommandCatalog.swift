@@ -98,6 +98,10 @@ public enum CommandInput: Sendable, Equatable {
     /// A genuinely open value. `recentKey` names this window's recent entries, shown as
     /// suggestions and never as a restriction (rule 9).
     case text(placeholder: String, recentKey: String)
+    /// A name for something that already has one (names, Calls made 10): the step arrives filled
+    /// with the shown name, selected; an empty line clears. No recents. The row that offers it
+    /// carries the subject as `.pushName(PaletteRename)`, since only the window knows the name.
+    case name(placeholder: String)
 }
 
 /// Which commands a command sits among: the focused pane's kind's, or the global ones.

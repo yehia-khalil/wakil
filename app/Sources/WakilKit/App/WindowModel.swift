@@ -6793,6 +6793,12 @@ public final class WindowModel {
             }
             return await performPaletteAction(
                 .dispatch(action: command.action, params: command.params(context, value)), mark: mark)
+        case .runName(let action, let params, let name):
+            // The name step's subject, with the typed name (empty clears): names, Calls made 10.
+            var object: [String: JSONValue] = [:]
+            if case .object(let given) = params { object = given }
+            object["name"] = .string(name)
+            return await performPaletteAction(.dispatch(action: action, params: .object(object)), mark: mark)
         case .needChoices, .close:
             return nil
         }
@@ -6863,7 +6869,7 @@ public final class WindowModel {
             }
             await refreshPanes()
             return await focusActedOn(since: before, named: focusedEditorPane(), mark: mark)
-        case .pushStep, .drill:
+        case .pushStep, .drill, .pushName:
             return nil
         }
     }
