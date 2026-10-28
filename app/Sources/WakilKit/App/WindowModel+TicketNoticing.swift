@@ -15,6 +15,11 @@ extension WindowModel {
     /// conversations' states and the organisation's drafts.
     public var ticketNeedsRows: [TicketNeedsRow] {
         guard let ticketNeeds else { return [] }
+        return ticketNeedsRowsOf(ticketNeeds, ticketHandOffLive, editorReviews.reads.draftRecords)
+    }
+
+    /// The live handed conversations' states, by conversation id.
+    private var ticketHandOffLive: [String: TicketHandOffLive] {
         var live: [String: TicketHandOffLive] = [:]
         for c in liveConversationRows() {
             live[c.id] = switch c.state {
@@ -24,7 +29,61 @@ extension WindowModel {
             case .done, .idle: .done
             }
         }
-        return ticketNeedsRowsOf(ticketNeeds, live, editorReviews.reads.draftRecords)
+        return live
+    }
+
+    // MARK: - ⌘P
+
+    /// ⌘P's tickets in flight, most urgent first, from the last In flight read (`ticketNeedsRows`); a PR
+    /// row's words are its own most urgent state.
+    func paletteTickets() -> [PaletteTicket] {
+        let live = ticketHandOffLive, drafts = editorReviews.reads.draftRecords
+        return ticketNeedsRows.map { row in
+            paletteTicket(row, prWords: { r in
+                ticketUrgentState(r, handoffs: live, drafts: r.threads.filter { drafts[$0] != nil }.count).words
+            })
+        }
+    }
+
+    /// The ticket source for `line` as typed (`#` included), over the last In flight read. Its keys are
+    /// the projects' keys the read holds (`INI` of INI-142).
+    func paletteTicketSource(line: String) -> TicketSource {
+        let tickets = paletteTickets()
+        return TicketSource(tickets: { tickets }, query: { line }, keys: paletteTicketKeys(tickets))
+    }
+
+    private func paletteTicketKeys(_ tickets: [PaletteTicket]) -> [String] {
+        var keys: [String] = []
+        for k in tickets.compactMap(\.key) {
+            guard let dash = k.lastIndex(of: "-") else { continue }
+            let prefix = String(k[..<dash])
+            if !keys.contains(prefix) { keys.append(prefix) }
+        }
+        return keys
+    }
+
+    /// Whether `line` reads In flight when its read is over 60 s old (spec, *When it reads*): it starts
+    /// with `#`, or holds a key-shaped word.
+    func paletteLineReadsTickets(_ line: String) -> Bool {
+        if line.hasPrefix("#") { return true }
+        let tickets = paletteTickets()
+        let keys = paletteTicketKeys(tickets), numbers = Set(tickets.flatMap(\.numbers))
+        return PaletteSearch.words(line).contains { paletteKeyShaped($0, projectKeys: keys, numbers: numbers) }
+    }
+
+    /// ⌘P's ticket rows for an open-mode line just typed, from the last read — at once, so typing never
+    /// waits. A `#` or key-shaped line whose read is over 60 s old reads In flight (joined to a read in
+    /// flight), and `landed` gets the line's rows again when that read changed them.
+    public func paletteTicketsTyped(line: String, landed: @escaping @MainActor ([PaletteEntry]) -> Void) -> [PaletteEntry] {
+        let rows = paletteTicketSource(line: line).entries(paletteTickets())
+        guard paletteLineReadsTickets(line) else { return rows }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.ticketNeedsRead(force: false)
+            let fresh = self.paletteTicketSource(line: line).entries(self.paletteTickets())
+            if fresh != rows { landed(fresh) }
+        }
+        return rows
     }
 
     /// The Mac's screen locked or unlocked (`com.apple.screenIsLocked` / `…Unlocked`): the 2-minute
@@ -85,4 +144,35 @@ extension WindowModel {
             await self?.ticketNeedsRead(force: true)
         }
     }
+}
+
+/// One `ticketNeedsRows` row as ⌘P reads it: title `INI-142  Login org page` (a keyless PR by its name,
+/// `#215 · api`), its number and its PRs' for a bare-number match, PR rows `#212 ini-142-login` under a
+/// keyed ticket, `ticket_open`'s params (`ticketOpenParams`), and ⌘↩'s hand-off from the header — none
+/// when no project holds its branch, since an agent needs a root. The PR rows carry no `→ base`: the In
+/// flight read does not name a PR's base.
+public func paletteTicket(_ row: TicketNeedsRow, prWords: (InFlightRowState) -> String) -> PaletteTicket {
+    let name = ticketNeedsRowName(row)
+    let title = row.title.isEmpty ? name : "\(name)  \(row.title)"
+    var numbers: [Int] = []
+    if let key = row.key, let dash = key.lastIndex(of: "-"), let n = Int(key[key.index(after: dash)...]) { numbers.append(n) }
+    var prs: [PaletteTicketPR] = []
+    for r in row.rows where r.pr > 0 {
+        if !numbers.contains(r.pr) { numbers.append(r.pr) }
+        let id = "\(r.repo)#\(r.pr)"
+        guard row.key != nil, !prs.contains(where: { $0.id == id }) else { continue }
+        let one = TicketNeedsRow(id: row.id, key: row.key, title: row.title, urgent: row.urgent, rows: [r],
+                                 activity: r.activity, openable: !r.root.isEmpty)
+        prs.append(PaletteTicketPR(
+            id: id, title: r.branch.isEmpty ? ticketRowName(key: "", repo: r.repo, pr: r.pr) : "#\(r.pr) \(r.branch)",
+            words: prWords(r), open: ticketOpenParams(one)))
+    }
+    let open = ticketOpenParams(row)
+    var handOff: JSONValue?
+    if row.openable, case .object(var o) = open {
+        o["from"] = .string("header")
+        handOff = .object(o)
+    }
+    return PaletteTicket(id: row.id, title: title, words: row.urgent.words, key: row.key, numbers: numbers, prs: prs,
+                         open: open, handOff: handOff, tier: row.urgent.tier, activity: row.activity)
 }

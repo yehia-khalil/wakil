@@ -6664,16 +6664,17 @@ public final class WindowModel {
             activeGitRoot: activeBranchRoot?.root, editorActiveConflicted: editorActiveConflicted)
     }
 
-    /// The root list for `mode`: ⌘K's catalog for the context now, or ⌘P's sources.
+    /// The root list for `mode`: ⌘K's catalog for the context now, ⌘P's sources, or — after a
+    /// leading `#` — the tickets in flight alone.
     ///
     /// **Every call is a new generation** (P7 a): a source that answers after this returns
     /// reaches `onLate` with the whole list — but only while this is still the latest build and
     /// the palette has not closed. A ⌘P whose tables came from the cache asks `wakil-db` again
     /// in the background (P7 d), and the fresh tables arrive the same way.
     public func paletteRootEntries(
-        mode: PaletteMode, onLate: @escaping @Sendable ([PaletteEntry]) -> Void
+        mode: PaletteMode, line: String = "", onLate: @escaping @Sendable ([PaletteEntry]) -> Void
     ) async -> [PaletteEntry] {
-        await paletteRoot(mode: mode) { onLate($0.rows) }.rows
+        await paletteRoot(mode: mode, line: line) { onLate($0.rows) }.rows
     }
 
     /// One root list and the generation it was built under: what the controller holds on screen
@@ -6686,8 +6687,12 @@ public final class WindowModel {
     /// `paletteRootEntries`, with each delivery's generation. **The rows are stamped as they are
     /// delivered** — here, and for a late source or a table refresh in `paletteLate` and
     /// `paletteTablesRefreshed` — never when the build begins.
+    ///
+    /// `line` is the line as typed, for the ticket source's rows (`TicketSource`). In `.tickets` mode the
+    /// rows come from the last In flight read at once; a read over 60 s old is made, and its rows land
+    /// late through `paletteLate`, as a slow source's do.
     public func paletteRoot(
-        mode: PaletteMode, onLate: @escaping @Sendable (PaletteRoot) -> Void
+        mode: PaletteMode, line: String = "", onLate: @escaping @Sendable (PaletteRoot) -> Void
     ) async -> PaletteRoot {
         paletteGeneration += 1
         let generation = paletteGeneration
@@ -6697,9 +6702,20 @@ public final class WindowModel {
         if generation == paletteGeneration {
             paletteBuilding = (generation, identity, context)
         }
-        guard mode == .open else {
+        if mode == .commands {
             let rows = CommandCatalog.entries(for: context)
             paletteDelivered(generation)
+            return PaletteRoot(generation: generation, rows: rows)
+        }
+        if mode == .tickets {
+            let rows = await paletteTicketSource(line: "#").entries()
+            paletteDelivered(generation)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.ticketNeedsRead(force: false)
+                let fresh = await self.paletteTicketSource(line: "#").entries()
+                if fresh != rows { self.paletteLate(fresh, generation: generation, onLate: onLate) }
+            }
             return PaletteRoot(generation: generation, rows: rows)
         }
 
@@ -6709,7 +6725,7 @@ public final class WindowModel {
         let late: @Sendable ([PaletteEntry]) -> Void = { [weak self] rows in
             Task { @MainActor in self?.paletteLate(rows, generation: generation, onLate: onLate) }
         }
-        let rows = await openModeEntries(paletteOpenSources(tables: tables?.source), onLate: late)
+        let rows = await openModeEntries(paletteOpenSources(tables: tables?.source, line: line), onLate: late)
         if generation == paletteGeneration, paletteLatest?.generation != generation {
             paletteLatest = (generation, rows)
         }
@@ -6986,6 +7002,14 @@ public final class WindowModel {
             apiSendRequestToken += 1
             apiSendRequests[value("pane")] = apiSendRequestToken
             return nil
+        case "window.ticketHandOff":
+            // ⌘↩ on a ticket or PR row: the ticket opens on its Ticket view, then the hand-off popover
+            // opens from its header (`ticket_hand_off_open`).
+            guard case .object(let o) = params, let open = o["open"], let handOff = o["handOff"] else {
+                return "window.ticketHandOff needs open and handOff"
+            }
+            if let error = await paletteDispatch("ticket_open", open, mark: mark) { return error }
+            return await dispatchLayout("ticket_hand_off_open", handOff) != nil ? nil : paletteFailure(since: mark)
         case "ctx_set_environment":
             return await setEnvironment(value("name")) ? nil : paletteFailure(since: mark)
         case "ctx_set_project":
@@ -7013,14 +7037,15 @@ public final class WindowModel {
             // A changed file names no pane (3b-iii): the editor pane it went to is the one acted on,
             // by `editor_changes_select`'s own rule — the focused editor pane, else the first.
             let named = optionalString(params, "pane") ?? optionalString(params, "id")
-                ?? (name == "editor_changes_select" ? focusedEditorPane() : nil)
+                ?? (name == "editor_changes_select" || name == "ticket_open" ? focusedEditorPane() : nil)
             return await focusActedOn(since: before, named: named, mark: mark)
         }
     }
 
     /// The palette's actions that open a pane when they name none. `editor_changes_select` (3b-iii)
     /// opens an editor pane when there is none, as the Git pane it replaced was opened.
-    private static let paletteOpensAPane: Set<String> = ["db_read_table", "api_open", "editor_changes_select"]
+    /// `ticket_open` opens one the same way when there is none.
+    private static let paletteOpensAPane: Set<String> = ["db_read_table", "api_open", "editor_changes_select", "ticket_open"]
 
     /// Drops a Send request whose pane has closed.
     private func pruneApiSendRequests() {
@@ -7101,8 +7126,8 @@ public final class WindowModel {
         }
     }
 
-    /// ⌘P's sources, in group order.
-    private func paletteOpenSources(tables: TablesSource?) -> [any PaletteSource] {
+    /// ⌘P's sources, in group order. The ticket source answers nothing for an empty `line`.
+    private func paletteOpenSources(tables: TablesSource?, line: String) -> [any PaletteSource] {
         // Read now, on the main actor: the live set as the palette opens.
         let running = liveConversationRows()
         var sources: [any PaletteSource] = [
@@ -7124,6 +7149,7 @@ public final class WindowModel {
         if let fileSource, editorFocused { sources.append(fileSource) }
         sources.append(changed)
         if let fileSource, !editorFocused { sources.append(fileSource) }
+        sources.append(paletteTicketSource(line: line))
         sources.append(ItemsSource.projects(
             organisation: { [weak self] in await self?.organization ?? "" },
             read: { [weak self] org in await self?.currentOrganisationProjects(org) ?? ([], nil) }))

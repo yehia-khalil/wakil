@@ -6,7 +6,10 @@ public enum PaletteGroup: Int, Sendable, Comparable, CaseIterable {
     /// Live conversations, above everything (conversations 2 of 3): -1, so no other group's
     /// value moves.
     case running = -1
-    case openPanes = 0, newPane, resources, projects, sessions, providers, commands, choices
+    case openPanes = 0, newPane, resources
+    /// Tickets in flight (ticket noticing): after files and tables, before projects.
+    case tickets
+    case projects, sessions, providers, commands, choices
 
     public static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 
@@ -17,6 +20,7 @@ public enum PaletteGroup: Int, Sendable, Comparable, CaseIterable {
         case .openPanes: "Open panes"
         case .newPane: "New pane"
         case .resources: "Resources"
+        case .tickets: "Tickets"
         case .projects: "Projects"
         case .sessions: "Sessions"
         case .providers: "Providers"
@@ -24,6 +28,15 @@ public enum PaletteGroup: Int, Sendable, Comparable, CaseIterable {
         case .choices: "Choices"
         }
     }
+}
+
+/// Where a row ranks against the others whatever its score (`PaletteSearch.rank`): a ticket matched
+/// by its key or a number above every row, Running included; a ticket matched by words after the
+/// last file or table and before projects; every other row by score. Higher first.
+public enum PaletteTier: Int, Sendable, Comparable {
+    case belowResources = -1, ordinary = 0, key = 1
+
+    public static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 }
 
 /// What choosing a row does. The palette view switches on this and nothing
@@ -68,11 +81,18 @@ public struct PaletteEntry: Sendable, Equatable, Identifiable {
     public var isDimmed: Bool
     /// A live conversation's row draws its state's dot; every other row is nil and draws none.
     public var state: ConversationState?
+    /// Ranked by this before score (`PaletteTier`).
+    public var tier: PaletteTier
+    /// What ⌘↩ runs on this row, and the footer's words for it (`⌘↩ hand to agent`); nil on a row
+    /// ⌘↩ does nothing for.
+    public var altAction: PaletteAction?
+    public var altVerb: String?
 
     public init(
         id: String, group: PaletteGroup, title: String, subtitle: String, kindLabel: String,
         verb: String, action: PaletteAction, isProduction: Bool = false, isError: Bool = false,
-        isCaution: Bool = false, isDimmed: Bool = false, state: ConversationState? = nil
+        isCaution: Bool = false, isDimmed: Bool = false, state: ConversationState? = nil,
+        tier: PaletteTier = .ordinary, altAction: PaletteAction? = nil, altVerb: String? = nil
     ) {
         self.id = id
         self.group = group
@@ -86,5 +106,8 @@ public struct PaletteEntry: Sendable, Equatable, Identifiable {
         self.isCaution = isCaution
         self.isDimmed = isDimmed
         self.state = state
+        self.tier = tier
+        self.altAction = altAction
+        self.altVerb = altVerb
     }
 }

@@ -430,7 +430,7 @@ is the same switch, undone by deleting it. `Palette.dc.html` is the artboard.
   The header names the step; Esc pops one step, then closes. Production is red wherever it
   is a choice.
 - **Search is words, not syntax:** every word must hit the title, subtitle or kind label,
-  in any order (`catalog api`, `catalog db`). The only special character is `>`.
+  in any order (`catalog api`, `catalog db`). The only special characters are `>` and `#`.
 - **After a run** the plane closes and focus goes to the pane acted on. A failure stays
   open with the whole error and the input intact. The operator's own environment switch is
   not confirmed: the gate prices the agent's switch, not this one.

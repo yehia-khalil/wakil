@@ -635,3 +635,136 @@ private func drillStep() -> PaletteModel {
     choice.closing()
     #expect(choice.recents.isEmpty)
 }
+
+@Suite struct PaletteModelTicketTests {
+    /// ⌘P over today's rows plus a file whose name starts with `#`.
+    private func cmdPWithHashFile() -> PaletteModel {
+        var m = PaletteModel(mode: .open)
+        m.rootEntries = openRows + [
+            PaletteEntry(id: "editorfile:/src/api/#notes.md", group: .resources, title: "#notes.md", subtitle: "api",
+                         kindLabel: "file", verb: "open", action: .openInEditor(path: "/src/api/#notes.md")),
+        ]
+        return m
+    }
+
+    /// `#` is a mode: the window hands it the ticket source's rows alone, and they list as given.
+    @Test func hashListsTicketsAlone() async {
+        var m = cmdPWithHashFile()
+        m.type("#")
+        #expect(m.mode == .tickets)
+        #expect(m.line == "#")
+        #expect(m.rootStale)
+        m.contextChanged(rootEntries: await paletteTicketSource("#").entries())
+        #expect(m.results.map(\.id) == ["ticket:INI-142", "ticket:initech/api#215", "ticket:INI-150", "ticket:INI-160"])
+        #expect(m.placeholder == "tickets in flight…")
+    }
+
+    /// The words after `#` filter the tickets, keeping their urgency order rather than ranking by score.
+    @Test func hashFiltersByWords() async {
+        var m = cmdPWithHashFile()
+        m.type("#")
+        m.contextChanged(rootEntries: await paletteTicketSource("#").entries())
+        m.type("#login")
+        #expect(m.query == "login")
+        #expect(m.results.map(\.id) == ["ticket:INI-142", "ticket:INI-160"])
+        m.type("#zzz")
+        #expect(m.results.map(\.id) == ["no-results"])
+    }
+
+    /// Deleting the `#` returns to the ordinary list with the words kept, as `>` does.
+    @Test func deletingHashKeepsWords() {
+        var m = cmdPWithHashFile()
+        m.type("#wak")
+        #expect(m.mode == .tickets)
+        m.type("wak")
+        #expect(m.mode == .open)
+        #expect(m.line == "wak")
+        #expect(m.query == "wak")
+        // ⌘P while in `#` mode is also back to open, the words kept.
+        m.type("#wak")
+        m.modeKey(.open)
+        #expect(m.mode == .open)
+        #expect(m.line == "wak")
+    }
+
+    /// Inside a step, in a palette opened with ⌘K, and after `>`, `#` is a literal.
+    @Test func hashLiteralInAStep() {
+        var step = curlStep()
+        step.type("#x")
+        #expect(step.mode == .commands)
+        #expect(step.query == "#x")
+        var k = cmdK()
+        k.type("#x")
+        #expect(k.mode == .commands)
+        #expect(k.query == "#x")
+        var chevron = cmdP()
+        chevron.type(">#x")
+        #expect(chevron.mode == .commands)
+        #expect(chevron.query == "#x")
+    }
+
+    /// A file whose name starts with `#` is still found by its other words.
+    @Test func fileNamedHashFoundByOtherWords() {
+        var m = cmdPWithHashFile()
+        m.type("notes")
+        #expect(m.mode == .open)
+        #expect(m.results.first?.title == "#notes.md")
+        m.type("api notes")
+        #expect(m.results.contains { $0.title == "#notes.md" })
+    }
+
+    /// Return opens the ticket; ⌘↩ opens it and hands it to an agent from its header.
+    @Test func returnOpensAndCmdReturnHandsOff() async {
+        let ticket = paletteTicketFixtures[0]
+        var m = cmdPWithHashFile()
+        m.type("ini-142")
+        m.replaceTickets(await paletteTicketSource("ini-142").entries())
+        #expect(m.selected?.id == "ticket:INI-142")
+        var alt = m
+        #expect(m.confirm() == .run(.dispatch(action: "ticket_open", params: ticket.open)))
+        #expect(m.confirm() == nil)  // in flight
+        #expect(alt.confirmAlternate() == .run(.dispatch(
+            action: "window.ticketHandOff",
+            params: .object(["open": ticket.open, "handOff": ticket.handOff!]))))
+        #expect(alt.confirmAlternate() == nil)  // in flight
+        #expect(alt.isRunning(alt.selected!))
+        // A PR row hands off its ticket, opening at that PR.
+        var pr = m
+        pr.move(1)
+        #expect(pr.selected?.id == "ticketpr:initech/api#212")
+        #expect(pr.confirmAlternate() == .run(.dispatch(
+            action: "window.ticketHandOff",
+            params: .object(["open": ticket.prs[0].open, "handOff": ticket.handOff!]))))
+        // A later root list (a late source landing) keeps the typed line's ticket rows.
+        m.contextChanged(rootEntries: openRows)
+        #expect(m.results.first?.id == "ticket:INI-142")
+    }
+
+    /// A ticket whose PR no project holds has no ⌘↩.
+    @Test func outsideRowHasNoAlternate() async {
+        var m = cmdP()
+        m.type("#")
+        m.contextChanged(rootEntries: await paletteTicketSource("#").entries())
+        m.type("#audit")
+        #expect(m.selected?.id == "ticket:INI-160")
+        #expect(m.footerAlt == "")
+        #expect(m.confirmAlternate() == nil)
+        #expect(m.footerVerb == "open")
+    }
+
+    /// The footer names ⌘↩ on a ticket or PR row, and nothing on any other row.
+    @Test func footerNamesHandToAgent() async {
+        var m = cmdP()
+        m.type("ini-142")
+        m.replaceTickets(await paletteTicketSource("ini-142").entries())
+        #expect(m.footerVerb == "open")
+        #expect(m.footerAlt == "⌘↩ hand to agent")
+        m.move(1)
+        #expect(m.footerAlt == "⌘↩ hand to agent")
+        m.type("git")
+        m.replaceTickets(await paletteTicketSource("git").entries())
+        #expect(m.selected?.id == "pane:git-1")
+        #expect(m.footerAlt == "")
+        #expect(m.confirmAlternate() == nil)
+    }
+}

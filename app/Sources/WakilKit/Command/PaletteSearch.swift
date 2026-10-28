@@ -18,6 +18,8 @@ public enum PaletteSearch {
         "session": ["session"],
         "provider": ["provider"],
         "command": ["command"],
+        "ticket": ["ticket"],
+        "pull request": ["pr", "pull", "request"],
     ]
 
     /// The query lowercased and split on spaces and tabs.
@@ -188,21 +190,48 @@ public enum PaletteSearch {
     /// An empty query returns `entries` as given. An error row stays visible
     /// while the first word is in its title, so a failing source is not
     /// silently hidden by the search that would have listed it.
+    ///
+    /// **Tiers before score** (`PaletteTier`): `.key` rows — a ticket named by its key or a number,
+    /// and its PRs — come first, in the order given (the ticket, then its PRs), whatever they score;
+    /// the source matched them. `.belowResources` rows rank among themselves by score and are placed
+    /// after the last undimmed file or table, else before the first row of a group after tickets.
     public static func rank(_ entries: [PaletteEntry], query: String) -> [PaletteEntry] {
         let ws = words(query)
         if ws.isEmpty { return entries }
         let folded = ws.map(Word.init)
-        return entries.enumerated()
+        let sorted = entries.enumerated()
             .compactMap { i, e -> (Int, Int, PaletteEntry)? in
                 if let s = score(e, words: folded) { return (s, i, e) }
+                if e.tier == .key { return (0, i, e) }
                 if e.isError, e.title.lowercased().contains(ws[0]) { return (0, i, e) }
                 return nil
             }
-            // Dimmed rows (gitignored files) after every undimmed match, however well they score.
             .sorted { a, b in
+                let ka = a.2.tier == .key, kb = b.2.tier == .key
+                if ka || kb { return ka != kb ? ka : a.1 < b.1 }
+                // Dimmed rows (gitignored files) after every undimmed match, however well they score.
                 if a.2.isDimmed != b.2.isDimmed { return !a.2.isDimmed }
                 return (a.0, -a.1) > (b.0, -b.1)
             }
             .map(\.2)
+        let below = sorted.filter { $0.tier == .belowResources }
+        guard !below.isEmpty else { return sorted }
+        var rest = sorted.filter { $0.tier != .belowResources }
+        let at = rest.lastIndex { $0.group == .resources && !$0.isDimmed }.map { $0 + 1 }
+            ?? rest.firstIndex { $0.tier != .key && ($0.group > .tickets || $0.isDimmed) }
+            ?? rest.count
+        rest.insert(contentsOf: below, at: at)
+        return rest
+    }
+
+    /// The entries that match every word, in the order given: `#`'s tickets keep their urgency order.
+    /// An empty query returns `entries`; an error row stays as in `rank`.
+    public static func filter(_ entries: [PaletteEntry], query: String) -> [PaletteEntry] {
+        let ws = words(query)
+        if ws.isEmpty { return entries }
+        let folded = ws.map(Word.init)
+        return entries.filter { e in
+            score(e, words: folded) != nil || (e.isError && e.title.lowercased().contains(ws[0]))
+        }
     }
 }

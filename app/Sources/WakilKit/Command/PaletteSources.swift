@@ -640,6 +640,161 @@ public struct FilesSource: PaletteSource {
     }
 }
 
+// MARK: - Tickets
+
+/// A pull request of a ticket in flight, as ⌘P lists it under its ticket.
+public struct PaletteTicketPR: Sendable, Equatable {
+    public let id: String
+    /// `#212 ini-142-login`.
+    public let title: String
+    /// Its most urgent state in words.
+    public let words: String
+    /// `ticket_open`'s params, scrolled to this PR.
+    public let open: JSONValue
+
+    public init(id: String, title: String, words: String, open: JSONValue) {
+        self.id = id
+        self.title = title
+        self.words = words
+        self.open = open
+    }
+}
+
+/// One ticket in flight — or a PR with no ticket key — as ⌘P reads it. The window maps its
+/// `ticketNeedsRows` to these, so `Command` holds nothing of the editor.
+public struct PaletteTicket: Sendable, Equatable {
+    public let id: String
+    /// `INI-142  Login org page`; a keyless PR `#215 · api`.
+    public let title: String
+    /// Its most urgent state in words: `#212 · 3 comments`.
+    public let words: String
+    public let key: String?
+    /// The ticket's number (142 of INI-142) and its PRs' numbers: a bare number matching one is key-shaped.
+    public let numbers: [Int]
+    public let prs: [PaletteTicketPR]
+    /// `ticket_open`'s params.
+    public let open: JSONValue
+    /// `ticket_hand_off_open`'s params; nil when no project holds the ticket's branch (an agent needs a root).
+    public let handOff: JSONValue?
+    /// The urgency tier, 1 most urgent, and the newest activity (RFC 3339): `#` lists by these.
+    public let tier: Int
+    public let activity: String
+
+    public init(id: String, title: String, words: String, key: String?, numbers: [Int], prs: [PaletteTicketPR],
+                open: JSONValue, handOff: JSONValue?, tier: Int, activity: String) {
+        self.id = id
+        self.title = title
+        self.words = words
+        self.key = key
+        self.numbers = numbers
+        self.prs = prs
+        self.open = open
+        self.handOff = handOff
+        self.tier = tier
+        self.activity = activity
+    }
+}
+
+/// Whether one query word is key-shaped: a project key's pattern (`ini-142` for key `INI`), or a bare
+/// number equal to a ticket's or a PR's number.
+public func paletteKeyShaped(_ word: String, projectKeys: [String], numbers: Set<Int>) -> Bool {
+    let w = word.lowercased()
+    if !w.isEmpty, w.allSatisfy(\.isASCII), w.allSatisfy(\.isNumber) { return Int(w).map(numbers.contains) ?? false }
+    guard let dash = w.lastIndex(of: "-") else { return false }
+    let prefix = w[..<dash], digits = w[w.index(after: dash)...]
+    guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }) else { return false }
+    return projectKeys.contains { $0.lowercased() == prefix }
+}
+
+/// Tickets in flight, already read — never a search of the PM tool (spec, ⌘P). Its rows depend on the
+/// line as typed (`query`, `#` included):
+///
+/// - **Empty**: nothing, so ⌘P opened empty is exactly today's list.
+/// - **`#…`**: every ticket, by tier then newest activity, no PR rows; the model filters by the words.
+/// - **A key-shaped word** (`paletteKeyShaped`): the ticket it names and its PRs at `.key`, above every
+///   row; every other ticket at `.belowResources`.
+/// - **Words**: every ticket at `.belowResources`, after files and tables, before projects.
+///
+/// Return dispatches `ticket_open`; ⌘↩ `window.ticketHandOff` — `ticket_open`, then
+/// `ticket_hand_off_open` from the ticket's header — on a row whose ticket has a hand-off.
+public struct TicketSource: PaletteSource {
+    public let id = "tickets"
+    public let group = PaletteGroup.tickets
+    private let tickets: @Sendable () async -> [PaletteTicket]
+    private let query: @Sendable () -> String
+    private let keys: [String]
+
+    public init(tickets: @escaping @Sendable () async -> [PaletteTicket], query: @escaping @Sendable () -> String,
+                keys: [String]) {
+        self.tickets = tickets
+        self.query = query
+        self.keys = keys
+    }
+
+    public func entries() async -> [PaletteEntry] {
+        let line = query()
+        if !line.hasPrefix("#"), PaletteSearch.words(line).isEmpty { return [] }
+        return entries(await tickets())
+    }
+
+    /// `entries()` over tickets already in hand: the window's fast path for each line typed.
+    public func entries(_ all: [PaletteTicket]) -> [PaletteEntry] {
+        let line = query()
+        if line.hasPrefix("#") {
+            return Self.byUrgency(all).map { row($0, tier: .ordinary) }
+        }
+        let words = PaletteSearch.words(line)
+        if words.isEmpty { return [] }
+        let numbers = Set(all.flatMap(\.numbers))
+        let keyWords = words.filter { paletteKeyShaped($0, projectKeys: keys, numbers: numbers) }
+        var keyed: [PaletteEntry] = [], others: [PaletteEntry] = []
+        for t in all {
+            let named = keyWords.contains { w in t.key?.lowercased() == w || Int(w).map(t.numbers.contains) == true }
+            if named {
+                keyed.append(row(t, tier: .key))
+                keyed += t.prs.map { prRow($0, of: t) }
+            } else {
+                others.append(row(t, tier: .belowResources))
+            }
+        }
+        return keyed + others
+    }
+
+    private func row(_ t: PaletteTicket, tier: PaletteTier) -> PaletteEntry {
+        PaletteEntry(id: "ticket:\(t.id)", group: group, title: t.title, subtitle: t.words, kindLabel: "ticket",
+                     verb: "open", action: .dispatch(action: "ticket_open", params: t.open), tier: tier,
+                     altAction: Self.handOff(t, open: t.open), altVerb: t.handOff == nil ? nil : Self.handOffVerb)
+    }
+
+    private func prRow(_ pr: PaletteTicketPR, of t: PaletteTicket) -> PaletteEntry {
+        PaletteEntry(id: "ticketpr:\(pr.id)", group: group, title: pr.title, subtitle: pr.words,
+                     kindLabel: "pull request", verb: "open", action: .dispatch(action: "ticket_open", params: pr.open),
+                     tier: .key, altAction: Self.handOff(t, open: pr.open),
+                     altVerb: t.handOff == nil ? nil : Self.handOffVerb)
+    }
+
+    static let handOffVerb = "hand to agent"
+
+    /// ⌘↩: the window runs `open` (`ticket_open`), then `handOff` (`ticket_hand_off_open`).
+    private static func handOff(_ t: PaletteTicket, open: JSONValue) -> PaletteAction? {
+        t.handOff.map { .dispatch(action: "window.ticketHandOff", params: .object(["open": open, "handOff": $0])) }
+    }
+
+    /// By tier, then newest activity first; ties keep the order given.
+    static func byUrgency(_ tickets: [PaletteTicket]) -> [PaletteTicket] {
+        let f = ISO8601DateFormatter()
+        let frac = ISO8601DateFormatter()
+        frac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func date(_ s: String) -> Date { f.date(from: s) ?? frac.date(from: s) ?? .distantPast }
+        return tickets.enumerated().sorted { a, b in
+            if a.element.tier != b.element.tier { return a.element.tier < b.element.tier }
+            let da = date(a.element.activity), db = date(b.element.activity)
+            if da != db { return da > db }
+            return a.offset < b.offset
+        }.map(\.element)
+    }
+}
+
 // MARK: - Projects, sessions, providers
 
 /// What `WindowModel`'s ⌘P readers return: rows, and a note when the listing is incomplete.

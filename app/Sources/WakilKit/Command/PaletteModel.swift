@@ -1,7 +1,8 @@
 import Foundation
 
-/// Which front door the palette is showing: ⌘P's *open or switch to*, or ⌘K's commands.
-public enum PaletteMode: Sendable, Equatable { case open, commands }
+/// Which front door the palette is showing: ⌘P's *open or switch to*, ⌘K's commands, or ⌘P's
+/// tickets in flight alone (a leading `#`).
+public enum PaletteMode: Sendable, Equatable { case open, commands, tickets }
 
 /// One input step a `…` command pushed: its own query line over its own list.
 public struct PaletteStep: Sendable, Equatable {
@@ -52,7 +53,11 @@ public enum PaletteEffect: Sendable, Equatable {
 ///
 /// **`>` switches only in a palette opened with ⌘P**, and only as the first character. Its
 /// commands state remembers the `>` (`line` shows it), and deleting it switches back. In one
-/// opened with ⌘K, or in a step, `>` is a literal.
+/// opened with ⌘K, or in a step, `>` is a literal. **`#` is the same** for `.tickets`: the window
+/// lists `TicketSource` alone, filtered by the words after it in urgency order.
+///
+/// **Ticket rows follow the line** (`replaceTickets`): in open mode the window hands the ticket
+/// source's rows for each line typed, and they stand in for the root list's own until the next.
 ///
 /// **Source row ids are prefixed** (`pane:`, `table:`, `database:`, `project:`, …) so they
 /// never equal a catalog command id: `inFlight` holds both kinds in one set.
@@ -88,6 +93,10 @@ public struct PaletteModel: Sendable, Equatable {
     private let openedIn: PaletteMode
     /// The commands state was entered by a leading `>`.
     private var viaChevron = false
+    /// The tickets state was entered by a leading `#`.
+    private var viaHash = false
+    /// Open mode's ticket rows for the line now, in place of the root list's `.tickets` rows.
+    private var ticketRows: [PaletteEntry]?
     private var rootQuery = ""
     /// The selected row under each pushed step, restored when it pops.
     private var parentSelections: [SavedSelection] = []
@@ -105,8 +114,17 @@ public struct PaletteModel: Sendable, Equatable {
     /// The current line's query: the top step's, else the root's, without a `>` switch.
     public var query: String { steps.last?.query ?? rootQuery }
 
-    /// What the query field shows — the query, with the `>` back in front when it switched modes.
-    public var line: String { steps.isEmpty && viaChevron ? ">" + rootQuery : query }
+    /// What the query field shows — the query, with the `>` or `#` back in front when it switched modes.
+    public var line: String {
+        guard steps.isEmpty else { return query }
+        return viaChevron ? ">" + rootQuery : viaHash ? "#" + rootQuery : rootQuery
+    }
+
+    /// The root's rows: `rootEntries`, with open mode's ticket rows for the line now.
+    public var rootRows: [PaletteEntry] {
+        guard mode == .open, let ticketRows else { return rootEntries }
+        return rootEntries.filter { $0.group != .tickets } + ticketRows
+    }
 
     /// The ranked rows. A choice step lists its choices; a text step lists its recents above a
     /// row for the typed line; the root lists `rootEntries`. A query with words that matches
@@ -114,7 +132,10 @@ public struct PaletteModel: Sendable, Equatable {
     public var results: [PaletteEntry] {
         let q = query
         let hasWords = !PaletteSearch.words(q).isEmpty
-        guard let step = steps.last else { return orNoResults(PaletteSearch.rank(rootEntries, query: q), q, .commands) }
+        guard let step = steps.last else {
+            if mode == .tickets { return orNoResults(PaletteSearch.filter(rootEntries, query: q), q, .tickets) }
+            return orNoResults(PaletteSearch.rank(rootRows, query: q), q, .commands)
+        }
         guard step.isText else { return orNoResults(PaletteSearch.rank(step.choices, query: q), q, .choices) }
         let typed = trimmed(q)
         let suggestions = (recents[recentKey(step) ?? ""] ?? []).filter { $0 != typed }.map { value in
@@ -135,7 +156,11 @@ public struct PaletteModel: Sendable, Equatable {
 
     public var placeholder: String {
         if let step = steps.last { return step.title }
-        return mode == .open ? "open or switch to…" : "run an action…"
+        switch mode {
+        case .open: return "open or switch to…"
+        case .commands: return "run an action…"
+        case .tickets: return "tickets in flight…"
+        }
     }
 
     /// The footer's `⏎ <verb>`: the selected row's. Empty on an error or "No results" row and
@@ -143,6 +168,13 @@ public struct PaletteModel: Sendable, Equatable {
     public var footerVerb: String {
         if steps.isEmpty && rootStale { return "" }
         return selected.map { $0.isError ? "" : $0.verb } ?? ""
+    }
+
+    /// The footer's `⌘↩ <verb>`: the selected root row's alternate (`⌘↩ hand to agent`), or empty
+    /// when ⌘↩ would run nothing.
+    public var footerAlt: String {
+        guard let entry = alternateRow, let verb = entry.altVerb else { return "" }
+        return "⌘↩ \(verb)"
     }
 
     /// Replaces the line's text. Clears the error and resets the selection.
@@ -154,6 +186,10 @@ public struct PaletteModel: Sendable, Equatable {
             mode = .commands
             viaChevron = true
             rootQuery = String(text.dropFirst())
+        } else if openedIn == .open, mode == .open, text.hasPrefix("#") {
+            mode = .tickets
+            viaHash = true
+            rootQuery = String(text.dropFirst())
         } else if viaChevron {
             if text.hasPrefix(">") {
                 rootQuery = String(text.dropFirst())
@@ -162,6 +198,17 @@ public struct PaletteModel: Sendable, Equatable {
                 mode = .open
                 viaChevron = false
                 rootQuery = text
+            }
+        } else if viaHash {
+            if text.hasPrefix("#") {
+                rootQuery = String(text.dropFirst())
+            } else {
+                // The `#` was deleted: back to open, keeping whatever followed it — a `>` in its
+                // place switches on to commands.
+                mode = .open
+                viaHash = false
+                type(text)
+                return
             }
         } else {
             rootQuery = text
@@ -202,6 +249,22 @@ public struct PaletteModel: Sendable, Equatable {
         return .runCommand(commandId: step.commandId, value: entry.id)
     }
 
+    /// ⌘↩ on the selected root row: its alternate (a ticket's hand-off). `nil` when it has none, on an
+    /// error row, while the list is stale, inside a step, or while that row's run is in flight.
+    public mutating func confirmAlternate() -> PaletteEffect? {
+        guard let entry = alternateRow, let action = entry.altAction, !inFlight.contains(entry.id) else { return nil }
+        inFlight.insert(entry.id)
+        return .run(action, step: nil)
+    }
+
+    /// The window's ticket rows for the line now (open mode): they replace the last ones, and the root
+    /// list's own, until the next. The selection stays on its row if it is still listed.
+    public mutating func replaceTickets(_ rows: [PaletteEntry]) {
+        let current = SavedSelection(id: selected?.id, index: selection)
+        ticketRows = rows
+        restore(current)
+    }
+
     /// Esc: pops one step, restoring the parent's query and selection; at the root, `.close`.
     ///
     /// A text step's typed line is never thrown away (rule 2): popping it keeps the line as a
@@ -223,9 +286,10 @@ public struct PaletteModel: Sendable, Equatable {
     /// ⌘P / ⌘K while open: switches mode at the root, keeping the query minus any `>`. Inside a
     /// step it does nothing, so the step's typed input is never thrown away (rule 2).
     public mutating func modeKey(_ mode: PaletteMode) {
-        guard steps.isEmpty, mode != self.mode || viaChevron else { return }
+        guard steps.isEmpty, mode != self.mode || viaChevron || viaHash else { return }
         self.mode = mode
         viaChevron = false
+        viaHash = false
         error = nil
         selection = 0
     }
@@ -276,6 +340,12 @@ public struct PaletteModel: Sendable, Equatable {
     // MARK: - Private
 
     private static let lineId = "line"
+
+    /// The selected root row, when ⌘↩ may act on it.
+    private var alternateRow: PaletteEntry? {
+        guard steps.isEmpty, !rootStale, let entry = selected, !entry.isError, entry.altAction != nil else { return nil }
+        return entry
+    }
 
     /// The first row, except a text step with a typed line selects the line (last).
     private var defaultSelection: Int {
