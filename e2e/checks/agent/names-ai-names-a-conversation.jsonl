@@ -1,0 +1,15 @@
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"{chatStub}"}}}
+{"dispatch":{"action":"ctx_update_org","params":{"id":"e2e-fixture","quickProvider":"qwen"}}}
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"expect":{"journal":{"contains":"\"action\":\"conversation_named\""}}}
+{"do":{"hotkey":"cmd+n"}}
+{"expect":{"tree":"contains","text":"RUNNING"}}
+{"expect":{"tree":"contains","text":"Fixture Named Conversation"}}
+{"do":{"hotkey":"cmd+p"}}
+{"expect":{"tree":"contains","text":"OPEN OR SWITCH TO"}}
+{"expect":{"tree":"contains","text":"Value: Fixture Named Conversation"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"OPEN OR SWITCH TO"}}
