@@ -93,6 +93,24 @@ struct Rail: View {
     /// at rest there is nothing to point at.
     @State private var hoveredRow: String?
 
+    /// Puts the rail away, or, peeked, keeps it out: ⌃⌘R by click. Its tooltip names the key.
+    private var collapseButton: some View {
+        Button {
+            Task { await model.setRailCollapsed(!held) }
+        } label: {
+            Image(systemName: "sidebar.right")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(Color(RailTreatment.textColour))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 8)
+        .help(held ? "Keep Panes Open  ⌃⌘R" : "Hide Panes  ⌃⌘R")
+        .accessibilityLabel(held ? "Keep panes open" : "Hide panes")
+        .accessibilityIdentifier("rail.collapse")
+    }
+
     var body: some View {
         // **A `List`, stripped of its chrome — not a `ScrollView` of rows,
         // which does not receive events here.** This was a `ScrollView` +
@@ -114,19 +132,22 @@ struct Rail: View {
         //
         // The chrome goes by modifier instead: clear row backgrounds, zero
         // insets, no separators, plain style, hidden scroll background.
-        List(model.layoutSnapshot.panes) { pane in
-            row(pane)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
+        VStack(alignment: .trailing, spacing: 0) {
+            collapseButton
+            List(model.layoutSnapshot.panes) { pane in
+                row(pane)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         // Peeked only: the rail is as tall as its rows, on a slab, because out over the canvas its
         // names are read against whatever pane is under them. Shown, both are no-ops by value.
         .padding(.vertical, held ? 8 : 0)
         .frame(width: 220)
-        .frame(maxHeight: held ? CGFloat(model.layoutSnapshot.panes.count) * 40 + 16 : .infinity)
+        .frame(maxHeight: held ? CGFloat(model.layoutSnapshot.panes.count) * 40 + 16 + 24 : .infinity)
         .background {
             if held {
                 UnevenRoundedRectangle(topLeadingRadius: 10, bottomLeadingRadius: 10, style: .continuous)

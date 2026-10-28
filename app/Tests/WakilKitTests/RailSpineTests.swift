@@ -146,9 +146,10 @@ private func eventually(_ condition: @escaping @Sendable () -> Bool) async throw
 
 // MARK: - The spine's treatment
 
-@Test func theSpinesQuietMarksAreFarPlaneAndItsHuedMarksAreNot() {
+@Test func theSpinesQuietMarksAreBrighterThanTheFarPlaneAndItsHuedMarksBrighterStill() {
     let rest = RailTreatment.spineOpacity(working: false, active: false, isMaximized: false)
-    #expect(rest == Plane.far.opacity)
+    #expect(rest == 0.6)
+    #expect(rest > Plane.far.opacity)
     #expect(RailTreatment.spineOpacity(working: false, active: true, isMaximized: false) > rest)
     #expect(RailTreatment.spineOpacity(working: true, active: true, isMaximized: false) == 1)
 }

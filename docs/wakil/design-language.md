@@ -144,11 +144,14 @@ pointer would be interactive far-plane content again at 1.28:1 — half the
 2.35:1 this section already forbids. `Rail.dc.html` draws the deferred state
 with no pointer on it and so does not rule on this; it was settled here.
 
-**The rail collapses, 2026-10-28.** ⌃⌘R puts the rail away to a *spine*: a slim stack of 2 pt
-horizontal marks at the window's right edge, one per open pane in the rail's order, with no label.
+**The rail collapses, 2026-10-28.** ⌃⌘R, or the sidebar glyph at the rail's top right
+(tooltip *Hide Panes ⌃⌘R*), puts the rail away to a *spine*: a row of 3 pt horizontal marks laid
+across in the context line's band at the top right, above the panes and clear of their corner
+controls, one per open pane in the rail's order, with no label.
 The active pane's mark is longer and `#9e82ff`; a working pane's is §5's green and wins, as the
-ticks do; the rest stay on the far plane, so "what is open" and "what is working" are readable
-with the rail put away. Resting the pointer on the spine or the 6 pt edge for 150 ms slides the
+ticks do; the rest sit at 60%, brighter than the far plane so the spine is found at a glance, so "what is open" and "what is working" are readable
+with the rail put away. A click on the spine shows the rail (*Show Panes ⌃⌘R*); on a peeked
+rail the glyph keeps it out. Resting the pointer on the spine or the 6 pt edge for 150 ms slides the
 rail out *over* the canvas, never pushing a pane, promoted to the mid plane as hover does; it
 leaves 300 ms after the pointer does. The entrance is the plane releasing, opacity and blur
 together, plus a few points of travel from the right over §7's 400–600 ms; with Reduce Motion it

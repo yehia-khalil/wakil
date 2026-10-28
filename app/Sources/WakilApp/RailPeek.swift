@@ -65,25 +65,28 @@ struct RailPeek: View {
         let panes = model.layoutSnapshot.panes
         let focused = model.layoutSnapshot.focusedId
         let marks = RailSpine.marks(panes: panes, focusedId: focused)
-        return VStack(alignment: .trailing, spacing: CGFloat(RailSpine.gap)) {
+        // Above the panes, in the context line's band at the top right, laid across: clear of
+        // every pane's own corner controls.
+        return HStack(alignment: .center, spacing: CGFloat(RailSpine.gap)) {
             ForEach(marks) { mark in
                 SpineMarkView(mark: mark, isMaximized: isMaximized)
                     .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: RailTreatment.planeTransition), value: marks.map(\.id))
-        // Clear of the window's edge, and of the parallax's 8 pt either way.
-        .padding(.trailing, 10)
-        .padding(.top, 20)
-        .padding(.bottom, 12)
-        .frame(width: CGFloat(RailSpine.hitWidth), alignment: .trailing)
-        // The far plane's parallax, kept: it is the rail's distance, whether or not it is out.
-        // Outside the hit region for the rail's reason: the region follows what is drawn.
-        .offset(x: parallax.x, y: parallax.y)
-        .contentShape(Rectangle())
-        .onHover { move(.spine, $0) }
-        // Out, the rail carries the marks as its own ticks; they would draw twice.
+        // Out, the rail carries the marks as its own ticks; they would draw twice. Only the marks
+        // go: the hit region stays, or the pointer resting on it would read as leaving (an
+        // invisible view takes no hover) and the rail would go and come back, again and again.
         .opacity(peeking ? 0 : 1)
+        .padding(.horizontal, 10)
+        .frame(height: CGFloat(RailSpine.hitHeight))
+        // The hit region goes up with the marks: `offset` moves only what is drawn, so the region
+        // is set before it and travels with it.
+        .contentShape(Rectangle())
+        .onTapGesture { Task { await model.setRailCollapsed(false) } }
+        .help("Show Panes  ⌃⌘R")
+        .onHover { move(.spine, $0) }
+        .offset(x: parallax.x - 6, y: parallax.y - CGFloat(RailSpine.lift))
         // One element, whatever the marks are: colour and length are not in the accessibility tree.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(RailSpine.label)

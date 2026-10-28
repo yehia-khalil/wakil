@@ -24,18 +24,22 @@ public enum RailSpine {
         public var length: Double { isActive ? RailSpine.activeLength : RailSpine.restLength }
     }
 
-    /// Marks are 2 pt, the same mark as the rail's tick turned across.
-    public static let thickness: Double = 2
+    /// Marks are 3 pt: thicker than the rail's tick, so they read in the context line's band.
+    public static let thickness: Double = 3
     /// A pane that is open and not active.
     public static let restLength: Double = 10
     /// The active pane's, longer so it reads without hue.
     public static let activeLength: Double = 18
     /// Between one mark and the next.
-    public static let gap: Double = 10
+    public static let gap: Double = 6
     /// The strip at the window's right edge that peeks the rail, full height.
     public static let edgeZone: Double = 6
     /// The spine's own hit width: the longest mark plus room to land on it.
     public static let hitWidth: Double = 32
+    /// The spine's hit height, laid across in the context line's band.
+    public static let hitHeight: Double = 24
+    /// How far above the canvas row's top the spine's centre sits: the context line's band.
+    public static let lift: Double = 30
     /// How long the pointer rests before the rail comes out, and how long after it leaves before
     /// the rail goes back. Short in, longer out: a pointer that overshoots the rail's edge does not
     /// lose it.

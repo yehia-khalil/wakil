@@ -120,7 +120,7 @@ public enum RailTreatment {
     public static func spineOpacity(working: Bool, active: Bool, isMaximized: Bool) -> Double {
         if isMaximized { return deferredOpacity }
         if working { return 1.0 }
-        return active ? 0.85 : Plane.far.opacity
+        return active ? 0.95 : 0.6
     }
 
     /// What the peeked rail sits on. Out over the canvas the pane names would be read against
