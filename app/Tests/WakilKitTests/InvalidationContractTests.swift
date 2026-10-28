@@ -106,6 +106,9 @@ private let orgDerived: Set<String> = [
     // SET, not cleared, by `invalidatePalette`: the open palette's steps were read in the org
     // left, so one with no stamp is refused. `paletteClosed` clears it.
     "paletteLeftOrganisation",
+    // Where the palette last opened: a tab's name step answers to it. `invalidatePalette` stamps it
+    // `.organisationLeft`, so a run landing after the switch is refused (names, final review).
+    "paletteOpenedIn",
     // Bumped, not zeroed, by `invalidatePalette`: a late answer asked under the outgoing org's
     // number is dropped, and a zeroed counter would let an old number match again.
     "paletteGeneration",
