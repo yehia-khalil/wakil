@@ -265,6 +265,9 @@ struct PaneTabStrip<Entry: View>: View {
     /// Whether entry `index` keeps its own width in a `.shrink` or `.fixed` strip (3d-i: a group's
     /// chip); the others share what is left. Nil, none does.
     var naturalWidth: ((Int) -> Bool)?
+    /// Whether entry `index` draws its own surface (3d-i walk: a group's tinted pill): no tick, no
+    /// lift or hover fill, a 2 pt inset, and no hairline beside it. Nil, none does.
+    var bare: ((Int) -> Bool)?
     /// A label drawn under one entry; nil, none.
     var tip: PaneStripTip?
 
@@ -525,6 +528,7 @@ struct PaneTabStrip<Entry: View>: View {
     /// chip or lifted under the pointer.
     private func separatorView(after index: Int) -> some View {
         let quiet = [ids[index], ids[index + 1]].contains { $0 == active || $0 == hovered }
+            || (bare?(index) ?? false) || (bare?(index + 1) ?? false)
         return Rectangle()
             .fill(PaneStripStyle.text.opacity(quiet ? 0 : PaneStripStyle.hairline))
             .frame(width: 1, height: PaneStripStyle.separatorHeight)
@@ -542,12 +546,15 @@ struct PaneTabStrip<Entry: View>: View {
     }
 
     private func row(_ id: String, index: Int, width: CGFloat?) -> some View {
-        let on = id == active
-        let lifted = hovered == id
+        let bare = bare?(index) ?? false
+        let on = id == active && !bare
+        let lifted = hovered == id && !bare
         return HStack(spacing: PaneStripStyle.tabGap) {
-            LuminousTick(
-                colour: on ? PaneStripStyle.tick : nil, height: PaneStripStyle.tickHeight,
-                glowRadius: PaneStripStyle.tickGlowRadius)
+            if !bare {
+                LuminousTick(
+                    colour: on ? PaneStripStyle.tick : nil, height: PaneStripStyle.tickHeight,
+                    glowRadius: PaneStripStyle.tickGlowRadius)
+            }
             entry(index, on)
             if width != nil { Spacer(minLength: 0) }
             if lifted, let close, closable?(index) ?? true {
@@ -562,8 +569,8 @@ struct PaneTabStrip<Entry: View>: View {
                 .accessibilityIdentifier(stripIds.close(index))
             }
         }
-        .padding(.leading, PaneStripStyle.tabLeading)
-        .padding(.trailing, PaneStripStyle.tabTrailing)
+        .padding(.leading, bare ? 2 : PaneStripStyle.tabLeading)
+        .padding(.trailing, bare ? 2 : PaneStripStyle.tabTrailing)
         .frame(width: width, height: PaneStripStyle.tabHeight, alignment: .leading)
         .background(entryFill(on ? PaneStripStyle.tabOnFill : (lifted ? PaneStripStyle.tabHoverFill : 0)))
         .overlay {

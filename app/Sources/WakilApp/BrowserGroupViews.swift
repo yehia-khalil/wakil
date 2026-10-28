@@ -136,39 +136,78 @@ struct BrowserEntryPresses {
     }
 }
 
-/// A group's chip (3d-i): an 8 pt dot in its colour and its name at the tab title's size;
-/// collapsed, the tab it shows (`lastOpen`)'s favicon after the name. No ×. While renamed, the
-/// name is the field. The pull-request group shows ↻ while a refresh runs.
+/// A group's header (3d-i walk), one design in both modes: a soft pill tinted with the group's
+/// colour, a solid dot in it, the name in medium weight and the member count in §6's meta style.
+/// Collapsed, up to three of its members' favicons overlap before the count
+/// (`BrowserSnapshot.preview`). In the column it fills the row and leads with a disclosure chevron
+/// that turns 90° as it opens (§7's ease-out; still under Reduce Motion). No ×, no control of its
+/// own: the whole pill is the entry. While renamed, the name is the field. The pull-request group
+/// shows ↻ while a refresh runs; while ⌘R is on its header, the pill carries the editing edge.
 struct BrowserGroupChip: View {
     let group: BrowserGroup
-    /// The tab a collapsed group shows, its favicon beside the name.
-    let favicon: NSImage?
-    /// The name drawn (false where the strip is folded: the dot and the favicon only).
+    /// A collapsed group's preview favicons, nil where a tab names none (a globe).
+    var favicons: [NSImage?] = []
+    /// The members, shown in meta style; nil, no count (the folded strip).
+    var count: Int?
+    /// The name drawn (false where the strip is folded: the dot and the count only).
     var showsName = true
-    var on = false
+    /// The column's header: the chevron, and the pill fills the row (its name truncating).
+    var column = false
     var refreshing = false
     var renaming = false
+    /// ⌘R acts on this header (the pull-request group's, ruling 19).
+    var focused = false
     var commitName: (String) -> Void = { _ in }
     var endRename: (_ explicit: Bool) -> Void = { _ in }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
+
     static let dot: CGFloat = 8
+    /// The tint: soft at rest, a step stronger under the pointer — still well under the text.
+    static let fill: Double = 0.13
+    static let hoverFill: Double = 0.19
+    /// The pill in the strip's 26 pt entry and the column's 28 pt row.
+    static let stripHeight: CGFloat = 22
+    static let columnHeight: CGFloat = 24
+    /// The leading inset; in the column the chevron's box follows it, then the dot (whose centre the
+    /// members' line runs under — `BrowserTabColumn.lineX`).
+    static let leading: CGFloat = 6
+    static let chevronBox: CGFloat = 12
+    static let spacing: CGFloat = 6
+    /// The name over the tint: cool white, one step under full (§5's text rule).
+    static let nameOpacity: Double = 0.92
+    /// §7: eased out, never snappy; the value-materialising beat.
+    static let turn: Double = 0.25
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(group.colour.colour)
+        let tint = group.colour.colour
+        HStack(spacing: Self.spacing) {
+            if column {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: BrowserPaneStyle.closeGlyph - 1, weight: .bold))
+                    .foregroundStyle(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
+                    .rotationEffect(.degrees(group.collapsed ? 0 : 90))
+                    .animation(reduceMotion ? nil : .easeOut(duration: Self.turn), value: group.collapsed)
+                    .frame(width: Self.chevronBox)
+                    .accessibilityHidden(true)
+            }
+            Circle().fill(tint)
                 .frame(width: Self.dot, height: Self.dot)
                 .accessibilityHidden(true)
             if renaming {
                 BrowserGroupNameField(group: group, commit: commitName, end: endRename)
             } else if showsName {
                 Text(group.name)
-                    .font(.system(size: BrowserPaneStyle.tabTitleSize))
+                    .font(.system(size: BrowserPaneStyle.tabTitleSize, weight: .medium))
                     .lineLimit(1)
-                    .fixedSize()
-                    .foregroundStyle(BrowserPaneStyle.text.opacity(on ? 1 : PaneStripStyle.tabTitleRest))
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: !column, vertical: false)
+                    .foregroundStyle(BrowserPaneStyle.text.opacity(Self.nameOpacity))
             }
-            if group.collapsed {
-                BrowserFavicon(image: favicon)
+            if column { Spacer(minLength: 0) }
+            if group.collapsed, !favicons.isEmpty {
+                BrowserFaviconStack(images: favicons, tint: tint.opacity(hovered ? Self.hoverFill : Self.fill))
             }
             if group.kind == .pullRequests, refreshing {
                 Image(systemName: "arrow.triangle.2.circlepath")
@@ -178,12 +217,57 @@ struct BrowserGroupChip: View {
                     .accessibilityLabel("Refreshing")
                     .accessibilityIdentifier("browser.group.\(group.id).refreshing")
             }
+            if let count {
+                Text("\(count)")
+                    .font(.system(size: BrowserPaneStyle.metaSize, design: .monospaced).monospacedDigit())
+                    .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityHidden(true)
+            }
         }
+        .padding(.leading, Self.leading)
+        .padding(.trailing, Self.leading + 2)
+        .frame(maxWidth: column ? .infinity : nil, alignment: .leading)
+        .frame(height: column ? Self.columnHeight : Self.stripHeight)
+        .background(Capsule(style: .continuous).fill(tint.opacity(hovered ? Self.hoverFill : Self.fill)))
+        .overlay {
+            if focused {
+                Capsule(style: .continuous)
+                    .strokeBorder(BrowserPaneStyle.tick.opacity(BrowserPaneStyle.fieldEditingEdge), lineWidth: 1)
+            }
+        }
+        .animation(.easeOut(duration: PaneStripStyle.hoverDuration), value: hovered)
+        .onHover { hovered = $0 }
     }
 
     /// The chip's tooltip and spoken name.
     static func label(_ group: BrowserGroup) -> String {
         "\(group.name), group, \(group.collapsed ? "collapsed" : "expanded")"
+    }
+}
+
+/// A collapsed group's members, up to three favicons overlapping, the first on top. Each sits on a
+/// small square of the pill's own surface, so where they overlap the edge reads as a cut, not a smear.
+struct BrowserFaviconStack: View {
+    let images: [NSImage?]
+    /// The pill's tint, laid over the slab under each favicon.
+    let tint: Color
+
+    static let overlap: CGFloat = 5
+
+    var body: some View {
+        HStack(spacing: -Self.overlap) {
+            ForEach(Array(images.enumerated()), id: \.offset) { i, image in
+                BrowserFavicon(image: image)
+                    .padding(1.5)
+                    .background(RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                        .fill(PaneStripStyle.slab)
+                        .overlay(RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(tint)))
+                    .zIndex(Double(images.count - i))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

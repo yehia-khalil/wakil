@@ -446,15 +446,19 @@ public enum BrowserGroupKind: String, Codable, Sendable {
 public enum BrowserGroupColour: String, Codable, Sendable, CaseIterable {
     case blue, steel, teal, sand, stone, smoke
 
-    /// `0xRRGGBB`.
+    /// `0xRRGGBB`. Muted, but each a hue (3d-i walk): the first six sat at 6–25% saturation, five of
+    /// them within 20° of one another, and read as grey on the dark chrome — every group dot looked
+    /// alike. These are 20–50% saturated and stay clear of §5's reserved hues — violet (252°),
+    /// amber (38°), red (0°), green (163°) — by hue and by being half as saturated as any of them:
+    /// sand is khaki beside the amber, stone clay beside the red (`BrowserStoreTests`).
     public var hex: UInt32 {
         switch self {
-        case .blue: return 0x7f97b2
-        case .steel: return 0x8d98a8
-        case .teal: return 0x77a0a3
-        case .sand: return 0xad9f86
-        case .stone: return 0xa0938b
-        case .smoke: return 0x9b9da6
+        case .blue: return 0x75a0d1   // 212° 50% 64%
+        case .steel: return 0x9aa2cb  // 230° 32% 70%
+        case .teal: return 0x6ab1b9   // 186° 36% 57%
+        case .sand: return 0xbfb67d   //  52° 34% 62%
+        case .stone: return 0xbf9c88  //  22° 30% 64%
+        case .smoke: return 0xbf9bb6  // 316° 22% 68%
         }
     }
 

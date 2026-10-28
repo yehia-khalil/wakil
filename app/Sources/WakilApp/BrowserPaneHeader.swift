@@ -258,8 +258,8 @@ struct BrowserTabCount: View {
 /// Every press is a `browser_*` action (Invariant 2): select, close, `browser_move_tab` for a drag
 /// (Safari's behaviours kept), ⌘T's `browser_new_tab` on the ＋.
 ///
-/// **Groups (3d-i).** Each group's chip (`BrowserGroupChip`, its own width, no ×) leads its tabs,
-/// which carry a 2 pt line in its colour; a collapsed group is its chip alone, but for the active tab when it is the group's, which stays beside it (`BrowserSnapshot.showsTab`). A click on a chip
+/// **Groups (3d-i).** Each group's tinted pill (`BrowserGroupChip`, its own width, no ×, no tick)
+/// leads its tabs, which carry a 2 pt line in its colour; a collapsed group is its chip alone, but for the active tab when it is the group's, which stays beside it (`BrowserSnapshot.showsTab`). A click on a chip
 /// collapses or expands it at once (rename is the group menu's) — and
 /// puts the group's header under the keyboard's ⌘R (`browserHeaderFocus`); a click on a tab takes
 /// it away. A drag into a group's run joins it, out of it leaves it (`BrowserStripEntries.move`).
@@ -336,6 +336,7 @@ struct BrowserTabList: View {
             canMove: { from, to in list.move(from: from, to: to) != nil },
             underline: { list.underline($0) },
             naturalWidth: { if case .chip = entries[$0] { true } else { false } },
+            bare: { if case .chip = entries[$0] { true } else { false } },
             tip: closeArmed.flatMap { tab in
                 list.index(ofTab: tab).map {
                     PaneStripTip(index: $0, text: BrowserPinnedClose.tip, identifier: "browser.tab.\(tab).closeTip")
@@ -363,10 +364,14 @@ struct BrowserTabList: View {
         }
     }
 
+    /// The group's tinted pill (`BrowserGroupChip`), the column header's design: dot, name and —
+    /// with room for whole entries — the member count; collapsed, its members' favicons overlap.
     private func chip(_ g: BrowserGroup, active: Bool) -> some View {
         BrowserGroupChip(
-            group: g, favicon: g.lastOpen.flatMap { favicon($0) }, showsName: mode == .full, on: active,
+            group: g, favicons: snapshot.preview(of: g.id).map { favicon($0) },
+            count: mode == .full ? snapshot.members(of: g.id).count : nil, showsName: mode == .full,
             refreshing: g.kind == .pullRequests && menus.refreshing, renaming: renaming == g.id,
+            focused: headerFocus == g.id && g.kind == .pullRequests,
             commitName: { name in
                 dispatch("browser_group", ["action": .string("rename"), "group": .string(g.id), "name": .string(name)])
             },
@@ -374,15 +379,6 @@ struct BrowserTabList: View {
                 if renaming == g.id { renaming = nil }
                 renameEnded(explicit)
             })
-            // The group header under ⌘R: the address field's editing edge, in the tick's colour.
-            .padding(.horizontal, 3)
-            .padding(.vertical, 2)
-            .overlay {
-                if headerFocus == g.id, g.kind == .pullRequests {
-                    RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius - 1, style: .continuous)
-                        .strokeBorder(BrowserPaneStyle.tick.opacity(BrowserPaneStyle.fieldEditingEdge), lineWidth: 1)
-                }
-            }
     }
 }
 

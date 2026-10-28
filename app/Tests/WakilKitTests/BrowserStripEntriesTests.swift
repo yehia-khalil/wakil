@@ -75,3 +75,60 @@ struct BrowserStripEntriesTests {
         #expect(s.showsTab(s.tabs[2]))
     }
 }
+
+/// 3d-i walk: what a group's header draws beside its name, and the one line down its members.
+@Suite("Browser group header and member runs")
+struct BrowserGroupRunTests {
+    private func tab(_ id: String, group: String? = nil) -> BrowserTab {
+        BrowserTab(id: id, url: "https://\(id).test/", title: id, loaded: true, group: group)
+    }
+
+    private func pane(_ tabs: [BrowserTab], groups: [BrowserGroup], active: String?) -> BrowserSnapshot {
+        BrowserSnapshot(tabs: tabs, active: active, find: nil, downloads: [], closed: [],
+                        nextTab: tabs.count + 1, groups: groups, nextGroup: groups.count + 1)
+    }
+
+    private func own(_ id: String, collapsed: Bool, lastOpen: String? = nil) -> BrowserGroup {
+        BrowserGroup(id: id, name: id, colour: .blue, collapsed: collapsed, lastOpen: lastOpen, kind: .own)
+    }
+
+    @Test func aHeaderCountsEveryMemberShownOrNot() {
+        let s = pane([tab("t1", group: "g1"), tab("t2", group: "g1"), tab("t3", group: "g1"), tab("t4")],
+                     groups: [own("g1", collapsed: true)], active: "t4")
+        #expect(s.members(of: "g1").map(\.id) == ["t1", "t2", "t3"])
+        #expect(s.members(of: "nope").isEmpty)
+    }
+
+    @Test func aCollapsedHeaderPreviewsUpToThreeMembersTheLastOpenFirst() {
+        let s = pane([tab("t1", group: "g1"), tab("t2", group: "g1"), tab("t3", group: "g1"), tab("t4", group: "g1")],
+                     groups: [own("g1", collapsed: true, lastOpen: "t3")], active: nil)
+        #expect(s.preview(of: "g1") == ["t3", "t1", "t2"])
+        let two = pane([tab("t1", group: "g1"), tab("t2", group: "g1")], groups: [own("g1", collapsed: true)], active: nil)
+        #expect(two.preview(of: "g1") == ["t1", "t2"])
+    }
+
+    @Test func eachExpandedGroupIsOneRunOfItsMemberRows() {
+        let s = pane([tab("t1", group: "g1"), tab("t2", group: "g1"), tab("t3", group: "g2"), tab("t4")],
+                     groups: [own("g1", collapsed: false), own("g2", collapsed: false)], active: "t4")
+        // group:g1, t1, t2, group:g2, t3, t4
+        #expect(s.memberRuns == [BrowserMemberRun(group: "g1", rows: 1...2), BrowserMemberRun(group: "g2", rows: 4...4)])
+    }
+
+    @Test func aCollapsedGroupsRunIsItsActiveRowOrNone() {
+        let s = pane([tab("t1", group: "g1"), tab("t2", group: "g1"), tab("t3", group: "g2"), tab("t4", group: "g2")],
+                     groups: [own("g1", collapsed: true), own("g2", collapsed: true)], active: "t4")
+        // group:g1, group:g2, t4
+        #expect(s.memberRuns == [BrowserMemberRun(group: "g2", rows: 2...2)])
+    }
+
+    /// The active row's tick takes the line's place, so the two never stand side by side.
+    @Test func theLineBreaksAtTheActiveRow() {
+        let run = BrowserMemberRun(group: "g1", rows: 1...4)
+        #expect(run.segments(skipping: nil) == [1...4])
+        #expect(run.segments(skipping: 7) == [1...4])
+        #expect(run.segments(skipping: 1) == [2...4])
+        #expect(run.segments(skipping: 3) == [1...2, 4...4])
+        #expect(run.segments(skipping: 4) == [1...3])
+        #expect(BrowserMemberRun(group: "g1", rows: 2...2).segments(skipping: 2).isEmpty)
+    }
+}

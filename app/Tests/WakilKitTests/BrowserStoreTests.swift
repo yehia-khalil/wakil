@@ -274,8 +274,31 @@ private let readPaneKeys: Set<String> = [
     let g = try JSONDecoder().decode(BrowserGroup.self, from: Data(json.utf8))
     #expect(g.kind == .own && g.colour == .blue)
     #expect(g.lastOpen == nil && g.siteKey == nil && g.pin == nil && g.named)
-    #expect(BrowserGroupColour.allCases.map(\.hex) == [0x7f97b2, 0x8d98a8, 0x77a0a3, 0xad9f86, 0xa0938b, 0x9b9da6])
+    #expect(BrowserGroupColour.allCases.map(\.hex) == [0x75a0d1, 0x9aa2cb, 0x6ab1b9, 0xbfb67d, 0xbf9c88, 0xbf9bb6])
     #expect(BrowserGroupColour.allCases.map { $0.rawValue } == ["blue", "steel", "teal", "sand", "stone", "smoke"])
+}
+
+/// 3d-i walk: the swatches read as colours, not grey, and none is near a reserved hue (§5).
+@Test func groupSwatchesAreHuesClearOfTheReservedOnes() {
+    func hsl(_ hex: UInt32) -> (h: Double, s: Double) {
+        let r = Double((hex >> 16) & 0xff) / 255, g = Double((hex >> 8) & 0xff) / 255, b = Double(hex & 0xff) / 255
+        let mx = max(r, g, b), mn = min(r, g, b), l = (mx + mn) / 2, d = mx - mn
+        guard d > 0 else { return (0, 0) }
+        let s = d / (1 - abs(2 * l - 1))
+        var h: Double
+        if mx == r { h = ((g - b) / d).truncatingRemainder(dividingBy: 6) } else if mx == g { h = (b - r) / d + 2 } else { h = (r - g) / d + 4 }
+        h *= 60
+        return (h < 0 ? h + 360 : h, s)
+    }
+    func apart(_ a: Double, _ b: Double) -> Double { let d = abs(a - b).truncatingRemainder(dividingBy: 360); return min(d, 360 - d) }
+    let reserved = [0x7c5cff, 0xe8b45a, 0xe85c5c, 0x8be0c8].map { hsl(UInt32($0)).h }
+    let hues = BrowserGroupColour.allCases.map { hsl($0.hex) }
+    for (c, x) in zip(BrowserGroupColour.allCases, hues) {
+        #expect(x.s >= 0.2, "\(c) reads grey")
+        #expect(reserved.allSatisfy { apart($0, x.h) >= 12 }, "\(c) is near a reserved hue")
+        #expect(x.s <= 0.55, "\(c) is as loud as a status hue")
+    }
+    for i in hues.indices { for j in hues.indices where j > i { #expect(apart(hues[i].h, hues[j].h) >= 14) } }
 }
 
 // MARK: - 3d-i Task 7: tabs placed at the seam

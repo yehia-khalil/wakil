@@ -73,3 +73,56 @@ extension BrowserSnapshot {
     /// group's under its header; the header itself is never the raised one.
     public var stripActive: String? { activeTab?.id }
 }
+
+/// A group's member rows in the tab list (3d-i walk): the entries a group's shown tabs take, one
+/// after another under its header. The vertical column draws ONE line in the group's colour down
+/// them, not a mark per row.
+public struct BrowserMemberRun: Equatable, Sendable {
+    public let group: String
+    /// Indexes into `stripEntries`.
+    public let rows: ClosedRange<Int>
+
+    public init(group: String, rows: ClosedRange<Int>) {
+        self.group = group
+        self.rows = rows
+    }
+
+    /// Where the line is drawn: the run, broken at the active row, whose tick takes the line's place
+    /// there so the two never stand side by side as a double bar.
+    public func segments(skipping active: Int?) -> [ClosedRange<Int>] {
+        guard let active, rows.contains(active) else { return [rows] }
+        var out: [ClosedRange<Int>] = []
+        if active > rows.lowerBound { out.append(rows.lowerBound...(active - 1)) }
+        if active < rows.upperBound { out.append((active + 1)...rows.upperBound) }
+        return out
+    }
+}
+
+extension BrowserSnapshot {
+    /// Every tab of the group, shown or not, in order: the count its header shows.
+    public func members(of group: String) -> [BrowserTab] {
+        tabs.filter { $0.group == group }
+    }
+
+    /// The tabs whose favicons a collapsed group's header shows, overlapping: up to `limit`, the one
+    /// last open first (the tab the group stands for), then the rest in order.
+    public func preview(of group: String, limit: Int = 3) -> [String] {
+        let ids = members(of: group).map(\.id)
+        guard let last = self.group(group)?.lastOpen, ids.contains(last) else { return Array(ids.prefix(limit)) }
+        return Array(([last] + ids.filter { $0 != last }).prefix(limit))
+    }
+
+    /// Each group's member rows in `stripEntries`, in drawn order; a group showing none has no run.
+    public var memberRuns: [BrowserMemberRun] {
+        var out: [BrowserMemberRun] = []
+        for (i, entry) in stripEntries.enumerated() {
+            guard case .tab(let t) = entry, let gid = t.group, group(gid) != nil else { continue }
+            if let last = out.last, last.group == gid, last.rows.upperBound == i - 1 {
+                out[out.count - 1] = BrowserMemberRun(group: gid, rows: last.rows.lowerBound...i)
+            } else {
+                out.append(BrowserMemberRun(group: gid, rows: i...i))
+            }
+        }
+        return out
+    }
+}

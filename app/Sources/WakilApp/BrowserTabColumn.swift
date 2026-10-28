@@ -6,9 +6,9 @@ import WakilKit
 
 /// The vertical tab column (3d-i, ruling 20): with Settings → Browser → Tabs on *Vertical*, the
 /// pane's tabs in a column at its left under the address row, full height; the tab count is its
-/// footer's, beside ＋ *New Tab* (3d-i walk). Rows 28 pt: pinned tabs,
-/// then each group's header and — expanded — its tabs indented 12 pt, then loose tabs, and ＋ at the
-/// bottom. The order and the entries are the strip's (`BrowserStripEntries`), and so are the chip,
+/// footer's, beside ＋ *New Tab* (3d-i walk). Rows 28 pt: pinned tabs, then each group's header —
+/// a pill tinted with its colour — and, expanded, its tabs indented under one line in that colour,
+/// then loose tabs, and ＋ at the bottom. The order and the entries are the strip's (`BrowserStripEntries`), and so are the chip,
 /// the rename field and the menus (`BrowserGroupViews.swift`). A 1 pt divider at its right edge
 /// drags its width, app-wide, 160–360 pt (`BrowserTabColumnRules`).
 ///
@@ -64,6 +64,7 @@ struct BrowserTabColumn: View {
                             row(entry, index: index, list: list)
                         }
                     }
+                    .overlay(alignment: .topLeading) { groupLines(list) }
                     .overlay(alignment: .topLeading) { dropLine(list) }
                     .coordinateSpace(name: Self.space)
                     .padding(.vertical, 4)
@@ -96,20 +97,41 @@ struct BrowserTabColumn: View {
 
     // MARK: Rows
 
+    /// Where a group's line runs, from the column's left: under the header's dot, so the colour
+    /// flows from the dot down its members (`BrowserGroupChip`'s leading, chevron and spacing).
+    static let lineX: CGFloat = rowInset + BrowserGroupChip.leading + BrowserGroupChip.chevronBox
+        + BrowserGroupChip.spacing + BrowserGroupChip.dot / 2
+    /// A member row's chip starts just right of the line, and its favicon in it lines up with the
+    /// group's name in the header.
+    static let memberLead: CGFloat = lineX + 6 - rowInset
+    static let memberInner: CGFloat = BrowserGroupChip.dot / 2 + BrowserGroupChip.spacing - 6
+    /// The line stops this short of a run's ends, and of the active row's tick.
+    static let lineInset: CGFloat = 3
+
     @ViewBuilder
     private func row(_ entry: BrowserStripEntry, index: Int, list: BrowserStripEntries) -> some View {
-        let on = list.active == entry.id
-        let lifted = hovered == entry.id
-        HStack(spacing: PaneStripStyle.tabGap) {
-            LuminousTick(
-                colour: on ? PaneStripStyle.tick : nil, height: PaneStripStyle.tickHeight,
-                glowRadius: PaneStripStyle.tickGlowRadius)
-            switch entry {
-            case .chip(let g): chip(g, on: on)
-            case .tab(let t): tabContent(t, on: on, lifted: lifted)
-            }
+        switch entry {
+        case .chip(let g): interactive(header(g), entry: entry, index: index, list: list)
+        case .tab(let t):
+            interactive(tabRow(t, member: t.group.flatMap { snapshot.group($0) } != nil,
+                               on: list.active == entry.id, lifted: hovered == entry.id),
+                        entry: entry, index: index, list: list)
         }
-        .padding(.leading, leading(entry))
+    }
+
+    /// A tab's row. A loose or pinned tab carries the rail's tick inside its chip; a group's member
+    /// is indented past the group's line and carries none — on the active member the tick stands
+    /// in the line's place (`groupLines`), so the two never sit side by side.
+    private func tabRow(_ t: BrowserTab, member: Bool, on: Bool, lifted: Bool) -> some View {
+        HStack(spacing: PaneStripStyle.tabGap) {
+            if !member {
+                LuminousTick(
+                    colour: on ? PaneStripStyle.tick : nil, height: PaneStripStyle.tickHeight,
+                    glowRadius: PaneStripStyle.tickGlowRadius)
+            }
+            tabContent(t, on: on, lifted: lifted)
+        }
+        .padding(.leading, member ? Self.memberInner : PaneStripStyle.tabLeading - 7)
         .padding(.trailing, 4)
         .frame(maxWidth: .infinity, minHeight: Self.rowHeight, maxHeight: Self.rowHeight, alignment: .leading)
         .background(
@@ -121,17 +143,16 @@ struct BrowserTabColumn: View {
                     .strokeBorder(BrowserPaneStyle.text.opacity(PaneStripStyle.edge), lineWidth: 1)
             }
         }
-        // A grouped tab's 2 pt line in its group's colour, at the indent.
-        .overlay(alignment: .leading) {
-            if let colour = list.underline(index) {
-                RoundedRectangle(cornerRadius: 1).fill(colour)
-                    .frame(width: 2, height: PaneStripStyle.tickHeight)
-                    .padding(.leading, Self.indent / 2)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-        }
         .animation(.easeOut(duration: PaneStripStyle.hoverDuration), value: lifted)
+        .padding(.leading, member ? Self.memberLead : 0)
+    }
+
+    /// What every row shares: its inset, the drag, the press, the middle-click, the hover, the menu,
+    /// the tooltip and how it reads in the accessibility tree.
+    private func interactive(_ content: some View, entry: BrowserStripEntry, index: Int,
+                             list: BrowserStripEntries) -> some View {
+        let on = list.active == entry.id
+        return content
         .padding(.horizontal, Self.rowInset)
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
@@ -172,12 +193,29 @@ struct BrowserTabColumn: View {
         .accessibilityIdentifier(entry.identifier)
     }
 
-    /// The tick's room, and a grouped tab's indent.
-    private func leading(_ entry: BrowserStripEntry) -> CGFloat {
-        if case .tab(let t) = entry, t.group.flatMap({ snapshot.group($0) }) != nil {
-            return PaneStripStyle.tabLeading - 7 + Self.indent
+    /// Each group's ONE line in its colour down its member rows (`BrowserSnapshot.memberRuns`), 2 pt,
+    /// broken at the active member, where the rail's violet tick stands in its place.
+    @ViewBuilder private func groupLines(_ list: BrowserStripEntries) -> some View {
+        let active = list.entries.firstIndex { $0.id == list.active }
+        let runs = snapshot.memberRuns
+        ZStack(alignment: .topLeading) {
+            ForEach(runs, id: \.group) { run in
+                let colour = snapshot.group(run.group)?.colour.colour ?? .clear
+                ForEach(run.segments(skipping: active), id: \.lowerBound) { rows in
+                    RoundedRectangle(cornerRadius: 1).fill(colour)
+                        .frame(width: 2, height: CGFloat(rows.count) * Self.rowHeight - 2 * Self.lineInset)
+                        .offset(x: Self.lineX - 1, y: CGFloat(rows.lowerBound) * Self.rowHeight + Self.lineInset)
+                }
+            }
+            if let active, runs.contains(where: { $0.rows.contains(active) }) {
+                LuminousTick(colour: PaneStripStyle.tick, height: PaneStripStyle.tickHeight,
+                             glowRadius: PaneStripStyle.tickGlowRadius)
+                    .offset(x: Self.lineX - 1,
+                            y: CGFloat(active) * Self.rowHeight + (Self.rowHeight - PaneStripStyle.tickHeight) / 2)
+            }
         }
-        return PaneStripStyle.tabLeading - 7
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder private func tabContent(_ tab: BrowserTab, on: Bool, lifted: Bool) -> some View {
@@ -207,34 +245,22 @@ struct BrowserTabColumn: View {
         }
     }
 
-    private func chip(_ g: BrowserGroup, on: Bool) -> some View {
-        HStack(spacing: 0) {
-            BrowserGroupChip(
-                group: g, favicon: g.lastOpen.flatMap { favicon($0) }, on: on,
-                refreshing: g.kind == .pullRequests && menus.refreshing, renaming: renaming == g.id,
-                commitName: { name in
-                    dispatch("browser_group", ["action": .string("rename"), "group": .string(g.id), "name": .string(name)])
-                },
-                endRename: { explicit in
-                    if renaming == g.id { renaming = nil }
-                    renameEnded(explicit)
-                })
-                .padding(.horizontal, 3)
-                .padding(.vertical, 2)
-                // The group header under ⌘R: the address field's editing edge, in the tick's colour.
-                .overlay {
-                    if headerFocus == g.id, g.kind == .pullRequests {
-                        RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius - 1, style: .continuous)
-                            .strokeBorder(BrowserPaneStyle.tick.opacity(BrowserPaneStyle.fieldEditingEdge), lineWidth: 1)
-                    }
-                }
-            Spacer(minLength: 0)
-            Image(systemName: g.collapsed ? "chevron.right" : "chevron.down")
-                .font(.system(size: BrowserPaneStyle.closeGlyph, weight: .semibold))
-                .foregroundStyle(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
-                .frame(width: PaneStripStyle.closeHit)
-                .accessibilityHidden(true)
-        }
+    /// A group's header: the tinted pill (`BrowserGroupChip`) across the row, its chevron at the
+    /// left, the member count at the right and, collapsed, its members' favicons before it.
+    private func header(_ g: BrowserGroup) -> some View {
+        BrowserGroupChip(
+            group: g, favicons: snapshot.preview(of: g.id).map { favicon($0) },
+            count: snapshot.members(of: g.id).count, column: true,
+            refreshing: g.kind == .pullRequests && menus.refreshing, renaming: renaming == g.id,
+            focused: headerFocus == g.id && g.kind == .pullRequests,
+            commitName: { name in
+                dispatch("browser_group", ["action": .string("rename"), "group": .string(g.id), "name": .string(name)])
+            },
+            endRename: { explicit in
+                if renaming == g.id { renaming = nil }
+                renameEnded(explicit)
+            })
+            .frame(maxWidth: .infinity, minHeight: Self.rowHeight, maxHeight: Self.rowHeight)
     }
 
     /// The pinned tab armed by ⌘W, as the strip names its tip.
