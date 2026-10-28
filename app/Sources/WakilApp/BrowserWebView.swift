@@ -421,7 +421,8 @@ final class BrowserTabDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     /// ⌘-click and middle-click: a new tab behind this one.
     private func opensInBackground(_ action: WKNavigationAction) -> Bool {
-        action.modifierFlags.contains(.command) || action.buttonNumber == 2
+        BrowserLinkOpening.opensInBackground(command: action.modifierFlags.contains(.command),
+                                             buttonNumber: action.buttonNumber)
     }
 
     private func openInBackground(_ url: URL) {
