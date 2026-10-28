@@ -178,6 +178,20 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
 
 // MARK: - Tests
 
+// MARK: - Names: a name step's run after the palette moved
+
+/// Stand-ins for the two rename actions, so a run that is not refused is seen in the journal.
+private let registerRenameDoubles: @Sendable (ActionRegistry, PaneStore, LayoutStore) async -> Void = { registry, _, _ in
+    for name in ["browser_rename_tab", "conversation_rename"] {
+        await registry.register(Action(
+            name: name, description: "test double", kind: .control,
+            schema: .object(["type": .string("object")]), handler: { _ in .object([:]) }))
+    }
+}
+
+private let tabRenameEffect = PaletteEffect.runName(
+    action: "browser_rename_tab", params: .object(["pane": .string("b1"), "tab": .string("t1")]), name: "Docs")
+
 @Suite @MainActor struct WindowModelPaletteTests {
     /// Spec 37: ⌘P → "New Editor pane" → an editor pane opens and is focused.
     @Test func newEditorPaneEntryOpensAndFocusesAnEditorPane() async throws {
@@ -425,6 +439,67 @@ private func registerEnvironmentSwitch(into registry: ActionRegistry) async {
         let error = await w.model.performPalette(.run(.dispatch(action: "db_refetch", params: .object(["pane": .string("p1")]))))
 
         #expect(error == whole)
+    }
+
+    /// Names, final review: a tab's name step names it by pane and tab id, which repeat across
+    /// places, so its run — Return's, or the close's after `paletteClosed()` — is refused once the
+    /// window has left the place the palette was opened in. Nothing is dispatched.
+    @Test func aTabRenameAfterAPlaceSwitchIsRefused() async throws {
+        let w = await paletteWindow(register: registerRenameDoubles)
+        await w.model.refreshContext()
+        w.model.paletteOpened()
+        await w.context.switchTo(project: "q", roots: ["/q/web"])
+        await w.model.refreshContext()
+        w.model.paletteClosed()
+
+        let error = await w.model.performPalette(tabRenameEffect)
+
+        #expect(error == "the palette was opened for acme/p in staging; reopen it")
+        #expect(try await w.journal().filter { $0.action == "browser_rename_tab" }.isEmpty)
+    }
+
+    /// An organisation switch while it was open: refused as every other read of the palette's is.
+    @Test func aTabRenameAfterAnOrganisationSwitchIsRefused() async throws {
+        let w = await paletteWindow(register: registerRenameDoubles)
+        await w.model.refreshContext()
+        w.model.paletteOpened()
+        await w.model.invalidateForOrgChange()
+        w.model.setOrganizationForTesting("beta")
+        w.model.paletteClosed()
+
+        let error = await w.model.performPalette(tabRenameEffect)
+
+        #expect(error == "the organisation changed under the palette; reopen it")
+        #expect(try await w.journal().filter { $0.action == "browser_rename_tab" }.isEmpty)
+    }
+
+    /// In the place it was opened in, the close's run still goes through, though the close dropped
+    /// every build a `shown` could name.
+    @Test func aTabRenameInThePlaceItWasOpenedInRunsAfterTheClose() async throws {
+        let w = await paletteWindow(register: registerRenameDoubles)
+        await w.model.refreshContext()
+        w.model.paletteOpened()
+        let root = await w.model.paletteRoot(mode: .commands) { _ in }
+        w.model.paletteClosed()
+
+        #expect(await w.model.performPalette(tabRenameEffect, shown: root.generation) == nil)
+        #expect(try await w.journal().filter { $0.action == "browser_rename_tab" }.count == 1)
+    }
+
+    /// A conversation's name step names a conversation id, which no other place shares: it runs
+    /// wherever the operator is when it does (`conversation_rename` refuses a gone one, whole).
+    @Test func aConversationRenameAfterAPlaceSwitchStillRuns() async throws {
+        let w = await paletteWindow(register: registerRenameDoubles)
+        await w.model.refreshContext()
+        w.model.paletteOpened()
+        await w.context.switchTo(project: "q", roots: ["/q/web"])
+        await w.model.refreshContext()
+        w.model.paletteClosed()
+
+        let effect = PaletteEffect.runName(
+            action: "conversation_rename", params: .object(["conversation": .string("c1")]), name: "Docs")
+        #expect(await w.model.performPalette(effect) == nil)
+        #expect(try await w.journal().filter { $0.action == "conversation_rename" }.count == 1)
     }
 
     /// Review Focus 3: entries built for one project never run in another.

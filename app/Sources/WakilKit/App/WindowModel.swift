@@ -6786,6 +6786,11 @@ public final class WindowModel {
     /// Cleared by `paletteClosed()`.
     @ObservationIgnored private var paletteLeftOrganisation = false
 
+    /// Where the palette last opened (`paletteOpened`), or `.organisationLeft` once the window left
+    /// that organisation. A tab's name step answers to it: pane and tab ids repeat across places, and
+    /// its run can land after the close. **Not cleared by `paletteClosed()`**, for that run.
+    @ObservationIgnored private var paletteOpenedIn: PaletteIdentity?
+
     /// Every close, counted: a run compares it with the count it began under, and one that
     /// finishes after its palette closed moves no keyboard (rule 6).
     @ObservationIgnored private var paletteCloses = 0
@@ -7014,6 +7019,7 @@ public final class WindowModel {
     /// The plane went up. `paletteClosed()` is its other half, on every close path.
     public func paletteOpened() {
         paletteShowing = true
+        paletteOpenedIn = paletteIdentity
     }
 
     /// The palette closed: anything still on its way to it is dropped.
@@ -7054,6 +7060,7 @@ public final class WindowModel {
         paletteGeneration += 1
         paletteBuiltFor = nil
         paletteBuiltIn = .organisationLeft
+        if paletteOpenedIn != nil { paletteOpenedIn = .organisationLeft }
         paletteBuilding = nil
         paletteBuilds = [:]
         paletteLeftOrganisation = true
@@ -7151,11 +7158,17 @@ public final class WindowModel {
     /// step read before the window left its organisation has none, and is refused. A root row
     /// answers to the build named by `shown`, else to the last one delivered.
     private func paletteRefusal(_ effect: PaletteEffect, shown: Int?) -> String? {
-        // A name step's run names its subject by id and reads no list: `conversation_rename` refuses
-        // one that is gone, whole (Rule 8). It also runs from the close (Rule 2), after
-        // `paletteClosed()` has dropped every build a `shown` could name.
-        if case .runName = effect { return nil }
         let orgChanged = "the organisation changed under the palette; reopen it"
+        // A name step's run names its subject by id and reads no list. It also runs from the close
+        // (Rule 2), after `paletteClosed()` has dropped every build a `shown` could name, so no build
+        // is asked for. A conversation id is no other place's: `conversation_rename` refuses one that
+        // is gone, whole (Rule 8). A tab's pane and tab ids repeat across places, so its run answers
+        // to where the palette opened — never another place's tab (Invariant 4).
+        if case .runName(let action, _, _) = effect {
+            guard action == "browser_rename_tab", let opened = paletteOpenedIn else { return nil }
+            if opened == .organisationLeft { return orgChanged }
+            return opened == paletteIdentity ? nil : Self.paletteOpenedFor(opened)
+        }
         let step: String?
         switch effect {
         case .run(_, let s): step = s
@@ -7179,12 +7192,15 @@ public final class WindowModel {
             stamp = paletteBuiltIn
         }
         if stamp == .organisationLeft { return orgChanged }
-        if let stamp, stamp != paletteIdentity {
-            let place = "\(stamp.organisation)/\(stamp.project)"
-                + (stamp.environment.isEmpty ? "" : " in \(stamp.environment)")
-            return "the palette was opened for \(place); reopen it"
-        }
+        if let stamp, stamp != paletteIdentity { return Self.paletteOpenedFor(stamp) }
         return nil
+    }
+
+    /// The refusal for rows read in `stamp`'s place, which the window has left.
+    private static func paletteOpenedFor(_ stamp: PaletteIdentity) -> String {
+        let place = "\(stamp.organisation)/\(stamp.project)"
+            + (stamp.environment.isEmpty ? "" : " in \(stamp.environment)")
+        return "the palette was opened for \(place); reopen it"
     }
 
     /// Where a palette run began: the `status` write count (`paletteFailure`) and the close count
