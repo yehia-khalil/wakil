@@ -48,6 +48,26 @@ import Testing
         #expect(BrowserPasswordSettings.bySite([]).isEmpty)
     }
 
+    // MARK: Which organisation a result is for
+
+    @Test func aResultForAnotherOrganisationIsDropped() {
+        #expect(BrowserPasswordSettings.stillShown(asked: "initech", shown: "initech"))
+        #expect(!BrowserPasswordSettings.stillShown(asked: "initech", shown: "umbrella"))
+        #expect(!BrowserPasswordSettings.stillShown(asked: "initech", shown: nil))
+    }
+
+    @Test func onlyTheShownOrganisationsLoginsAreDrawn() {
+        let other = BrowserLogin(org: "umbrella", site: "example.com", username: "ann", modified: nil)
+        let mine = login("example.com", "ann")
+        #expect(BrowserPasswordSettings.visible([other, mine], org: "initech") == [mine])
+    }
+
+    @Test func aRowKeyNamesItsOrganisation() {
+        let other = BrowserLogin(org: "umbrella", site: "example.com", username: "ann", modified: nil)
+        #expect(BrowserPasswordSettings.rowKey(login("example.com", "ann")) == "initech example.com ann")
+        #expect(BrowserPasswordSettings.rowKey(other) != BrowserPasswordSettings.rowKey(login("example.com", "ann")))
+    }
+
     // MARK: Copy
 
     @Test func theSentencesAreTheSpecs() {

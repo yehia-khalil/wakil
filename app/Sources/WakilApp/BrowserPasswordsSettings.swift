@@ -34,7 +34,8 @@ extension EnvironmentValues {
     }
 }
 
-/// One `.deviceOwnerAuthentication` (ruling 16). Cancelled by the operator, it is no error.
+/// One `.deviceOwnerAuthentication` (ruling 16). Cancelled by the operator, it is no error; cancelled
+/// by anything else, it is.
 enum BrowserPasswordAuthentication: Sendable, Equatable {
     case open, cancelled
     case failed(String)
@@ -42,10 +43,13 @@ enum BrowserPasswordAuthentication: Sendable, Equatable {
     static func ask(reason: String) async -> BrowserPasswordAuthentication {
         await withCheckedContinuation { continuation in
             let context = LAContext()
+            // The reply holds the context, so it lives until the evaluation answers; a context freed
+            // mid-evaluation would cancel it with no word to the operator.
             context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, error in
+                withExtendedLifetime(context) {}
                 if ok { continuation.resume(returning: .open); return }
-                if let error = error as? LAError,
-                   [.userCancel, .appCancel, .systemCancel].contains(error.code) {
+                // Only the operator's own Cancel is silent; a system or app cancel shows whole (Rule 8).
+                if let error = error as? LAError, error.code == .userCancel {
                     continuation.resume(returning: .cancelled)
                     return
                 }
@@ -69,6 +73,8 @@ struct BrowserPasswordsSettings: View {
     @Environment(\.browserPasswords) private var access
 
     @State private var logins: [BrowserLogin] = []
+    /// The organisation the section shows now: a read or reveal started for another is dropped.
+    @State private var shownOrg: String?
     @State private var loadError: String?
     @State private var never: [String] = []
     @State private var neverError: String?
@@ -112,6 +118,7 @@ struct BrowserPasswordsSettings: View {
         .accessibilityIdentifier("settings.browser.passwords")
         // A new organisation is a new list and a locked one (Invariant 4).
         .task(id: org) {
+            shownOrg = org
             lockAway()
             confirmingDelete = nil
             editing = nil
@@ -119,7 +126,10 @@ struct BrowserPasswordsSettings: View {
             neverError = nil
             await reload()
         }
-        .onDisappear { lockAway() }
+        .onDisappear {
+            shownOrg = nil
+            lockAway()
+        }
         .sheet(isPresented: $importing, onDismiss: { Task { await reload() } }) {
             if let access {
                 BrowserPasswordImport(org: org, access: access) { importing = false }
@@ -137,14 +147,15 @@ struct BrowserPasswordsSettings: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .accessibilityIdentifier("settings.browser.passwords.error")
-        } else if logins.isEmpty {
+        } else if BrowserPasswordSettings.visible(logins, org: org).isEmpty {
             Text(BrowserPasswordSettings.empty(org: name))
                 .font(.system(size: SettingsScale.body))
                 .foregroundStyle(coolWhite.opacity(0.52))
                 .accessibilityIdentifier("settings.browser.passwords.empty")
         } else {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(BrowserPasswordSettings.bySite(logins), id: \.site) { group in
+                let shown = BrowserPasswordSettings.visible(logins, org: org)
+                ForEach(BrowserPasswordSettings.bySite(shown), id: \.site) { group in
                     Text(group.site)
                         .font(.system(size: SettingsScale.identifier, design: .monospaced))
                         .foregroundStyle(coolWhite.opacity(0.62))
@@ -159,9 +170,7 @@ struct BrowserPasswordsSettings: View {
         }
     }
 
-    private func rowKey(_ login: BrowserLogin) -> String {
-        BrowserPasswords.account(site: login.site, username: login.username)
-    }
+    private func rowKey(_ login: BrowserLogin) -> String { BrowserPasswordSettings.rowKey(login) }
 
     private func loginRow(_ login: BrowserLogin, n: Int) -> some View {
         let key = rowKey(login)
@@ -183,7 +192,7 @@ struct BrowserPasswordsSettings: View {
                         .foregroundStyle(coolWhite.opacity(revealed[key] == nil ? 0.40 : 0.86))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                        .textSelection(.enabled)
+                        // Not selectable: ⌘C would copy it unmarked. Copy is the one way out.
                         .accessibilityIdentifier("settings.browser.passwords.row.\(n).value")
                 }
                 Spacer(minLength: 6)
@@ -312,7 +321,8 @@ struct BrowserPasswordsSettings: View {
                 Result { try store.password(org: org, site: login.site, username: login.username) }
             }.value
             // The organisation changed or the window locked while it read: show nothing.
-            guard org == self.org, unlock.isOpen(at: Date()) else { return }
+            guard BrowserPasswordSettings.stillShown(asked: org, shown: shownOrg), unlock.isOpen(at: Date())
+            else { return }
             switch result {
             case .success(let value): use(value)
             case .failure(let error): refusals[key] = String(describing: error)
@@ -503,7 +513,7 @@ struct BrowserPasswordsSettings: View {
             guard let home else { return nil }
             return Result { try BrowserOrgFiles(home: home, org: org).neverSave() }
         }.value
-        guard org == self.org else { return }
+        guard BrowserPasswordSettings.stillShown(asked: org, shown: shownOrg) else { return }
         switch found {
         case .success(let all): logins = all; loadError = nil
         case .failure(let error): logins = []; loadError = String(describing: error)

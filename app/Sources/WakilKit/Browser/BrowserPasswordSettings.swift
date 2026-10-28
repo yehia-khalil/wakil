@@ -64,6 +64,23 @@ public enum BrowserPasswordSettings {
         return groups
     }
 
+    // MARK: Which organisation a result is for (Invariant 4)
+
+    /// A read or a reveal started for `asked` lands only if the section still shows `asked`. A result
+    /// from before an organisation switch is dropped, never drawn on the new organisation's rows.
+    public static func stillShown(asked: String, shown: String?) -> Bool { shown == asked }
+
+    /// Only the shown organisation's logins are drawn, whatever reached the view.
+    public static func visible(_ logins: [BrowserLogin], org: String) -> [BrowserLogin] {
+        logins.filter { $0.org == org }
+    }
+
+    /// A row's key: organisation, site and username, so a value revealed in one organisation can never
+    /// sit on another's row. An organisation name holds no space (`BrowserPasswords.service`).
+    public static func rowKey(_ login: BrowserLogin) -> String {
+        "\(login.org) " + BrowserPasswords.account(site: login.site, username: login.username)
+    }
+
     // MARK: Copy
 
     public static let title = "Passwords"
