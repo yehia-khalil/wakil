@@ -1,0 +1,44 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"ctx_set_browser_settings","params":{"nameGroups":false}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"expect":{"pane":"browser-1","field":"groups[0]","present":false}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[1].title","equals":"Page B"}}
+{"expect":{"pane":"browser-1","field":"groups[0].id","equals":"g1"}}
+{"expect":{"pane":"browser-1","field":"groups[0].kind","equals":"automatic"}}
+{"expect":{"pane":"browser-1","field":"groups[0].name","contains":"127.0.0.1:"}}
+{"expect":{"pane":"browser-1","field":"groups[0].collapsed","equals":"false"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].group","equals":"g1"}}
+{"expect":{"pane":"browser-1","field":"tabs[1].group","equals":"g1"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"false"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStubLive}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"tabs[2].title","equals":"Page A"}}
+{"expect":{"pane":"browser-1","field":"tabs[2].group","equals":"null"}}
+{"expect":{"pane":"browser-1","field":"groups[1]","present":false}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-1","url":"{pageStub}/find.html"}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t4"}}
+{"expect":{"pane":"browser-1","field":"groups[0].tabs[2]","equals":"t4"}}
+{"expect":{"pane":"browser-1","field":"tabs[2].id","equals":"t4"}}
+{"expect":{"pane":"browser-1","field":"tabs[3].id","equals":"t3"}}
+{"expect":{"frame":"browser.group.g1","inside":"browser.tabs"}}
+{"parity":{"action":"browser_group","params":{"pane":"browser-1","action":"collapse","group":"g1"},"assert":"read_pane","click":"browser.group.g1"}}
+{"expect":{"pane":"browser-1","field":"groups[0].collapsed","equals":"true"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t4"}}
+{"do":{"click":"browser.group.g1"}}
+{"expect":{"pane":"browser-1","field":"groups[0].collapsed","equals":"false"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t4"}}
+{"expect":{"journal":{"contains":"\"action\":\"browser_group\""}}}
+{"dispatch":{"action":"browser_close_tab","params":{"pane":"browser-1","tab":"t4"}}}
+{"expect":{"pane":"browser-1","field":"groups[0].tabs[2]","present":false}}
+{"dispatch":{"action":"browser_reopen_tab","params":{"pane":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t5"}}
+{"expect":{"pane":"browser-1","field":"groups[0].tabs[2]","equals":"t5"}}
+{"dispatch":{"action":"browser_close_tab","params":{"pane":"browser-1","tab":"t5"}}}
+{"dispatch":{"action":"browser_close_tab","params":{"pane":"browser-1","tab":"t2"}}}
+{"expect":{"pane":"browser-1","field":"groups[0]","present":false}}
+{"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t1"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].group","equals":"null"}}
+{"dispatch":{"action":"browser_group","params":{"pane":"browser-1","action":"collapse","group":"g9"},"refuses":"browser_group: this pane has no group g9"}}
+{"dispatch":{"action":"browser_group","params":{"pane":"browser-1","action":"fold","group":"g1"},"refuses":"action is create, rename, recolour, collapse, expand, ungroup or close, not fold"}}
