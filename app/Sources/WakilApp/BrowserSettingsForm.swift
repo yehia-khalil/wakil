@@ -55,7 +55,7 @@ struct BrowserSettingsForm: View {
                 ChoiceSettingRow(
                     label: "Search suggestions", options: ["Off", "On"],
                     selected: browser.searchSuggestions ? "On" : "Off",
-                    identifier: { option in "settings.browser.searchSuggestions.\(option.lowercased())" },
+                    identifier: { option in let choice = option.lowercased(); return "settings.browser.searchSuggestions.\(choice)" },
                     refusalIdentifier: "settings.browser.searchSuggestions.refusal",
                     hint: "Sends what you type in the address bar to the search engine as you type. Off, nothing "
                         + "leaves the Mac until you press Return. Kagi gives none.",
@@ -70,7 +70,7 @@ struct BrowserSettingsForm: View {
                 ChoiceSettingRow(
                     label: "Picture in picture", options: ["On", "Off"],
                     selected: browser.pictureInPicture ? "On" : "Off",
-                    identifier: { option in "settings.browser.pictureInPicture.\(option.lowercased())" },
+                    identifier: { option in let choice = option.lowercased(); return "settings.browser.pictureInPicture.\(choice)" },
                     refusalIdentifier: "settings.browser.pictureInPicture.refusal",
                     hint: "A playing video floats in its own window when you leave its tab, its pane, the place or "
                         + "the organisation, or minimise the window. Off, Wakil floats nothing; a page's own "
