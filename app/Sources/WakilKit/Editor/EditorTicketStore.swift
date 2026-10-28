@@ -368,6 +368,8 @@ public actor EditorTicketStore {
     /// Reads the window's organisation's drafts (`ticket_drafts`), as a relaunch or an org switch
     /// finds them. A load from before an org switch lands on a newer generation and is dropped.
     public func loadDrafts() async throws {
+        // No wakil-ticket client: there is nothing to load, so no load and no failure to say.
+        guard ticket != nil else { return }
         let gen = generation
         let read: TicketDraftsState
         do {

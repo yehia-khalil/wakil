@@ -557,3 +557,18 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(ticketDraftReplacedLine(replaced) == "Agent replaced your draft · Restore yours")
     }
 }
+
+/// No wakil-ticket client: nothing to load, so no load and no drafts-failure line. A window with a
+/// client whose load fails still says so (`aFailedDraftsLoadIsShownWhole`).
+@Test func noTicketClientLoadsNoDraftsAndSaysNothing() async throws {
+    let store = EditorTicketStore(ticket: nil)
+    try await store.loadDrafts()
+    #expect(await store.draftsFailure() == nil)
+    #expect(await store.allDrafts().isEmpty)
+
+    let fake = FakeTicket()
+    await fake.fail("ticket_drafts", "drafts are not readable: unexpected end of JSON input")
+    let withClient = EditorTicketStore(ticket: fake)
+    await #expect { try await withClient.loadDrafts() } throws: { _ in true }
+    #expect(await withClient.draftsFailure() == "Reply drafts could not be read: drafts are not readable: unexpected end of JSON input")
+}
