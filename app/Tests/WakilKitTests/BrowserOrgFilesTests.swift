@@ -172,9 +172,9 @@ private func writeState(_ files: BrowserOrgFiles, _ scope: LayoutScope, _ pane: 
     #expect(try files.identifier() == id)
 }
 
-@Test func theClearQuestionSaysHistoryGoesAndBookmarksStay() {
+@Test func theClearQuestionSaysHistoryGoesAndBookmarksAndPasswordsStay() {
     #expect(BrowserClearDataQuestion.text(org: "initech")
-        == "Delete initech's browsing data? Every site signs you out, in every project, and its history is deleted. Bookmarks stay.")
+        == "Delete initech's browsing data? Every site signs you out, in every project, and its history is deleted. Bookmarks and saved passwords stay.")
 }
 
 // MARK: - Bookmarks (3c-iii Task 3)
@@ -227,4 +227,39 @@ private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
     try files.setBookmark(url: "https://example.com/", title: "E", on: true, now: t0)
     try files.removeEverythingButTheProfile()
     #expect(try files.bookmarks().count == 1)
+}
+
+// MARK: - The never-save list (3d-iv Task 5)
+
+@Test func neverSaveAddsRemovesAndStaysSorted() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    #expect(try files.neverSave() == [])
+    #expect(try files.setNeverSave(site: "b.example.com", on: true) == ["b.example.com"])
+    #expect(try files.setNeverSave(site: "a.example.com", on: true) == ["a.example.com", "b.example.com"])
+    #expect(try files.setNeverSave(site: "a.example.com", on: true) == ["a.example.com", "b.example.com"])
+    #expect(try files.neverSave() == ["a.example.com", "b.example.com"])
+    let file = files.directory.appendingPathComponent("passwords-never.json")
+    #expect(try JSONDecoder().decode([String].self, from: Data(contentsOf: file)) == ["a.example.com", "b.example.com"])
+    #expect(try files.setNeverSave(site: "a.example.com", on: false) == ["b.example.com"])
+    #expect(try files.setNeverSave(site: "zzz.example.com", on: false) == ["b.example.com"])
+    #expect(try files.neverSave() == ["b.example.com"])
+}
+
+@Test func anUnreadableNeverFileIsNeverWrittenOver() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try FileManager.default.createDirectory(at: files.directory, withIntermediateDirectories: true)
+    let path = files.directory.appendingPathComponent("passwords-never.json")
+    let bytes = Data("{not json".utf8)
+    try bytes.write(to: path)
+    #expect(throws: BrowserNeverSaveUnreadable.self) { try files.neverSave() }
+    #expect(throws: BrowserNeverSaveUnreadable.self) { try files.setNeverSave(site: "example.com", on: true) }
+    #expect(throws: BrowserNeverSaveUnreadable.self) { try files.setNeverSave(site: "example.com", on: false) }
+    #expect(try Data(contentsOf: path) == bytes)
+}
+
+@Test func clearingBrowsingDataKeepsTheNeverList() throws {
+    let files = try BrowserOrgFiles(home: scratchHome(), org: "initech")
+    try files.setNeverSave(site: "example.com", on: true)
+    try files.removeEverythingButTheProfile()
+    #expect(try files.neverSave() == ["example.com"])
 }

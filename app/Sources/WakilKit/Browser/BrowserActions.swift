@@ -585,7 +585,7 @@ func browserActions(
     actions.append(Action(
         name: "browser_clear_data",
         description: "Delete the active organisation's browsing data: every site's cookies, logins and storage, "
-            + "in every project, the saved zoom and the organisation's browsing history; bookmarks are kept. `org` is the organisation the operator was asked "
+            + "in every project, the saved zoom and the organisation's browsing history; bookmarks and saved passwords are kept. `org` is the organisation the operator was asked "
             + "about; refused when it is no longer the active one. Asks the operator first. Operator-only.",
         kind: .mutate, audience: .operatorOnly,
         schema: schema(["org": string], required: ["org"]),

@@ -32,7 +32,7 @@ public struct BrowserBookmarksUnreadable: Error, Sendable, Equatable {
 /// The copy of the clear-data question (global constraints), for the view that asks it.
 public enum BrowserClearDataQuestion {
     public static func text(org: String) -> String {
-        "Delete \(org)'s browsing data? Every site signs you out, in every project, and its history is deleted. Bookmarks stay."
+        "Delete \(org)'s browsing data? Every site signs you out, in every project, and its history is deleted. Bookmarks and saved passwords stay."
     }
     /// The receipt after Delete: the organisation the question named (`asked`), else the current one.
     public static func receipt(asked: String?, current: String) -> String {
@@ -51,6 +51,8 @@ public enum BrowserClearDataQuestion {
 /// - `zoom.json`: `{"<host>": <factor>}`, the page zoom per host.
 /// - `history.sqlite` (with `-wal`, `-shm`): the browsing history, 90 days (`BrowserHistory`).
 /// - `bookmarks.json`: the bookmarks; clearing browsing data keeps them.
+/// - `passwords-never.json`: the sites never to offer saving a password for (a sorted array of site
+///   keys, no credential); clearing browsing data keeps it. See `BrowserOrgFiles+Passwords.swift`.
 /// - `tabs/`: per-tab state, `tabs/<tab-id>.state`.
 public struct BrowserOrgFiles: Sendable, Equatable {
     public let home: URL
@@ -217,7 +219,7 @@ public struct BrowserOrgFiles: Sendable, Equatable {
     }
 
     /// Deletes `tabs/`, `zoom.json` and the history (`history.sqlite`, `-wal`, `-shm`); `profile.json`
-    /// stays, so the organisation keeps its id, and `bookmarks.json` stays, as Safari's Clear History keeps them.
+    /// stays, so the organisation keeps its id, and `bookmarks.json` and `passwords-never.json` stay, as Safari's Clear History keeps them.
     func removeEverythingButTheProfile() throws {
         // -wal and -shm go before the database: a writer opening between the removals could otherwise replay a stale WAL.
         let historyFiles = ["-wal", "-shm", ""].map { URL(fileURLWithPath: historyURL.path + $0) }

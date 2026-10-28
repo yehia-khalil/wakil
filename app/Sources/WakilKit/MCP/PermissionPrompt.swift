@@ -125,7 +125,7 @@ public let operatorOnlyActions: Set<String> = [
     // 3c-i. Putting back a browser pane's saved tabs is the window's own relaunch step; the
     // agent opens and selects tabs through the browser actions instead.
     "browser_restore",
-    // 3c-i. Deleting an organisation's browsing data signs it out of every site, in every project, and deletes its history (bookmarks stay).
+    // 3c-i. Deleting an organisation's browsing data signs it out of every site, in every project, and deletes its history (bookmarks and saved passwords stay).
     "browser_clear_data",
     // 3c-ii. Which sites the agent may act on is the operator's consent; the agent never takes one
     // off its own list, nor anyone else's.
@@ -340,7 +340,7 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "and browser_reopen_tab."
     case "browser_clear_data":
         return "\(toolName): only the operator deletes an organisation's browsing data. It signs "
-            + "every site out, in every project, and deletes the organisation's history (bookmarks stay). Ask the operator to do it in Settings → Browser (\u{2318},)."
+            + "every site out, in every project, and deletes the organisation's history (bookmarks and saved passwords stay). Ask the operator to do it in Settings → Browser (\u{2318},)."
     case "browser_revoke_site":
         return "\(toolName): only the operator takes a site off the agent's list for a conversation. "
             + "Ask them to press \u{00D7} on its agent allowed mark."
