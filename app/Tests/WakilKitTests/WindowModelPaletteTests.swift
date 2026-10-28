@@ -1018,7 +1018,7 @@ private let registeredBeforeThePalette: Set<String> = [
     "pane_close", "pane_focus", "pane_maximize", "pane_move", "pane_open", "pane_resize", "pane_restore",
     "pane_scroll_clear", "pane_scroll_to_row", "pane_select_cell", "pane_select_rows",
     "pane_set_column_width", "pane_set_density", "pane_snap", "pane_sort",
-    "session_close", "session_get", "session_list", "session_new", "session_read", "session_record_parent", "session_resume",
+    "rail_set", "session_close", "session_get", "session_list", "session_new", "session_read", "session_record_parent", "session_resume",
     "session_set_provider", "session_switch", "settings_open", "term_open", "term_propose", "term_run", "term_scroll",
 ]
 
@@ -1062,6 +1062,7 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__pane_restore", "mcp__wakil__pane_scroll_clear", "mcp__wakil__pane_scroll_to_row",
     "mcp__wakil__pane_select_cell", "mcp__wakil__pane_select_rows", "mcp__wakil__pane_set_column_width",
     "mcp__wakil__pane_set_density", "mcp__wakil__pane_snap", "mcp__wakil__pane_sort",
+    "mcp__wakil__rail_set",
     "mcp__wakil__read_layout", "mcp__wakil__read_pane", "mcp__wakil__session_get",
     "mcp__wakil__session_list", "mcp__wakil__session_read", "mcp__wakil__session_record_parent",
     "mcp__wakil__session_resume", "mcp__wakil__term_open", "mcp__wakil__term_propose",

@@ -173,6 +173,8 @@ private let keptPerPlace: Set<String> = [
 ]
 
 private let orgIndependent: Set<String> = [
+    // The rail's collapse is the window's own, kept in `window.json`; no switch changes it.
+    "railCollapsed",
     // 3c-i: the search engine and start page are the operator's, in ~/.wakil/settings.json, across
     // every organisation; the cache is the box the browser actions read them from.
     "browserSettings", "browserSettingsCache",
