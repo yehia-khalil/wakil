@@ -12,7 +12,9 @@ public struct BrowserPin: Codable, Sendable, Equatable {
     /// A tab's address and title, as it was pinned (or last *Pin Current Page*).
     public var url: String?
     public var title: String?
-    /// A group's name, colour and tabs, as it was pinned (or last *Update Pin*).
+    /// A group's name, colour and tabs, as it was pinned (or last *Update Pin*). On a tab pin, the
+    /// tab's name (names call 15): written when the tab is pinned and at once when it is renamed; nil
+    /// when it has none, and absent from a 3d-i file.
     public var name: String?
     public var colour: BrowserGroupColour?
     public var tabs: [BrowserPinTab]?
@@ -38,9 +40,13 @@ public struct BrowserPin: Codable, Sendable, Equatable {
 public struct BrowserPinTab: Codable, Sendable, Equatable {
     public var url: String
     public var title: String
-    public init(url: String, title: String) {
+    /// The tab's name (names call 15), as it was pinned or last *Update Pin*; nil when it had none, and
+    /// absent from a 3d-i file (the synthesised decoder reads an optional with `decodeIfPresent`).
+    public var name: String?
+    public init(url: String, title: String, name: String? = nil) {
         self.url = url
         self.title = title
+        self.name = name
     }
 }
 
@@ -93,18 +99,24 @@ extension BrowserSnapshot {
 
     /// Puts `pin` in the pane when it lacks it: a tab at the end of the pinned tabs, a group of new
     /// tabs, or the pin on the pull-request group (made, empty and collapsed, when the pane has none).
-    /// What it adds is unloaded and never becomes active (Rule 6).
+    /// What it adds is unloaded and never becomes active (Rule 6). A tab pin the pane already shows
+    /// only takes the pin's name (names call 15: a rename is deliberate, so it does not wait); its
+    /// page is left alone (ruling 16).
     private mutating func addPin(_ pin: BrowserPin) {
-        if tabs.contains(where: { $0.pin == pin.id }) || groups.contains(where: { $0.pin == pin.id }) { return }
+        if let i = tabs.firstIndex(where: { $0.pin == pin.id }) {
+            if pin.kind == .tab { tabs[i].name = pin.name }
+            return
+        }
+        if groups.contains(where: { $0.pin == pin.id }) { return }
         switch pin.kind {
         case .tab:
-            var tab = BrowserTab(id: takeTabId(), url: pin.url ?? "", title: pin.title ?? "")
+            var tab = BrowserTab(id: takeTabId(), url: pin.url ?? "", title: pin.title ?? "", name: pin.name)
             tab.pin = pin.id
             tabs.append(tab)
         case .group:
             var members: [String] = []
             for t in pin.tabs ?? [] {
-                let tab = BrowserTab(id: takeTabId(), url: t.url, title: t.title)
+                let tab = BrowserTab(id: takeTabId(), url: t.url, title: t.title, name: t.name)
                 tabs.append(tab)
                 members.append(tab.id)
             }

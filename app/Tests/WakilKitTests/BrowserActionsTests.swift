@@ -1614,3 +1614,99 @@ private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.g
     try await f.dispatch("browser_bookmark")
     #expect(try files.bookmarks().map(\.title) == ["Stripe Dashboard"])
 }
+
+// MARK: - browser_rename_tab (names Task 13)
+
+@Test func renameNamesTheActiveTabAndEmptyClears() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    let reply = try await f.dispatch("browser_rename_tab", ["name": .string("  Billing\n  page ")])
+    let first = try #require(await f.snapshot().tabs.first)
+    #expect(first.name == "Billing page", "cleaned as a conversation's name is")
+    #expect(await f.snapshot().tabs.last?.name == nil)
+    guard case .object(let o) = reply else { Issue.record("no reply"); return }
+    #expect(o["pane"] == .string(f.pane))
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.first?.name == "Billing page", "saved")
+    // A name of nothing but whitespace clears it.
+    try await f.dispatch("browser_rename_tab", ["tab": .string(first.id), "name": .string("  ")])
+    #expect(await f.snapshot().tabs.first?.name == nil)
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.first?.name == nil)
+    // name is required.
+    #expect(await refusal { try await f.dispatch("browser_rename_tab") } != nil)
+}
+
+@Test func renameNeverSelectsTheTab() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    let before = await f.snapshot()
+    let second = before.tabs[1]
+    try await f.dispatch("browser_rename_tab", ["tab": .string(second.id), "name": .string("Second")])
+    let after = await f.snapshot()
+    #expect(after.active == before.active)
+    #expect(after.tabs.map(\.id) == before.tabs.map(\.id))
+    #expect(after.tabs[1].name == "Second")
+    #expect(after.tabs[1].command == second.command, "no load or select command is issued")
+}
+
+@Test func anUnknownTabIsRefused() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let why = await refusal { try await f.dispatch("browser_rename_tab", ["tab": .string("t99"), "name": .string("X")]) }
+    #expect(why == String(describing: BrowserActionError.noTab(action: "browser_rename_tab", tab: "t99")))
+}
+
+@Test func aPullRequestRowIsRefused() async throws {
+    let f = try await withTabs(["https://github.com/o/r/pull/1"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in s.tabs[0].pullRequest = "https://github.com/o/r/pull/1" }
+    let why = await refusal { try await f.dispatch("browser_rename_tab", ["name": .string("Mine")]) }
+    #expect(why == String(describing: BrowserActionError.pullRequestGroupRefuses("renamed")))
+    #expect(await f.snapshot().tabs.first?.name == nil)
+}
+
+@Test func aPinnedTabsNameIsWrittenToItsPinAtOnce() async throws {
+    let (f, _, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    try await f.dispatch("browser_rename_tab", ["name": .string("Home")])
+    #expect(try files.pins(project: "web").first?.name == "Home")
+    #expect(try files.pins(project: "web").first?.url == "https://example.com/a")
+    try await f.dispatch("browser_rename_tab", ["name": .string("")])
+    #expect(try files.pins(project: "web").first?.name == nil)
+}
+
+@Test func anotherPaneOfTheProjectTakesThePinnedName() async throws {
+    let (f, other, _) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let before = await f.panes.browserSnapshot(paneId: other)
+    try await f.dispatch("browser_rename_tab", ["name": .string("Home")])
+    let after = await f.panes.browserSnapshot(paneId: other)
+    #expect(after.tabs.first?.name == "Home")
+    #expect(after.tabs.map(\.id) == before.tabs.map(\.id), "the copy is renamed, not replaced")
+    #expect(after.active == before.active)
+    #expect(await f.layout.browserTabs(id: other)?.tabs.first?.name == "Home", "saved in the other pane too")
+    // A pane opened later takes it from the pin at its full reconcile.
+    let third = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_restore", ["pane": .string(third)], named: false)
+    #expect(await f.panes.browserSnapshot(paneId: third).tabs.first { $0.pin != nil }?.name == "Home")
+}
+
+@Test func pinningAGroupKeepsItsTabsNames() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.net/c")])
+    let ids = await f.snapshot().tabs.map(\.id)
+    try await f.dispatch("browser_rename_tab", ["tab": .string(ids[0]), "name": .string("Alpha")])
+    guard case .object(let made) = try await f.dispatch(
+        "browser_group", ["action": .string("create"), "name": .string("Work"),
+                          "tabs": .array(ids.map { .string($0) })]),
+        case .string(let group)? = made["group"] else { Issue.record("no group"); return }
+    try await f.dispatch("browser_pin", ["group": .string(group)])
+    let pin = try #require(try files.pins(project: "web").first)
+    #expect(pin.tabs?.map(\.name) == ["Alpha", nil])
+    let o = await f.panes.browserSnapshot(paneId: other)
+    let copy = try #require(o.groups.first { $0.pin == pin.id })
+    #expect(o.tabs.filter { $0.group == copy.id }.map(\.name) == ["Alpha", nil])
+}
+
+@Test func pinningANamedTabCarriesItsName() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_rename_tab", ["name": .string("Home")])
+    try await f.dispatch("browser_pin")
+    #expect(try files.pins(project: "web").first?.name == "Home")
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.first?.name == "Home")
+}

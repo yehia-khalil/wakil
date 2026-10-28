@@ -995,8 +995,8 @@ private let registeredBeforeThePalette: Set<String> = [
     "api_remove_entry", "api_request", "api_send", "api_set_entry", "api_set_request", "api_unbind", "api_undo_fill", "api_update_entry",
     // Provider capacity, on purpose: the operator-only record path and the agent's read.
     "capacity_record", "ctx_capacity",
-    // Names: the operator's and the agent's rename of a conversation.
-    "conversation_rename",
+    // Names: the operator's and the agent's rename of a conversation and of a browser tab.
+    "conversation_rename", "browser_rename_tab",
     "ctx_add_provider", "ctx_adopt_provider", "ctx_config_tree", "ctx_create_org", "ctx_list_accounts",
     "ctx_create_environment", "ctx_create_project", "ctx_remove_environment", "ctx_remove_project",
     "ctx_rename_environment", "ctx_rename_project",
@@ -1034,6 +1034,8 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__ctx_browser_settings",
     // Names: `.control` and agent-reachable, for the agent's own conversation.
     "mcp__wakil__conversation_rename",
+    // Names: `.control` and agent-reachable, a browser tab's name.
+    "mcp__wakil__browser_rename_tab",
     "mcp__wakil__ctx_github_pull_requests",
     "mcp__wakil__editor_tree", "mcp__wakil__editor_tree_expand", "mcp__wakil__editor_tree_collapse",
     "mcp__wakil__editor_move_tab", "mcp__wakil__editor_tree_reveal",

@@ -797,6 +797,42 @@ func browserActions(
         }))
 
     actions.append(Action(
+        name: "browser_rename_tab",
+        description: "Name a browser tab (tab, default the active one): the name shows instead of the page title "
+            + "and is kept across navigations until cleared with an empty name. Never selects the tab.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["tab": string, "name": string], required: ["name"]),
+        handler: { params in
+            let action = "browser_rename_tab"
+            let typed = try requireString(params, "name", action: action)
+            let pane = try await browserPane(params, action: action).id
+            let tab = optionalString(params, "tab")
+            // Names call 14: cleaned as a conversation's name; nothing left clears it.
+            let name = cleanConversationName(typed)
+            let renamed = await panes.updateBrowser(paneId: pane, create: true) { s -> Result<String?, BrowserActionError> in
+                guard let i = s.tabIndex(tab) else { return .failure(.noTab(action: action, tab: tab)) }
+                // 3d-i ruling 18: the pull-request rows are a listing, never saved.
+                if s.tabs[i].pullRequest != nil { return .failure(.pullRequestGroupRefuses("renamed")) }
+                s.tabs[i].name = name
+                return .success(s.tabs[i].pin)
+            }
+            let pin = try renamed.get()
+            await persist(pane)
+            // Names call 15: a pinned tab's name goes to its pin at once, and every other pane of the
+            // project takes it. With no project, no organisation or an unreadable pins file the tab is
+            // still renamed here; the file is never written over (ruling 13).
+            if let pin, let place = try? await pinsPlace(action),
+               var pins = try? place.files.pins(project: place.project),
+               let at = pins.firstIndex(where: { $0.id == pin && $0.kind == .tab }), pins[at].name != name {
+                pins[at].name = name
+                if (try? place.files.setPins(pins, project: place.project)) != nil {
+                    await reconcileOthers(pane, add: pins[at], remove: nil)
+                }
+            }
+            return await reply(pane)
+        }))
+
+    actions.append(Action(
         name: "browser_pin",
         description: "Pin a tab (tab, default the active one) or a group (group, a group id from read_pane's "
             + "groups; pr is the pull-request group) to the project: it is kept in the project's pins and "
@@ -826,14 +862,15 @@ func browserActions(
                 entry = g.kind == .pullRequests
                     ? BrowserPin(id: id, kind: .pullRequests)
                     : BrowserPin(id: id, kind: .group, name: g.name, colour: g.colour,
-                                 tabs: s.tabs.filter { $0.group == gid }.map { BrowserPinTab(url: $0.url, title: $0.title) })
+                                 tabs: s.tabs.filter { $0.group == gid }.map { BrowserPinTab(url: $0.url, title: $0.title, name: $0.name) })
             case .tab(let tid):
                 guard let tab = s.tabs.first(where: { $0.id == tid }) else {
                     throw BrowserActionError.noTab(action: action, tab: tid)
                 }
                 // A tab of a pinned group is pinned with it.
                 if tab.pin == nil, s.isPinned(tab) { return await reply(pane) }
-                entry = BrowserPin(id: tab.pin ?? BrowserPin.newId(), kind: .tab, url: tab.url, title: tab.title)
+                entry = BrowserPin(id: tab.pin ?? BrowserPin.newId(), kind: .tab, url: tab.url, title: tab.title,
+                                   name: tab.name)
             }
             let present = pins.firstIndex { $0.id == entry.id }
             guard present == nil || update else { return await reply(pane) }
