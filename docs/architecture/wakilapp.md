@@ -98,6 +98,14 @@ re-checks the live element at act time. An act waits out the operator's typing (
 1 s quiet, 10 s ceiling) and each call has a 10 s timeout. The driver replaces any script failure that
 is not the script's own fixed sentence with Wakil's, so no page text reaches the agent that way.
 
+**Browser passwords (3d-iv, Decision 49)** are drawn by `BrowserPasswordViews.swift` (the key, its popover list and the
+save bar), driven by `BrowserPasswordMessages.swift` (the `wakilPasswords` handler, which takes only
+main-frame messages from the isolated world `wakil.passwords`, and reads the origin from the frame, never from the
+page) and `BrowserPasswordScript.swift` (the script). `BrowserPasswordAgent.swift` fills and suggests, and only
+after the key's list was opened on that tab. Settings → Browser → Passwords is `BrowserPasswordsSettings.swift`
+(list, reveal and copy behind `LAContext`, edit, delete, never saved) and `BrowserPasswordImport.swift` (the one-time
+import from the Passwords app's CSV).
+
 **This switch is the one view-side place a new pane kind touches**: its view file and one `case`
 (the rest of the recipe is `CONTRIBUTING.md`, "A new pane kind").
 

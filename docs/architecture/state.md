@@ -15,6 +15,7 @@ both the Swift side and Go read the `HOME` variable, so an overridden `HOME` mov
 | Provider (account) records | `~/.wakil/orgs/<org>/providers/<id>.json` | Go: `provider.go`, `adopt.go`, `unlink.go` |
 | Session lineage (which session was forked from which) | `~/.wakil/orgs/<org>/sessions.json` | Go: `sessions_lineage.go` (`record_session_parent`) |
 | A project's configuration (roots, scopes, environments, databases, API entries, editor tabs) | the project's `project.json`, by convention `.wakil/project.json` inside the project | the operator; Go `projectwrite.go` (`set_database_dsn`, `remove_database`) and `editorsettings.go` (`set_project_editor_settings`, the `editor` key) |
+| Sites never to offer saving a password for (`passwords-never.json`, a sorted array of site keys, no credential; clearing browsing data keeps it; an unreadable file is never written over) | `~/.wakil/orgs/<org>/browser/` | Swift: `BrowserOrgFiles` (`neverSave`), the `browser_password_never` action |
 | Browser profile id (`profile.json`: `{"identifier":"<UUID>"}`, the organisation's WebKit data-store id), zoom per host (`zoom.json`: `{"<host>": <factor>}`), per-tab state (`tabs/<place-digest>.<pane>.<tab>.state`, WebKit's binary `interactionState`, so ‹ › survive a relaunch) | `~/.wakil/orgs/<org>/browser/`. The store itself (cookies, logins, site storage) is WebKit's, under `~/Library/WebKit/`, outside Wakil's reach; Settings → Browser → Clear removes it through the id and keeps `profile.json` | Swift: `BrowserOrgFiles`; zoom by `browser_zoom`, tab state by `BrowserTabHost` |
 | The browser's sites and the agent's reach: the organisation's production sites, the active environment's tags, each conversation's allowed sites (`PlaceAgent.id` → site keys) and each tab's last read | **memory only**: `PaneStore`'s browser kind, rebuilt from the config tree and never written; a closed conversation and an org switch forget theirs, a relaunch asks again | Swift: `BrowserSites`, `browserAllow`, `browserRecordRead` |
 | Pane arrangement per project (a browser pane's `browserTabs` — id, URL and title per tab — and `browserActiveTab` are saved with it; only the active tab loads on restore) | `~/.wakil/layouts/<org>/<project>.json` | Swift: `LayoutPersistence` |
@@ -32,10 +33,11 @@ The full org and provider model is in `docs/wakil/org-and-provider-model.md`.
 |---|---|---|
 | `wakil:<org>:<ref>` | a database DSN, an API credential, or Jira (`ref` is `jira:<org>`) named by a `project.json` ref | Go `SecretGet` (`internal/wakilcore/secrets.go`, `keychainService`) |
 | `wakil:<org>:provider:<id>` | an account's minted OAuth token (`ProviderTokenRef`) | Go; the app asks `wakil provider credentials` (`WakilCLICredentialsLookup`) |
+| `wakil:<org>:browser-login:<identity>` (`default` today; account `<site> <username>`) | one saved browser password, trusting Wakil.app only | Swift, in-process: `BrowserPasswordStore` (Security.framework). Go only checks the service exists (`BrowserLoginsPresent`, attributes only, for `wakil org rm`) |
 
 Go reaches the Keychain only by running `/usr/bin/security` at its absolute path
 (`internal/wakilcore/credpresence.go`). `WAKIL_KEYCHAIN` names a keychain file instead of the login
-keychain; the e2e harness uses it. The Swift app never reads the Keychain directly. Values are
+keychain; the e2e harness uses it. The Swift app reads the Keychain directly only for browser passwords (Decision 49: an item `/usr/bin/security` trusts would be readable by the agent's shell). Values are
 never written to `project.json`, only the ref.
 
 ## Only in memory

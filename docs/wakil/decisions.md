@@ -1657,6 +1657,43 @@ Each entry: the call, why, and what would change our mind.
     *Reverse if:* a site the operator needs will not work in WebKit — then a second engine is argued
     for, not the profile model.
 
+49. **Browser passwords (3d-iv) live in the Keychain, read in Swift, filled only on the operator's
+    press; the agent never holds one.** *(2026-10-27, the 3d-iv plan's rulings 1, 2, 5 and 10. This
+    is the passwords part only; 3d-i's other parts are written with that lane.)*
+    *Where.* One Keychain item per login, service `wakil:<org>:browser-login:default`, account
+    `<site> <username>` (split at the first space; a site key holds none), label
+    `<site> — Wakil (<org>)`. `BrowserPasswordStore` reads and writes them **in-process through
+    Security.framework**, not through `/usr/bin/security`. That is the one place the Swift app reads
+    the Keychain directly, and it is deliberate: Go's items trust `/usr/bin/security`, and the agent
+    has a bare shell, so a Go-written item could be read with `security find-generic-password -w` and
+    no prompt. An item `SecItemAdd` creates from Wakil.app trusts Wakil.app only, and any other program
+    that asks for its value raises the system's prompt (probe: `3d-iv-keychain-probe.md`). Every read
+    names the exact service and re-checks the service and site of each item that comes back
+    (Invariant 4); a mismatch throws, it is never skipped.
+    *Cost (ruling 2).* An ad-hoc signed build gets a new code hash with every build, so the first read
+    of each item after a rebuild asks *"Wakil wants to use your confidential information…"*;
+    **Always Allow** holds until the next build. Listing reads attributes only and never asks. Signing
+    (2b-vii) removes the cost.
+    *Which site (ruling 5).* The registrable domain, **with no families**: `github.com` and
+    `githubusercontent.com` are one family for groups and must never share a password, and the bundled
+    public-suffix list treats `githubusercontent.com` as a suffix, so `gist.githubusercontent.com` is its
+    own site. A local host (loopback, `localhost`, `*.localhost`, `*.test`, an IP literal) is `host:port`.
+    Nothing off http and https has a key.
+    *Who (ruling 10).* Reads for the operator (the key's list, Settings' list, reveal, copy) are direct
+    calls on the store, and no action returns a password, so none reaches a journal, a transcript or an
+    MCP reply. Filling, suggesting, saving, deleting and the never list are operator-only `.control`
+    actions (`browser_password_fill`, `_suggest`, `_save`, `_delete`, `_never`), `password` is a
+    `secretParams` key, and a fill needs the key's list open on that tab: a press. A fill lands only on
+    the site and origin it was asked for. A filled, suggested or saved password is kept in memory (64 at
+    most) and replaced with `••••••••` in the agent's page reads. Reveal and copy need one
+    LocalAuthentication, held for 5 minutes; copy marks the pasteboard concealed. The never list is
+    `passwords-never.json` (site keys only) and clearing browsing data keeps it.
+    *Known limits.* A login form in an iframe gets no key. A password a site sends in a GET URL is in
+    the tab's URL and is not scrubbed from it. A password under 6 characters made visible as page text
+    by a *show password* toggle is not hidden in text or labels (it is, in element values). Every
+    rebuild asks again per item (ruling 2). `wakil org rm` names the items as residue and deletes none.
+    *Reverse if:* the agent can read a saved password by any route, or an organisation's login is
+    offered in another; then the store and the fill move out of the app process, to something the agent cannot start.
 ## Invariant 6 — the writes that have earned in
 
 **Moved out of `north-star.md` §4 on 2026-09-17.** The invariant had grown to 474 words,
@@ -1866,5 +1903,5 @@ http and https pages, only on a ref from the last read of that tab at that addre
 password, card or one-time-code field. Its script runs in the isolated world `wakil.agent`, takes the
 agent's text only as an argument and runs no string the agent sent. A page over 200 KB is cut and says
 where. The operator typing in the page holds an act for up to 10 s. Still refused: a password, card or
-one-time-code field typed by the agent, an act in a page that is not http or https, a script the agent
+one-time-code field typed or filled by the agent (a saved password is filled only by the operator's press, Decision 49), an act in a page that is not http or https, a script the agent
 supplies, and the operator's own `.ui` acts in the page on a production site (no surface yet).

@@ -45,7 +45,7 @@ The operator's CLI, **not an MCP server** (`cmd/wakil/main.go`). Subcommand fami
 
 - `secrets set | set-db | set-api` — puts a credential in the Keychain under `wakil:<org>:<ref>`.
   Secret values arrive on stdin, never argv.
-- `org create | set | list | rm` (`orgcmd.go`) — `~/.wakil/orgs/<org>/org.json`.
+- `org create | set | list | rm` (`orgcmd.go`) — `~/.wakil/orgs/<org>/org.json`. `rm` names the org's WebKit store and its saved browser passwords (`BrowserLoginsPresent`, `browserlogins.go`: `find-generic-password -s`, attributes only, no value, no prompt) as residue and deletes neither.
 - `provider add | list | rm | config-dir | home | credentials | mint` (`providercmd.go`,
   `providercredentials.go`) — provider records under the org's `providers/`. The window runs
   `wakil provider credentials` to read an account's credentials (`WakilCLICredentialsLookup`) and
