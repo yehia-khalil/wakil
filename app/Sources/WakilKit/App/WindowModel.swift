@@ -8529,12 +8529,23 @@ public final class WindowModel {
         // Read BEFORE the swap and before `session_record_parent` below
         // adds this fork to the map, so it is the parent's own lineage
         // being asked about and not one this call has already altered.
-        let inheritedRoot = await lineageRootOfSession(parent, as: caller)
+        let lineage = await lineageOfSession(parent, as: caller)
+        let inheritedRoot = lineage.root
         // F16: a session from another conversation may be a handed one's. It is handed with May
         // push off from before its session is installed — before any message can reach it — and
         // the carry below then sets what the stored hand-off says, or lifts it when there is none.
-        // A resume that stops short puts back what was there.
-        let provisional = agent.handoff == nil && ticket != nil && inheritedRoot.map { $0 != agent.id } == true
+        // A lineage that could not be read keeps the mark: whose session it is cannot be told. A
+        // session of this conversation's own chain is its own, handed or not. A resume that stops
+        // short puts back what was there.
+        let handOffFrom: String?, lineageUnread: String?
+        switch lineage {
+        case .root(let root): (handOffFrom, lineageUnread) = (root, nil)
+        // A session with no recorded parent is its own root.
+        case .none: (handOffFrom, lineageUnread) = (parent, nil)
+        case .unread(let why): (handOffFrom, lineageUnread) = (nil, why)
+        }
+        let provisional = agent.handoff == nil && ticket != nil && !agent.sessionIds.contains(parent)
+            && (lineageUnread != nil || handOffFrom != agent.id)
         var carried = false
         if provisional {
             agent.handoff = PlaceAgentHandoff(key: nil, pr: nil, thread: nil, root: thread.cwd, branch: "", mayPush: false)
@@ -8607,9 +8618,13 @@ public final class WindowModel {
         // F16: a session of a handed conversation resumed into another conversation carries
         // its hand-off there, so the gate keeps applying. The conversation's own resumes and forks
         // keep its id, and with it the hand-off.
-        if provisional, let inheritedRoot {
+        if provisional {
             carried = true
-            await carryHandOff(from: inheritedRoot, to: agent, root: thread.cwd)
+            if let handOffFrom {
+                await carryHandOff(from: handOffFrom, to: agent, root: thread.cwd)
+            } else {
+                noteHandOffUnknown(lineageUnread ?? "no answer", in: agent)
+            }
         }
         // Last, and only once the swap has actually happened: the canvas
         // follows the conversation. A resume that returned early above
@@ -8651,17 +8666,31 @@ public final class WindowModel {
     /// `nil` means the project's seed — the same thing a brand-new
     /// conversation gets, which is a state the operator already
     /// understands.
-    private func lineageRootOfSession(_ id: String, as caller: DispatchCaller) async -> String? {
-        guard let result = try? await registry.dispatch(
-            name: "session_get", params: .object(["id": .string(id)]),
-            origin: .ui, caller: caller, confirmation: nil)
-        else { return nil }
+    ///
+    /// **Its answer says which nil it is** (F16): `SessionLineage.none` is a well-formed reply with
+    /// an empty root, `unread` a call that failed or a reply with no string `lineageRoot`. The
+    /// lineage root is nil for both, as before; a hand-off's carry needs the difference, since an
+    /// unread lineage may be a handed conversation's.
+    func lineageOfSession(_ id: String, as caller: DispatchCaller) async -> SessionLineage {
+        let result: JSONValue
+        do {
+            result = try await registry.dispatch(
+                name: "session_get", params: .object(["id": .string(id)]),
+                origin: .ui, caller: caller, confirmation: nil)
+        } catch {
+            return .unread("session_get: \(error)")
+        }
         guard case .object(let object) = result,
             case .object(let structured)? = object["structuredContent"],
-            case .string(let root)? = structured["lineageRoot"],
-            !root.isEmpty
-        else { return nil }
-        return root
+            case .string(let root)? = structured["lineageRoot"]
+        else { return .unread("session_get answered no lineage root") }
+        return root.isEmpty ? .none : .root(root)
+    }
+
+    /// `lineageOfSession`'s answer: a root, a well-formed none, or why it could not be read.
+    enum SessionLineage: Equatable {
+        case root(String), none, unread(String)
+        var root: String? { if case .root(let r) = self { r } else { nil } }
     }
 
     /// TEST-ONLY: the session id `autoResumeAfterSwitch()` last decided to

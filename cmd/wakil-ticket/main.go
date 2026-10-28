@@ -152,6 +152,7 @@ type handoffWriteArg struct {
 }
 
 type handoffWriteResult struct {
+	Carried *bool                    `json:"carried,omitempty" jsonschema:"carry: whether from was handed and its hand-off carried; false says, explicitly, there was none"`
 	Key     string                   `json:"key,omitempty" jsonschema:"carry: the ticket key, or pr:<host>/<owner>/<repo>#<n>, the hand-off is kept by"`
 	Handoff *wakilcore.TicketHandoff `json:"handoff,omitempty" jsonschema:"add: the hand-off as kept, with its id; carry: the new conversation's, none when from was never handed"`
 }
@@ -396,7 +397,11 @@ func writeHandoff(org string, a handoffWriteArg, now time.Time) (handoffWriteRes
 		return handoffWriteResult{}, wakilcore.EndTicketHandoffs(org, a.Conversations, a.KeepLive, now)
 	case "carry":
 		key, h, err := wakilcore.CarryTicketHandoff(org, strings.TrimSpace(a.From), strings.TrimSpace(a.To), now)
-		return handoffWriteResult{Key: key, Handoff: h}, err
+		if err != nil {
+			return handoffWriteResult{}, err
+		}
+		carried := h != nil
+		return handoffWriteResult{Key: key, Handoff: h, Carried: &carried}, nil
 	}
 	return handoffWriteResult{}, wakilcore.UserError("a hand-off op is add, end or carry, not " + strconvQuote(a.Op))
 }

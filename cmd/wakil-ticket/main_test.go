@@ -1313,13 +1313,13 @@ func TestHandoffMayPushAndCarryTools(t *testing.T) {
 	if err := json.Unmarshal(b, &carried); err != nil {
 		t.Fatal(err)
 	}
-	if carried.Key != "INI-142" || carried.Handoff == nil || carried.Handoff.Conversation != "c2" || carried.Handoff.Thread != "T_1" {
+	if !strings.Contains(string(b), `"carried":true`) || carried.Key != "INI-142" || carried.Handoff == nil || carried.Handoff.Conversation != "c2" || carried.Handoff.Thread != "T_1" {
 		t.Errorf("carried = %s", b)
 	}
 	if b := call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c2"}); !strings.Contains(string(b), `"mayPush":true`) {
 		t.Errorf("carried May push = %s", b)
 	}
-	if b := call(t, cs, "ticket_handoff_write", map[string]any{"op": "carry", "from": "c-never", "to": "c3"}); strings.Contains(string(b), `"handoff"`) {
+	if b := call(t, cs, "ticket_handoff_write", map[string]any{"op": "carry", "from": "c-never", "to": "c3"}); strings.Contains(string(b), `"handoff"`) || !strings.Contains(string(b), `"carried":false`) {
 		t.Errorf("a carry from a conversation never handed = %s", b)
 	}
 	t.Setenv("WAKIL_IN_WINDOW", "")

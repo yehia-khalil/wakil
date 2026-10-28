@@ -23,7 +23,8 @@ private func until(_ done: @MainActor () async -> Bool) async {
 /// `wakil-ticket`, the five git writes registered as shipped (allow everywhere, Decision 44), and
 /// the doubles a resume reads (`session_read`, `session_get`: the parent's lineage root is `root`).
 @MainActor
-private func handOffWindow(root: @escaping @Sendable () -> String = { "" }, holding: HoldingTicket? = nil)
+private func handOffWindow(root: @escaping @Sendable () -> String = { "" }, holding: HoldingTicket? = nil,
+                           sessionGet: (@Sendable () throws -> JSONValue)? = nil)
     async -> (WindowModel, Harnesses, FakeTicket) {
     let harnesses = Harnesses()
     let fake = holding?.fake ?? FakeTicket()
@@ -51,7 +52,10 @@ private func handOffWindow(root: @escaping @Sendable () -> String = { "" }, hold
         }))
     await registry.register(Action(
         name: "session_get", description: "test double", kind: .read, schema: .object(["type": .string("object")]),
-        handler: { _ in .object(["structuredContent": .object(["lineageRoot": .string(root())])]) }))
+        handler: { _ in
+            if let sessionGet { return try sessionGet() }
+            return .object(["structuredContent": .object(["lineageRoot": .string(root())])])
+        }))
     return (window, harnesses, fake)
 }
 
@@ -339,7 +343,7 @@ private func agentRuns(_ window: WindowModel, _ name: String, conversation: Stri
         await window.closeConversation(handed)
         root.value = handed
         await fake.set("ticket_handoff_write", .object([
-            "key": .string("INI-142"),
+            "carried": .bool(true), "key": .string("INI-142"),
             "handoff": .object(["id": .string("h2"), "conversation": .string("new"), "thread": .string("PRRT_1"),
                                 "mayPush": .bool(true)]),
         ]))
@@ -365,7 +369,7 @@ private func agentRuns(_ window: WindowModel, _ name: String, conversation: Stri
         let holding = HoldingTicket()
         let (window, _, fake) = await handOffWindow(root: { "c-handed-before" }, holding: holding)
         await fake.set("ticket_handoff_write", .object([
-            "key": .string("INI-142"),
+            "carried": .bool(true), "key": .string("INI-142"),
             "handoff": .object(["id": .string("h2"), "conversation": .string("new"), "thread": .string("PRRT_1"),
                                 "mayPush": .bool(true)]),
         ]))
@@ -400,9 +404,58 @@ private func agentRuns(_ window: WindowModel, _ name: String, conversation: Stri
         }
     }
 
+    /// A resume that cannot tell whose session it resumed — `session_get` failed, or answered a
+    /// shape with no lineage root — stays handed with May push off, says why, and carries nothing.
+    @Test func aResumeThatCannotReadItsLineageStaysHanded() async throws {
+        struct Down: Error, CustomStringConvertible { var description: String { "wakil-ctx is not running" } }
+        let answers: [(String, @Sendable () throws -> JSONValue)] = [
+            ("wakil-ctx is not running", { throw Down() }),
+            ("no lineage root", { .object(["structuredContent": .object(["id": .string("s-parent")])]) }),
+            ("no lineage root", { .object(["structuredContent": .object(["lineageRoot": .integer(4)])]) }),
+            ("no lineage root", { .object(["content": .array([])]) }),
+        ]
+        for (why, answer) in answers {
+            let (window, _, fake) = await handOffWindow(sessionGet: answer)
+            await fake.set("ticket_handoff_may_push", .object(["mayPush": .bool(true)]))
+            await window.resume(sessionId: "s-parent")
+            let resumed = try #require(window.currentAgent)
+            #expect(resumed.harness != nil)
+            #expect(resumed.handoff?.mayPush == false, "\(why)")
+            #expect(resumed.handoffFailure?.contains(why) == true, "\(String(describing: resumed.handoffFailure))")
+            #expect(await writes(fake, op: "carry").isEmpty)
+            for name in gitWrites {
+                #expect(!(try await agentRuns(window, name, conversation: resumed.id)), "\(name) \(why)")
+            }
+        }
+    }
+
+    /// Only an explicit "nothing carried" lifts the mark: a carry answer whose hand-off is null or
+    /// not an object, or that says nothing, keeps it handed with May push off.
+    @Test func aCarryAnswerOfTheWrongShapeKeepsTheMark() async throws {
+        for answer: JSONValue in [
+            .object(["carried": .bool(true), "key": .string("INI-142"), "handoff": .null]),
+            .object(["carried": .bool(true), "key": .string("INI-142"), "handoff": .string("h2")]),
+            .object(["carried": .bool(true), "handoff": .object(["mayPush": .bool(true)])]),
+            .object([:]),
+            .object(["carried": .string("no")]),
+        ] {
+            let (window, _, fake) = await handOffWindow(root: { "c-handed-before" })
+            await fake.set("ticket_handoff_write", answer)
+            await fake.set("ticket_handoff_may_push", .object(["mayPush": .bool(true)]))
+            await window.resume(sessionId: "s-parent")
+            let resumed = try #require(window.currentAgent)
+            #expect(resumed.handoff?.mayPush == false, "\(answer)")
+            #expect(resumed.handoffFailure != nil, "\(answer)")
+            for name in gitWrites {
+                #expect(!(try await agentRuns(window, name, conversation: resumed.id)), "\(name) \(answer)")
+            }
+        }
+    }
+
     /// A conversation never handed, resumed: the carry finds nothing, and it is priced as any agent.
     @Test func resumingAnOrdinarySessionStaysOrdinary() async throws {
         let (window, _, fake) = await handOffWindow(root: { "c-never-handed" })
+        await fake.set("ticket_handoff_write", .object(["carried": .bool(false)]))
         await window.resume(sessionId: "s-parent")
         let resumed = try #require(window.currentAgent)
         #expect(await writes(fake, op: "carry").count == 1)

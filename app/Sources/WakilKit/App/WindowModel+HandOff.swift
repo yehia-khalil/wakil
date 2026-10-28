@@ -173,8 +173,16 @@ extension WindowModel {
         DispatchCaller(place: agent.place, session: agent.sessionId ?? agent.id, conversation: agent.id)
     }
 
+    /// F16: a resume could not read whose session it resumed (`why`, whole), so the conversation
+    /// stays handed with May push off — it may be a handed one's — and says so.
+    func noteHandOffUnknown(_ why: String, in agent: PlaceAgent) {
+        noteHandOffFailure(
+            "Wakil could not tell whether this session was handed to an agent (\(why)), so its push, sync, publish, merge and rebase ask you.",
+            in: agent)
+    }
+
     /// Says a hand-off's failure whole: on its chip and in its thread (Rule 8).
-    private func noteHandOffFailure(_ note: String, in agent: PlaceAgent) {
+    func noteHandOffFailure(_ note: String, in agent: PlaceAgent) {
         agent.handoffFailure = note
         agent.appendRow(label: "hand-off", detail: note, isError: true)
     }

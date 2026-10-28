@@ -290,16 +290,23 @@ public actor EditorTicketStore {
     }
 
     /// Carries the hand-off of conversation `from` to `to` (`ticket_handoff_write` `carry`): the
-    /// key it is kept by and the carried hand-off, or nil when `from` was never handed.
+    /// key it is kept by and the carried hand-off, or nil when the answer says explicitly
+    /// (`carried: false`) that `from` was never handed. Any other shape throws.
     public func carryHandoff(from: String, to: String, as caller: DispatchCaller) async throws
         -> (key: String, handoff: [String: JSONValue])? {
         let content = try await routedCall("ticket_handoff_write", ["op": .string("carry"), "from": .string(from), "to": .string(to)],
                                            as: caller, timeout: MCPClient.mutationReplyTimeout)
-        guard case .object(let h)? = content["handoff"] else { return nil }
-        guard case .string(let key)? = content["key"] else {
-            throw TicketReadError(description: "ticket_handoff_write answered a carry with no key")
+        // Only an explicit `carried: false` is "nothing to carry"; any other shape is an error.
+        switch content["carried"] {
+        case .bool(false)?: return nil
+        case .bool(true)?:
+            guard case .object(let h)? = content["handoff"], case .string(let key)? = content["key"], !key.isEmpty else {
+                throw TicketReadError(description: "ticket_handoff_write answered a carry with no hand-off or no key")
+            }
+            return (key, h)
+        default:
+            throw TicketReadError(description: "ticket_handoff_write answered a carry without saying whether it carried one")
         }
-        return (key, h)
     }
 
     /// The conversation's May push as its stored hand-off says (`ticket_handoff_may_push`): on only
