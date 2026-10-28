@@ -25,6 +25,8 @@ struct EditorTicketView: View {
     @Binding var fieldHasKeyboard: Bool
     /// The file a thread row or ⌥↓ opens: browsing, so the keyboard stays in the column (Rule 6).
     @Binding var browsed: String?
+    /// The Hand to agent popover is this pane's, from the header: **Hand to agent** anchors it.
+    var handOffAnchored = false
 
     /// The record's **+ Add** menu is open.
     @State private var picking = false
@@ -42,6 +44,8 @@ struct EditorTicketView: View {
     /// The record line under the pointer, and the one whose ✕ holds the keyboard: where ✕ shows.
     @State private var hoveredLine: String?
     @FocusState private var removeFocus: String?
+    /// The Hand to agent popover's field as typed, when **Hand to agent** here anchors it.
+    @State private var handOffDraft = TicketHandOffDraft()
 
     private var root: String? { ticketFollowedRoot(tab: tab, roots: state.roots) }
     private var branch: TicketBranchState? { root.flatMap { state.branches[$0] } }
@@ -158,6 +162,29 @@ struct EditorTicketView: View {
                     .help("Read the ticket, pull requests and checks again")
                     .accessibilityIdentifier("editor.ticket.refresh")
             }
+            handOffButton
+        }
+    }
+
+    /// **Hand to agent** beside ↻: the popover, prefilled from the header (`ticketHandOffHeaderParams`).
+    /// Not drawn where nothing can be handed — a pull request no project holds among them.
+    @ViewBuilder
+    private var handOffButton: some View {
+        if let params = ticketHandOffHeaderParams(state, column: column, root: root) {
+            Button("Hand to agent") { Task { await dispatch("ticket_hand_off_open", params) } }
+                .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.violet)
+                .help("Hand this ticket to an agent in the background, with a brief you can edit")
+                .accessibilityIdentifier("editor.ticket.handOff")
+                .popover(isPresented: Binding(get: { handOffAnchored && state.handoff != nil }, set: { shown in
+                    if !shown, state.handoff?.starting == false {
+                        let p = handOffDraft.closeParams(state.handoff)
+                        Task { await dispatch("ticket_hand_off_close", p) }
+                    }
+                }), arrowEdge: .bottom) {
+                    if let h = state.handoff {
+                        TicketHandOffPopover(state: h, dispatch: dispatch, dispatchReply: dispatchReply, draft: handOffDraft)
+                    }
+                }
         }
     }
 
@@ -533,7 +560,24 @@ struct EditorTicketView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            if count == nil && adding == nil {
+            // Each hand-off as an entry by agent, newest first, above the lines (spec, *The hand-off in the record*).
+            ForEach(r.handoffs.sorted { $0.at > $1.at }, id: \.id) { h in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Hand-off").font(.system(size: 9, weight: .semibold)).tracking(1.44).textCase(.uppercase)
+                            .foregroundStyle(EditorPaneStyle.violet).lineLimit(1).fixedSize()
+                        Spacer(minLength: Space.s)
+                        Text("agent").font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(EditorPaneStyle.text.opacity(0.45)).lineLimit(1).fixedSize()
+                    }
+                    Text(ticketHandOffEntry(h, live: state.handOffLive[h.conversation], now: Date()))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("editor.ticket.handoff:\(h.id)")
+            }
+            if count == nil && adding == nil && r.handoffs.isEmpty {
                 Text("Nothing noted yet. Decisions, open work and checks you or an agent note on this ticket stay here for the next session.")
                     .font(.system(size: 11.5)).dimmed().lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)

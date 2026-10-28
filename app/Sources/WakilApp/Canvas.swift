@@ -588,7 +588,7 @@ extension WakilWindow {
                         return await model.dispatchFromSurfaceReply(name, .object(withPane))
                     },
                     // Ticket view: the column's Ticket view.
-                    ticket: model.editorTicket,
+                    ticket: { var t = model.editorTicket; t.handOffLive = model.ticketHandOffLive; return t }(),
                     ticketCount: ticketNeedsCount(model.ticketNeeds),
                     ticketCountLabel: ticketNeedsLabel(model.ticketNeeds),
                     dispatchThrowingReply: { name, params in

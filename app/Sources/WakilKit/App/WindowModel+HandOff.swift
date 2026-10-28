@@ -1,46 +1,5 @@
 import Foundation
 
-/// What the operator's Start hands to an agent (ticket noticing, Task 9): the ticket key (nil for
-/// a PR with no key) and its PR, the thread it is handed from (nil from the header or ⌘P), the
-/// brief — its first line the conversation's title — the harness and provider Start runs, the
-/// place it runs in, the root and branch it works on, and the popover's May push.
-public struct TicketHandOffRequest: Sendable, Equatable {
-    public let key: String?
-    public let pr: Int?
-    public let thread: String?
-    public let brief: String
-    public let harness, provider: String
-    public let place: Place
-    public let root, branch: String
-    public let mayPush: Bool
-    /// The PR's repository (`github.com/initech/api`), which keeps a hand-off from a PR with no
-    /// ticket key (`pr:<repo>#<n>`); nil for a ticket's.
-    public let repo: String?
-
-    public init(key: String?, pr: Int?, thread: String?, brief: String, harness: String, provider: String,
-                place: Place, root: String, branch: String, mayPush: Bool, repo: String? = nil) {
-        self.key = key
-        self.pr = pr
-        self.thread = thread
-        self.brief = brief
-        self.harness = harness
-        self.provider = provider
-        self.place = place
-        self.root = root
-        self.branch = branch
-        self.mayPush = mayPush
-        self.repo = repo
-    }
-
-    /// The brief's first line: the conversation's title and the hand-off's.
-    var firstLine: String { String(brief.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).first ?? "") }
-}
-
-/// A Start that did not start: the window's own sentence for why, whole (Rule 8).
-public struct TicketHandOffError: Error, CustomStringConvertible, Equatable {
-    public let description: String
-}
-
 /// A handed conversation (spec, *Hand to agent*, *What a handed agent may do without asking*): an
 /// ordinary agent conversation started off screen, through the one start path (`send`), pinned to
 /// its place; its push, sync, publish, merge and rebase priced tighter (`handedAgentPrice`), May
@@ -87,6 +46,29 @@ extension WindowModel {
             noteHandOffFailure("The hand-off was not recorded (\(error)), so this conversation's push and sync ask you.", in: agent)
         }
         return agent.id
+    }
+
+    /// What the Hand to agent popover opens with (Task 10): the place on screen and its provider,
+    /// the organisation's Claude Code bindings, and each project's environments with their
+    /// production flags — from the settings tree the window holds, read when it holds none. A tree
+    /// that cannot be read leaves the lists empty: the place's own provider still defaults.
+    func handOffContext() async -> TicketHandOffContext {
+        var tree = settings
+        if tree == nil, let result = try? await registry.dispatch(
+            name: "ctx_config_tree", params: .object([:]), origin: .ui,
+            caller: DispatchCaller(place: place, session: nil), confirmation: nil) {
+            tree = decodeSettingsTree(fromResult: result)
+        }
+        let harness = ticketHandOffHarnesses[0].id
+        let providers = (tree?.providers ?? []).filter { $0.kind == harness }.map { TicketHandOffProvider(id: $0.id, label: $0.label) }
+        var environments: [String: [TicketHandOffEnvironment]] = [:]
+        for p in tree?.projects ?? [] {
+            environments[p.name] = p.environments.map { e in
+                // Not known is production (`SettingsEnvironment.production`): it fails toward asking.
+                TicketHandOffEnvironment(name: e.name, production: e.production ?? true)
+            }
+        }
+        return TicketHandOffContext(screen: place, provider: providerId, providers: providers, environments: environments)
     }
 
     /// Cancel: ends the conversation a Start reserved, whatever its start has reached (Rule 4) —

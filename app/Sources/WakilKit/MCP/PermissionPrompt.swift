@@ -91,6 +91,10 @@ public let permissionPromptToolName = "approve_tool_use"
 public let operatorOnlyActions: Set<String> = [
     // provider capacity: the agent may not forge a reading the operator chooses accounts by.
     "capacity_record",
+    // Ticket noticing: Hand to agent's Start, and its Cancel, are the operator's — an agent does not
+    // start conversations (conversations: "no agent tool to start or switch conversations"), and a
+    // spoken turn may open the popover but never press Start (Invariant 7).
+    "ticket_hand_off", "ticket_hand_off_cancel",
     "session_set_provider", "ctx_set_provider",
     // Conversations 2 of 3: which conversation is on screen is the operator's; an agent must not
     // push aside the operator's conversation.
@@ -259,6 +263,8 @@ public let operatorOnlyActions: Set<String> = [
 ///   screen is the operator's; each names the gesture that does it (⌘N, ⌘P).
 /// - `session_close` (conversations 3 of 3): ending a conversation is the operator's; the
 ///   sentence names ⌘⇧W.
+/// - `ticket_hand_off` and `ticket_hand_off_cancel` (ticket noticing): Hand to agent's Start and
+///   Cancel; the spec's own sentence, whole.
 private func operatorOnlyDenialMessage(toolName: String, action: String) -> String {
     switch action {
     case "session_set_provider", "ctx_set_provider":
@@ -378,6 +384,10 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
             + "which is the credential boundary an organisation is. You may READ "
             + "these values — ctx_config_tree answers all three. Ask the operator to change "
             + "them in the settings pane (\u{2318},)."
+    case "ticket_hand_off":
+        return "ticket_hand_off is the operator's: an agent does not start conversations."
+    case "ticket_hand_off_cancel":
+        return "ticket_hand_off_cancel is the operator's: an agent does not start or stop conversations."
     case "capacity_record":
         return "\(toolName): readings are recorded from the agent's own stream, not supplied by the "
             + "agent. Read them with ctx_capacity."

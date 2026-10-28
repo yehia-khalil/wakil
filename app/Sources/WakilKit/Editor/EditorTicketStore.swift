@@ -56,6 +56,13 @@ public actor EditorTicketStore {
     private var shownFailures: [String: String] = [:]
     /// Where each picked ticket's branch is read from, so a resolve, a push or ↻ reads it again.
     private var shownWhere: [String: (root: String, branch: String)] = [:]
+    /// The Hand to agent popover while it is open, and each brief as edited, by subject and source
+    /// (`handOffBriefKey`), for the window's life (Rule 2). `handOffStart` is the Start in flight;
+    /// `handOffCancelled` the one its Cancel stopped. An org switch drops all four (Invariant 4).
+    private var handOffShown: TicketHandOffState?
+    private var briefs: [String: String] = [:]
+    private var handOffStart: UUID?
+    private var handOffCancelled: UUID?
     private var generation = 0
     private var onChange: (@Sendable () async -> Void)?
 
@@ -327,6 +334,15 @@ public actor EditorTicketStore {
         }
     }
 
+    /// The organisation's last Start's harness, provider and May push (`ticket_handoff_defaults`),
+    /// the window's own: nil when none was kept, or the read failed — a default only suggests (Rule 9).
+    public func handoffDefaults() async -> (harness: String, provider: String, mayPush: Bool)? {
+        guard ticket != nil, let content = try? await windowCall("ticket_handoff_defaults", [:], timeout: MCPClient.readReplyTimeout),
+              content["found"] == .bool(true), case .object(let d)? = content["defaults"] else { return nil }
+        func text(_ k: String) -> String { if case .string(let v)? = d[k] { v } else { "" } }
+        return (text("harness"), text("provider"), d["mayPush"] == .bool(true))
+    }
+
     /// The last In flight read, for the view.
     public func lastInFlight() -> InFlightState? { inFlightRead }
 
@@ -469,6 +485,89 @@ public actor EditorTicketStore {
         return nil
     }
 
+    // MARK: Hand to agent (ticket noticing, Task 10)
+
+    /// The popover while it is open; nil when it is closed.
+    public func handOff() -> TicketHandOffState? { handOffShown }
+
+    /// Opens (or changes) the popover; its brief is kept for its subject and source.
+    func showHandOff(_ s: TicketHandOffState) async {
+        handOffShown = s
+        briefs[handOffBriefKey(key: s.key, pr: s.pr, repo: s.repo, source: s.source)] = s.brief
+        await changed()
+    }
+
+    /// The brief kept for a subject and source, as last edited; nil before one was.
+    func keptBrief(_ key: String) -> String? { briefs[key] }
+
+    /// Closes the popover; its brief stays kept (Rule 2).
+    func closeHandOff() async {
+        handOffShown = nil
+        await changed()
+    }
+
+    /// A Start begins: the popover reads Starting…, its last failure goes. Answers the start's token.
+    func beginHandOffStart() async -> UUID {
+        let token = UUID()
+        handOffStart = token
+        handOffShown?.starting = true
+        handOffShown?.error = nil
+        handOffShown?.conversation = nil
+        await changed()
+        return token
+    }
+
+    /// The start reserved its conversation: kept so Cancel can name it. False when that start was
+    /// cancelled meanwhile — its conversation is then ended by the caller.
+    func reserveHandOff(_ conversation: String, token: UUID) async -> Bool {
+        guard handOffCancelled != token else { return false }
+        if handOffStart == token { handOffShown?.conversation = conversation }
+        await changed()
+        return true
+    }
+
+    /// How a start ended, for its own state: it is the popover's still (`current`), Cancel stopped it,
+    /// or an org switch dropped the popover (`gone`).
+    enum HandOffStartEnd { case current, cancelled, gone }
+
+    /// A start came back: on success the popover closes (its brief stays kept); a failure leaves it
+    /// open with the message whole and the brief intact (Rule 8). A start Cancel stopped, or an org
+    /// switch dropped, changes nothing here.
+    func finishHandOffStart(_ token: UUID, error: String?) async -> HandOffStartEnd {
+        if handOffCancelled == token { handOffCancelled = nil; return .cancelled }
+        guard handOffStart == token else { return .gone }
+        handOffStart = nil
+        if let error {
+            handOffShown?.starting = false
+            handOffShown?.conversation = nil
+            handOffShown?.error = error
+        } else {
+            handOffShown = nil
+        }
+        await changed()
+        return .current
+    }
+
+    /// Cancel while starting (Rule 4): the popover stays open, no longer starting; answers the
+    /// conversation the start reserved, if it reserved one yet, for the caller to end.
+    func cancelHandOffStart() async -> String? {
+        guard let token = handOffStart else { return nil }
+        handOffCancelled = token
+        handOffStart = nil
+        let reserved = handOffShown?.conversation
+        handOffShown?.starting = false
+        handOffShown?.conversation = nil
+        await changed()
+        return reserved
+    }
+
+    /// The read that holds a thread: the root's current branch first, then a picked ticket's branch.
+    public func branch(holding thread: String) -> TicketBranchState? {
+        let reads = cache.filter { current[$0.key.root] == $0.key.branch }.map(\.value.state)
+            + cache.filter { current[$0.key.root] != $0.key.branch }.map(\.value.state) + shownReads.values
+        return reads.first { $0.prs.contains { $0.threads.contains { $0.id == thread } } }
+    }
+
     // MARK: Drafts
 
     /// A thread's draft text; nil when it has none.
@@ -572,8 +671,9 @@ public actor EditorTicketStore {
     /// Keeps what GitHub answered beside the thread's posted reply; nil drops it.
     func setAnswer(thread: String, text: String?) { answers[thread] = text }
 
-    /// An org switch: the outgoing organisation's reads, drafts and flights go, and anything still
-    /// running lands on a newer generation and is dropped.
+    /// An org switch: the outgoing organisation's reads, drafts and flights go, the Hand to agent
+    /// popover closes and its kept briefs go, and anything still running lands on a newer generation
+    /// and is dropped.
     public func reset() {
         generation += 1
         for f in flights.values { f.task.cancel() }
@@ -595,6 +695,10 @@ public actor EditorTicketStore {
         shownReads = [:]
         shownFailures = [:]
         shownWhere = [:]
+        handOffShown = nil
+        briefs = [:]
+        handOffStart = nil
+        handOffCancelled = nil
     }
 }
 

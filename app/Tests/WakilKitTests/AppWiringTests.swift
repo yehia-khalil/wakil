@@ -279,6 +279,7 @@ private func makeCheckout(marker: String = "go.mod") throws -> (root: URL, exeDi
              "session_close", "session_get", "session_list", "session_new", "session_read",
              "session_record_parent", "session_resume", "session_set_provider", "session_switch", "settings_open", "term_open",
              "term_propose", "term_run", "term_scroll",
+             "ticket_hand_off", "ticket_hand_off_brief", "ticket_hand_off_cancel", "ticket_hand_off_close", "ticket_hand_off_open",
              "ticket_in_flight", "ticket_link", "ticket_open", "ticket_read", "ticket_record_update", "ticket_refresh", "ticket_show"])
     #expect(wiring.contextClient == nil)
     #expect(wiring.databaseClient == nil)

@@ -129,6 +129,8 @@ struct EditorPane: View {
     @State private var treeBrowsed: String?
     /// The revealed file's row, until the column has drawn and selected it.
     @State private var pendingReveal: String?
+    /// The Hand to agent popover's field as typed, when it is anchored here.
+    @State private var handOffDraft = TicketHandOffDraft()
 
     private var activeTab: EditorTab? {
         snapshot.active.flatMap { $0 < snapshot.tabs.count ? snapshot.tabs[$0] : nil }
@@ -140,6 +142,12 @@ struct EditorPane: View {
         editorTreeRows(roots.compactMap { files.listings[$0] }, open: Set(column.open), dirs: files.dirs,
                        loading: files.loading, dirErrors: files.dirErrors, showIgnored: showIgnored)
     }
+
+    /// The Hand to agent popover, when it opened in THIS pane (`TicketHandOffState.pane`).
+    private var handOff: TicketHandOffState? { ticket.handoff.flatMap { $0.pane == pane.id ? $0 : nil } }
+    /// From the header with the Ticket view showing: anchored to its **Hand to agent**; else to the
+    /// editor, under its top edge, where the box that opened it is.
+    private var handOffInColumn: Bool { handOff?.source == .header && column.shown && column.view == .ticket }
 
     /// Save-as starts in the selected row's folder, else the first root.
     private var saveAsBase: String {
@@ -161,7 +169,8 @@ struct EditorPane: View {
                                  pendingReveal: $pendingReveal, browsed: $treeBrowsed,
                                  changes: changes, timeline: timeline, timelineTab: activeTab,
                                  ticket: ticket, reviews: reviews, dispatchReply: dispatchThrowingReply,
-                                 ticketCount: ticketCount, ticketCountLabel: ticketCountLabel)
+                                 ticketCount: ticketCount, ticketCountLabel: ticketCountLabel,
+                                 handOffAnchored: handOffInColumn)
                 }
                 editorStack
             }
@@ -328,6 +337,19 @@ struct EditorPane: View {
                         .accessibilityIdentifier(comparing != nil ? "editor.compare.diff" : "editor.monaco")
                 }
                 if snapshot.tabs.isEmpty, comparing == nil { emptyState }
+                // Hand to agent from a review box (or the header, its Ticket view hidden).
+                Color.clear.frame(width: 1, height: 1)
+                    .popover(isPresented: Binding(get: { handOff != nil && !handOffInColumn }, set: { shown in
+                        if !shown, handOff?.starting == false {
+                            let p = handOffDraft.closeParams(handOff)
+                            Task { await dispatch("ticket_hand_off_close", p) }
+                        }
+                    }), arrowEdge: .bottom) {
+                        if let handOff {
+                            TicketHandOffPopover(state: handOff, dispatch: dispatch, dispatchReply: dispatchThrowingReply,
+                                                 draft: handOffDraft)
+                        }
+                    }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -619,7 +641,8 @@ struct EditorPane: View {
     /// A review box's control, as the registry action every caller uses (Invariant 2): the draft
     /// kept on blur and dropped by Discard (`review_reply_draft`), Restore yours
     /// (`review_reply_draft_restore`), Send (`review_reply_send`, gated:
-    /// the plane shows the text and the thread's place), Resolve and Unresolve (`review_resolve`), and
+    /// the plane shows the text and the thread's place), Hand to agent (`ticket_hand_off_open`, the
+    /// popover only), Resolve and Unresolve (`review_resolve`), and
     /// ⌥↓ / ⌥↑ from the box (`review_step` from that thread). A Send is drawn as sending from the press
     /// until its dispatch — the plane included — is over, and is not pressed twice (Rule 5).
     private func reviewOp(_ thread: String, _ op: String, _ text: String?, _ delta: Int?) {
@@ -645,6 +668,10 @@ struct EditorPane: View {
                     "thread": .string(thread), "body": .string(body), "path": .string(t.path),
                     "line": .integer(Int64(t.line))])
                 host.endReviewSend(thread)
+            case "handoff":
+                // Hand to agent: the popover opens prefilled from this thread (`ticket_hand_off_open`);
+                // only the operator's Start in it hands anything off.
+                await dispatch("ticket_hand_off_open", ["thread": .string(thread)])
             case "resolve", "unresolve":
                 guard let t else { return }
                 await dispatch("review_resolve", ["root": .string(t.root), "thread": .string(thread),

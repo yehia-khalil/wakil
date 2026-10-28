@@ -279,6 +279,7 @@ public struct WakilWiring: Sendable {
         }, cancel: { [weak model] conversation in
             await model?.cancelHandOff(conversation)
         })
+        handOffLookup.use(context: { [weak model] in await model?.handOffContext() })
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -509,7 +510,7 @@ public struct WakilWiring: Sendable {
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
             gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites, ticket: ticketStore,
-            organization: { await liveLookup.organization() })
+            organization: { await liveLookup.organization() }, handOff: handOffLookup)
         // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
         for action in browser { await registry.register(action) }
         let commitDrafts = CommitDraftSink()

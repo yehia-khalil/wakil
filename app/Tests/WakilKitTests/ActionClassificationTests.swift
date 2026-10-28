@@ -177,6 +177,8 @@ private func wiringWithNoBinaries() async throws -> WakilWiring {
             // does hold, and an agent able to open a surface it may drive
             // no part of holds a handle to nothing.
             "settings_open", "term_run",
+            // Ticket noticing: Hand to agent's Start and Cancel — an agent does not start conversations.
+            "ticket_hand_off", "ticket_hand_off_cancel",
         ])
 
     let reachable = await wiring.registry.all()

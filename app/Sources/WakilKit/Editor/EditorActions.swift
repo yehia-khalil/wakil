@@ -290,7 +290,8 @@ public func registerEditorActions(
     roots: @escaping @Sendable () async -> [String],
     gitWrites: GitWriteFlights = GitWriteFlights(),
     ticket: EditorTicketStore? = nil,
-    organization: @escaping @Sendable () async -> String? = { nil }
+    organization: @escaping @Sendable () async -> String? = { nil },
+    handOff: TicketHandOffLookup? = nil
 ) async {
     await registerEditorChangesWrites(into: registry, gitStatus: gitStatus, panes: panes, layout: layout, writes: gitWrites,
                                       ticket: ticket)
@@ -2367,7 +2368,7 @@ public func registerEditorActions(
                         await panes.landEditorReviewHead(h, text: await editorReadReviewHead(git, h), generation: gen)
                     }
                 }),
-            roots: roots, organization: organization)
+            roots: roots, organization: organization, handOff: handOff)
     }
 }
 

@@ -18,8 +18,8 @@ extension WindowModel {
         return ticketNeedsRowsOf(ticketNeeds, ticketHandOffLive, editorReviews.reads.draftRecords)
     }
 
-    /// The live handed conversations' states, by conversation id.
-    private var ticketHandOffLive: [String: TicketHandOffLive] {
+    /// The live handed conversations' states, by conversation id (the record's hand-off entries read it).
+    public var ticketHandOffLive: [String: TicketHandOffLive] {
         var live: [String: TicketHandOffLive] = [:]
         for c in liveConversationRows() {
             live[c.id] = switch c.state {

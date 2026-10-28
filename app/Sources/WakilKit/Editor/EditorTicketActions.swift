@@ -41,6 +41,8 @@ public struct EditorTicketMirror: Sendable, Equatable {
     /// Which threads have a draft and who wrote it (`operator` or `agent`), by thread id; never the text.
     public struct Draft: Sendable, Equatable { public let thread: String; public let by: String }
     public var drafts: [Draft]
+    /// The Hand to agent popover while it is open: its readable part (`TicketHandOffState.json`).
+    public var handoff: TicketHandOffState?
     public static let empty = EditorTicketMirror(roots: [], byRoot: [:], drafts: [])
 
     /// The `ticket` key of a pane whose front tab is in `front`.
@@ -58,6 +60,7 @@ public struct EditorTicketMirror: Sendable, Equatable {
             "drafts": .array(drafts.map { .object(["thread": .string($0.thread), "by": .string($0.by)]) }),
             "reading": .bool(r?.reading ?? false),
             "error": r?.error.map { .string($0) } ?? .null,
+            "handoff": handoff?.json ?? .object(["open": .bool(false)]),
         ])
     }
 }
@@ -72,13 +75,14 @@ func editorFrontRoot(_ s: EditorSnapshot) -> String? {
     }
 }
 
-/// Registers the Ticket view's thirteen actions (spec, *Actions*). Every write — a record line, a link,
+/// Registers the Ticket view's actions (spec, *Actions*), Hand to agent's five among them. Every write — a record line, a link,
 /// a draft, a reply, a resolve — is one of these, for the operator and the agent alike (Invariant 2).
 /// `by` on a record line comes from who dispatched (`ticketBy`), never from params.
 func registerTicketActions(
     into registry: ActionRegistry, store: EditorTicketStore, panes: PaneStore, layout: LayoutStore?,
     editor: EditorTicketHooks, roots: @escaping @Sendable () async -> [String],
-    organization: @escaping @Sendable () async -> String? = { nil }
+    organization: @escaping @Sendable () async -> String? = { nil },
+    handOff: TicketHandOffLookup? = nil
 ) async {
     @Sendable func mirror() async {
         let rs = await roots()
@@ -102,10 +106,11 @@ func registerTicketActions(
                                          recordFailures: await store.shownRecordFailures(),
                                          shownBranches: await store.shownBranches(),
                                          shownBranchFailures: await store.shownBranchFailures(),
-                                         draftsFailure: await store.draftsFailure())
+                                         draftsFailure: await store.draftsFailure(), handoff: await store.handOff())
         await panes.setEditorTicketMirror(
             EditorTicketMirror(roots: rs, byRoot: byRoot,
-                               drafts: records.keys.sorted().map { .init(thread: $0, by: records[$0]?.by ?? "") }),
+                               drafts: records.keys.sorted().map { .init(thread: $0, by: records[$0]?.by ?? "") },
+                               handoff: await store.handOff()),
             reviews: EditorReviewsState.Reads(byRoot: reviews, drafts: drafts, sending: await store.allSending(),
                                               answers: await store.allAnswers(), draftRecords: records),
             view: view)
@@ -737,6 +742,276 @@ func registerTicketActions(
             guard case .object(let o) = params else { return "" }
             let verb = o["resolved"] == .bool(false) ? "unresolve" : "resolve"
             return "\(verb) the review thread at \(t.path):\(t.line) on \(t.repo)#\(t.number) in \((root as NSString).lastPathComponent)"
+        }))
+
+    // MARK: - Hand to agent (ticket noticing, Task 10)
+
+    /// What a hand-off is handed from, read from the store (never from params beyond naming it): the
+    /// ticket (nil for a PR with no key), its PR, root and branch, and the fresh brief. A row no project
+    /// holds is refused: an agent needs a root (spec, *After the builder check*).
+    struct HandOffSubject {
+        let key: String?, pr: Int?, repo: String?, source: TicketHandOffSource
+        let root, branch: String, brief: String
+    }
+    @Sendable func outsideRefusal(_ name: String) -> TicketActionError {
+        TicketActionError(description: "ticket_hand_off_open: \(name) is \(ticketOutsideLine.lowercased()) — an agent "
+            + "needs a root to work in, so it is not handed; nothing was opened")
+    }
+    /// The ticket of a read: the one named, else the branch's marked, else its first.
+    @Sendable func ticketOf(_ b: TicketBranchState, key: String?) -> TicketRefState? {
+        if let key { return b.tickets.first { $0.key == key } }
+        return b.tickets.first(where: \.marked) ?? b.tickets.first
+    }
+    @Sendable func handOffSubject(_ params: JSONValue) async throws -> HandOffSubject {
+        let action = "ticket_hand_off_open"
+        let key = optionalString(params, "key").flatMap { $0.isEmpty ? nil : $0.uppercased() }
+        let prParam: Int? = if case .object(let o) = params, let n = o["pr"]?.intValue, n > 0 { n } else { nil }
+        if let id = optionalString(params, "thread"), !id.isEmpty {
+            guard let t = await store.thread(id), let b = await store.branch(holding: id),
+                  let pr = b.prs.first(where: { $0.number == t.number }) else {
+                throw TicketActionError(description: "\(action): no review thread \(id) in the ticket reads; ticket_refresh reads them again")
+            }
+            let ticket = ticketOf(b, key: key)
+            return HandOffSubject(key: ticket?.key, pr: pr.number, repo: ticket == nil && !b.repo.isEmpty ? b.repo : nil,
+                                  source: .thread(id),
+                                  root: t.root, branch: b.branch,
+                                  brief: handOffThreadBrief(ticket: ticket, pr: pr, thread: t, root: t.root, branch: b.branch))
+        }
+        // From the header (or ⌘P): the named row's root and branch, else the key's first row's, else
+        // the followed root's own branch.
+        let s = await store.lastInFlight()
+        let rows = (s?.waitingOnYou ?? []) + (s?.inFlight ?? [])
+        var root = optionalString(params, "root").flatMap { $0.isEmpty ? nil : $0 }
+        var branchName = optionalString(params, "branch").flatMap { $0.isEmpty ? nil : $0 }
+        if let r = root { _ = try await orgRoot(.object(["root": .string(r)]), action) }
+        let own = await roots()
+        if root == nil, let key {
+            let keyed = rows.filter { $0.key == key }
+            if !keyed.isEmpty, keyed.allSatisfy({ $0.root.isEmpty }) { throw outsideRefusal(key) }
+            // The key on a root of this project, as read: the followed branch's own ticket.
+            var found: TicketBranchState?
+            for r in own { if let b = await store.branch(root: r), b.tickets.contains(where: { $0.key == key }) { found = b; break } }
+            if let found { root = found.root; branchName = found.branch }
+            else if let row = keyed.first(where: { !$0.root.isEmpty }) { root = row.root; branchName = row.branch }
+        }
+        if root == nil, key == nil {
+            if let prParam, rows.contains(where: { $0.root.isEmpty && $0.pr == prParam }) {
+                throw outsideRefusal("#\(prParam)")
+            }
+            if let r = own.first { root = r; branchName = await store.branch(root: r)?.branch }
+        }
+        guard let root else {
+            throw TicketActionError(description: "\(action): no root to hand \(key ?? prParam.map { "#\($0)" } ?? "this branch") "
+                + "from — open it in the Ticket view first; nothing was opened")
+        }
+        // The read: the root's current branch's when it is the one named, else a picked ticket's or row's.
+        var read: TicketBranchState?
+        if let b = await store.branch(root: root), branchName == nil || b.branch == branchName { read = b }
+        let shown = await store.shownBranches()
+        if read == nil, let key, let b = shown[key], branchName == nil || b.branch == branchName { read = b }
+        if read == nil, let branchName, let b = shown[TicketShownAt(root: root, branch: branchName).id] { read = b }
+        let branch = read?.branch ?? branchName ?? ""
+        var ticket = read.flatMap { ticketOf($0, key: key) }
+        if ticket == nil, let key {
+            // Not read yet: what In flight says of it.
+            let row = rows.first { $0.key == key && $0.root == root } ?? rows.first { $0.key == key }
+            ticket = TicketRefState(key: key, title: row?.title ?? "", status: row?.status ?? "")
+        }
+        if let t = ticket, let record = await store.shownRecords()[t.key] { ticket?.record = record }
+        let prs = (read?.prs ?? []).filter { $0.state.lowercased() == "open" }
+        let pr = prParam.flatMap { n in read?.prs.first { $0.number == n } } ?? prs.first ?? read?.prs.first
+        guard ticket != nil || pr != nil || prParam != nil else {
+            throw TicketActionError(description: "\(action): \(branch.isEmpty ? "this branch" : branch) has no ticket and no "
+                + "pull request to hand to an agent; nothing was opened")
+        }
+        let waiting = read.map(handOffWaitingThreads) ?? []
+        let failing = prs.flatMap(ticketFailingChecks)
+        let brief = handOffHeaderBrief(ticket: ticket, pr: pr, waiting: waiting, failing: failing,
+                                       notDone: ticket?.record.notDone ?? [], root: root, branch: branch)
+        // A PR with no ticket key is kept by its repository (`pr:<repo>#<n>`); unread, it has none to name.
+        let repo = ticket == nil ? read.flatMap { $0.repo.isEmpty ? nil : $0.repo } : nil
+        return HandOffSubject(key: ticket?.key, pr: pr?.number ?? prParam, repo: repo,
+                              source: .header, root: root, branch: branch, brief: brief)
+    }
+    /// A popover action's answer: its pane's `read_pane` (the `ticket` key carries the popover), else
+    /// the popover's readable part alone.
+    @Sendable func handOffReply(_ pane: String?) async -> JSONValue {
+        if let pane, !pane.isEmpty { return await editor.reply(pane) }
+        return .object(["handoff": await store.handOff()?.json ?? .object(["open": .bool(false)])])
+    }
+    /// The place a subject starts in (`handOffPlace`), and whether its environment is production.
+    @Sendable func handOffWhere(root: String, context ctx: TicketHandOffContext) async -> (Place, Bool) {
+        var project = ctx.screen.project
+        if !(await roots()).contains(root) {
+            let rows = (await store.lastInFlight()).map { $0.waitingOnYou + $0.inFlight } ?? []
+            let row = rows.first { $0.root == root }
+            project = row.map { $0.project.isEmpty ? ($0.root as NSString).lastPathComponent : $0.project } ?? project
+        }
+        let envs = ctx.environments[project] ?? []
+        let place = handOffPlace(project: project, screen: ctx.screen, environments: envs.map { ($0.name, $0.production) },
+                                 remembered: ctx.remembered[project])
+        let production = envs.first { $0.name == place.environment }?.production
+            ?? isProductionEnvironment(place.environment)
+        return (place, production)
+    }
+
+    await registry.register(Action(
+        name: "ticket_hand_off_open",
+        description: "Open the Hand to agent popover, prefilled: from a review thread (thread), or from the Ticket "
+            + "header for a key (with root and branch naming its row; key null with root, branch and pr for a pull "
+            + "request with no ticket key). The brief kept for that ticket and thread or header comes back as edited; "
+            + "reset true refills it from the source. Harness, provider and May push default to the organization's "
+            + "last Start. It only opens the popover: the operator's Start hands it to an agent. Not offered for a "
+            + "pull request no project holds.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["key": .object(["type": .array([.string("string"), .string("null")])]), "pr": integer,
+                        "thread": string, "root": string, "branch": string, "reset": boolean, "from": string,
+                        "pane": string]),
+        handler: { params in
+            let action = "ticket_hand_off_open"
+            if await store.handOff()?.starting == true {
+                throw TicketActionError(description: "\(action): a hand-off is starting; Cancel stops it first")
+            }
+            guard let handOff, let ctx = await handOff.context() else {
+                throw TicketActionError(description: "\(action): no window to hand off from")
+            }
+            let pane = try await editor.pane(params, action)
+            let subject = try await handOffSubject(params)
+            let briefKey = handOffBriefKey(key: subject.key, pr: subject.pr, repo: subject.repo, source: subject.source)
+            let reset = { if case .object(let o) = params { o["reset"] == .bool(true) } else { false } }()
+            let brief = reset ? subject.brief : (await store.keptBrief(briefKey) ?? subject.brief)
+            // Reopened on the same hand-off: what the operator set stays; else the last Start's (Rule 9).
+            let open = await store.handOff()
+            let same = open.map { handOffBriefKey(key: $0.key, pr: $0.pr, repo: $0.repo, source: $0.source) == briefKey } ?? false
+            let d = same ? (open!.harness, open!.provider, open!.mayPush)
+                : handOffDefaults(stored: await store.handoffDefaults(), current: ctx.provider)
+            let (place, production) = await handOffWhere(root: subject.root, context: ctx)
+            await store.showHandOff(TicketHandOffState(
+                key: subject.key, pr: subject.pr, repo: subject.repo, source: subject.source, brief: brief,
+                harness: d.0, provider: d.1, mayPush: d.2, place: place, production: production,
+                root: subject.root, branch: subject.branch, providers: ctx.providers, pane: pane))
+            return await editor.reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "ticket_hand_off_brief",
+        description: "Keep the open Hand to agent popover's edits (its field dispatches on blur): brief, its text. "
+            + "harness, provider and mayPush are the operator's alone: an agent may edit the brief's text and nothing "
+            + "else, and a call from one that names any of the three is refused whole.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["brief": string, "harness": string, "provider": string, "mayPush": boolean]),
+        handler: { params in
+            let action = "ticket_hand_off_brief"
+            guard var s = await store.handOff() else {
+                throw TicketActionError(description: "\(action): no Hand to agent popover is open")
+            }
+            guard !s.starting else { throw TicketActionError(description: "\(action): the hand-off is starting; nothing was changed") }
+            guard case .object(let o) = params else { return await handOffReply(s.pane) }
+            // F2: who runs it and whether it may push are the operator's (Invariant 7) — never an agent's.
+            let operatorsOnly = ["harness", "provider", "mayPush"].filter { o[$0] != nil }
+            if ActionRegistry.dispatchOrigin == .agent, !operatorsOnly.isEmpty {
+                throw TicketActionError(description: "\(action): only the operator sets "
+                    + operatorsOnly.joined(separator: ", ") + " — an agent may edit the brief's text alone; nothing was changed")
+            }
+            if case .string(let h)? = o["harness"] {
+                guard ticketHandOffHarnesses.contains(where: { $0.id == h }) else {
+                    throw TicketActionError(description: "\(action): Wakil has no harness \(h); nothing was changed")
+                }
+                s.harness = h
+            }
+            if case .string(let p)? = o["provider"], !p.isEmpty { s.provider = p }
+            if case .bool(let m)? = o["mayPush"] { s.mayPush = m }
+            if case .string(let b)? = o["brief"] { s.brief = b }
+            s.error = nil
+            await store.showHandOff(s)
+            return await handOffReply(s.pane)
+        }))
+
+    await registry.register(Action(
+        name: "ticket_hand_off",
+        description: "Start: hand the popover's ticket to an agent in a new background conversation, with exactly "
+            + "the popover's brief, harness, provider, place, root, branch and May push. The operator's only.",
+        kind: .control, audience: .operatorOnly,
+        schema: schema(["key": .object(["type": .array([.string("string"), .string("null")])]), "pr": integer,
+                        "repo": string, "thread": string, "brief": string, "harness": string, "provider": string,
+                        "mayPush": boolean, "root": string, "branch": string, "pane": string,
+                        "place": .object(["type": .string("object")])],
+                       required: ["brief", "harness", "provider", "mayPush", "place", "root", "branch"]),
+        handler: { params in
+            let action = "ticket_hand_off"
+            guard let s = await store.handOff() else {
+                throw TicketActionError(description: "\(action): no Hand to agent popover is open; nothing was started")
+            }
+            guard !s.starting else {
+                throw TicketActionError(description: "\(action): the hand-off is already starting; nothing was started twice")
+            }
+            guard let handOff else { throw TicketActionError(description: "\(action): no window to start the hand-off in") }
+            guard case .object(let o) = params, case .object(let p)? = o["place"], case .bool(let mayPush)? = o["mayPush"] else {
+                throw StandardActionError.missingParam(action: action, param: "place")
+            }
+            let brief = try param(params, "brief", action)
+            func text(_ k: String) -> String { if case .string(let v)? = p[k] { v } else { "" } }
+            let key = optionalString(params, "key").flatMap { $0.isEmpty ? nil : $0 }
+            let thread = optionalString(params, "thread").flatMap { $0.isEmpty ? nil : $0 }
+            // The popover the operator pressed Start on: the same hand-off, or nothing starts.
+            guard key == s.key, thread == s.thread else {
+                throw TicketActionError(description: "\(action): the popover shows \(s.name), not what this Start names; nothing was started")
+            }
+            let request = TicketHandOffRequest(
+                key: key, pr: o["pr"]?.intValue, thread: thread, brief: brief, harness: try param(params, "harness", action),
+                provider: try param(params, "provider", action),
+                place: Place(organization: text("organization"), project: text("project"), environment: text("environment")),
+                root: try param(params, "root", action), branch: try param(params, "branch", action), mayPush: mayPush,
+                repo: optionalString(params, "repo").flatMap { $0.isEmpty ? nil : $0 })
+            let token = await store.beginHandOffStart()
+            do {
+                let id = try await handOff.start(request, reserved: { id in
+                    Task { if !(await store.reserveHandOff(id, token: token)) { await handOff.cancel(id) } }
+                })
+                if await store.finishHandOffStart(token, error: nil) == .cancelled { await handOff.cancel(id) }
+                return .object(["conversation": .string(id)])
+            } catch {
+                let said = "\(error)"
+                guard await store.finishHandOffStart(token, error: said) == .current else {
+                    return .object(["cancelled": .bool(true)])
+                }
+                throw TicketActionError(description: "\(action): \(said)")
+            }
+        }))
+
+    await registry.register(Action(
+        name: "ticket_hand_off_cancel",
+        description: "Cancel the Hand to agent popover: while a Start runs, stop it and end the conversation it "
+            + "reserved (the popover stays, its brief kept); else close the popover. The operator's only.",
+        kind: .control, audience: .operatorOnly,
+        schema: schema(["pane": string]),
+        handler: { _ in
+            guard let s = await store.handOff() else { return .object(["handoff": .object(["open": .bool(false)])]) }
+            if s.starting {
+                if let id = await store.cancelHandOffStart() { await handOff?.cancel(id) }
+            } else {
+                await store.closeHandOff()
+            }
+            return await handOffReply(s.pane)
+        }))
+
+    await registry.register(Action(
+        name: "ticket_hand_off_close",
+        description: "Close the Hand to agent popover. Its brief is kept — brief, when given, is the field's text "
+            + "as it closed — and reopening it shows the edited text. Refused while a Start runs: Cancel stops that.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["brief": string, "pane": string]),
+        handler: { params in
+            guard var s = await store.handOff() else { return .object(["handoff": .object(["open": .bool(false)])]) }
+            guard !s.starting else {
+                throw TicketActionError(description: "ticket_hand_off_close: the hand-off is starting; Cancel stops it")
+            }
+            if let brief = optionalString(params, "brief") {
+                s.brief = brief
+                await store.showHandOff(s)
+            }
+            await store.closeHandOff()
+            return await handOffReply(s.pane)
         }))
 }
 

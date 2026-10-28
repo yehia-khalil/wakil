@@ -52,6 +52,8 @@ struct EditorColumn: View {
     /// the view follows.
     var ticketCount = 0
     var ticketCountLabel: String?
+    /// The Hand to agent popover is this pane's and from the header: the Ticket view's button anchors it.
+    var handOffAnchored = false
 
     @State private var dragWidth: Double?
     /// 3a-iv: the root whose branch picker is open from its header.
@@ -154,7 +156,8 @@ struct EditorColumn: View {
                 case .ticket:
                     EditorTicketView(state: ticket, column: column, tab: timelineTab, reviews: reviews,
                                      dispatch: dispatch, dispatchReply: dispatchReply, focused: $ticketFocused,
-                                     fieldHasKeyboard: $ticketFieldHasKeyboard, browsed: $browsed)
+                                     fieldHasKeyboard: $ticketFieldHasKeyboard, browsed: $browsed,
+                                     handOffAnchored: handOffAnchored)
                 }
             }
             .frame(width: dragWidth ?? editorColumnWidth(column.width, paneWidth: paneWidth))

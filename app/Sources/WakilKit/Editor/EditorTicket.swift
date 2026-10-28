@@ -57,29 +57,31 @@ public struct TicketSeenState: Sendable, Equatable, Codable {
     }
 }
 
-/// A ticket's record (spec, *The ticket record*): `next` and the five lists. Its `branches` and `prs`
-/// are Wakil's cache of reads and are not mirrored here.
+/// A ticket's record (spec, *The ticket record*): `next` and the five lists, and the hand-offs Wakil
+/// wrote (`handoffs`, ticket noticing). Its `branches` and `prs` are Wakil's cache of reads and are
+/// not mirrored here.
 public struct TicketRecordState: Sendable, Equatable, Codable {
     public var key: String
     public var seen: TicketSeenState
     public var next: TicketLineState?
     public var decisions, notDone, waitingOn, verified, rulings: [TicketLineState]
+    public var handoffs: [TicketHandOffEntryState]
 
     public init(key: String, seen: TicketSeenState = TicketSeenState(), next: TicketLineState? = nil,
                 decisions: [TicketLineState] = [], notDone: [TicketLineState] = [], waitingOn: [TicketLineState] = [],
-                verified: [TicketLineState] = [], rulings: [TicketLineState] = []) {
+                verified: [TicketLineState] = [], rulings: [TicketLineState] = [], handoffs: [TicketHandOffEntryState] = []) {
         self.key = key; self.seen = seen; self.next = next; self.decisions = decisions; self.notDone = notDone
-        self.waitingOn = waitingOn; self.verified = verified; self.rulings = rulings
+        self.waitingOn = waitingOn; self.verified = verified; self.rulings = rulings; self.handoffs = handoffs
     }
 
-    private enum CodingKeys: String, CodingKey { case key, seen, next, decisions, notDone, waitingOn, verified, rulings }
+    private enum CodingKeys: String, CodingKey { case key, seen, next, decisions, notDone, waitingOn, verified, rulings, handoffs }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(key: c.text(.key), seen: ((try? c.decodeIfPresent(TicketSeenState.self, forKey: .seen)) ?? nil) ?? TicketSeenState(),
                   next: (try? c.decodeIfPresent(TicketLineState.self, forKey: .next)) ?? nil,
                   decisions: c.list(.decisions), notDone: c.list(.notDone), waitingOn: c.list(.waitingOn),
-                  verified: c.list(.verified), rulings: c.list(.rulings))
+                  verified: c.list(.verified), rulings: c.list(.rulings), handoffs: c.list(.handoffs))
     }
 }
 
@@ -770,15 +772,21 @@ public struct EditorTicketViewState: Sendable, Equatable {
     public var shownBranchFailures: [String: String]
     /// Why the organisation's reply drafts could not be read, whole; nil after a load that came back.
     public var draftsFailure: String?
+    /// The Hand to agent popover, while it is open (ticket noticing, Task 10).
+    public var handoff: TicketHandOffState?
+    /// The live handed conversations' states, by conversation id, for the record's hand-off entries:
+    /// the window's (`WindowModel.ticketHandOffLive`), set where the view is drawn.
+    public var handOffLive: [String: TicketHandOffLive]
 
     public init(roots: [String] = [], branches: [String: TicketBranchState] = [:], reading: Set<String> = [],
                 failures: [String: String] = [:], inFlight: InFlightState? = nil, records: [String: TicketRecordState] = [:],
                 recordFailures: [String: String] = [:], shownBranches: [String: TicketBranchState] = [:],
-                shownBranchFailures: [String: String] = [:], draftsFailure: String? = nil) {
+                shownBranchFailures: [String: String] = [:], draftsFailure: String? = nil,
+                handoff: TicketHandOffState? = nil, handOffLive: [String: TicketHandOffLive] = [:]) {
         self.roots = roots; self.branches = branches; self.reading = reading; self.failures = failures
         self.inFlight = inFlight; self.records = records; self.recordFailures = recordFailures
         self.shownBranches = shownBranches; self.shownBranchFailures = shownBranchFailures
-        self.draftsFailure = draftsFailure
+        self.draftsFailure = draftsFailure; self.handoff = handoff; self.handOffLive = handOffLive
     }
     public static let empty = EditorTicketViewState()
 
