@@ -271,6 +271,29 @@ private func thread(_ id: String, _ path: String, _ line: Int, outdated: Bool = 
         #expect(s.inFlight.first?.state == "checks failing")
     }
 
+    @Test func inFlightRowCarriesItsNumbers() throws {
+        // Piece 3's numbers decode beside piece 2's words; a row from before them decodes as empty.
+        let row: JSONValue = .object([
+            "key": .string(""), "title": .string("Speed up the build"), "state": .string("#215 · 2 threads"),
+            "root": .string(""), "branch": .string("build-speed"), "pr": .integer(215), "project": .string(""),
+            "repo": .string("github.com/initech/billing"), "url": .string("https://github.com/initech/billing/pull/215"),
+            "threads": .array([.string("T_1"), .string("T_2")]), "failing": .array([.string("unit (Linux)")]),
+            "review": .bool(true), "activity": .string("2026-10-26T11:00:00Z"),
+            "handoffs": .array([.object(["id": .string("h1"), "conversation": .string("c1"), "thread": .string("T_1")])]),
+            "count": .integer(4),
+        ])
+        let old: JSONValue = .object(["key": .string("INI-142"), "state": .string("local branch")])
+        let o: [String: JSONValue] = ["waitingOnYou": .array([row]), "inFlight": .array([old]), "partial": .array([]),
+                                      "count": .integer(4)]
+        let s = try ticketDecode(InFlightState.self, o, tool: "t")
+        #expect(s.count == 4)
+        let r = try #require(s.waitingOnYou.first)
+        #expect(r.threads == ["T_1", "T_2"] && r.failing == ["unit (Linux)"] && r.review && r.count == 4)
+        #expect(r.repo == "github.com/initech/billing" && r.url.hasSuffix("/pull/215") && r.root.isEmpty && r.project.isEmpty)
+        #expect(r.activity == "2026-10-26T11:00:00Z" && r.handoffs == [HandoffRefState(id: "h1", conversation: "c1", thread: "T_1")])
+        #expect(s.inFlight.first == InFlightRowState(key: "INI-142", state: "local branch"))
+    }
+
     @Test func partialLinesAreWhole() {
         let ssh = "Pull requests not read: this organization's github.com account signs in with SSH, which reads no pull "
             + "requests. Add API access to the GitHub account in Settings → Organisation → Git."

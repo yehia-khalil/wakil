@@ -141,7 +141,7 @@ func newServer() *mcp.Server {
 			return nil, out, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "ticket_in_flight", Description: "Read-only. The organization's tickets in flight (a local branch in any of its roots, or an open PR of yours) and Waiting on you (threads on your open PRs whose last word is not yours, PRs asking for your review, your PRs with a failing check), each with one state in words."},
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_in_flight", Description: "Read-only. The organization's tickets in flight (a local branch in any of its roots, or an open PR of yours) and Waiting on you (threads on your open PRs whose last word is not yours, PRs asking for your review, your PRs with a failing check), each with one state in words. Waiting on you is one row per PR carrying every reason — threads (the waiting thread ids), failing (failing check names), review (asks for your review), activity (newest change, RFC 3339) and count (1 per thread, 1 for any failing check, 1 for the review) — including PRs with no ticket key (key \"\") and review requests on repositories no project holds (root \"\", url to open on GitHub); count on the reply is the sum."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, InFlight, error) {
 			org, err := wakilcore.CurrentOrg()
 			if err != nil {

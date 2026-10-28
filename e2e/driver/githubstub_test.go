@@ -37,9 +37,15 @@ func TestGitHubStubAnswersTheProductionClient(t *testing.T) {
 	if login, err := gh.Viewer(ctx); err != nil || login != "peter" {
 		t.Fatalf("viewer %q, %v", login, err)
 	}
-	authored, _, err := gh.MyOpenPRs(ctx, []string{"initech"})
-	if err != nil || len(authored) != 1 || authored[0].Author != "peter" {
+	authored, requested, err := gh.MyOpenPRs(ctx, []string{"initech"})
+	if err != nil || len(authored) != 2 || authored[0].Author != "peter" || authored[0].UpdatedAt != "2026-10-25T08:00:00Z" {
 		t.Fatalf("my PRs: %v, %+v", err, authored)
+	}
+	if k := authored[1]; k.Number != 215 || k.Head != "build-speed" || len(k.Checks) != 1 || k.Checks[0].Name != "unit (Linux)" || k.Checks[0].State != "failure" || k.UpdatedAt == "" {
+		t.Fatalf("the keyless PR decoded as %+v", k)
+	}
+	if len(requested) != 1 || requested[0].Number != 214 || requested[0].URL != "https://github.com/initech/billing/pull/214" || requested[0].UpdatedAt == "" {
+		t.Fatalf("review requests: %+v", requested)
 	}
 	th, err := gh.ReviewThread(ctx, "T_1")
 	if err != nil || th.Repo != "initech/api" || th.Number != 212 || th.Path != "app.txt" || th.Line != 2 {

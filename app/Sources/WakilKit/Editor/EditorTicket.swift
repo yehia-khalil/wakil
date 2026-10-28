@@ -247,22 +247,73 @@ public struct TicketBranchState: Sendable, Equatable, Codable {
     }
 }
 
-/// One row of In flight or Waiting on you. `state` is the row's one state in words, composed by Go.
-public struct InFlightRowState: Sendable, Equatable, Codable {
-    public var key, title, status, state, root, branch: String
-    public var pr: Int
-    public init(key: String, title: String = "", status: String = "", state: String = "", root: String = "",
-                branch: String = "", pr: Int = 0) {
-        self.key = key; self.title = title; self.status = status; self.state = state; self.root = root
-        self.branch = branch; self.pr = pr
+/// One open hand-off of a row's ticket.
+public struct HandoffRefState: Sendable, Equatable, Codable {
+    public var id, conversation, thread: String
+    public init(id: String = "", conversation: String = "", thread: String = "") {
+        self.id = id; self.conversation = conversation; self.thread = thread
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, conversation, thread }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: c.text(.id), conversation: c.text(.conversation), thread: c.text(.thread))
     }
 }
 
+/// One row of In flight or Waiting on you. `state` is the row's one state in words, composed by Go.
+/// A Waiting on you row is one PR, with the numbers behind its words: `threads` (the waiting thread
+/// ids), `failing` (failing check names), `review`, `activity` (RFC 3339) and `count` (its items).
+/// `key` is empty for a PR with no ticket; `root` and `project` are empty for a repository no project
+/// holds, which `url` opens on GitHub.
+public struct InFlightRowState: Sendable, Equatable, Codable {
+    public var key, title, status, state, root, branch, project, repo, url: String
+    public var pr: Int
+    public var threads, failing: [String]
+    public var review: Bool
+    public var activity: String
+    public var handoffs: [HandoffRefState]
+    public var count: Int
+    public init(key: String, title: String = "", status: String = "", state: String = "", root: String = "",
+                branch: String = "", pr: Int = 0, project: String = "", repo: String = "", url: String = "",
+                threads: [String] = [], failing: [String] = [], review: Bool = false, activity: String = "",
+                handoffs: [HandoffRefState] = [], count: Int = 0) {
+        self.key = key; self.title = title; self.status = status; self.state = state; self.root = root
+        self.branch = branch; self.pr = pr; self.project = project; self.repo = repo; self.url = url
+        self.threads = threads; self.failing = failing; self.review = review; self.activity = activity
+        self.handoffs = handoffs; self.count = count
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key, title, status, state, root, branch, project, repo, url, pr, threads, failing, review, activity, handoffs, count
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(key: c.text(.key), title: c.text(.title), status: c.text(.status), state: c.text(.state),
+                  root: c.text(.root), branch: c.text(.branch), pr: c.number(.pr), project: c.text(.project),
+                  repo: c.text(.repo), url: c.text(.url), threads: c.list(.threads), failing: c.list(.failing),
+                  review: c.flag(.review), activity: c.text(.activity), handoffs: c.list(.handoffs), count: c.number(.count))
+    }
+}
+
+/// `count` is Waiting on you's items: the sum of its rows' counts.
 public struct InFlightState: Sendable, Equatable, Codable {
     public var waitingOnYou, inFlight: [InFlightRowState]
     public var partial: [SourceNoteState]
-    public init(waitingOnYou: [InFlightRowState] = [], inFlight: [InFlightRowState] = [], partial: [SourceNoteState] = []) {
-        self.waitingOnYou = waitingOnYou; self.inFlight = inFlight; self.partial = partial
+    public var count: Int
+    public init(waitingOnYou: [InFlightRowState] = [], inFlight: [InFlightRowState] = [], partial: [SourceNoteState] = [],
+                count: Int = 0) {
+        self.waitingOnYou = waitingOnYou; self.inFlight = inFlight; self.partial = partial; self.count = count
+    }
+
+    private enum CodingKeys: String, CodingKey { case waitingOnYou, inFlight, partial, count }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(waitingOnYou: c.list(.waitingOnYou), inFlight: c.list(.inFlight), partial: c.list(.partial),
+                  count: c.number(.count))
     }
 }
 

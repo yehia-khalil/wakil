@@ -71,9 +71,11 @@ type CheckRun struct{ Name, State, URL string }
 type PullRequest struct {
 	Number                                               int
 	Title, Body, URL, State, Head, Base, HeadSHA, Author string
-	Checks                                               []CheckRun
-	Threads                                              []ReviewThread
-	RequestedReviewers                                   []string
+	// UpdatedAt is GitHub's last change to the PR (RFC 3339): Waiting on you's newest activity.
+	UpdatedAt          string
+	Checks             []CheckRun
+	Threads            []ReviewThread
+	RequestedReviewers []string
 	// Parent is the open PR whose head is this PR's base — the step down the stack — set on
 	// BranchPRs' heads only, as a summary with no threads or checks.
 	Parent *PullRequest
@@ -86,7 +88,7 @@ func (e *GraphQLError) Error() string { return "GitHub: " + strings.Join(e.Messa
 
 const githubPRFields = `
 fragment pr on PullRequest {
-  id number title body url state mergeStateStatus isCrossRepository
+  id number title body url state mergeStateStatus isCrossRepository updatedAt
   headRefName baseRefName headRefOid author { login }
   reviewRequests(first: 20) { nodes { requestedReviewer {
     ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Team { name } } } }
@@ -223,6 +225,7 @@ type ghPR struct {
 	HeadRefName       string   `json:"headRefName"`
 	BaseRefName       string   `json:"baseRefName"`
 	HeadRefOid        string   `json:"headRefOid"`
+	UpdatedAt         string   `json:"updatedAt"`
 	Author            *ghLogin `json:"author"`
 	ReviewRequests    struct {
 		Nodes []struct {
@@ -265,6 +268,7 @@ func (p ghPR) pullRequest() PullRequest {
 	pr := PullRequest{
 		Number: p.Number, Title: p.Title, Body: p.Body, URL: p.URL, State: state,
 		Head: p.HeadRefName, Base: p.BaseRefName, HeadSHA: p.HeadRefOid, Author: loginOf(p.Author),
+		UpdatedAt: p.UpdatedAt,
 	}
 	for _, n := range p.ReviewRequests.Nodes {
 		if r := n.RequestedReviewer; r != nil {

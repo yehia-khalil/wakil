@@ -532,6 +532,35 @@ func TestMyOpenPRsCarryLastCommentsAndChecks(t *testing.T) {
 	}
 }
 
+// Waiting on you orders by newest activity, and a PR's own last change is part of it: both
+// searches read each PR's updatedAt.
+func TestMyOpenPRsReadsUpdatedAt(t *testing.T) {
+	f := &fakeGraphQL{}
+	c := f.serve(t, func(r gqlRequest) (int, string) {
+		pr := prNode(212, "ini-142-login", "main", nil, false, nil, false)
+		pr["updatedAt"] = "2026-10-27T09:30:00Z"
+		asked := prNode(301, "build-speed", "main", nil, false, nil, false)
+		asked["updatedAt"] = "2026-10-26T08:00:00Z"
+		return 200, mustJSON(t, map[string]any{"data": map[string]any{
+			"authored":  map[string]any{"nodes": []any{pr}},
+			"requested": map[string]any{"nodes": []any{asked}},
+		}})
+	})
+	authored, requested, err := c.MyOpenPRs(context.Background(), []string{"initech"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q := f.requests[0].Query; !strings.Contains(q, "updatedAt") {
+		t.Errorf("search lacks updatedAt: %s", q)
+	}
+	if len(authored) != 1 || authored[0].UpdatedAt != "2026-10-27T09:30:00Z" {
+		t.Errorf("authored = %+v", authored)
+	}
+	if len(requested) != 1 || requested[0].UpdatedAt != "2026-10-26T08:00:00Z" {
+		t.Errorf("requested = %+v", requested)
+	}
+}
+
 func TestReviewThreadDescribesTheThreadByItsID(t *testing.T) {
 	f := &fakeGraphQL{}
 	c := f.serve(t, func(r gqlRequest) (int, string) {

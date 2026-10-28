@@ -705,21 +705,41 @@ func TestInFlightBranchesAndMyPRs(t *testing.T) {
 	// Rows carry the root as the project names it, never with its symlinks resolved: the window
 	// matches them against its own roots (macOS's temp dir is under the /var -> /private/var link).
 	real := f.repo
+	none, refs := []string{}, []HandoffRef{}
+	at := func(r InFlightRow) InFlightRow {
+		r.Root, r.Project, r.Repo = real, "api", "github.com/initech/api"
+		if r.PR != 0 {
+			r.URL = fmt.Sprintf("https://github.com/initech/api/pull/%d", r.PR)
+		}
+		if r.Threads == nil {
+			r.Threads = none
+		}
+		if r.Failing == nil {
+			r.Failing = none
+		}
+		r.Handoffs = refs
+		return r
+	}
 	wantInFlight := []InFlightRow{
-		{Key: "INI-142", Title: "Sign-in keeps the last organization", Status: "In Progress", State: "#212 · open", Root: real, Branch: "ini-142-login", PR: 212},
-		{Key: "INI-150", Title: "Cache the org list", Status: "In Progress", State: "local branch", Root: real, Branch: "ini-150-cache"},
-		{Key: "INI-160", Title: "Retry the token refresh", Status: "In Progress", State: "#220 · open", Root: real, Branch: "ini-160-retry", PR: 220},
+		at(InFlightRow{Key: "INI-142", Title: "Sign-in keeps the last organization", Status: "In Progress", State: "#212 · open", Branch: "ini-142-login", PR: 212}),
+		at(InFlightRow{Key: "INI-150", Title: "Cache the org list", Status: "In Progress", State: "local branch", Branch: "ini-150-cache"}),
+		at(InFlightRow{Key: "INI-160", Title: "Retry the token refresh", Status: "In Progress", State: "#220 · open", Branch: "ini-160-retry", PR: 220}),
 	}
 	if !reflect.DeepEqual(got.InFlight, wantInFlight) {
 		t.Errorf("in flight =\n%+v\nwant\n%+v", got.InFlight, wantInFlight)
 	}
 	wantWaiting := []InFlightRow{
-		{Key: "INI-142", Title: "Sign-in keeps the last organization", Status: "In Progress", State: "#212 · 1 thread", Root: real, Branch: "ini-142-login", PR: 212},
-		{Key: "INI-160", Title: "Retry the token refresh", Status: "In Progress", State: "checks failing", Root: real, Branch: "ini-160-retry", PR: 220},
-		{Title: "Speed up the build", State: "review requested", Root: real, Branch: "build-speed", PR: 301},
+		at(InFlightRow{Key: "INI-142", Title: "Sign-in keeps the last organization", Status: "In Progress", State: "#212 · 1 thread", Branch: "ini-142-login", PR: 212,
+			Threads: []string{"T_1"}, Activity: "2026-10-25T10:00:00Z", Count: 1}),
+		at(InFlightRow{Key: "INI-160", Title: "Retry the token refresh", Status: "In Progress", State: "checks failing", Branch: "ini-160-retry", PR: 220,
+			Failing: []string{"unit"}, Count: 1}),
+		at(InFlightRow{Title: "Speed up the build", State: "review requested", Branch: "build-speed", PR: 301, Review: true, Count: 1}),
 	}
 	if !reflect.DeepEqual(got.WaitingOnYou, wantWaiting) {
 		t.Errorf("waiting on you =\n%+v\nwant\n%+v", got.WaitingOnYou, wantWaiting)
+	}
+	if got.Count != 3 {
+		t.Errorf("count = %d, want 3", got.Count)
 	}
 	var searches int
 	for _, r := range f.s.gql {
@@ -944,5 +964,184 @@ func TestReviewThreadDescribesTheThreadFromGitHub(t *testing.T) {
 	}
 	if msg := callErr(t, cs, "review_thread", map[string]any{"root": f.repo, "thread": "T_gone"}); !strings.Contains(msg, "T_gone") {
 		t.Errorf("unknown thread: %q", msg)
+	}
+}
+
+// readInFlightTool calls ticket_in_flight and returns its reply decoded and raw.
+func readInFlightTool(t *testing.T) (InFlight, map[string]any) {
+	t.Helper()
+	b := call(t, connect(t), "ticket_in_flight", map[string]any{})
+	var got InFlight
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	_ = json.Unmarshal(b, &raw)
+	return got, raw
+}
+
+// searchReply answers MyOpenPRs' search with authored and requested.
+func searchReply(authored, requested []any) func(gqlRequest) (int, string) {
+	return func(gqlRequest) (int, string) {
+		if authored == nil {
+			authored = []any{}
+		}
+		if requested == nil {
+			requested = []any{}
+		}
+		return 200, mustJSON(map[string]any{"data": map[string]any{
+			"authored": map[string]any{"nodes": authored}, "requested": map[string]any{"nodes": requested}}})
+	}
+}
+
+// threadAt is a thread whose comments are given as author, createdAt pairs.
+func threadAt(id string, pairs ...string) map[string]any {
+	var comments []any
+	for i := 0; i+1 < len(pairs); i += 2 {
+		comments = append(comments, map[string]any{"author": map[string]any{"login": pairs[i]}, "body": "comment", "createdAt": pairs[i+1]})
+	}
+	return map[string]any{"id": id, "path": "a.go", "line": 1, "isOutdated": false, "isResolved": false, "comments": map[string]any{"nodes": comments}}
+}
+
+// A PR with two threads waiting and a failing check is one row that counts 3: the rail counts
+// per item, the row carries every reason, and its words are its most urgent one.
+func TestInFlightOneRowPerPRCarriesEveryReason(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	f.s.search = searchReply([]any{prNode(212, "INI-142 keep", "ini-142-login", "main",
+		[]any{thread("T_1", "a.go", 1, "milton"), thread("T_2", "b.go", 2, "peter", "milton")},
+		[]any{check("unit (Linux)", "FAILURE"), check("lint", "SUCCESS")})}, nil)
+	got, raw := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 {
+		t.Fatalf("waiting on you = %+v, want one row", got.WaitingOnYou)
+	}
+	row := got.WaitingOnYou[0]
+	if !reflect.DeepEqual(row.Threads, []string{"T_1", "T_2"}) || !reflect.DeepEqual(row.Failing, []string{"unit (Linux)"}) || row.Review {
+		t.Errorf("reasons = threads %v failing %v review %v", row.Threads, row.Failing, row.Review)
+	}
+	if row.Count != 3 || got.Count != 3 {
+		t.Errorf("count = row %d reply %d, want 3", row.Count, got.Count)
+	}
+	if row.State != "#212 · 2 threads" || row.Key != "INI-142" || row.PR != 212 {
+		t.Errorf("row = %+v", row)
+	}
+	if row.Root != f.repo || row.Project != "api" || row.Repo != "github.com/initech/api" || row.URL != "https://github.com/initech/api/pull/212" {
+		t.Errorf("place = root %q project %q repo %q url %q", row.Root, row.Project, row.Repo, row.URL)
+	}
+	w := raw["waitingOnYou"].([]any)[0].(map[string]any)
+	if h, ok := w["handoffs"].([]any); !ok || len(h) != 0 {
+		t.Errorf("handoffs = %#v, want []", w["handoffs"])
+	}
+	if _, ok := raw["count"].(float64); !ok {
+		t.Errorf("reply has no count: %v", raw)
+	}
+}
+
+// A PR whose branch, title and body carry no ticket key still waits on the operator: it is a row
+// named by its PR, and it counts.
+func TestInFlightKeylessPRIsARow(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "main", "")
+	f.s.search = searchReply([]any{prNode(215, "Speed up the build", "build-speed", "main", nil, []any{check("unit (Linux)", "FAILURE")})}, nil)
+	got, _ := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 {
+		t.Fatalf("waiting on you = %+v", got.WaitingOnYou)
+	}
+	row := got.WaitingOnYou[0]
+	if row.Key != "" || row.PR != 215 || row.Title != "Speed up the build" || row.Branch != "build-speed" || row.State != "checks failing" {
+		t.Errorf("row = %+v", row)
+	}
+	if !reflect.DeepEqual(row.Failing, []string{"unit (Linux)"}) || row.Count != 1 || got.Count != 1 {
+		t.Errorf("failing %v count %d reply %d", row.Failing, row.Count, got.Count)
+	}
+	if row.Repo != "github.com/initech/api" || row.URL == "" || row.Root != f.repo {
+		t.Errorf("place = %+v", row)
+	}
+}
+
+// A review asked of the operator on a repository no project holds counts and shows, with no
+// root: it is opened on GitHub, by its URL.
+func TestInFlightReviewRequestOutsideEveryProject(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "main", "")
+	asked := prNode(7, "INI-142 bill the token", "ini-142-bill", "main", nil, nil)
+	asked["url"] = "https://github.com/initech/billing/pull/7"
+	asked["author"] = map[string]any{"login": "milton"}
+	f.s.search = searchReply(nil, []any{asked})
+	got, _ := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 {
+		t.Fatalf("waiting on you = %+v", got.WaitingOnYou)
+	}
+	row := got.WaitingOnYou[0]
+	if row.Root != "" || row.Project != "" || row.URL != "https://github.com/initech/billing/pull/7" || row.Repo != "github.com/initech/billing" {
+		t.Errorf("place = root %q project %q url %q repo %q", row.Root, row.Project, row.URL, row.Repo)
+	}
+	if !row.Review || row.Count != 1 || got.Count != 1 || row.State != "review requested" || row.Key != "INI-142" {
+		t.Errorf("row = %+v, reply count %d", row, got.Count)
+	}
+	if row.Threads == nil || row.Failing == nil {
+		t.Errorf("lists are not arrays: %+v", row)
+	}
+}
+
+// A thread whose last comment is the operator's waits on someone else: not counted, not listed.
+func TestInFlightThreadLastWordMineNotCounted(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	f.s.search = searchReply([]any{
+		prNode(212, "INI-142 keep", "ini-142-login", "main",
+			[]any{thread("T_1", "a.go", 1, "milton", "peter"), thread("T_2", "b.go", 2, "milton")}, nil),
+		prNode(213, "INI-150 cache", "ini-150-cache", "main", []any{thread("T_3", "c.go", 3, "milton", "peter")}, nil),
+	}, nil)
+	got, _ := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 {
+		t.Fatalf("waiting on you = %+v, want only #212", got.WaitingOnYou)
+	}
+	if row := got.WaitingOnYou[0]; !reflect.DeepEqual(row.Threads, []string{"T_2"}) || row.Count != 1 || got.Count != 1 {
+		t.Errorf("row = %+v, reply count %d", row, got.Count)
+	}
+}
+
+// Two worktrees of one repository are two roots on github.com/initech/api: the PR they share is
+// one row, counted once.
+func TestInFlightTwoWorktreesCountOnce(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	second := filepath.Join(t.TempDir(), "api-review")
+	git(t, f.repo, "worktree", "add", "-q", "-b", "ini-150-cache", second, "main")
+	pp := filepath.Join(f.home, "proj", ".wakil", "project.json")
+	writeFile(t, pp, `{"name":"api","org":"initech","roots":[{"path":`+jsonString(f.repo)+`},{"path":`+jsonString(second)+`}],"scopes":{"pm":{"provider":"jira","projectKey":"INI"}},"environments":{}}`)
+	f.s.search = searchReply([]any{prNode(212, "INI-142 keep", "ini-142-login", "main",
+		[]any{thread("T_1", "a.go", 1, "milton"), thread("T_2", "b.go", 2, "milton")},
+		[]any{check("unit (Linux)", "FAILURE")})}, nil)
+	got, _ := readInFlightTool(t)
+	if len(got.WaitingOnYou) != 1 || got.Count != 3 {
+		t.Fatalf("waiting on you = %+v, count %d, want one row counting 3", got.WaitingOnYou, got.Count)
+	}
+	if row := got.WaitingOnYou[0]; row.Root != f.repo {
+		t.Errorf("root = %q, want the first root on the repository", row.Root)
+	}
+}
+
+// A row's activity is the newest of the PR's own last change and its waiting threads' last
+// comments; a thread the operator answered last is not activity waiting on them.
+func TestInFlightActivityIsNewest(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "main", "")
+	commented := prNode(212, "INI-142 keep", "ini-142-login", "main", []any{
+		threadAt("T_1", "milton", "2026-10-26T11:00:00Z"),
+		threadAt("T_2", "milton", "2026-10-26T12:00:00Z", "peter", "2026-10-27T15:00:00Z"),
+	}, nil)
+	commented["updatedAt"] = "2026-10-25T08:00:00Z"
+	pushed := prNode(215, "INI-150 cache", "ini-150-cache", "main",
+		[]any{threadAt("T_3", "milton", "2026-10-25T09:00:00Z")}, nil)
+	pushed["updatedAt"] = "2026-10-27T12:00:00Z"
+	asked := prNode(301, "Speed up the build", "build-speed", "main", nil, nil)
+	asked["author"] = map[string]any{"login": "milton"}
+	asked["updatedAt"] = "2026-10-24T07:00:00Z"
+	f.s.search = searchReply([]any{commented, pushed}, []any{asked})
+	got, _ := readInFlightTool(t)
+	want := map[int]string{212: "2026-10-26T11:00:00Z", 215: "2026-10-27T12:00:00Z", 301: "2026-10-24T07:00:00Z"}
+	if len(got.WaitingOnYou) != 3 {
+		t.Fatalf("waiting on you = %+v", got.WaitingOnYou)
+	}
+	for _, row := range got.WaitingOnYou {
+		if row.Activity != want[row.PR] {
+			t.Errorf("#%d activity = %q, want %q", row.PR, row.Activity, want[row.PR])
+		}
 	}
 }
