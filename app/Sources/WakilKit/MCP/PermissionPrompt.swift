@@ -130,6 +130,11 @@ public let operatorOnlyActions: Set<String> = [
     // 3c-ii. Which sites the agent may act on is the operator's consent; the agent never takes one
     // off its own list, nor anyone else's.
     "browser_revoke_site",
+    // 3d-iv (ruling 10). A saved password is the operator's: only their press in a field fills or
+    // suggests one, and only their bar or Settings saves, deletes or stops offering one. No action
+    // returns a password, and the agent never carries one in its parameters.
+    "browser_password_fill", "browser_password_suggest", "browser_password_save",
+    "browser_password_delete", "browser_password_never",
     // 3b-viii (Decision 42). Which model reads the operator's code is the operator's choice.
     "ctx_set_local_provider",
     // 3a-iii (Decision 44). Which account pushes for an organisation, and its secrets, are the
@@ -344,6 +349,10 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
     case "browser_revoke_site":
         return "\(toolName): only the operator takes a site off the agent's list for a conversation. "
             + "Ask them to press \u{00D7} on its agent allowed mark."
+    case "browser_password_fill", "browser_password_suggest", "browser_password_save",
+         "browser_password_delete", "browser_password_never":
+        return "\(toolName): only the operator fills, saves or deletes a saved password, by pressing the "
+            + "key in a field or in Settings → Browser → Passwords. You never see a password and never fill one."
     case "ctx_set_browser_settings":
         return "\(toolName): only the operator changes the browser's search engine and start "
             + "page. You may READ them: ctx_browser_settings answers the settings in force. "
