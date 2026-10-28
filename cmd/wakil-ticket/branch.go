@@ -867,8 +867,12 @@ func readInFlight(ctx context.Context, org string) InFlight {
 			row.Title, row.Status = rec.Seen.Title, rec.Seen.Status
 		}
 	}
-	// Each row carries its ticket's open hand-offs, a keyless PR's kept by its PR.
-	open, _ := wakilcore.OpenTicketHandoffs(org)
+	// Each row carries its ticket's open hand-offs, a keyless PR's kept by its PR. Hand-offs that
+	// cannot be read are said (Rule 8); those that could be still show.
+	open, err := wakilcore.OpenTicketHandoffs(org)
+	if err != nil {
+		out.Partial = append(out.Partial, SourceNote{Source: "wakil", Message: "hand-offs not read: " + err.Error()})
+	}
 	carried := map[string]bool{}
 	handoffsOf := func(row InFlightRow) []wakilcore.HandoffRef {
 		key := strings.ToUpper(row.Key)

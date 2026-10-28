@@ -1174,6 +1174,33 @@ func TestInFlightCarriesOpenHandoffs(t *testing.T) {
 	}
 }
 
+// Rule 8: hand-offs that cannot be read are said, as a partial note — the ticket hand-offs that
+// could be read still show.
+func TestInFlightUnreadableHandoffsAreSaid(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	if _, err := wakilcore.AddTicketHandoff("initech", "INI-142", handedTo("c1"), false, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := wakilcore.OrgDirFor("initech")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tickets", "pr-handoffs.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := readInFlightTool(t)
+	if len(got.InFlight) != 1 || len(got.InFlight[0].Handoffs) != 1 || got.InFlight[0].Handoffs[0].Conversation != "c1" {
+		t.Errorf("in flight = %+v", got.InFlight)
+	}
+	said := false
+	for _, n := range got.Partial {
+		said = said || (n.Source == "wakil" && strings.Contains(n.Message, "pr-handoffs.json"))
+	}
+	if !said {
+		t.Errorf("partial = %+v, want a note naming pr-handoffs.json", got.Partial)
+	}
+}
+
 // A ticket whose only sign of life is a live handed conversation is in flight, in state "agent";
 // so is a PR with no ticket key handed to an agent.
 func TestInFlightHandoffOnlyTicketIsInFlight(t *testing.T) {
