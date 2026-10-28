@@ -153,6 +153,15 @@ func AddTicketHandoff(org, key string, h TicketHandoff, mayPush bool, now time.T
 	if strings.TrimSpace(h.Conversation) == "" {
 		return TicketRecord{}, UserError("a hand-off needs its conversation")
 	}
+	// One live hand-off per conversation (a fork carries its own under its new id). The check
+	// spans files, so it holds no one lock; a duplicate that slips past still reads May push off.
+	if hs, err := conversationHandoffs(org, h.Conversation); err == nil {
+		for _, o := range hs {
+			if o.Ended == nil {
+				return TicketRecord{}, UserError("conversation " + strconv.Quote(h.Conversation) + " is already handed to an agent (" + o.ID + ")")
+			}
+		}
+	}
 	at := now.UTC().Format(time.RFC3339)
 	h.At, h.Ended, h.MayPush = at, nil, mayPush
 	var out TicketRecord
@@ -405,42 +414,52 @@ func OpenTicketHandoffs(org string) (map[string][]TicketHandoff, error) {
 	return out, nil
 }
 
-// TicketHandoffMayPush is May push for a conversation: its stored hand-off's, ended or not, so a
-// resumed or forked conversation keeps what the operator chose. It fails closed: no hand-off for
-// the conversation, or none that can be read, is off.
-func TicketHandoffMayPush(org, conversation string) bool {
-	if conversation == "" {
-		return false
-	}
+// conversationHandoffs are every hand-off of conversation, ended or not, across the
+// organisation's records and PRs. Any file it cannot read is an error: a hand-off in it may be
+// the conversation's.
+func conversationHandoffs(org, conversation string) ([]TicketHandoff, error) {
 	keys, err := ticketRecordKeys(org)
 	if err != nil {
-		return false
+		return nil, err
 	}
+	var out []TicketHandoff
 	for _, key := range keys {
 		r, err := ReadTicketRecord(org, key)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for _, h := range r.Handoffs {
 			if h.Conversation == conversation {
-				return h.MayPush
+				out = append(out, h)
 			}
 		}
 	}
 	path, _, _, err := prHandoffPaths(org)
 	if err != nil {
-		return false
+		return nil, err
 	}
 	m, err := readPRHandoffsFile(path)
 	if err != nil {
-		return false
+		return nil, err
 	}
 	for _, hs := range m {
 		for _, h := range hs {
 			if h.Conversation == conversation {
-				return h.MayPush
+				out = append(out, h)
 			}
 		}
 	}
-	return false
+	return out, nil
+}
+
+// TicketHandoffMayPush is May push for a conversation: its stored hand-off's, ended or not, so a
+// resumed or forked conversation keeps what the operator chose. It reads on only when exactly one
+// hand-off names the conversation and it says on; none, several, or any file that cannot be read
+// is off, whatever order the files are read in.
+func TicketHandoffMayPush(org, conversation string) bool {
+	if conversation == "" {
+		return false
+	}
+	hs, err := conversationHandoffs(org, conversation)
+	return err == nil && len(hs) == 1 && hs[0].MayPush
 }

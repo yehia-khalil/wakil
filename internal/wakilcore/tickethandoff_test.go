@@ -186,3 +186,63 @@ func TestHandoffEmptyRecordWritesEmptyList(t *testing.T) {
 		t.Errorf("record = %s", b)
 	}
 }
+
+// One live hand-off per conversation: a second Start on the same conversation is refused.
+func TestHandoffAddRefusesALiveConversation(t *testing.T) {
+	localOrg(t)
+	addHandoff(t, "INI-142", "c1", true)
+	if _, err := AddTicketHandoff("initech", PRHandoffKey("github.com/initech/api", 215), handoff("c1"), true, ticketNow); err == nil {
+		t.Error("a conversation with a live hand-off was handed again")
+	}
+	if r, _ := ReadTicketRecord("initech", "INI-142"); len(r.Handoffs) != 1 {
+		t.Errorf("handoffs = %+v", r.Handoffs)
+	}
+}
+
+// May push reads on only from exactly one hand-off that says so: a conversation handed twice
+// (the first ended) reads off, whatever either said.
+func TestMayPushHandedTwiceOnThenOffReadsOff(t *testing.T) {
+	localOrg(t)
+	addHandoff(t, "INI-142", "c1", true)
+	if err := EndTicketHandoffs("initech", []string{"c1"}, false, ticketNow); err != nil {
+		t.Fatal(err)
+	}
+	addHandoff(t, "INI-142", "c1", false)
+	if TicketHandoffMayPush("initech", "c1") {
+		t.Error("a conversation handed on then off reads May push on")
+	}
+}
+
+func TestMayPushTwoMatchesAcrossTicketAndPRReadOff(t *testing.T) {
+	localOrg(t)
+	addHandoff(t, "INI-142", "c1", true)
+	if err := EndTicketHandoffs("initech", []string{"c1"}, false, ticketNow); err != nil {
+		t.Fatal(err)
+	}
+	addHandoff(t, PRHandoffKey("github.com/initech/api", 215), "c1", true)
+	for i := 0; i < 20; i++ {
+		if TicketHandoffMayPush("initech", "c1") {
+			t.Fatal("two hand-offs of one conversation read May push on")
+		}
+	}
+}
+
+// Any unreadable file the lookup reads makes May push off, even when another file holds the one
+// matching hand-off with May push on.
+func TestMayPushAnyUnreadableFileReadsOff(t *testing.T) {
+	for _, bad := range []string{"INI-150.json", "pr-handoffs.json"} {
+		t.Run(bad, func(t *testing.T) {
+			localOrg(t)
+			addHandoff(t, "INI-142", "c1", true)
+			if !TicketHandoffMayPush("initech", "c1") {
+				t.Fatal("one hand-off with May push on reads off")
+			}
+			if err := os.WriteFile(filepath.Join(ticketDir(t), bad), []byte("{not json"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if TicketHandoffMayPush("initech", "c1") {
+				t.Errorf("May push reads on beside an unreadable %s", bad)
+			}
+		})
+	}
+}
