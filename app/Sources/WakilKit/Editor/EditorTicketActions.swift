@@ -879,19 +879,29 @@ func registerTicketActions(
             let subject = try await handOffSubject(params)
             let briefKey = handOffBriefKey(key: subject.key, pr: subject.pr, repo: subject.repo, source: subject.source)
             let reset = { if case .object(let o) = params { o["reset"] == .bool(true) } else { false } }()
-            let kept = reset ? nil : await store.keptBrief(briefKey)
             let byAgent = ActionRegistry.dispatchOrigin == .agent
             let open = await store.handOff()
             let same = open.map { handOffBriefKey(key: $0.key, pr: $0.pr, repo: $0.repo, source: $0.source) == briefKey } ?? false
+            // An agent never replaces the operator's own popover (Rules 2 and 6): another subject is
+            // refused whole, and the same one changes nothing — no reset, no focus.
+            if byAgent, let open, open.focus {
+                guard same else {
+                    throw TicketActionError(description: "\(action): the operator is writing a hand-off for \(open.name); nothing was opened")
+                }
+                return await editor.reply(open.pane ?? pane)
+            }
+            let kept = reset ? nil : await store.keptBrief(briefKey)
             // Reopened on the same hand-off: what the operator set stays. Else the operator's open takes
-            // the last Start's (Rule 9); an agent's never changes what the popover showed, and on a
-            // first open shows May push off — only the operator ticks it (pre-flight).
+            // the last Start's (Rule 9). An agent's never changes what the popover showed: on the subject
+            // it last showed, its choices; on any other, May push off — only the operator ticks it.
             let d: (String, String, Bool)
             if let open, same {
                 d = (open.harness, open.provider, open.mayPush)
             } else if byAgent {
                 let stored = handOffDefaults(stored: await store.handoffDefaults(), current: ctx.provider)
-                d = await store.lastHandOffChoices().map { ($0.harness, $0.provider, $0.mayPush) } ?? (stored.harness, stored.provider, false)
+                let last = await store.lastHandOffChoices()
+                d = (last?.harness ?? stored.harness, last?.provider ?? stored.provider,
+                     last?.subject == briefKey ? last?.mayPush ?? false : false)
             } else {
                 d = handOffDefaults(stored: await store.handoffDefaults(), current: ctx.provider)
             }

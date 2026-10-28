@@ -65,7 +65,7 @@ public actor EditorTicketStore {
     private var briefs: [String: KeptBrief] = [:]
     /// The harness, provider and May push the popover last showed, for the window's life: an agent's
     /// reopen takes these, never the last Start's (it can never switch May push on).
-    private var handOffChoices: (harness: String, provider: String, mayPush: Bool)?
+    private var handOffChoices: (harness: String, provider: String, mayPush: Bool, subject: String)?
     private var handOffOpens = 0
     private var handOffStart: UUID?
     private var handOffCancelled: UUID?
@@ -501,15 +501,16 @@ public actor EditorTicketStore {
         handOffShown = s
         briefs[handOffBriefKey(key: s.key, pr: s.pr, repo: s.repo, source: s.source)]
             = KeptBrief(text: s.brief, byAgent: s.agentBrief, title: s.titleLine)
-        handOffChoices = (s.harness, s.provider, s.mayPush)
+        handOffChoices = (s.harness, s.provider, s.mayPush, handOffBriefKey(key: s.key, pr: s.pr, repo: s.repo, source: s.source))
         await changed()
     }
 
     /// The brief kept for a subject and source, as last edited; nil before one was.
     func keptBrief(_ key: String) -> KeptBrief? { briefs[key] }
 
-    /// What the popover last showed for harness, provider and May push; nil before it opened.
-    func lastHandOffChoices() -> (harness: String, provider: String, mayPush: Bool)? { handOffChoices }
+    /// What the popover last showed for harness, provider and May push, and for which subject
+    /// (`handOffBriefKey`); nil before it opened.
+    func lastHandOffChoices() -> (harness: String, provider: String, mayPush: Bool, subject: String)? { handOffChoices }
 
     /// A new open of a subject: its number.
     func nextHandOffOpen() -> Int {

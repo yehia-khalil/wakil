@@ -398,7 +398,7 @@ private func quotedBlock(_ brief: String) -> [String] {
         try await f.openFromThread(origin: .agent)
         var s = try await f.state()
         #expect(!s.mayPush && s.provider == "initech-work")
-        // Nor by opening another subject and coming back.
+        // Nor by opening another subject and coming back (the popover is the agent's now).
         try await f.dispatch("ticket_hand_off_open", ["thread": .string("T1")], origin: .agent)
         try await f.openFromThread(origin: .agent)
         s = try await f.state()
@@ -413,13 +413,52 @@ private func quotedBlock(_ brief: String) -> [String] {
         #expect(try await g.state().mayPush)
     }
 
+    /// Fix round 2: an agent's open of another subject than the popover last showed is May push off,
+    /// though the operator's last popover had it on.
+    @Test func anAgentsOpenOfAnotherSubjectIsMayPushOff() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["mayPush": .bool(true), "provider": .string("initech-spare")])
+        try await f.dispatch("ticket_hand_off_close")
+        try await f.dispatch("ticket_hand_off_open", ["thread": .string("T1")], origin: .agent)
+        let s = try await f.state()
+        #expect(s.thread == "T1" && !s.mayPush && s.provider == "initech-spare")
+        // The same subject the operator left on: what the operator set stays.
+        let g = try await handOffFixture()
+        try await g.openFromThread()
+        try await g.dispatch("ticket_hand_off_brief", ["mayPush": .bool(true)])
+        try await g.dispatch("ticket_hand_off_close")
+        try await g.openFromThread(origin: .agent)
+        #expect(try await g.state().mayPush)
+    }
+
+    /// Fix round 2 (Rules 2 and 6): an agent never replaces the operator's open popover — another
+    /// subject is refused whole; the same subject changes nothing.
+    @Test func anAgentNeverReplacesTheOperatorsPopover() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        try await f.dispatch("ticket_hand_off_brief", ["brief": .string("INI-142 · mine")])
+        let before = try await f.state()
+        await #expect { try await f.dispatch("ticket_hand_off_open", ["thread": .string("T1")], origin: .agent) } throws: {
+            "\($0)".contains("the operator is writing a hand-off for INI-142; nothing was opened")
+        }
+        #expect(try await f.state() == before)
+        // The same subject, even with reset: nothing changes.
+        try await f.openFromThread(["reset": .bool(true)], origin: .agent)
+        #expect(try await f.state() == before)
+        // The operator's Start of what they wrote runs.
+        _ = try await f.start()
+        #expect(await f.handOff.requests.first?.brief == "INI-142 · mine")
+    }
+
     /// Fix round 1: a field typed for one subject never starts another.
     @Test func anotherSubjectNeverCarriesTheBrief() async throws {
         let f = try await handOffFixture()
         try await f.openFromThread()
         var typedForT2 = try await f.state().startParams
         typedForT2["brief"] = .string("INI-142 · token.go — mine, for T2")
-        // An agent opens another thread: its own brief, a new open.
+        // The operator's popover closes; an agent opens another thread: its own brief, a new open.
+        try await f.dispatch("ticket_hand_off_close")
         try await f.dispatch("ticket_hand_off_open", ["thread": .string("T1")], origin: .agent)
         let s = try await f.state()
         #expect(s.thread == "T1" && s.brief.hasPrefix("INI-142 · src/auth/session.go:88 — "))
