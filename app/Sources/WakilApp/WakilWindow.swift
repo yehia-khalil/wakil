@@ -303,6 +303,8 @@ struct WakilWindow: View {
                     VStack(alignment: .leading) {
                         loaded(session)
                     }
+                    // 3d-iv: Settings → Browser → Passwords reads the store and dispatches through this.
+                    .environment(\.browserPasswords, BrowserPasswordsAccess(session: session))
                     .padding()
                     // 2d-ii: the composer bar owns the bottom edge now, so the
                     // old thread-clearance reserve is gone. A pane ends 48pt
