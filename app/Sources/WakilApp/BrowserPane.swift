@@ -90,6 +90,13 @@ struct BrowserPane: View {
                     .frame(height: BrowserPaneStyle.rowHeight)
                 PaneHairline()
             }
+            // 3d-iv: a sent form's question, under the find bar; the active tab's only (ruling 14).
+            if let tab = active, let offer = host.passwordOffers[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: tab.id)] {
+                BrowserPasswordBar(host: host, key: BrowserTabHost.Key(scope: scope, pane: pane.id, tab: tab.id), offer: offer)
+                    .padding(.horizontal, BrowserPaneStyle.rowInset)
+                    .frame(minHeight: BrowserPaneStyle.rowHeight)
+                PaneHairline()
+            }
             pageArea
                 .overlay(alignment: .top) { progressLine }
                 // The page's bottom corners are the pane's, unless the downloads sit under it.
@@ -493,6 +500,12 @@ struct BrowserPane: View {
                     // view fills this host, so its frame is the page area's.
                     BrowserPageHost(webView: page)
                         .accessibilityElement(children: .contain)
+                    // 3d-iv: the key in the focused login field (ruling 11).
+                    let fieldKey = BrowserTabHost.Key(scope: scope, pane: pane.id, tab: tab.id)
+                    if let field = host.passwordFields[fieldKey],
+                       BrowserPasswordKeyLayout.showsKey(role: field.role, read: field.read, hasLogins: field.hasLogins) {
+                        BrowserPasswordKey(host: host, key: fieldKey, field: field, zoom: page.pageZoom)
+                    }
                 } else {
                     Color(nsColor: .textBackgroundColor)
                 }

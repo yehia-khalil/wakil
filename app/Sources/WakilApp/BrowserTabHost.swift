@@ -87,6 +87,22 @@ final class BrowserTabHost {
     /// operator is still in the composer. Taken once, by the pane's appearance.
     @ObservationIgnored private var renamedPanes: Set<Key> = []
 
+    // 3d-iv: passwords (`BrowserPasswordMessages.swift`). In memory only, never the store's or a file's.
+    /// The Keychain store the key's list reads (ruling 10: reads are direct calls). Set by the session.
+    @ObservationIgnored var passwordStore: BrowserPasswordStore?
+    /// The focused login field per tab, as its page reported it: the key is drawn over it.
+    var passwordFields: [Key: BrowserPasswordField] = [:]
+    /// A sent form's question per tab: the bar, until it is answered or its tab closes.
+    var passwordOffers: [Key: BrowserPasswordOfferState] = [:]
+    /// The strong password the operator chose per tab: a form sent with it is saved with no bar.
+    @ObservationIgnored var pendingSuggestion: [Key: String] = [:]
+    /// The origin of the field whose key's list is open, per tab: the only origin a fill may land on.
+    @ObservationIgnored var passwordPress: [Key: String] = [:]
+    @ObservationIgnored var passwordListOpen: Set<Key> = []
+    @ObservationIgnored var passwordBlurs: [Key: Task<Void, Never>] = [:]
+    @ObservationIgnored var passwordSubmits = 0
+    @ObservationIgnored var passwordLatestSubmit: [Key: Int] = [:]
+
     struct OrgHost: Hashable {
         let org: String
         let host: String
@@ -212,6 +228,8 @@ final class BrowserTabHost {
         // 3c-ii: the agent's page script, in its own world, as each main-frame document ends. A
         // pop-up's configuration is WebKit's copy of its opener's, so it carries the script too.
         configuration.userContentController.addUserScript(BrowserAgentScript.userScript())
+        // 3d-iv: the passwords' script and its handler, in `wakil.passwords` (a pop-up's copy carries both).
+        BrowserPasswordMessages.install(in: configuration)
         // `isInspectable` only lets Safari's Develop menu attach; the page's own right-click
         // **Inspect Element** needs WebKit's developer extras, which have no public setter.
         configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
@@ -318,6 +336,12 @@ final class BrowserTabHost {
         openPanels = move(openPanels)
         findsRun = move(findsRun)
         findsWanted = move(findsWanted)
+        passwordFields = move(passwordFields)
+        passwordOffers = move(passwordOffers)
+        pendingSuggestion = move(pendingSuggestion)
+        passwordPress = move(passwordPress)
+        passwordListOpen = Set(passwordListOpen.map(moved))
+        passwordLatestSubmit = move(passwordLatestSubmit)
         // `findsBusy` stays: its running loop reads the old key, ends, and lets it go.
         mediaAnswers = Dictionary(mediaAnswers.map {
             ($0.key.scope == from ? MediaKey(scope: to, host: $0.key.host, type: $0.key.type) : $0.key, $0.value)
@@ -840,6 +864,7 @@ final class BrowserTabHost {
         dismissPrompts(key)
         certificates[key] = nil
         crashed.remove(key)
+        forgetPasswords(key, tabClosed: mode == .forget)
         if let view {
             if mode == .evict { saveState(of: view, scope: key.scope, pane: key.pane, tab: key.tab, files: delegate?.files) }
             delegate?.detach()
