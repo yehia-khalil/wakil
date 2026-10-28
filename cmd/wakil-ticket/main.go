@@ -316,7 +316,7 @@ func newServer() *mcp.Server {
 			return nil, draftsResult{Drafts: m}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "ticket_draft_write", Description: "Writes. Sets a review thread's reply draft, or removes it when text is left out or empty. Only from the Wakil window. An agent's draft over the operator's keeps the operator's text as replaced; the operator's draft clears it. Answers every draft."},
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_draft_write", Description: "Writes. Sets a review thread's reply draft, or removes it when text is left out or empty. Only from the Wakil window. An agent's draft over the operator's keeps the operator's text as replaced; the operator's draft clears it. An agent's removal of a draft holding the operator's text is refused. Answers every draft."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a draftWriteArg) (*mcp.CallToolResult, draftsResult, error) {
 			if err := assertWindow("ticket_draft_write"); err != nil {
 				return toolErr(err), noDrafts(), nil
@@ -325,10 +325,8 @@ func newServer() *mcp.Server {
 			if err != nil {
 				return toolErr(err), noDrafts(), nil
 			}
-			var d *wakilcore.TicketDraft
-			if a.Text != "" {
-				d = &wakilcore.TicketDraft{Text: a.Text, By: a.By, Conversation: a.Conversation, Root: a.Root, Branch: a.Branch}
-			}
+			// A removal carries its by too: an agent's may not remove the operator's text.
+			d := &wakilcore.TicketDraft{Text: a.Text, By: a.By, Conversation: a.Conversation, Root: a.Root, Branch: a.Branch}
 			m, err := wakilcore.WriteTicketDraft(org, a.Thread, d, time.Now())
 			if err != nil {
 				return toolErr(err), noDrafts(), nil

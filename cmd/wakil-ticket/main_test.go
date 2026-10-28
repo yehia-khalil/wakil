@@ -1247,6 +1247,10 @@ func TestDraftToolsWriteReadAndRemove(t *testing.T) {
 	if d.Text != "Fixed in 4f1c" || d.By != "agent" || d.Replaced != "Will fix" || d.Conversation != "c1" || d.Branch != "ini-142-login" {
 		t.Errorf("draft = %+v", d)
 	}
+	// An agent's removal reaches the file with its by, and is refused: the operator's text is kept.
+	if msg := callErr(t, cs, "ticket_draft_write", map[string]any{"thread": "T_1", "by": "agent", "conversation": "c1"}); !strings.Contains(msg, "Rule 2") {
+		t.Errorf("an agent's removal refused with %q", msg)
+	}
 	call(t, cs, "ticket_draft_write", map[string]any{"thread": "T_1", "by": "operator"})
 	b := call(t, cs, "ticket_drafts", map[string]any{})
 	if !strings.Contains(string(b), `"drafts":{}`) {

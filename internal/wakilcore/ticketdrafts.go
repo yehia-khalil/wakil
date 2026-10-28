@@ -65,7 +65,9 @@ func readDraftsFile(path string) (map[string]TicketDraft, error) {
 
 // WriteTicketDraft sets thread's draft, or removes it when d is nil or its text is empty, and
 // returns every draft after the write. An agent's draft over the operator's keeps the operator's
-// text in Replaced (and an agent's later draft keeps it still); an operator's draft clears it.
+// text in Replaced (and an agent's later draft keeps it still); an operator's draft clears it. An
+// agent's removal of a draft holding the operator's text — theirs, or kept as Replaced — is
+// refused (Rule 2: typed text is never lost), the file untouched.
 func WriteTicketDraft(org, thread string, d *TicketDraft, now time.Time) (map[string]TicketDraft, error) {
 	thread = strings.TrimSpace(thread)
 	if thread == "" {
@@ -85,9 +87,14 @@ func WriteTicketDraft(org, thread string, d *TicketDraft, now time.Time) (map[st
 			return err
 		}
 		if d == nil || d.Text == "" {
-			if _, ok := m[thread]; !ok {
+			old, ok := m[thread]
+			if !ok {
 				out = m
 				return nil
+			}
+			if d != nil && d.By == "agent" && (old.By == "operator" || old.Replaced != "") {
+				return UserError("an agent cannot remove the operator's draft reply on review thread " + strconv.Quote(thread) +
+					" (Rule 2: the operator's typed text is never lost); write a draft over it instead, and theirs is kept to restore")
 			}
 			delete(m, thread)
 		} else {

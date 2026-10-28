@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -77,6 +78,34 @@ func TestDraftRemovedOnEmptyText(t *testing.T) {
 	m, _ := ReadTicketDrafts("initech")
 	if len(m) != 0 {
 		t.Errorf("read back = %+v", m)
+	}
+}
+
+// Rule 2: an agent's removal never loses the operator's text — their draft, or theirs an agent's
+// draft keeps as Replaced. It is refused, and the file is untouched. An agent's own draft with
+// nothing of the operator's in it, it may remove.
+func TestAnAgentCannotRemoveTheOperatorsDraft(t *testing.T) {
+	localOrg(t)
+	writeDraft(t, "PRRT_1", &TicketDraft{Text: "mine", By: "operator"})
+	writeDraft(t, "PRRT_2", &TicketDraft{Text: "mine too", By: "operator"})
+	writeDraft(t, "PRRT_2", &TicketDraft{Text: "theirs", By: "agent", Conversation: "c1"})
+	writeDraft(t, "PRRT_3", &TicketDraft{Text: "an agent's", By: "agent", Conversation: "c1"})
+	for _, thread := range []string{"PRRT_1", "PRRT_2"} {
+		_, err := WriteTicketDraft("initech", thread, &TicketDraft{By: "agent", Conversation: "c1"}, ticketNow)
+		if msg, ok := IsUserError(err); !ok || !strings.Contains(msg, "Rule 2") {
+			t.Errorf("%s: an agent's removal = %v, want refused naming Rule 2", thread, err)
+		}
+	}
+	m, _ := ReadTicketDrafts("initech")
+	if m["PRRT_1"].Text != "mine" || m["PRRT_2"].Replaced != "mine too" {
+		t.Fatalf("after the refusals = %+v", m)
+	}
+	if m := writeDraft(t, "PRRT_3", &TicketDraft{By: "agent", Conversation: "c1"}); len(m) != 2 {
+		t.Errorf("an agent's own draft not removed: %+v", m)
+	}
+	// The operator removes their own.
+	if m := writeDraft(t, "PRRT_1", &TicketDraft{By: "operator"}); len(m) != 1 {
+		t.Errorf("the operator's removal = %+v", m)
 	}
 }
 
