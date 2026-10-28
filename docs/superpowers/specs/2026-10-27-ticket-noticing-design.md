@@ -165,8 +165,8 @@ the rail draws nothing for tickets: the Landing and ⌘P still say it (open ques
 
 ### When it reads
 
-Piece 2's triggers stay. Piece 3 needs `ticket_in_flight` with no editor open; it adds triggers,
-**no timer**:
+Piece 2's triggers stay. Piece 3 needs `ticket_in_flight` with no editor open; it adds these
+triggers and, by the operator's decision of 2026-10-28, a read every 2 minutes while Wakil is active:
 
 | Trigger | Reads |
 |---|---|
@@ -177,12 +177,12 @@ Piece 2's triggers stay. Piece 3 needs `ticket_in_flight` with no editor open; i
 | Send, Resolve, or a push, publish or sync from Wakil (piece 2's triggers) | that root's `ticket_branch`, then `ticket_in_flight` |
 | A handed agent's turn ends | its ticket's root's `ticket_branch`, then `ticket_in_flight` |
 | ↻ in the Ticket view | the view's read, then `ticket_in_flight` |
+| Every 2 minutes while Wakil is the active app and the screen is unlocked | `ticket_in_flight`, and the shown Ticket view's `ticket_branch` |
 
 One read in flight at a time per organization (Rule 5); a trigger during one joins it. The 20 s
-limit and its message are piece 2's. Why no timer: the operator moves between Wakil and other apps
-(the browser, chat) all day, and every return is a read; a poll would read GitHub on behalf of a
-window nobody is looking at. The cost of the call: a comment that arrives while Wakil stays
-frontmost shows on the next return or ↻ (open question 3).
+limit and its message are piece 2's. The timer runs only while Wakil is active, so nothing reads
+GitHub for a window nobody is looking at; a comment that arrives while Wakil is frontmost shows
+within 2 minutes.
 
 ### State in words, and the urgency order
 
@@ -500,13 +500,25 @@ back on GitHub; production red on a handed chip; narrow widths.
   `ticket_show` already does); a background conversation passes them, so a draft lands without an
   editor pane on screen. This is the plan's first task.
 
+## Decided by the operator (2026-10-28)
+
+1. **A handed agent pushes when it is told to.** The Hand to agent popover carries a **May push**
+   switch, off by default and remembered per organisation like the harness (Rule 9). On, the handed
+   agent's push is priced as any agent's (*allow*, Decision 44) — the operator instructed it; off, its
+   push raises the plane. Publish, merge and rebase still raise the plane either way. *(Operator:
+   "allow agent to push when instructed to"; the instruction is the switch, never words parsed from
+   the brief — my call.)*
+2. **There is a tick with no editor pane open.** When the count is above zero and the canvas holds no
+   editor pane, the rail draws one extra row, **Tickets · N** with the amber tick; choosing it opens an
+   editor pane on the Ticket view (Rule 6: it opens where the operator asked). With an editor pane open
+   the tick is on that pane's row as before, and the extra row is not drawn. *(Operator: "there should
+   be"; the row is my call.)*
+3. **It updates by itself.** While Wakil is the active app and the screen is unlocked, the ticket state
+   is read every **2 minutes** on top of the triggers above; nothing is read while Wakil is in the
+   background, and returning after 60 s reads at once as before. One query per root per read keeps it
+   far under GitHub's rate limit. *(Operator: "it needs to auto update"; the 2-minute interval is my
+   call.)*
+
 ## Open questions
 
-1. A handed agent's push asks on the plane, though an ordinary agent's push is *allow* everywhere
-   (Decision 44). The umbrella's line asks for it; is the asymmetry what the operator wants? My pick:
-   yes.
-2. With no editor pane on the canvas the rail has no Editor row, so the tick has nowhere to go. My
-   pick: nothing is drawn; the Landing and ⌘P still say it.
-3. No timer: a comment arriving while Wakil stays frontmost shows on the next return to Wakil or
-   ↻. My pick: accept; the alternative is a read every five minutes while Wakil is active.
-4. Open question 15 (PM transition reversibility) is untouched; it applies to piece 5's Move.
+1. Open question 15 (PM transition reversibility) is untouched; it applies to piece 5's Move.
