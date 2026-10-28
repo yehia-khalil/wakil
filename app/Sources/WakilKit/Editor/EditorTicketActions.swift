@@ -947,7 +947,8 @@ func registerTicketActions(
             if case .bool(let m)? = o["mayPush"] { s.mayPush = m }
             // An agent's words are marked as its own; the operator's become the title's source.
             if case .string(let b)? = o["brief"], b != s.brief { s.write(brief: b, byAgent: ActionRegistry.dispatchOrigin == .agent) }
-            s.error = nil
+            // A failed Start's message is the operator's to read (Rule 8): only their edit clears it.
+            if ActionRegistry.dispatchOrigin != .agent { s.error = nil }
             await store.showHandOff(s)
             return await handOffReply(s.pane)
         }))

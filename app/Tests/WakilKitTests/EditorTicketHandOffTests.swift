@@ -710,6 +710,21 @@ private func quotedBlock(_ brief: String) -> [String] {
         #expect(await f.store.handOff() == nil)
     }
 
+    /// Rule 8: a failed Start's message is the operator's to read. An agent's brief edit leaves it;
+    /// the operator's own edit clears it.
+    @Test func anAgentsBriefEditKeepsTheFailedStartMessage() async throws {
+        let f = try await handOffFixture()
+        try await f.openFromThread()
+        await f.handOff.setFail("initech-spare has no credentials in the Keychain; add them in Settings")
+        await #expect { try await f.start() } throws: { _ in true }
+        try await f.dispatch("ticket_hand_off_brief", ["brief": .string("Never mind that, start again")], origin: .agent)
+        let s = try await f.state()
+        #expect(s.brief.contains("Never mind that"))
+        #expect(s.error == "initech-spare has no credentials in the Keychain; add them in Settings")
+        try await f.dispatch("ticket_hand_off_brief", ["brief": .string("INI-142 · mine")])
+        #expect(try await f.state().error == nil)
+    }
+
     @Test(.timeLimit(.minutes(1))) func cancelEndsTheStart() async throws {
         let f = try await handOffFixture()
         try await f.openFromThread()
