@@ -74,7 +74,8 @@ extension BrowserSnapshot {
     }
 
     /// Delta reconcile (ruling 14): only `remove` is taken out and only `add` put in, when the pane
-    /// lacks it. A pin the pane already has is left alone, its live page too (ruling 16).
+    /// lacks it. A pin the pane already has keeps its live page (ruling 16); a tab pin's name is taken
+    /// (names call 15).
     mutating func applyPin(add: BrowserPin?, remove: String?) {
         if let remove { removePins { $0 == remove } }
         if let add { addPin(add) }

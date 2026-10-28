@@ -31,9 +31,10 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     case bookmarksUnreadable(String)
     /// 3d-i: the group named is not in the pane.
     case noGroup(action: String, group: String)
-    /// 3d-i: the pull-request group is the read's; only collapse and expand change it. The word is
-    /// the participle: `renamed`, `recoloured`, `ungrouped`, `closed`.
-    case pullRequestGroupRefuses(String)
+    /// 3d-i: the pull-request group is the read's; only collapse and expand change it, and its rows
+    /// are never named (`browser_rename_tab`). The word is the participle: `renamed`, `recoloured`,
+    /// `ungrouped`, `closed`; `action` is the refusing action, whose name the sentence leads with.
+    case pullRequestGroupRefuses(action: String, word: String)
     case unknownColour
     case unknownGroupAction(String)
     /// 3d-i: pins are per project, and the place on screen has none.
@@ -61,7 +62,10 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .bookmarksUnreadable(let error):
             "browser_bookmark: bookmarks.json can't be read (\(error)) — fix or move it; Wakil won't write over it."
         case .noGroup(let action, let group): "\(action): this pane has no group \(group)"
-        case .pullRequestGroupRefuses(let word): "browser_group: the pull-request group can't be \(word)"
+        case .pullRequestGroupRefuses(let action, let word):
+            action == "browser_group"
+                ? "browser_group: the pull-request group can't be \(word)"
+                : "\(action): a pull-request row can't be \(word) (3d-i ruling 18: a listing, never saved)"
         case .unknownColour:
             "browser_group: colour is one of " + BrowserGroupColour.allCases.map(\.rawValue).joined(separator: ", ")
         case .unknownGroupAction(let verb):
@@ -757,7 +761,7 @@ func browserActions(
                 }
                 if s.groups[g].kind == .pullRequests {
                     let words = ["rename": "renamed", "recolour": "recoloured", "ungroup": "ungrouped", "close": "closed"]
-                    if let word = words[verb] { return .failure(.pullRequestGroupRefuses(word)) }
+                    if let word = words[verb] { return .failure(.pullRequestGroupRefuses(action: action, word: word)) }
                 }
                 switch verb {
                 case "rename":
@@ -812,21 +816,32 @@ func browserActions(
             let renamed = await panes.updateBrowser(paneId: pane, create: true) { s -> Result<String?, BrowserActionError> in
                 guard let i = s.tabIndex(tab) else { return .failure(.noTab(action: action, tab: tab)) }
                 // 3d-i ruling 18: the pull-request rows are a listing, never saved.
-                if s.tabs[i].pullRequest != nil { return .failure(.pullRequestGroupRefuses("renamed")) }
+                if s.tabs[i].pullRequest != nil {
+                    return .failure(.pullRequestGroupRefuses(action: action, word: "renamed"))
+                }
                 s.tabs[i].name = name
                 return .success(s.tabs[i].pin)
             }
             let pin = try renamed.get()
             await persist(pane)
             // Names call 15: a pinned tab's name goes to its pin at once, and every other pane of the
-            // project takes it. With no project, no organisation or an unreadable pins file the tab is
-            // still renamed here; the file is never written over (ruling 13).
-            if let pin, let place = try? await pinsPlace(action),
-               var pins = try? place.files.pins(project: place.project),
-               let at = pins.firstIndex(where: { $0.id == pin && $0.kind == .tab }), pins[at].name != name {
-                pins[at].name = name
-                if (try? place.files.setPins(pins, project: place.project)) != nil {
-                    await reconcileOthers(pane, add: pins[at], remove: nil)
+            // project takes it. With no project or no organisation there are no pins to write. A pins
+            // file that can't be read or written never refuses the rename (call 14) and is never
+            // written over (ruling 13): its error goes on the pane whole (`pinsError`, Rule 8), so the
+            // strip and the reply say the name is this pane's only.
+            if let pin, let place = try? await pinsPlace(action) {
+                do {
+                    var pins = try withPins(action, place) { try place.files.pins(project: place.project) }
+                    if let at = pins.firstIndex(where: { $0.id == pin && $0.kind == .tab }), pins[at].name != name {
+                        pins[at].name = name
+                        try withPins(action, place) { try place.files.setPins(pins, project: place.project) }
+                        await reconcileOthers(pane, add: pins[at], remove: nil)
+                    }
+                } catch {
+                    let why = (error as? BrowserActionError)?.description
+                        ?? "\(action): \(BrowserOrgFiles.pinsName(project: place.project)) can't be written "
+                        + "(\(error.localizedDescription)) — the name is kept in this pane only."
+                    await panes.updateBrowser(paneId: pane) { s in s.pinsError = why }
                 }
             }
             return await reply(pane)

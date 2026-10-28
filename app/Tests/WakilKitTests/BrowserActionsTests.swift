@@ -1656,7 +1656,7 @@ private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.g
     let f = try await withTabs(["https://github.com/o/r/pull/1"])
     await f.panes.updateBrowser(paneId: f.pane) { s in s.tabs[0].pullRequest = "https://github.com/o/r/pull/1" }
     let why = await refusal { try await f.dispatch("browser_rename_tab", ["name": .string("Mine")]) }
-    #expect(why == String(describing: BrowserActionError.pullRequestGroupRefuses("renamed")))
+    #expect(why == "browser_rename_tab: a pull-request row can't be renamed (3d-i ruling 18: a listing, never saved)")
     #expect(await f.snapshot().tabs.first?.name == nil)
 }
 
@@ -1668,6 +1668,24 @@ private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.g
     #expect(try files.pins(project: "web").first?.url == "https://example.com/a")
     try await f.dispatch("browser_rename_tab", ["name": .string("")])
     #expect(try files.pins(project: "web").first?.name == nil)
+}
+
+@Test func aPinnedTabRenamedOverAnUnreadablePinsFileSaysSoWhole() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let url = files.pinsURL(project: "web")
+    let bytes = Data("{\"items\": [oops".utf8)
+    try bytes.write(to: url)
+    let reply = try await f.dispatch("browser_rename_tab", ["name": .string("Home")])
+    #expect(await f.snapshot().tabs.first?.name == "Home", "renamed here all the same")
+    #expect(try Data(contentsOf: url) == bytes, "never written over")
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.first?.name == nil)
+    guard case .object(let o) = reply, case .string(let why)? = o["pinsError"] else {
+        Issue.record("the reply carries no pinsError"); return
+    }
+    #expect(why.hasPrefix("browser_rename_tab: pins/web.json can't be read ("))
+    #expect(why.hasSuffix(") — fix or move it; Wakil won't write over it."))
+    #expect(await f.snapshot().pinsError == why, "the strip shows it")
 }
 
 @Test func anotherPaneOfTheProjectTakesThePinnedName() async throws {
