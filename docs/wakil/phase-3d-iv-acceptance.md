@@ -11,8 +11,7 @@ only, and never reaches the agent, a file, a log or the store. Settings → Brow
 reveals, copies, edits and deletes them, lists the sites never to offer, and imports the Passwords app's
 CSV once. A second organisation sees nothing.
 
-**Not walked yet.** Everything below is the operator's. The build was made without driving the screen,
-so rows 11 to 14 and the probe's open rows (b), (e) and (f) are checks nobody has run.
+**Walked 2026-10-28; the operator marked it good to go.** Two walk fixes are in 9cc7b06: the key on a light chip (it vanished on a white field) and the import's rows (the organisation picker squeezed them to `…`). Neither was seen on screen after the fix. Probe (b) and (f) are recorded in the probe doc.
 
 ## 0. Setup
 
@@ -36,26 +35,26 @@ have no name, so the test password never reaches the tab's URL. Stop the servers
 
 | # | Where | Do | Expect | Walked |
 |---|---|---|---|---|
-| 1 | Wakil | Open `http://127.0.0.1:8123/login.html`, type `walker` and `walk-test-pass-1`, and press **Sign in** | `Save the password for walker on 127.0.0.1:8123?` at the pane's top. The signed-in page is usable under it. **Save** removes the bar | |
-| 2 | Wakil | Open `login.html` again. Wait, then click into the username field, press the key, and choose `walker` | Nothing is filled until the press. Then both fields are filled, and the keyboard stays in the page | |
-| 3 | Wakil | Sign in again with `walk-test-pass-2` | `Update the password for walker…` with **Update** and **Not Now** only. After **Update**, row 2's fill gives the new password | |
-| 4 | Wakil | On `http://127.0.0.1:8124/login.html`, sign in, then choose **Never for This Site**. Sign in again | No second bar. Settings → Browser → Passwords lists `127.0.0.1:8124` under *Never saved for*, and × takes it off | |
-| 5 | Wakil | Open `signup.html`, press the key in a password field, and choose **Suggest Strong Password**, then **Create** | Both fields hold the same `xxxxx-xxxxx-xxxxx-xxxxx`. No bar appears, and Settings lists the login | |
-| 6 | Wakil, Terminal | After row 2's fill, ask the agent to read the page and to fill the password. Then, in Terminal: `grep -rl walk-test-pass ~/.wakil` | The read shows the password field with no value. The fill is refused with the operator-only sentence. The grep prints nothing | |
-| 7 | Wakil | ⌘⇧O → **B**, then open `login.html` on 8123 | No key in the fields, and Settings → Passwords reads `No passwords saved for orgb yet.` | |
-| 8 | Wakil | Back in **A**, Settings → Passwords: **Reveal**, **Copy**, **Edit** the password then click away, then **Delete** | Reveal asks for Touch ID or the Mac's password, once. The edit saves when focus leaves. Delete asks in place, and **Keep it** keeps the login | |
-| 9 | Wakil | **Import…** → `.scratch/3d-iv/passwords-test.csv` → **Import**, then answer the Trash question | Rows are listed by site with an organisation picker set to `personal`. The no-URL row is marked `no URL`. The receipt reads `Imported 2 passwords. Skipped 1.` **Move to Trash** moves the file | |
-| 10 | Terminal, Wakil | `security find-generic-password -s wakil:personal:browser-login:default -a "127.0.0.1:8123 walker" -w`. Then rebuild (`make app-bundle`), relaunch, and repeat row 2 | macOS asks before `security` gets the value. Deny it, and nothing prints. After the rebuild, the first fill asks once (ruling 2), and **Always Allow** stops further asks. A rename-only **Edit** in Settings after a rebuild asks too | |
+| 1 | Wakil | Open `http://127.0.0.1:8123/login.html`, type `walker` and `walk-test-pass-1`, and press **Sign in** | `Save the password for walker on 127.0.0.1:8123?` at the pane's top. The signed-in page is usable under it. **Save** removes the bar || ✓ 2026-10-28 |
+| 2 | Wakil | Open `login.html` again. Wait, then click into the username field, press the key, and choose `walker` | Nothing is filled until the press. Then both fields are filled, and the keyboard stays in the page || ✓ 2026-10-28 |
+| 3 | Wakil | Sign in again with `walk-test-pass-2` | `Update the password for walker…` with **Update** and **Not Now** only. After **Update**, row 2's fill gives the new password || ✓ 2026-10-28 |
+| 4 | Wakil | On `http://127.0.0.1:8124/login.html`, sign in, then choose **Never for This Site**. Sign in again | No second bar. Settings → Browser → Passwords lists `127.0.0.1:8124` under *Never saved for*, and × takes it off || ✓ 2026-10-28 |
+| 5 | Wakil | Open `signup.html`, press the key in a password field, and choose **Suggest Strong Password**, then **Create** | Both fields hold the same `xxxxx-xxxxx-xxxxx-xxxxx`. No bar appears, and Settings lists the login || ✓ 2026-10-28 |
+| 6 | Wakil, Terminal | After row 2's fill, ask the agent to read the page and to fill the password. Then, in Terminal: `grep -rl walk-test-pass ~/.wakil` | The read shows the password field with no value. The fill is refused with the operator-only sentence. The grep prints nothing || ✓ 2026-10-28 |
+| 7 | Wakil | ⌘⇧O → **B**, then open `login.html` on 8123 | No key in the fields, and Settings → Passwords reads `No passwords saved for orgb yet.` || ✓ 2026-10-28 |
+| 8 | Wakil | Back in **A**, Settings → Passwords: **Reveal**, **Copy**, **Edit** the password then click away, then **Delete** | Reveal asks for Touch ID or the Mac's password, once. The edit saves when focus leaves. Delete asks in place, and **Keep it** keeps the login || ✓ 2026-10-28 |
+| 9 | Wakil | **Import…** → `.scratch/3d-iv/passwords-test.csv` → **Import**, then answer the Trash question | Rows are listed by site with an organisation picker set to `personal`. The no-URL row is marked `no URL`. The receipt reads `Imported 2 passwords. Skipped 1.` **Move to Trash** moves the file || ✓ 2026-10-28 |
+| 10 | Terminal, Wakil | `security find-generic-password -s wakil:personal:browser-login:default -a "127.0.0.1:8123 walker" -w`. Then rebuild (`make app-bundle`), relaunch, and repeat row 2 | macOS asks before `security` gets the value. Deny it, and nothing prints. After the rebuild, the first fill asks once (ruling 2), and **Always Allow** stops further asks. A rename-only **Edit** in Settings after a rebuild asks too || accepted 2026-10-28: the fill after a rebuild with no code change asked nothing (same binary); not re-run after 9cc7b06 |
 
 Rows 11 to 14 are what the build could not check without the screen. They are the first things to look
 at: a defect in any is a UI defect nobody has seen.
 
 | # | Where | Do | Expect | Walked |
 |---|---|---|---|---|
-| 11 | Wakil | On `login.html` with a saved login, click into Username, then Password. Press the key. Zoom the page with ⌘+, resize the pane, scroll | The key is 16 pt, inside the focused field's right edge, inset 4 pt, and follows the field through zoom, resize and scroll. The popover points at the key, not at the pane's corner | |
-| 12 | Wakil | Press the key, then press Esc (no choice). Press it again and choose `walker`. Type a character | After Esc the key is still there, or returns when you click into the field. After a choice the popover closes and the next character goes into the page's field, never into the address bar or the composer | |
-| 13 | Wakil | Settings → Passwords → **Edit** on a row | The password field takes the keyboard on its own. Typing replaces the password. Empty keeps the old one. Click away saves; **Done** saves | |
-| 14 | Wakil | **Import…** → **Choose File…** | The macOS file picker comes in front of the sheet, and the sheet is still there when it closes (also after Cancel). The file's rows then appear | |
+| 11 | Wakil | On `login.html` with a saved login, click into Username, then Password. Press the key. Zoom the page with ⌘+, resize the pane, scroll | The key is 16 pt, inside the focused field's right edge, inset 4 pt, and follows the field through zoom, resize and scroll. The popover points at the key, not at the pane's corner || ✓ 2026-10-28 |
+| 12 | Wakil | Press the key, then press Esc (no choice). Press it again and choose `walker`. Type a character | After Esc the key is still there, or returns when you click into the field. After a choice the popover closes and the next character goes into the page's field, never into the address bar or the composer || ✓ 2026-10-28 |
+| 13 | Wakil | Settings → Passwords → **Edit** on a row | The password field takes the keyboard on its own. Typing replaces the password. Empty keeps the old one. Click away saves; **Done** saves || ✓ 2026-10-28 |
+| 14 | Wakil | **Import…** → **Choose File…** | The macOS file picker comes in front of the sheet, and the sheet is still there when it closes (also after Cancel). The file's rows then appear || ✓ 2026-10-28 |
 
 ## 2. Known and not fixed
 
