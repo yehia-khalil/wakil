@@ -131,4 +131,70 @@ private func row(key: String = "INI-142", pr: Int = 0, threads: [String] = [], f
         #expect(!ticketPollWanted(appActive: true, screenLocked: true, organization: "initech"))
         #expect(!ticketPollWanted(appActive: true, screenLocked: false, organization: ""))
     }
+
+    // MARK: Task 7 — the Landing's Tickets in flight, and opening a row
+
+    /// `n` rows of the read, each its own ticket (INI-101, INI-102, …), oldest last.
+    private func needsRows(_ n: Int) -> [TicketNeedsRow] {
+        let s = InFlightState(inFlight: (1...n).map { i in
+            row(key: "INI-\(100 + i)", pr: 200 + i, activity: "2026-10-28T09:\(String(format: "%02d", 60 - i)):00Z")
+        })
+        return ticketNeedsRows(s, handoffs: [:], drafts: [:])
+    }
+
+    @Test func landingShowsFiveThenAll() {
+        let rows = needsRows(7)
+        let landing = landingTicketRows(rows)
+        #expect(landing.shown.map(\.id) == Array(rows.prefix(5)).map(\.id))
+        #expect(landing.allLine == "All 7 in ⌘P")
+    }
+
+    @Test func landingAllLineAbsentAtFive() {
+        let landing = landingTicketRows(needsRows(5))
+        #expect(landing.shown.count == 5)
+        #expect(landing.allLine == nil)
+        #expect(landingTicketRows([]).shown.isEmpty)
+        #expect(landingTicketRows([]).allLine == nil)
+    }
+
+    /// A row's name where a key goes: the key, else the PR and its repository's last part (never empty).
+    @Test func keylessRowIsNamedByItsPR() {
+        let s = InFlightState(waitingOnYou: [row(key: "", pr: 215, failing: ["unit (Linux)"])], count: 1)
+        let r = ticketNeedsRows(s, handoffs: [:], drafts: [:]).first
+        #expect(r.map(ticketNeedsRowName) == "#215 · api")
+        #expect(ticketNeedsRowName(needsRows(1)[0]) == "INI-101")
+        #expect(ticketInFlightRowLabel(row(key: "", pr: 215)) == "#215 · api")
+        #expect(ticketInFlightRowLabel(row(key: "INI-142", pr: 212)) == "INI-142")
+    }
+
+    /// What a Landing or ⌘P row dispatches: a ticket by key at its row's root and branch, with its PR;
+    /// a keyless one by its root and branch; one no project holds by its PR and repository.
+    @Test func openParamsNameTheRow() {
+        let keyed = ticketNeedsRows(InFlightState(waitingOnYou: [row(key: "INI-142", pr: 212, threads: ["T1"])], count: 1),
+                                    handoffs: [:], drafts: [:])[0]
+        #expect(ticketOpenParams(keyed) == .object(["key": .string("INI-142"), "root": .string("/p/api"),
+                                                    "branch": .string("ini-142-login"), "pr": .integer(212)]))
+        let keyless = ticketNeedsRows(InFlightState(waitingOnYou: [row(key: "", pr: 215, failing: ["x"])], count: 1),
+                                      handoffs: [:], drafts: [:])[0]
+        #expect(ticketOpenParams(keyless) == .object(["key": .null, "root": .string("/p/api"),
+                                                      "branch": .string("ini-142-login"), "pr": .integer(215)]))
+        let outside = ticketNeedsRows(InFlightState(waitingOnYou: [row(key: "", pr: 300, review: true, root: "",
+                                                                         repo: "github.com/umbrella/web")], count: 1),
+                                      handoffs: [:], drafts: [:])[0]
+        #expect(ticketOpenParams(outside) == .object(["key": .null, "pr": .integer(300),
+                                                      "repo": .string("github.com/umbrella/web")]))
+    }
+
+    /// A ticket of another project of the organisation shows its PRs and record; its thread rows open
+    /// nothing there and say which project they are in (Invariant 5).
+    @Test func threadRowsOfAnotherProjectSayWhere() {
+        let t = ReviewThreadState(id: "T1", path: "src/export.go", line: 12)
+        #expect(ticketThreadRow(t).elsewhere == nil)
+        #expect(ticketThreadRow(t, elsewhere: "umbrella").elsewhere == "in project umbrella")
+        var other = row(key: "INI-150", pr: 215, root: "/q/billing")
+        other.project = "umbrella"
+        #expect(ticketElsewhere(other, roots: ["/p/api", "/p/web"]) == "umbrella")
+        #expect(ticketElsewhere(row(key: "INI-142"), roots: ["/p/api", "/p/web"]) == nil)
+        #expect(ticketElsewhere(nil, roots: ["/p/api"]) == nil)
+    }
 }

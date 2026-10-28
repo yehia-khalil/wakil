@@ -47,40 +47,70 @@ struct EditorTicketView: View {
     private var branch: TicketBranchState? { root.flatMap { state.branches[$0] } }
     private var reading: Bool { root.map { state.reading.contains($0) } ?? false }
     private var failure: String? { root.flatMap { state.failures[$0] } }
-    private var viewCase: TicketViewCase {
-        ticketViewCase(branch, shown: column.ticketShown, failure: failure, reading: reading)
+    private var viewCase: TicketViewCase { ticketViewCase(state, column: column, root: root) }
+    /// A keyless row picked from In flight or the Landing (a PR with no ticket key): where it is.
+    private var keylessAt: TicketShownAt? {
+        guard column.ticketShown == nil, let at = column.ticketShownAt, !at.root.isEmpty else { return nil }
+        return at
+    }
+    /// The keyless row's own branch, once read; the view draws its case in place of the root's.
+    private var keyless: TicketBranchState? { keylessAt.flatMap { state.shownBranches[$0.id] } }
+    /// The branch the cases draw: the keyless row's, else the followed root's.
+    private var viewed: TicketBranchState? { keylessAt == nil ? branch : keyless }
+    /// The project a picked row's branch is in when it is not the screen's: its threads open nothing.
+    private var elsewhere: String? {
+        if let key = column.ticketShown { return ticketElsewhere(state.inFlightRow(key, at: column.ticketShownAt), roots: state.roots) }
+        guard let at = keylessAt else { return nil }
+        let row = state.inFlight.flatMap { s in (s.waitingOnYou + s.inFlight).first { $0.root == at.root && $0.branch == at.branch } }
+        return ticketElsewhere(row, roots: state.roots)
+    }
+    /// The PR card `ticket_open` asked to scroll to, once it is drawn.
+    private var scrollTarget: String? {
+        guard let n = column.ticketScrollPR else { return nil }
+        let drawn = [viewed, column.ticketShown.flatMap { state.shownBranches[$0] }].compactMap { $0 }.flatMap(\.prs)
+        return drawn.contains { $0.number == n } ? "pr:\(n)" : nil
     }
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: Space.m) {
-                topLine
-                switch viewCase {
-                case .loading:
-                    Text("Reading the ticket…").dimmed()
-                        .accessibilityIdentifier("editor.ticket.loading")
-                case .unread:
-                    // Nothing is reading (Rule 8): a root not read, or a first read cancelled.
-                    Text(root == nil ? "No project roots to read" : "Not read. ↻ reads the ticket.").dimmed()
-                        .accessibilityIdentifier("editor.ticket.unread")
-                case .error(let message):
-                    whole(message, id: "editor.ticket.error")
-                case .ticket:
-                    if let key = column.ticketShown { shownTicket(key) } else if let b = branch { ownTicket(b) }
-                case .several:
-                    if let b = branch { severalTickets(b) }
-                case .noTicket(let name):
-                    if let b = branch { noTicket(b, name: name) }
-                case .longLived:
-                    longLived
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    topLine
+                    switch viewCase {
+                    case .loading:
+                        backIfPicked
+                        Text("Reading the ticket…").dimmed()
+                            .accessibilityIdentifier("editor.ticket.loading")
+                    case .unread:
+                        // Nothing is reading (Rule 8): a root not read, or a first read cancelled.
+                        Text(root == nil ? "No project roots to read" : "Not read. ↻ reads the ticket.").dimmed()
+                            .accessibilityIdentifier("editor.ticket.unread")
+                    case .error(let message):
+                        backIfPicked
+                        whole(message, id: "editor.ticket.error")
+                    case .ticket:
+                        if let key = column.ticketShown { shownTicket(key) } else if let b = viewed { backIfPicked; ownTicket(b) }
+                    case .several:
+                        if let b = viewed { backIfPicked; severalTickets(b) }
+                    case .noTicket(let name):
+                        if let b = viewed { backIfPicked; noTicket(b, name: name) }
+                    case .longLived:
+                        longLived
+                    case .outside(let url):
+                        outside(url)
+                    }
+                    if branch != nil, let failure { whole(failure, id: "editor.ticket.failure") }
+                    if let writeError { whole(writeError, id: "editor.ticket.writeError") }
+                    if let drafts = state.draftsFailure { whole(drafts, id: "editor.ticket.draftsFailure") }
+                    partialLines
                 }
-                if branch != nil, let failure { whole(failure, id: "editor.ticket.failure") }
-                if let writeError { whole(writeError, id: "editor.ticket.writeError") }
-                if let drafts = state.draftsFailure { whole(drafts, id: "editor.ticket.draftsFailure") }
-                partialLines
+                .padding(Space.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(Space.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // `ticket_open` with a PR: its card scrolled into view once it is drawn.
+            .onChange(of: scrollTarget, initial: true) { _, target in
+                if let target { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(target, anchor: .top) } }
+            }
         }
         .focusable()
         .focused(focused)
@@ -133,6 +163,33 @@ struct EditorTicketView: View {
 
     // MARK: - The cases
 
+    /// **← Back to this branch**, for a keyless row picked from In flight or the Landing.
+    @ViewBuilder
+    private var backIfPicked: some View {
+        if keylessAt != nil { backButton }
+    }
+
+    private var backButton: some View {
+        Button("← Back to this branch") { Task { await dispatch("ticket_show", ["key": .null]) } }
+            .buttonStyle(.plain).foregroundStyle(EditorPaneStyle.violet)
+            .accessibilityIdentifier("editor.ticket.back")
+    }
+
+    /// A pull request on a repository no project holds: no root to read it in, so no branch, threads
+    /// or hand-off here — it opens on GitHub.
+    @ViewBuilder
+    private func outside(_ url: String) -> some View {
+        backButton
+        VStack(alignment: .leading, spacing: Space.s) {
+            Text(ticketOutsideLine).fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("editor.ticket.outside")
+            if let link = URL(string: url), !url.isEmpty {
+                Link("Open on GitHub ↗", destination: link).foregroundStyle(EditorPaneStyle.violet)
+                    .accessibilityIdentifier("editor.ticket.outside.github")
+            }
+        }
+    }
+
     @ViewBuilder
     private func ownTicket(_ b: TicketBranchState) -> some View {
         let t = b.tickets[0]
@@ -183,7 +240,10 @@ struct EditorTicketView: View {
                 Text(looked).dimmed().fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("editor.ticket.looked")
             }
-            if linking {
+            if keylessAt != nil {
+                // Linking names the root's current branch, never a picked one (Rule 6): nothing here.
+                EmptyView()
+            } else if linking {
                 // Checked against the PM tool when it is left or Enter is pressed (Rule 2).
                 TicketField(value: "", placeholder: "INI-142", id: "editor.ticket.linkField", focus: $fieldFocus,
                             arrivesFocused: true, left: { linking = false }) { key in
@@ -227,7 +287,7 @@ struct EditorTicketView: View {
                     // whole and the title truncating, then the status pill and Go's state words.
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: Space.s) {
-                            Text(r.key).ticketKey().lineLimit(1).fixedSize()
+                            Text(ticketInFlightRowLabel(r)).ticketKey().lineLimit(1).fixedSize()
                             Text(r.title).font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
                         }
                         HStack(spacing: Space.s) {
@@ -263,9 +323,7 @@ struct EditorTicketView: View {
         let row = state.inFlightRow(key, at: at)
         let shownRecord = ticketShownRecord(state, key: key, ref: ref)
         let record: TicketRecordState? = if case .record(let r) = shownRecord { r } else { nil }
-        Button("← Back to this branch") { Task { await dispatch("ticket_show", ["key": .null]) } }
-            .buttonStyle(.plain).foregroundStyle(EditorPaneStyle.violet)
-            .accessibilityIdentifier("editor.ticket.back")
+        backButton
         header(key: key, title: [ref?.title, row?.title, record?.seen.title].compactMap { $0 }.first { !$0.isEmpty } ?? "",
                status: [ref?.status, row?.status, record?.seen.status].compactMap { $0 }.first { !$0.isEmpty } ?? "",
                waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record),
@@ -359,7 +417,7 @@ struct EditorTicketView: View {
             Text("Threads · \(threads.count) open").microLabel()
             let cursor = editorCursorThread(tab, reviews)
             VStack(alignment: .leading, spacing: 1) {
-                ForEach(threads, id: \.id) { t in threadRow(t, selected: t.id == cursor) }
+                ForEach(threads, id: \.id) { t in threadRow(t, selected: t.id == cursor, elsewhere: elsewhere) }
             }
         }
     }
@@ -399,13 +457,18 @@ struct EditorTicketView: View {
         .padding(.horizontal, 8).padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(EditorPaneStyle.text.opacity(0.08)))
+        .id("pr:\(pr.number)")
     }
 
     /// A thread's row opens its file at its line; the column stays on Ticket, scrolled where it was,
     /// and keeps the keyboard (Rule 6). The thread whose box holds the cursor is tinted: where you are.
-    private func threadRow(_ t: ReviewThreadState, selected: Bool) -> some View {
-        let row = ticketThreadRow(t)
+    ///
+    /// A thread of another project of the organisation opens nothing (one place is on screen,
+    /// Invariant 5): its row says which project it is in instead.
+    private func threadRow(_ t: ReviewThreadState, selected: Bool, elsewhere: String?) -> some View {
+        let row = ticketThreadRow(t, elsewhere: elsewhere)
         return Button {
+            guard row.elsewhere == nil else { return }
             browsed = t.root + "/" + t.path
             Task { await dispatch("review_open", ["thread": .string(t.id)]) }
         } label: {
@@ -424,6 +487,10 @@ struct EditorTicketView: View {
                             .accessibilityIdentifier("editor.ticket.draft:\(t.id)")
                     }
                     if let replies = row.replies { Text(replies).dimmed().font(.system(size: 10.5)).fixedSize() }
+                    if let there = row.elsewhere {
+                        Text(there).dimmed().font(.system(size: 10.5)).fixedSize()
+                            .accessibilityIdentifier("editor.ticket.elsewhere:\(t.id)")
+                    }
                 }
                 Text(row.words).font(.system(size: 11.5)).lineLimit(2).truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)

@@ -1063,3 +1063,169 @@ private func names(_ f: TicketFixture) async -> [String] { await f.ticket.calls.
         #expect(o["waitingOnYou"] != nil)
     }
 }
+
+// MARK: Ticket noticing, Task 7 — ticket_open
+
+/// An In flight read with INI-140 on `/p/api`, a keyless PR #215 on `/p/web`, INI-150 in another
+/// project's root (`/q/billing`, project umbrella) and a review request #300 no project holds.
+private func openFixture(editorPane: Bool = true) async throws -> TicketFixture {
+    let f = try await ticketFixture(editorPane: editorPane)
+    func row(_ key: String, root: String, branch: String, pr: Int, project: String = "api",
+             repo: String = "github.com/initech/api", review: Bool = false) -> JSONValue {
+        .object(["key": .string(key), "title": .string("t"), "root": .string(root), "branch": .string(branch),
+                 "pr": .integer(Int64(pr)), "project": .string(project), "repo": .string(repo),
+                 "url": .string("https://\(repo)/pull/\(pr)"), "review": .bool(review), "count": .integer(review ? 1 : 0)])
+    }
+    await f.ticket.set("ticket_in_flight", .object([
+        "waitingOnYou": .array([row("", root: "", branch: "", pr: 300, project: "", repo: "github.com/umbrella/web", review: true)]),
+        "inFlight": .array([row("INI-140", root: "/p/api", branch: "ini-140-deploy", pr: 212),
+                            row("", root: "/p/web", branch: "fix-export", pr: 215, project: "web", repo: "github.com/initech/web"),
+                            row("INI-150", root: "/q/billing", branch: "ini-150-export", pr: 216, project: "umbrella",
+                                repo: "github.com/initech/billing")]),
+        "partial": .array([]), "count": .integer(1),
+    ]))
+    _ = try await f.store.inFlight()
+    await f.ticket.set("ticket_record", .object(["key": .string("INI-140")]))
+    return f
+}
+
+/// The editor pane's column once the store's mirror has landed in the view state.
+private func openedView(_ f: TicketFixture, until done: @Sendable (EditorTicketViewState) -> Bool) async throws -> EditorTicketViewState {
+    var v = await f.editor.panes.editorTicketView()
+    for _ in 0..<1_000 where !done(v) {
+        try await Task.sleep(for: .milliseconds(1))
+        v = await f.editor.panes.editorTicketView()
+    }
+    return v
+}
+
+@Test func openWithNoEditorOpensOneOnTicket() async throws {
+    let f = try await openFixture(editorPane: false)
+    #expect(await f.editor.layout.snapshot().panes.filter { $0.kind == "editor" }.isEmpty)
+    let out = try await f.dispatch("ticket_open", ["key": .string("INI-140")], origin: .ui, confirmation: nil)
+    let editors = await f.editor.layout.snapshot().panes.filter { $0.kind == "editor" }
+    #expect(editors.count == 1)
+    let pane = try #require(editors.first?.id)
+    guard case .object(let o) = out else { Issue.record("reply \(out)"); return }
+    #expect(o["pane"] == .string(pane))
+    let c = await f.editor.panes.editorSnapshot(paneId: pane).column
+    #expect(c?.view == .ticket && c?.shown == true)
+    #expect(c?.ticketShown == "INI-140")
+
+    // No key and no root: the column on Ticket for the followed branch, in the pane now open.
+    try await f.dispatch("ticket_open", [:], origin: .ui, confirmation: nil)
+    #expect(await f.editor.layout.snapshot().panes.filter { $0.kind == "editor" }.count == 1)
+    let own = await f.editor.panes.editorSnapshot(paneId: pane).column
+    #expect(own?.view == .ticket && own?.ticketShown == nil && own?.ticketShownAt == nil)
+}
+
+@Test func openFocusesTheFrontEditor() async throws {
+    let f = try await openFixture()
+    let other = await f.editor.layout.open(kind: "terminal", title: "Terminal").id
+    #expect(await f.editor.layout.snapshot().focusedId == other)
+    try await f.dispatch("ticket_open", ["key": .string("INI-140")], origin: .ui, confirmation: nil)
+    let snap = await f.editor.layout.snapshot()
+    #expect(snap.focusedId == f.editor.pane)
+    #expect(snap.panes.filter { $0.kind == "editor" }.count == 1)
+    #expect(await f.editor.snapshot().column?.ticketShown == "INI-140")
+}
+
+@Test func openNeverSwitchesTheBranch() async throws {
+    let f = try await openFixture()
+    _ = try await f.store.read(root: "/p/api")
+    try await f.dispatch("ticket_open", ["key": .string("INI-140"), "root": .string("/p/api"),
+                                         "branch": .string("ini-140-deploy"), "pr": .integer(212)], origin: .ui, confirmation: nil)
+    try await f.dispatch("ticket_open", ["key": .null, "root": .string("/p/web"), "branch": .string("fix-export"),
+                                         "pr": .integer(215)], origin: .ui, confirmation: nil)
+    // Nothing checked out, linked or written: git is asked for no switch, wakil-ticket only reads.
+    #expect(await f.editor.git.calls.allSatisfy { !$0.contains("switch") && !$0.contains("checkout") })
+    let asked = Set(await f.ticket.calls.map(\.name))
+    #expect(asked.isSubset(of: ["ticket_branch", "ticket_in_flight", "ticket_record", "ticket_drafts"]), "\(asked)")
+    // The followed root's own read is the branch it was.
+    #expect(await f.store.branch(root: "/p/api")?.branch == "ini-142-login")
+}
+
+@Test func openWithPRSetsTheScroll() async throws {
+    let f = try await openFixture()
+    try await f.dispatch("ticket_open", ["key": .string("INI-140"), "pr": .integer(212)], origin: .ui, confirmation: nil)
+    #expect(await f.editor.snapshot().column?.ticketScrollPR == 212)
+    // Not saved, as the ticket shown is not; an open without a PR scrolls nowhere.
+    let saved = try JSONDecoder().decode(EditorColumnState.self,
+                                         from: JSONEncoder().encode(try #require(await f.editor.snapshot().column)))
+    #expect(saved.ticketScrollPR == nil)
+    try await f.dispatch("ticket_open", ["key": .string("INI-140")], origin: .ui, confirmation: nil)
+    #expect(await f.editor.snapshot().column?.ticketScrollPR == nil)
+}
+
+/// The followed branch's own ticket shows as the branch's (key null), not as a pick.
+@Test func openTheFollowedBranchsOwnTicketShowsIt() async throws {
+    let f = try await openFixture()
+    _ = try await f.store.read(root: "/p/api")
+    try await f.dispatch("ticket_open", ["key": .string("INI-142")], origin: .ui, confirmation: nil)
+    let c = await f.editor.snapshot().column
+    #expect(c?.view == .ticket && c?.ticketShown == nil && c?.ticketShownAt == nil)
+}
+
+@Test func openKeylessShowsThatBranchsNoTicketCase() async throws {
+    let f = try await openFixture()
+    _ = try await f.store.read(root: "/p/api")
+    var keyless = ticketBranchJSON(root: "/p/web", branch: "fix-export")
+    if case .object(var o) = keyless { o["tickets"] = .array([]); keyless = .object(o) }
+    await f.ticket.set("ticket_branch", keyless)
+    try await f.dispatch("ticket_open", ["key": .null, "root": .string("/p/web"), "branch": .string("fix-export"),
+                                         "pr": .integer(215)], origin: .ui, confirmation: nil)
+    #expect(await f.ticket.args("ticket_branch") == ["root": .string("/p/web"), "branch": .string("fix-export")])
+    let c = try #require(await f.editor.snapshot().column)
+    let at = TicketShownAt(root: "/p/web", branch: "fix-export")
+    #expect(c.ticketShown == nil && c.ticketShownAt == at && c.ticketScrollPR == 215)
+    let v = try await openedView(f) { $0.shownBranches[at.id] != nil && $0.branches["/p/api"] != nil }
+    #expect(v.shownBranches[at.id]?.branch == "fix-export")
+    #expect(ticketViewCase(v, column: c, root: "/p/api") == .noTicket(branch: "fix-export"))
+    // The followed root's own read and case are untouched.
+    #expect(ticketViewCase(v, column: .initial, root: "/p/api") == .ticket)
+
+    // ticket_show takes the same keyless row by its root and branch.
+    try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .null], origin: .ui, confirmation: nil)
+    #expect(await f.editor.snapshot().column?.ticketShownAt == nil)
+    try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .null, "root": .string("/p/web"),
+                                         "branch": .string("fix-export")], origin: .ui, confirmation: nil)
+    #expect(await f.editor.snapshot().column?.ticketShownAt == at)
+}
+
+/// A review request on a repository no project holds: its case says where it is, and opens on GitHub.
+@Test func outsideRowShowsOpenOnGitHub() async throws {
+    let f = try await openFixture()
+    let read = try #require(await f.store.lastInFlight())
+    let row = try #require(ticketNeedsRows(read, handoffs: [:], drafts: [:]).first { $0.id == "github.com/umbrella/web#300" })
+    #expect(!row.openable)
+    guard case .object(let params) = ticketOpenParams(row) else { Issue.record("params"); return }
+    try await f.dispatch("ticket_open", params, origin: .ui, confirmation: nil)
+    let c = try #require(await f.editor.snapshot().column)
+    #expect(c.view == .ticket && c.ticketShown == nil)
+    let v = await f.editor.panes.editorTicketView()
+    #expect(ticketViewCase(v, column: c, root: "/p/api") == .outside(url: "https://github.com/umbrella/web/pull/300"))
+    #expect(ticketOutsideLine == "Not open in any project of this organisation")
+    // Nothing is read for it: there is no root to read.
+    #expect(await f.ticket.count("ticket_branch") == 0)
+}
+
+/// F7: a root of another project of the organisation opens (read only, nothing switched); a root
+/// outside the organisation is refused, naming the roots, and nothing is shown or read.
+@Test func openTakesTheOrganisationsRootsOnly() async throws {
+    let f = try await openFixture()
+    try await f.dispatch("ticket_open", ["key": .string("INI-150"), "root": .string("/q/billing"),
+                                         "branch": .string("ini-150-export")], origin: .ui, confirmation: nil)
+    #expect(await f.editor.snapshot().column?.ticketShownAt == TicketShownAt(root: "/q/billing", branch: "ini-150-export"))
+    #expect(await f.ticket.args("ticket_branch") == ["root": .string("/q/billing"), "branch": .string("ini-150-export")])
+
+    let reads = await f.ticket.count("ticket_branch")
+    await #expect {
+        try await f.dispatch("ticket_open", ["key": .string("INI-150"), "root": .string("/elsewhere"),
+                                             "branch": .string("ini-150-export")], origin: .ui, confirmation: nil)
+    } throws: { error in
+        guard case GitActionError.notAProjectRoot(_, let root, let roots) = error else { return false }
+        return root == "/elsewhere" && roots.contains("/q/billing") && roots.contains("/p/api")
+    }
+    #expect(await f.ticket.count("ticket_branch") == reads)
+    #expect(await f.editor.snapshot().column?.ticketShownAt == TicketShownAt(root: "/q/billing", branch: "ini-150-export"))
+}

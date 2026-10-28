@@ -13,6 +13,10 @@ struct EditorTicketHooks: Sendable {
     let updateColumn: @Sendable (String, @escaping @Sendable (inout EditorColumnState) -> Void) async -> EditorColumnState
     /// Opens `path` in `pane` at `line` (`editor_open`'s body), the column untouched.
     let openFile: @Sendable (_ pane: String, _ path: String, _ line: Int) async throws -> Void
+    /// Opens a new editor pane, focused, and answers its id (`ticket_open` with none open).
+    var openEditorPane: @Sendable () async throws -> String = {
+        throw TicketActionError(description: "ticket_open: no canvas to open an editor pane on")
+    }
     /// Reads these head texts into the panes' review state now (`git_show` rev `commit:<sha>`), so a
     /// thread's box can be placed before its file opens at it.
     var readHeads: @Sendable ([EditorReviewHead]) async -> Void = { _ in }
@@ -68,7 +72,7 @@ func editorFrontRoot(_ s: EditorSnapshot) -> String? {
     }
 }
 
-/// Registers the Ticket view's eleven actions (spec, *Actions*). Every write — a record line, a link,
+/// Registers the Ticket view's thirteen actions (spec, *Actions*). Every write — a record line, a link,
 /// a draft, a reply, a resolve — is one of these, for the operator and the agent alike (Invariant 2).
 /// `by` on a record line comes from who dispatched (`ticketBy`), never from params.
 func registerTicketActions(
@@ -116,6 +120,26 @@ func registerTicketActions(
         let root = try param(params, "root", action)
         let all = await roots()
         guard all.contains(root) else { throw GitActionError.notAProjectRoot(action: action, root: root, roots: all) }
+        return root
+    }
+    /// A root `ticket_open` or `ticket_show` names (F7): the caller's own project's, or another
+    /// project's of the organisation — any root the organisation's last In flight read names, since
+    /// wakil-ticket read those from the organisation's projects (and reads a branch in no other).
+    /// Read only: nothing is switched or written there. An agent session of another organisation
+    /// than the window's gets its own roots alone, the window's read being of the window's (Invariant 4).
+    @Sendable func orgRoot(_ params: JSONValue, _ action: String) async throws -> String {
+        let root = try param(params, "root", action)
+        let own = await roots()
+        if own.contains(root) { return root }
+        var org: [String] = []
+        let away = pinnedPlace(of: ActionRegistry.dispatchCaller)
+        let windowOrg = await organization()
+        if away == nil || away?.organization == windowOrg, let s = await store.lastInFlight() {
+            for r in s.waitingOnYou + s.inFlight where !r.root.isEmpty && !own.contains(r.root) && !org.contains(r.root) {
+                org.append(r.root)
+            }
+        }
+        guard org.contains(root) else { throw GitActionError.notAProjectRoot(action: action, root: root, roots: own + org) }
         return root
     }
     /// The place a draft or a record line names: `root`, checked as `projectRoot` checks it, with
@@ -292,7 +316,8 @@ func registerTicketActions(
                 return await editor.reply(pane)
             }
             // A ticket picked from In flight is read again with it: its branch is the view's too.
-            let shown = await panes.editorSnapshot(paneId: pane).column?.ticketShown
+            let column = await panes.editorSnapshot(paneId: pane).column
+            let shown = column?.ticketShown ?? column?.ticketShownAt.flatMap { $0.root.isEmpty ? nil : $0.id }
             let picked = Task { if let shown { await store.refreshShown(key: shown) } }
             // The view's read, then In flight (spec, *When it reads*), whichever branch the view follows.
             do {
@@ -309,12 +334,60 @@ func registerTicketActions(
             return await editor.reply(pane)
         }))
 
+    /// Shows `key` in `pane`'s Ticket view — the row at `named`'s root and branch when given (two
+    /// rows can carry one key), else the key's first — or, with no key, the keyless row at `named` (a
+    /// PR with no ticket key: its own branch's read, Go's no-ticket case for it; one no project holds
+    /// has no root and nothing is read), else the followed branch's own. The column goes to Ticket,
+    /// scrolled nowhere; the branch never switches (Rule 6).
+    @Sendable func show(_ pane: String, key: String?, named: TicketShownAt?) async {
+        let followedRoot = await followed(pane)
+        let own = await followedRoot.asyncFlatMap { await store.branch(root: $0) }
+        guard let key else {
+            // A keyless row on the followed root's current branch is the branch's own.
+            let at = named.flatMap { at in at.root == followedRoot && at.branch == own?.branch ? nil : at }
+            _ = await editor.updateColumn(pane) { c in
+                c.ticketShown = nil
+                c.ticketShownAt = at
+                c.ticketScrollPR = nil
+                c.view = .ticket
+                c.shown = true
+            }
+            if let at, !at.root.isEmpty { await store.readShown(at: at) }
+            return
+        }
+        let s = await store.lastInFlight()
+        let rows = ((s?.waitingOnYou ?? []) + (s?.inFlight ?? [])).filter { $0.key == key }
+        let row = named.map { at in rows.first { $0.root == at.root && $0.branch == at.branch } } ?? rows.first
+        // Where the shown ticket's branch is read: the named row's, else the key's first row's.
+        let at = named ?? row.flatMap { r in r.root.isEmpty || r.branch.isEmpty ? nil : TicketShownAt(root: r.root, branch: r.branch) }
+        _ = await editor.updateColumn(pane) { c in
+            c.ticketShown = key
+            c.ticketShownAt = at
+            c.ticketScrollPR = nil
+            c.view = .ticket
+            c.shown = true
+        }
+        // The shown ticket's record, for its header and lists, and — for a ticket the branch does not
+        // carry — its own branch, read by its In flight row's root and branch, for its pull
+        // requests and threads. Nothing is checked out (Rule 6); a failed read is kept whole for
+        // the view (Rule 8), so the show itself does not fail.
+        // The followed root's own read carries it — unless a row on another branch was named.
+        let carried = (own?.tickets.contains { $0.key == key } ?? false)
+            && (named == nil || (named?.root == followedRoot && named?.branch == own?.branch))
+        async let record: Void = { _ = try? await store.readRecord(key: key) }()
+        if !carried, let at, !at.root.isEmpty {
+            await store.readShown(key: key, root: at.root, branch: at.branch)
+        }
+        await record
+    }
+
     await registry.register(Action(
         name: "ticket_show",
         description: "Show a ticket in an editor pane's Ticket view by key (a row of In flight), or null for the "
             + "branch's own. root and branch pick the In flight or Waiting on you row a key is on, since two "
-            + "branches can carry one ticket; without them the key's first row. The branch never switches. "
-            + "Shows the column on Ticket.",
+            + "branches can carry one ticket; without them the key's first row. With key null, root and branch "
+            + "pick a pull request with no ticket key: that branch's own read shows. root may be any project's "
+            + "of the organization. The branch never switches. Shows the column on Ticket.",
         kind: .control, audience: .agentReachable,
         schema: schema(["pane": string, "key": .object(["type": .array([.string("string"), .string("null")])]),
                         "root": string, "branch": string]),
@@ -323,37 +396,58 @@ func registerTicketActions(
             let key = optionalString(params, "key").flatMap { $0.isEmpty ? nil : $0.uppercased() }
             // A row named by its root and branch; either alone names no row and is ignored (Rule 7).
             var named: TicketShownAt?
-            if key != nil, optionalString(params, "root")?.isEmpty == false,
+            if optionalString(params, "root")?.isEmpty == false,
                let b = optionalString(params, "branch"), !b.isEmpty {
-                named = TicketShownAt(root: try await projectRoot(params, "ticket_show"), branch: b)
+                named = TicketShownAt(root: try await orgRoot(params, "ticket_show"), branch: b)
             }
-            let s = await store.lastInFlight()
-            let rows = ((s?.waitingOnYou ?? []) + (s?.inFlight ?? [])).filter { $0.key == key }
-            let row = named.map { at in rows.first { $0.root == at.root && $0.branch == at.branch } } ?? rows.first
-            // Where the shown ticket's branch is read: the named row's, else the key's first row's.
-            let at = named ?? row.flatMap { r in r.root.isEmpty || r.branch.isEmpty ? nil : TicketShownAt(root: r.root, branch: r.branch) }
-            _ = await editor.updateColumn(pane) { c in
-                c.ticketShown = key
-                c.ticketShownAt = key == nil ? nil : at
-                c.view = .ticket
-                c.shown = true
-            }
-            // The shown ticket's record, for its header and lists, and — for a ticket the branch does not
-            // carry — its own branch, read by its In flight row's root and branch, for its pull
-            // requests and threads. Nothing is checked out (Rule 6); a failed read is kept whole for
-            // the view (Rule 8), so the show itself does not fail.
-            if let key {
-                // The followed root's own read carries it — unless a row on another branch was named.
-                let followedRoot = await followed(pane)
-                let own = await followedRoot.asyncFlatMap { await store.branch(root: $0) }
-                let carried = (own?.tickets.contains { $0.key == key } ?? false)
-                    && (named == nil || (named?.root == followedRoot && named?.branch == own?.branch))
-                async let record: Void = { _ = try? await store.readRecord(key: key) }()
-                if !carried, let at {
-                    await store.readShown(key: key, root: at.root, branch: at.branch)
+            await show(pane, key: key, named: named)
+            return await editor.reply(pane)
+        }))
+
+    await registry.register(Action(
+        name: "ticket_open",
+        description: "Open a ticket in flight: the focused editor pane, else the first, else a new one, its column on "
+            + "Ticket showing key — the followed branch's own when key is null or absent. root and branch name the "
+            + "row (any project's root of the organization, read only); with key null they name a pull request with "
+            + "no ticket key, shown as that branch's no-ticket case. pr scrolls that pull request into view; with no "
+            + "key and no root, pr and repo name a pull request no project holds, which the view opens on GitHub. "
+            + "The branch never switches. Answers the pane.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(["key": .object(["type": .array([.string("string"), .string("null")])]),
+                        "root": string, "branch": string, "pr": integer, "repo": string]),
+        handler: { params in
+            let action = "ticket_open"
+            var key = optionalString(params, "key").flatMap { $0.isEmpty ? nil : $0.uppercased() }
+            let pr: Int? = if case .object(let o) = params, let n = o["pr"]?.intValue, n > 0 { n } else { nil }
+            var named: TicketShownAt?
+            let rooted = optionalString(params, "root")?.isEmpty == false
+            if rooted {
+                // Checked before any pane opens: a refused root shows nothing (Rule 7).
+                let root = try await orgRoot(params, action)
+                if let b = optionalString(params, "branch"), !b.isEmpty { named = TicketShownAt(root: root, branch: b) }
+            } else if key == nil, let pr, let s = await store.lastInFlight() {
+                // A PR no project holds, as the last In flight read has it; else pr is the followed branch's.
+                let repo = optionalString(params, "repo") ?? ""
+                if let r = (s.waitingOnYou + s.inFlight).first(where: { $0.root.isEmpty && $0.pr == pr && (repo.isEmpty || $0.repo == repo) }) {
+                    named = TicketShownAt(root: "", branch: "", repo: r.repo, pr: pr)
                 }
-                await record
             }
+            let pane: String
+            if let front = await frontPane() {
+                try? await layout?.focus(id: front)
+                pane = front
+            } else {
+                pane = try await editor.openEditorPane()
+            }
+            // The followed branch's own ticket shows as the branch's, not as a pick.
+            if let k = key, let root = await followed(pane), let own = await store.branch(root: root),
+               ticketViewCase(own, shown: nil) == .ticket, own.tickets.first?.key == k,
+               named == nil || (named?.root == root && named?.branch == own.branch) {
+                key = nil
+                named = nil
+            }
+            await show(pane, key: key, named: named)
+            if let pr { _ = await editor.updateColumn(pane) { $0.ticketScrollPR = pr } }
             return await editor.reply(pane)
         }))
 

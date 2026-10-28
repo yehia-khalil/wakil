@@ -322,6 +322,12 @@ public actor EditorTicketStore {
         await changed()
     }
 
+    /// `readShown` for a keyless row (a PR with no ticket key): its branch is kept by `at.id`, where a
+    /// ticket's is kept by its key.
+    public func readShown(at: TicketShownAt) async {
+        await readShown(key: at.id, root: at.root, branch: at.branch)
+    }
+
     /// Reads a picked ticket's branch again (↻, a resolve, a push, a reply); nothing for a key not picked.
     public func refreshShown(key: String) async {
         guard let at = shownWhere[key] else { return }

@@ -67,7 +67,7 @@ extension WindowModel {
 
     /// Reads In flight — `force`, or when the last read is over 60 s old — joined to a read in flight.
     /// A failed read keeps the last needs; the store keeps why, whole.
-    func ticketNeedsRead(force: Bool) async {
+    public func ticketNeedsRead(force: Bool) async {
         guard let ticket, !organization.isEmpty else { return }
         if !force, !(await ticket.inFlightStale()) { return }
         _ = try? await ticket.inFlight()

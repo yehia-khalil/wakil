@@ -662,7 +662,11 @@ struct WakilWindow: View {
         // put a surface on top would be the org plane's treatment borrowed
         // for a case that does not need it.
         if !model.sessionStarted {
-            Landing(model: model)
+            Landing(model: model, openTicketsPalette: {
+                // ⌘P in open mode with `#` typed: every ticket in flight.
+                openPalette(.open)
+                palette?.type("#")
+            })
                 .padding(.top, 34)
                 .transition(.opacity)
                 // **The settings pane draws OVER the Landing**, because

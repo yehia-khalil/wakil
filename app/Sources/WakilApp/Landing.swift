@@ -25,12 +25,21 @@ import SwiftUI
 /// conversation is in one list only, so a past session resumed leaves Continue.
 /// With nothing live the column is not drawn, and the two columns stand as before.
 ///
+/// **Tickets in flight, atop the Continue column** (ticket noticing): the organisation's tickets
+/// and keyless PRs in flight, most urgent first (`WindowModel.ticketNeedsRows`), five at most and
+/// then `All 7 in ⌘P  #`, each with its most urgent state in words — amber when it waits on the
+/// operator. A row runs `ticket_open` (`openTicket`), which opens or focuses the editor on Ticket;
+/// the branch never switches (Rule 6). With nothing in flight the section is not drawn; a source
+/// that could not be read is said under the rows, whole (Rule 8).
+///
 /// **Invariant 2.** Every control dispatches through `WindowModel` — a Running
 /// row through `switchToRunning` (`session_switch`), a
 /// Continue row through `continueSession` (`session_resume`), an Open row through
 /// `openPane`/`openTerminalPane` — the same actions ⌘P's rows run.
 struct Landing: View {
     let model: WindowModel
+    /// Opens ⌘P in open mode with `#` typed: every ticket in flight (`All N in ⌘P`).
+    let openTicketsPalette: () -> Void
 
     @State private var sessions: [PaletteItem] = []
     @State private var projects: [WindowModel.ProjectListing] = []
@@ -79,10 +88,10 @@ struct Landing: View {
                     threeColumns(running, widths: (248, 320, 248), spacing: 36)
                 }
             } else if hasProject {
-                twoColumns("Continue · newest first", { continueRows }, "Open", { openRows })
+                twoColumns(continueLabel, { continueColumn }, "Open", { openRows })
             } else {
                 // The empty workspace's one job is to get you a project.
-                twoColumns("Projects", { projectRows }, "Continue · newest first", { continueRows })
+                twoColumns("Projects", { projectRows }, continueLabel, { continueColumn })
             }
             Spacer(minLength: 0)
         }
@@ -105,6 +114,8 @@ struct Landing: View {
             readFor = place
             loaded = true
         }
+        // The Landing drawn: In flight read when the last read is over 60 s old (spec, *When it reads*).
+        .task(id: model.organization) { await model.ticketNeedsRead(force: false) }
     }
 
     private func threeColumns(
@@ -112,7 +123,7 @@ struct Landing: View {
     ) -> some View {
         HStack(alignment: .top, spacing: spacing) {
             column("Running", width: widths.0) { runningRows(running) }
-            column("Continue · newest first", width: widths.1) { continueRows }
+            column(continueLabel, width: widths.1) { continueColumn }
             column("Open", width: widths.2) { openRows }
         }
     }
@@ -214,6 +225,113 @@ struct Landing: View {
                 }
             }
         }
+    }
+
+    // MARK: - Tickets in flight
+
+    /// The tickets in flight, most urgent first; read in `body`, so a new read redraws them.
+    private var tickets: [TicketNeedsRow] { model.ticketNeedsRows }
+
+    /// The Continue column's label: Tickets in flight heads it while any are, Continue below them.
+    private var continueLabel: String { tickets.isEmpty ? "Continue · newest first" : "Tickets in flight" }
+
+    /// The Continue column: Tickets in flight above *Continue · newest first* in one slab, so the
+    /// column keeps its one height cap.
+    @ViewBuilder
+    private var continueColumn: some View {
+        let tickets = tickets
+        if tickets.isEmpty {
+            continueRows
+        } else {
+            ticketRows(tickets)
+            Text("Continue · newest first".uppercased())
+                .font(.system(size: 9, weight: .medium))
+                .tracking(1.7)
+                .foregroundStyle(coolWhite.opacity(0.52))
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                .padding(.bottom, 4)
+            continueRows
+        }
+    }
+
+    @ViewBuilder
+    private func ticketRows(_ rows: [TicketNeedsRow]) -> some View {
+        let landing = landingTicketRows(rows)
+        ForEach(Array(landing.shown.enumerated()), id: \.element.id) { index, row in
+            ticketRow(row, index: index)
+        }
+        if let all = landing.allLine {
+            HStack(spacing: 8) {
+                Text(all).font(.system(size: 12.5)).foregroundStyle(coolWhite.opacity(0.62))
+                // ⌘P's mode key for tickets, as `>` is for commands.
+                Text("#").font(.system(size: 11, design: .monospaced)).foregroundStyle(coolWhite.opacity(0.40))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 10)
+            .background(coolWhite.opacity(hovered == "tickets:all" ? 0.04 : 0))
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.24)) { hovered = hovering ? "tickets:all" : nil }
+            }
+            .onTapGesture(perform: openTicketsPalette)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default, openTicketsPalette)
+            .accessibilityIdentifier("landing.tickets.all")
+        }
+        // A source In flight could not read, whole, under the rows (Rule 8); the rest still drawn.
+        ForEach(ticketPartialLine(model.ticketNeeds?.partial ?? []), id: \.self) { line in
+            Text(line)
+                .font(.system(size: 11))
+                .foregroundStyle(coolWhite.opacity(0.62))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 6)
+                .accessibilityIdentifier("landing.tickets.partial")
+        }
+    }
+
+    /// `INI-142  Sign-in keeps the last organization` — a keyless PR as `#215 · api` — and its most
+    /// urgent state at the right: amber when it waits on the operator (hue only for meaning, §5).
+    private func ticketRow(_ row: TicketNeedsRow, index: Int) -> some View {
+        let hoverKey = "ticket:\(row.id)"
+        let open = { Task { await model.openTicket(ticketOpenParams(row)) } }
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            // §6: identifiers are monospace, always.
+            Text(ticketNeedsRowName(row))
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(coolWhite.opacity(0.86))
+                .lineLimit(1)
+                .fixedSize()
+            Text(row.title)
+                .font(.system(size: 13))
+                .foregroundStyle(coolWhite.opacity(0.80))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            Text(row.urgent.words)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(row.urgent.needsYou ? Color(TerminalPalette.amber) : coolWhite.opacity(0.50))
+                .lineLimit(1)
+                .truncationMode(.head)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 11)
+        .background(coolWhite.opacity(hovered == hoverKey ? 0.04 : 0))
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.24)) { hovered = hovering ? hoverKey : nil }
+        }
+        .onTapGesture { _ = open() }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default) { _ = open() }
+        // Ordinal, as a Running row's: a check cannot know the order's keys ahead.
+        .accessibilityIdentifier("landing.tickets.\(index)")
+        .accessibilityValue(row.urgent.needsYou ? "needs you" : "")
     }
 
     // MARK: - Continue

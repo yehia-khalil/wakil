@@ -483,7 +483,40 @@ public func reviewPosition(_ threads: [ReviewThreadState], id: String) -> String
 /// Which of the spec's cases the Ticket view shows (*What the operator gets* 1 and 5).
 /// `loading` is a read in flight; `unread` is no read and none running — a root the window did not
 /// read (not a repository), or a first read cancelled — which ↻ reads.
-public enum TicketViewCase: Equatable { case ticket, several, noTicket(branch: String), longLived, loading, unread, error(String) }
+public enum TicketViewCase: Equatable {
+    case ticket, several, noTicket(branch: String), longLived, loading, unread, error(String)
+    /// A pull request on a repository no project of the organisation holds: there is no root to
+    /// read it in, so the view says so and opens it on GitHub (`url`).
+    case outside(url: String)
+}
+
+/// What the outside case says.
+public let ticketOutsideLine = "Not open in any project of this organisation"
+
+/// The case for a pane's column: a row no project holds is `outside`; a keyless row picked from In
+/// flight or the Landing is its own branch's read — reading, failed, or its case (no ticket, as Go
+/// found none); else the followed root's (`ticketViewCase(_:shown:failure:reading:)`).
+public func ticketViewCase(_ state: EditorTicketViewState, column: EditorColumnState, root: String?) -> TicketViewCase {
+    if let key = column.ticketShown, !key.isEmpty {
+        let rows = state.inFlight.map { ($0.waitingOnYou + $0.inFlight).filter { $0.key == key } } ?? []
+        if let first = rows.first, rows.allSatisfy({ $0.root.isEmpty }) { return .outside(url: first.url) }
+        return .ticket
+    }
+    if let at = column.ticketShownAt {
+        if at.root.isEmpty {
+            let row = state.inFlight.flatMap { s in
+                (s.waitingOnYou + s.inFlight).first { $0.root.isEmpty && $0.pr == at.pr && (at.repo.isEmpty || $0.repo == at.repo) }
+            }
+            return .outside(url: row?.url ?? (at.repo.isEmpty ? "" : "https://\(at.repo)/pull/\(at.pr)"))
+        }
+        if let b = state.shownBranches[at.id] { return ticketViewCase(b, shown: nil) }
+        if let f = state.shownBranchFailures[at.id], !f.isEmpty { return .error(f) }
+        return .loading
+    }
+    let b = root.flatMap { state.branches[$0] }
+    return ticketViewCase(b, shown: nil, failure: root.flatMap { state.failures[$0] },
+                          reading: root.map { state.reading.contains($0) } ?? false)
+}
 
 /// The case for a root's read. A key picked from In flight (`shown`) overrides the branch. One
 /// ticket is the branch's own only when it is marked: a ticket only the stack carries is never the
@@ -547,7 +580,12 @@ public let ticketThreadWordsLimit = 40
 
 /// A thread's row: where it is, the first comment's first words (at most 40 characters, cut at a
 /// word and ended with "…"), and its replies counted — or `outdated` for a thread GitHub calls so.
-public func ticketThreadRow(_ t: ReviewThreadState) -> (place: String, words: String, replies: String?) {
+///
+/// `elsewhere` names the project of the organisation the thread's branch is in, when that is not the
+/// project on screen: the row opens nothing there (one place is on screen, Invariant 5) and says
+/// `in project umbrella`.
+public func ticketThreadRow(_ t: ReviewThreadState, elsewhere: String? = nil)
+    -> (place: String, words: String, replies: String?, elsewhere: String?) {
     let place = t.line > 0 ? "\(t.path):\(t.line)" : t.path
     let body = (t.comments.first?.body ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
     var words = body
@@ -558,8 +596,27 @@ public func ticketThreadRow(_ t: ReviewThreadState) -> (place: String, words: St
     }
     let n = max(0, t.comments.count - 1)
     let replies: String? = t.outdated ? "outdated" : n == 0 ? nil : n == 1 ? "1 reply" : "\(n) replies"
-    return (place, words, replies)
+    return (place, words, replies, elsewhere.map { "in project \($0)" })
 }
+
+/// The project an In flight row's branch is in, when it is not the screen's (its root is none of
+/// `roots`): its project's name, else its root's last part; nil for the screen's own or a row no
+/// project holds.
+public func ticketElsewhere(_ row: InFlightRowState?, roots: [String]) -> String? {
+    guard let row, !row.root.isEmpty, !roots.contains(row.root) else { return nil }
+    return row.project.isEmpty ? (row.root as NSString).lastPathComponent : row.project
+}
+
+/// What stands where a row's key goes: the key, else its PR and repository's last part
+/// (`#215 · api`) — a keyless row is never drawn with an empty key.
+public func ticketRowName(key: String, repo: String, pr: Int) -> String {
+    if !key.isEmpty { return key }
+    let name = repo.split(separator: "/").last.map(String.init) ?? repo
+    return name.isEmpty ? "#\(pr)" : "#\(pr) · \(name)"
+}
+
+/// `ticketRowName` for an In flight or Waiting on you row.
+public func ticketInFlightRowLabel(_ r: InFlightRowState) -> String { ticketRowName(key: r.key, repo: r.repo, pr: r.pr) }
 
 // MARK: - The column's pills (design A, "cards with state")
 

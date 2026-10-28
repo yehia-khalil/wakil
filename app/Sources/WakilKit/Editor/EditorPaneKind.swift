@@ -69,7 +69,10 @@ enum EditorPaneKind: PaneKind {
             "changes_highlight": c.changesHighlight.map { h in
                 .object(["root": .string(h.root), "path": .string(h.path), "group": .string(h.group)]) } ?? .null,
             "ticket_shown": c.ticketShown.map { .string($0) } ?? .null,
-            "ticket_shown_at": c.ticketShownAt.map { .object(["root": .string($0.root), "branch": .string($0.branch)]) } ?? .null,
+            "ticket_shown_at": c.ticketShownAt.map { at in
+                at.root.isEmpty ? .object(["repo": .string(at.repo), "pr": .integer(Int64(at.pr))])
+                    : .object(["root": .string(at.root), "branch": .string(at.branch)]) } ?? .null,
+            "ticket_scroll_pr": c.ticketScrollPR.map { .integer(Int64($0)) } ?? .null,
         ]) } ?? .null
         // The Ticket view (Invariant 3): the root this pane follows, its branch, tickets and PRs, and
         // which review threads have a draft — never a draft's text.

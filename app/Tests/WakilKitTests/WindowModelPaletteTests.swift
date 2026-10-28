@@ -988,7 +988,7 @@ private let registeredBeforeThePalette: Set<String> = [
     // 3a-v-b: the conflict blocks in a conflicted file's tab.
     "editor_conflict_accept", "editor_conflict_next", "editor_conflict_previous", "editor_conflict_compare",
     // Ticket view: the ticket reads and record, and the review threads, all agent-reachable.
-    "ticket_read", "ticket_refresh", "ticket_show", "ticket_in_flight", "ticket_link", "ticket_record_update",
+    "ticket_read", "ticket_refresh", "ticket_show", "ticket_open", "ticket_in_flight", "ticket_link", "ticket_record_update",
     "review_open", "review_step", "review_reply_draft", "review_reply_draft_restore", "review_reply_send", "review_resolve",
     // 3c-i: the browser's actions; browser_restore is the window's own (operator-only).
     "browser_back", "browser_bookmark", "browser_clear_data", "browser_close_tab", "browser_download_cancel", "browser_downloads_clear", "browser_find", "browser_find_close", "browser_find_step", "browser_focus_address", "browser_forward", "browser_move_tab", "browser_navigate", "browser_new_tab", "browser_open", "browser_print", "browser_reload", "browser_reopen_tab", "browser_restore", "browser_select_tab", "browser_stop", "browser_zoom",
@@ -1053,7 +1053,7 @@ private let agentToolsBeforeThePalette: Set<String> = [
     "mcp__wakil__editor_conflict_accept", "mcp__wakil__editor_conflict_next", "mcp__wakil__editor_conflict_previous", "mcp__wakil__editor_conflict_compare",
     // Ticket view: the reads and controls; ticket_link, ticket_record_update, review_reply_send and
     // review_resolve are mutations, reached through the gate.
-    "mcp__wakil__ticket_read", "mcp__wakil__ticket_refresh", "mcp__wakil__ticket_show", "mcp__wakil__ticket_in_flight",
+    "mcp__wakil__ticket_read", "mcp__wakil__ticket_refresh", "mcp__wakil__ticket_show", "mcp__wakil__ticket_open", "mcp__wakil__ticket_in_flight",
     "mcp__wakil__review_open", "mcp__wakil__review_step", "mcp__wakil__review_reply_draft",
     "mcp__wakil__review_reply_draft_restore",
     "mcp__wakil-git", "mcp__wakil-pm", "mcp__wakil-recall",

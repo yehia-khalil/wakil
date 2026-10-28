@@ -5318,6 +5318,15 @@ public final class WindowModel {
         return await dispatchLayout("pane_open", .object(["kind": .string(kind)])) != nil
     }
 
+    /// A Landing or ⌘P ticket row (`ticketOpenParams`): work begun, as a pane opening is, then
+    /// `ticket_open` — the editor pane opened or focused on Ticket, that ticket shown, the branch
+    /// never switched (Rule 6). A refusal is in `status`.
+    public func openTicket(_ params: JSONValue) async {
+        await enterConversation()
+        _ = await dispatchLayout("ticket_open", params)
+        await refreshPanes()
+    }
+
     /// Marks work begun and brings the canvas in line with the conversation
     /// that begins with it.
     ///

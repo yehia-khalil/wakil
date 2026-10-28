@@ -113,6 +113,37 @@ public func ticketNeedsRows(_ s: InFlightState, handoffs: [String: TicketHandOff
     }
 }
 
+/// The Landing's **Tickets in flight**: at most five rows, most urgent first as given, and
+/// `All 7 in ⌘P` when there are more (it opens ⌘P with `#` typed); nil at five or fewer.
+public func landingTicketRows(_ rows: [TicketNeedsRow]) -> (shown: [TicketNeedsRow], allLine: String?) {
+    (Array(rows.prefix(5)), rows.count > 5 ? "All \(rows.count) in ⌘P" : nil)
+}
+
+/// A row's name where its key goes: the key, else `#215 · api` (`ticketRowName`).
+public func ticketNeedsRowName(_ row: TicketNeedsRow) -> String {
+    let first = row.rows.first
+    return ticketRowName(key: row.key ?? "", repo: first?.repo ?? "", pr: first?.pr ?? 0)
+}
+
+/// What choosing a row dispatches, `ticket_open`'s params: the ticket's key at its first row's root
+/// and branch (its most urgent: Waiting on you's come first) with that row's PR to scroll to; a
+/// keyless row with `key` null, by its root and branch; a row no project holds by its PR and
+/// repository, since it has no root.
+public func ticketOpenParams(_ row: TicketNeedsRow) -> JSONValue {
+    var o: [String: JSONValue] = ["key": row.key.map { .string($0) } ?? .null]
+    let first = row.rows.first { !$0.root.isEmpty } ?? row.rows.first
+    if let first {
+        if !first.root.isEmpty {
+            o["root"] = .string(first.root)
+            if !first.branch.isEmpty { o["branch"] = .string(first.branch) }
+        } else if row.key == nil {
+            o["repo"] = .string(first.repo)
+        }
+        if first.pr > 0 { o["pr"] = .integer(Int64(first.pr)) }
+    }
+    return .object(o)
+}
+
 /// The items waiting on the operator: the reply's own `count`; 0 before a read.
 public func ticketNeedsCount(_ s: InFlightState?) -> Int { s?.count ?? 0 }
 
