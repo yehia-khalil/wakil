@@ -1091,7 +1091,7 @@ private final class ManagedAtomicFlag: @unchecked Sendable {
         journalDirectory: try scratch(), sessionId: "kc-missing", executableDirectory: emptyBin,
         environment: ["HOME": home.path, "WAKIL_BIN_DIR": emptyBin.path, "WAKIL_KEYCHAIN": missing])
     await refused.shutdown()
-    #expect(refused.browserPasswords.keychainFile == missing)
+    try #require(refused.browserPasswords.keychainFile == missing)
     #expect(throws: BrowserPasswordError.noKeychainFile(missing)) {
         try refused.browserPasswords.logins(org: "initech", site: nil)
     }
