@@ -132,15 +132,21 @@ extension View {
     }
 }
 
-/// The address row, 32 pt: ‹ › ↻ (× while loading) and the address field.
+/// The address row, 32 pt: ‹ › ↻ (× while loading) and the address field. With the tabs in the
+/// vertical column (3d-i walk) it is the pane's only header row and leads with the browser glyph, the
+/// pane's label, where the strip row would carry it. The glyph and the controls keep their size; the
+/// address field is what gives way in a narrow pane.
 struct BrowserHeader<Address: View>: View {
     let tab: BrowserTab?
+    /// The browser glyph at the row's left: the vertical mode's one header row.
+    var glyph = false
     let dispatch: (String, [String: JSONValue]) -> Void
     @ViewBuilder let address: () -> Address
 
     var body: some View {
         HStack(spacing: BrowserPaneStyle.gap) {
             HStack(spacing: 2) {
+                if glyph { PaneGlyph(symbol: "safari", name: "Browser") }
                 control("chevron.left", "browser.back", "Back", enabled: tab?.canGoBack == true) {
                     dispatch("browser_back", [:])
                 }
@@ -155,6 +161,7 @@ struct BrowserHeader<Address: View>: View {
                     }
                 }
             }
+            .fixedSize()
             address()
         }
         .padding(.horizontal, BrowserPaneStyle.rowInset)
@@ -184,9 +191,13 @@ struct BrowserHeader<Address: View>: View {
 /// every tab, by group (3d-i) — loose and pinned tabs on their own, each group's under its name.
 /// With the list hidden it carries the ⌄ itself. Tabular digits and no tracking, so 15 reads as one
 /// number.
+///
+/// In the vertical column's footer (3d-i walk) it sits beside *New Tab* in §6's meta style — the
+/// meta size, monospaced — rather than the strip's micro label, so it reads as the footer's note.
 struct BrowserTabCount: View {
     let snapshot: BrowserSnapshot
     let listMode: BrowserTabListMode
+    var footer = false
     let dispatch: (String, [String: JSONValue]) -> Void
 
     /// Runs of tabs in drawn order, each a group's (by id) or loose (nil).
@@ -211,8 +222,15 @@ struct BrowserTabCount: View {
             }
         } label: {
             HStack(spacing: 3) {
-                PaneStripNumber(value: tabs.count)
-                if listMode == .hidden {
+                if footer {
+                    Text("\(tabs.count)")
+                        .font(.system(size: BrowserPaneStyle.metaSize, design: .monospaced).monospacedDigit())
+                        .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
+                        .lineLimit(1)
+                } else {
+                    PaneStripNumber(value: tabs.count)
+                }
+                if listMode == .hidden, !footer {
                     Image(systemName: "chevron.down")
                         .font(.system(size: BrowserPaneStyle.closeGlyph, weight: .semibold))
                         .foregroundStyle(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
@@ -225,7 +243,7 @@ struct BrowserTabCount: View {
         .fixedSize()
         .help("Tabs")
         .accessibilityLabel("\(tabs.count) tabs")
-        .accessibilityIdentifier(listMode == .hidden ? "browser.tabMenu" : "browser.tabCount")
+        .accessibilityIdentifier(listMode == .hidden && !footer ? "browser.tabMenu" : "browser.tabCount")
     }
 
     private func items(_ tabs: [BrowserTab]) -> some View {

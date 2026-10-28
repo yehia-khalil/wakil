@@ -59,7 +59,7 @@ struct BrowserPane: View {
     let setHeaderFocus: (String?) -> Void
     let refreshPullRequests: () -> Void
     /// 3d-i: Settings → Browser → Tabs is *Vertical*: the tabs are the column at the pane's left
-    /// (`BrowserTabColumn`), and the strip row keeps the glyph and the count.
+    /// (`BrowserTabColumn`), the glyph leads the address row and the count is the column's footer.
     var verticalTabs = false
 
     @FocusState private var addressFocused: Bool
@@ -93,17 +93,24 @@ struct BrowserPane: View {
         VStack(spacing: 0) {
             // Two 32 pt rows — the tab strip, then ‹ › ↻ and the address field — a hairline, and
             // the page edge to edge to the pane's border (the canvas pads no browser pane). The
-            // find bar and the downloads take a row of their own, each across a hairline.
-            tabStrip
-                // The pinned tab's tip hangs over the row below.
-                .zIndex(1)
-            stripErrors
-            BrowserHeader(tab: active, dispatch: send) {
+            // find bar and the downloads take a row of their own, each across a hairline. With the
+            // tabs in the column (3d-i walk) the strip row goes: the glyph leads the address row,
+            // the count is the column's footer, and the page gains the row.
+            if !verticalTabs {
+                tabStrip
+                    // The pinned tab's tip hangs over the row below.
+                    .zIndex(1)
+                stripErrors(closing: true)
+            }
+            BrowserHeader(tab: active, glyph: verticalTabs, dispatch: send) {
                 addressField
+                    // At a narrow width the field gives way first; the controls, ★ and the marks keep theirs.
+                    .layoutPriority(-1)
                 BrowserBookmarkMenu(
                     choices: BrowserBookmarkChoices(url: active?.url, bookmarks: bookmarks), dispatch: send)
                 siteMarks
             }
+            if verticalTabs { stripErrors(closing: false) }
             PaneHairline()
             // 3d-i: in vertical mode the column sits at the left, under the address row, full
             // height; hidden, its 6 pt edge peeks it over the page.
@@ -230,11 +237,7 @@ struct BrowserPane: View {
     /// name), then the tabs and their count; too narrow for the list, the ⌄ menu holds both.
     private var tabStrip: some View {
         PaneStripRow(glyph: "safari", name: "Browser") {
-            if verticalTabs {
-                // The column holds the entries; the row keeps the glyph and the count.
-                Spacer(minLength: 0)
-                BrowserTabCount(snapshot: snapshot, listMode: listMode, dispatch: send)
-            } else if listMode != .hidden {
+            if listMode != .hidden {
                 BrowserTabList(
                     snapshot: snapshot, mode: listMode,
                     favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
@@ -271,7 +274,9 @@ struct BrowserPane: View {
                 // As the strip's: Return or Esc gives the keyboard back to the page (Rule 6).
                 if explicit { DispatchQueue.main.async { focusPage() } }
             },
-            middleClickEnabled: isKeyboardOwner)
+            middleClickEnabled: isKeyboardOwner,
+            // The tab count, the strip row's in the horizontal mode, is the footer's here.
+            count: { BrowserTabCount(snapshot: snapshot, listMode: .full, footer: true, dispatch: send) })
     }
 
     /// The tab and group menus' context (3d-i).
@@ -291,8 +296,9 @@ struct BrowserPane: View {
     }
 
     /// Under the strip, each whole and wrapping (Rule 8): why the project's pins can't be read, and
-    /// the pull-request group's last refresh failure. Neither blocks anything.
-    @ViewBuilder private var stripErrors: some View {
+    /// the pull-request group's last refresh failure. Neither blocks anything. In the vertical mode
+    /// they sit under the one header row, whose own hairline closes them (`closing` false).
+    @ViewBuilder private func stripErrors(closing: Bool) -> some View {
         let prError = snapshot.groups.contains { $0.kind == .pullRequests } ? pullRequests?.error : nil
         if snapshot.pinsError != nil || prError != nil {
             PaneHairline()
@@ -303,7 +309,7 @@ struct BrowserPane: View {
             if let prError {
                 BrowserStripErrorRow(text: prError, identifier: "browser.group.pr.error")
             }
-            PaneHairline()
+            if closing { PaneHairline() }
         }
     }
 

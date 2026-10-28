@@ -5,7 +5,8 @@ import WakilKit
 // MARK: 3d-i — vertical tabs
 
 /// The vertical tab column (3d-i, ruling 20): with Settings → Browser → Tabs on *Vertical*, the
-/// pane's tabs in a column at its left under the address row, full height. Rows 28 pt: pinned tabs,
+/// pane's tabs in a column at its left under the address row, full height; the tab count is its
+/// footer's, beside ＋ *New Tab* (3d-i walk). Rows 28 pt: pinned tabs,
 /// then each group's header and — expanded — its tabs indented 12 pt, then loose tabs, and ＋ at the
 /// bottom. The order and the entries are the strip's (`BrowserStripEntries`), and so are the chip,
 /// the rename field and the menus (`BrowserGroupViews.swift`). A 1 pt divider at its right edge
@@ -31,6 +32,9 @@ struct BrowserTabColumn: View {
     let renameEnded: (_ explicit: Bool) -> Void
     /// Nothing is drawn over the canvas: a middle-click on a tab closes it (3d-i walk).
     var middleClickEnabled = false
+    /// The pane's tab count, at the footer's right beside *New Tab* (3d-i walk: the vertical mode has
+    /// no strip row to carry it).
+    var count: (() -> BrowserTabCount)?
 
     @AppStorage("browser.tabColumn.width") private var width = BrowserTabColumnRules.width
     /// The width as the divider's drag began.
@@ -78,7 +82,7 @@ struct BrowserTabColumn: View {
                         }
                     }
                 }
-                newTabRow
+                footer
             }
             .frame(width: CGFloat(BrowserTabColumnRules.clamp(width)))
             divider
@@ -242,7 +246,20 @@ struct BrowserTabColumn: View {
         }
     }
 
-    /// ＋ at the column's foot: ⌘T's `browser_new_tab`.
+    /// The column's foot: ＋ *New Tab* (⌘T's `browser_new_tab`), and the tab count at its right.
+    private var footer: some View {
+        HStack(spacing: 0) {
+            newTabRow
+            if let count {
+                count()
+                    .padding(.horizontal, 6)
+                    .frame(height: Self.rowHeight)
+            }
+        }
+        .padding(.horizontal, Self.rowInset)
+        .padding(.bottom, 4)
+    }
+
     private var newTabRow: some View {
         Button { dispatch("browser_new_tab", [:]) } label: {
             HStack(spacing: PaneStripStyle.tabGap) {
@@ -258,8 +275,6 @@ struct BrowserTabColumn: View {
             .frame(maxWidth: .infinity, minHeight: Self.rowHeight, maxHeight: Self.rowHeight, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
                 .fill(BrowserPaneStyle.text.opacity(newTabHovered ? PaneStripStyle.tabHoverFill : 0)))
-            .padding(.horizontal, Self.rowInset)
-            .padding(.bottom, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

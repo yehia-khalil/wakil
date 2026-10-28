@@ -15,6 +15,8 @@
 {"expect":{"frame":"browser.tabColumn","inside":"browser.pane","minWidth":215,"maxWidth":235}}
 {"expect":{"frame":"browser.tab.t1","inside":"browser.tabColumn"}}
 {"expect":{"frame":"browser.tabColumn","clear":"browser.page"}}
+{"expect":{"frame":"browser.tabCount","inside":"browser.tabColumn"}}
+{"expect":{"frame":"browser.tabColumn","clear":"browser.addressField"}}
 {"do":{"click":"browser.newTab"}}
 {"expect":{"pane":"browser-1","field":"tabs[1].id","equals":"t2"}}
 {"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
