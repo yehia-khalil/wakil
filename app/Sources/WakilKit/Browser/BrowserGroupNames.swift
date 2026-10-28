@@ -12,10 +12,14 @@ public enum BrowserGroupNames {
         s.groups.filter { $0.kind == .automatic && !$0.named && titles(of: $0.id, in: s).count >= 2 }.map(\.id)
     }
 
-    /// Up to five non-empty titles of the group's tabs, in the order they were opened (`t<n>` ascending).
+    /// Up to five non-empty names of the group's tabs, in the order they were opened (`t<n>` ascending).
+    /// A tab's operator-given name is sent where it has one, else its page title.
     public static func titles(of group: String, in s: BrowserSnapshot) -> [String] {
         let members = s.tabs.filter { $0.group == group }.sorted { number($0.id) < number($1.id) }
-        let titled = members.map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        let titled = members.map { tab -> String in
+            let name = tab.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return name.isEmpty ? tab.title.trimmingCharacters(in: .whitespacesAndNewlines) : name
+        }.filter { !$0.isEmpty }
         return Array(titled.prefix(5))
     }
 
