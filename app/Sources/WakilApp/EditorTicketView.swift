@@ -169,14 +169,33 @@ struct EditorTicketView: View {
     }
 
     /// **Hand to agent** beside ↻: the popover, prefilled from the header (`ticketHandOffHeaderParams`).
-    /// Not drawn where nothing can be handed — a pull request no project holds among them.
+    /// Not drawn where nothing can be handed — a pull request no project holds among them. While a
+    /// live hand-off of this ticket works it reads **With agent · working** with the chip's dot, and
+    /// **Agent finished · <what it left>** once its turn is done and unseen; either opens that
+    /// conversation, as its chip does (walk 2026-10-28).
     @ViewBuilder
     private var handOffButton: some View {
         if let params = ticketHandOffHeaderParams(state, column: column, root: root) {
-            Button("Hand to agent") { Task { await dispatch("ticket_hand_off_open", params) } }
-                .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.violet)
-                .help("Hand this ticket to an agent in the background, with a brief you can edit")
-                .accessibilityIdentifier("editor.ticket.handOff")
+            let at = ticketHandOffHeader(state, params: params, drafts: reviews.reads.draftRecords)
+            Group {
+                if let conversation = at.conversation {
+                    Button { Task { await dispatch("session_switch", ["conversation": .string(conversation)]) } } label: {
+                        HStack(spacing: 5) {
+                            ChipDot(colour: handOffDotHue(at.dot), breathes: at.dot == .working)
+                            Text(at.label).lineLimit(1).truncationMode(.tail)
+                        }
+                    }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.text.opacity(0.85))
+                    .help("Open the agent's conversation")
+                    .accessibilityLabel(at.label)
+                    .accessibilityIdentifier("editor.ticket.handOff.agent")
+                } else {
+                    Button("Hand to agent") { Task { await dispatch("ticket_hand_off_open", params) } }
+                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(EditorPaneStyle.violet)
+                        .help("Hand this ticket to an agent in the background, with a brief you can edit")
+                        .accessibilityIdentifier("editor.ticket.handOff")
+                }
+            }
                 .popover(isPresented: Binding(get: { handOffAnchored && state.handoff != nil }, set: { shown in
                     if !shown, state.handoff?.starting == false {
                         let p = handOffDraft.closeParams(state.handoff)
@@ -188,6 +207,17 @@ struct EditorTicketView: View {
                             .id(h.subject)
                     }
                 }
+        }
+    }
+
+    /// The chip's hue for a hand-off's state (design A, agent chips): working violet, waiting amber,
+    /// done green, failed red.
+    private func handOffDotHue(_ live: TicketHandOffLive?) -> Color {
+        switch live {
+        case .waiting: EditorPaneStyle.amber
+        case .done, .idle: Color(TerminalPalette.green)
+        case .failed: Color(VoidPalette.red)
+        default: EditorPaneStyle.violet
         }
     }
 
@@ -366,7 +396,7 @@ struct EditorTicketView: View {
                    waiting: ticketWaitingOn(own ?? TicketBranchState(root: ""), record: record),
                    threads: own.map(ticketThreadsWaitingOnViewer) ?? 0, linked: false)
             if let record {
-                nextLine(key: key, text: record.next?.text ?? "", labelled: false)
+                nextLine(key: key, line: record.next, text: record.next?.text ?? "", labelled: false)
             }
         }
         if let own {
@@ -426,21 +456,36 @@ struct EditorTicketView: View {
 
     @ViewBuilder
     private func nextField(_ b: TicketBranchState) -> some View {
-        if let target = ticketNextTarget(b) { nextLine(key: target.key, text: target.text, labelled: target.labelled) }
+        if let target = ticketNextTarget(b) {
+            nextLine(key: target.key, line: b.tickets.first { $0.key == target.key }?.record.next, text: target.text,
+                     labelled: target.labelled)
+        }
     }
 
     /// **Next:** a field — focused on click (Rule 3), kept on blur (Rule 2), Enter a shortcut. It wraps
-    /// to as many lines as it holds, never cut (the calmer column, 2026-10-28).
-    private func nextLine(key: String, text: String, labelled: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+    /// to as many lines as it holds, never cut (the calmer column, 2026-10-28). Who wrote it and when
+    /// is its hover, as every record line's. A Next in the operator's shape (`ticketNextShape`, the
+    /// one a handed agent writes) draws its step as the field and its tool and blocker as small dim
+    /// chips after it, a blocker other than nothing amber; the operator's own edit of the step is
+    /// theirs, plain (walk 2026-10-28).
+    private func nextLine(key: String, line: TicketLineState?, text: String, labelled: Bool) -> some View {
+        let shape = ticketNextShape(text)
+        return HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             Text(labelled ? "Next (\(key))" : "Next").dimmed().fixedSize()
-            TicketField(value: text, placeholder: "what happens next", id: "editor.ticket.next", focus: $fieldFocus,
+            TicketField(value: shape?.step ?? text, placeholder: "what happens next", id: "editor.ticket.next", focus: $fieldFocus,
                         wraps: true) { now in
                 write(["key": .string(key), "section": .string("next"), "op": .string("set"), "text": .string(now)])
             }
             .id("next|\(key)")
+            if let shape {
+                TicketNextChip(label: shape.tool, amber: false)
+                    .accessibilityIdentifier("editor.ticket.next.tool")
+                TicketNextChip(label: "Blocked by \(shape.blocker)", amber: shape.blocked)
+                    .accessibilityIdentifier("editor.ticket.next.blocker")
+            }
         }
         .padding(.top, 2)
+        .help(line.map { ticketLineCaption($0) } ?? "")
     }
 
     // MARK: - Pull requests
@@ -997,6 +1042,21 @@ private struct TicketBlock<Content: View>: View {
 
 /// A status pill: a dot in its meaning's hue (§5's reserved green, amber, red; grey for none) and
 /// its word, in a hairline capsule.
+/// A Next's tool or blocker after its step: small, dim, monospaced for the tool; amber when it blocks.
+private struct TicketNextChip: View {
+    let label: String
+    let amber: Bool
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 10.5, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+            .foregroundStyle(amber ? EditorPaneStyle.amber : EditorPaneStyle.text.opacity(0.55))
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder((amber ? EditorPaneStyle.amber : EditorPaneStyle.text).opacity(0.18)))
+            .fixedSize()
+    }
+}
+
 private struct TicketPill: View {
     let label: String
     let hue: TicketHue

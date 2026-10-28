@@ -648,7 +648,7 @@ struct EditorPane: View {
     /// kept on blur and dropped by Discard (`review_reply_draft`), Restore yours
     /// (`review_reply_draft_restore`), Send (`review_reply_send`, gated:
     /// the plane shows the text and the thread's place), Hand to agent (`ticket_hand_off_open`, the
-    /// popover only), Resolve and Unresolve (`review_resolve`), and
+    /// popover only), Agent on it (`session_switch` to the hand-off at work on it), Resolve and Unresolve (`review_resolve`), and
     /// ⌥↓ / ⌥↑ from the box (`review_step` from that thread). A Send is drawn as sending from the press
     /// until its dispatch — the plane included — is over, and is not pressed twice (Rule 5).
     private func reviewOp(_ thread: String, _ op: String, _ text: String?, _ delta: Int?) {
@@ -678,6 +678,10 @@ struct EditorPane: View {
                 // Hand to agent: the popover opens prefilled from this thread (`ticket_hand_off_open`);
                 // only the operator's Start in it hands anything off.
                 await dispatch("ticket_hand_off_open", ["thread": .string(thread)])
+            case "agent":
+                // **Agent on it**: the hand-off at work on this thread — its conversation, as its chip opens it.
+                guard let conversation = host.reviews.handed[thread] else { return }
+                await dispatch("session_switch", ["conversation": .string(conversation)])
             case "resolve", "unresolve":
                 guard let t else { return }
                 await dispatch("review_resolve", ["root": .string(t.root), "thread": .string(thread),

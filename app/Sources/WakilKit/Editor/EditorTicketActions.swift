@@ -780,6 +780,8 @@ func registerTicketActions(
     struct HandOffSubject {
         let key: String?, pr: Int?, repo: String?, source: TicketHandOffSource
         let root, branch: String, brief: String
+        /// What Wakil appends at Start, out of the field (`handOffAppended`): the record as held now.
+        let appended: String
     }
     @Sendable func outsideRefusal(_ name: String) -> TicketActionError {
         TicketActionError(description: "ticket_hand_off_open: \(name) is \(ticketOutsideLine.lowercased()) — an agent "
@@ -799,11 +801,14 @@ func registerTicketActions(
                   let pr = b.prs.first(where: { $0.number == t.number }) else {
                 throw TicketActionError(description: "\(action): no review thread \(id) in the ticket reads; ticket_refresh reads them again")
             }
-            let ticket = ticketOf(b, key: key)
+            var ticket = ticketOf(b, key: key)
+            if let k = ticket?.key, let record = await store.shownRecords()[k] { ticket?.record = record }
             return HandOffSubject(key: ticket?.key, pr: pr.number, repo: ticket == nil && !b.repo.isEmpty ? b.repo : nil,
                                   source: .thread(id),
                                   root: t.root, branch: b.branch,
-                                  brief: handOffThreadBrief(ticket: ticket, pr: pr, thread: t, root: t.root, branch: b.branch))
+                                  brief: handOffThreadBrief(ticket: ticket, pr: pr, thread: t, root: t.root, branch: b.branch),
+                                  appended: handOffAppended(ticket: ticket, pr: pr, thread: t, waiting: [], root: t.root,
+                                                            branch: b.branch))
         }
         // From the header (or ⌘P): the named row's root and branch, else the key's first row's, else
         // the followed root's own branch.
@@ -859,7 +864,9 @@ func registerTicketActions(
         // A PR with no ticket key is kept by its repository (`pr:<repo>#<n>`); unread, it has none to name.
         let repo = ticket == nil ? read.flatMap { $0.repo.isEmpty ? nil : $0.repo } : nil
         return HandOffSubject(key: ticket?.key, pr: pr?.number ?? prParam, repo: repo,
-                              source: .header, root: root, branch: branch, brief: brief)
+                              source: .header, root: root, branch: branch, brief: brief,
+                              appended: handOffAppended(ticket: ticket, pr: pr, thread: nil, waiting: waiting, root: root,
+                                                        branch: branch))
     }
     /// A popover action's answer: its pane's `read_pane` (the `ticket` key carries the popover), else
     /// the popover's readable part alone.
@@ -984,7 +991,8 @@ func registerTicketActions(
     await registry.register(Action(
         name: "ticket_hand_off",
         description: "Start: hand the popover's ticket to an agent in a new background conversation, with exactly "
-            + "the popover's brief, harness, provider, place, root, branch and May push. The operator's only.",
+            + "the popover's brief, harness, provider, place, root, branch and May push; Wakil appends the ticket's "
+            + "record and its own actions below the brief, and journals the whole text sent. The operator's only.",
         kind: .control, audience: .operatorOnly,
         schema: schema(["key": .object(["type": .array([.string("string"), .string("null")])]), "pr": integer,
                         "repo": string, "thread": string, "brief": string, "harness": string, "provider": string,
@@ -1014,18 +1022,39 @@ func registerTicketActions(
                   optionalString(params, "root") == s.root, optionalString(params, "branch") == s.branch else {
                 throw TicketActionError(description: "\(action): the popover shows \(s.name), not what this Start names; nothing was started")
             }
+            // What Wakil adds below the operator's words, out of view: the record as the store holds it
+            // now, and Wakil's actions (walk 2026-10-28). A subject no longer read starts nothing.
+            let appended: String
+            do {
+                appended = try await handOffSubject(.object(s.openParams)).appended
+            } catch {
+                let said = "\(error)".replacingOccurrences(of: "ticket_hand_off_open: ", with: "")
+                throw TicketActionError(description: "\(action): \(said)")
+            }
             let request = TicketHandOffRequest(
-                key: key, pr: o["pr"]?.intValue, thread: thread, brief: s.startBrief(brief), harness: try param(params, "harness", action),
+                key: key, pr: o["pr"]?.intValue, thread: thread, brief: s.startBrief(brief) + "\n\n" + appended,
+                harness: try param(params, "harness", action),
                 provider: try param(params, "provider", action),
                 place: Place(organization: text("organization"), project: text("project"), environment: text("environment")),
                 root: try param(params, "root", action), branch: try param(params, "branch", action), mayPush: mayPush,
-                repo: optionalString(params, "repo").flatMap { $0.isEmpty ? nil : $0 })
+                repo: optionalString(params, "repo").flatMap { $0.isEmpty ? nil : $0 },
+                title: handOffChipTitle(key: key, pr: o["pr"]?.intValue, firstLine: s.agentBrief && brief == s.brief
+                    ? s.titleLine : handOffFirstLine(brief)))
             let token = await store.beginHandOffStart()
             do {
                 let id = try await handOff.start(request, reserved: { id in
                     Task { if !(await store.reserveHandOff(id, token: token)) { await handOff.cancel(id) } }
                 })
                 if await store.finishHandOffStart(token, error: nil) == .cancelled { await handOff.cancel(id) }
+                // The whole text the agent was sent, on its own line after the dispatch's (which holds
+                // the operator's part as asked): what was asked, then what was started.
+                var started: [String: JSONValue] = ["key": key.map { .string($0) } ?? .null, "conversation": .string(id),
+                                                    "title": .string(request.title), "brief": .string(request.brief)]
+                if let thread { started["thread"] = .string(thread) }
+                if let pr = request.pr { started["pr"] = .integer(Int64(pr)) }
+                try? await registry.journalFollowUp(
+                    action: action, params: .object(started), origin: ActionRegistry.dispatchOrigin,
+                    caller: ActionRegistry.dispatchCaller ?? DispatchCaller(place: request.place, session: nil), outcome: "started")
                 return .object(["conversation": .string(id)])
             } catch {
                 let said = "\(error)"

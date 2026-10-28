@@ -980,10 +980,17 @@
         row.appendChild(reply);
       }
       // Reply · Hand to agent · Resolve: the hand-off popover opens prefilled from this thread; it
-      // starts nothing until the operator's Start.
-      row.appendChild(reviewButton(node, 'Hand to agent', 'Agent', function () {
-        reviewPost(key, b.thread, 'handoff');
-      }));
+      // starts nothing until the operator's Start. While a live hand-off works on the thread it is
+      // **Agent on it**, which opens that conversation, as its chip does.
+      if (b.handed) {
+        row.appendChild(reviewButton(node, 'Agent on it', 'Agent on it', function () {
+          reviewPost(key, b.thread, 'agent');
+        }));
+      } else {
+        row.appendChild(reviewButton(node, 'Hand to agent', 'Agent', function () {
+          reviewPost(key, b.thread, 'handoff');
+        }));
+      }
       row.appendChild(reviewButton(node, 'Resolve', 'Resolve', function (el) {
         el.disabled = true;
         reviewPost(key, b.thread, 'resolve');

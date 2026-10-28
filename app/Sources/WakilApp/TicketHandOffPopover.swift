@@ -3,7 +3,8 @@ import WakilKit
 import SwiftUI
 
 /// **Hand to agent**'s popover (ticket noticing, spec *Hand to agent*): the brief, focused with the
-/// caret at its end (Rule 3) — Return a new line, ⌘↩ Start — kept on blur and when the popover
+/// caret at its end (Rule 3) — Return a new line, ⌘↩ Start, a long one scrolling inside the field —
+/// kept on blur and when the popover
 /// closes (Rule 2); the harness and provider menus and **May push**, defaulting to the last Start
 /// (Rule 9); the place line, a production environment red (Invariant 8); **Reset**, **Cancel** and
 /// **Start**. It decides nothing: the state is `EditorTicketViewState.handoff`, and every change is
@@ -125,12 +126,15 @@ struct TicketHandOffPopover: View {
         .font(.system(size: 11.5))
     }
 
-    /// The brief: Return a new line, ⌘↩ Start, kept when it is left.
+    /// The brief — the operator's words only; Wakil appends the record and its actions at Start,
+    /// out of view (walk 2026-10-28): Return a new line, ⌘↩ Start, kept when it is left. A long
+    /// brief scrolls inside the field, which stops growing at `briefMaxHeight`, so the popover
+    /// keeps a sensible height (walk 2026-10-28: it clipped).
     private var briefField: some View {
-        TextField("", text: $text, axis: .vertical)
-            .textFieldStyle(.plain)
-            .lineLimit(8...18)
+        TextEditor(text: $text)
             .font(.system(size: 12, design: .monospaced))
+            .scrollContentBackground(.hidden)
+            .frame(minHeight: Self.briefMinHeight, maxHeight: Self.briefMaxHeight)
             .padding(Space.s)
             .background(RoundedRectangle(cornerRadius: 6).fill(EditorPaneStyle.lifted))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(EditorPaneStyle.text.opacity(briefFocused ? 0.3 : 0.12)))
@@ -144,11 +148,10 @@ struct TicketHandOffPopover: View {
                 if old, !now { keep() }
                 if now { Task { @MainActor in caretToEnd() } }
             }
-            // Return is a new line; ⌘↩ starts.
+            // Return is a new line (the editor's own); ⌘↩ starts.
             .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.command) { start(); return .handled }
-                guard press.modifiers.isEmpty, let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return .ignored }
-                editor.insertNewlineIgnoringFieldEditor(nil)
+                guard press.modifiers.contains(.command) else { return .ignored }
+                start()
                 return .handled
             }
             .accessibilityLabel("Brief")
@@ -210,6 +213,9 @@ struct TicketHandOffPopover: View {
     private enum Space {
         static let s: CGFloat = 6, m: CGFloat = 12
     }
+
+    /// About eight lines of the brief at least, about twenty-two at most; past that it scrolls.
+    private static let briefMinHeight: CGFloat = 130, briefMaxHeight: CGFloat = 340
 }
 
 /// What the popover's field holds as typed, held by the view that anchors it: a dismissal (a click

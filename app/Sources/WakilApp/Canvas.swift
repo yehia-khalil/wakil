@@ -581,14 +581,20 @@ extension WakilWindow {
                     stageRanges: { spans in await model.changesStageRanges(pane: pane.id, spans) },
                     unstageRanges: { spans in await model.changesUnstageRanges(pane: pane.id, spans) },
                     // Ticket view: the review boxes in the file.
-                    reviews: model.editorReviews,
+                    // …and the threads a live hand-off is at work on: their boxes say Agent on it.
+                    reviews: { var r = model.editorReviews; r.handed = ticketHandedThreads(model.ticketLiveHandOffs); return r }(),
                     dispatchReply: { name, params in
                         var withPane = params
                         withPane["pane"] = .string(pane.id)
                         return await model.dispatchFromSurfaceReply(name, .object(withPane))
                     },
                     // Ticket view: the column's Ticket view.
-                    ticket: { var t = model.editorTicket; t.handOffLive = model.ticketHandOffLive; return t }(),
+                    ticket: {
+                        var t = model.editorTicket
+                        t.handOffLive = model.ticketHandOffLive
+                        t.liveHandOffs = model.ticketLiveHandOffs
+                        return t
+                    }(),
                     ticketCount: ticketNeedsCount(model.ticketNeeds),
                     ticketCountLabel: ticketNeedsLabel(model.ticketNeeds),
                     dispatchThrowingReply: { name, params in

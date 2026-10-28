@@ -26,10 +26,22 @@ extension WindowModel {
             case .working: .working
             case .waiting: .waiting
             case .failed: .failed
-            case .done, .idle: .done
+            case .done: .done
+            case .idle: .idle
             }
         }
         return live
+    }
+
+    /// The live handed conversations with what they were handed (walk 2026-10-28): the Ticket
+    /// header's **With agent** and the review boxes' **Agent on it** read these — the same rows as
+    /// `ticketHandOffLive` and the chips.
+    public var ticketLiveHandOffs: [TicketLiveHandOff] {
+        let live = ticketHandOffLive
+        return liveConversationRows().compactMap { c in
+            guard let h = c.handoff, let state = live[c.id] else { return nil }
+            return TicketLiveHandOff(conversation: c.id, key: h.key, pr: h.pr, root: h.root, thread: h.thread, live: state)
+        }
     }
 
     // MARK: - ⌘P

@@ -4,8 +4,10 @@ import Foundation
 /// functions over the last `ticket_in_flight` read, the live handed conversations and the drafts.
 /// The rail, the Ticket label, the Landing and ⌘P all draw from these.
 
-/// A handed conversation's state, as its chip shows it; a hand-off whose conversation ended is not live.
-public enum TicketHandOffLive: String, Sendable { case working, waiting, done, failed }
+/// A handed conversation's state, as its chip shows it; a hand-off whose conversation ended is not
+/// live. `idle` is a finished turn the operator has seen (no chip): it reads as done everywhere but
+/// the Ticket header, which says "Agent finished" only until the operator opens it.
+public enum TicketHandOffLive: String, Sendable { case working, waiting, done, failed, idle }
 
 /// A ticket's single most urgent state: its tier (1 most urgent) and its words.
 public struct TicketUrgent: Sendable, Equatable {

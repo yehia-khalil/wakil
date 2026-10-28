@@ -576,6 +576,19 @@ public actor ActionRegistry {
             secretParams: actions[action]?.secretParams)
     }
 
+    /// A handler's own second line after its dispatch's, for what the dispatch line cannot hold: what
+    /// was asked is the dispatch's params, what was done is this (`ticket_hand_off`'s `started`
+    /// line: the whole text Wakil sent, the operator's brief with what Wakil appended). The
+    /// action's secret parameters are redacted here as in the dispatch line.
+    public func journalFollowUp(
+        action: String, params: JSONValue, origin: ActionOrigin, caller: DispatchCaller, outcome: String
+    ) throws {
+        try appendJournalEntry(
+            action: action, params: params, origin: origin,
+            caller: caller, outcome: outcome,
+            secretParams: actions[action]?.secretParams)
+    }
+
     /// 2d-ii: a turn whose text landed from speech. Carries no transcript —
     /// the turn itself is the agent's record; this line says only how it
     /// was entered.

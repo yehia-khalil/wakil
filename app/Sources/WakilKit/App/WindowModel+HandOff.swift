@@ -15,8 +15,9 @@ extension WindowModel {
     public func startHandOff(_ r: TicketHandOffRequest, reserved: ((String) -> Void)? = nil) async throws -> String {
         let agent = backgroundAgent(in: r.place, providerId: r.provider)
         agent.handoff = PlaceAgentHandoff(key: r.key, pr: r.pr, thread: r.thread, root: r.root, branch: r.branch, mayPush: r.mayPush)
-        // The chip reads well: the brief's first line, not the whole brief (conversations call 6).
-        agent.title = conversationTitle(r.firstLine)
+        // The chip reads well: `INI-142 · <the operator's first line>`, not the whole brief
+        // (conversations call 6; walk 2026-10-28).
+        agent.title = conversationTitle(r.title)
         reserved?(agent.id)
         let scope = TurnScope(place: r.place, rootPath: r.root, providerId: r.provider, conversation: agent.id)
         guard await send(r.brief, scope: scope) else {
@@ -32,7 +33,7 @@ extension WindowModel {
             return agent.id
         }
         var handoff: [String: JSONValue] = [
-            "conversation": .string(agent.id), "title": .string(r.firstLine), "harness": .string(r.harness),
+            "conversation": .string(agent.id), "title": .string(r.title), "harness": .string(r.harness),
             "provider": .string(r.provider),
             "place": .object(["organization": .string(r.place.organization), "project": .string(r.place.project),
                               "environment": .string(r.place.environment)]),

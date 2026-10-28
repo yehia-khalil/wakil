@@ -788,16 +788,21 @@ public struct EditorTicketViewState: Sendable, Equatable {
     /// The live handed conversations' states, by conversation id, for the record's hand-off entries:
     /// the window's (`WindowModel.ticketHandOffLive`), set where the view is drawn.
     public var handOffLive: [String: TicketHandOffLive]
+    /// The live handed conversations with what they were handed (`WindowModel.ticketLiveHandOffs`),
+    /// set where the view is drawn: the header's **With agent** reads them.
+    public var liveHandOffs: [TicketLiveHandOff]
 
     public init(roots: [String] = [], branches: [String: TicketBranchState] = [:], reading: Set<String> = [],
                 failures: [String: String] = [:], inFlight: InFlightState? = nil, records: [String: TicketRecordState] = [:],
                 recordFailures: [String: String] = [:], shownBranches: [String: TicketBranchState] = [:],
                 shownBranchFailures: [String: String] = [:], draftsFailure: String? = nil,
-                handoff: TicketHandOffState? = nil, handOffLive: [String: TicketHandOffLive] = [:]) {
+                handoff: TicketHandOffState? = nil, handOffLive: [String: TicketHandOffLive] = [:],
+                liveHandOffs: [TicketLiveHandOff] = []) {
         self.roots = roots; self.branches = branches; self.reading = reading; self.failures = failures
         self.inFlight = inFlight; self.records = records; self.recordFailures = recordFailures
         self.shownBranches = shownBranches; self.shownBranchFailures = shownBranchFailures
         self.draftsFailure = draftsFailure; self.handoff = handoff; self.handOffLive = handOffLive
+        self.liveHandOffs = liveHandOffs
     }
     public static let empty = EditorTicketViewState()
 

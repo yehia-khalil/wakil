@@ -71,6 +71,9 @@ public struct ReviewBox: Sendable, Equatable, Encodable {
     /// An agent's draft replaced the operator's: the box offers **Restore yours**. The operator's text
     /// stays in the store; the page is handed only that there is one.
     public let replaced: Bool
+    /// A live hand-off is at work on this thread (`ticketHandedThreads`): the box says **Agent on
+    /// it** where **Hand to agent** was, and a press opens that conversation.
+    public let handed: Bool
 }
 
 /// When a comment was written, as a box shows it: "24 Oct 09:00", local time; the text GitHub gave
@@ -93,7 +96,7 @@ public func reviewBoxes(threads: [ReviewThreadState], path: String, root: String
                         headTexts: [String: String], buffer: String, drafts: [String: String],
                         sending: Set<String>, answers: [String: String] = [:], viewer: String = "",
                         draftRecords: [String: TicketDraftState] = [:], now: Date = Date(),
-                        headSHA: String? = nil) -> [ReviewBox] {
+                        headSHA: String? = nil, handed: Set<String> = []) -> [ReviewBox] {
     let mine = threads.filter { $0.root == root }
     let open = reviewOpenThreads([PullRequestState(number: 0, threads: mine)])
     var seen: Set<String> = []
@@ -113,7 +116,8 @@ public func reviewBoxes(threads: [ReviewThreadState], path: String, root: String
             waiting: !t.resolved && !viewer.isEmpty && (t.comments.last.map { $0.author != viewer } ?? false),
             draft: drafts[t.id], sending: sending.contains(t.id), answer: answers[t.id],
             draftBy: record?.by, draftAt: record.map { ticketDraftAge($0.at, now: now) },
-            draftCaption: record.flatMap { ticketDraftCaption($0, now: now) }, replaced: record?.replaced != nil)
+            draftCaption: record.flatMap { ticketDraftCaption($0, now: now) }, replaced: record?.replaced != nil,
+            handed: handed.contains(t.id))
     }
     return boxes.enumerated().sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }.map(\.element)
 }
@@ -189,6 +193,9 @@ public struct EditorReviewsState: Sendable, Equatable {
         }
     }
     public var reads: Reads
+    /// The threads a live hand-off is at work on, and its conversation (`ticketHandedThreads`): the
+    /// window's, set where the panes are drawn.
+    public var handed: [String: String] = [:]
     /// Each head text read; a key in `fetched` with no text here is not local (or the file is not
     /// at that commit).
     public var heads: [EditorReviewHead: String]
@@ -264,7 +271,7 @@ private func editorReviewHeadBoxes(_ h: (root: String, rel: String, sha: String,
     return reviewBoxes(threads: read.threads, path: h.root + "/" + h.rel, root: h.root, headTexts: [h.sha: h.text],
                        buffer: h.text, drafts: reviews.reads.drafts, sending: reviews.reads.sending,
                        answers: reviews.reads.answers, viewer: read.viewer, draftRecords: reviews.reads.draftRecords,
-                       headSHA: h.sha)
+                       headSHA: h.sha, handed: Set(reviews.handed.keys))
 }
 
 /// A file tab's boxes, placed against `buffer` (the tab's text when nil); a head tab's on its
@@ -281,7 +288,7 @@ public func editorReviewBoxes(_ tab: EditorTab, buffer: String? = nil, _ reviews
     return reviewBoxes(threads: root?.threads ?? [], path: f.path, root: f.root, headTexts: heads,
                        buffer: buffer ?? tab.text, drafts: reviews.reads.drafts, sending: reviews.reads.sending,
                        answers: reviews.reads.answers, viewer: root?.viewer ?? "",
-                       draftRecords: reviews.reads.draftRecords)
+                       draftRecords: reviews.reads.draftRecords, handed: Set(reviews.handed.keys))
 }
 
 /// The thread whose box is on the tab's cursor line, as placed (`read_pane`'s `cursorThread`, and
