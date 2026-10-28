@@ -21,20 +21,26 @@ extension BrowserGroupColour {
 }
 
 /// What a pane's tab list shows, in drawn order — the rule is `BrowserSnapshot.stripEntries`; this
-/// adds what the drawing needs (the raised entry, the colours, the drag).
+/// adds what the drawing needs (the raised entry, the colours, the pinned section, the drop).
 struct BrowserStripEntries {
     let snapshot: BrowserSnapshot
     let entries: [BrowserStripEntry]
+    /// The head drawn above the line: tiles, then pinned groups (`BrowserPinnedSection`).
+    let section: BrowserPinnedSection
 
     init(_ snapshot: BrowserSnapshot) {
         self.snapshot = snapshot
         entries = snapshot.stripEntries
+        section = snapshot.pinnedSection
     }
 
     var ids: [String] { entries.map(\.id) }
 
     /// The entry the strip raises: the active tab (a collapsed group's, shown under its header).
     var active: String? { snapshot.stripActive }
+
+    /// Entry `index` is a pinned tab, drawn as a tile.
+    func isTile(_ index: Int) -> Bool { index < section.tiles }
 
     /// The colour under a tab of an expanded group.
     func underline(_ index: Int) -> Color? {
@@ -49,35 +55,10 @@ struct BrowserStripEntries {
         return entries.firstIndex { $0.id == "group:\(gid)" }
     }
 
-    /// The `browser_move_tab` a drag of entry `from` to index `to` makes, or nil when it would change
-    /// nothing — a chip, a drop into the pull-request group, a pinned tab dropped among the others:
-    /// no line is drawn for a drop that would do nothing. The tab lands before the entry now at
-    /// `to` (counted without it), in that entry's group (`dropGroup`); before a chip or at the end,
-    /// loose.
-    func move(from: Int, to: Int) -> [String: JSONValue]? {
-        guard entries.indices.contains(from), case .tab(let moving) = entries[from] else { return nil }
-        var others = entries
-        others.remove(at: from)
-        let rest = snapshot.tabs.filter { $0.id != moving.id }
-        // Where it lands in `tabs` once taken out: before the next shown tab, or before the first
-        // tab of the group whose chip is next.
-        let at: Int = {
-            for entry in others.dropFirst(to) {
-                switch entry {
-                case .tab(let t): if let i = rest.firstIndex(where: { $0.id == t.id }) { return i }
-                case .chip(let g): if let i = rest.firstIndex(where: { $0.group == g.id }) { return i }
-                }
-            }
-            return rest.count
-        }()
-        var group: String?
-        if to < others.count, case .tab = others[to] { group = snapshot.dropGroup(moving: moving.id, before: at) }
-        // Only a drop that changes something is offered.
-        var after = snapshot
-        after.moveTab(moving.id, into: group, at: at)
-        guard after.tabs.map(\.id) != snapshot.tabs.map(\.id) || after.tabs.map(\.group) != snapshot.tabs.map(\.group)
-        else { return nil }
-        return ["tab": .string(moving.id), "to": .integer(Int64(at)), "group": .string(group ?? "")]
+    /// What a drop of entry `from` in `gap` does (`BrowserSnapshot.drop`): a move, a pin on the
+    /// tiles, an unpin below the line; nil draws no line.
+    func drop(_ from: Int, gap: Int, inSection: Bool) -> BrowserTabDrop? {
+        snapshot.drop(from, gap: gap, inSection: inSection)
     }
 }
 

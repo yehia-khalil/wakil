@@ -85,6 +85,34 @@ enum PaneStripStyle {
     static let closeHit: CGFloat = 16
     /// `.act`'s hover fade, the rail's row duration.
     static let hoverDuration = RailTreatment.rowHoverDuration
+
+    // MARK: The pinned head (3d-i walk)
+
+    /// A favicon-only entry: the browser's pinned tab.
+    static let compactWidth: CGFloat = 30
+    /// The active pinned tab's mark: the tick laid flat under its favicon, `tickBar` wide, `tickBarInset`
+    /// up from the entry's foot.
+    static let tickBar: CGFloat = 12
+    static let tickBarInset: CGFloat = 3
+    /// The line after the pinned head: the border token, so it reads past the hairlines between
+    /// entries, `sectionLineHeight` tall with `sectionLineGap` either side.
+    static let sectionLineHeight: CGFloat = 18
+    static let sectionLineGap: CGFloat = 5
+}
+
+/// The rail's tick laid flat (3d-i walk): the active pinned tab's mark, under its favicon in the
+/// strip and in the column's tile, with the tick's glow.
+struct LuminousBar: View {
+    let width: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(PaneStripStyle.tick)
+            .frame(width: width, height: 2)
+            .shadow(color: PaneStripStyle.tick.opacity(0.70), radius: PaneStripStyle.tickGlowRadius)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
 }
 
 /// A 1 px rule in the hairline token, across the pane: under a header row, and either side of a
@@ -207,6 +235,29 @@ struct PaneStripTipLabel: View {
     }
 }
 
+/// A strip's head drawn apart (3d-i walk: the browser's pinned tabs and groups): its first `compact`
+/// entries are favicon-only squares, and a line stands after its first `count`. A drag reads which
+/// side of the line it is on, and the kind decides what the drop does.
+struct PaneStripSection {
+    /// Entries before the line; 0, no line.
+    let count: Int
+    /// Leading entries drawn favicon-only, with no ×.
+    let compact: Int
+    /// The line's identifier.
+    let divider: String
+    /// Whether a drop of entry `from` in `gap` (before the entry now there, it counted), on the
+    /// line's left when `inSection`, does anything: no line is drawn where it does not.
+    let canDrop: (_ from: Int, _ gap: Int, _ inSection: Bool) -> Bool
+    let drop: (_ from: Int, _ gap: Int, _ inSection: Bool) -> Void
+}
+
+/// A drag's target in a strip with a section: entry `from` into `gap`, left of the line when `inSection`.
+struct PaneStripGapDrop: Equatable {
+    let from: Int
+    let gap: Int
+    let inSection: Bool
+}
+
 /// The ＋ pinned at a strip's right: what it opens, and its name.
 struct PaneStripNewTab {
     let help: String
@@ -270,6 +321,9 @@ struct PaneTabStrip<Entry: View>: View {
     var bare: ((Int) -> Bool)?
     /// A label drawn under one entry; nil, none.
     var tip: PaneStripTip?
+    /// The head drawn apart, and the drop that reads the line (3d-i walk); nil, none — `move` and
+    /// `canMove` then decide every drag.
+    var section: PaneStripSection?
 
     @State private var hovered: String?
     @State private var newTabHovered = false
@@ -279,6 +333,8 @@ struct PaneTabStrip<Entry: View>: View {
     @State private var spans: [String: ClosedRange<Double>] = [:]
     /// A drag's current target (indexes into `ids`), drawn as a line; nil when none.
     @State private var drop: EditorTabDrop?
+    /// The same, in a strip with a section.
+    @State private var gapDrop: PaneStripGapDrop?
     /// How far the entries are scrolled, as the strip's own scroll view reports it.
     @State private var offset: Double = 0
     /// The strip's AppKit scroll view: read for the offset, and scrolled to an offset worked out
@@ -306,17 +362,22 @@ struct PaneTabStrip<Entry: View>: View {
 
     private var separator: Double { Double(PaneStripStyle.separatorWidth) }
 
-    private func isNatural(_ index: Int) -> Bool { naturalWidth?(index) ?? false }
+    private func isCompact(_ index: Int) -> Bool { index < (section?.compact ?? 0) }
+
+    /// Kept out of the shrinking: an entry of its own width, or a favicon-only one.
+    private func isNatural(_ index: Int) -> Bool { isCompact(index) || (naturalWidth?(index) ?? false) }
+
+    private var hasNatural: Bool { naturalWidth != nil || (section?.compact ?? 0) > 0 }
 
     /// The room the entries of their own width take, each with its separator, as last laid out.
     private var naturalRoom: Double {
-        guard naturalWidth != nil else { return 0 }
+        guard hasNatural else { return 0 }
         return ids.indices.filter(isNatural).reduce(0) { sum, i in
             sum + (spans[ids[i]].map { $0.upperBound - $0.lowerBound } ?? 0) + separator
         }
     }
 
-    private var sizedCount: Int { ids.count - (naturalWidth == nil ? 0 : ids.indices.filter(isNatural).count) }
+    private var sizedCount: Int { ids.count - (hasNatural ? ids.indices.filter(isNatural).count : 0) }
 
     private func widths(available: Double) -> TabStripLayout.Widths {
         TabStripLayout.widths(count: sizedCount, available: available - naturalRoom, separator: separator)
@@ -324,6 +385,7 @@ struct PaneTabStrip<Entry: View>: View {
 
     /// One entry's width under this layout; nil for an entry of its own width.
     private func entryWidth(_ index: Int, _ id: String, _ widths: TabStripLayout.Widths) -> CGFloat? {
+        if isCompact(index) { return PaneStripStyle.compactWidth }
         if isNatural(index) { return nil }
         switch width {
         case .shrink: return CGFloat(id == active ? widths.active : widths.other)
@@ -335,7 +397,7 @@ struct PaneTabStrip<Entry: View>: View {
     private func overflows(available: Double, _ widths: TabStripLayout.Widths) -> Bool {
         guard available > 0 else { return false }
         // Entries of their own width alone (every group collapsed) can fill the strip too.
-        let laidOut = naturalWidth != nil
+        let laidOut = hasNatural
             && TabStripLayout.overflows(contentWidth: orderedSpans.last?.upperBound ?? 0, available: available)
         switch width {
         case .shrink: return widths.overflows || laidOut
@@ -456,13 +518,23 @@ struct PaneTabStrip<Entry: View>: View {
         .onPreferenceChange(PaneStripOriginKey.self) { entriesOrigin = $0 }
         // Where the dragged entry would land: the tick's colour, on the side away from where it came from.
         .overlay(alignment: .topLeading) {
-            if let drop {
+            if let x = dropLineX {
                 Rectangle().fill(PaneStripStyle.tick)
                     .frame(width: 2, height: PaneStripStyle.tabHeight - 8)
-                    .offset(x: editorTabDropX(drop, spans: orderedSpans) - 1, y: 4)
+                    .offset(x: x - 1, y: 4)
                     .allowsHitTesting(false)
             }
         }
+    }
+
+    /// Where the drop line stands, if a drag has a target.
+    private var dropLineX: CGFloat? {
+        if let gapDrop, let section {
+            return CGFloat(BrowserStripDrop.dropX(from: gapDrop.from, gap: gapDrop.gap, inSection: gapDrop.inSection,
+                                                  section: section.count, spans: orderedSpans))
+        }
+        guard let drop else { return nil }
+        return CGFloat(editorTabDropX(drop, spans: orderedSpans))
     }
 
     /// The strip's edge fading where entries are out of sight on that side.
@@ -525,10 +597,31 @@ struct PaneTabStrip<Entry: View>: View {
     private var orderedSpans: [ClosedRange<Double>] { ids.map { spans[$0] ?? 0...0 } }
 
     /// The hairline between entry `index` and the next, clear where either side is the raised
-    /// chip or lifted under the pointer.
+    /// chip or lifted under the pointer, or both are favicon-only; after the section, its line.
+    @ViewBuilder
     private func separatorView(after index: Int) -> some View {
+        if let section, index + 1 == section.count {
+            sectionLine(section)
+        } else {
+            hairline(after: index)
+        }
+    }
+
+    /// The line after the pinned head: always drawn, in the border token.
+    private func sectionLine(_ section: PaneStripSection) -> some View {
+        Rectangle()
+            .fill(PaneStripStyle.text.opacity(PaneStripStyle.edge))
+            .frame(width: 1, height: PaneStripStyle.sectionLineHeight)
+            .padding(.horizontal, PaneStripStyle.sectionLineGap)
+            .accessibilityElement()
+            .accessibilityLabel("End of pinned tabs")
+            .accessibilityIdentifier(section.divider)
+    }
+
+    private func hairline(after index: Int) -> some View {
         let quiet = [ids[index], ids[index + 1]].contains { $0 == active || $0 == hovered }
             || (bare?(index) ?? false) || (bare?(index + 1) ?? false)
+            || (isCompact(index) && isCompact(index + 1))
         return Rectangle()
             .fill(PaneStripStyle.text.opacity(quiet ? 0 : PaneStripStyle.hairline))
             .frame(width: 1, height: PaneStripStyle.separatorHeight)
@@ -545,19 +638,28 @@ struct PaneTabStrip<Entry: View>: View {
         return canMove?(index, to) ?? true ? to : nil
     }
 
+    /// The same with a section: the gap, and which side of the line (`BrowserStripDrop`).
+    private func gapTarget(_ section: PaneStripSection, from index: Int, at location: CGPoint) -> PaneStripGapDrop? {
+        guard let t = BrowserStripDrop.target(from: index, x: location.x, y: location.y, spans: orderedSpans,
+                                              height: Double(PaneStripStyle.tabHeight), section: section.count),
+              section.canDrop(index, t.gap, t.inSection) else { return nil }
+        return PaneStripGapDrop(from: index, gap: t.gap, inSection: t.inSection)
+    }
+
     private func row(_ id: String, index: Int, width: CGFloat?) -> some View {
         let bare = bare?(index) ?? false
+        let compact = isCompact(index)
         let on = id == active && !bare
         let lifted = hovered == id && !bare
         return HStack(spacing: PaneStripStyle.tabGap) {
-            if !bare {
+            if !bare && !compact {
                 LuminousTick(
                     colour: on ? PaneStripStyle.tick : nil, height: PaneStripStyle.tickHeight,
                     glowRadius: PaneStripStyle.tickGlowRadius)
             }
             entry(index, on)
-            if width != nil { Spacer(minLength: 0) }
-            if lifted, let close, closable?(index) ?? true {
+            if width != nil && !compact { Spacer(minLength: 0) }
+            if lifted, !compact, let close, closable?(index) ?? true {
                 Button { close(index) } label: {
                     Image(systemName: "xmark").font(.system(size: PaneStripStyle.closeGlyph, weight: .semibold))
                         .frame(width: PaneStripStyle.closeHit, height: PaneStripStyle.closeHit)
@@ -569,9 +671,9 @@ struct PaneTabStrip<Entry: View>: View {
                 .accessibilityIdentifier(stripIds.close(index))
             }
         }
-        .padding(.leading, bare ? 2 : PaneStripStyle.tabLeading)
-        .padding(.trailing, bare ? 2 : PaneStripStyle.tabTrailing)
-        .frame(width: width, height: PaneStripStyle.tabHeight, alignment: .leading)
+        .padding(.leading, compact ? 0 : bare ? 2 : PaneStripStyle.tabLeading)
+        .padding(.trailing, compact ? 0 : bare ? 2 : PaneStripStyle.tabTrailing)
+        .frame(width: width, height: PaneStripStyle.tabHeight, alignment: compact ? .center : .leading)
         .background(entryFill(on ? PaneStripStyle.tabOnFill : (lifted ? PaneStripStyle.tabHoverFill : 0)))
         .overlay {
             if on {
@@ -580,7 +682,9 @@ struct PaneTabStrip<Entry: View>: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if let colour = underline?(index) {
+            if compact {
+                if on { LuminousBar(width: PaneStripStyle.tickBar).padding(.bottom, PaneStripStyle.tickBarInset) }
+            } else if let colour = underline?(index) {
                 Rectangle().fill(colour)
                     .frame(height: 2)
                     .padding(.horizontal, PaneStripStyle.tabRadius)
@@ -595,9 +699,20 @@ struct PaneTabStrip<Entry: View>: View {
         })
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .named(stripIds.tabs))
-            .onChanged { g in drop = dropTarget(from: index, at: g.location).map { EditorTabDrop(from: index, to: $0) } }
+            .onChanged { g in
+                if let section {
+                    gapDrop = gapTarget(section, from: index, at: g.location)
+                } else {
+                    drop = dropTarget(from: index, at: g.location).map { EditorTabDrop(from: index, to: $0) }
+                }
+            }
             .onEnded { g in
-                defer { drop = nil }
+                defer { drop = nil; gapDrop = nil }
+                if let section {
+                    guard let t = gapTarget(section, from: index, at: g.location) else { return }
+                    section.drop(t.from, t.gap, t.inSection)
+                    return
+                }
                 guard let to = dropTarget(from: index, at: g.location) else { return }
                 move(index, to)
             })

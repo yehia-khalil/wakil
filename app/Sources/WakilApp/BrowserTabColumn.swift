@@ -6,10 +6,13 @@ import WakilKit
 
 /// The vertical tab column (3d-i, ruling 20): with Settings → Browser → Tabs on *Vertical*, the
 /// pane's tabs in a column at its left under the address row, full height; the tab count is its
-/// footer's, beside ＋ *New Tab* (3d-i walk). Rows 28 pt: pinned tabs, then each group's header —
-/// a pill tinted with its colour — and, expanded, its tabs indented under one line in that colour,
-/// then loose tabs, and ＋ at the bottom. The order and the entries are the strip's (`BrowserStripEntries`), and so are the chip,
-/// the rename field and the menus (`BrowserGroupViews.swift`). A 1 pt divider at its right edge
+/// footer's, beside ＋ *New Tab* (3d-i walk). At the top the pinned section: pinned tabs as a grid
+/// of square favicon tiles, as many to a row as the width holds (four at 220 pt), then the pinned
+/// groups, then a 0.5 pt hairline — with nothing pinned, neither. Below it, rows 28 pt: each group's
+/// header — a pill tinted with its colour — and, expanded, its tabs indented under one line in that
+/// colour, then loose tabs, and ＋ at the bottom. The geometry is `BrowserColumnLayout`'s; the order
+/// and the entries are the strip's (`BrowserStripEntries`), and so are the chip, the rename field
+/// and the menus (`BrowserGroupViews.swift`). A 1 pt divider at its right edge
 /// drags its width, app-wide, 160–360 pt (`BrowserTabColumnRules`).
 ///
 /// Every press is a `browser_*` action (Invariant 2). Rows are tapped, not focused: nothing here
@@ -41,31 +44,50 @@ struct BrowserTabColumn: View {
     @State private var dragStart: Double?
     @State private var hovered: String?
     @State private var newTabHovered = false
-    /// A drag of entry `from`, and the gap (0…count) it would land in.
-    @State private var drag: (from: Int, gap: Int)?
+    /// A drag of entry `from`, the gap (0…count) it would land in and which side of the line.
+    @State private var drag: PaneStripGapDrop?
 
     private var presses: BrowserEntryPresses {
         BrowserEntryPresses(dispatch: dispatch, renaming: $renaming, headerFocus: headerFocus,
                             setHeaderFocus: setHeaderFocus)
     }
 
-    static let rowHeight: CGFloat = 28
+    static let rowHeight = CGFloat(BrowserColumnLayout.rowHeight)
     static let indent: CGFloat = 12
     /// Each row's inset from the column's edges.
-    static let rowInset: CGFloat = 6
+    static let rowInset = CGFloat(BrowserColumnLayout.inset)
+    /// A pinned tile: its corner, and its favicon's square.
+    static let tileRadius: CGFloat = 8
+    static let tileGlyph: CGFloat = 16
+    /// The active tile's flat tick, up from the tile's foot.
+    static let barInset: CGFloat = 8
 
     var body: some View {
         let list = BrowserStripEntries(snapshot)
+        let layout = BrowserColumnLayout(section: list.section, entries: list.entries.count, width: width)
+        let rows = Array(list.entries.enumerated())
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(list.entries.enumerated()), id: \.element.id) { index, entry in
-                            row(entry, index: index, list: list)
+                        if !list.section.isEmpty {
+                            VStack(alignment: .leading, spacing: 0) {
+                                if list.section.tiles > 0 { tiles(list, layout: layout) }
+                                ForEach(rows[list.section.tiles..<list.section.count], id: \.element.id) { index, entry in
+                                    row(entry, index: index, list: list, layout: layout)
+                                }
+                            }
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Pinned")
+                            .accessibilityIdentifier("browser.tabColumn.pinned")
+                            sectionLine
+                        }
+                        ForEach(rows[list.section.count...], id: \.element.id) { index, entry in
+                            row(entry, index: index, list: list, layout: layout)
                         }
                     }
-                    .overlay(alignment: .topLeading) { groupLines(list) }
-                    .overlay(alignment: .topLeading) { dropLine(list) }
+                    .overlay(alignment: .topLeading) { groupLines(list, layout: layout) }
+                    .overlay(alignment: .topLeading) { dropLine(list, layout: layout) }
                     .coordinateSpace(name: Self.space)
                     .padding(.vertical, 4)
                 }
@@ -109,14 +131,77 @@ struct BrowserTabColumn: View {
     static let lineInset: CGFloat = 3
 
     @ViewBuilder
-    private func row(_ entry: BrowserStripEntry, index: Int, list: BrowserStripEntries) -> some View {
+    private func row(_ entry: BrowserStripEntry, index: Int, list: BrowserStripEntries,
+                     layout: BrowserColumnLayout) -> some View {
         switch entry {
-        case .chip(let g): interactive(header(g), entry: entry, index: index, list: list)
+        case .chip(let g): interactive(header(g), entry: entry, index: index, list: list, layout: layout)
         case .tab(let t):
             interactive(tabRow(t, member: t.group.flatMap { snapshot.group($0) } != nil,
                                on: list.active == entry.id, lifted: hovered == entry.id),
-                        entry: entry, index: index, list: list)
+                        entry: entry, index: index, list: list, layout: layout)
         }
+    }
+
+    // MARK: The pinned section
+
+    /// The pinned tabs' grid, `layout.perRow` to a row, the space under it included.
+    private func tiles(_ list: BrowserStripEntries, layout: BrowserColumnLayout) -> some View {
+        let n = layout.perRow, count = list.section.tiles
+        let entries = Array(list.entries.enumerated())
+        return VStack(alignment: .leading, spacing: CGFloat(BrowserColumnLayout.tileSpacing)) {
+            ForEach(0..<layout.tileRows, id: \.self) { r in
+                HStack(spacing: CGFloat(BrowserColumnLayout.tileSpacing)) {
+                    ForEach(entries[(r * n)..<min(count, (r + 1) * n)], id: \.element.id) { index, entry in
+                        if case .tab(let t) = entry {
+                            interactive(tile(t, on: list.active == entry.id, lifted: hovered == entry.id,
+                                             side: CGFloat(layout.tileSide)),
+                                        entry: entry, index: index, list: list, layout: layout, inset: false)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, Self.rowInset)
+        .frame(height: CGFloat(layout.gridHeight), alignment: .top)
+    }
+
+    /// A pinned tab's tile: a rounded square, its favicon centred — the hairline's edge at rest, the
+    /// row's lift under the pointer, and on the active one the raised chip with the rail's tick laid
+    /// flat under the favicon. Not loaded yet, the tile is dimmed. × on hover, at its corner.
+    private func tile(_ t: BrowserTab, on: Bool, lifted: Bool, side: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Self.tileRadius, style: .continuous)
+        return ZStack {
+            shape.fill(BrowserPaneStyle.text.opacity(on ? PaneStripStyle.tabOnFill : (lifted ? PaneStripStyle.tabHoverFill : 0)))
+            shape.strokeBorder(BrowserPaneStyle.text.opacity(on ? PaneStripStyle.edge : PaneStripStyle.hairline),
+                               lineWidth: 1)
+            BrowserFavicon(image: favicon(t.id), size: Self.tileGlyph)
+                .overlay(alignment: .topTrailing) {
+                    if let tag = sites.tag(t.url) {
+                        BrowserSiteTagDot(tag: tag, tab: t.id).offset(x: 3, y: -3)
+                    }
+                }
+        }
+        .overlay(alignment: .bottom) {
+            if on { LuminousBar(width: Self.tileGlyph).padding(.bottom, Self.barInset) }
+        }
+        .opacity(t.loaded || on ? 1 : BrowserPaneStyle.unloadedOpacity)
+        .overlay(alignment: .topTrailing) {
+            if lifted { closeButton(t).padding(2).transition(.opacity) }
+        }
+        .frame(width: side, height: side)
+        .animation(.easeOut(duration: PaneStripStyle.hoverDuration), value: lifted)
+    }
+
+    /// The section's end: the house's 0.5 pt rule at the hairline's opacity, centred in its band.
+    private var sectionLine: some View {
+        Rectangle()
+            .fill(BrowserPaneStyle.text.opacity(PaneStripStyle.hairline))
+            .frame(height: 0.5)
+            .padding(.horizontal, Self.rowInset + 4)
+            .frame(height: CGFloat(BrowserColumnLayout.band))
+            .accessibilityElement()
+            .accessibilityLabel("End of pinned tabs")
+            .accessibilityIdentifier("browser.tabColumn.pinnedDivider")
     }
 
     /// A tab's row. A loose or pinned tab carries the rail's tick inside its chip; a group's member
@@ -147,23 +232,21 @@ struct BrowserTabColumn: View {
         .padding(.leading, member ? Self.memberLead : 0)
     }
 
-    /// What every row shares: its inset, the drag, the press, the middle-click, the hover, the menu,
-    /// the tooltip and how it reads in the accessibility tree.
+    /// What every row and tile shares: a row's inset, the drag, the press, the middle-click, the
+    /// hover, the menu, the tooltip and how it reads in the accessibility tree.
     private func interactive(_ content: some View, entry: BrowserStripEntry, index: Int,
-                             list: BrowserStripEntries) -> some View {
+                             list: BrowserStripEntries, layout: BrowserColumnLayout, inset: Bool = true) -> some View {
         let on = list.active == entry.id
         return content
-        .padding(.horizontal, Self.rowInset)
+        .padding(.horizontal, inset ? Self.rowInset : 0)
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
-            .onChanged { g in
-                let gap = self.gap(at: g.location.y, count: list.entries.count)
-                drag = target(list, from: index, gap: gap) != nil ? (index, gap) : nil
-            }
+            .onChanged { g in drag = target(list, layout: layout, from: index, at: g.location) }
             .onEnded { g in
                 defer { drag = nil }
-                let gap = self.gap(at: g.location.y, count: list.entries.count)
-                if let params = target(list, from: index, gap: gap) { dispatch("browser_move_tab", params) }
+                guard let t = target(list, layout: layout, from: index, at: g.location),
+                      let d = list.drop(t.from, gap: t.gap, inSection: t.inSection) else { return }
+                dispatch(d.action, d.params)
             })
         .onTapGesture { presses.tap(entry) }
         // A middle-click on a tab closes it, as its × does (a pinned one too, in one press); a group's
@@ -194,8 +277,9 @@ struct BrowserTabColumn: View {
     }
 
     /// Each group's ONE line in its colour down its member rows (`BrowserSnapshot.memberRuns`), 2 pt,
-    /// broken at the active member, where the rail's violet tick stands in its place.
-    @ViewBuilder private func groupLines(_ list: BrowserStripEntries) -> some View {
+    /// broken at the active member, where the rail's violet tick stands in its place. A run never
+    /// crosses the section's line: a pinned group's members are all above it.
+    @ViewBuilder private func groupLines(_ list: BrowserStripEntries, layout: BrowserColumnLayout) -> some View {
         let active = list.entries.firstIndex { $0.id == list.active }
         let runs = snapshot.memberRuns
         ZStack(alignment: .topLeading) {
@@ -204,14 +288,14 @@ struct BrowserTabColumn: View {
                 ForEach(run.segments(skipping: active), id: \.lowerBound) { rows in
                     RoundedRectangle(cornerRadius: 1).fill(colour)
                         .frame(width: 2, height: CGFloat(rows.count) * Self.rowHeight - 2 * Self.lineInset)
-                        .offset(x: Self.lineX - 1, y: CGFloat(rows.lowerBound) * Self.rowHeight + Self.lineInset)
+                        .offset(x: Self.lineX - 1, y: CGFloat(layout.rowTop(rows.lowerBound)) + Self.lineInset)
                 }
             }
             if let active, runs.contains(where: { $0.rows.contains(active) }) {
                 LuminousTick(colour: PaneStripStyle.tick, height: PaneStripStyle.tickHeight,
                              glowRadius: PaneStripStyle.tickGlowRadius)
                     .offset(x: Self.lineX - 1,
-                            y: CGFloat(active) * Self.rowHeight + (Self.rowHeight - PaneStripStyle.tickHeight) / 2)
+                            y: CGFloat(layout.rowTop(active)) + (Self.rowHeight - PaneStripStyle.tickHeight) / 2)
             }
         }
         .allowsHitTesting(false)
@@ -231,18 +315,20 @@ struct BrowserTabColumn: View {
             .truncationMode(.tail)
             .foregroundStyle(BrowserPaneStyle.text.opacity(on ? 1 : PaneStripStyle.tabTitleRest))
         Spacer(minLength: 0)
-        if lifted {
-            Button { dispatch("browser_close_tab", ["tab": .string(tab.id)]) } label: {
-                Image(systemName: "xmark").font(.system(size: PaneStripStyle.closeGlyph, weight: .semibold))
-                    .frame(width: PaneStripStyle.closeHit, height: PaneStripStyle.closeHit)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(ChangesIconButtonStyle())
-            .focusable(false)
-            .transition(.opacity)
-            .accessibilityLabel("Close \(tab.label)")
-            .accessibilityIdentifier("browser.tab.\(tab.id).close")
+        if lifted { closeButton(tab).transition(.opacity) }
+    }
+
+    /// A row's or a tile's × under the pointer: `browser_close_tab`, a pinned tab's in one click.
+    private func closeButton(_ tab: BrowserTab) -> some View {
+        Button { dispatch("browser_close_tab", ["tab": .string(tab.id)]) } label: {
+            Image(systemName: "xmark").font(.system(size: PaneStripStyle.closeGlyph, weight: .semibold))
+                .frame(width: PaneStripStyle.closeHit, height: PaneStripStyle.closeHit)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(ChangesIconButtonStyle())
+        .focusable(false)
+        .accessibilityLabel("Close \(tab.label)")
+        .accessibilityIdentifier("browser.tab.\(tab.id).close")
     }
 
     /// A group's header: the tinted pill (`BrowserGroupChip`) across the row, its chevron at the
@@ -330,27 +416,35 @@ struct BrowserTabColumn: View {
 
     // MARK: Drag
 
-    /// The gap a drag at `y` (in the rows' space, whose origin is the first row's top — the space is
-    /// named inside the vertical padding) is nearest: 0 before the first row, `count` after the last.
-    private func gap(at y: CGFloat, count: Int) -> Int {
-        max(0, min(count, Int((y / Self.rowHeight).rounded())))
+    /// The drop under a drag at `point` (in the rows' space, whose origin is the first row's top —
+    /// the space is named inside the vertical padding): `BrowserColumnLayout`'s gap and side, kept
+    /// only where the drop does something (`BrowserSnapshot.drop`).
+    private func target(_ list: BrowserStripEntries, layout: BrowserColumnLayout, from: Int,
+                        at point: CGPoint) -> PaneStripGapDrop? {
+        let t = layout.target(x: Double(point.x), y: Double(point.y))
+        guard list.drop(from, gap: t.gap, inSection: t.inSection) != nil else { return nil }
+        return PaneStripGapDrop(from: from, gap: t.gap, inSection: t.inSection)
     }
 
-    /// The move a drop of entry `from` in `gap` makes, counted without it (`BrowserStripEntries.move`).
-    private func target(_ list: BrowserStripEntries, from: Int, gap: Int) -> [String: JSONValue]? {
-        let to = gap > from ? gap - 1 : gap
-        guard to != from else { return nil }
-        return list.move(from: from, to: to)
-    }
-
-    @ViewBuilder private func dropLine(_ list: BrowserStripEntries) -> some View {
+    /// Where the drag would land, in the tick's colour: a bar between two tiles, or a line across
+    /// the column between two rows — at the section's line, on the side the drop is on.
+    @ViewBuilder private func dropLine(_ list: BrowserStripEntries, layout: BrowserColumnLayout) -> some View {
         if let drag {
-            Rectangle().fill(BrowserPaneStyle.tick)
-                .frame(height: 2)
-                .padding(.horizontal, Self.rowInset)
-                .offset(y: CGFloat(drag.gap) * Self.rowHeight - 1)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+            Group {
+                if list.section.onTiles(gap: drag.gap, inSection: drag.inSection) {
+                    let at = layout.tileLine(drag.gap)
+                    Rectangle().fill(BrowserPaneStyle.tick)
+                        .frame(width: 2, height: CGFloat(layout.tileSide) - 8)
+                        .offset(x: CGFloat(at.x) - 1, y: CGFloat(at.y) + 4)
+                } else {
+                    Rectangle().fill(BrowserPaneStyle.tick)
+                        .frame(height: 2)
+                        .padding(.horizontal, Self.rowInset)
+                        .offset(y: CGFloat(layout.lineY(gap: drag.gap, inSection: drag.inSection)) - 1)
+                }
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 }

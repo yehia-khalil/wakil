@@ -49,6 +49,8 @@ enum BrowserPaneStyle {
     static let tabTitleSize = SettingsScale.body
     /// The favicon or globe, 12 px; the globe's stroke at the micro-label's step.
     static let glyphSize: CGFloat = 12
+    /// A pinned tab not loaded yet (3d-i walk): its tile, or its favicon in the strip, at this.
+    static let unloadedOpacity: Double = 0.45
     static let globeGlyph: CGFloat = 11
     static let closeGlyph = PaneStripStyle.closeGlyph
     static let closeHit = PaneStripStyle.closeHit
@@ -264,6 +266,11 @@ struct BrowserTabCount: View {
 /// puts the group's header under the keyboard's ⌘R (`browserHeaderFocus`); a click on a tab takes
 /// it away. A drag into a group's run joins it, out of it leaves it (`BrowserStripEntries.move`).
 /// The tab and group menus are on a right-click; a pinned tab armed by ⌘W shows its tip under it.
+///
+/// **Pinned (3d-i walk).** Pinned tabs lead as favicon-only entries, the pinned groups' pills after
+/// them, then a line before the rest (`BrowserPinnedSection`). A drag onto the pinned tabs pins the
+/// tab (`browser_pin`), a pinned tab dragged past the line is unpinned where it lands
+/// (`browser_unpin`); `BrowserSnapshot.drop` decides.
 struct BrowserTabList: View {
     let snapshot: BrowserSnapshot
     let mode: BrowserTabListMode
@@ -307,15 +314,15 @@ struct BrowserTabList: View {
             entry: { index, active in
                 switch entries[index] {
                 case .chip(let g): chip(g, active: active)
+                case .tab(let t) where list.isTile(index): pinnedEntry(t, active: active)
                 case .tab(let t): tabEntry(t, active: active)
                 }
             },
             label: { BrowserEntryPresses.label(entries[$0]) },
             tap: { presses.tap(entries[$0]) },
             activate: { presses.activate(entries[$0]) },
-            move: { from, to in
-                if let params = list.move(from: from, to: to) { dispatch("browser_move_tab", params) }
-            },
+            // Every drag reads the pinned section's line (`section`, below).
+            move: { _, _ in },
             close: { index in
                 if case .tab(let t) = entries[index] { dispatch("browser_close_tab", ["tab": .string(t.id)]) }
             },
@@ -333,7 +340,6 @@ struct BrowserTabList: View {
                 case .tab(let t): AnyView(BrowserTabMenu(tab: t, context: menus))
                 }
             },
-            canMove: { from, to in list.move(from: from, to: to) != nil },
             underline: { list.underline($0) },
             naturalWidth: { if case .chip = entries[$0] { true } else { false } },
             bare: { if case .chip = entries[$0] { true } else { false } },
@@ -341,7 +347,25 @@ struct BrowserTabList: View {
                 list.index(ofTab: tab).map {
                     PaneStripTip(index: $0, text: BrowserPinnedClose.tip, identifier: "browser.tab.\(tab).closeTip")
                 }
-            })
+            },
+            section: PaneStripSection(
+                count: list.section.count, compact: list.section.tiles, divider: "browser.tabs.pinnedDivider",
+                canDrop: { list.drop($0, gap: $1, inSection: $2) != nil },
+                drop: { from, gap, inSection in
+                    if let d = list.drop(from, gap: gap, inSection: inSection) { dispatch(d.action, d.params) }
+                }))
+    }
+
+    /// A pinned tab (3d-i walk): its favicon alone, at the strip's left before the line — dimmed until
+    /// its page has loaded. Its title is the entry's tooltip and spoken name.
+    private func pinnedEntry(_ tab: BrowserTab, active: Bool) -> some View {
+        BrowserFavicon(image: favicon(tab.id))
+            .overlay(alignment: .topTrailing) {
+                if let tag = sites.tag(tab.url) {
+                    BrowserSiteTagDot(tag: tag, tab: tab.id).offset(x: 3, y: -3)
+                }
+            }
+            .opacity(tab.loaded || active ? 1 : BrowserPaneStyle.unloadedOpacity)
     }
 
     @ViewBuilder private func tabEntry(_ tab: BrowserTab, active: Bool) -> some View {
@@ -526,6 +550,8 @@ struct BrowserAgentAllowedMark: View {
 /// else a globe, drawn at the micro-label's step as `Browser.dc.html` strokes it.
 struct BrowserFavicon: View {
     let image: NSImage?
+    /// The square it is drawn in: 12 pt in a row, larger on a pinned tile.
+    var size: CGFloat = BrowserPaneStyle.glyphSize
 
     var body: some View {
         Group {
@@ -533,11 +559,11 @@ struct BrowserFavicon: View {
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
             } else {
                 Image(systemName: "globe")
-                    .font(.system(size: BrowserPaneStyle.globeGlyph))
+                    .font(.system(size: BrowserPaneStyle.globeGlyph * size / BrowserPaneStyle.glyphSize))
                     .foregroundStyle(BrowserPaneStyle.text.opacity(RailTreatment.kindOpacity))
             }
         }
-        .frame(width: BrowserPaneStyle.glyphSize, height: BrowserPaneStyle.glyphSize)
+        .frame(width: size, height: size)
     }
 }
 
