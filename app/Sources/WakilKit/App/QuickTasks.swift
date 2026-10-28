@@ -161,13 +161,6 @@ public actor QuickTasks {
         throw QuickModelError.noProvider(op)
     }
 
-    /// A reply the model gave but its caller could not use (a name that did not parse): kept under the
-    /// provider `op` routes to, like a model's own error, so Settings shows it whole.
-    public func recordFailure(_ error: String, for op: QuickOperation) {
-        guard let id = routedId(op) else { return }
-        note(error, for: id)
-    }
-
     /// Keeps `error` whole as `id`'s last error, logging it when it differs from the one kept. A
     /// failure caused by the shutdown itself (a session ended under its turn) is nobody's to read.
     private func note(_ error: String, for id: String) {
