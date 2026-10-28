@@ -129,13 +129,19 @@ extension WindowModel {
         }
     }
 
-    /// F16: `agent` resumed a session of conversation `from` (its lineage root): when `from` was
-    /// handed, its hand-off is carried to `agent`'s id, so its git writes stay priced as handed. A
-    /// carry that fails leaves `agent` handed with May push off — fail closed — and says why.
+    /// F16: `agent` resumed a session of conversation `from` (its lineage root), and `resume` has
+    /// already marked it handed with May push off. When `from` was handed, its hand-off is carried
+    /// to `agent`'s id, so its git writes stay priced as handed with the stored May push; when it
+    /// was not, the mark is lifted. A carry that fails leaves `agent` handed with May push off —
+    /// fail closed — and says why.
     func carryHandOff(from: String, to agent: PlaceAgent, root: String) async {
         guard let ticket else { return }
         do {
-            guard let (key, h) = try await ticket.carryHandoff(from: from, to: agent.id, as: handOffCaller(agent)) else { return }
+            guard let (key, h) = try await ticket.carryHandoff(from: from, to: agent.id, as: handOffCaller(agent)) else {
+                // Never handed: the provisional hand-off `resume` set is lifted.
+                agent.handoff = nil
+                return
+            }
             let pr = parsedPRHandoffKey(key)
             agent.handoff = PlaceAgentHandoff(
                 key: pr == nil ? key : nil, pr: pr?.number, thread: h["thread"].flatMap { if case .string(let t) = $0, !t.isEmpty { t } else { nil } },

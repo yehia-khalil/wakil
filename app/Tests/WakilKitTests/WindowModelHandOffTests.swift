@@ -23,11 +23,11 @@ private func until(_ done: @MainActor () async -> Bool) async {
 /// `wakil-ticket`, the five git writes registered as shipped (allow everywhere, Decision 44), and
 /// the doubles a resume reads (`session_read`, `session_get`: the parent's lineage root is `root`).
 @MainActor
-private func handOffWindow(root: @escaping @Sendable () -> String = { "" })
+private func handOffWindow(root: @escaping @Sendable () -> String = { "" }, holding: HoldingTicket? = nil)
     async -> (WindowModel, Harnesses, FakeTicket) {
     let harnesses = Harnesses()
-    let fake = FakeTicket()
-    let store = EditorTicketStore(ticket: fake)
+    let fake = holding?.fake ?? FakeTicket()
+    let store = EditorTicketStore(ticket: holding ?? fake)
     let window = WindowModel.forTesting(
         scratchRoot: testScratchRoot, organization: org, harnessFactory: { place, _ in harnesses.make(place) },
         ticket: store)
@@ -358,6 +358,33 @@ private func agentRuns(_ window: WindowModel, _ name: String, conversation: Stri
         #expect(await fake.args("ticket_handoff_may_push")?["conversation"] == .string(resumed.id))
     }
 
+    /// No window in which a resumed handed session is unhanded: while its carry is in flight, the
+    /// new conversation is handed with May push off, so every git write asks; once the carry lands
+    /// with May push on, its push runs and its publish still asks.
+    @Test func aResumeIsHandedBeforeItsCarryLands() async throws {
+        let holding = HoldingTicket()
+        let (window, _, fake) = await handOffWindow(root: { "c-handed-before" }, holding: holding)
+        await fake.set("ticket_handoff_write", .object([
+            "key": .string("INI-142"),
+            "handoff": .object(["id": .string("h2"), "conversation": .string("new"), "thread": .string("PRRT_1"),
+                                "mayPush": .bool(true)]),
+        ]))
+        await fake.set("ticket_handoff_may_push", .object(["mayPush": .bool(true)]))
+        let resume = Task { await window.resume(sessionId: "s-parent") }
+        await until { await holding.carryPending }
+        #expect(await holding.carryPending)
+        let resumed = try #require(window.currentAgent)
+        #expect(resumed.harness != nil, "the resumed session is live while its carry is in flight")
+        for name in gitWrites {
+            #expect(!(try await agentRuns(window, name, conversation: resumed.id)), "\(name) during the carry")
+        }
+        await holding.release()
+        await resume.value
+        #expect(resumed.handoff?.mayPush == true)
+        #expect(try await agentRuns(window, "editor_changes_push", conversation: resumed.id))
+        #expect(!(try await agentRuns(window, "editor_changes_publish", conversation: resumed.id)))
+    }
+
     /// A carry that fails leaves the new conversation handed with May push off — whatever the
     /// store would say — and says why on its chip and in its thread.
     @Test func aFailedCarryReadsMayPushOff() async throws {
@@ -394,5 +421,29 @@ private final class Locked<T: Sendable>: @unchecked Sendable {
     var value: T {
         get { lock.withLock { v } }
         set { lock.withLock { v = newValue } }
+    }
+}
+
+/// `FakeTicket` with its carry held until the test lets go: the window between a resume's install
+/// and its carry landing.
+actor HoldingTicket: ToolCaller {
+    nonisolated let fake = FakeTicket()
+    private(set) var carryPending = false
+    private var parked: CheckedContinuation<Void, Never>?
+    private var released = false
+
+    func release() {
+        released = true
+        parked?.resume()
+        parked = nil
+    }
+
+    func callTool(name: String, arguments: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        if name == "ticket_handoff_write", case .object(let o) = arguments, o["op"] == .string("carry"), !released {
+            carryPending = true
+            await withCheckedContinuation { parked = $0 }
+            carryPending = false
+        }
+        return try await fake.callTool(name: name, arguments: arguments, timeout: timeout)
     }
 }

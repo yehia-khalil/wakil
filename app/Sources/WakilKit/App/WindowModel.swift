@@ -8530,6 +8530,16 @@ public final class WindowModel {
         // adds this fork to the map, so it is the parent's own lineage
         // being asked about and not one this call has already altered.
         let inheritedRoot = await lineageRootOfSession(parent, as: caller)
+        // F16: a session from another conversation may be a handed one's. It is handed with May
+        // push off from before its session is installed — before any message can reach it — and
+        // the carry below then sets what the stored hand-off says, or lifts it when there is none.
+        // A resume that stops short puts back what was there.
+        let provisional = agent.handoff == nil && ticket != nil && inheritedRoot.map { $0 != agent.id } == true
+        var carried = false
+        if provisional {
+            agent.handoff = PlaceAgentHandoff(key: nil, pr: nil, thread: nil, root: thread.cwd, branch: "", mayPush: false)
+        }
+        defer { if provisional, !carried { agent.handoff = nil } }
 
         do {
             try await next.start(
@@ -8597,7 +8607,8 @@ public final class WindowModel {
         // F16: a session of a handed conversation resumed into another conversation carries
         // its hand-off there, so the gate keeps applying. The conversation's own resumes and forks
         // keep its id, and with it the hand-off.
-        if agent.handoff == nil, let inheritedRoot, inheritedRoot != agent.id {
+        if provisional, let inheritedRoot {
+            carried = true
             await carryHandOff(from: inheritedRoot, to: agent, root: thread.cwd)
         }
         // Last, and only once the swap has actually happened: the canvas
