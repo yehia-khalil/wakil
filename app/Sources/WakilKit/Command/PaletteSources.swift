@@ -226,6 +226,18 @@ public func conversationRename(id: String, current: String, fallback: String) ->
 /// The name step's placeholder for a conversation, ⌘K's and ⌘P's alike.
 public let conversationNamePlaceholder = "Conversation name"
 
+/// The name step's subject for a browser tab (names, spec §3 and Calls made 12): `browser_rename_tab`
+/// with its pane and tab, so the rename lands on that tab and selects nothing (Rule 6). `current` is the
+/// tab's `label`, `fallback` its `pageLabel`.
+public func tabRename(pane: String, tab: String, current: String, fallback: String) -> PaletteRename {
+    PaletteRename(
+        action: "browser_rename_tab", params: .object(["pane": .string(pane), "tab": .string(tab)]),
+        current: current, fallback: fallback, placeholder: tabNamePlaceholder)
+}
+
+/// The name step's placeholder for a browser tab, ⌘K's and a tile's alike.
+public let tabNamePlaceholder = "Tab name"
+
 // MARK: - New pane
 
 /// The kinds the palette may open, in the order they are offered. `pane_open` refuses

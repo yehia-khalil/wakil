@@ -6867,6 +6867,10 @@ public final class WindowModel {
             activeGitRoot: activeBranchRoot?.root, editorActiveConflicted: editorActiveConflicted,
             currentConversation: currentAgent.map {
                 PaletteSubject(id: $0.id, name: $0.title, fallback: $0.fallbackTitle)
+            },
+            browserActiveTab: focused.flatMap { f -> PaletteSubject? in
+                guard f.kind == "browser", let tab = browser(f.id)?.activeTab, tab.pullRequest == nil else { return nil }
+                return PaletteSubject(id: tab.id, name: tab.label, fallback: tab.pageLabel)
             })
     }
 
@@ -6993,6 +6997,17 @@ public final class WindowModel {
         paletteKeyPress = PaletteKeyPress(
             mode: .open, serial: paletteKeySerial,
             rename: conversationRename(id: agent.id, current: agent.title, fallback: agent.fallbackTitle))
+    }
+
+    /// A pinned tile's or a folded strip entry's **Rename Tab…** (names, Calls made 12): ⌘P opens
+    /// directly on the name step for `tab` of `pane`, whose Esc closes it straight back (Rule 6). Its
+    /// run names the pane and tab, so nothing is selected. A tab that is not there, or a pull-request
+    /// row (3d-i ruling 18), opens nothing.
+    public func openRenameTabPalette(pane: String, tab id: String) {
+        guard let tab = browser(pane)?.tabs.first(where: { $0.id == id }), tab.pullRequest == nil else { return }
+        paletteKeySerial += 1
+        paletteKeyPress = PaletteKeyPress(mode: .open, serial: paletteKeySerial, 
+            rename: tabRename(pane: pane, tab: tab.id, current: tab.label, fallback: tab.pageLabel))
     }
 
     /// The plane went up. `paletteClosed()` is its other half, on every close path.

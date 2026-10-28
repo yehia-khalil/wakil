@@ -61,6 +61,9 @@ struct BrowserPane: View {
     let headerFocus: String?
     let setHeaderFocus: (String?) -> Void
     let refreshPullRequests: () -> Void
+    /// Names, Calls made 12: a pinned tile's or a folded entry's *Rename Tab…* — ⌘P on the name step
+    /// for this pane's tab (`WindowModel.openRenameTabPalette`).
+    let openRenameTabPalette: (String) -> Void
     /// 3d-i: Settings → Browser → Tabs is *Vertical*: the tabs are the column at the pane's left
     /// (`BrowserTabColumn`), the glyph leads the address row and the count is the column's footer.
     var verticalTabs = false
@@ -88,6 +91,8 @@ struct BrowserPane: View {
     @State private var placingCompletion = false
     /// The group whose name field is open (3d-i): *Rename…* or *New Group…*.
     @State private var renamingGroup: String?
+    /// The tab whose name field is open in place (names): *Rename Tab…* on a full entry or a row.
+    @State private var renamingTab: String?
 
     private var active: BrowserTab? { snapshot.activeTab }
     private var listMode: BrowserTabListMode { BrowserTabListMode(paneWidth: width) }
@@ -152,7 +157,7 @@ struct BrowserPane: View {
                 }
                 .overlay(alignment: .leading) {
                     if verticalTabs, snapshot.tabColumnHidden {
-                        BrowserTabColumnPeek(holding: renamingGroup != nil) { tabColumn }
+                        BrowserTabColumnPeek(holding: renamingGroup != nil || renamingTab != nil) { tabColumn }
                     }
                 }
             }
@@ -262,6 +267,7 @@ struct BrowserPane: View {
                     snapshot: snapshot, mode: listMode,
                     favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
                     sites: sites, dispatch: send, menus: groupMenus, renaming: $renamingGroup,
+                    renamingTab: $renamingTab,
                     headerFocus: headerFocus, setHeaderFocus: setHeaderFocus,
                     closeArmed: closeArm.flatMap { $0.pane == pane.id ? $0.tab : nil },
                     renameEnded: { explicit in
@@ -288,6 +294,7 @@ struct BrowserPane: View {
             snapshot: snapshot,
             favicon: { host.favicons[BrowserTabHost.Key(scope: scope, pane: pane.id, tab: $0)] },
             sites: sites, dispatch: send, menus: groupMenus, renaming: $renamingGroup,
+            renamingTab: $renamingTab,
             headerFocus: headerFocus, setHeaderFocus: setHeaderFocus,
             closeArmed: closeArm.flatMap { $0.pane == pane.id ? $0.tab : nil },
             renameEnded: { explicit in
@@ -312,7 +319,9 @@ struct BrowserPane: View {
                         "browser_group", ["action": .string("create"), "tabs": .array([.string(tab)])])
                     if case .object(let o)? = made, case .string(let id)? = o["group"] { renamingGroup = id }
                 }
-            })
+            },
+            renameTab: { renamingTab = $0 },
+            renameTabInPalette: openRenameTabPalette)
     }
 
     /// Under the strip, each whole and wrapping (Rule 8): why the project's pins can't be read, and
