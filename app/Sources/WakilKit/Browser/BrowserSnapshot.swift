@@ -65,6 +65,9 @@ public struct BrowserTab: Sendable, Equatable, Codable {
     public var lastRead: BrowserReadStamp?
     /// Refs `e1…e<refsIssued>` have been given out in this tab; a ref is never reused.
     public var refsIssued: Int
+    /// This tab's video floats in the system's picture-in-picture window. Reported by the host
+    /// (`BrowserPageReport`), never saved: it is not in `CodingKeys` or `BrowserSavedTab`.
+    public var pictureInPicture: Bool = false
 
     public init(
         id: String, url: String, title: String, isLoading: Bool = false, progress: Double = 0,
@@ -186,12 +189,15 @@ public struct BrowserPageReport: Sendable, Equatable {
     /// nil leaves the tab's zoom as it is. Only a host change names one, so a report read before a
     /// `browser_zoom` applied never undoes it.
     public var zoom: Double?
+    /// This tab's video floats in picture-in-picture. Always carried, so a re-sent report keeps it.
+    public var pictureInPicture: Bool
 
     public init(
         url: String, title: String, isLoading: Bool, progress: Double, canGoBack: Bool,
-        canGoForward: Bool, failure: String?, zoom: Double? = nil
+        canGoForward: Bool, failure: String?, zoom: Double? = nil, pictureInPicture: Bool = false
     ) {
         self.zoom = zoom
+        self.pictureInPicture = pictureInPicture
         self.url = url
         self.title = title
         self.isLoading = isLoading

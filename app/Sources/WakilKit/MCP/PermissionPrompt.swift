@@ -345,8 +345,8 @@ private func operatorOnlyDenialMessage(toolName: String, action: String) -> Stri
         return "\(toolName): only the operator takes a site off the agent's list for a conversation. "
             + "Ask them to press \u{00D7} on its agent allowed mark."
     case "ctx_set_browser_settings":
-        return "\(toolName): only the operator changes the browser's search engine and start "
-            + "page. You may READ them: ctx_browser_settings answers the settings in force. "
+        return "\(toolName): only the operator changes the browser's search engine, start "
+            + "page, search suggestions and picture in picture. You may READ them: ctx_browser_settings answers the settings in force. "
             + "Ask the operator to change them in the settings pane (\u{2318},)."
     case "ctx_set_editor_settings", "ctx_set_project_editor_settings":
         return "\(toolName): only the operator changes editor settings. Autosave "

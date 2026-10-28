@@ -65,7 +65,7 @@ private func report(_ url: String, title: String = "Page", loading: Bool = false
 
 private let readPaneKeys: Set<String> = [
     "kind", "failure", "tabs", "active", "url", "title", "loading", "canGoBack", "canGoForward",
-    "zoom", "find", "downloads", "bookmarked",
+    "zoom", "find", "downloads", "bookmarked", "pictureInPicture",
 ]
 
 @Test func readPaneHasEveryKeyAndNoPageText() async {
@@ -203,4 +203,44 @@ private let readPaneKeys: Set<String> = [
     let s = await store.browserSnapshot(paneId: pane)
     #expect(s.tabs.first { $0.id == popup }?.fromSavedLayout == false)
     #expect(BrowserTab(id: "t9", url: "", title: "").fromSavedLayout == false)
+}
+
+private func reportPiP(_ on: Bool) -> BrowserPageReport {
+    BrowserPageReport(url: "https://example.com/", title: "Page", isLoading: false, progress: 1,
+                      canGoBack: false, canGoForward: false, failure: nil, pictureInPicture: on)
+}
+
+private func pipOf(_ store: PaneStore) async -> JSONValue? {
+    guard case .object(let o) = await store.readPane(paneId: pane, kind: "browser") else { return nil }
+    return o["pictureInPicture"]
+}
+
+@Test func aReportCarriesPictureInPictureIntoReadPane() async {
+    let store = await browserStore()
+    await store.browserPageDidReport(paneId: pane, tab: "t1", reportPiP(true))
+    #expect(await pipOf(store) == .string("t1"))
+    await store.browserPageDidReport(paneId: pane, tab: "t1", reportPiP(false))
+    #expect(await pipOf(store) == .some(.null))
+}
+
+@Test func readPaneAlwaysCarriesPictureInPicture() async {
+    let store = PaneStore(kinds: PaneKinds.standard)
+    guard case .object(let o) = await store.readPane(paneId: "empty", kind: "browser") else {
+        Issue.record("not an object"); return
+    }
+    #expect(o["pictureInPicture"] == .null)
+    #expect(o.keys.contains("pictureInPicture"))
+}
+
+@Test func pictureInPictureIsNeverSaved() async throws {
+    var t = tab("t1")
+    t.pictureInPicture = true
+    let json = try String(decoding: JSONEncoder().encode(t), as: UTF8.self)
+    #expect(!json.contains("pictureInPicture"))
+    let store = await browserStore()
+    await store.browserPageDidReport(paneId: pane, tab: "t1", reportPiP(true))
+    let s = await store.browserSnapshot(paneId: pane)
+    #expect(s.tabs[0].pictureInPicture)
+    #expect(browserSavedTabs(s).count == 2)
+    #expect(!String(decoding: try JSONEncoder().encode(browserSavedTabs(s)), as: UTF8.self).contains("pictureInPicture"))
 }
