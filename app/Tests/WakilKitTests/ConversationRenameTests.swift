@@ -257,6 +257,34 @@ private struct Fixture {
         #expect(f.model.status.hasSuffix(" — the name holds until Wakil quits"))
     }
 
+    /// Review I1: a provider switch starts the conversation under a new lineage root; its names are
+    /// written there too, so Continue shows the post-switch session by its name. The old root keeps them.
+    @Test func theNamesFollowAProviderSwitch() async throws {
+        let f = try await Fixture()
+        let agent = try await f.turn()
+        try await f.rename(["conversation": .string(agent.id), "name": .string("Mine")])
+        #expect(await waitUntil { agent.operatorName == "Mine" })
+        let before = try #require(agent.lineageRoot)
+
+        await f.model.setProvider("other-provider")
+
+        let after = try #require(agent.lineageRoot)
+        #expect(after != before)
+        #expect(!agent.namesUnsaved)
+        let stored = try f.file.read()
+        #expect(stored[after] == StoredConversationName(operator: "Mine", ai: "Model"))
+        #expect(stored[before] == StoredConversationName(operator: "Mine", ai: "Model"))
+    }
+
+    /// An unnamed conversation's switch writes nothing.
+    @Test func anUnnamedConversationsSwitchWritesNoNames() async throws {
+        let f = try await Fixture(thoughts: 1)
+        let agent = try #require(f.model.currentAgent)
+        await f.model.setProvider("other-provider")
+        #expect(agent.lineageRoot != nil)
+        #expect(try f.file.read().isEmpty)
+    }
+
     @Test func renamingNeverSwitchesTheScreen() async throws {
         let f = try await Fixture()
         let first = try await f.turn()

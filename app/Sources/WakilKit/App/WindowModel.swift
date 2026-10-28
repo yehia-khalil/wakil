@@ -9011,6 +9011,12 @@ public final class WindowModel {
         // (re-walk #4) — re-reading the seed would rebuild every api pane from an empty draft.
         let previousRoot = agent.lineageRoot
         agent.lineageRoot = fresh
+        // Its names go under the new root too (names, review I1): Continue lists the post-switch
+        // session by that root, and the old root keeps what it had.
+        if agent.operatorName != nil || agent.aiName != nil {
+            agent.namesUnsaved = true
+            saveUnsavedNames(of: agent)
+        }
         // The window's provider, and the remembered default below, are the screen's place's:
         // written only while that is still the place switched (Invariant 4). The lookup and the
         // start suspended, and an org switch landing there moved the screen — and the window's
