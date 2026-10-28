@@ -7006,7 +7006,8 @@ public final class WindowModel {
     public func openRenameTabPalette(pane: String, tab id: String) {
         guard let tab = browser(pane)?.tabs.first(where: { $0.id == id }), tab.pullRequest == nil else { return }
         paletteKeySerial += 1
-        paletteKeyPress = PaletteKeyPress(mode: .open, serial: paletteKeySerial, 
+        paletteKeyPress = PaletteKeyPress(
+            mode: .open, serial: paletteKeySerial,
             rename: tabRename(pane: pane, tab: tab.id, current: tab.label, fallback: tab.pageLabel))
     }
 

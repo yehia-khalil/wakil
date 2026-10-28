@@ -64,6 +64,9 @@ struct BrowserPane: View {
     /// Names, Calls made 12: a pinned tile's or a folded entry's *Rename Tab…* — ⌘P on the name step
     /// for this pane's tab (`WindowModel.openRenameTabPalette`).
     let openRenameTabPalette: (String) -> Void
+    /// The place the window shows now (`WindowModel.browserScope`), read when asked: a tab name field
+    /// commits only while it is still `scope`.
+    let placeNow: @MainActor () -> LayoutScope?
     /// 3d-i: Settings → Browser → Tabs is *Vertical*: the tabs are the column at the pane's left
     /// (`BrowserTabColumn`), the glyph leads the address row and the count is the column's footer.
     var verticalTabs = false
@@ -202,7 +205,16 @@ struct BrowserPane: View {
             // stays where the operator had it (Rule 6).
             if !host.appearsRenamed(scope: scope, pane: pane.id), isFocusedPane { takeKeyboard() }
         }
-        .onChange(of: snapshot) { old, now in sync(old: old, now: now) }
+        .onChange(of: snapshot) { old, now in
+            sync(old: old, now: now)
+            // A tab closed before its name field went: nothing is being renamed.
+            if let tab = renamingTab, !now.tabs.contains(where: { $0.id == tab }) { renamingTab = nil }
+        }
+        // The strip folded or hid: no entry draws a field, so none is being renamed (the column's
+        // rows always can).
+        .onChange(of: verticalTabs || listMode == .full) { _, fieldDrawn in
+            if !fieldDrawn { renamingTab = nil }
+        }
         // A data clear is done: commands held while the store went apply now.
         .onChange(of: host.rebuilds) { _, _ in sync(old: nil, now: snapshot) }
         .onChange(of: isFocusedPane) { _, now in
@@ -321,7 +333,8 @@ struct BrowserPane: View {
                 }
             },
             renameTab: { renamingTab = $0 },
-            renameTabInPalette: openRenameTabPalette)
+            renameTabInPalette: openRenameTabPalette,
+            samePlace: { [scope, placeNow] in placeNow() == scope })
     }
 
     /// Under the strip, each whole and wrapping (Rule 8): why the project's pins can't be read, and

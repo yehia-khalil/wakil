@@ -340,6 +340,10 @@ struct BrowserTabNameField: View {
     let commit: (String) -> Void
     /// The field has gone; `explicit` when Return or Esc ended it.
     let end: (_ explicit: Bool) -> Void
+    /// The window still shows the place (and organisation) this field was opened in. A tab id is the
+    /// pane's and a pane id repeats from place to place, so after a switch the dispatch would land
+    /// on another place's tab: then nothing is committed.
+    let samePlace: () -> Bool
 
     @State private var text = ""
     /// The label as the field opened: what an unchanged line is compared with.
@@ -382,7 +386,7 @@ struct BrowserTabNameField: View {
     private func finish(keep: Bool, explicit: Bool) {
         guard !done else { return }
         done = true
-        if keep, let name = RenameDraft.decide(typed: text, shown: shown).name { commit(name) }
+        if keep, samePlace(), let name = RenameDraft.decide(typed: text, shown: shown).name { commit(name) }
         end(explicit)
     }
 
@@ -433,6 +437,8 @@ struct BrowserGroupMenuContext {
     /// *Rename Tab…* where it does not (a pinned tile, a folded entry): ⌘P on the name step (names,
     /// Calls made 12).
     let renameTabInPalette: (String) -> Void
+    /// The window still shows the place this pane was drawn in (`BrowserTabNameField.samePlace`).
+    let samePlace: () -> Bool
 
     var pinTitle: String { "Pin to \(project.isEmpty ? "Project" : project)" }
 }

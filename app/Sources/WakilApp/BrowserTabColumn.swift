@@ -319,7 +319,8 @@ struct BrowserTabColumn: View {
                 end: { explicit in
                     if renamingTab == tab.id { renamingTab = nil }
                     renameEnded(explicit)
-                })
+                },
+                samePlace: menus.samePlace)
         } else {
             Text(tab.label)
                 .font(.system(size: BrowserPaneStyle.tabTitleSize))
