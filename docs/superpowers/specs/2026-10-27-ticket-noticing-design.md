@@ -519,6 +519,19 @@ back on GitHub; production red on a handed chip; narrow widths.
    far under GitHub's rate limit. *(Operator: "it needs to auto update"; the 2-minute interval is my
    call.)*
 
+### Plan pre-flight (2026-10-28, my calls)
+
+- **Only the operator sets May push, the harness and the provider.** An agent may edit a hand-off's
+  brief text; it can never switch May push on or change who runs it. Start uses exactly what the
+  popover showed.
+- **May push survives a resume.** It is stored with the hand-off and carried when the conversation is
+  resumed or forked; if the hand-off can't be read, May push is off.
+- **An agent's draft stays in its organisation.** It reaches the window's store only when the window
+  shows the same organisation.
+- **A hand-off from a PR with no ticket key** is kept by its PR; it writes no ticket record.
+- **The charter (north-star.md) is not edited by this piece**; its word limit is already exceeded on
+  main. The decision is recorded in decisions.md.
+
 ## Open questions
 
 1. Open question 15 (PM transition reversibility) is untouched; it applies to piece 5's Move.
