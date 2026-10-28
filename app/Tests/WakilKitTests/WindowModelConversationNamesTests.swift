@@ -240,19 +240,38 @@ private struct Fixture {
         #expect(agent.aiName == "Fixture")
     }
 
-    @Test func aReplyAfterARebuildIsDroppedAndAskedAgain() async throws {
-        let quick = NamingModel(gated: 1)
+    /// A reply a rebuild dropped is asked again of the new quick tasks at once: that rebuild's own
+    /// `nameDueConversations` ran while the old ask was still in flight, so nothing else would ask it.
+    @Test func aReplyDroppedByARebuildIsAskedAgainAtOnce() async throws {
+        let quick = NamingModel(gated: 2)
         let f = try await Fixture(quick: quick)
         let agent = try await f.turn(settle: false)
         #expect(await waitUntil { await quick.waiting == 1 })
         await f.model.rebuildQuickTasks()
         await quick.release()
-        await f.model.settleConversationNaming()
+        // The first reply is dropped, and the second ask is made and held, with no rebuild between.
+        #expect(await waitUntil { await quick.waiting == 1 })
+        #expect(await quick.requests.count == 2)
         #expect(agent.aiName == nil)
-        #expect(!agent.namingAsked)
+        #expect(agent.namingAsked)
         #expect(try await f.namingEntries().isEmpty)
 
-        await f.model.rebuildQuickTasks()
+        await quick.release()
+        await f.model.settleConversationNaming()
+        #expect(agent.aiName == "Fixture")
+        #expect(try await f.namingEntries().count == 1)
+    }
+
+    /// Dropped while a rebuild is under way: whichever lands first — the drop (no quick tasks yet, so
+    /// that rebuild's `nameDueConversations` asks) or the rebuild (the drop asks) — it is asked once more.
+    @Test func aReplyDroppedDuringARebuildIsAskedExactlyOnceMore() async throws {
+        let quick = NamingModel(gated: 1)
+        let f = try await Fixture(quick: quick)
+        let agent = try await f.turn(settle: false)
+        #expect(await waitUntil { await quick.waiting == 1 })
+        let rebuild = Task { await f.model.rebuildQuickTasks() }
+        await quick.release()
+        await rebuild.value
         await f.model.settleConversationNaming()
         #expect(await quick.requests.count == 2)
         #expect(agent.aiName == "Fixture")

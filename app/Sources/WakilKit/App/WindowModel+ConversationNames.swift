@@ -39,7 +39,11 @@ extension WindowModel {
             self.conversationNamingTasks[id] = nil
             guard generation == self.quickTasksGeneration, org == self.organization,
                   agent.place.organization == self.organization else {
-                agent.namingAsked = false   // dropped: asked again when its quick tasks are next built
+                // Dropped. Asked again when its quick tasks are next built — or now, when they already
+                // are: that rebuild's `nameDueConversations` ran while this was in flight. In another
+                // organisation `nameIfDue` asks nothing; mid-rebuild it finds no quick tasks.
+                agent.namingAsked = false
+                self.nameIfDue(agent)
                 return
             }
             let line = self.land(outcome, for: agent)
