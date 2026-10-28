@@ -63,3 +63,11 @@ swiftc -o .scratch/3d-iv/writer .scratch/3d-iv/writer.swift 2>/dev/null
 | (f) | The tab state holds no password | In the app, open `e2e/fixtures/pages/form.html`, type `probe-pass-1` into the password field, switch tabs, then `grep -c probe-pass-1 ~/.wakil/orgs/personal/browser/tabs/*.state` | Every file reports 0. Then switch the field to `type=text` in the inspector, type it again, leave the tab, and repeat the grep; record the count, which is the edge. **If the first grep finds the value, add a task before Task 8 that writes no tab state for a page with a filled password.** |
 
 Afterwards: `security delete-keychain "$PWD/.scratch/3d-iv/b.keychain"; rm -r .scratch/3d-iv`.
+
+## Measured afterwards (2026-10-28, with the operator)
+
+| | Result |
+|---|---|
+| (b) | **Holds.** `security find-generic-password … -w` on the writer's item raised the access dialog; the operator denied it; exit 128, nothing printed. Ruling 1 stands. |
+| (f) | **0 in both cases.** Measured headless rather than in the app: a `WKWebView` in an off-screen window, the field typed with real key events (`keyDown`), then `interactionState` searched for the value (UTF-8, UTF-16 LE and BE) on the page and after a navigation away. `type=password`: 0 and 0. `type=text`: 0 and 0. So the value is not stored in plain text in the state either way; WebKit may still keep form state in an encoded form, which a grep of the app's `.state` files would miss just as well. |
+| (e) | Not run here: it is walk row 10. |
