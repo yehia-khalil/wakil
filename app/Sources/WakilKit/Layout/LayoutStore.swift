@@ -528,23 +528,36 @@ public actor LayoutStore {
         byScope[scope]?.panes.first(where: { $0.id == id })?.editorTabs
     }
 
-    /// The browser pane `id`'s saved tabs and selected tab (3c-i). A no-op when unchanged.
-    public func setBrowserTabs(id: String, to tabs: [BrowserSavedTab], active: String?) {
+    /// The browser pane `id`'s saved tabs, selected tab (3c-i), groups and whether its tab column is
+    /// hidden (3d-i). No groups and a shown column are kept as `nil`, so a pane that uses neither
+    /// writes what a 3c layout wrote. A no-op when unchanged.
+    public func setBrowserTabs(
+        id: String, to tabs: [BrowserSavedTab], active: String?, groups: [BrowserGroup], columnHidden: Bool
+    ) {
+        let keptGroups = groups.isEmpty ? nil : groups
+        let keptHidden: Bool? = columnHidden ? true : nil
         guard var current = byScope[scope],
-            let index = current.panes.firstIndex(where: { $0.id == id }),
-            current.panes[index].browserTabs != tabs || current.panes[index].browserActiveTab != active
+            let index = current.panes.firstIndex(where: { $0.id == id })
+        else { return }
+        let pane = current.panes[index]
+        guard pane.browserTabs != tabs || pane.browserActiveTab != active || pane.browserGroups != keptGroups
+            || pane.browserColumnHidden != keptHidden
         else { return }
         current.panes[index].browserTabs = tabs
         current.panes[index].browserActiveTab = active
+        current.panes[index].browserGroups = keptGroups
+        current.panes[index].browserColumnHidden = keptHidden
         byScope[scope] = current
     }
 
     /// `nil` when the pane is missing or has no saved tabs.
-    public func browserTabs(id: String) -> (tabs: [BrowserSavedTab], active: String?)? {
+    public func browserTabs(id: String)
+        -> (tabs: [BrowserSavedTab], active: String?, groups: [BrowserGroup], columnHidden: Bool)?
+    {
         guard let pane = byScope[scope]?.panes.first(where: { $0.id == id }),
             let tabs = pane.browserTabs
         else { return nil }
-        return (tabs, pane.browserActiveTab)
+        return (tabs, pane.browserActiveTab, pane.browserGroups ?? [], pane.browserColumnHidden ?? false)
     }
 
     /// The editor pane `id`'s column (3b-ii), and the window's default for a new pane: what the

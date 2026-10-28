@@ -36,6 +36,8 @@ struct Landing: View {
     @State private var projects: [WindowModel.ProjectListing] = []
     @State private var loaded = false
     @State private var hovered: String?
+    /// The Running row whose title is a field (names): a conversation id, or nil.
+    @State private var renaming: String?
 
     /// With no project there is no environment, so a database pane cannot
     /// resolve a database to open against — and the one thing to do is pick
@@ -207,7 +209,8 @@ struct Landing: View {
                         subtitle: "\(conversation.state.rawValue) \u{00b7} \(WindowModel.age(since: conversation.lastActivity, now: context.date))",
                         state: conversation.state,
                         // Invariant 8: a production place keeps its red segment, as its chip draws it.
-                        productionSegment: conversation.isProduction ? conversation.place.environment : nil
+                        productionSegment: conversation.isProduction ? conversation.place.environment : nil,
+                        rename: conversation.id
                     ) {
                         Task { await model.switchToRunning(conversation.id) }
                     }
@@ -315,10 +318,12 @@ struct Landing: View {
     private func row(
         id: String, hoverKey: String? = nil, title: String, subtitle: String,
         state: ConversationState? = nil, productionSegment: String? = nil,
+        rename conversationId: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         let hoverKey = hoverKey ?? id
         let isHovered = hovered == hoverKey
+        let editing = conversationId != nil && renaming == conversationId
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             if let state {
                 // The dot's centre on the title's x-height, as the chip's sits on its text.
@@ -326,11 +331,17 @@ struct Landing: View {
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
             }
             VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.system(size: 15))
-                    .foregroundStyle(coolWhite.opacity(0.92))
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                if editing, let conversationId {
+                    ConversationNameField(
+                        conversation: conversationId, shown: title, identifier: "landing.row.\(id).name",
+                        size: 15, colour: coolWhite.opacity(0.92), model: model, done: { renaming = nil })
+                } else {
+                    Text(title)
+                        .font(.system(size: 15))
+                        .foregroundStyle(coolWhite.opacity(0.92))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if !subtitle.isEmpty {
                     // §6: identifiers are monospace, always.
                     Text(subtitleText(subtitle, productionSegment: productionSegment))
@@ -349,7 +360,14 @@ struct Landing: View {
             // ease-out` on a palette row.
             withAnimation(.easeOut(duration: 0.24)) { hovered = hovering ? hoverKey : nil }
         }
-        .onTapGesture(perform: action)
+        .onTapGesture { if !editing { action() } }
+        .contextMenu {
+            // Names: the title becomes a field where it stands; the commit dispatches
+            // `conversation_rename` (Invariant 2), as ⌘P's name step does.
+            if let conversationId {
+                Button("Rename…") { renaming = conversationId }
+            }
+        }
         // **A tappable `VStack` is not a button to anybody but a mouse.**
         // Before this, every landing row — including the one that opens the
         // terminal pane — reached the accessibility tree as two loose
@@ -357,12 +375,13 @@ struct Landing: View {
         // VoiceOver, and unaddressable by a check. `.combine` keeps the
         // title and subtitle as the row's spoken text, which is what an
         // operator recognises it by.
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
+        // While the title is a field, its own element must stay reachable.
+        .accessibilityElement(children: editing ? .contain : .combine)
+        .accessibilityAddTraits(editing ? [] : .isButton)
         // Without this the trait is a claim the row cannot honour: a tap
         // gesture is not an accessibility action, so VoiceOver would
         // announce a button that does nothing when activated.
-        .accessibilityAction(.default, action)
+        .accessibilityAction(.default) { if !editing { action() } }
         // `id` is already unique across the landing's three sections —
         // "project:wakil", "open:terminal", a session id — and is what the
         // hover state keys on, so it is the row's name here too.

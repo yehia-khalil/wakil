@@ -466,7 +466,10 @@ struct SettingsRow<Value: View>: View {
         Text(label)
             .font(.system(size: SettingsScale.body, weight: .medium))
             .foregroundStyle(SettingsPalette.coolWhite.opacity(0.86))
-            .lineLimit(1)
+            // A label longer than the column takes a second line rather than an ellipsis
+            // ("Name groups with AI" was cut, 3d-i walk).
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var oneLine: some View {

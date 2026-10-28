@@ -18,6 +18,8 @@ import (
 const (
 	DefaultBrowserSearchEngine = "google"
 	DefaultBrowserStartPage    = ""
+	// DefaultBrowserTabs is where the tab strip sits: along the top, or "vertical" down the side.
+	DefaultBrowserTabs = "horizontal"
 )
 
 // BrowserSearchEngines maps each engine to the URL its query is appended to.
@@ -34,6 +36,12 @@ type BrowserAppSettings struct {
 	StartPage    string `json:"startPage,omitempty"`
 	// SearchSuggestions asks the search engine for suggestions as the operator types; off by default.
 	SearchSuggestions bool `json:"searchSuggestions,omitempty"`
+	// Tabs is "horizontal" or "vertical"; empty is horizontal.
+	Tabs string `json:"tabs,omitempty"`
+	// NameGroups asks the model to name automatic tab groups; nil is on, so a stored false is kept.
+	NameGroups *bool `json:"nameGroups,omitempty"`
+	// PictureInPicture floats a playing video when the operator leaves its tab; nil is the default, on.
+	PictureInPicture *bool `json:"pictureInPicture,omitempty"`
 }
 
 // BrowserSettings is the tier with every default filled in — what browser_settings answers.
@@ -42,8 +50,14 @@ type BrowserSettings struct {
 	SearchEngine string `json:"searchEngine"`
 	StartPage    string `json:"startPage"`
 	// SearchSuggestions is false unless the operator turned it on.
-	SearchSuggestions bool   `json:"searchSuggestions"`
-	AppError          string `json:"appError,omitempty"`
+	SearchSuggestions bool `json:"searchSuggestions"`
+	// Tabs is "horizontal" or "vertical".
+	Tabs string `json:"tabs"`
+	// NameGroups is true unless the operator turned it off.
+	NameGroups bool `json:"nameGroups"`
+	// PictureInPicture is true unless the operator turned it off.
+	PictureInPicture bool   `json:"pictureInPicture"`
+	AppError         string `json:"appError,omitempty"`
 }
 
 func browserEngineNames() []string {
@@ -71,7 +85,8 @@ func startPageProblem(s string) string {
 // Resolved fills the defaults. A stored value that breaks a rule — only a hand edit can put one
 // there — reads as the default rather than reaching the browser.
 func (s BrowserAppSettings) Resolved() BrowserSettings {
-	v := BrowserSettings{SearchEngine: DefaultBrowserSearchEngine, StartPage: DefaultBrowserStartPage}
+	v := BrowserSettings{SearchEngine: DefaultBrowserSearchEngine, StartPage: DefaultBrowserStartPage,
+		Tabs: DefaultBrowserTabs, NameGroups: true, PictureInPicture: true}
 	if _, ok := BrowserSearchEngines[s.SearchEngine]; ok {
 		v.SearchEngine = s.SearchEngine
 	}
@@ -79,6 +94,15 @@ func (s BrowserAppSettings) Resolved() BrowserSettings {
 		v.StartPage = s.StartPage
 	}
 	v.SearchSuggestions = s.SearchSuggestions
+	if s.Tabs == "horizontal" || s.Tabs == "vertical" {
+		v.Tabs = s.Tabs
+	}
+	if s.NameGroups != nil {
+		v.NameGroups = *s.NameGroups
+	}
+	if s.PictureInPicture != nil {
+		v.PictureInPicture = *s.PictureInPicture
+	}
 	return v
 }
 
@@ -100,12 +124,19 @@ type BrowserSettingsPatch struct {
 	StartPage    *string
 	// SearchSuggestions turns engine suggestions on or off.
 	SearchSuggestions *bool
+	// Tabs is "horizontal" or "vertical".
+	Tabs *string
+	// NameGroups turns model naming of automatic tab groups on or off.
+	NameGroups *bool
+	// PictureInPicture turns floating a playing video on or off.
+	PictureInPicture *bool
 }
 
 // WriteBrowserSettings applies p to settings.json, read from disk now, keeping every other key.
 // A file that does not parse is refused rather than overwritten.
 func WriteBrowserSettings(p BrowserSettingsPatch) error {
-	if p.SearchEngine == nil && p.StartPage == nil && p.SearchSuggestions == nil {
+	if p.SearchEngine == nil && p.StartPage == nil && p.SearchSuggestions == nil &&
+		p.Tabs == nil && p.NameGroups == nil && p.PictureInPicture == nil {
 		return nil
 	}
 	current, err := LoadAppSettings()
@@ -128,6 +159,20 @@ func WriteBrowserSettings(p BrowserSettingsPatch) error {
 	}
 	if p.SearchSuggestions != nil {
 		current.Browser.SearchSuggestions = *p.SearchSuggestions
+	}
+	if p.Tabs != nil {
+		if *p.Tabs != "horizontal" && *p.Tabs != "vertical" {
+			return UserError("tabs is horizontal or vertical, not " + strconv.Quote(*p.Tabs))
+		}
+		current.Browser.Tabs = *p.Tabs
+	}
+	if p.NameGroups != nil {
+		v := *p.NameGroups
+		current.Browser.NameGroups = &v
+	}
+	if p.PictureInPicture != nil {
+		pip := *p.PictureInPicture
+		current.Browser.PictureInPicture = &pip
 	}
 	path, err := appSettingsPath()
 	if err != nil {

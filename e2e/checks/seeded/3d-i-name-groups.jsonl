@@ -1,0 +1,23 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"ctx_set_local_provider","params":{"id":"qwen","label":"Qwen 1.5B","baseURL":"{chatStub}"}}}
+{"do":{"hotkey":"cmd+,"}}
+{"do":{"click":"settings.tree.providers"}}
+{"expect":{"tree":"contains","text":"QUICK TASKS"}}
+{"do":{"click":"settings.org.quickProvider"}}
+{"do":{"click":"settings.org.quickProvider.qwen"}}
+{"expect":{"pane":"settings-1","field":"configuration.structuredContent.org.quickProvider","equals":"qwen"}}
+{"dispatch":{"action":"pane_close","params":{"id":"settings-1"}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-2","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-2","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-2","url":"{pageStub}/b.html"}}}
+{"expect":{"pane":"browser-2","field":"groups[0].name","equals":"Fixture Pages"}}
+{"expect":{"pane":"browser-2","field":"groups[0].kind","equals":"automatic"}}
+{"dispatch":{"action":"ctx_set_browser_settings","params":{"nameGroups":false}}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-2","url":"{pageStubLive}/a.html"}}}
+{"expect":{"pane":"browser-2","field":"tabs[2].title","equals":"Page A"}}
+{"dispatch":{"action":"browser_new_tab","params":{"pane":"browser-2","url":"{pageStubLive}/b.html"}}}
+{"expect":{"pane":"browser-2","field":"groups[1].tabs[1]","equals":"t4"}}
+{"expect":{"pane":"browser-2","field":"groups[1].name","contains":"localhost:"}}
+{"expect":{"pane":"browser-2","field":"groups[0].name","equals":"Fixture Pages"}}
+{"expect":{"pane":"browser-2","field":"groups[1].name","contains":"localhost:"}}

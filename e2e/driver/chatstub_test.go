@@ -87,3 +87,87 @@ func TestChatStubDraftsACommitMessage(t *testing.T) {
 		t.Errorf("a commit draft answered %s", got)
 	}
 }
+
+func askNaming(t *testing.T, origin, message string) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]interface{}{"messages": []map[string]string{
+		{"role": "system", "content": "Name this conversation from its opening message and the start of the reply."},
+		{"role": "user", "content": "MESSAGE: " + message + "\n\nREPLY: first reply in the thread"},
+	}})
+	resp, err := http.Post(origin+"/v1/chat/completions", "application/json", strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Choices []struct {
+			Message struct{ Content string } `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || len(out.Choices) != 1 {
+		t.Fatalf("decoding: %v %#v", err, out)
+	}
+	return out.Choices[0].Message.Content
+}
+
+// TestChatStubNamesAConversation — names: a request whose instructions ask to
+// name a conversation gets ConversationNameReply, whatever the message says.
+func TestChatStubNamesAConversation(t *testing.T) {
+	origin, stop, err := StartChatStub()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	start := time.Now()
+	if got := askNaming(t, origin, "thread turn one"); got != ConversationNameReply {
+		t.Errorf("a naming request answered %s", got)
+	}
+	if took := time.Since(start); took >= SlowReply {
+		t.Errorf("a plain naming request waited %v", took)
+	}
+}
+
+// TestChatStubNamesASlowMessageLate — a first message starting `slow name`
+// gets its name only after SlowReply, so a check can rename before it lands.
+func TestChatStubNamesASlowMessageLate(t *testing.T) {
+	origin, stop, err := StartChatStub()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	start := time.Now()
+	if got := askNaming(t, origin, "slow name thread turn one"); got != ConversationNameReply {
+		t.Errorf("a slow naming request answered %s", got)
+	}
+	if took := time.Since(start); took < SlowReply {
+		t.Errorf("answered in %v, before %v", took, SlowReply)
+	}
+}
+
+// TestChatStubNamesATabGroup — 3d-i: a request to name a browser tab group (its
+// instructions open with BrowserGroupNames' phrase) gets GroupNameReply, whatever
+// the titles in its input say.
+func TestChatStubNamesATabGroup(t *testing.T) {
+	origin, stop, err := StartChatStub()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	body := `{"messages":[{"role":"system","content":"Name this group of browser tabs from their titles. Answer with at most three words and no punctuation, as JSON: {\"name\": \"...\"}."},{"role":"user","content":"Page A\nPage B"}]}`
+	resp, err := http.Post(origin+"/v1/chat/completions", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Choices []struct {
+			Message struct{ Content string } `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || len(out.Choices) != 1 {
+		t.Fatalf("decoding: %v %#v", err, out)
+	}
+	if got := out.Choices[0].Message.Content; got != GroupNameReply {
+		t.Errorf("a group name answered %s", got)
+	}
+}

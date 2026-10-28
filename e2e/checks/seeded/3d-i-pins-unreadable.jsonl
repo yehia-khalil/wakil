@@ -1,0 +1,23 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"ctx_set_browser_settings","params":{"nameGroups":false}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/a.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Page A"}}
+{"dispatch":{"action":"browser_pin","params":{"pane":"browser-1","tab":"t1"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}
+{"dispatch":{"action":"term_open","params":{}}}
+{"expect":{"pane":"terminal-2","field":"kind","equals":"terminal"}}
+{"do":{"keys":"printf 'not json' > ~/.wakil/orgs/e2e-fixture/browser/pins/*.json && echo broken"}}
+{"do":{"press":"Return"}}
+{"expect":{"pane":"terminal-2","field":"blocks[-1].output[0]","equals":"broken"}}
+{"dispatch":{"action":"browser_pin","params":{"pane":"browser-1","tab":"t1","update":true},"refuses":"can't be read ("}}
+{"dispatch":{"action":"browser_unpin","params":{"pane":"browser-1","tab":"t1"},"refuses":"Wakil won't write over it."}}
+{"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"expect":{"pane":"browser-3","field":"pinsError","present":true}}
+{"expect":{"pane":"browser-3","field":"tabs[0].pinned","equals":"false"}}
+{"expect":{"frame":"browser.pinsError","inside":"browser.pane"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}
+{"dispatch":{"action":"browser_restore","params":{"pane":"browser-1"}}}
+{"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].url","contains":"/a.html"}}

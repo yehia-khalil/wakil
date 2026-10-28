@@ -10,9 +10,13 @@ struct BrowserSettingsForm: View {
     let organisation: String
     /// The organisation's id: what Delete passes, so the action refuses if another is active by then.
     let organisationId: String
+    /// 3d-i: why this organisation has no pull-request group, in one line under Tabs; nil, it has one.
+    var pullRequestsAbsent: String?
     let save: ([String: JSONValue]) async -> String?
     /// Deletes the named organisation's browsing data; answers the refusal's sentence, or nil.
     let clearData: (_ org: String) async -> String?
+    /// Why picture in picture is off on this Mac (its WebKit lacks the private API), or nil when it is there.
+    let pictureInPictureUnavailable: String?
 
     static let engines: [(label: String, key: String)] = [
         ("Google", "google"), ("DuckDuckGo", "duckduckgo"), ("Bing", "bing"), ("Kagi", "kagi"),
@@ -51,7 +55,7 @@ struct BrowserSettingsForm: View {
                 ChoiceSettingRow(
                     label: "Search suggestions", options: ["Off", "On"],
                     selected: browser.searchSuggestions ? "On" : "Off",
-                    identifier: { option in "settings.browser.searchSuggestions.\(option.lowercased())" },
+                    identifier: { option in let choice = option.lowercased(); return "settings.browser.searchSuggestions.\(choice)" },
                     refusalIdentifier: "settings.browser.searchSuggestions.refusal",
                     hint: "Sends what you type in the address bar to the search engine as you type. Off, nothing "
                         + "leaves the Mac until you press Return. Kagi gives none.",
@@ -59,14 +63,75 @@ struct BrowserSettingsForm: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("settings.browser.searchSuggestions")
             }
+            SettingsSection("Tabs") {
+                tabsSection
+            }
+            SettingsSection("Picture in picture") {
+                ChoiceSettingRow(
+                    label: "Picture in picture", options: ["On", "Off"],
+                    selected: browser.pictureInPicture ? "On" : "Off",
+                    identifier: { option in let choice = option.lowercased(); return "settings.browser.pictureInPicture.\(choice)" },
+                    refusalIdentifier: "settings.browser.pictureInPicture.refusal",
+                    hint: "A playing video floats in its own window when you leave its tab, its pane, the place or "
+                        + "the organisation, or minimise the window. Off, Wakil floats nothing; a page's own "
+                        + "picture-in-picture button still works.",
+                    save: { option in await save(["pictureInPicture": .bool(option == "On")]) })
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("settings.browser.pictureInPicture")
+                if let pictureInPictureUnavailable {
+                    Text(pictureInPictureUnavailable)
+                        .font(.system(size: SettingsScale.body))
+                        .foregroundStyle(caution)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .underRowValue()
+                        .padding(.vertical, 4)
+                        .accessibilityIdentifier("settings.browser.pictureInPicture.unavailable")
+                }
+            }
             SettingsSection("Browsing data") {
                 clearSection
             }
+            SettingsSection("Passwords") { BrowserPasswordsSettings(org: organisationId, name: organisation) }
             Text("Search and start page are yours across every organisation — stored in ~/.wakil/settings.json. "
                  + "Browsing data is this organisation's.")
                 .font(.system(size: SettingsScale.meta))
                 .foregroundStyle(coolWhite.opacity(0.40))
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// 3d-i: horizontal or vertical tabs for every browser pane, and whether a new group is named by
+    /// the quick-tasks model. Both are app-wide; horizontal and naming on are the defaults (Rule 9).
+    /// Under them, why this organisation has no pull-request group, when it has none.
+    @ViewBuilder private var tabsSection: some View {
+        ChoiceSettingRow(
+            label: "Tabs", options: ["Horizontal", "Vertical"],
+            selected: browser.tabs == "vertical" ? "Vertical" : "Horizontal",
+            identifier: { option in let choice = option.lowercased(); return "settings.browser.tabs.\(choice)" },
+            refusalIdentifier: "settings.browser.tabs.refusal",
+            hint: "Vertical puts the tabs in a column at the pane's left; ⌃⌘S hides and shows it.",
+            save: { option in await save(["tabs": .string(option.lowercased())]) })
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("settings.browser.tabs")
+        ChoiceSettingRow(
+            label: "Name groups with AI", options: ["Off", "On"],
+            selected: browser.nameGroups ? "On" : "Off",
+            identifier: { option in let choice = option.lowercased(); return "settings.browser.nameGroups.\(choice)" },
+            refusalIdentifier: "settings.browser.nameGroups.refusal",
+            hint: "Sends the titles of a new group's first tabs — never addresses or page text — to this "
+                + "organisation's quick-tasks model for a name of up to three words. Off, a group is named "
+                + "after its site.",
+            save: { option in await save(["nameGroups": .bool(option == "On")]) })
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("settings.browser.nameGroups")
+        if let pullRequestsAbsent {
+            Text(pullRequestsAbsent)
+                .font(.system(size: SettingsScale.body))
+                .foregroundStyle(coolWhite.opacity(0.62))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .padding(.vertical, 6)
+                .accessibilityIdentifier("settings.browser.pullRequests.absent")
         }
     }
 

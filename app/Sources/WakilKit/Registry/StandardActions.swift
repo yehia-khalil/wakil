@@ -1389,6 +1389,7 @@ public func registerStandardActions(
                 "ghostText": .object(["type": .string("boolean")]),
                 "fastPath": .object(["type": .string("boolean")]),
                 "commitDrafts": .object(["type": .string("boolean")]),
+                "conversationNames": .object(["type": .string("boolean")]),
                 "pullStrategy": .object(["type": .string("string")]),
                 "agentGeneral": .object(["type": .string("string")]),
                 "gitCommitInstructions": .object(["type": .string("string")]),
@@ -1414,7 +1415,7 @@ public func registerStandardActions(
                         "agentGeneral", "gitCommitInstructions", "gitPRInstructions"] {
                 if let value = fields[key], case .string = value { arguments[key] = value }
             }
-            for key in ["ghostText", "fastPath", "commitDrafts"] {
+            for key in ["ghostText", "fastPath", "commitDrafts", "conversationNames"] {
                 if let value = fields[key], case .bool = value { arguments[key] = value }
             }
             return try await callChecked(
@@ -1553,11 +1554,34 @@ public func registerStandardActions(
         }
     ))
 
+    // 3d-i (Ruling 17). The active organisation's open pull requests, read only. It takes no
+    // organisation and no id, and the reply carries no credential.
+    await registry.register(Action(
+        name: "ctx_github_pull_requests",
+        description: "Read the active organisation's open GitHub pull requests: those it wrote "
+            + "(reason author) and those awaiting its review (reason review-requested), newest "
+            + "update first. absent says why there is no list (no GitHub account, an SSH account, "
+            + "no token kept). Read only; no credential is returned.",
+        kind: .read,
+        audience: .agentReachable,
+        schema: .object(["type": .string("object"), "properties": .object([:])]),
+        handler: { _ in
+            guard let context else {
+                throw StandardActionError.missingClient(action: "ctx_github_pull_requests", role: "context")
+            }
+            return try await callChecked(
+                context, tool: "github_pull_requests", arguments: .object([:]),
+                action: "ctx_github_pull_requests", timeout: MCPClient.readReplyTimeout)
+        }
+    ))
+
     await registry.register(Action(
         name: "ctx_set_browser_settings",
         description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing "
             + "or kagi), startPage (an http or https URL, or empty for a blank page), and "
-            + "searchSuggestions (true or false; off by default). "
+            + "searchSuggestions (true or false; off by default), tabs (horizontal or vertical), "
+            + "nameGroups (true or false; on by default), and pictureInPicture "
+            + "(true or false; on by default — a playing video floats when you leave its tab). "
             + "Read-modify-write: omit a field to leave it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
@@ -1570,6 +1594,12 @@ public func registerStandardActions(
                 ]),
                 "startPage": .object(["type": .string("string")]),
                 "searchSuggestions": .object(["type": .string("boolean")]),
+                "tabs": .object([
+                    "type": .string("string"),
+                    "enum": .array([.string("horizontal"), .string("vertical")]),
+                ]),
+                "nameGroups": .object(["type": .string("boolean")]),
+                "pictureInPicture": .object(["type": .string("boolean")]),
             ]),
         ]),
         handler: { params in
@@ -1583,6 +1613,9 @@ public func registerStandardActions(
             if case .string? = fields["searchEngine"] { arguments["searchEngine"] = fields["searchEngine"] }
             if case .string? = fields["startPage"] { arguments["startPage"] = fields["startPage"] }
             if case .bool? = fields["searchSuggestions"] { arguments["searchSuggestions"] = fields["searchSuggestions"] }
+            if case .string? = fields["tabs"] { arguments["tabs"] = fields["tabs"] }
+            if case .bool? = fields["nameGroups"] { arguments["nameGroups"] = fields["nameGroups"] }
+            if case .bool? = fields["pictureInPicture"] { arguments["pictureInPicture"] = fields["pictureInPicture"] }
             return try await callChecked(
                 context, tool: "set_browser_settings", arguments: .object(arguments),
                 action: "ctx_set_browser_settings", timeout: MCPClient.readReplyTimeout)
@@ -2544,6 +2577,10 @@ public func registerStandardActions(
         }
     ))
 
+    // Names, call 3: beside the `session_*` actions, parked on the same broker for the same reason.
+    await registry.register(conversationRenameAction(
+        conversationRequests: conversationRequests, liveConversations: liveConversations))
+
     // **`.control`, for the identical reason `session_resume` above is:**
     // this changes which account Wakil's own session runs under and
     // touches nothing outside Wakil, so the environment never blocks it.
@@ -3460,4 +3497,61 @@ private func callChecked(
         throw StandardActionError.serverError(action: action, message: mcpErrorText(from: obj) ?? "\(tool) failed with no message")
     }
     return result
+}
+
+/// `conversation_rename`'s refusals (names, call 3): Rule 7's "refuse only what a recorded decision
+/// forbids, and say which", and Rule 8's whole sentence for an id that names nothing.
+public struct ConversationRenameRefusal: Error, Sendable, Equatable, CustomStringConvertible {
+    public let description: String
+}
+
+/// `conversation_rename` (names, call 3): **`.control`** — a conversation's name is Wakil's own state —
+/// and **agent-reachable**, for the agent's own conversation only (conversations call 5: an agent does
+/// not know about the others). `conversation` defaults to the caller's, or — the operator's, with none —
+/// to the one on screen when the request drains (`WindowModel.renameConversation`); an id that names
+/// no live conversation is refused here, before parking, so the caller hears it. `name` is cleaned
+/// (call 4); empty or whitespace clears the operator's name. The agent's rename is the operator's name,
+/// not a third slot: the later value wins (Rule 7), and the journal records who.
+///
+/// A builder, as `layoutActions` is, so a test can register it into a window's own registry.
+/// `liveConversations` nil (no window, as for a test that wires none) checks nothing.
+public func conversationRenameAction(
+    conversationRequests: ConversationBroker,
+    liveConversations: (@Sendable (Place?) async -> [LiveConversation])?
+) -> Action {
+    Action(
+        name: "conversation_rename",
+        description: "Name a live conversation, as the operator's name for it: it wins over the name "
+            + "Wakil's quick model gave it. An empty or blank name clears it, back to the model's name "
+            + "or the first message. `conversation` is its id; an agent names only its own conversation, "
+            + "and omits it.",
+        kind: .control,
+        audience: .agentReachable,
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "conversation": .object(["type": .string("string")]),
+                "name": .object(["type": .string("string")]),
+            ]),
+            "required": .array([.string("name")]),
+        ]),
+        handler: { params in
+            let raw = try requireStringParam(params, "name", action: "conversation_rename")
+            let requested = optionalStringParam(params, "conversation")
+            let own = ActionRegistry.dispatchCaller?.conversation
+            if ActionRegistry.dispatchOrigin == .agent, own == nil || (requested != nil && requested != own) {
+                throw ConversationRenameRefusal(description: "conversation_rename: an agent renames only its "
+                    + "own conversation (conversations call 5: an agent does not know about the others)")
+            }
+            let id = requested ?? own
+            if let id, let liveConversations, !(await liveConversations(nil)).contains(where: { $0.id == id }) {
+                throw ConversationRenameRefusal(description: "conversation_rename: no live conversation \(id)")
+            }
+            let name = cleanConversationName(raw)
+            await conversationRequests.request(.rename(conversation: id, name: name))
+            return .object([
+                "renaming": id.map(JSONValue.string) ?? .null,
+                "name": name.map(JSONValue.string) ?? .null,
+            ])
+        })
 }

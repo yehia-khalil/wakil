@@ -34,8 +34,45 @@ func theTitleIsTheFirstMessageCutTo48(_ message: String, _ title: String) {
     #expect(live.json == .object([
         "conversation": .string("c1"), "session": .null, "organization": .string("o"),
         "project": .string("p"), "environment": .string("e"), "title": .string("t"),
-        "state": .string("working"), "onScreen": .bool(true),
+        "state": .string("working"), "onScreen": .bool(true), "titleSource": .string("message"),
     ]))
+}
+
+@Test func theOperatorsNameWinsThenTheModelsThenTheMessage() {
+    #expect(conversationDisplayTitle(operatorName: "Mine", aiName: "Model", messageTitle: "fix it").title == "Mine")
+    #expect(conversationDisplayTitle(operatorName: "Mine", aiName: "Model", messageTitle: "fix it").source == .operator_)
+    #expect(conversationDisplayTitle(operatorName: nil, aiName: "Model", messageTitle: "fix it") == ("Model", .ai))
+    #expect(conversationDisplayTitle(operatorName: nil, aiName: nil, messageTitle: "fix it") == ("fix it", .message))
+    #expect(conversationDisplayTitle(operatorName: nil, aiName: nil, messageTitle: newConversationTitle).source == .none)
+}
+
+@Test(arguments: [("  a\n b\t c ", "a b c"), ("   ", nil), ("\n", nil), ("Fix C++ 2c-ii", "Fix C++ 2c-ii")] as [(String, String?)])
+func aNameIsCleanedNotCut(_ raw: String, _ clean: String?) { #expect(cleanConversationName(raw) == clean) }
+
+@Test @MainActor func theFirstSendSetsTheMessageTitleAndFirstMessageOnce() {
+    let agent = PlaceAgent(
+        id: "c1", place: Place(organization: "o", project: "p", environment: "e"),
+        providerId: "main", mirror: TerminalMirrorFeed(panes: PaneStore(kinds: PaneKinds.standard), layout: LayoutStore()))
+    #expect(agent.firstMessage == nil)
+    #expect(agent.titleSource == .none)
+    agent.noteSend("first")
+    agent.noteSend("second")
+    #expect(agent.firstMessage == "first")
+    #expect(agent.title == "first")
+    #expect(agent.titleSource == .message)
+    agent.aiName = "Model"
+    #expect(agent.title == "Model")
+    agent.operatorName = "Mine"
+    #expect(agent.title == "Mine")
+    #expect(agent.titleSource == .operator_)
+}
+
+@Test func aLiveConversationsJSONCarriesItsTitleSource() {
+    let live = LiveConversation(
+        id: "c1", session: nil, place: Place(organization: "o", project: "p", environment: "e"),
+        title: "t", titleSource: .ai, state: .working, onScreen: true, lastActivity: Date())
+    guard case .object(let o) = live.json else { Issue.record("not an object"); return }
+    #expect(o["titleSource"] == .string("ai"))
 }
 
 @MainActor

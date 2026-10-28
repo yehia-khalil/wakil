@@ -2402,11 +2402,12 @@ private func makeQueryLineModel(harness: DBActionHarness, environment: String) -
     // covers `registerStandardActions` alone.
     #expect(await r.all().map(\.name).sorted() ==
             ["api_remove_entry", "api_set_entry", "api_update_entry",
+             "conversation_rename",
              "ctx_add_provider", "ctx_adopt_provider", "ctx_browser_settings", "ctx_config_tree", "ctx_create_environment",
              "ctx_create_org", "ctx_create_project", "ctx_editor_settings",
              "ctx_git_account_add", "ctx_git_account_remove", "ctx_git_account_test", "ctx_git_device_poll",
              "ctx_git_device_start", "ctx_git_gh_import", "ctx_git_gh_logins", "ctx_git_host_suggestions",
-             "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set",
+             "ctx_git_key_generate", "ctx_git_key_passphrase_set", "ctx_git_ssh_keys", "ctx_git_token_set", "ctx_github_pull_requests",
              "ctx_list_accounts",
              "ctx_list_environments", "ctx_list_machine_providers",
              "ctx_list_orgs", "ctx_list_projects", "ctx_list_providers",
@@ -2726,6 +2727,7 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         "ctx_set_project_editor_settings": .object(["projectPath": .string("/p.json"), "tabSize": .integer(2)]),
         "ctx_editor_settings": .object([:]),
         "ctx_browser_settings": .object([:]),
+        "ctx_github_pull_requests": .object([:]),
         "ctx_set_provider": .object(["name": .string("work")]),
         "db_list_databases": .object([:]),
         "db_run_query": .object(["query": .string("select 1")]),
@@ -2791,6 +2793,8 @@ private func satisfiesAnthropicToolNameRule(_ name: String) -> Bool {
         // `session_set_provider` does; neither touches a client. Conversations 3 of 3:
         // `session_close` parks there too.
         "session_close", "session_new", "session_switch",
+        // Names: `conversation_rename` parks there too, and checks no client.
+        "conversation_rename",
         // Checks no client before touching `panes`/`layout`. With no
         // `layout` wired (this test's `registerStandardActions` call
         // passes none, so it defaults to `nil`), `requireOpenPane`

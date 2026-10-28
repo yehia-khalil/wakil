@@ -13,6 +13,14 @@ final class BrowserSettingsBox: @unchecked Sendable {
     }
 }
 
+/// What a fixture's `copyText` put on its pasteboard, in order.
+final class BrowserCopies: @unchecked Sendable {
+    private let lock = NSLock()
+    private var texts: [String] = []
+    var all: [String] { lock.withLock { texts } }
+    func add(_ text: String) { lock.withLock { texts.append(text) } }
+}
+
 struct BrowserFixture {
     let registry: ActionRegistry
     let panes: PaneStore
@@ -36,7 +44,9 @@ struct BrowserFixture {
 /// A layout with one browser pane (no tabs yet) and the browser actions over it — `editorFixture`'s
 /// shape. `open` false leaves the canvas empty.
 func browserFixture(startPage: String = "", open: Bool = true, orgFiles: BrowserOrgFiles? = nil,
-                    removeData: BrowserDataRemover? = nil) async throws -> BrowserFixture {
+                    removeData: BrowserDataRemover? = nil,
+                    pullRequests: @escaping BrowserPullRequestsRead = { nil },
+                    copyText: BrowserTextCopier? = nil) async throws -> BrowserFixture {
     let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
@@ -45,7 +55,8 @@ func browserFixture(startPage: String = "", open: Bool = true, orgFiles: Browser
     let panes = PaneStore(kinds: PaneKinds.standard)
     let settings = BrowserSettingsBox(SettingsBrowser(searchEngine: "google", startPage: startPage))
     await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { settings.current },
-                                 orgFiles: { orgFiles }, removeData: removeData)
+                                 orgFiles: { orgFiles }, removeData: removeData, pullRequests: pullRequests,
+                                 copyText: copyText)
     return BrowserFixture(registry: registry, panes: panes, layout: layout, settings: settings, pane: pane)
 }
 
@@ -114,7 +125,7 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
 
 @Test func commandSeqsRiseFromARestoredTab() async throws {
     let f = try await browserFixture()
-    await f.layout.setBrowserTabs(id: f.pane, to: [BrowserSavedTab(id: "t3", url: "https://a.test/", title: "A")], active: "t3")
+    await f.layout.setBrowserTabs(id: f.pane, to: [BrowserSavedTab(id: "t3", url: "https://a.test/", title: "A")], active: "t3", groups: [], columnHidden: false)
     try await f.dispatch("browser_restore", origin: .ui)
     #expect(await f.active()?.command == BrowserCommand(seq: 1, verb: .load("https://a.test/")))
     try await f.dispatch("browser_reload")
@@ -167,7 +178,7 @@ private func refusal(_ body: () async throws -> Void) async -> String? {
     await f.layout.setBrowserTabs(id: f.pane, to: [
         BrowserSavedTab(id: "t1", url: "https://a.test/", title: "A"),
         BrowserSavedTab(id: "t2", url: "https://b.test/", title: "B"),
-    ], active: "t1")
+    ], active: "t1", groups: [], columnHidden: false)
     try await f.dispatch("browser_restore", origin: .ui)
     #expect(await f.snapshot().tabs[1].command == nil)
     try await f.dispatch("browser_select_tab", ["index": .integer(-1)])
@@ -640,6 +651,16 @@ private struct StoreInUse: Error, CustomStringConvertible {
     #expect(on.searchSuggestions == true)
 }
 
+@Test func browserSettingsDecodeTabsAndNaming() throws {
+    let d = try JSONDecoder().decode(SettingsBrowser.self, from: Data("{}".utf8))
+    #expect(d.tabs == "horizontal")
+    #expect(d.nameGroups == true)
+    let v = try JSONDecoder().decode(
+        SettingsBrowser.self, from: Data(#"{"tabs":"vertical","nameGroups":false}"#.utf8))
+    #expect(v.tabs == "vertical")
+    #expect(v.nameGroups == false)
+}
+
 // MARK: - Bookmarks (3c-iii Task 3)
 
 private func bookmarkFixture(org: String = "initech") async throws -> (BrowserFixture, BrowserOrgFiles) {
@@ -722,4 +743,988 @@ private func bookmarked(_ reply: JSONValue) -> Bool? {
     #expect(BrowserTab(id: "t1", url: "https://example.com/x", title: "Docs").label == "Docs")
     #expect(BrowserTab(id: "t1", url: "https://www.example.com/x", title: "").label == BrowserAddress.displayHost(URL(string: "https://www.example.com/x")!))
     #expect(BrowserTab(id: "t1", url: "", title: "").label == "New Tab")
+}
+
+// MARK: - 3d-i Task 7: browser_group, browser_move_tab into a group, browser_new_tab's opener
+
+private func fields(_ value: JSONValue?) -> [String: JSONValue] {
+    if case .object(let o)? = value { return o }
+    return [:]
+}
+
+/// The reply's `groups`, each as an object.
+private func replyGroups(_ reply: JSONValue) -> [[String: JSONValue]] {
+    guard case .array(let a)? = fields(reply)["groups"] else { return [] }
+    return a.map { fields($0) }
+}
+
+/// Tabs t1–t4 (t1 active): t1 and t2 on example.com in automatic group g1, t3 and t4 loose.
+private func groupedFixture() async throws -> BrowserFixture {
+    let f = try await withTabs(["https://example.com/a", "https://example.com/b", "https://other.org/c",
+                                "https://third.net/d"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.groups = [BrowserGroup(id: "g1", name: "Example", colour: .blue, kind: .automatic, siteKey: "example.com")]
+        s.nextGroup = 2
+        s.tabs[0].group = "g1"; s.tabs[1].group = "g1"
+    }
+    return f
+}
+
+@Test func newTabWithOpenerUsesTheOpenerRule() async throws {
+    let f = try await withTabs(["https://example.com/a"])
+    // ⌘-click from a loose tab to another site: the two form a chain group, named after the opener.
+    try await f.dispatch("browser_new_tab", ["url": .string("https://other.org/x"), "opener": .string("t1")])
+    var s = await f.snapshot()
+    #expect(s.groups.count == 1 && s.groups[0].kind == .automatic && s.groups[0].siteKey == nil)
+    #expect(s.groups[0].name == "Example")
+    #expect(s.tabs.map(\.group) == ["g1", "g1"] && s.tabs[1].opener == "t1")
+    #expect(s.active == "t2", "browser_new_tab still selects the new tab")
+    // From a grouped tab: it joins.
+    try await f.dispatch("browser_new_tab", ["url": .string("https://third.net/"), "opener": .string("t2")])
+    s = await f.snapshot()
+    #expect(s.tabs.map(\.group) == ["g1", "g1", "g1"])
+    // The same site from a loose opener: no group; the site rule decides when it loads.
+    try await f.dispatch("browser_new_tab", ["url": .string("https://fourth.net/")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://fourth.net/b"), "opener": .string("t4")])
+    s = await f.snapshot()
+    #expect(s.tabs.suffix(2).map(\.group) == [nil, nil] && s.tabs.last?.opener == nil)
+    // An opener that has closed meanwhile is no opener.
+    try await f.dispatch("browser_new_tab", ["url": .string("https://fifth.net/"), "opener": .string("t99")])
+    #expect(await f.snapshot().tabs.last?.group == nil)
+    // Saved with the layout.
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).groups.map(\.id) == ["g1"])
+}
+
+@Test func groupCreateMakesAnOwnGroup() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/", "https://c.test/"])
+    let reply = try await f.dispatch("browser_group", ["action": .string("create"),
+                                                       "tabs": .array([.string("t1"), .string("t3")]),
+                                                       "name": .string("Trip")])
+    #expect(fields(reply)["group"] == .string("g1") && fields(reply)["pane"] == .string(f.pane))
+    #expect(replyGroups(reply).first?["kind"] == .string("own") && replyGroups(reply).first?["name"] == .string("Trip"))
+    #expect(replyGroups(reply).first?["tabs"] == .array([.string("t1"), .string("t3")]))
+    #expect(await f.snapshot().tabs.map(\.id) == ["t1", "t3", "t2"], "a group's tabs sit together")
+    // No tabs: the active tab, named New Group.
+    try await f.dispatch("browser_select_tab", ["tab": .string("t2")])
+    let second = try await f.dispatch("browser_group", ["action": .string("create")])
+    #expect(fields(second)["group"] == .string("g2"))
+    #expect(replyGroups(second).last?["name"] == .string("New Group"))
+    #expect(replyGroups(second).last?["tabs"] == .array([.string("t2")]))
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).groups.map(\.id) == ["g1", "g2"])
+    #expect(await refusal { try await f.dispatch("browser_group", ["action": .string("create"),
+                                                                   "tabs": .array([.string("t9")])]) }
+        == "browser_group: the browser pane has no tab t9")
+}
+
+@Test func groupRenameMakesItOwn() async throws {
+    let f = try await groupedFixture()
+    let reply = try await f.dispatch("browser_group", ["action": .string("rename"), "group": .string("g1"),
+                                                       "name": .string("Shopping")])
+    #expect(replyGroups(reply).first?["name"] == .string("Shopping") && replyGroups(reply).first?["kind"] == .string("own"))
+    #expect(await f.snapshot().group("g1")?.named == true)
+}
+
+@Test func groupRecolourMakesItOwn() async throws {
+    let f = try await groupedFixture()
+    let reply = try await f.dispatch("browser_group", ["action": .string("recolour"), "group": .string("g1"),
+                                                       "colour": .string("sand")])
+    #expect(replyGroups(reply).first?["colour"] == .string("sand") && replyGroups(reply).first?["kind"] == .string("own"))
+}
+
+@Test func groupCollapseAndExpandLeaveItAutomatic() async throws {
+    let f = try await groupedFixture()
+    var reply = try await f.dispatch("browser_group", ["action": .string("collapse"), "group": .string("g1")])
+    #expect(replyGroups(reply).first?["collapsed"] == .bool(true) && replyGroups(reply).first?["kind"] == .string("automatic"))
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).groups.first?.collapsed == true)
+    reply = try await f.dispatch("browser_group", ["action": .string("expand"), "group": .string("g1")])
+    #expect(replyGroups(reply).first?["collapsed"] == .bool(false) && replyGroups(reply).first?["kind"] == .string("automatic"))
+}
+
+@Test func groupUngroupKeepsItsTabsLoose() async throws {
+    let f = try await groupedFixture()
+    let reply = try await f.dispatch("browser_group", ["action": .string("ungroup"), "group": .string("g1")])
+    #expect(replyGroups(reply).isEmpty)
+    let s = await f.snapshot()
+    #expect(s.tabs.allSatisfy { $0.group == nil })
+    #expect(s.tabs.filter(\.keptLoose).map(\.id).sorted() == ["t1", "t2"])
+    // The site rule never pulls them back.
+    await f.panes.browserPageDidReport(paneId: f.pane, tab: "t2", BrowserPageReport(
+        url: "https://example.com/b", title: "", isLoading: true, progress: 0.5, canGoBack: false, canGoForward: false, failure: nil))
+    await f.panes.browserPageDidReport(paneId: f.pane, tab: "t2", BrowserPageReport(
+        url: "https://example.com/b", title: "", isLoading: false, progress: 1, canGoBack: false, canGoForward: false, failure: nil))
+    #expect(await f.snapshot().groups.isEmpty)
+}
+
+@Test func groupCloseClosesItsTabs() async throws {
+    let f = try await groupedFixture()
+    let reply = try await f.dispatch("browser_group", ["action": .string("close"), "group": .string("g1")])
+    #expect(replyGroups(reply).isEmpty)
+    let s = await f.snapshot()
+    #expect(s.tabs.map(\.id) == ["t3", "t4"] && s.active == "t3", "the tab right of the group is selected")
+    #expect(s.closed.map(\.url) == ["https://example.com/a", "https://example.com/b"])
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.map(\.id) == ["t3", "t4"])
+}
+
+@Test func closingAGroupClosesItsTabsAndTheLastClosesThePane() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    try await f.dispatch("browser_group", ["action": .string("create"), "tabs": .array([.string("t1"), .string("t2")])])
+    let reply = try await f.dispatch("browser_group", ["action": .string("close"), "group": .string("g1")])
+    #expect(reply == .object(["pane": .string(f.pane), "closed": .bool(true)]))
+    #expect(await !f.layout.snapshot().panes.contains { $0.id == f.pane })
+    #expect(await !f.panes.holdsContents(paneId: f.pane))
+}
+
+/// A pull-request tab is never saved, so it is never the saved active tab: the nearest saved tab
+/// before it is, else the first saved tab, else none.
+@Test func aSelectedPullRequestTabIsNotSavedAsActive() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs.append(BrowserTab(id: "t3", url: "https://github.com/initech/app/pull/4", title: "Fix · initech/app#4",
+                                 group: "pr", pullRequest: "https://github.com/initech/app/pull/4"))
+        s.groups = [BrowserGroup(id: "pr", name: "Pull Requests", colour: .blue, kind: .pullRequests, named: true)]
+        s.nextTab = 4
+        s.arrange()
+    }
+    try await f.dispatch("browser_select_tab", ["tab": .string("t3")])
+    #expect(await f.snapshot().active == "t3")
+    let saved = try #require(await f.layout.browserTabs(id: f.pane))
+    #expect(saved.active == "t1", "the PR group leads, so the first saved tab stands in")
+    #expect(!saved.tabs.contains { $0.id == "t3" })
+
+    var s = BrowserSnapshot(tabs: [
+        BrowserTab(id: "t1", url: "https://a.test/", title: "a"),
+        BrowserTab(id: "t2", url: "https://github.com/x/y/pull/1", title: "p", pullRequest: "https://github.com/x/y/pull/1"),
+        BrowserTab(id: "t3", url: "https://b.test/", title: "b"),
+    ], active: "t2", find: nil, downloads: [], closed: [], nextTab: 4)
+    #expect(browserSavedActive(s) == "t1", "the nearest saved tab before it")
+    s.tabs.removeAll { $0.pullRequest == nil }
+    #expect(browserSavedActive(s) == nil, "no saved tab: none")
+    s.active = "t2"
+    s.tabs[0].pullRequest = nil
+    #expect(browserSavedActive(s) == "t2")
+}
+
+@Test func thePullRequestGroupRefusesRename() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs.append(BrowserTab(id: "t2", url: "https://github.com/initech/app/pull/4", title: "Fix · initech/app#4",
+                                 group: "pr", pullRequest: "https://github.com/initech/app/pull/4"))
+        s.groups = [BrowserGroup(id: "pr", name: "Pull Requests", colour: .blue, collapsed: true,
+                                 kind: .pullRequests, named: true)]
+        s.nextTab = 3
+    }
+    let before = await f.snapshot()
+    for (verb, word, extra) in [("rename", "renamed", ["name": JSONValue.string("X")]),
+                                ("recolour", "recoloured", ["colour": .string("teal")]),
+                                ("ungroup", "ungrouped", [:]), ("close", "closed", [:])] {
+        var params: [String: JSONValue] = ["action": .string(verb), "group": .string("pr")]
+        params.merge(extra) { a, _ in a }
+        #expect(await refusal { try await f.dispatch("browser_group", params) }
+            == "browser_group: the pull-request group can't be \(word)", "\(verb)")
+    }
+    #expect(await f.snapshot() == before)
+    let reply = try await f.dispatch("browser_group", ["action": .string("expand"), "group": .string("pr")])
+    #expect(replyGroups(reply).first?["collapsed"] == .bool(false) && replyGroups(reply).first?["kind"] == .string("pullRequests"))
+}
+
+@Test func anUnknownColourIsRefusedWithTheList() async throws {
+    let f = try await groupedFixture()
+    let before = await f.snapshot()
+    #expect(await refusal { try await f.dispatch("browser_group", ["action": .string("recolour"), "group": .string("g1"),
+                                                                   "colour": .string("red")]) }
+        == "browser_group: colour is one of blue, steel, teal, sand, stone, smoke")
+    #expect(await refusal { try await f.dispatch("browser_group", ["action": .string("collapse"), "group": .string("g7")]) }
+        == "browser_group: this pane has no group g7")
+    #expect(await f.snapshot() == before)
+}
+
+@Test func moveTabIntoAndOutOfAGroup() async throws {
+    let f = try await groupedFixture()
+    try await f.dispatch("browser_move_tab", ["tab": .string("t4"), "group": .string("g1")])
+    var s = await f.snapshot()
+    #expect(s.tabs.map(\.id) == ["t1", "t2", "t4", "t3"] && s.tabs[2].group == "g1")
+    #expect(s.group("g1")?.kind == .own, "a tab dragged in makes it yours")
+    try await f.dispatch("browser_move_tab", ["tab": .string("t1"), "group": .string("")])
+    s = await f.snapshot()
+    #expect(s.tabs.first { $0.id == "t1" }?.group == nil && s.tabs.first { $0.id == "t1" }?.keptLoose == true)
+    #expect(s.tabs.filter { $0.group == "g1" }.map(\.id) == ["t2", "t4"], "an own group of two stays")
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.first { $0.id == "t1" }?.keptLoose == true)
+    // Plain reordering is still today's, then arranged: a loose tab cannot land inside a group.
+    try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "to": .integer(0)])
+    s = await f.snapshot()
+    #expect(s.tabs.map(\.id).prefix(2) == ["t2", "t4"])
+    #expect(await refusal { try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "group": .string("g9")]) }
+        == "browser_move_tab: this pane has no group g9")
+    #expect(await refusal { try await f.dispatch("browser_move_tab", ["tab": .string("t3")]) }
+        == StandardActionError.missingParam(action: "browser_move_tab", param: "to").description)
+}
+
+/// Ruling 22: a reopened tab returns to its group while the pane still has it.
+@Test func aReopenedTabReturnsToItsGroup() async throws {
+    let f = try await groupedFixture()
+    try await f.dispatch("browser_group", ["action": .string("rename"), "group": .string("g1"), "name": .string("Mine")])
+    try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "group": .string("g1")])
+    try await f.dispatch("browser_close_tab", ["tab": .string("t2")])
+    try await f.dispatch("browser_reopen_tab")
+    var s = await f.snapshot()
+    #expect(s.tabs.first { $0.url == "https://example.com/b" }?.group == "g1")
+    // Its group gone, it comes back loose.
+    try await f.dispatch("browser_close_tab", ["tab": .string("t3")])
+    try await f.dispatch("browser_group", ["action": .string("ungroup"), "group": .string("g1")])
+    try await f.dispatch("browser_reopen_tab")
+    s = await f.snapshot()
+    #expect(s.tabs.first { $0.url == "https://other.org/c" }?.group == nil)
+}
+
+/// A closed pinned tab reopened with ⌘⇧T keeps its pin, so the next full reconcile finds the pin
+/// held and adds no second copy — unless the pane already holds that pin again, then it is plain.
+@Test func aReopenedPinnedTabKeepsItsPin() async throws {
+    let f = try await withTabs(["https://example.com/a", "https://example.com/b"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs[1].pin = "p1234abcd"
+        s.arrange()
+    }
+    try await f.dispatch("browser_close_tab", ["tab": .string("t2")])
+    try await f.dispatch("browser_reopen_tab")
+    var s = await f.snapshot()
+    let back = try #require(s.tabs.first { $0.url == "https://example.com/b" })
+    #expect(back.pin == "p1234abcd", "the pin comes back with it")
+    #expect(s.tabs.first?.id == back.id, "into the pinned section")
+    #expect(back.group == nil)
+
+    // Closed again; meanwhile the pane holds that pin once more (a reconcile put it back).
+    try await f.dispatch("browser_close_tab", ["tab": .string(back.id)])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs.append(BrowserTab(id: s.takeTabId(), url: "https://example.com/b", title: "b", pin: "p1234abcd"))
+        s.arrange()
+    }
+    try await f.dispatch("browser_reopen_tab")
+    s = await f.snapshot()
+    #expect(s.tabs.filter { $0.pin == "p1234abcd" }.count == 1, "never two tabs of one pin")
+    #expect(s.tabs.filter { $0.url == "https://example.com/b" }.count == 2)
+}
+
+/// Rule 6: no grouping rule or action changes the selection; a tab moved into a group stays selected.
+@Test func groupingNeverChangesTheActiveTab() async throws {
+    let f = try await groupedFixture()
+    try await f.dispatch("browser_select_tab", ["tab": .string("t3")])
+    let steps: [[String: JSONValue]] = [
+        ["action": .string("rename"), "group": .string("g1"), "name": .string("A")],
+        ["action": .string("recolour"), "group": .string("g1"), "colour": .string("teal")],
+        ["action": .string("collapse"), "group": .string("g1")],
+        ["action": .string("expand"), "group": .string("g1")],
+        ["action": .string("create"), "tabs": .array([.string("t4")])],
+    ]
+    for p in steps {
+        try await f.dispatch("browser_group", p)
+        #expect(await f.snapshot().active == "t3", "\(p)")
+    }
+    try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "group": .string("g1")])
+    #expect(await f.snapshot().active == "t3", "moved into a group, still selected")
+    try await f.dispatch("browser_move_tab", ["tab": .string("t3"), "group": .string("")])
+    #expect(await f.snapshot().active == "t3")
+    try await f.dispatch("browser_group", ["action": .string("ungroup"), "group": .string("g2")])
+    #expect(await f.snapshot().active == "t3")
+    try await f.dispatch("browser_new_tab", ["url": .string("https://x.org/"), "opener": .string("t1")])
+    try await f.dispatch("browser_select_tab", ["tab": .string("t3")])
+    await f.panes.browserPageDidReport(paneId: f.pane, tab: "t4", BrowserPageReport(
+        url: "https://example.com/z", title: "", isLoading: true, progress: 0.5, canGoBack: false, canGoForward: false, failure: nil))
+    await f.panes.browserPageDidReport(paneId: f.pane, tab: "t4", BrowserPageReport(
+        url: "https://example.com/z", title: "", isLoading: false, progress: 1, canGoBack: false, canGoForward: false, failure: nil))
+    try await f.dispatch("browser_group", ["action": .string("close"), "group": .string("g1")])
+    #expect(await f.snapshot().active == "t3", "closing a group the selection is not in")
+}
+
+// MARK: - Pins per project (3d-i Task 8)
+
+/// Two browser panes on project `web`'s canvas, each with one loaded tab: `f.pane` on example.com/a,
+/// `other` on example.org/b.
+private func pinFixture() async throws -> (f: BrowserFixture, other: String, files: BrowserOrgFiles) {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "initech")
+    var f = try await browserFixture(open: false, orgFiles: files)
+    let scope = LayoutScope(organization: "initech", project: "web", environment: "e")
+    await f.layout.switchScope(to: scope)
+    await f.panes.switchScope(to: scope)
+    f.pane = await f.layout.open(kind: "browser", title: "Browser").id
+    let other = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.org/b"), "pane": .string(other)])
+    for p in [f.pane, other] {
+        await f.panes.updateBrowser(paneId: p) { s in for i in s.tabs.indices { s.tabs[i].loaded = true } }
+    }
+    return (f, other, files)
+}
+
+@Test func anUnreadablePinsFileIsNeverWrittenOver() async throws {
+    let (f, _, files) = try await pinFixture()
+    let url = files.pinsURL(project: "web")
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let bytes = Data("{\"items\": [oops".utf8)
+    try bytes.write(to: url)
+    let why = await refusal { try await f.dispatch("browser_pin") }
+    #expect(why?.hasPrefix("browser_pin: pins/web.json can't be read (") == true)
+    #expect(why?.hasSuffix(") — fix or move it; Wakil won't write over it.") == true)
+    _ = await refusal { try await f.dispatch("browser_unpin") }
+    #expect(try Data(contentsOf: url) == bytes)
+    #expect(await f.snapshot().tabs.allSatisfy { $0.pin == nil })
+}
+
+@Test func anUnreadablePinsFileRefusesAnUnpinOfAPinnedTab() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let url = files.pinsURL(project: "web")
+    let bytes = Data("{\"items\": [oops".utf8)
+    try bytes.write(to: url)
+    let why = await refusal { try await f.dispatch("browser_unpin") }
+    #expect(why?.hasPrefix("browser_unpin: pins/web.json can't be read (") == true)
+    #expect(try Data(contentsOf: url) == bytes)
+    #expect(await f.snapshot().tabs.first?.pin != nil)
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.first?.pin != nil)
+}
+
+@Test func aRestoreThatLeavesAPaneWithNoTabClosesIt() async throws {
+    let (f, _, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    #expect(await f.snapshot().tabs.count == 1)
+    try files.setPins([], project: "web")
+    let reply = try await f.dispatch("browser_restore", ["pane": .string(f.pane)], named: false)
+    #expect(reply == .object(["pane": .string(f.pane), "closed": .bool(true)]))
+    #expect(await !f.layout.snapshot().panes.contains { $0.id == f.pane })
+}
+
+@Test func pinningRefusesWithNoProject() async throws {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "initech")
+    let f = try await browserFixture(orgFiles: files)
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    #expect(await refusal { try await f.dispatch("browser_pin") } == "browser_pin: no project is active")
+}
+
+@Test func pinningATabShowsItInTheOtherBrowserPaneUnloaded() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let pins = try files.pins(project: "web")
+    #expect(pins.count == 1)
+    let pin = try #require(pins.first)
+    #expect(pin.kind == .tab)
+    #expect(pin.url == "https://example.com/a")
+    #expect(pin.id.count == 9 && pin.id.hasPrefix("p"))
+    #expect(await f.snapshot().tabs.first?.pin == pin.id)
+
+    let o = await f.panes.browserSnapshot(paneId: other)
+    #expect(o.tabs.map(\.url) == ["https://example.com/a", "https://example.org/b"])
+    let copy = try #require(o.tabs.first)
+    #expect(copy.pin == pin.id)
+    #expect(copy.loaded == false)
+    #expect(o.active != copy.id)
+    // Saved in the other pane's layout too.
+    #expect(await f.layout.browserTabs(id: other)?.tabs.first?.pin == pin.id)
+}
+
+@Test func pinningAGroupWritesItsTabs() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.net/c")])
+    let ids = await f.snapshot().tabs.map(\.id)
+    guard case .object(let made) = try await f.dispatch(
+        "browser_group", ["action": .string("create"), "name": .string("Work"), "colour": .string("stone"),
+                          "tabs": .array(ids.map { .string($0) })]),
+        case .string(let group)? = made["group"] else { Issue.record("no group"); return }
+    try await f.dispatch("browser_pin", ["group": .string(group)])
+    let pin = try #require(try files.pins(project: "web").first)
+    #expect(pin.kind == .group)
+    #expect(pin.name == "Work")
+    #expect(pin.colour == .stone)
+    #expect(pin.tabs == [BrowserPinTab(url: "https://example.com/a", title: ""),
+                         BrowserPinTab(url: "https://example.net/c", title: "")])
+    #expect(await f.snapshot().group(group)?.pin == pin.id)
+
+    let o = await f.panes.browserSnapshot(paneId: other)
+    let copy = try #require(o.groups.first { $0.pin == pin.id })
+    #expect(copy.name == "Work")
+    #expect(o.tabs.filter { $0.group == copy.id }.map(\.url) == ["https://example.com/a", "https://example.net/c"])
+    #expect(o.tabs.last?.url == "https://example.org/b")
+}
+
+@Test func pinMakesAnAutomaticGroupOwn() async throws {
+    let (f, _, files) = try await pinFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/b")])
+    let group = await f.panes.updateBrowser(paneId: f.pane) { s -> String in
+        s.newGroup(tabs: s.tabs.map(\.id), name: "Example", kind: .automatic, siteKey: "example.com")
+    }
+    #expect(await f.snapshot().group(group)?.kind == .automatic)
+    try await f.dispatch("browser_pin", ["group": .string(group)])
+    #expect(await f.snapshot().group(group)?.kind == .own)
+    #expect(try files.pins(project: "web").first?.name == "Example")
+}
+
+@Test func unpinKeepsItHereAndRemovesItFromTheOtherPane() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let tab = try #require(await f.snapshot().tabs.first)
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.count == 2)
+    try await f.dispatch("browser_unpin", ["tab": .string(tab.id)])
+    #expect(try files.pins(project: "web") == [])
+    let here = await f.snapshot()
+    #expect(here.tabs.map(\.id) == [tab.id])
+    #expect(here.tabs.first?.pin == nil)
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.map(\.url) == ["https://example.org/b"])
+}
+
+@Test func aTabPinnedByADropLandsWhereItWasDropped() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.net/c")])
+    let ids = await f.snapshot().tabs.map(\.id)
+    // Dropped before the pinned tab: pinned, and first.
+    try await f.dispatch("browser_pin", ["tab": .string(ids[1]), "to": .integer(0)])
+    let here = await f.snapshot()
+    #expect(here.tabs.map(\.id) == [ids[1], ids[0]])
+    #expect(here.tabs.allSatisfy { $0.pin != nil })
+    #expect(try files.pins(project: "web").count == 2)
+    // The other pane gains it, unloaded, after its own pinned tabs.
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.map(\.url)
+            == ["https://example.com/a", "https://example.net/c", "https://example.org/b"])
+}
+
+@Test func aPinnedTabDroppedBelowTheLineIsUnpinnedWhereItLands() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.net/c")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.edu/d")])
+    let ids = await f.snapshot().tabs.map(\.id)
+    guard case .object(let made) = try await f.dispatch(
+        "browser_group", ["action": .string("create"), "name": .string("Net"),
+                          "tabs": .array([.string(ids[1]), .string(ids[2])])]),
+        case .string(let group)? = made["group"] else { Issue.record("no group"); return }
+    try await f.dispatch("browser_pin", ["tab": .string(ids[0])])
+    // Between the group's two tabs: `to` 1 counted without it, into the group.
+    try await f.dispatch("browser_unpin", ["tab": .string(ids[0]), "to": .integer(1), "into": .string(group)])
+    let here = await f.snapshot()
+    #expect(here.tabs.map(\.id) == [ids[1], ids[0], ids[2]])
+    #expect(here.tabs[1].group == group)
+    #expect(here.tabs[1].pin == nil)
+    #expect(try files.pins(project: "web") == [])
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.map(\.url) == ["https://example.org/b"])
+    // A group that isn't there is refused before anything is unpinned.
+    try await f.dispatch("browser_pin", ["tab": .string(ids[2])])
+    let why = await refusal {
+        try await f.dispatch("browser_unpin", ["tab": .string(ids[2]), "to": .integer(0), "into": .string("g99")])
+    }
+    #expect(why?.contains("g99") == true)
+    #expect(try files.pins(project: "web").count == 1)
+}
+
+@Test func pinCurrentPageRewritesTheEntryOnly() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    try await f.dispatch("browser_navigate", ["input": .string("https://example.com/moved")])
+    try await f.dispatch("browser_pin", ["update": .bool(true)])
+    let pins = try files.pins(project: "web")
+    #expect(pins.count == 1)
+    #expect(pins.first?.url == "https://example.com/moved")
+    // The other pane's live tab keeps its page.
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.first?.url == "https://example.com/a")
+}
+
+@Test func aNewBrowserPaneOpensWithTheProjectsPins() async throws {
+    let files = try BrowserOrgFiles(home: testScratchRoot.appendingPathComponent(UUID().uuidString), org: "initech")
+    try files.setPins([BrowserPin(id: "p0000000a", kind: .tab, url: "https://example.com/pinned", title: "Pinned")],
+                      project: "web")
+    let f = try await browserFixture(open: false, orgFiles: files)
+    let scope = LayoutScope(organization: "initech", project: "web", environment: "e")
+    await f.layout.switchScope(to: scope)
+    await f.panes.switchScope(to: scope)
+    guard case .object(let o) = try await f.dispatch("browser_open", ["url": .string("https://example.org/")], named: false),
+          case .string(let pane)? = o["pane"] else { Issue.record("no pane"); return }
+    let s = await f.panes.browserSnapshot(paneId: pane)
+    #expect(s.tabs.map(\.url) == ["https://example.com/pinned", "https://example.org/"])
+    #expect(s.tabs.first?.loaded == false)
+    #expect(s.activeTab?.url == "https://example.org/")
+
+    // A restored pane is reconciled too: a pin the file no longer holds goes.
+    try files.setPins([], project: "web")
+    try await f.dispatch("browser_restore", ["pane": .string(pane)], named: false)
+    #expect(await f.panes.browserSnapshot(paneId: pane).tabs.map(\.url) == ["https://example.org/"])
+}
+
+// MARK: - The pull-request group (3d-i Task 11)
+
+/// What `ctx_github_pull_requests` answers in a test: a list, an absent reason, or a failure; counts
+/// the reads, and holds each until released when gated.
+final class PullRequestsReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reply: Result<JSONValue, Error>
+    private var gated: Bool
+    private var count = 0
+    init(_ items: [BrowserPullRequest] = [], gated: Bool = false) {
+        reply = .success(Self.reply(items))
+        self.gated = gated
+    }
+    static func reply(_ items: [BrowserPullRequest], absent: String? = nil) -> JSONValue {
+        var o: [String: JSONValue] = ["pullRequests": .array(items.map { pr in .object([
+            "number": .integer(Int64(pr.number)), "title": .string(pr.title), "url": .string(pr.url),
+            "repository": .string(pr.repository), "reason": .string(pr.reason),
+        ]) })]
+        if let absent { o["absent"] = .string(absent) }
+        return .object(["structuredContent": .object(o)])
+    }
+    func answer(_ items: [BrowserPullRequest]) { lock.withLock { reply = .success(Self.reply(items)) } }
+    func answer(absent: String) { lock.withLock { reply = .success(Self.reply([], absent: absent)) } }
+    func fail(_ error: Error) { lock.withLock { reply = .failure(error) } }
+    func release() { lock.withLock { gated = false } }
+    func hold() { lock.withLock { gated = true } }
+    var reads: Int { lock.withLock { count } }
+    var read: BrowserPullRequestsRead {
+        { [self] in
+            lock.withLock { count += 1 }
+            for _ in 0..<5_000 where lock.withLock({ gated }) { try await Task.sleep(nanoseconds: 1_000_000) }
+            return try lock.withLock { try reply.get() }
+        }
+    }
+}
+
+func pr(_ n: Int, _ title: String = "Fix", repo: String = "initech/app") -> BrowserPullRequest {
+    BrowserPullRequest(number: n, title: "\(title) \(n)", url: "https://github.com/\(repo)/pull/\(n)",
+                       repository: repo, reason: "author")
+}
+
+/// A browser pane on organisation `initech`'s canvas with one loaded loose tab, its pull requests
+/// read by `reader`.
+private func prFixture(_ reader: PullRequestsReader) async throws -> BrowserFixture {
+    var f = try await browserFixture(open: false, pullRequests: reader.read)
+    let scope = LayoutScope(organization: "initech", project: "web", environment: "e")
+    await f.layout.switchScope(to: scope)
+    await f.panes.switchScope(to: scope)
+    f.pane = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.com/a")])
+    await f.panes.updateBrowser(paneId: f.pane) { s in for i in s.tabs.indices { s.tabs[i].loaded = true } }
+    return f
+}
+
+private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.group == "pr" } }
+
+@Test func pullRequestsFillAGroupCollapsedOfUnloadedTabs() async throws {
+    let reader = PullRequestsReader([pr(4), pr(9, repo: "initech/api")])
+    let f = try await prFixture(reader)
+    let reply = try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(reply == .object(["org": .string("initech"), "count": .integer(2), "absent": .null, "error": .null,
+                              "refreshing": .bool(false)]))
+    let s = await f.snapshot()
+    let group = try #require(s.group("pr"))
+    #expect(group.kind == .pullRequests && group.name == "Pull Requests" && group.collapsed)
+    let tabs = prTabs(s)
+    #expect(tabs.map(\.title) == ["Fix 4 · initech/app#4", "Fix 9 · initech/api#9"])
+    #expect(tabs.map(\.pullRequest) == [pr(4).url, pr(9, repo: "initech/api").url])
+    #expect(tabs.allSatisfy { !$0.loaded && $0.command == nil })
+    #expect(s.activeTab?.url == "https://example.com/a", "a new pull-request tab never becomes the selected one")
+    // Not saved as tabs; the group is, collapsed.
+    let saved = try #require(await f.layout.browserTabs(id: f.pane))
+    #expect(saved.tabs.map(\.url) == ["https://example.com/a"])
+    #expect(saved.groups.first { $0.id == "pr" }?.collapsed == true)
+    // read_pane carries the group's error and refreshing.
+    let group2 = replyGroups(try await f.dispatch("browser_find_close")).first { $0["id"] == .string("pr") }
+    #expect(group2?["error"] == .null && group2?["refreshing"] == .bool(false))
+}
+
+@Test func aRefreshKeepsListedTabsAddsNewDropsGone() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let first = prTabs(await f.snapshot())
+    // Tab of #1 has loaded its page.
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        if let i = s.tabs.firstIndex(where: { $0.pullRequest == pr(1).url }) {
+            s.tabs[i].loaded = true
+            s.tabs[i].title = "Fix 1 by someone · Pull Request #1 · initech/app"
+        }
+    }
+    reader.answer([pr(3), pr(1, "Renamed")])
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let after = prTabs(await f.snapshot())
+    #expect(after.map(\.pullRequest) == [pr(3).url, pr(1).url], "the list's order")
+    #expect(after[1].id == first[0].id, "a listed tab stays")
+    #expect(after[1].title == "Fix 1 by someone · Pull Request #1 · initech/app", "with its page")
+    #expect(!after.contains { $0.id == first[1].id }, "a gone one goes")
+    #expect(after[0].loaded == false && after[0].title == "Fix 3 · initech/app#3")
+}
+
+/// A pane whose only content was the pull-request group (restored with `pr` alone) closes when a
+/// refresh says `absent` — by the rule restore and reconcile use — rather than staying empty.
+@Test func aPaneLeftEmptyByARefreshCloses() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs.removeAll { $0.pullRequest == nil }
+        s.active = nil
+    }
+    reader.answer(absent: "No pull-request group: initech has no GitHub account.")
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(await !f.layout.snapshot().panes.contains { $0.id == f.pane }, "the empty pane closes")
+    #expect(await !f.panes.holdsContents(paneId: f.pane))
+}
+
+@Test func theActivePullRequestTabStaysAsALooseTab() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let tab = try #require(prTabs(await f.snapshot()).last)
+    try await f.dispatch("browser_select_tab", ["tab": .string(tab.id)])
+    reader.answer([pr(1)])
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let s = await f.snapshot()
+    let kept = try #require(s.tabs.first { $0.id == tab.id })
+    #expect(s.active == tab.id, "Rule 6: the operator stays where they were")
+    #expect(kept.group == nil && kept.pullRequest == nil, "a plain loose tab now")
+    #expect(prTabs(s).map(\.pullRequest) == [pr(1).url])
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.contains { $0.id == tab.id }, "and saved as one")
+}
+
+@Test func aFailedRefreshKeepsTheListAndShowsTheErrorWhole() async throws {
+    let reader = PullRequestsReader([pr(1)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let why = "github.com refused the pull-request search (HTTP 401): Bad credentials"
+    reader.fail(StandardActionError.serverError(action: "ctx_github_pull_requests", message: why))
+    let reply = try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    guard case .object(let o) = reply else { Issue.record("no reply"); return }
+    #expect(o["error"] == .string(why) && o["count"] == .integer(1))
+    #expect(prTabs(await f.snapshot()).map(\.pullRequest) == [pr(1).url], "the last list is kept")
+    let group = try #require(replyGroups(try await f.dispatch("browser_find_close")).first { $0["id"] == .string("pr") })
+    #expect(group["error"] == .string(why) && group["refreshing"] == .bool(false))
+    // The next good read clears it.
+    reader.answer([pr(1)])
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(await f.panes.browserPullRequests(org: "initech")?.error == nil)
+}
+
+@Test func aRefreshWhileOneRunsFetchesOnce() async throws {
+    let reader = PullRequestsReader([pr(1)], gated: true)
+    let f = try await prFixture(reader)
+    let first = Task { try await f.dispatch("browser_pull_requests_refresh", [:], named: false) }
+    for _ in 0..<5_000 where reader.reads == 0 { try await Task.sleep(nanoseconds: 1_000_000) }
+    let second = try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    guard case .object(let o) = second else { Issue.record("no reply"); return }
+    #expect(o["refreshing"] == .bool(true), "returned at once")
+    let group = replyGroups(try await f.dispatch("browser_find_close")).first { $0["id"] == .string("pr") }
+    #expect(group == nil, "no list yet, so no group")
+    let other = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.org/"), "pane": .string(other)])
+    #expect(await f.panes.browserSnapshot(paneId: other).group("pr") == nil, "a pane opened meanwhile neither")
+    reader.release()
+    _ = try await first.value
+    #expect(reader.reads == 1)
+    #expect(prTabs(await f.snapshot()).count == 1)
+    #expect(prTabs(await f.panes.browserSnapshot(paneId: other)).count == 1, "the answer fills both")
+}
+
+@Test func absentMeansNoGroupAndNoError() async throws {
+    let reader = PullRequestsReader([pr(1)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(await f.snapshot().group("pr") != nil)
+    let why = "No pull-request group: initech has no GitHub account."
+    reader.answer(absent: why)
+    let reply = try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    #expect(reply == .object(["org": .string("initech"), "count": .integer(0), "absent": .string(why), "error": .null,
+                              "refreshing": .bool(false)]))
+    let s = await f.snapshot()
+    #expect(s.group("pr") == nil && prTabs(s).isEmpty)
+    #expect(s.tabs.map(\.url) == ["https://example.com/a"])
+}
+
+@Test func aNewPaneGetsTheCachedList() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    let other = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.org/"), "pane": .string(other)])
+    let o = await f.panes.browserSnapshot(paneId: other)
+    #expect(prTabs(o).map(\.pullRequest) == [pr(1).url, pr(2).url])
+    #expect(o.group("pr")?.collapsed == true)
+    #expect(o.activeTab?.url == "https://example.org/")
+    #expect(reader.reads == 1, "from the list kept, not a read")
+}
+
+@Test func pullRequestTabsAreNeverGrouped() async throws {
+    let reader = PullRequestsReader([pr(1), pr(2)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    // Both pages finish loading on github.com: the site rule leaves them in the pull-request group.
+    for tab in prTabs(await f.snapshot()) {
+        for loading in [true, false] {
+            await f.panes.browserPageDidReport(paneId: f.pane, tab: tab.id, BrowserPageReport(
+                url: tab.url, title: "PR", isLoading: loading, progress: loading ? 0.5 : 1, canGoBack: false,
+                canGoForward: false, failure: nil))
+        }
+    }
+    let s = await f.snapshot()
+    #expect(prTabs(s).count == 2 && s.groups.map(\.id) == ["pr"])
+    // A tab opened from one waits for the site rule rather than joining the pull-request group.
+    let opener = try #require(prTabs(s).first?.id)
+    try await f.dispatch("browser_new_tab", ["url": .string("https://github.com/initech/app/pull/1/files"),
+                                             "opener": .string(opener)])
+    let after = await f.snapshot()
+    #expect(prTabs(after).count == 2)
+}
+
+@Test func aPaneWhoseOnlyTabsWerePullRequestsIsRestoredWithItsGroup() async throws {
+    let reader = PullRequestsReader([pr(1)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    try await f.dispatch("browser_group", ["action": .string("expand"), "group": .string("pr")])
+    try await f.dispatch("browser_tab_column", ["hidden": .bool(true)])
+    let loose = try #require(await f.snapshot().tabs.first { $0.group == nil }?.id)
+    try await f.dispatch("browser_close_tab", ["tab": .string(loose)])
+    let saved = try #require(await f.layout.browserTabs(id: f.pane))
+    #expect(saved.tabs.isEmpty && saved.groups.map(\.id) == ["pr"])
+    // A relaunch: nothing in the store, no list read yet.
+    await f.panes.drop(paneId: f.pane)
+    await f.panes.browserSetPullRequests(org: "initech", BrowserPullRequests())
+    let pane = try #require(await f.layout.snapshot().panes.first { $0.id == f.pane })
+    #expect(BrowserPaneKind.restoreStep(for: pane) != nil)
+    try await f.dispatch("browser_restore", ["pane": .string(f.pane)], named: false)
+    let s = await f.snapshot()
+    #expect(s.group("pr")?.collapsed == false && s.tabColumnHidden, "its group and column came back")
+    #expect(await f.layout.snapshot().panes.contains { $0.id == f.pane }, "an empty pr group keeps the pane")
+}
+
+@Test func aListReadAcrossAnOrganisationSwitchIsDropped() async throws {
+    let reader = PullRequestsReader([pr(1)])
+    let f = try await prFixture(reader)
+    try await f.dispatch("browser_pull_requests_refresh", [:], named: false)
+    reader.hold()
+    reader.answer([pr(7)])
+    let registry = f.registry
+    let running = Task {
+        try await registry.dispatch(name: "browser_pull_requests_refresh", params: .object([:]), origin: .agent,
+                                    caller: .test("staging"), confirmation: nil)
+    }
+    for _ in 0..<5_000 where reader.reads < 2 { try await Task.sleep(nanoseconds: 1_000_000) }
+    let globex = LayoutScope(organization: "globex", project: "web", environment: "e")
+    await f.layout.switchScope(to: globex)
+    await f.panes.switchScope(to: globex)
+    reader.release()
+    _ = try await running.value
+    #expect(await f.panes.browserPullRequests(org: "globex") == nil, "the answer is filed under no organisation")
+    let acme = try #require(await f.panes.browserPullRequests(org: "initech"))
+    #expect(acme.items.map(\.number) == [1] && !acme.refreshing)
+    #expect(await !f.panes.holdsContents(paneId: f.pane), "globex's canvas is untouched")
+    let initech = LayoutScope(organization: "initech", project: "web", environment: "e")
+    await f.layout.switchScope(to: initech)
+    await f.panes.switchScope(to: initech)
+    #expect(prTabs(await f.snapshot()).map(\.pullRequest) == [pr(1).url], "nor initech's panes")
+}
+
+// MARK: 3d-i walk: browser_copy_url
+
+@Test func copyURLWritesTheActiveTabsAddressAndAnswersIt() async throws {
+    let copies = BrowserCopies()
+    let f = try await browserFixture(copyText: { copies.add($0) })
+    try await f.dispatch("browser_new_tab", ["url": .string("https://a.test/one?x=1")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://b.test/two")])
+    let before = await f.snapshot()
+
+    let reply = try await f.dispatch("browser_copy_url")
+    guard case .object(let o) = reply else { Issue.record("no object: \(reply)"); return }
+    #expect(o["url"] == .string("https://b.test/two"), "the active tab's address")
+    #expect(o["copied"] == .bool(true))
+    #expect(copies.all == ["https://b.test/two"])
+    #expect(await f.snapshot() == before, "nothing in the pane changed: the page and the tabs stay")
+
+    try await f.dispatch("browser_copy_url", ["tab": .string("t1")])
+    #expect(copies.all.last == "https://a.test/one?x=1", "a named tab")
+    #expect(await f.snapshot().active == before.active, "and it does not select it")
+}
+
+@Test func copyURLRefusesATabWithNoAddressAndAMissingTab() async throws {
+    let copies = BrowserCopies()
+    let f = try await browserFixture(copyText: { copies.add($0) })
+    try await f.dispatch("browser_new_tab")
+    #expect(await refusal { try await f.dispatch("browser_copy_url") } == "browser_copy_url: tab t1 has no address yet")
+    #expect(await refusal { try await f.dispatch("browser_copy_url", ["tab": .string("t9")]) }
+            == "browser_copy_url: the browser pane has no tab t9")
+    #expect(copies.all.isEmpty, "nothing was written")
+}
+
+@Test func copyURLWithNoPasteboardSaysSo() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let reply = try await f.dispatch("browser_copy_url")
+    guard case .object(let o) = reply else { Issue.record("no object"); return }
+    #expect(o["url"] == .string("https://a.test/"))
+    #expect(o["copied"] == .bool(false), "a headless dispatch writes nothing and says so")
+}
+
+@Test func copyURLIsAnAgentReachableControl() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let action = try #require(await f.registry.all().first { $0.name == "browser_copy_url" })
+    #expect(action.kind == .control)
+    #expect(action.audience == .agentReachable)
+}
+
+@Test func theCopyTipAndTheAddressRule() {
+    #expect(BrowserCopyURL.tip == "Copied")
+    #expect(BrowserCopyURL.tipDuration == 1.5)
+    #expect(BrowserCopyURL.copyable("  https://a.test/ ") == "https://a.test/")
+    #expect(BrowserCopyURL.copyable("   ") == nil)
+}
+
+@Test func browserSettingsDecodePictureInPicture() throws {
+    let on = try JSONDecoder().decode(SettingsBrowser.self, from: Data("{}".utf8))
+    #expect(on.pictureInPicture == true)
+    let off = try JSONDecoder().decode(SettingsBrowser.self, from: Data(#"{"pictureInPicture": false}"#.utf8))
+    #expect(off.pictureInPicture == false)
+}
+
+// MARK: - Names (Task 12): a tab's name is saved, reopened and read
+
+@Test func reopenBringsTheNameBack() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in s.tabs[1].name = "Billing" }
+    try await f.dispatch("browser_close_tab", ["tab": .string("t2")])
+    #expect(await f.snapshot().closed.map(\.name) == ["Billing"])
+    try await f.dispatch("browser_reopen_tab")
+    let back = try #require(await f.active())
+    #expect(back.url == "https://b.test/" && back.name == "Billing")
+    // Saved with the layout too.
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.first { $0.id == back.id }?.name == "Billing")
+}
+
+@Test func readPaneListsNameBesideTitle() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs[0].title = "Stripe Dashboard"; s.tabs[0].name = "Billing"
+        s.tabs[1].title = "B"
+    }
+    guard case .object(let o) = await f.panes.readPane(paneId: f.pane, kind: "browser"),
+          case .array(let tabs)? = o["tabs"],
+          case .object(let first) = tabs[0], case .object(let second) = tabs[1] else {
+        Issue.record("read_pane has no tabs"); return
+    }
+    #expect(first["name"] == .string("Billing") && first["title"] == .string("Stripe Dashboard"))
+    #expect(second["name"] == .null && second["title"] == .string("B"))
+    // The active tab's own `title` stays the page's.
+    #expect(o["title"] == .string("Stripe Dashboard"))
+}
+
+@Test func aBookmarkKeepsThePageTitle() async throws {
+    let (f, files) = try await bookmarkFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://dashboard.stripe.com/")])
+    await f.panes.updateBrowser(paneId: f.pane) { s in
+        s.tabs[0].title = "Stripe Dashboard"; s.tabs[0].name = "Billing"
+    }
+    try await f.dispatch("browser_bookmark")
+    #expect(try files.bookmarks().map(\.title) == ["Stripe Dashboard"])
+}
+
+// MARK: - browser_rename_tab (names Task 13)
+
+@Test func renameNamesTheActiveTabAndEmptyClears() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    let reply = try await f.dispatch("browser_rename_tab", ["name": .string("  Billing\n  page ")])
+    let first = try #require(await f.snapshot().tabs.first)
+    #expect(first.name == "Billing page", "cleaned as a conversation's name is")
+    #expect(await f.snapshot().tabs.last?.name == nil)
+    guard case .object(let o) = reply else { Issue.record("no reply"); return }
+    #expect(o["pane"] == .string(f.pane))
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.first?.name == "Billing page", "saved")
+    // A name of nothing but whitespace clears it.
+    try await f.dispatch("browser_rename_tab", ["tab": .string(first.id), "name": .string("  ")])
+    #expect(await f.snapshot().tabs.first?.name == nil)
+    #expect(try #require(await f.layout.browserTabs(id: f.pane)).tabs.first?.name == nil)
+    // name is required.
+    #expect(await refusal { try await f.dispatch("browser_rename_tab") } != nil)
+}
+
+@Test func renameNeverSelectsTheTab() async throws {
+    let f = try await withTabs(["https://a.test/", "https://b.test/"])
+    let before = await f.snapshot()
+    let second = before.tabs[1]
+    try await f.dispatch("browser_rename_tab", ["tab": .string(second.id), "name": .string("Second")])
+    let after = await f.snapshot()
+    #expect(after.active == before.active)
+    #expect(after.tabs.map(\.id) == before.tabs.map(\.id))
+    #expect(after.tabs[1].name == "Second")
+    #expect(after.tabs[1].command == second.command, "no load or select command is issued")
+}
+
+@Test func anUnknownTabIsRefused() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let why = await refusal { try await f.dispatch("browser_rename_tab", ["tab": .string("t99"), "name": .string("X")]) }
+    #expect(why == String(describing: BrowserActionError.noTab(action: "browser_rename_tab", tab: "t99")))
+}
+
+@Test func aPullRequestRowIsRefused() async throws {
+    let f = try await withTabs(["https://github.com/o/r/pull/1"])
+    await f.panes.updateBrowser(paneId: f.pane) { s in s.tabs[0].pullRequest = "https://github.com/o/r/pull/1" }
+    let why = await refusal { try await f.dispatch("browser_rename_tab", ["name": .string("Mine")]) }
+    #expect(why == "browser_rename_tab: a pull-request row can't be renamed (3d-i ruling 18: a listing, never saved)")
+    #expect(await f.snapshot().tabs.first?.name == nil)
+}
+
+@Test func aPinnedTabsNameIsWrittenToItsPinAtOnce() async throws {
+    let (f, _, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    try await f.dispatch("browser_rename_tab", ["name": .string("Home")])
+    #expect(try files.pins(project: "web").first?.name == "Home")
+    #expect(try files.pins(project: "web").first?.url == "https://example.com/a")
+    try await f.dispatch("browser_rename_tab", ["name": .string("")])
+    #expect(try files.pins(project: "web").first?.name == nil)
+}
+
+@Test func aPinnedTabRenamedOverAnUnreadablePinsFileSaysSoWhole() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let url = files.pinsURL(project: "web")
+    let bytes = Data("{\"items\": [oops".utf8)
+    try bytes.write(to: url)
+    let reply = try await f.dispatch("browser_rename_tab", ["name": .string("Home")])
+    #expect(await f.snapshot().tabs.first?.name == "Home", "renamed here all the same")
+    #expect(try Data(contentsOf: url) == bytes, "never written over")
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.first?.name == nil)
+    guard case .object(let o) = reply, case .string(let why)? = o["pinsError"] else {
+        Issue.record("the reply carries no pinsError"); return
+    }
+    #expect(why.hasPrefix("browser_rename_tab: pins/web.json can't be read ("))
+    #expect(why.hasSuffix(") — fix or move it; Wakil won't write over it."))
+    #expect(await f.snapshot().pinsError == why, "the strip shows it")
+}
+
+@Test func anotherPaneOfTheProjectTakesThePinnedName() async throws {
+    let (f, other, _) = try await pinFixture()
+    try await f.dispatch("browser_pin")
+    let before = await f.panes.browserSnapshot(paneId: other)
+    try await f.dispatch("browser_rename_tab", ["name": .string("Home")])
+    let after = await f.panes.browserSnapshot(paneId: other)
+    #expect(after.tabs.first?.name == "Home")
+    #expect(after.tabs.map(\.id) == before.tabs.map(\.id), "the copy is renamed, not replaced")
+    #expect(after.active == before.active)
+    #expect(await f.layout.browserTabs(id: other)?.tabs.first?.name == "Home", "saved in the other pane too")
+    // A pane opened later takes it from the pin at its full reconcile.
+    let third = await f.layout.open(kind: "browser", title: "Browser").id
+    try await f.dispatch("browser_restore", ["pane": .string(third)], named: false)
+    #expect(await f.panes.browserSnapshot(paneId: third).tabs.first { $0.pin != nil }?.name == "Home")
+}
+
+@Test func pinningAGroupKeepsItsTabsNames() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_new_tab", ["url": .string("https://example.net/c")])
+    let ids = await f.snapshot().tabs.map(\.id)
+    try await f.dispatch("browser_rename_tab", ["tab": .string(ids[0]), "name": .string("Alpha")])
+    guard case .object(let made) = try await f.dispatch(
+        "browser_group", ["action": .string("create"), "name": .string("Work"),
+                          "tabs": .array(ids.map { .string($0) })]),
+        case .string(let group)? = made["group"] else { Issue.record("no group"); return }
+    try await f.dispatch("browser_pin", ["group": .string(group)])
+    let pin = try #require(try files.pins(project: "web").first)
+    #expect(pin.tabs?.map(\.name) == ["Alpha", nil])
+    let o = await f.panes.browserSnapshot(paneId: other)
+    let copy = try #require(o.groups.first { $0.pin == pin.id })
+    #expect(o.tabs.filter { $0.group == copy.id }.map(\.name) == ["Alpha", nil])
+}
+
+@Test func pinningANamedTabCarriesItsName() async throws {
+    let (f, other, files) = try await pinFixture()
+    try await f.dispatch("browser_rename_tab", ["name": .string("Home")])
+    try await f.dispatch("browser_pin")
+    #expect(try files.pins(project: "web").first?.name == "Home")
+    #expect(await f.panes.browserSnapshot(paneId: other).tabs.first?.name == "Home")
 }
