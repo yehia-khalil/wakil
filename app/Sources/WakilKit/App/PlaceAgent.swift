@@ -101,9 +101,22 @@ public final class PlaceAgent {
     public internal(set) var assignedSessionId: String? {
         didSet { if let assignedSessionId { sessionIds.insert(assignedSessionId) } }
     }
-    /// The conversation's title: `newConversationTitle` until its first `send` sets it, once,
+    /// The first message's title: `newConversationTitle` until the first `send` sets it, once,
     /// from the typed text.
-    public internal(set) var title = newConversationTitle
+    public internal(set) var messageTitle = newConversationTitle
+    /// The typed text of the first `send` (not the identifier note or instructions update).
+    public internal(set) var firstMessage: String?
+    /// The operator's name for this conversation; it wins over the model's.
+    public internal(set) var operatorName: String?
+    /// The name the model gave it.
+    public internal(set) var aiName: String?
+    /// The conversation's title: the operator's name, else the model's, else the first message's.
+    public var title: String { displayTitle.title }
+    /// Which of the three slots `title` came from.
+    public var titleSource: ConversationTitleSource { displayTitle.source }
+    private var displayTitle: (title: String, source: ConversationTitleSource) {
+        conversationDisplayTitle(operatorName: operatorName, aiName: aiName, messageTitle: messageTitle)
+    }
     /// Creation, each `send`, each event appended: what "most recent" orders by.
     public internal(set) var lastActivity = Date()
     /// The window-wide creation counter's value when this conversation was made.
@@ -141,7 +154,10 @@ public final class PlaceAgent {
 
     /// A `send`: the first one names the conversation from the typed text.
     func noteSend(_ text: String) {
-        if title == newConversationTitle { title = conversationTitle(text) }
+        if firstMessage == nil {
+            firstMessage = text
+            messageTitle = conversationTitle(text)
+        }
         lastActivity = Date()
     }
 

@@ -8827,7 +8827,7 @@ public final class WindowModel {
             .map { agent in
                 LiveConversation(
                     id: agent.id, session: agent.sessionId, place: agent.place, title: agent.title,
-                    state: .of(
+                    titleSource: agent.titleSource, state: .of(
                         waiting: waiting.contains(agent.id), failed: agent.unseenFailure,
                         working: agent.turnInFlight, done: agent.unseenResult),
                     onScreen: agent === shown, lastActivity: agent.lastActivity,
