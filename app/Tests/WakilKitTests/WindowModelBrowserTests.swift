@@ -8,7 +8,8 @@ import Testing
 private func browserWindow(
     orgFiles: BrowserOrgFiles? = nil, removeData: BrowserDataRemover? = nil,
     context: (any ToolCaller)? = nil, quickModel: (any QuickModel)? = nil,
-    pullRequests: @escaping BrowserPullRequestsRead = { nil }
+    pullRequests: @escaping BrowserPullRequestsRead = { nil },
+    copyText: BrowserTextCopier? = nil
 ) async -> (WindowModel, FakeFiles, LayoutStore, journal: URL, panes: PaneStore) {
     let journalDir = testScratchRoot.appendingPathComponent("browser-window-\(UUID().uuidString)")
     let registry = ActionRegistry(journalDirectory: journalDir, sessionId: "browser-window")
@@ -32,7 +33,8 @@ private func browserWindow(
         into: registry, panes: panes, layout: layout, files: fileLists, fileLists: fileLists,
         gitStatus: nil, roots: { [weak model] in await model?.gitRootPaths ?? [] })
     await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { .defaults },
-                                 orgFiles: { orgFiles }, removeData: removeData, pullRequests: pullRequests)
+                                 orgFiles: { orgFiles }, removeData: removeData, pullRequests: pullRequests,
+                                 copyText: copyText)
     return (model, files, layout, journalDir.appendingPathComponent("browser-window.jsonl"), panes)
 }
 
@@ -44,8 +46,9 @@ private func browserWindow(
     }
 
     /// `focusedBrowser`, with the window's pane store, for a test that moves its screen.
-    private func focusedBrowserAndPanes() async throws -> (WindowModel, String, LayoutStore, URL, PaneStore) {
-        let (model, _, layout, journal, panes) = await browserWindow()
+    private func focusedBrowserAndPanes(copyText: BrowserTextCopier? = nil) async throws
+        -> (WindowModel, String, LayoutStore, URL, PaneStore) {
+        let (model, _, layout, journal, panes) = await browserWindow(copyText: copyText)
         await model.refreshContext()
         await model.dispatchFromSurface("browser_open", .object(["url": .string("https://a.test/")]))
         await model.refreshLayout()
@@ -525,6 +528,54 @@ private func browserWindow(
         model.browserHome = testScratchRoot
         #expect(model.organization.isEmpty)
         #expect(model.browserOrgFiles == nil)
+    }
+
+    // MARK: 3d-i walk: ⌘⇧C
+
+    @Test func copyPageAddressCopiesTheActiveTabsURLWithATipAndMovesNothing() async throws {
+        let copies = BrowserCopies()
+        let (model, pane, _, journal, panes) = try await focusedBrowserAndPanes(copyText: { copies.add($0) })
+        let before = await panes.browserSnapshot(paneId: pane)
+        let focus = model.layoutSnapshot.focusedId
+        #expect(await model.browserKey(.copyURL))
+        #expect(copies.all == ["https://a.test/"])
+        #expect(model.browserCopiedTip?.pane == pane, "the tip shows in this pane")
+        #expect(model.layoutSnapshot.focusedId == focus, "focus stays")
+        #expect(await panes.browserSnapshot(paneId: pane) == before, "the page and the tabs are untouched")
+        let lines = try String(contentsOf: journal, encoding: .utf8).split(separator: "\n")
+        #expect(lines.contains { $0.contains("\"browser_copy_url\"") }, "⌘⇧C went through the action")
+    }
+
+    @Test func theCopiedTipGoesAfterItsTime() async throws {
+        let (model, _, _, _, _) = try await focusedBrowserAndPanes(copyText: { _ in })
+        #expect(await model.browserKey(.copyURL))
+        #expect(model.browserCopiedTip != nil)
+        try await Task.sleep(for: .seconds(BrowserCopyURL.tipDuration + 0.5))
+        #expect(model.browserCopiedTip == nil, "it fades after about a second and a half")
+    }
+
+    @Test func copyPageAddressWithNoAddressDoesNothingAndShowsNoTip() async throws {
+        let copies = BrowserCopies()
+        let (model, pane, _, _, _) = try await focusedBrowserAndPanes(copyText: { copies.add($0) })
+        await model.dispatchFromSurface("browser_new_tab", .object(["pane": .string(pane)]))
+        #expect(model.browser(pane)?.activeTab?.url == "")
+        #expect(await model.browserKey(.copyURL), "the key is the browser's, with nothing to copy")
+        #expect(copies.all.isEmpty)
+        #expect(model.browserCopiedTip == nil)
+    }
+
+    @Test func copyPageAddressOutsideABrowserIsNotTakenAndCopiesNothing() async throws {
+        let copies = BrowserCopies()
+        let (model, files, _, _, _) = await browserWindow(copyText: { copies.add($0) })
+        await model.refreshContext()
+        await files.put("/p/api/a.go", "a")
+        await model.dispatchFromSurface("editor_open", .object(["path": .string("/p/api/a.go")]))
+        await model.refreshLayout()
+        let editor = try #require(model.layoutSnapshot.panes.first { $0.kind == "editor" }?.id)
+        await model.focusPane(id: editor)
+        #expect(await !model.browserKey(.copyURL), "the key goes on to the editor")
+        #expect(copies.all.isEmpty)
+        #expect(model.browserCopiedTip == nil)
     }
 
     @Test func keysOutsideABrowserKeepTodaysMeaning() async throws {

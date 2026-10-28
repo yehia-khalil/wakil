@@ -37,7 +37,7 @@ private let orgDerived: Set<String> = [
     "project", "projectKey", "environment", "environmentProduction",
     // 3c-ii: the browser's sites come from the org's config tree (unread until re-read), and the on-screen
     // conversation's allowed sites are re-read from the store after the switch.
-    "browserSites", "browserAllowedOnScreen", "browserCloseArm",
+    "browserSites", "browserAllowedOnScreen", "browserCloseArm", "browserCopiedTip",
     // 3c-iii: the ★ menu's bookmarks are the drawn org's, re-read from the store after the switch.
     "browserBookmarksOnScreen",
     // 3d-i: the groups asked a name for, and the requests in flight, are the outgoing org's places';
@@ -299,7 +299,7 @@ private let orgIndependent: Set<String> = [
     // count of writes it ran (a test seam). Neither describes an organisation.
     "editorTabsDelay", "editorTabsWriteCount", "editorAutosaveDelay", "editorAutosaveCount",
     // 3c-i: the browser's saved-tabs debounce length and its write count, the same shapes.
-    "browserTabsDelay", "browserTabsWriteCount", "browserNow", "browserCloseArmTask",
+    "browserTabsDelay", "browserTabsWriteCount", "browserNow", "browserCloseArmTask", "browserCopiedTipTask", "browserCopiedSerial",
     // 3d-i: the pull-request loop's interval (configuration, shortened by tests).
     "browserPullRequestsInterval",
     // 3d-i Task 12: how many of this window's refreshes are under way — each its own call, which

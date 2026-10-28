@@ -13,6 +13,8 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
     case notABrowser(action: String, pane: String)
     case noTab(action: String, tab: String?)
     case nothingToReopen
+    /// `browser_copy_url`: the tab has no address yet (a blank start page).
+    case nothingToCopy(tab: String)
     case findClosed
     case noDownload(id: String)
     case unknownZoomStep(String)
@@ -48,6 +50,7 @@ public enum BrowserActionError: Error, Sendable, Equatable, CustomStringConverti
         case .noTab(let action, let tab):
             tab.map { "\(action): the browser pane has no tab \($0)" } ?? "\(action): the browser pane has no open tab"
         case .nothingToReopen: "browser_reopen_tab: no closed tab to reopen in this pane"
+        case .nothingToCopy(let tab): "browser_copy_url: tab \(tab) has no address yet"
         case .findClosed: "browser_find_step: the find bar is closed; open it with browser_find (⌘F)"
         case .noDownload(let id): "browser_download_cancel: this pane has no download \(id)"
         case .unknownZoomStep(let step): "browser_zoom: step is in, out or reset, not \(step)"
@@ -242,10 +245,12 @@ public func registerBrowserActions(
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
     removeData: BrowserDataRemover? = nil,
     driver: (any BrowserPageDriver)? = nil,
-    pullRequests: @escaping BrowserPullRequestsRead = { nil }
+    pullRequests: @escaping BrowserPullRequestsRead = { nil },
+    copyText: BrowserTextCopier? = nil
 ) async {
     for action in browserActions(panes: panes, layout: layout, settings: settings, orgFiles: orgFiles,
-                                 removeData: removeData, driver: driver, pullRequests: pullRequests) {
+                                 removeData: removeData, driver: driver, pullRequests: pullRequests,
+                                 copyText: copyText) {
         await registry.register(action)
     }
 }
@@ -259,7 +264,8 @@ func browserActions(
     orgFiles: @escaping @Sendable () async throws -> BrowserOrgFiles? = { nil },
     removeData: BrowserDataRemover? = nil,
     driver: (any BrowserPageDriver)? = nil,
-    pullRequests: @escaping BrowserPullRequestsRead = { nil }
+    pullRequests: @escaping BrowserPullRequestsRead = { nil },
+    copyText: BrowserTextCopier? = nil
 ) -> [Action] {
     var actions: [Action] = []
     let kind = BrowserPaneKind.names[0]
@@ -487,6 +493,28 @@ func browserActions(
         kind: .control, audience: .agentReachable,
         schema: schema(tabSchema),
         handler: { params in try await command(params, action: "browser_focus_address") { _ in .focusAddress } }))
+
+    actions.append(Action(
+        name: "browser_copy_url",
+        description: "Copy a tab's address (tab, default the active one) to the system pasteboard, as ⌘⇧C, "
+            + "and answer it as url; copied is false where nothing can write the pasteboard (no app). "
+            + "A tab with no address yet refuses.",
+        kind: .control, audience: .agentReachable,
+        schema: schema(tabSchema),
+        handler: { params in
+            let pane = try await browserPane(params, action: "browser_copy_url").id
+            let tab = optionalString(params, "tab")
+            let snapshot = await panes.browserSnapshot(paneId: pane)
+            guard let i = snapshot.tabIndex(tab) else { throw BrowserActionError.noTab(action: "browser_copy_url", tab: tab) }
+            guard let url = BrowserCopyURL.copyable(snapshot.tabs[i].url) else {
+                throw BrowserActionError.nothingToCopy(tab: snapshot.tabs[i].id)
+            }
+            if let copyText { await copyText(url) }
+            guard case .object(var o) = await reply(pane) else { return .null }
+            o["url"] = .string(url)
+            o["copied"] = .bool(copyText != nil)
+            return .object(o)
+        }))
 
     actions.append(Action(
         name: "browser_print",
@@ -1159,6 +1187,8 @@ public func decodeBrowserSettings(fromResult result: JSONValue?) -> SettingsBrow
 public enum BrowserKey: Sendable, Equatable {
     case newTab, closeTab, toggleTabColumn, reopenTab, focusAddress, reload, back, forward, find, findNext, findPrevious
     case zoomIn, zoomOut, zoomReset, nextTab, previousTab, bookmark
+    /// ⌘⇧C: copy the active tab's address (`browser_copy_url`).
+    case copyURL
     /// ⌘1–8 tab N; ⌘9 the last tab.
     case tab(Int)
 }

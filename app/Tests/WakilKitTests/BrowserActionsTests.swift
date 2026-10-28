@@ -13,6 +13,14 @@ final class BrowserSettingsBox: @unchecked Sendable {
     }
 }
 
+/// What a fixture's `copyText` put on its pasteboard, in order.
+final class BrowserCopies: @unchecked Sendable {
+    private let lock = NSLock()
+    private var texts: [String] = []
+    var all: [String] { lock.withLock { texts } }
+    func add(_ text: String) { lock.withLock { texts.append(text) } }
+}
+
 struct BrowserFixture {
     let registry: ActionRegistry
     let panes: PaneStore
@@ -37,7 +45,8 @@ struct BrowserFixture {
 /// shape. `open` false leaves the canvas empty.
 func browserFixture(startPage: String = "", open: Bool = true, orgFiles: BrowserOrgFiles? = nil,
                     removeData: BrowserDataRemover? = nil,
-                    pullRequests: @escaping BrowserPullRequestsRead = { nil }) async throws -> BrowserFixture {
+                    pullRequests: @escaping BrowserPullRequestsRead = { nil },
+                    copyText: BrowserTextCopier? = nil) async throws -> BrowserFixture {
     let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
@@ -46,7 +55,8 @@ func browserFixture(startPage: String = "", open: Bool = true, orgFiles: Browser
     let panes = PaneStore(kinds: PaneKinds.standard)
     let settings = BrowserSettingsBox(SettingsBrowser(searchEngine: "google", startPage: startPage))
     await registerBrowserActions(into: registry, panes: panes, layout: layout, settings: { settings.current },
-                                 orgFiles: { orgFiles }, removeData: removeData, pullRequests: pullRequests)
+                                 orgFiles: { orgFiles }, removeData: removeData, pullRequests: pullRequests,
+                                 copyText: copyText)
     return BrowserFixture(registry: registry, panes: panes, layout: layout, settings: settings, pane: pane)
 }
 
@@ -1459,4 +1469,57 @@ private func prTabs(_ s: BrowserSnapshot) -> [BrowserTab] { s.tabs.filter { $0.g
     await f.layout.switchScope(to: initech)
     await f.panes.switchScope(to: initech)
     #expect(prTabs(await f.snapshot()).map(\.pullRequest) == [pr(1).url], "nor initech's panes")
+}
+
+// MARK: 3d-i walk: browser_copy_url
+
+@Test func copyURLWritesTheActiveTabsAddressAndAnswersIt() async throws {
+    let copies = BrowserCopies()
+    let f = try await browserFixture(copyText: { copies.add($0) })
+    try await f.dispatch("browser_new_tab", ["url": .string("https://a.test/one?x=1")])
+    try await f.dispatch("browser_new_tab", ["url": .string("https://b.test/two")])
+    let before = await f.snapshot()
+
+    let reply = try await f.dispatch("browser_copy_url")
+    guard case .object(let o) = reply else { Issue.record("no object: \(reply)"); return }
+    #expect(o["url"] == .string("https://b.test/two"), "the active tab's address")
+    #expect(o["copied"] == .bool(true))
+    #expect(copies.all == ["https://b.test/two"])
+    #expect(await f.snapshot() == before, "nothing in the pane changed: the page and the tabs stay")
+
+    try await f.dispatch("browser_copy_url", ["tab": .string("t1")])
+    #expect(copies.all.last == "https://a.test/one?x=1", "a named tab")
+    #expect(await f.snapshot().active == before.active, "and it does not select it")
+}
+
+@Test func copyURLRefusesATabWithNoAddressAndAMissingTab() async throws {
+    let copies = BrowserCopies()
+    let f = try await browserFixture(copyText: { copies.add($0) })
+    try await f.dispatch("browser_new_tab")
+    #expect(await refusal { try await f.dispatch("browser_copy_url") } == "browser_copy_url: tab t1 has no address yet")
+    #expect(await refusal { try await f.dispatch("browser_copy_url", ["tab": .string("t9")]) }
+            == "browser_copy_url: the browser pane has no tab t9")
+    #expect(copies.all.isEmpty, "nothing was written")
+}
+
+@Test func copyURLWithNoPasteboardSaysSo() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let reply = try await f.dispatch("browser_copy_url")
+    guard case .object(let o) = reply else { Issue.record("no object"); return }
+    #expect(o["url"] == .string("https://a.test/"))
+    #expect(o["copied"] == .bool(false), "a headless dispatch writes nothing and says so")
+}
+
+@Test func copyURLIsAnAgentReachableControl() async throws {
+    let f = try await withTabs(["https://a.test/"])
+    let action = try #require(await f.registry.all().first { $0.name == "browser_copy_url" })
+    #expect(action.kind == .control)
+    #expect(action.audience == .agentReachable)
+}
+
+@Test func theCopyTipAndTheAddressRule() {
+    #expect(BrowserCopyURL.tip == "Copied")
+    #expect(BrowserCopyURL.tipDuration == 1.5)
+    #expect(BrowserCopyURL.copyable("  https://a.test/ ") == "https://a.test/")
+    #expect(BrowserCopyURL.copyable("   ") == nil)
 }

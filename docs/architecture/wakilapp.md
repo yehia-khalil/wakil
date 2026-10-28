@@ -86,6 +86,9 @@ is shown (`reportAll`). Commands go the other way only: an action bumps the tab'
 pane's `sync` hands it to the host. A page's own prompts (alert, sign-in, camera) are the host's,
 not store state (`BrowserPrompt`): the page asked, not the operator or the agent.
 `BrowserSettingsForm.swift` is Settings → Browser (search engine, start page, Clear data).
+Two seams reach outside the store from here: `BrowserFaviconLoader` fetches a tab's icon with an ephemeral
+session (no cookies, no credentials, 64 KB, kept in memory by URL), and `WindowSession` hands
+`browser_copy_url` the general pasteboard (`copyBrowserText`).
 
 **The agent's reach into a page (3c-ii)** is `BrowserPageAgent` (`BrowserPageAgent.swift`), the
 `BrowserPageDriver` WakilKit's actions call, and `BrowserAgentScript.swift`, the script it runs. The

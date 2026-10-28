@@ -231,10 +231,17 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   never written over.
 - `BrowserPinnedClose.swift` — `BrowserPinnedClose` (3d-i): ⌘W on a pinned tab arms for 2 s
   (`Press ⌘W again to close`) and closes on the second press; the × closes at once.
+- `BrowserFaviconRules.swift` — `BrowserFaviconRules` (3d-i walk): which address a tab's icon comes from
+  (the page's `link rel=icon`, else `<origin>/favicon.ico`; http and https only) and the size and type rule
+  (at most 64 KB, a 2xx, not a page). The fetch is the app's: an ephemeral session, no cookies or credentials.
+- `BrowserStripEntries.swift` — `BrowserStripEntry` and `BrowserSnapshot.stripEntries` (3d-i walk): what the
+  tab list draws, in order; a collapsed group shows its active tab under its header (`showsTab`).
+- `BrowserCopyURL.swift` — `BrowserCopyURL` (3d-i walk): ⌘⇧C's rule, the `Copied` tip (1.5 s) and
+  `BrowserTextCopier`, the seam `browser_copy_url` writes the pasteboard through (only the app can).
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `BrowserGroup`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `BrowserSiteKeyTests`, `BrowserGroupingTests`, `BrowserGroupNamesTests`, `BrowserPinsTests`, `BrowserPinnedCloseTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `BrowserSiteKeyTests`, `BrowserGroupingTests`, `BrowserGroupNamesTests`, `BrowserPinsTests`, `BrowserPinnedCloseTests`, `BrowserFaviconRulesTests`, `BrowserStripEntriesTests`, `WindowModelBrowserTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 

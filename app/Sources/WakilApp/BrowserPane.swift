@@ -52,6 +52,8 @@ struct BrowserPane: View {
     /// ↻ and error), the group header ⌘R acts on in this pane and how to set it, and *Refresh*.
     let project: String
     let closeArm: BrowserCloseArm?
+    /// 3d-i walk: the `Copied` tip after ⌘⇧C, drawn under the address field while it is this pane's.
+    let copiedTip: BrowserCopiedTip?
     let pullRequests: BrowserPullRequests?
     let headerFocus: String?
     let setHeaderFocus: (String?) -> Void
@@ -147,9 +149,28 @@ struct BrowserPane: View {
                     BrowserSuggestionList(rows: input.rows, highlight: input.highlight, choose: choose)
                         .frame(width: field.width)
                         .offset(x: field.minX, y: field.maxY + 2)
+                } else if copiedTip?.pane == pane.id, let anchor {
+                    // Where the pinned tab's tip hangs, under the field: it fades, takes no click and
+                    // moves nothing (Rule 6).
+                    let field = geometry[anchor]
+                    Text(BrowserCopyURL.tip)
+                        .font(.system(size: BrowserPaneStyle.tabTitleSize, weight: .medium))
+                        .foregroundStyle(BrowserPaneStyle.text)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
+                            .fill(.regularMaterial))
+                        .overlay(RoundedRectangle(cornerRadius: PaneStripStyle.tabRadius, style: .continuous)
+                            .strokeBorder(BrowserPaneStyle.text.opacity(PaneStripStyle.hairline), lineWidth: 1))
+                        .fixedSize()
+                        .offset(x: field.minX, y: field.maxY + 4)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("browser.copiedTip")
                 }
             }
         }
+        .animation(.easeOut(duration: 0.3), value: copiedTip)
         .onAppear {
             sync(old: nil, now: snapshot)
             // What its web views said while this place was off screen was dropped (the seam's

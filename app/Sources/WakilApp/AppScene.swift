@@ -520,6 +520,10 @@ struct WakilApplication: App {
                 // ⌘D, select the next match), as the other browser keys do (ruling 13).
                 Button("Add Bookmark") { browserKey(.bookmark) }
                     .keyboardShortcut("d", modifiers: .command)
+                // The active tab's address, with a `Copied` tip; outside a browser pane the key goes
+                // on to what holds it (the editor's and the terminal's own ⌘⇧C stay theirs).
+                Button("Copy Page Address") { browserKey(.copyURL) }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
                 Divider()
                 Button("Find…") { browserKey(.find) }
                     .keyboardShortcut("f", modifiers: .command)

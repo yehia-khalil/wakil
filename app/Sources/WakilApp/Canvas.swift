@@ -632,6 +632,7 @@ extension WakilWindow {
                         chooseTab: { tab, url in await model.browserChooseTab(tab, url: url, from: pane.id) },
                         project: model.project,
                         closeArm: model.browserCloseArm,
+                        copiedTip: model.browserCopiedTip,
                         pullRequests: model.browserPullRequestsOnScreen,
                         headerFocus: model.browserHeaderFocus?.pane == pane.id ? model.browserHeaderFocus?.group : nil,
                         setHeaderFocus: { group in

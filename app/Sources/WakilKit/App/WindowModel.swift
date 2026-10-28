@@ -2305,6 +2305,7 @@ public final class WindowModel {
         // prices as production until the incoming org's tree is read.
         browserSites = .unread
         clearBrowserCloseArm()
+        clearBrowserCopiedTip()
         browserAllowedOnScreen = []
         browserBookmarksOnScreen = []
         // 3d-i ruling 12: a group asked about in the outgoing organisation is another's; a reply in
@@ -5768,6 +5769,30 @@ public final class WindowModel {
         }
     }
 
+    /// The `Copied` tip under a browser pane's address field, for `BrowserCopyURL.tipDuration` after
+    /// ⌘⇧C. Observed: the view draws it while it is set. Org-derived: `invalidateForOrgChange` clears it.
+    public private(set) var browserCopiedTip: BrowserCopiedTip?
+    @ObservationIgnored private var browserCopiedTipTask: Task<Void, Never>?
+    @ObservationIgnored private var browserCopiedSerial = 0
+
+    private func showBrowserCopiedTip(pane: String) {
+        browserCopiedTipTask?.cancel()
+        browserCopiedSerial += 1
+        let tip = BrowserCopiedTip(pane: pane, serial: browserCopiedSerial)
+        browserCopiedTip = tip
+        browserCopiedTipTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(BrowserCopyURL.tipDuration))
+            guard !Task.isCancelled, let self, self.browserCopiedTip == tip else { return }
+            self.browserCopiedTip = nil
+        }
+    }
+
+    private func clearBrowserCopiedTip() {
+        browserCopiedTipTask?.cancel()
+        browserCopiedTipTask = nil
+        browserCopiedTip = nil
+    }
+
     private func clearBrowserCloseArm() {
         browserCloseArmTask?.cancel()
         browserCloseArmTask = nil
@@ -5836,6 +5861,12 @@ public final class WindowModel {
         case .bookmark:
             guard s.activeTab != nil else { return true }
             name = "browser_bookmark"
+        case .copyURL:
+            // ⌘⇧C: the page you are on, with a tip under the address field. Nothing moves: focus stays
+            // where it was and the page is untouched (Rule 6).
+            guard let active = s.activeTab, BrowserCopyURL.copyable(active.url) != nil else { return true }
+            if await dispatch("browser_copy_url", .object(params)) != nil { showBrowserCopiedTip(pane: pane) }
+            return true
         case .nextTab, .previousTab:
             guard let i = s.tabs.firstIndex(where: { $0.id == s.active }), s.tabs.count > 1 else { return true }
             name = "browser_select_tab"

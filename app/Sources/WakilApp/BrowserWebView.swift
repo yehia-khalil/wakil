@@ -13,14 +13,14 @@ final class BrowserWebView: WKWebView {
     /// Esc while the page loads: the tab's `browser_stop` (Rule 4). Answers whether it was used.
     var stopOnEscape: (@MainActor () -> Bool)?
 
-    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, and ⌘⇧W (global constraints), **by physical key**
+    /// ⌘K, ⌘P, ⌘N, ⌘T, ⌘W, ⌘L, ⌘1–9, ⌘, ⌘⇧W and ⌘⇧C (global constraints), **by physical key**
     /// (`kVK_ANSI_*`), so they are Wakil's on every keyboard layout — a character match fails on a
     /// non-Latin one (`QueryLineKeys`' note).
     static func isWakilKey(_ event: NSEvent) -> Bool {
         guard event.type == .keyDown else { return false }
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if mods == .command { return commandKeys.contains(event.keyCode) }
-        if mods == [.command, .shift] { return event.keyCode == 13 }   // W
+        if mods == [.command, .shift] { return event.keyCode == 13 || event.keyCode == 8 }   // W; C: Copy Page Address
         if mods == [.control, .command] { return event.keyCode == 1 }  // S: Toggle Tab Column (3d-i)
         return false
     }
