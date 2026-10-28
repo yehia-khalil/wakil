@@ -45,7 +45,7 @@ have no name, so the test password never reaches the tab's URL. Stop the servers
 | 7 | Wakil | ⌘⇧O → **B**, then open `login.html` on 8123 | No key in the fields, and Settings → Passwords reads `No passwords saved for orgb yet.` | |
 | 8 | Wakil | Back in **A**, Settings → Passwords: **Reveal**, **Copy**, **Edit** the password then click away, then **Delete** | Reveal asks for Touch ID or the Mac's password, once. The edit saves when focus leaves. Delete asks in place, and **Keep it** keeps the login | |
 | 9 | Wakil | **Import…** → `.scratch/3d-iv/passwords-test.csv` → **Import**, then answer the Trash question | Rows are listed by site with an organisation picker set to `personal`. The no-URL row is marked `no URL`. The receipt reads `Imported 2 passwords. Skipped 1.` **Move to Trash** moves the file | |
-| 10 | Terminal, Wakil | `security find-generic-password -s wakil:personal:browser-login:default -a "127.0.0.1:8123 walker" -w`. Then rebuild (`make app-bundle`), relaunch, and repeat row 2 | macOS asks before `security` gets the value. Deny it, and nothing prints. After the rebuild, the first fill asks once (ruling 2), and **Always Allow** stops further asks | |
+| 10 | Terminal, Wakil | `security find-generic-password -s wakil:personal:browser-login:default -a "127.0.0.1:8123 walker" -w`. Then rebuild (`make app-bundle`), relaunch, and repeat row 2 | macOS asks before `security` gets the value. Deny it, and nothing prints. After the rebuild, the first fill asks once (ruling 2), and **Always Allow** stops further asks. A rename-only **Edit** in Settings after a rebuild asks too | |
 
 Rows 11 to 14 are what the build could not check without the screen. They are the first things to look
 at: a defect in any is a UI defect nobody has seen.
@@ -71,6 +71,17 @@ at: a defect in any is a UI defect nobody has seen.
 - A page's own script can raise a Save bar by sending a form it built, for its own site, with values it
   already holds; saving needs your **Save**.
 - The import receipt reads `Imported 1 passwords.` for one row: the copy is fixed by the plan.
+- An http page that is not local (not loopback, `localhost`, `*.localhost`, `*.test` or an IP
+  literal) gets no key, and a fill or suggestion there is refused: a site key drops the scheme, so a
+  login saved on https would otherwise fill on the same site's http page.
+- **Copy** in Settings leaves the password on the pasteboard for 90 s; it is cleared then unless
+  something else was copied since.
+- The Wakil binary is ad-hoc signed with no hardened runtime, so code the agent runs in its shell
+  could (a) load itself into the trusted binary (`DYLD_INSERT_LIBRARIES`) and read saved passwords with
+  no prompt — unmeasured; (b) run `Wakil --dispatch` with `browser_password_save`, `_delete` or
+  `_never` and overwrite or delete logins with no prompt — the e2e driver needs `--dispatch`, so this
+  lane does not refuse it; (c) rebuild the app, which raises the same **Always Allow** prompt as your
+  own rebuild. Signing with the hardened runtime (2b-vii) fixes it; that is your call.
 - Open in the probe: (b) the prompt `security` raises and the exit status, (e) the exact words after
   a rebuild, (f) whether a tab's saved state ever holds a typed password (it should not).
 
@@ -91,6 +102,7 @@ screen. If it runs without the login keychain, set `WAKIL_KEYCHAIN` to a tempora
 - save then fill on `login.html` and on `login-spa.html`;
 - nothing filled on load;
 - the fill refused after `login-redirect.html` moves;
+- http (non-local) page: fill refused;
 - a page's own `window.webkit` post is not heard (the handler lives in `wakil.passwords`);
 - update, never and suggest on `signup.html`;
 - the agent's `browser_read_page` after a fill, *show password* included;

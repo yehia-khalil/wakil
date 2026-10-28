@@ -1692,6 +1692,14 @@ Each entry: the call, why, and what would change our mind.
     the tab's URL and is not scrubbed from it. A password under 6 characters made visible as page text
     by a *show password* toggle is not hidden in text or labels (it is, in element values). Every
     rebuild asks again per item (ruling 2). `wakil org rm` names the items as residue and deletes none.
+    An http page that is not local gets no key and no fill: a site key drops the scheme. A copied
+    password leaves the pasteboard after 90 s unless something was copied since.
+    **The binary is ad-hoc signed with no hardened runtime**, so code the agent runs in its shell could
+    (a) load itself into the trusted binary (`DYLD_INSERT_LIBRARIES`) and read saved passwords with no
+    prompt — unmeasured; (b) run `Wakil --dispatch` with `browser_password_save`, `_delete` or `_never`
+    and overwrite or delete logins with no prompt — the e2e driver needs `--dispatch`, so this lane does
+    not refuse it; (c) rebuild the app, which raises the same *Always Allow* prompt as the operator's
+    own rebuild. The fix is signing with the hardened runtime (sub-phase 2b-vii); the operator decides.
     *Reverse if:* the agent can read a saved password by any route, or an organisation's login is
     offered in another; then the store and the fill move out of the app process, to something the agent cannot start.
 ## Invariant 6 — the writes that have earned in
