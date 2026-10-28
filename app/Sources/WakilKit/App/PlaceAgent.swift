@@ -110,6 +110,16 @@ public final class PlaceAgent {
     public internal(set) var operatorName: String?
     /// The name the model gave it.
     public internal(set) var aiName: String?
+    /// The agent's text of the first clean turn, joined and cut to `ConversationNames.replyLimit`:
+    /// the start of the reply the naming quick task is sent.
+    var replyStart = ""
+    /// The first turn ending without error has ended: what makes a conversation due to be named.
+    var firstCleanTurnDone = false
+    /// The model was asked to name this conversation, or never will be (a resume). Cleared only by a
+    /// reply dropped by a rebuild or an organisation switch, so it is asked again.
+    var namingAsked = false
+    /// A name landed before the conversation had a lineage root: written when the root is set.
+    var namesUnsaved = false
     /// The conversation's title: the operator's name, else the model's, else the first message's.
     public var title: String { displayTitle.title }
     /// Which of the three slots `title` came from.
@@ -159,6 +169,13 @@ public final class PlaceAgent {
             messageTitle = conversationTitle(text)
         }
         lastActivity = Date()
+    }
+
+    /// One `assistantText` of the turns before the first clean one ends, kept to the reply limit.
+    func noteReplyText(_ text: String) {
+        guard !firstCleanTurnDone, replyStart.count < ConversationNames.replyLimit else { return }
+        let joined = replyStart.isEmpty ? text : replyStart + "\n" + text
+        replyStart = String(joined.prefix(ConversationNames.replyLimit))
     }
 
     /// Lets every turn waiting on the session's start go on.

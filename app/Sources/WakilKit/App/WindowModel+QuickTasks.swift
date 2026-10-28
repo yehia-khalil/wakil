@@ -59,6 +59,9 @@ extension WindowModel {
                                       jsonSchema: FastPath.replySchema, maxTokens: 8)
             Task { _ = try? await tasks.respond(warm, fallback: false) }   // the reply is not used
         }
+        // Names: every conversation due — its first turn ended in another organisation, or a rebuild
+        // dropped its reply — is asked now.
+        nameDueConversations()
     }
 
     /// Releases every pane's pending request, then shuts the models down. Also the window's own

@@ -46,6 +46,9 @@ private let orgDerived: Set<String> = [
     // ghost session asks them; `invalidateForOrgChange` shuts both down, and the switch rebuilds.
     "quickTasks", "ghostSessions", "ghostTextEnabled", "fastPathEnabled", "commitDraftsEnabled",
     "conversationNamesEnabled",
+    // Names: a naming in flight asked the outgoing org's quick model; `invalidateForOrgChange` cancels
+    // each and leaves its conversation due (WindowModelConversationNamesTests).
+    "conversationNamingTasks",
     "quickTasksConfigError",
     "providerId",
     "lookup", "rootPaths", "hasProjectRoot",

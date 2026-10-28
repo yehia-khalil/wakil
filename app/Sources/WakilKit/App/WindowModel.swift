@@ -319,7 +319,7 @@ public final class WindowModel {
     /// The last thing that went wrong, as text. A SwiftUI control has
     /// nowhere to throw to, so a refusal or a transport failure has to
     /// become something on screen or it becomes nothing at all.
-    public private(set) var status = "" {
+    public internal(set) var status = "" {
         didSet { statusWrites &+= 1 }
     }
     /// Every write to `status`, counted, so the palette can tell a failure its run wrote from
@@ -582,6 +582,9 @@ public final class WindowModel {
     public internal(set) var commitDraftsEnabled = false
     /// The organisation's conversation-naming switch (names phase), read with the quick tasks.
     public internal(set) var conversationNamesEnabled = false
+    /// The naming quick task in flight, by conversation id (`nameIfDue`). Org-derived: an org switch
+    /// cancels each and clears its conversation's `namingAsked`, so it is asked again on return.
+    @ObservationIgnored var conversationNamingTasks: [String: Task<Void, Never>] = [:]
     private let panes: PaneStore
     private let layout: LayoutStore
     /// Every live PTY a terminal pane in this window opened. One per
@@ -2383,6 +2386,9 @@ public final class WindowModel {
         changesTasks = [:]
         for task in changesDraftTasks.values { task.cancel() }
         changesDraftTasks = [:]
+        // Names: a naming in flight asked the outgoing org's quick model; its conversation is asked again
+        // when that organisation's quick tasks are built.
+        cancelConversationNaming()
         changesDrafting = []
         changesLastDraft = nil
         changesRemoteNotes = [:]
@@ -8232,6 +8238,7 @@ public final class WindowModel {
             status = "resume \(parent): that is the session already running in this window"
             return
         }
+        let reviving = parent == agent.sessionId
         // A running agent forks under its own account; a place with none takes the window's —
         // only while it is the conversation on screen: one the screen has left keeps the account
         // it was given in its own organisation (Invariant 4).
@@ -8339,6 +8346,9 @@ public final class WindowModel {
         // parent's own lineage, so a chain of any length resolves to the
         // same arrangement.
         agent.lineageRoot = inheritedRoot
+        // A resume carries a past session, already named or not (names call 6) — never asked. Forking
+        // the conversation's own ended session is its revival, not a resume.
+        if !reviving { agent.namingAsked = true }
         startEventPump(next, for: agent)
         status = agent.socketFailure ?? ""
         // Best effort, and after the swap: a lineage record that failed to
@@ -10062,6 +10072,16 @@ public final class WindowModel {
         if case .result(let isError, _) = event {
             agent.turnInFlight = false
             markUnseen(failed: isError, for: agent)
+        }
+        // Names: the first clean exchange — its reply's start, then the one ask.
+        switch event {
+        case .assistantText(let text):
+            agent.noteReplyText(text)
+        case .result(false, _) where !agent.firstCleanTurnDone:
+            agent.firstCleanTurnDone = true
+            nameIfDue(agent)
+        default:
+            break
         }
         // Task 15, fix round 1 (Critical): `Date()` is captured exactly
         // here, at the one place a harness event actually arrives, and
