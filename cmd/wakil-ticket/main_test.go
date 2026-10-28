@@ -795,6 +795,50 @@ func TestTicketRecordEditKeepsOtherFields(t *testing.T) {
 	}
 }
 
+// A record line written with a root and branch names where the ticket is worked on: the record
+// gains that branch, by Wakil, beside the ones reads found, and drops none.
+func TestRecordWriteWithRootAddsTheBranch(t *testing.T) {
+	f := newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	read := wakilcore.TicketBranchRef{Repo: "github.com/initech/api", Branch: "ini-142-login", Source: "branch"}
+	if err := wakilcore.RecordTicketSeen("initech", "INI-142", wakilcore.TicketSeen{}, []wakilcore.TicketBranchRef{read}, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+	b := call(t, cs, "ticket_record_write", map[string]any{"key": "INI-142", "section": "next", "op": "set",
+		"line": map[string]any{"text": "answer the review"}, "by": "agent", "conversation": "c1",
+		"root": f.repo, "branch": "ini-142-review"})
+	var r wakilcore.TicketRecord
+	if err := json.Unmarshal(b, &r); err != nil {
+		t.Fatal(err)
+	}
+	want := []wakilcore.TicketBranchRef{read, {Repo: "github.com/initech/api", Branch: "ini-142-review", Source: "wakil"}}
+	if !reflect.DeepEqual(r.Branches, want) {
+		t.Errorf("branches = %+v, want %+v", r.Branches, want)
+	}
+	if r.Next == nil || r.Next.Text != "answer the review" {
+		t.Errorf("next = %+v", r.Next)
+	}
+
+	// A branch without a root names no place: the line lands, the branches stay as they were.
+	b = call(t, cs, "ticket_record_write", map[string]any{"key": "INI-142", "section": "next", "op": "set",
+		"line": map[string]any{"text": "ship it"}, "by": "agent", "branch": "ini-142-other"})
+	_ = json.Unmarshal(b, &r)
+	if len(r.Branches) != 2 || r.Next == nil || r.Next.Text != "ship it" {
+		t.Errorf("branch alone: %+v", r)
+	}
+
+	// A root outside the organisation's projects is refused, and nothing is written.
+	if msg := callErr(t, cs, "ticket_record_write", map[string]any{"key": "INI-142", "section": "next", "op": "set",
+		"line": map[string]any{"text": "elsewhere"}, "by": "agent", "root": t.TempDir(), "branch": "x"}); msg == "" {
+		t.Error("an outside root was not refused")
+	}
+	b = call(t, cs, "ticket_record", map[string]any{"key": "INI-142"})
+	_ = json.Unmarshal(b, &r)
+	if r.Next == nil || r.Next.Text != "ship it" || len(r.Branches) != 2 {
+		t.Errorf("after the refusal: %+v", r)
+	}
+}
+
 func TestTicketBranchLongLivedStagingReadsNoJira(t *testing.T) {
 	f := newFixture(t, "git@github.com:initech/api.git", "staging", "Merge INI-142\n\nTicket: INI-142")
 	f.s.branch = branchReply(nil, []any{prNode(212, "INI-142 keep", "ini-142-login", "staging", nil, nil)})

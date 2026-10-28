@@ -16,12 +16,13 @@ private struct TicketFixture {
     }
 }
 
-private func ticketFixture() async throws -> TicketFixture {
+/// `organization` is the window's on screen; `editorPane` false leaves the canvas with none.
+private func ticketFixture(organization: String = "org", editorPane: Bool = true) async throws -> TicketFixture {
     let dir = testScratchRoot.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let registry = ActionRegistry(journalDirectory: dir, sessionId: "t")
     let layout = LayoutStore()
-    let pane = await layout.open(kind: "editor", title: "Editor").id
+    let pane = editorPane ? await layout.open(kind: "editor", title: "Editor").id : ""
     let panes = PaneStore(kinds: PaneKinds.standard)
     let files = FakeFiles()
     let git = FakeGit()
@@ -31,7 +32,7 @@ private func ticketFixture() async throws -> TicketFixture {
     await ticket.set("ticket_branch", ticketBranchJSON())
     let store = EditorTicketStore(ticket: ticket)
     await registerEditorActions(into: registry, panes: panes, layout: layout, files: files, fileLists: nil,
-                                gitStatus: status, roots: { roots }, ticket: store)
+                                gitStatus: status, roots: { roots }, ticket: store, organization: { organization })
     let editor = EditorFixture(registry: registry, panes: panes, layout: layout, files: files, pane: pane, git: git, status: status)
     return TicketFixture(editor: editor, ticket: ticket, store: store)
 }
@@ -668,4 +669,98 @@ private func parkedByTheAgent(_ registry: ActionRegistry, _ name: String, _ args
                                                   "text": .string("from another org")],
                          origin: .ui, confirmation: nil)
     #expect(await f.store.branch(root: "/p/api")?.tickets.first?.record.next?.text == "from another org")
+}
+
+// MARK: Ticket noticing, Task 1 — a draft and a record line name their place
+
+private let draftText: JSONValue = .string("Thanks, fixed.")
+
+/// A root the caller's place does not hold is refused as every root param is, naming the roots.
+@Test func draftNamesARootOutsideThePlaceRefused() async throws {
+    let f = try await ticketFixture()
+    await #expect {
+        try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText,
+                                                    "root": .string("/elsewhere"), "branch": .string("ini-142-login")],
+                             caller: agentInSession)
+    } throws: { error in
+        guard case GitActionError.notAProjectRoot(_, let root, let roots) = error else { return false }
+        return root == "/elsewhere" && roots == ["/p/api", "/p/web"] && "\(error)".contains("/p/api")
+    }
+    #expect(await f.store.draft(thread: "T2") == nil)
+}
+
+/// A branch without a root names no place (Rule 7): the draft is kept, no read is started for it,
+/// and a record line passes no branch.
+@Test func draftBranchWithoutRootIsDropped() async throws {
+    let f = try await ticketFixture()
+    _ = try await f.store.read(root: "/p/api")
+    let reads = await f.ticket.count("ticket_branch")
+    try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText, "branch": .string("ini-142-login")],
+                         origin: .ui, confirmation: nil)
+    #expect(await f.store.draft(thread: "T2") == "Thanks, fixed.")
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(await f.ticket.count("ticket_branch") == reads)
+
+    await f.ticket.set("ticket_record_write", .object(["key": .string("INI-142")]))
+    try await f.dispatch("ticket_record_update", ["key": .string("INI-142"), "section": .string("next"), "op": .string("set"),
+                                                  "text": .string("ship it"), "branch": .string("ini-142-login")],
+                         caller: agentInSession)
+    let args = try #require(await f.ticket.args("ticket_record_write"))
+    #expect(args["branch"] == nil)
+    #expect(args["root"] == nil)
+}
+
+/// A handed agent works in the background: with no editor pane on screen, its draft for its own
+/// root and branch lands in the window's store, the window showing its organisation.
+@Test func draftFromAPinnedAgentWithNoPaneIsKept() async throws {
+    let f = try await ticketFixture(organization: "org", editorPane: false)
+    #expect(await f.editor.layout.snapshot().panes.allSatisfy { $0.kind != "editor" })
+    let out = try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText,
+                                                          "root": .string("/p/api"), "branch": .string("ini-142-login")],
+                                   caller: agentInSession)
+    #expect(await f.store.draft(thread: "T2") == "Thanks, fixed.")
+    #expect(out == .object(["thread": .string("T2"), "draft": .bool(true)]))
+}
+
+/// Invariant 4: an agent of another organisation than the window's drafting leaves the window's
+/// store untouched.
+@Test func draftFromAnotherOrganisationLeavesTheWindowsStore() async throws {
+    let f = try await ticketFixture(organization: "initech", editorPane: false)
+    let umbrella = DispatchCaller(place: Place(organization: "umbrella", project: "api", environment: "staging"),
+                                  session: "s1", conversation: "c1")
+    await #expect {
+        try await f.dispatch("review_reply_draft", ["thread": .string("T2"), "text": draftText,
+                                                    "root": .string("/p/api"), "branch": .string("ini-142-login")],
+                             caller: umbrella)
+    } throws: { "\($0)".contains("umbrella") }
+    #expect(await f.store.draft(thread: "T2") == nil)
+    #expect(await f.store.allDrafts().isEmpty)
+}
+
+/// A record line names its root and branch to wakil-ticket; the operator's re-reads that root.
+@Test(.timeLimit(.minutes(1))) func recordUpdatePassesRootAndBranch() async throws {
+    let f = try await ticketFixture()
+    await f.ticket.set("ticket_record_write", .object(["key": .string("INI-142")]))
+    let params: [String: JSONValue] = ["key": .string("INI-142"), "section": .string("next"), "op": .string("set"),
+                                       "text": .string("answer the review"),
+                                       "root": .string("/p/api"), "branch": .string("ini-142-login")]
+    try await f.dispatch("ticket_record_update", params, caller: agentInSession)
+    let args = try #require(await f.ticket.args("ticket_record_write"))
+    #expect(args["root"] == .string("/p/api"))
+    #expect(args["branch"] == .string("ini-142-login"))
+    #expect(args["conversation"] == .string("c1"))
+
+    _ = try await f.store.read(root: "/p/api")
+    let reads = await f.ticket.count("ticket_branch")
+    try await f.dispatch("ticket_record_update", params, origin: .ui, confirmation: nil)
+    while await f.ticket.count("ticket_branch") == reads { try await Task.sleep(for: .milliseconds(1)) }
+
+    var outside = params
+    outside["root"] = .string("/elsewhere")
+    let writes = await f.ticket.count("ticket_record_write")
+    await #expect { try await f.dispatch("ticket_record_update", outside, caller: agentInSession) } throws: { error in
+        if case GitActionError.notAProjectRoot = error { return true }
+        return false
+    }
+    #expect(await f.ticket.count("ticket_record_write") == writes)
 }

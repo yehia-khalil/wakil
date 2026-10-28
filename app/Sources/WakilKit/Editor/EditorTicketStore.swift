@@ -268,6 +268,14 @@ public actor EditorTicketStore {
         await readShown(key: key, root: at.root, branch: at.branch)
     }
 
+    /// Reads again each picked ticket's branch on `root` — on `branch` too, when given — not waited
+    /// for: a write that named its place landed there.
+    public func refreshShown(root: String, branch: String?) {
+        for (key, at) in shownWhere where at.root == root && (branch == nil || at.branch == branch) {
+            Task { await self.refreshShown(key: key) }
+        }
+    }
+
     /// The branches read for tickets picked from In flight, by key, and why one was not.
     public func shownBranches() -> [String: TicketBranchState] { shownReads }
     public func shownBranchFailures() -> [String: String] { shownFailures }

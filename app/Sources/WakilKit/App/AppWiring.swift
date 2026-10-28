@@ -497,7 +497,8 @@ public struct WakilWiring: Sendable {
         await registerEditorActions(
             into: registry, panes: panes, layout: layout,
             files: fileLists.map { $0 as any ToolCaller } ?? routedFiles, fileLists: fileLists,
-            gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites, ticket: ticketStore)
+            gitStatus: gitStatus, roots: { await gitRoots.current() }, gitWrites: gitWrites, ticket: ticketStore,
+            organization: { await liveLookup.organization() })
         // 3c-i. Built above, so `pane_open` could hold `browser_new_tab`'s handler.
         for action in browser { await registry.register(action) }
         let commitDrafts = CommitDraftSink()

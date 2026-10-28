@@ -71,7 +71,8 @@ func editorFrontRoot(_ s: EditorSnapshot) -> String? {
 /// `by` on a record line comes from who dispatched (`ticketBy`), never from params.
 func registerTicketActions(
     into registry: ActionRegistry, store: EditorTicketStore, panes: PaneStore, layout: LayoutStore?,
-    editor: EditorTicketHooks, roots: @escaping @Sendable () async -> [String]
+    editor: EditorTicketHooks, roots: @escaping @Sendable () async -> [String],
+    organization: @escaping @Sendable () async -> String? = { nil }
 ) async {
     @Sendable func mirror() async {
         let rs = await roots()
@@ -111,6 +112,19 @@ func registerTicketActions(
         let all = await roots()
         guard all.contains(root) else { throw GitActionError.notAProjectRoot(action: action, root: root, roots: all) }
         return root
+    }
+    /// The place a draft or a record line names: `root`, checked as `projectRoot` checks it, with
+    /// its `branch`. A branch without a root names no place and is dropped (Rule 7); nil without a root.
+    @Sendable func namedPlace(_ params: JSONValue, _ action: String) async throws -> (root: String, branch: String?)? {
+        guard optionalString(params, "root")?.isEmpty == false else { return nil }
+        let root = try await projectRoot(params, action)
+        return (root, optionalString(params, "branch").flatMap { $0.isEmpty ? nil : $0 })
+    }
+    /// A write named its place: the window's read of that root takes it with no editor pane on
+    /// screen — read again for the window's own caller; for an agent session's, only a ticket shown
+    /// at that root, since its root is its place's and the window's cache is the window's (Invariant 4).
+    @Sendable func landed(at place: (root: String, branch: String?)) async {
+        if pinned() { await store.refreshShown(root: place.root, branch: place.branch) } else { await store.invalidate(root: place.root) }
     }
     @Sendable func followed(_ pane: String) async -> String? {
         ticketFollowedRoot(front: editorFrontRoot(await panes.editorSnapshot(paneId: pane)), roots: await roots())
@@ -348,10 +362,13 @@ func registerTicketActions(
         description: "Write a ticket's record: section next with op set, or one line of decisions, notDone, "
             + "waitingOn, verified or rulings with op add, edit (by id; only the fields given change) or remove "
             + "(by id; the old line stays in the record's log). Who wrote it is set from who asked, never from "
-            + "params. Allowed everywhere: the record is Wakil's own store.",
+            + "params. root and branch name where the ticket is worked on: the record gains that branch, and the "
+            + "window takes the line with no editor pane open; a branch without a root is ignored. Allowed "
+            + "everywhere: the record is Wakil's own store.",
         kind: .mutate, audience: .agentReachable,
         schema: schema(["key": string, "section": string, "op": string, "id": string, "text": string, "why": string,
-                        "how": string, "who": string, "what": string], required: ["key", "section", "op"]),
+                        "how": string, "who": string, "what": string, "root": string, "branch": string],
+                       required: ["key", "section", "op"]),
         handler: { params in
             let action = "ticket_record_update"
             var args: [String: JSONValue] = [
@@ -366,12 +383,18 @@ func registerTicketActions(
             let origin = ActionRegistry.dispatchOrigin
             args["by"] = .string(ticketBy(origin))
             if origin == .agent, let c = ActionRegistry.dispatchCaller?.conversation { args["conversation"] = .string(c) }
+            let place = try await namedPlace(params, action)
+            if let place {
+                args["root"] = .string(place.root)
+                if let b = place.branch { args["branch"] = .string(b) }
+            }
             let out = try await call("ticket_record_write", args, action: action, timeout: MCPClient.mutationReplyTimeout)
             // An agent session's write went through its own place's client: the window's cache keeps
             // the window's organisation, and takes the line on its next read (Invariant 4).
             if !pinned(), let record = try? ticketDecode(TicketRecordState.self, out, tool: "ticket_record_write") {
                 await store.setRecord(record)
             }
+            if let place { await landed(at: place) }
             return .object(out)
         },
         price: (production: .allow, otherwise: .allow)))
@@ -424,14 +447,25 @@ func registerTicketActions(
     await registry.register(Action(
         name: "review_reply_draft",
         description: "Keep a review thread's reply draft for the window's life; empty or null text drops it. "
-            + "Nothing is posted: review_reply_send does that.",
+            + "root and branch name the thread's place, so the draft lands with no editor pane open; a branch "
+            + "without a root is ignored. Nothing is posted: review_reply_send does that.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["thread": string, "text": .object(["type": .array([.string("string"), .string("null")])])],
+        schema: schema(["thread": string, "text": .object(["type": .array([.string("string"), .string("null")])]),
+                        "root": string, "branch": string],
                        required: ["thread"]),
         handler: { params in
-            let thread = try param(params, "thread", "review_reply_draft")
+            let action = "review_reply_draft"
+            let thread = try param(params, "thread", action)
+            let place = try await namedPlace(params, action)
+            // An agent session's draft is kept by the window only while the window shows its
+            // organisation: the store holds the window's organisation alone (Invariant 4).
+            if let away = pinnedPlace(of: ActionRegistry.dispatchCaller), away.organization != (await organization()) {
+                throw TicketActionError(description: "\(action): this window shows another organisation than "
+                    + "\(away.organization); the draft was not kept, and nothing was written")
+            }
             await store.setDraft(thread: thread, text: optionalString(params, "text"))
             await mirror()
+            if let place { await landed(at: place) }
             return .object(["thread": .string(thread), "draft": .bool(await store.draft(thread: thread) != nil)])
         }))
 

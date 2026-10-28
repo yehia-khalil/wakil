@@ -52,6 +52,8 @@ type recordWriteArg struct {
 	Line         lineArg `json:"line"`
 	By           string  `json:"by" jsonschema:"operator, agent or wakil: who the window's dispatch came from"`
 	Conversation string  `json:"conversation,omitempty" jsonschema:"an agent line's conversation"`
+	Root         string  `json:"root,omitempty" jsonschema:"a root of one of the organization's projects the ticket is worked in"`
+	Branch       string  `json:"branch,omitempty" jsonschema:"the branch the ticket is worked on in root; with root, the record gains it"`
 }
 
 type linkArg struct {
@@ -161,7 +163,7 @@ func newServer() *mcp.Server {
 			return nil, r, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "ticket_record_write", Description: "Writes. Sets a ticket's next line, or adds, edits or removes one line of a list. Only from the Wakil window. The old line is kept in the record's log. An edit changes only the fields given."},
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_record_write", Description: "Writes. Sets a ticket's next line, or adds, edits or removes one line of a list. Only from the Wakil window. The old line is kept in the record's log. An edit changes only the fields given. With root and branch, the record also gains that branch (by Wakil); a branch without a root is ignored."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a recordWriteArg) (*mcp.CallToolResult, wakilcore.TicketRecord, error) {
 			if err := assertWindow("ticket_record_write"); err != nil {
 				return toolErr(err), wakilcore.TicketRecord{}, nil
@@ -170,7 +172,7 @@ func newServer() *mcp.Server {
 			if err != nil {
 				return toolErr(err), wakilcore.TicketRecord{}, nil
 			}
-			r, err := writeRecord(org, a, time.Now())
+			r, err := writeRecordAt(ctx, org, a, time.Now())
 			if err != nil {
 				return toolErr(err), wakilcore.TicketRecord{}, nil
 			}
@@ -301,6 +303,33 @@ func writeRecord(org string, a recordWriteArg, now time.Time) (wakilcore.TicketR
 	return wakilcore.UpdateTicketRecord(org, a.Key, wakilcore.TicketEdit{
 		Section: a.Section, Op: a.Op, ID: a.ID, Line: line, Fields: fields, By: a.By, Conversation: a.Conversation,
 	}, now)
+}
+
+// writeRecordAt is writeRecord for a line that may name its place: with root and branch, the
+// root is checked against the organisation's roots before anything is written, and after the line
+// the record gains the branch (Source "wakil"), added or updated and never dropping another. A
+// branch without a root names no place and is ignored (Rule 7); so is a root with no GitHub remote,
+// whose branches the record cannot key.
+func writeRecordAt(ctx context.Context, org string, a recordWriteArg, now time.Time) (wakilcore.TicketRecord, error) {
+	root, branch := strings.TrimSpace(a.Root), strings.TrimSpace(a.Branch)
+	if root == "" || branch == "" {
+		return writeRecord(org, a, now)
+	}
+	ctx, cancel := context.WithTimeout(ctx, readBudget)
+	defer cancel()
+	r, err := openRootOn(ctx, org, root, branch)
+	if err != nil {
+		return wakilcore.TicketRecord{}, err
+	}
+	rec, err := writeRecord(org, a, now)
+	if err != nil || r.RepoKey == "" {
+		return rec, err
+	}
+	ref := wakilcore.TicketBranchRef{Repo: r.RepoKey, Branch: branch, Source: "wakil"}
+	if err := wakilcore.RecordTicketSeen(org, a.Key, wakilcore.TicketSeen{}, []wakilcore.TicketBranchRef{ref}, nil); err != nil {
+		return wakilcore.TicketRecord{}, err
+	}
+	return wakilcore.ReadTicketRecord(org, a.Key)
 }
 
 // linkBranch links (or unlinks) the root's branch, then asks Jira whether it knows the key. The
