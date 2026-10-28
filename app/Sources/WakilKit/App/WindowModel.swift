@@ -10612,6 +10612,7 @@ public final class WindowModel {
     public func shutdown() async {
         socketsClosed = true
         stopBackgroundFetch()
+        stopTicketPoll()
         for agent in conversations.values { agent.eventPump?.cancel() }
         confirmationPump?.cancel()
         observationPump?.cancel()

@@ -36,8 +36,12 @@ extension WindowModel {
 
     /// Starts or stops the 2-minute read for the window's state now.
     func updateTicketPoll() {
-        let wanted = ticket != nil && ticketPollWanted(appActive: appActive, screenLocked: screenLocked, organization: organization)
-        if wanted { startTicketPoll() } else { stopTicketPoll() }
+        if ticketPollWantedNow { startTicketPoll() } else { stopTicketPoll() }
+    }
+
+    /// Whether the 2-minute read is wanted now: a store, Wakil in front, the screen unlocked, an organisation.
+    private var ticketPollWantedNow: Bool {
+        ticket != nil && ticketPollWanted(appActive: appActive, screenLocked: screenLocked, organization: organization)
     }
 
     private func startTicketPoll() {
@@ -45,9 +49,12 @@ extension WindowModel {
         ticketPollTask = Task { @MainActor [weak self] in
             while let self, !Task.isCancelled {
                 do { try await self.ticketPollSleep(self.ticketPollInterval) } catch { return }
-                if Task.isCancelled { return }
+                // A resign or a lock that landed during the sleep reads nothing, cancelled or not.
+                guard !Task.isCancelled, self.ticketPollWantedNow else { return }
                 // In flight, and each shown Ticket view's branch, with no staleness check.
-                for root in await self.ticketViewRoots() { self.ticketRead(root) }
+                let roots = await self.ticketViewRoots()
+                guard !Task.isCancelled, self.ticketPollWantedNow else { return }
+                for root in roots { self.ticketRead(root) }
                 await self.ticketNeedsRead(force: true)
             }
         }

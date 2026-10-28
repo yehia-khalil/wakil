@@ -80,6 +80,48 @@ private func until(_ done: @MainActor () async -> Bool) async {
         window.stopTicketPoll()
     }
 
+    /// A resign or a lock landing during the sleep: the tick that sleep ends reads nothing.
+    @Test func aResignOrLockDuringTheSleepReadsNothing() async {
+        for lock in [false, true] {
+            let (window, fake, _, _) = await noticingWindow()
+            var ticks = 0
+            window.ticketPollSleep = { _ in
+                ticks += 1
+                guard ticks == 1 else { try await Task.sleep(for: .seconds(3600)); return }
+                if lock { window.setScreenLocked(true) } else { window.setAppActive(false) }
+            }
+            window.updateTicketPoll()
+            await until { ticks >= 1 }
+            for _ in 0..<50 { await Task.yield() }
+            #expect(ticks == 1)
+            #expect(await fake.count("ticket_in_flight") == 0, "lock \(lock)")
+            #expect(window.ticketPollTask == nil)
+            window.stopTicketPoll()
+        }
+    }
+
+    /// A window shut down stops its 2-minute read: no tick reads after.
+    @Test func shutdownStopsThePoll() async {
+        let (window, fake, _, _) = await noticingWindow()
+        var ticks = 0
+        var released = false
+        window.ticketPollSleep = { _ in
+            ticks += 1
+            guard ticks == 1 else { try await Task.sleep(for: .seconds(3600)); return }
+            // Parked until the test lets go, then returns as a sleep ends: a loop the shutdown left
+            // running would read now.
+            while !released { await Task.yield() }
+        }
+        window.updateTicketPoll()
+        await until { ticks >= 1 }
+        await window.shutdown()
+        #expect(window.ticketPollTask == nil)
+        released = true
+        for _ in 0..<50 { await Task.yield() }
+        #expect(await fake.count("ticket_in_flight") == 0)
+        #expect(ticks == 1)
+    }
+
     /// Wakil coming back reads In flight when the last read is over 60 s old, with no editor pane open.
     @Test func activationReadsWhenStaleWhateverIsOnScreen() async {
         let (window, fake, _, clock) = await noticingWindow()
