@@ -138,7 +138,8 @@ struct BrowserPasswordImport: View {
                 }
             }
         }
-        .frame(maxHeight: 320)
+        // A ScrollView in a sheet sizes to its minimum unless told: up to about six rows show at once.
+        .frame(minHeight: min(CGFloat(rows.count) * 46, 280), maxHeight: 320)
     }
 
     private func rowView(_ row: BrowserImportRow, n: Int) -> some View {
@@ -159,6 +160,7 @@ struct BrowserPasswordImport: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
+                .layoutPriority(1)
                 Spacer(minLength: 8)
                 if row.skipped == nil {
                     if outcomes[row.id] == .imported {
@@ -173,7 +175,9 @@ struct BrowserPasswordImport: View {
                         }
                     }
                     .labelsHidden()
-                    .fixedSize()
+                    // Sized to the shown choice, not the longest organisation name on the Mac, which
+                    // squeezed the site and username to "…" (3d-iv walk).
+                    .frame(maxWidth: 170)
                     .disabled(running || finished)
                     .accessibilityIdentifier("settings.browser.passwords.import.row.\(n).org")
                 }

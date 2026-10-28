@@ -12,7 +12,7 @@ import WakilKit
 /// and after a fill the page's field has it again (the script focuses it).
 
 /// Over the active tab's page: the key at the focused field's right edge, inset 4 pt, 16 pt square, the
-/// `key.fill` glyph at the meta opacity (ruling 11). Pressing it opens the list.
+/// `key.fill` glyph, grey on a light chip so it reads on any page (ruling 11, 3d-iv walk). Pressing it opens the list.
 struct BrowserPasswordKey: View {
     let host: BrowserTabHost
     let key: BrowserTabHost.Key
@@ -29,10 +29,14 @@ struct BrowserPasswordKey: View {
             // A field scrolled out of the page area keeps its report, not its key.
             let inside = CGRect(origin: .zero, size: geometry.size).contains(frame)
             Button { open = true } label: {
+                // On a light chip with a grey glyph, so it reads on any page: Wakil's pale meta tone
+                // vanished on a white field (3d-iv walk).
                 Image(systemName: "key.fill")
                     .font(.system(size: BrowserPaneStyle.controlGlyph))
-                    .foregroundStyle(BrowserPaneStyle.text.opacity(BrowserPaneStyle.metaOpacity))
+                    .foregroundStyle(Color(white: 0.38))
                     .frame(width: frame.width, height: frame.height)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color(white: 0.96)))
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.black.opacity(0.18), lineWidth: 0.5))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
