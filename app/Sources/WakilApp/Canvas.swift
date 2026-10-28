@@ -589,6 +589,8 @@ extension WakilWindow {
                     },
                     // Ticket view: the column's Ticket view.
                     ticket: model.editorTicket,
+                    ticketCount: ticketNeedsCount(model.ticketNeeds),
+                    ticketCountLabel: ticketNeedsLabel(model.ticketNeeds),
                     dispatchThrowingReply: { name, params in
                         var withPane = params
                         withPane["pane"] = .string(pane.id)

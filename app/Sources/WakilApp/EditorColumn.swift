@@ -47,6 +47,11 @@ struct EditorColumn: View {
     var ticket: EditorTicketViewState = .empty
     var reviews: EditorReviewsState = .empty
     var dispatchReply: (String, [String: JSONValue]) async throws -> JSONValue = { _, _ in .null }
+    /// What waits on the operator in the organisation (`ticketNeedsCount`) and what it is made of
+    /// (`ticketNeedsLabel`): the Ticket label reads `Ticket · 4`, the rail's number, whichever branch
+    /// the view follows.
+    var ticketCount = 0
+    var ticketCountLabel: String?
 
     @State private var dragWidth: Double?
     /// 3a-iv: the root whose branch picker is open from its header.
@@ -239,16 +244,28 @@ struct EditorColumn: View {
         }
     }
 
+    /// The Ticket label carries the count (`Ticket · 4`); at icon width the icon carries a small `4`.
+    /// The tooltip and the spoken label say what it is made of.
     private func viewTab(_ view: EditorColumnView, _ name: String, _ symbol: String, _ id: String, icons: Bool) -> some View {
-        Button {
+        let count = view == .ticket ? RailTreatment.countSuffix(ticketCount) : nil
+        let said = count.flatMap { _ in ticketCountLabel.map { "\(name), \($0)" } } ?? name
+        return Button {
             focusWanted = view
             Task { await dispatch("editor_tree", ["view": .string(id), "shown": .bool(true)]) }
         } label: {
-            if icons { Image(systemName: symbol).font(.system(size: 11)) } else { Text(name).lineLimit(1).fixedSize() }
+            if icons {
+                HStack(spacing: 2) {
+                    Image(systemName: symbol).font(.system(size: 11))
+                    if count != nil { Text("\(ticketCount)").font(.system(size: 9, design: .monospaced)) }
+                }
+                .fixedSize()
+            } else {
+                Text(name + (count ?? "")).lineLimit(1).fixedSize()
+            }
         }
             .buttonStyle(.plain).opacity(column.view == view ? 1 : 0.5)
-            .help(name)
-            .accessibilityLabel(name)
+            .help(said)
+            .accessibilityLabel(said)
             .accessibilityIdentifier("editor.column.\(id)")
     }
 

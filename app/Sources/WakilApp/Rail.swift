@@ -72,6 +72,8 @@ struct Rail: View {
     /// Which row the pointer is on, by pane id. Only drawn once promoted:
     /// at rest there is nothing to point at.
     @State private var hoveredRow: String?
+    /// Whether the pointer is on the `Tickets · N` row.
+    @State private var hoveredTickets = false
 
     var body: some View {
         // **A `List`, stripped of its chrome — not a `ScrollView` of rows,
@@ -94,11 +96,22 @@ struct Rail: View {
         //
         // The chrome goes by modifier instead: clear row backgrounds, zero
         // insets, no separators, plain style, hidden scroll background.
-        List(model.layoutSnapshot.panes) { pane in
-            row(pane)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
+        List {
+            ForEach(model.layoutSnapshot.panes) { pane in
+                row(pane)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+            }
+            // Operator decision 2 (2026-10-28): with no editor pane, what waits on the operator
+            // still has a row — `Tickets · 4`, the amber tick. With one, the editor rows carry it.
+            if RailTreatment.ticketsRowShown(
+                count: needsCount, hasEditorPane: model.layoutSnapshot.panes.contains { $0.kind == "editor" }) {
+                ticketsRow
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -166,27 +179,85 @@ struct Rail: View {
         .contentShape(Rectangle())
         .onHover { isHovering in
             promoted = isHovering
-            if !isHovering { hoveredRow = nil }
+            if !isHovering { hoveredRow = nil; hoveredTickets = false }
         }
     }
 
+    // MARK: - What waits on the operator
+
+    /// The items waiting on the operator in the active organisation (`ticket_in_flight`'s count):
+    /// the same number on every editor row, on the Ticket label and on `Tickets · N`.
+    private var needsCount: Int { ticketNeedsCount(model.ticketNeeds) }
+
+    /// `4 waiting on you: 3 review threads, 1 failing check`; nil when nothing waits.
+    private var needsLabel: String? { ticketNeedsLabel(model.ticketNeeds) }
+
+    /// An editor row while something waits: the amber tick, ` · 4` after the kind, and a click that
+    /// shows its Ticket view — the count's home.
+    private func needsYou(_ pane: Pane) -> Bool { pane.kind == "editor" && needsCount > 0 }
+
     // MARK: - A row
 
-    private func row(_ pane: Pane) -> some View {
-        let lifted = promoted && hoveredRow == pane.id
-        return HStack(spacing: 12) {
-            Text(pane.title)
+    /// A row's two texts — the title, and the kind stepped down by opacity — and its padding.
+    private func rowText(_ title: String, _ kind: String) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
                 .font(.system(size: 13))
                 .foregroundStyle(Color(RailTreatment.textColour))
-            Text(pane.kind)
+            Text(kind)
                 .font(.system(size: 10.5, design: .monospaced))
                 // §5 steps text down by opacity rather than by hue — but
                 // not below the floor, which is why this is 0.55 and not the
-                // artboard's 0.46. See `RailTreatment.kindOpacity`.
+                // artboard's 0.46. See `RailTreatment.kindOpacity`. The
+                // count after it (` · 4`) is the same text: a number, not a hue.
                 .foregroundStyle(
                     Color(RailTreatment.textColour).opacity(RailTreatment.kindOpacity))
             Spacer(minLength: 0)
         }
+    }
+
+    /// The extra row with no editor pane open: `Tickets  · 4`, the amber tick, and a click that runs
+    /// `ticket_open {}` — an editor pane opened on the Ticket view of the followed branch. The
+    /// operator's own click, so the pane takes focus (Rule 6 is about an agent's open).
+    private var ticketsRow: some View {
+        let lifted = promoted && hoveredTickets
+        let open = { Task { await model.openTicket(.object([:])) } }
+        return rowText("Tickets", RailTreatment.countSuffix(needsCount).map { String($0.dropFirst()) } ?? "")
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .overlay(alignment: .leading) { tickMark(.needsYou) }
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(
+                        Color(RailTreatment.textColour)
+                            .opacity(lifted ? RailTreatment.rowHoverTint : 0)))
+            .animation(.easeOut(duration: RailTreatment.rowHoverDuration), value: lifted)
+            .contentShape(Rectangle())
+            .onHover { hoveredTickets = $0 }
+            .onTapGesture { _ = open() }
+            .help(needsLabel ?? "")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(needsLabel ?? "Tickets")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { _ = open() }
+            .accessibilityIdentifier("rail.tickets")
+    }
+
+    private func row(_ pane: Pane) -> some View {
+        let lifted = promoted && hoveredRow == pane.id
+        let needs = needsYou(pane)
+        // A needs-you editor row: focused, then its column on the Ticket view (`ticket_show` with no
+        // key — the followed branch's own), the scroll where it was.
+        let press = {
+            Task {
+                await model.focusPane(id: pane.id)
+                if needs {
+                    await model.dispatchFromSurface(
+                        "ticket_show", .object(["pane": .string(pane.id), "key": .null]))
+                }
+            }
+        }
+        return rowText(pane.title, pane.kind + (needs ? RailTreatment.countSuffix(needsCount) ?? "" : ""))
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
         // **The tick is an overlay on the padded row, not a member of the
@@ -215,9 +286,9 @@ struct Rail: View {
                 hoveredRow = nil
             }
         }
-        .onTapGesture {
-            Task { await model.focusPane(id: pane.id) }
-        }
+        .onTapGesture { _ = press() }
+        // The tooltip says what the count is made of (`4 waiting on you: 3 review threads, …`).
+        .help(needs ? needsLabel ?? "" : "")
         // **The tick's meaning, spoken.** Active and working are drawn as
         // hue on a 2pt mark, which VoiceOver cannot read at all — and the
         // word "working" this replaced, wrong as it was on screen, was at
@@ -241,9 +312,7 @@ struct Rail: View {
         //
         // The default action is what AXPress invokes, so the pointer path and
         // the accessibility path now run the identical call.
-        .accessibilityAction {
-            Task { await model.focusPane(id: pane.id) }
-        }
+        .accessibilityAction { _ = press() }
         // The label above is what the row SAYS and changes as the pane does
         // — "widgets, db, active, working" — so it cannot also be the row's
         // name. The identifier is the name: stable for the life of the pane,
@@ -255,6 +324,7 @@ struct Rail: View {
         var parts = [pane.title, pane.kind]
         if model.layoutSnapshot.focusedId == pane.id { parts.append("active") }
         if pane.busy { parts.append("working") }
+        if needsYou(pane), let needsLabel { parts.append(needsLabel) }
         return parts.joined(separator: ", ")
     }
 
@@ -278,24 +348,28 @@ struct Rail: View {
     /// which pane they focused; what they do not know is which pane has just
     /// started working, and §10 gives that state the louder signal. A row
     /// with no tick at all is neither.
-    @ViewBuilder
+    ///
+    /// **Needs you sits between them** (ticket noticing): amber, §5's *pending*, on an editor row
+    /// while something waits on the operator. Precedence and glow are `RailTreatment.tick` and
+    /// `glow`, tested there.
     private func tick(_ pane: Pane) -> some View {
-        let isActive = model.layoutSnapshot.focusedId == pane.id
-        let colour: Color? =
-            pane.busy
-            ? Color(RailTreatment.workingTickColour)
-            : (isActive ? Color(RailTreatment.activeTickColour) : nil)
+        tickMark(RailTreatment.tick(
+            busy: pane.busy, needsYou: needsYou(pane),
+            active: model.layoutSnapshot.focusedId == pane.id))
+    }
 
-        // The glow. A working pane keeps it in both states — it is the
-        // periphery §10 is talking about, and at 0.30 the fill alone
-        // composites to ≈2.05:1, which is a cue and not a reading. The
-        // active tick's glow arrives with promotion, matching the
-        // artboard: at rest the rail says *what is open*, and which one
-        // is focused is the canvas's own news.
-        LuminousTick(
-            colour: colour,
-            glow: pane.busy ? 0.85 : (promoted ? 0.70 : 0),
-            glowRadius: pane.busy ? 5 : 4)
+    /// The glow. A working or needs-you pane keeps it in both states — it is
+    /// the periphery §10 is talking about, and at 0.30 the fill alone
+    /// composites to ≈2.05:1, which is a cue and not a reading. The active
+    /// tick's glow arrives with promotion, matching the artboard: at rest
+    /// the rail says *what is open*, and which one is focused is the
+    /// canvas's own news.
+    private func tickMark(_ t: RailTick) -> some View {
+        let glow = RailTreatment.glow(t, promoted: promoted)
+        return LuminousTick(
+            colour: RailTreatment.colour(t).map { Color($0) },
+            glow: glow.opacity,
+            glowRadius: CGFloat(glow.radius))
             .padding(.vertical, 8)
     }
 }

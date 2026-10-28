@@ -137,3 +137,69 @@ import Testing
         RailTreatment.workingTickColour, promoted: false)
     #expect(working < Contrast.largeTextFloor)
 }
+
+// Ticket noticing (piece 3): the tick's third hue, amber — §5's *pending* — for an editor row while
+// something waits on the operator; `Tickets · N` when no editor pane is open; the count after the kind.
+@Suite struct RailTreatmentTickTests {
+    /// One mark, one hue: working (green) > needs you (amber) > active (violet).
+    @Test func tickPrecedenceWorkingNeedsActive() {
+        #expect(RailTreatment.tick(busy: true, needsYou: true, active: true) == .working)
+        #expect(RailTreatment.tick(busy: true, needsYou: false, active: false) == .working)
+        #expect(RailTreatment.tick(busy: false, needsYou: true, active: true) == .needsYou)
+        #expect(RailTreatment.tick(busy: false, needsYou: true, active: false) == .needsYou)
+        #expect(RailTreatment.tick(busy: false, needsYou: false, active: true) == .active)
+        #expect(RailTreatment.tick(busy: false, needsYou: false, active: false) == RailTick.none)
+        #expect(RailTreatment.colour(.needsYou) == RailTreatment.needsTickColour)
+        #expect(RailTreatment.colour(.working) == RailTreatment.workingTickColour)
+        #expect(RailTreatment.colour(.active) == RailTreatment.activeTickColour)
+        #expect(RailTreatment.colour(.none) == nil)
+    }
+
+    /// Amber carries the glow a working tick carries, at rest and promoted: it is the state meant to be
+    /// noticed from the corner of the eye. Active keeps its promoted-only glow.
+    @Test func needsGlowMatchesWorking() {
+        #expect(RailTreatment.needsGlow == 0.85)
+        #expect(RailTreatment.needsGlowRadius == 5)
+        for promoted in [false, true] {
+            let needs = RailTreatment.glow(.needsYou, promoted: promoted)
+            let working = RailTreatment.glow(.working, promoted: promoted)
+            #expect(needs.opacity == working.opacity && needs.radius == working.radius)
+            #expect(needs.opacity == 0.85 && needs.radius == 5)
+        }
+        #expect(RailTreatment.glow(.active, promoted: true) == (opacity: 0.70, radius: 4))
+        #expect(RailTreatment.glow(.active, promoted: false).opacity == 0)
+        #expect(RailTreatment.glow(.none, promoted: true).opacity == 0)
+    }
+
+    /// `#e8b45a`, read from the palette rather than respelled.
+    @Test func amberIsTerminalAmber() {
+        #expect(RailTreatment.needsTickColour == TerminalPalette.amber)
+        let c = RailTreatment.needsTickColour
+        #expect((c.r * 255).rounded() == 0xe8 && (c.g * 255).rounded() == 0xb4 && (c.b * 255).rounded() == 0x5a)
+    }
+
+    /// Operator decision 2 (2026-10-28): with no editor pane, one extra row; with one, none.
+    @Test func ticketsRowOnlyWithoutAnEditor() {
+        #expect(RailTreatment.ticketsRowShown(count: 4, hasEditorPane: false))
+        #expect(!RailTreatment.ticketsRowShown(count: 4, hasEditorPane: true))
+        #expect(!RailTreatment.ticketsRowShown(count: 0, hasEditorPane: false))
+        #expect(!RailTreatment.ticketsRowShown(count: 0, hasEditorPane: true))
+    }
+
+    /// The count is text after the kind, `· 4`; at 0 nothing — the tick and the count go together.
+    @Test func countSuffixAtZeroIsNil() {
+        #expect(RailTreatment.countSuffix(0) == nil)
+        #expect(RailTreatment.countSuffix(4) == " · 4")
+        #expect(RailTreatment.countSuffix(12) == " · 12")
+    }
+
+    /// F8: every mark clears 4.5:1 against the rail's background where it is read — the promoted rail,
+    /// mid plane, over the void. At rest the marks are hue cues (`theAmbientTickIsAPeripheralCueAndNotAContrastClaim`).
+    @Test func amberTickClearsTheFarPlaneCue() {
+        for (name, colour) in [("amber", RailTreatment.needsTickColour), ("green", RailTreatment.workingTickColour),
+                               ("violet", RailTreatment.activeTickColour)] {
+            let ratio = RailTreatment.effectiveContrast(colour, promoted: true)
+            #expect(ratio >= Contrast.bodyTextFloor, "\(name) tick is \(ratio):1")
+        }
+    }
+}

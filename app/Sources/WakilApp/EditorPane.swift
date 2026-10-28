@@ -99,6 +99,9 @@ struct EditorPane: View {
     /// Ticket view: what the column's Ticket view draws (`WindowModel.editorTicket`), and `dispatch`
     /// answering its reply or throwing its refusal, for a link's answer and a write's refusal.
     var ticket: EditorTicketViewState = .empty
+    /// What waits on the operator (`ticketNeedsCount`, `ticketNeedsLabel`): the Ticket label's count.
+    var ticketCount = 0
+    var ticketCountLabel: String?
     var dispatchThrowingReply: (String, [String: JSONValue]) async throws -> JSONValue = { _, _ in .null }
 
     @State private var host = EditorHost()
@@ -157,7 +160,8 @@ struct EditorPane: View {
                                  focusWanted: $columnFocusWanted, hasKeyboard: $columnHasKeyboard,
                                  pendingReveal: $pendingReveal, browsed: $treeBrowsed,
                                  changes: changes, timeline: timeline, timelineTab: activeTab,
-                                 ticket: ticket, reviews: reviews, dispatchReply: dispatchThrowingReply)
+                                 ticket: ticket, reviews: reviews, dispatchReply: dispatchThrowingReply,
+                                 ticketCount: ticketCount, ticketCountLabel: ticketCountLabel)
                 }
                 editorStack
             }
