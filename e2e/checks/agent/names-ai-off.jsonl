@@ -14,6 +14,9 @@
 {"do":{"type":{"into":"window.composer","text":"thread turn one"}}}
 {"do":{"press":"Return"}}
 {"expect":{"tree":"contains","text":"first reply in the thread"}}
+{"do":{"type":{"into":"window.composer","text":"thread turn two"}}}
+{"do":{"press":"Return"}}
+{"expect":{"tree":"contains","text":"second reply in the thread"}}
 {"do":{"hotkey":"cmd+n"}}
 {"expect":{"tree":"contains","text":"RUNNING"}}
 {"expect":{"tree":"contains","text":"thread turn one"}}
