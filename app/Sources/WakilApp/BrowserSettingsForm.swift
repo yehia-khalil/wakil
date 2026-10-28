@@ -82,7 +82,7 @@ struct BrowserSettingsForm: View {
         ChoiceSettingRow(
             label: "Tabs", options: ["Horizontal", "Vertical"],
             selected: browser.tabs == "vertical" ? "Vertical" : "Horizontal",
-            identifier: { option in "settings.browser.tabs.\(option.lowercased())" },
+            identifier: { option in let choice = option.lowercased(); return "settings.browser.tabs.\(choice)" },
             refusalIdentifier: "settings.browser.tabs.refusal",
             hint: "Vertical puts the tabs in a column at the pane's left; ⌃⌘S hides and shows it.",
             save: { option in await save(["tabs": .string(option.lowercased())]) })
@@ -91,7 +91,7 @@ struct BrowserSettingsForm: View {
         ChoiceSettingRow(
             label: "Name groups with AI", options: ["Off", "On"],
             selected: browser.nameGroups ? "On" : "Off",
-            identifier: { option in "settings.browser.nameGroups.\(option.lowercased())" },
+            identifier: { option in let choice = option.lowercased(); return "settings.browser.nameGroups.\(choice)" },
             refusalIdentifier: "settings.browser.nameGroups.refusal",
             hint: "Sends the titles of a new group's first tabs — never addresses or page text — to this "
                 + "organisation's quick-tasks model for a name of up to three words. Off, a group is named "
