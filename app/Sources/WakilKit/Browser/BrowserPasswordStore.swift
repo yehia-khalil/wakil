@@ -142,22 +142,27 @@ public struct BrowserPasswordStore: Sendable {
         guard FileManager.default.fileExists(atPath: keychainFile) else {
             throw BrowserPasswordError.noKeychainFile(keychainFile)
         }
-        var keychain: SecKeychain?
-        let opened = SecKeychainOpen(keychainFile, &keychain)
-        guard opened == errSecSuccess, let keychain else {
-            throw Self.keychainError(operation: "open the keychain", status: opened)
-        }
-        // An unreadable file still opens as a reference, and an add naming it would fall back to the
-        // default (login) keychain. Ask for its status first, so a file that is not a keychain is refused.
-        var keychainStatus: SecKeychainStatus = 0
-        let statusResult = SecKeychainGetStatus(keychain, &keychainStatus)
-        guard statusResult == errSecSuccess else {
-            throw Self.keychainError(operation: "open the keychain", status: statusResult)
-        }
+        let keychain = try Self.openKeychain(keychainFile)
         if forAdd { query[kSecUseKeychain as String] = keychain }
         else { query[kSecMatchSearchList as String] = [keychain] }
         query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
         return query
+    }
+
+    /// An unreadable file still opens as a reference, and an add naming it would fall back to the default
+    /// (login) keychain. So the status is asked for first, and a file that is not a keychain is refused.
+    static func openKeychain(_ path: String) throws -> SecKeychain {
+        var keychain: SecKeychain?
+        let opened = SecKeychainOpen(path, &keychain)
+        guard opened == errSecSuccess, let keychain else {
+            throw keychainError(operation: "open the keychain", status: opened)
+        }
+        var keychainStatus: SecKeychainStatus = 0
+        let statusResult = SecKeychainGetStatus(keychain, &keychainStatus)
+        guard statusResult == errSecSuccess else {
+            throw keychainError(operation: "open the keychain", status: statusResult)
+        }
+        return keychain
     }
 
     private func require(_ status: OSStatus, _ operation: String) throws {

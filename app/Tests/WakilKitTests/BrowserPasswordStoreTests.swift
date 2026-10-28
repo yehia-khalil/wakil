@@ -99,7 +99,7 @@ struct BrowserPasswordStoreTests {
         let path = dir.appendingPathComponent("absent.keychain-db").path
         let store = BrowserPasswordStore(keychainFile: path)
         #expect(throws: BrowserPasswordError.noKeychainFile(path)) {
-            try store.save(org: "initech", site: "example.com", username: "ann", password: "walk-test-pass-1")
+            try store.password(org: "initech", site: "example.com", username: "ann")
         }
         #expect(throws: BrowserPasswordError.noKeychainFile(path)) { try store.logins(org: "initech", site: nil) }
         #expect(!FileManager.default.fileExists(atPath: path))
@@ -127,12 +127,15 @@ struct BrowserPasswordStoreTests {
     @Test func keychainErrorsNeverCarryTheValue() throws {
         let keychain = try TemporaryKeychain()
         let store = BrowserPasswordStore(keychainFile: keychain.path)
-        // A keychain deleted under the store fails every call without a lock or a dialog.
-        try TemporaryKeychain.security(["delete-keychain", keychain.path])
         defer { keychain.remove() }
         let password = "walk-test-pass-1"
+        // Proof in this test that the keychain is the store's own temporary one: a save lands in it.
+        try store.save(org: "initech", site: "example.com", username: "ann", password: password)
+        #expect(try store.logins(org: "initech", site: nil).count == 1)
+        // A keychain deleted under the store fails every call without a lock or a dialog.
+        try TemporaryKeychain.security(["delete-keychain", keychain.path])
         do {
-            try store.save(org: "initech", site: "example.com", username: "ann", password: password)
+            try store.save(org: "initech", site: "example.com", username: "bob", password: password)
             Issue.record("a save on a deleted keychain should have thrown")
         } catch {
             for text in [String(describing: error), error.localizedDescription, "\(error)", String(reflecting: error)] {
@@ -141,21 +144,24 @@ struct BrowserPasswordStoreTests {
         }
     }
 
-    @Test func aKeychainFileThatIsNotOneFailsWithTheStatusAndNotTheValue() throws {
+    @Test func aKeychainFileThatIsNotOneIsRefusedByAReadWithoutAnyWrite() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("wakil-junk-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = dir.appendingPathComponent("junk.keychain-db").path
         try Data("not a keychain".utf8).write(to: URL(fileURLWithPath: path))
-        let password = "walk-test-pass-1"
+        // Attributes-only read and the open check itself: nothing here can write to any keychain.
+        #expect(throws: BrowserPasswordError.self) { try BrowserPasswordStore.openKeychain(path) }
         do {
-            try BrowserPasswordStore(keychainFile: path)
-                .save(org: "initech", site: "example.com", username: "ann", password: password)
-            Issue.record("a save on a file that is not a keychain should have thrown")
+            _ = try BrowserPasswordStore(keychainFile: path).logins(org: "initech", site: nil)
+            Issue.record("a read on a file that is not a keychain should have thrown")
         } catch let error as BrowserPasswordError {
             guard case .keychain = error else { Issue.record("expected .keychain, got \(error)"); return }
-            #expect(!String(describing: error).contains(password))
-            #expect(!error.localizedDescription.contains(password))
+        }
+        #expect(throws: Never.self) {
+            let keychain = try TemporaryKeychain()
+            defer { keychain.remove() }
+            _ = try BrowserPasswordStore.openKeychain(keychain.path)
         }
     }
 
