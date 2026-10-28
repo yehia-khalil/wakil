@@ -245,7 +245,8 @@ struct BrowserPane: View {
                         // Return or Esc gives the keyboard back to the page; focus the operator moved
                         // elsewhere stays there (Rule 6).
                         if explicit { DispatchQueue.main.async { focusPage() } }
-                    })
+                    },
+                    middleClickEnabled: isKeyboardOwner)
                 BrowserTabCount(snapshot: snapshot, listMode: listMode, dispatch: send)
                     .padding(.leading, BrowserPaneStyle.gap)
             } else {
@@ -269,7 +270,8 @@ struct BrowserPane: View {
             renameEnded: { explicit in
                 // As the strip's: Return or Esc gives the keyboard back to the page (Rule 6).
                 if explicit { DispatchQueue.main.async { focusPage() } }
-            })
+            },
+            middleClickEnabled: isKeyboardOwner)
     }
 
     /// The tab and group menus' context (3d-i).

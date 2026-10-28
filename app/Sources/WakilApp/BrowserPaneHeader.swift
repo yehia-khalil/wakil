@@ -264,6 +264,8 @@ struct BrowserTabList: View {
     let closeArmed: String?
     /// The rename field went; `explicit` when Return or Esc ended it.
     let renameEnded: (_ explicit: Bool) -> Void
+    /// Nothing is drawn over the canvas: a middle-click on a tab closes it (3d-i walk).
+    var middleClickEnabled = false
 
     /// A click on a chip, held for the double-click time so a double-click renames instead.
     @State private var pendingToggle: Task<Void, Never>?
@@ -302,6 +304,12 @@ struct BrowserTabList: View {
                 if case .tab(let t) = entries[index] { dispatch("browser_close_tab", ["tab": .string(t.id)]) }
             },
             newTab: PaneStripNewTab(help: "New Tab") { dispatch("browser_new_tab", [:]) },
+            // A middle-click on a tab closes it, as its × does (a pinned one too, in one press); a
+            // group's chip takes none.
+            middleClick: { index in
+                if let tab = entries[index].middleClickCloses { dispatch("browser_close_tab", ["tab": .string(tab)]) }
+            },
+            middleClickEnabled: middleClickEnabled,
             closable: { if case .tab = entries[$0] { true } else { false } },
             contextMenu: { index in
                 switch entries[index] {

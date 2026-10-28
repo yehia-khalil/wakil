@@ -88,7 +88,8 @@ not store state (`BrowserPrompt`): the page asked, not the operator or the agent
 `BrowserSettingsForm.swift` is Settings → Browser (search engine, start page, Clear data).
 Two seams reach outside the store from here: `BrowserFaviconLoader` fetches a tab's icon with an ephemeral
 session (no cookies, no credentials, 64 KB, kept in memory by URL), and `WindowSession` hands
-`browser_copy_url` the general pasteboard (`copyBrowserText`).
+`browser_copy_url` the general pasteboard (`copyBrowserText`). A middle-click on a vertical-column tab is
+`BrowserRowMiddleClick` (one local monitor for all rows, no hits of its own); the strip's is `PaneTabStrip`'s.
 
 **The agent's reach into a page (3c-ii)** is `BrowserPageAgent` (`BrowserPageAgent.swift`), the
 `BrowserPageDriver` WakilKit's actions call, and `BrowserAgentScript.swift`, the script it runs. The

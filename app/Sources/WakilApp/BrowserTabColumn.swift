@@ -29,6 +29,8 @@ struct BrowserTabColumn: View {
     let closeArmed: String?
     /// The rename field went; `explicit` when Return or Esc ended it.
     let renameEnded: (_ explicit: Bool) -> Void
+    /// Nothing is drawn over the canvas: a middle-click on a tab closes it (3d-i walk).
+    var middleClickEnabled = false
 
     @AppStorage("browser.tabColumn.width") private var width = BrowserTabColumnRules.width
     /// The width as the divider's drag began.
@@ -141,6 +143,15 @@ struct BrowserTabColumn: View {
                 if let params = target(list, from: index, gap: gap) { dispatch("browser_move_tab", params) }
             })
         .onTapGesture { presses.tap(entry) }
+        // A middle-click on a tab closes it, as its × does (a pinned one too, in one press); a group's
+        // header takes none.
+        .background {
+            if let tab = entry.middleClickCloses {
+                BrowserRowMiddleClick(enabled: middleClickEnabled) {
+                    dispatch("browser_close_tab", ["tab": .string(tab)])
+                }
+            }
+        }
         .onHover { inside in hovered = inside ? entry.id : (hovered == entry.id ? nil : hovered) }
         .contextMenu {
             switch entry {

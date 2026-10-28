@@ -235,7 +235,8 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   (the page's `link rel=icon`, else `<origin>/favicon.ico`; http and https only) and the size and type rule
   (at most 64 KB, a 2xx, not a page). The fetch is the app's: an ephemeral session, no cookies or credentials.
 - `BrowserStripEntries.swift` — `BrowserStripEntry` and `BrowserSnapshot.stripEntries` (3d-i walk): what the
-  tab list draws, in order; a collapsed group shows its active tab under its header (`showsTab`).
+  tab list draws, in order; a collapsed group shows its active tab under its header (`showsTab`); a
+  middle-click on a tab entry closes it (`middleClickCloses`), on a chip does nothing.
 - `BrowserLinkOpening.swift` — `BrowserLinkOpening` (3d-i walk): ⌘-click and middle-click (WebKit's button 4;
   AppKit's 2 kept) open a link in a background tab.
 - `BrowserCopyURL.swift` — `BrowserCopyURL` (3d-i walk): ⌘⇧C's rule, the `Copied` tip (1.5 s) and

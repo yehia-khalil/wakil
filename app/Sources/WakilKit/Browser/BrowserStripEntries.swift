@@ -13,6 +13,13 @@ public enum BrowserStripEntry: Equatable, Sendable {
         }
     }
 
+    /// The tab a middle-click on this entry closes, as its × does — a pinned one too, in one press;
+    /// a group's chip takes none (3d-i walk).
+    public var middleClickCloses: String? {
+        if case .tab(let t) = self { return t.id }
+        return nil
+    }
+
     /// `browser.group.<id>` for a chip, `browser.tab.<id>` for a tab.
     public var identifier: String {
         switch self {

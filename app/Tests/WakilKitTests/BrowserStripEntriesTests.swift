@@ -54,6 +54,19 @@ struct BrowserStripEntriesTests {
         #expect(ids(s) == ["group:g1", "t1", "group:pr", "t3"])
     }
 
+    @Test func aMiddleClickClosesATabEvenAPinnedOneAndNeverAGroupHeader() {
+        var pinned = own("g2", collapsed: false)
+        pinned.pin = "p"
+        let s = pane([tab("t1", pin: "p"), tab("t2", group: "g1"), tab("t3", group: "g2")],
+                     groups: [own("g1", collapsed: false), pinned], active: "t1")
+        let closes = s.stripEntries.map { [$0.id: $0.middleClickCloses] }
+        #expect(closes.contains { $0["t1"] == "t1" }, "a pinned tab: in one press, as its ×")
+        #expect(closes.contains { $0["t2"] == "t2" })
+        #expect(closes.contains { $0["t3"] == "t3" }, "a tab of a pinned group")
+        #expect(closes.contains { $0["group:g1"] == .some(nil) }, "a header does nothing")
+        #expect(closes.contains { $0["group:g2"] == .some(nil) })
+    }
+
     @Test func showsTabAnswersPerTab() {
         let s = pane([tab("t1", group: "g1"), tab("t2", group: "g1"), tab("t3")], groups: [own("g1", collapsed: true)],
                      active: "t1")
