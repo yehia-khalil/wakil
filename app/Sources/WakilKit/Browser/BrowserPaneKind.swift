@@ -107,6 +107,7 @@ enum BrowserPaneKind: PaneKind {
             "canGoForward": tab.map { .bool($0.canGoForward) } ?? .null,
             "bookmarked": .bool(bookmarked),
             "zoom": tab.map { .number($0.zoom) } ?? .null,
+            "pictureInPicture": s.tabs.first { $0.pictureInPicture }.map { .string($0.id) } ?? .null,
             "find": s.find.map { f in .object([
                 "query": .string(f.query), "current": .number(Double(f.current)), "total": .number(Double(f.total)),
             ]) } ?? .null,

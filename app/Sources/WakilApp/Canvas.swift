@@ -621,6 +621,8 @@ extension WakilWindow {
                         isClosed: {
                             model.drawnScope == scope && !model.layoutSnapshot.panes.contains { $0.id == pane.id }
                         },
+                        // Another pane maximised in front of this one (3d-iii ruling 1).
+                        isCovered: model.layoutSnapshot.maximizedId.map { $0 != pane.id } ?? false,
                         sites: model.browserSites,
                         agentAllowed: model.browserAllowedOnScreen,
                         revokeSite: { site in Task { await model.revokeBrowserSite(site) } },

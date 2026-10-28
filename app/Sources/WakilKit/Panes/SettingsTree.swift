@@ -162,16 +162,19 @@ public struct SettingsBrowser: Sendable, Equatable, Decodable {
     public var tabs: String
     /// Whether the model names automatic tab groups. On by default.
     public var nameGroups: Bool
+    /// Whether a playing video floats when the operator leaves its tab. On by default.
+    public var pictureInPicture: Bool
 
     public static let defaults = SettingsBrowser(searchEngine: "google", startPage: "")
 
     public init(searchEngine: String, startPage: String, searchSuggestions: Bool = false,
-                tabs: String = "horizontal", nameGroups: Bool = true) {
+                tabs: String = "horizontal", nameGroups: Bool = true, pictureInPicture: Bool = true) {
         self.searchEngine = searchEngine
         self.startPage = startPage
         self.searchSuggestions = searchSuggestions
         self.tabs = tabs
         self.nameGroups = nameGroups
+        self.pictureInPicture = pictureInPicture
     }
 
     public init(from decoder: Decoder) throws {
@@ -181,9 +184,12 @@ public struct SettingsBrowser: Sendable, Equatable, Decodable {
         searchSuggestions = try c.decodeIfPresent(Bool.self, forKey: .searchSuggestions) ?? false
         tabs = try c.decodeIfPresent(String.self, forKey: .tabs) ?? "horizontal"
         nameGroups = try c.decodeIfPresent(Bool.self, forKey: .nameGroups) ?? true
+        pictureInPicture = try c.decodeIfPresent(Bool.self, forKey: .pictureInPicture) ?? true
     }
 
-    private enum CodingKeys: String, CodingKey { case searchEngine, startPage, searchSuggestions, tabs, nameGroups }
+    private enum CodingKeys: String, CodingKey {
+        case searchEngine, startPage, searchSuggestions, tabs, nameGroups, pictureInPicture
+    }
 }
 
 /// One project's editor tier (`project.json`'s `editor`), defaults filled by Go.

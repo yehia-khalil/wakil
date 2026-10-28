@@ -1,0 +1,25 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"do":{"resize":{"width":1400,"height":900}}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/video.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Video"}}
+{"dispatch":{"action":"editor_new_scratch","params":{}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].scratch","equals":"1"}}
+{"dispatch":{"action":"pane_restore","params":{"id":"editor-2"}}}
+{"dispatch":{"action":"pane_restore","params":{"id":"browser-1"}}}
+{"dispatch":{"action":"pane_resize","params":{"id":"browser-1","width":640,"height":600}}}
+{"dispatch":{"action":"pane_move","params":{"id":"browser-1","x":20,"y":60}}}
+{"dispatch":{"action":"pane_resize","params":{"id":"editor-2","width":600,"height":600}}}
+{"dispatch":{"action":"pane_move","params":{"id":"editor-2","x":720,"y":60}}}
+{"expect":{"frame":"editor.pane","clear":"browser.page"}}
+{"dispatch":{"action":"editor_replace_range","params":{"pane":"editor-2","range":{"start":{"line":1,"column":1},"end":{"line":1,"column":1}},"text":"quit would lose this"}}}
+{"expect":{"pane":"editor-2","field":"tabs[0].dirty","equals":"true"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"null"}}
+{"do":{"hotkey":"cmd+m"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"t1"}}
+{"do":{"hotkey":"cmd+q"}}
+{"expect":{"tree":"contains","text":"Unsaved changes in Untitled-1"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"null"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Video"}}
+{"do":{"press":"Escape"}}
+{"expect":{"tree":"absent","text":"Unsaved changes in Untitled-1"}}

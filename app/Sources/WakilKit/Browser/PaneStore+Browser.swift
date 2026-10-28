@@ -83,6 +83,7 @@ extension PaneStore {
             s.tabs[i].canGoForward = report.canGoForward
             s.tabs[i].failure = report.failure
             if let zoom = report.zoom { s.tabs[i].zoom = zoom }
+            s.tabs[i].pictureInPicture = report.pictureInPicture
             s.tabs[i].loaded = true
             if endsALoad { s.placeLoaded(tab: tab) }
         }

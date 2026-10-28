@@ -47,7 +47,7 @@ the operator back to Dia every day:
 - **Vertical tabs are one Browser setting for every pane, and the column tucks away like Dia's**
   (2026-10-27: "a setting for all panes, like dia"; "like dia").
 - **Identities inside an organisation, like Firefox containers** (2026-10-26, notes decision 5, kept
-  as written there).
+  as written there). **Dropped 2026-10-28** (amendment below).
 - **Passwords: Wakil's own, in the Keychain** (2026-10-26, notes decision 6 "now"). The operator has
   no paid Apple Developer account (2026-10-27), so the signed-build test of the Passwords app's
   autofill waits until there is one.
@@ -116,8 +116,8 @@ the operator back to Dia every day:
     account `<site> <username>`. The site key is the registrable domain, as for groups. They are read
     and written from WakilKit, not through Go: only the window fills a page, and the org in the name is
     checked on every read as `Resolve()` checks it, so another organisation's item is never returned.
-    Lane C starts on the default identity; identities need no migration, since the name already
-    carries one.
+    Lane C uses only the default identity, since 3d-ii is dropped (amendment 2026-10-28); the name
+    still carries `default`, so identities, if they ever come back, need no migration.
 13. **Clearing an organisation's browsing data** (3c-i) clears every identity's store too. Passwords
     are not browsing data and stay; they are deleted per login in Settings. `wakil org rm` names the
     identities' stores and the password items as residue to clear first, as it names the profile store
@@ -128,7 +128,8 @@ the operator back to Dia every day:
 
 ## What the operator gets
 
-Three lanes. A and B start together; C starts when a lane frees, on the default identity (call 12). Each lane is its own plan, branch,
+Three lanes. A and B start together; C starts when a lane frees, on the default identity only (call 12).
+3d-ii, identities, is dropped (amendment 2026-10-28). Each lane is its own plan, branch,
 review and walk. Lane A runs its two sub-phases in order because both change the tab model.
 
 ### Lane A, 3d-i: the tab model — groups, pinning, vertical tabs
@@ -150,9 +151,10 @@ review and walk. Lane A runs its two sub-phases in order because both change the
   collapse, ungroup, close), `browser_tab_move` gains a group, `browser_pin` / `browser_unpin`, and
   `read_pane` reports each tab's group and pin. Priced `.control`, allow, like the other tab actions.
 
-### Lane A, 3d-ii: identities
+### Lane A, 3d-ii: identities — DROPPED (operator, 2026-10-28)
 
-As the notes' decision 5, unchanged:
+Not built. Organisations already keep cookies apart, and there is no felt need for a second login
+inside one. Kept below as written, for the record only:
 - Right-click a tab → **Identity ▸** `Default · <each identity> · New Identity…`. Changing a tab's
   identity reloads its page in that identity. New Identity… opens a name field in the menu, focused,
   made when focus leaves it, no Enter (Rules 2, 3).
@@ -184,11 +186,14 @@ As the notes' decision 5, unchanged:
 - Every tab's configuration sets `allowsPictureInPictureMediaPlayback` to true on `WKPreferences`
   through KVC, beside `developerExtrasEnabled`. **This is private API**: the public configuration
   property is iOS-only. Without it, every route answers `NotSupportedError`.
-- On leaving, Wakil runs a script in every frame that finds a `<video>` with `!paused && !ended &&
-  readyState > 2 && !disablePictureInPicture` and calls `webkitSetPresentationMode('picture-in-picture')`.
-  The prefixed call needs no user gesture (`requestPictureInPicture()` from a no-gesture script is
-  refused). It works before or after the web view leaves the window, and the video keeps playing with
-  the view removed, hidden or ordered out. Tested on a local `<video>` and on YouTube (`blob:` media).
+- On leaving, Wakil runs a script in every frame that finds a `<video>` that is `!paused` — or was
+  playing when the page went hidden, while the page stays hidden — and `!ended && readyState > 2 &&
+  !disablePictureInPicture`, calls `webkitSetPresentationMode('picture-in-picture')` and `play()`s it
+  if WebKit paused it (amended 2026-10-27, below). The prefixed call needs no user gesture
+  (`requestPictureInPicture()` from a no-gesture script is refused). It works before or after the web
+  view leaves the window. A video with sound keeps playing with the view removed, hidden or ordered
+  out; a muted or silent one is paused by WebKit the moment its view leaves, and floating plays it
+  again. Tested on a local `<video>` and on YouTube (`blob:` media).
 - Restore arrives as the private `WKUIDelegate` method `_webViewFullscreenMayReturnToInline:`; Wakil
   must switch to the tab **and put the web view back in the window synchronously, inside that call** —
   without it the page shows a blank video box while the window keeps playing.
@@ -303,11 +308,12 @@ As the notes' decision 6 "now", with these calls:
 
 - **A tab navigates to another site** inside an automatic group: it stays in the group if it came by
   the opener rule; otherwise it moves by the site rule (my call: a site group stays one site).
-- **Closing a tab whose video floats** ends picture-in-picture (untested in the spike; the plan's first
-  PiP task checks it).
+- **Closing a tab whose video floats** ends picture-in-picture: the system window goes with the web
+  view, and WebKit sends no `hasVideoInPictureInPictureDidChange: false`, so Wakil clears the floating
+  tab itself (probe, 2026-10-27).
 - **Two videos playing at once:** the newest-playing one floats.
-- **A video in a cross-origin iframe** (embedded YouTube) needs the script in every frame; untested in
-  the spike, the plan checks it.
+- **A video in a cross-origin iframe** (embedded YouTube) needs the script in every frame; the probe
+  floated one by its frame, with no gesture.
 - **The organisation has no GitHub account:** no pull-request group, no error.
 - **Keychain denied or locked:** the key glyph's list shows the error whole; nothing is filled.
 - **An identity deleted while its tabs are open:** they move to the default identity and reload.
@@ -340,3 +346,31 @@ As the notes' decision 6 "now", with these calls:
   now never fills one either.
 - `design-language.md` §11's Browser row: groups, pins, the vertical column, the identity mark and the
   key glyph.
+
+## Amendment, 2026-10-27 — what the 3d-iii probe found
+
+`docs/wakil/3d-iii-pip-probe.md` (3d-iii Task 1) contradicts two lines of "How (the spike…)" and
+settles two edges.
+
+- **The candidate rule changes.** WebKit pauses a playing video that is muted or has no audio track
+  the moment its web view leaves the window, or the window is minimised (the `pause` event 1–2 ms
+  later), and resumes it when the view returns. A video with sound keeps playing. With the old rule
+  (`!paused && …`) a float worked only when Wakil's script reached the page before that pause, which
+  nothing guarantees. A video now counts if it is `!paused`, or if its own events said it was playing
+  when the page went hidden (`visibilitychange`) and the page is still hidden; and `!ended &&
+  readyState > 2 && !disablePictureInPicture`. Floating calls `play()` on such a video. A video you
+  paused yourself still does not float. The body's "How" bullet is edited to match.
+- **"The video keeps playing with the view removed, hidden or ordered out"** holds only for a video
+  with sound. Edited.
+- **Closing a tab whose video floats** ends picture-in-picture, but no `false` callback arrives; Wakil
+  clears the floating tab itself. Edited under Errors and edges.
+- **A cross-origin iframe's video** floats through its frame from the `wakil.pip` world. Edited under
+  Errors and edges.
+
+## Amendment, 2026-10-28 — 3d-ii dropped
+
+The operator dropped 3d-ii, identities: an organisation already isolates its cookies, and there is no
+felt need for two logins inside one. So 3d is three lanes, A (3d-i), B (3d-iii) and C (3d-iv). C uses
+only the default identity: its Keychain service stays `wakil:<org>:browser-login:default`. Every other
+mention of an identity above (the tab fields, `identities.json`, the Identities setting, the e2e check,
+`wakil org rm`'s residue, Decision 49) is void.

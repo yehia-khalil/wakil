@@ -1579,7 +1579,8 @@ public func registerStandardActions(
         description: "Change the app-wide browser settings: searchEngine (google, duckduckgo, bing "
             + "or kagi), startPage (an http or https URL, or empty for a blank page), and "
             + "searchSuggestions (true or false; off by default), tabs (horizontal or vertical), "
-            + "and nameGroups (true or false; on by default). "
+            + "nameGroups (true or false; on by default), and pictureInPicture "
+            + "(true or false; on by default — a playing video floats when you leave its tab). "
             + "Read-modify-write: omit a field to leave it. Operator-only.",
         kind: .control,
         audience: .operatorOnly,
@@ -1597,6 +1598,7 @@ public func registerStandardActions(
                     "enum": .array([.string("horizontal"), .string("vertical")]),
                 ]),
                 "nameGroups": .object(["type": .string("boolean")]),
+                "pictureInPicture": .object(["type": .string("boolean")]),
             ]),
         ]),
         handler: { params in
@@ -1612,6 +1614,7 @@ public func registerStandardActions(
             if case .bool? = fields["searchSuggestions"] { arguments["searchSuggestions"] = fields["searchSuggestions"] }
             if case .string? = fields["tabs"] { arguments["tabs"] = fields["tabs"] }
             if case .bool? = fields["nameGroups"] { arguments["nameGroups"] = fields["nameGroups"] }
+            if case .bool? = fields["pictureInPicture"] { arguments["pictureInPicture"] = fields["pictureInPicture"] }
             return try await callChecked(
                 context, tool: "set_browser_settings", arguments: .object(arguments),
                 action: "ctx_set_browser_settings", timeout: MCPClient.readReplyTimeout)

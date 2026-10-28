@@ -6182,6 +6182,29 @@ public final class WindowModel {
         await dispatchFromSurface("browser_select_tab", .object(params))
     }
 
+    /// Restore in the system's picture-in-picture window: goes to the floating tab's place, then
+    /// selects its tab and gives its page the keyboard (ruling 6, Rule 6's named exception). A scope
+    /// with a `lineageRoot` is a conversation's canvas, so that conversation is switched to; any
+    /// other place is gone to. True when the screen reached `ref.scope` and the tab was selected;
+    /// false selects nothing, because pane and tab ids repeat from place to place.
+    @discardableResult
+    public func browserReturn(to ref: BrowserTabRef) async -> Bool {
+        if browserScope != ref.scope {
+            let place = Place(organization: ref.scope.organization, project: ref.scope.project,
+                              environment: ref.scope.environment)
+            if let root = ref.scope.lineageRoot,
+               let conversation = liveConversations(in: place).first(where: { $0.lineageRoot == root }) {
+                await switchToConversation(conversation.id)
+            } else {
+                await goTo(place)
+            }
+        }
+        guard browserScope == ref.scope else { return false }
+        await dispatchFromSurface("browser_select_tab", .object([
+            "pane": .string(ref.pane), "tab": .string(ref.tab), "focus": .bool(true)]))
+        return true
+    }
+
     /// TEST-ONLY: runs after `browserSuggestions` has read, before it answers.
     @ObservationIgnored var browserSuggestionsAfterReads: (@MainActor () async -> Void)?
 

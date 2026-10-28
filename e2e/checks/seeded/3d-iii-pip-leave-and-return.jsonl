@@ -1,0 +1,24 @@
+{"expect":{"tree":"contains","text":"e2e-fixture"}}
+{"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
+{"dispatch":{"action":"browser_navigate","params":{"pane":"browser-1","input":"{pageStub}/video.html"}}}
+{"expect":{"pane":"browser-1","field":"title","equals":"Video"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"null"}}
+{"do":{"hotkey":"cmd+t"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t2"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"t1"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Video · floating"}}
+{"do":{"hotkey":"cmd+1"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"null"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Video"}}
+{"do":{"hotkey":"cmd+2"}}
+{"do":{"hotkey":"cmd+1"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"null"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Video"}}
+{"do":{"hotkey":"cmd+2"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"t1"}}
+{"do":{"hotkey":"cmd+w"}}
+{"expect":{"pane":"browser-1","field":"active","equals":"t1"}}
+{"expect":{"pane":"browser-1","field":"pictureInPicture","equals":"null"}}
+{"expect":{"pane":"browser-1","field":"tabs[0].title","equals":"Video"}}

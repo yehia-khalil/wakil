@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Video</title></head>
+<body>
+<h1>Video</h1>
+<video id="v" src="clip.mp4" muted autoplay loop playsinline width="320" height="180"></video>
+<p><button id="float" type="button">Float</button></p>
+<script>
+// ?paused=1 drops autoplay: the attribute goes before the clip has loaded, so it never starts.
+const v = document.getElementById('v');
+if (new URLSearchParams(location.search).get('paused') === '1') { v.removeAttribute('autoplay'); v.pause(); }
+// The page's own picture-in-picture, as a site's button would ask for it.
+document.getElementById('float').addEventListener('click', () => { v.requestPictureInPicture().catch(() => {}); });
+v.addEventListener('enterpictureinpicture', () => { document.title = 'Video · floating'; });
+v.addEventListener('leavepictureinpicture', () => { document.title = 'Video'; });
+</script>
+</body></html>

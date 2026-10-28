@@ -15,6 +15,8 @@ struct BrowserSettingsForm: View {
     let save: ([String: JSONValue]) async -> String?
     /// Deletes the named organisation's browsing data; answers the refusal's sentence, or nil.
     let clearData: (_ org: String) async -> String?
+    /// Why picture in picture is off on this Mac (its WebKit lacks the private API), or nil when it is there.
+    let pictureInPictureUnavailable: String?
 
     static let engines: [(label: String, key: String)] = [
         ("Google", "google"), ("DuckDuckGo", "duckduckgo"), ("Bing", "bing"), ("Kagi", "kagi"),
@@ -63,6 +65,28 @@ struct BrowserSettingsForm: View {
             }
             SettingsSection("Tabs") {
                 tabsSection
+            }
+            SettingsSection("Picture in picture") {
+                ChoiceSettingRow(
+                    label: "Picture in picture", options: ["On", "Off"],
+                    selected: browser.pictureInPicture ? "On" : "Off",
+                    identifier: { option in "settings.browser.pictureInPicture.\(option.lowercased())" },
+                    refusalIdentifier: "settings.browser.pictureInPicture.refusal",
+                    hint: "A playing video floats in its own window when you leave its tab, its pane, the place or "
+                        + "the organisation, or minimise the window. Off, Wakil floats nothing; a page's own "
+                        + "picture-in-picture button still works.",
+                    save: { option in await save(["pictureInPicture": .bool(option == "On")]) })
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("settings.browser.pictureInPicture")
+                if let pictureInPictureUnavailable {
+                    Text(pictureInPictureUnavailable)
+                        .font(.system(size: SettingsScale.body))
+                        .foregroundStyle(caution)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .underRowValue()
+                        .padding(.vertical, 4)
+                        .accessibilityIdentifier("settings.browser.pictureInPicture.unavailable")
+                }
             }
             SettingsSection("Browsing data") {
                 clearSection

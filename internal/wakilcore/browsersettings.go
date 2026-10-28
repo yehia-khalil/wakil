@@ -40,6 +40,8 @@ type BrowserAppSettings struct {
 	Tabs string `json:"tabs,omitempty"`
 	// NameGroups asks the model to name automatic tab groups; nil is on, so a stored false is kept.
 	NameGroups *bool `json:"nameGroups,omitempty"`
+	// PictureInPicture floats a playing video when the operator leaves its tab; nil is the default, on.
+	PictureInPicture *bool `json:"pictureInPicture,omitempty"`
 }
 
 // BrowserSettings is the tier with every default filled in — what browser_settings answers.
@@ -52,8 +54,10 @@ type BrowserSettings struct {
 	// Tabs is "horizontal" or "vertical".
 	Tabs string `json:"tabs"`
 	// NameGroups is true unless the operator turned it off.
-	NameGroups bool   `json:"nameGroups"`
-	AppError   string `json:"appError,omitempty"`
+	NameGroups bool `json:"nameGroups"`
+	// PictureInPicture is true unless the operator turned it off.
+	PictureInPicture bool   `json:"pictureInPicture"`
+	AppError         string `json:"appError,omitempty"`
 }
 
 func browserEngineNames() []string {
@@ -82,7 +86,7 @@ func startPageProblem(s string) string {
 // there — reads as the default rather than reaching the browser.
 func (s BrowserAppSettings) Resolved() BrowserSettings {
 	v := BrowserSettings{SearchEngine: DefaultBrowserSearchEngine, StartPage: DefaultBrowserStartPage,
-		Tabs: DefaultBrowserTabs, NameGroups: true}
+		Tabs: DefaultBrowserTabs, NameGroups: true, PictureInPicture: true}
 	if _, ok := BrowserSearchEngines[s.SearchEngine]; ok {
 		v.SearchEngine = s.SearchEngine
 	}
@@ -95,6 +99,9 @@ func (s BrowserAppSettings) Resolved() BrowserSettings {
 	}
 	if s.NameGroups != nil {
 		v.NameGroups = *s.NameGroups
+	}
+	if s.PictureInPicture != nil {
+		v.PictureInPicture = *s.PictureInPicture
 	}
 	return v
 }
@@ -121,13 +128,15 @@ type BrowserSettingsPatch struct {
 	Tabs *string
 	// NameGroups turns model naming of automatic tab groups on or off.
 	NameGroups *bool
+	// PictureInPicture turns floating a playing video on or off.
+	PictureInPicture *bool
 }
 
 // WriteBrowserSettings applies p to settings.json, read from disk now, keeping every other key.
 // A file that does not parse is refused rather than overwritten.
 func WriteBrowserSettings(p BrowserSettingsPatch) error {
 	if p.SearchEngine == nil && p.StartPage == nil && p.SearchSuggestions == nil &&
-		p.Tabs == nil && p.NameGroups == nil {
+		p.Tabs == nil && p.NameGroups == nil && p.PictureInPicture == nil {
 		return nil
 	}
 	current, err := LoadAppSettings()
@@ -160,6 +169,10 @@ func WriteBrowserSettings(p BrowserSettingsPatch) error {
 	if p.NameGroups != nil {
 		v := *p.NameGroups
 		current.Browser.NameGroups = &v
+	}
+	if p.PictureInPicture != nil {
+		pip := *p.PictureInPicture
+		current.Browser.PictureInPicture = &pip
 	}
 	path, err := appSettingsPath()
 	if err != nil {

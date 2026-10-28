@@ -1658,8 +1658,7 @@ Each entry: the call, why, and what would change our mind.
     for, not the profile model.
 
 49. **Groups are the pane's, automatic and yours alike, and pinning per project is the one way to
-    share them; identities are stores inside the organisation; picture-in-picture is WebKit's own
-    through one private preference; Wakil keeps its own passwords in the Keychain.**
+    share them; picture-in-picture is WebKit's own through one private preference; Wakil keeps its own passwords in the Keychain.**
     *(2026-10-27, operator, during the 3d design —
     `docs/superpowers/specs/2026-10-27-3d-browser-you-live-in-design.md`.)*
     Every group, formed by site and opener or made by the operator, lives in its pane and is saved
@@ -1667,8 +1666,9 @@ Each entry: the call, why, and what would change our mind.
     recoloured, pinned, a tab dragged in or out, or made by hand). Pinning a tab or a group files it
     under the project in `pins/<project>.json`, and every pane of the project shows it first: a static
     list, read when a pane opens. A group is named once from its first tabs' titles by the quick task,
-    and never renamed. Vertical tabs are one Browser setting for every pane. Identities are separate
-    WebKit stores inside one organisation, as Firefox containers are. Picture-in-picture is WebKit's
+    and never renamed. Vertical tabs are one Browser setting for every pane. There are no identities inside an
+    organisation: the design had them (3d-ii), and the operator dropped them on 2026-10-28, since an
+    organisation already keeps its cookies apart. Picture-in-picture is WebKit's
     own, switched on through one private preference. Saved passwords are Wakil's own, in the Keychain
     (Invariant 4). The one group that is organisation-wide is the pull-request group, filled from the
     organisation's GitHub account through Go's read-only `github_pull_requests` and kept in memory

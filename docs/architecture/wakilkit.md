@@ -245,10 +245,18 @@ Tests: `WindowModelTests`, `WindowModelGitTests`, `WindowModelPaletteTests`, `Wi
   AppKit's 2 kept) open a link in a background tab.
 - `BrowserCopyURL.swift` — `BrowserCopyURL` (3d-i walk): ⌘⇧C's rule, the `Copied` tip (1.5 s) and
   `BrowserTextCopier`, the seam `browser_copy_url` writes the pasteboard through (only the app can).
+- `BrowserPictureInPicture.swift` — `BrowserTabRef` (a tab anywhere: scope, pane, tab) and
+  `BrowserPictureInPicture` (3d-iii): the pure rules for when a playing video floats, comes back
+  inline, is paused, or goes to its tab. The host says what is on screen and what WebKit reported;
+  it returns `Effect`s (`float`, `inline`, `pause`, `goTo`). Off floats nothing, and coming back from
+  the Dock brings back only a tab that is on screen. `closed` clears a floating tab itself, since WebKit
+  sends no callback. `BrowserRenamedPlaces.swift` is the pure map of a place's old names after a
+  rename, so a pane drawn under one is ignored. `read_pane` gives `pictureInPicture`, the id of the
+  floating tab or null; `WindowModel.browserReturn(to:)` is Restore's way back.
 
 Uses: `Layout` (`Pane`, `BrowserSavedTab`, `BrowserGroup`, `PaneRestorable`, `LayoutStore`), `Panes` (`PaneKind`,
 `PaneStore`), `Registry` (`ActionRegistry`, `Action`).
-Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `BrowserSiteKeyTests`, `BrowserGroupingTests`, `BrowserGroupNamesTests`, `BrowserPinsTests`, `BrowserPinnedCloseTests`, `BrowserFaviconRulesTests`, `BrowserStripEntriesTests`, `BrowserPinnedSectionTests`, `BrowserLinkOpeningTests`, `WindowModelBrowserTests`.
+Tests: `BrowserAddressTests`, `BrowserStoreTests`, `BrowserActionsTests`, `BrowserFocusRetryTests`, `BrowserHistoryTests`, `BrowserSuggestionsTests`, `BrowserAddressInputTests`, `BrowserSiteKeyTests`, `BrowserGroupingTests`, `BrowserGroupNamesTests`, `BrowserPinsTests`, `BrowserPinnedCloseTests`, `BrowserFaviconRulesTests`, `BrowserStripEntriesTests`, `BrowserPinnedSectionTests`, `BrowserLinkOpeningTests`, `WindowModelBrowserTests`, `BrowserPictureInPictureTests`, `BrowserRenamedPlacesTests`.
 
 ### Command/ — the ⌘K and ⌘P palettes
 
