@@ -26,16 +26,16 @@ and a second project. Row 8 needs a page with an embedded YouTube player.
 
 | # | Do | Expect | Walked |
 |---|---|---|---|
-| 1 | Play a YouTube video, then ⌘T | It floats with no click into the system window. Drag it to a corner and resize it; Play/Pause and ±10 s work | |
-| 2 | Select the video's tab again | The video is back in the page, playing, with no blank box, and the system window is gone | |
-| 3 | Pause it, then ⌘T; then let a short video end and ⌘T | Neither floats | |
-| 4 | With it playing, switch environment, then project, then organisation (⌘⇧O) | It floats each time. **Restore** brings you back to that organisation, place, pane and tab, with the page taking the keyboard | |
-| 5 | ⌘⏎ another pane to maximise it, then ⌘⏎ again. Then click into another pane while the video shows | It floats when covered and comes back when uncovered. A click elsewhere floats nothing | |
-| 6 | ⌘M the window, then bring it back from the Dock. Then ⌘M, then **Restore** | It floats on minimise and comes back on return. Restore brings the window back and lands on the tab | |
-| 7 | Float it, press **Close** in the system window, and go back. Float another, ⌘W its tab. Close a pane whose video plays | The first is paused in its tab. The second's window goes. The pane's close shows no window, not even briefly | |
-| 8 | A page with an embedded YouTube player (cross-origin), then a second tab's video started after the first's | The embedded one floats. When the second floats, the first is paused in its tab, not playing unseen | |
-| 9 | ⌘, → Browser → **Picture in picture: Off**, then leave a playing video; use YouTube's own PiP button; set **On** again | Nothing floats on its own. The page's own button still works | |
-| 10 | Float a video, then send the agent a first message in that place (the canvas becomes the conversation's), then **Restore** | Restore still lands on the tab | |
+| 1 | Play a YouTube video, then ⌘T | It floats with no click into the system window. Drag it to a corner and resize it; Play/Pause and ±10 s work || ✓ 2026-10-28 |
+| 2 | Select the video's tab again | The video is back in the page, playing, with no blank box, and the system window is gone || ✓ 2026-10-28 |
+| 3 | Pause it, then ⌘T; then let a short video end and ⌘T | Neither floats || ✓ 2026-10-28 |
+| 4 | With it playing, switch environment, then project, then organisation (⌘⇧O) | It floats each time. **Restore** brings you back to that organisation, place, pane and tab, with the page taking the keyboard || ✓ 2026-10-28 |
+| 5 | ⌘⏎ another pane to maximise it, then ⌘⏎ again. Then click into another pane while the video shows | It floats when covered and comes back when uncovered. A click elsewhere floats nothing || ✓ 2026-10-28 |
+| 6 | ⌘M the window, then bring it back from the Dock. Then ⌘M, then **Restore** | It floats on minimise and comes back on return. Restore brings the window back and lands on the tab || ✓ 2026-10-28 |
+| 7 | Float it, press **Close** in the system window, and go back. Float another, ⌘W its tab. Close a pane whose video plays | The first is paused in its tab. The second's window goes. The pane's close shows no window, not even briefly || ✓ 2026-10-28 |
+| 8 | A page with an embedded YouTube player (cross-origin), then a second tab's video started after the first's | The embedded one floats. When the second floats, the first is paused in its tab, not playing unseen || ✓ 2026-10-28 |
+| 9 | ⌘, → Browser → **Picture in picture: Off**, then leave a playing video; use YouTube's own PiP button; set **On** again | Nothing floats on its own. The page's own button still works || ✓ 2026-10-28 |
+| 10 | Float a video, then send the agent a first message in that place (the canvas becomes the conversation's), then **Restore** | Restore still lands on the tab || ✓ 2026-10-28 |
 
 ## 2. Known and not fixed
 
