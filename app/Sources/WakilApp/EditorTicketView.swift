@@ -183,6 +183,7 @@ struct EditorTicketView: View {
                 }), arrowEdge: .bottom) {
                     if let h = state.handoff {
                         TicketHandOffPopover(state: h, dispatch: dispatch, dispatchReply: dispatchReply, draft: handOffDraft)
+                            .id(h.subject)
                     }
                 }
         }

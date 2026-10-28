@@ -60,7 +60,13 @@ public actor EditorTicketStore {
     /// (`handOffBriefKey`), for the window's life (Rule 2). `handOffStart` is the Start in flight;
     /// `handOffCancelled` the one its Cancel stopped. An org switch drops all four (Invariant 4).
     private var handOffShown: TicketHandOffState?
-    private var briefs: [String: String] = [:]
+    /// A kept brief: its text, whether an agent wrote it last, and the operator's first line.
+    struct KeptBrief: Equatable { let text: String; let byAgent: Bool; let title: String }
+    private var briefs: [String: KeptBrief] = [:]
+    /// The harness, provider and May push the popover last showed, for the window's life: an agent's
+    /// reopen takes these, never the last Start's (it can never switch May push on).
+    private var handOffChoices: (harness: String, provider: String, mayPush: Bool)?
+    private var handOffOpens = 0
     private var handOffStart: UUID?
     private var handOffCancelled: UUID?
     private var generation = 0
@@ -493,12 +499,23 @@ public actor EditorTicketStore {
     /// Opens (or changes) the popover; its brief is kept for its subject and source.
     func showHandOff(_ s: TicketHandOffState) async {
         handOffShown = s
-        briefs[handOffBriefKey(key: s.key, pr: s.pr, repo: s.repo, source: s.source)] = s.brief
+        briefs[handOffBriefKey(key: s.key, pr: s.pr, repo: s.repo, source: s.source)]
+            = KeptBrief(text: s.brief, byAgent: s.agentBrief, title: s.titleLine)
+        handOffChoices = (s.harness, s.provider, s.mayPush)
         await changed()
     }
 
     /// The brief kept for a subject and source, as last edited; nil before one was.
-    func keptBrief(_ key: String) -> String? { briefs[key] }
+    func keptBrief(_ key: String) -> KeptBrief? { briefs[key] }
+
+    /// What the popover last showed for harness, provider and May push; nil before it opened.
+    func lastHandOffChoices() -> (harness: String, provider: String, mayPush: Bool)? { handOffChoices }
+
+    /// A new open of a subject: its number.
+    func nextHandOffOpen() -> Int {
+        handOffOpens += 1
+        return handOffOpens
+    }
 
     /// Closes the popover; its brief stays kept (Rule 2).
     func closeHandOff() async {
@@ -697,6 +714,7 @@ public actor EditorTicketStore {
         shownWhere = [:]
         handOffShown = nil
         briefs = [:]
+        handOffChoices = nil
         handOffStart = nil
         handOffCancelled = nil
     }

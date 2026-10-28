@@ -879,17 +879,31 @@ func registerTicketActions(
             let subject = try await handOffSubject(params)
             let briefKey = handOffBriefKey(key: subject.key, pr: subject.pr, repo: subject.repo, source: subject.source)
             let reset = { if case .object(let o) = params { o["reset"] == .bool(true) } else { false } }()
-            let brief = reset ? subject.brief : (await store.keptBrief(briefKey) ?? subject.brief)
-            // Reopened on the same hand-off: what the operator set stays; else the last Start's (Rule 9).
+            let kept = reset ? nil : await store.keptBrief(briefKey)
+            let byAgent = ActionRegistry.dispatchOrigin == .agent
             let open = await store.handOff()
             let same = open.map { handOffBriefKey(key: $0.key, pr: $0.pr, repo: $0.repo, source: $0.source) == briefKey } ?? false
-            let d = same ? (open!.harness, open!.provider, open!.mayPush)
-                : handOffDefaults(stored: await store.handoffDefaults(), current: ctx.provider)
+            // Reopened on the same hand-off: what the operator set stays. Else the operator's open takes
+            // the last Start's (Rule 9); an agent's never changes what the popover showed, and on a
+            // first open shows May push off — only the operator ticks it (pre-flight).
+            let d: (String, String, Bool)
+            if let open, same {
+                d = (open.harness, open.provider, open.mayPush)
+            } else if byAgent {
+                let stored = handOffDefaults(stored: await store.handoffDefaults(), current: ctx.provider)
+                d = await store.lastHandOffChoices().map { ($0.harness, $0.provider, $0.mayPush) } ?? (stored.harness, stored.provider, false)
+            } else {
+                d = handOffDefaults(stored: await store.handoffDefaults(), current: ctx.provider)
+            }
             let (place, production) = await handOffWhere(root: subject.root, context: ctx)
             await store.showHandOff(TicketHandOffState(
-                key: subject.key, pr: subject.pr, repo: subject.repo, source: subject.source, brief: brief,
+                key: subject.key, pr: subject.pr, repo: subject.repo, source: subject.source, brief: kept?.text ?? subject.brief,
                 harness: d.0, provider: d.1, mayPush: d.2, place: place, production: production,
-                root: subject.root, branch: subject.branch, providers: ctx.providers, pane: pane))
+                root: subject.root, branch: subject.branch, providers: ctx.providers, pane: pane,
+                // The keyboard is the operator's open's only (Rules 3 and 6).
+                focus: same ? (open?.focus ?? false) || !byAgent : !byAgent,
+                agentBrief: kept?.byAgent ?? false, titleLine: kept?.title,
+                opened: same ? open?.opened ?? 0 : await store.nextHandOffOpen()))
             return await editor.reply(pane)
         }))
 
@@ -921,7 +935,8 @@ func registerTicketActions(
             }
             if case .string(let p)? = o["provider"], !p.isEmpty { s.provider = p }
             if case .bool(let m)? = o["mayPush"] { s.mayPush = m }
-            if case .string(let b)? = o["brief"] { s.brief = b }
+            // An agent's words are marked as its own; the operator's become the title's source.
+            if case .string(let b)? = o["brief"], b != s.brief { s.write(brief: b, byAgent: ActionRegistry.dispatchOrigin == .agent) }
             s.error = nil
             await store.showHandOff(s)
             return await handOffReply(s.pane)
@@ -934,7 +949,7 @@ func registerTicketActions(
         kind: .control, audience: .operatorOnly,
         schema: schema(["key": .object(["type": .array([.string("string"), .string("null")])]), "pr": integer,
                         "repo": string, "thread": string, "brief": string, "harness": string, "provider": string,
-                        "mayPush": boolean, "root": string, "branch": string, "pane": string,
+                        "mayPush": boolean, "root": string, "branch": string, "pane": string, "opened": integer,
                         "place": .object(["type": .string("object")])],
                        required: ["brief", "harness", "provider", "mayPush", "place", "root", "branch"]),
         handler: { params in
@@ -954,11 +969,14 @@ func registerTicketActions(
             let key = optionalString(params, "key").flatMap { $0.isEmpty ? nil : $0 }
             let thread = optionalString(params, "thread").flatMap { $0.isEmpty ? nil : $0 }
             // The popover the operator pressed Start on: the same hand-off, or nothing starts.
-            guard key == s.key, thread == s.thread else {
+            // …and the same open of it: a brief typed for one subject never starts another.
+            let opened = o["opened"]?.intValue
+            guard key == s.key, thread == s.thread, o["pr"]?.intValue == s.pr, opened == nil || opened == s.opened,
+                  optionalString(params, "root") == s.root, optionalString(params, "branch") == s.branch else {
                 throw TicketActionError(description: "\(action): the popover shows \(s.name), not what this Start names; nothing was started")
             }
             let request = TicketHandOffRequest(
-                key: key, pr: o["pr"]?.intValue, thread: thread, brief: brief, harness: try param(params, "harness", action),
+                key: key, pr: o["pr"]?.intValue, thread: thread, brief: s.startBrief(brief), harness: try param(params, "harness", action),
                 provider: try param(params, "provider", action),
                 place: Place(organization: text("organization"), project: text("project"), environment: text("environment")),
                 root: try param(params, "root", action), branch: try param(params, "branch", action), mayPush: mayPush,
@@ -1006,8 +1024,8 @@ func registerTicketActions(
             guard !s.starting else {
                 throw TicketActionError(description: "ticket_hand_off_close: the hand-off is starting; Cancel stops it")
             }
-            if let brief = optionalString(params, "brief") {
-                s.brief = brief
+            if let brief = optionalString(params, "brief"), brief != s.brief {
+                s.write(brief: brief, byAgent: ActionRegistry.dispatchOrigin == .agent)
                 await store.showHandOff(s)
             }
             await store.closeHandOff()

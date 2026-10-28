@@ -29,6 +29,12 @@ struct TicketHandOffPopover: View {
             Text(state.title)
                 .font(.system(size: 13, weight: .semibold))
                 .accessibilityIdentifier("ticket.handoff.title")
+            if state.agentBrief {
+                // An agent wrote the brief as it stands: Start sends it marked as the agent's.
+                Text(handOffAgentEdited)
+                    .font(.system(size: 11)).foregroundStyle(EditorPaneStyle.amber)
+                    .accessibilityIdentifier("ticket.handoff.agentEdited")
+            }
             briefField
             Button("Reset") {
                 typed = false
@@ -72,7 +78,8 @@ struct TicketHandOffPopover: View {
             text = state.brief
             draft.text = state.brief
             typed = false
-            briefFocused = true
+            // Only the operator's own open takes the keyboard (Rules 3 and 6).
+            if state.focus { briefFocused = true }
         }
         .onChange(of: state.brief) { _, now in
             // The store's brief — Reset's, an agent's edit — reaches the field unless the operator is typing.

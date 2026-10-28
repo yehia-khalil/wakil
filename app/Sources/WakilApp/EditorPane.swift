@@ -348,6 +348,8 @@ struct EditorPane: View {
                         if let handOff {
                             TicketHandOffPopover(state: handOff, dispatch: dispatch, dispatchReply: dispatchThrowingReply,
                                                  draft: handOffDraft)
+                                // One field per subject and open: typed text never carries to another.
+                                .id(handOff.subject)
                         }
                     }
             }
