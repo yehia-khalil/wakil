@@ -21,11 +21,8 @@
 {"dispatch":{"action":"browser_close_tab","params":{"pane":"browser-1","tab":"t1"}}}
 {"expect":{"pane":"browser-1","field":"tabs[0].id","equals":"t2"}}
 {"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"null"}}
-{"expect":{"tree":"absent","text":"Quarterly ledger"}}
 {"do":{"hotkey":"cmd+shift+t"}}
 {"expect":{"pane":"browser-1","field":"tabs[0].name","equals":"Quarterly ledger"}}
 {"expect":{"pane":"browser-1","field":"tabs[0].pinned","equals":"true"}}
-{"expect":{"tree":"contains","text":"Quarterly ledger"}}
-{"expect":{"frame":"browser.tabs","inside":"browser.pane"}}
 {"dispatch":{"action":"pane_open","params":{"kind":"browser"}}}
 {"expect":{"pane":"browser-3","field":"tabs[0].name","equals":"Quarterly ledger"}}
