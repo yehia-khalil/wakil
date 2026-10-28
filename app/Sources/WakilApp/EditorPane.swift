@@ -261,9 +261,13 @@ struct EditorPane: View {
             // arrive: the keyboard stays where the operator was (Rule 6). `editorFrontTabArrived`.
             // A tree click on a file whose tab is already open and pinned brings that tab forward
             // too: browsing all the same, so the keyboard stays in the tree (`treeBrowsed`).
-            let front = now.active.flatMap { now.tabs.indices.contains($0) ? now.tabs[$0].path : nil }
+            // A head tab (a picked ticket's thread at its PR's head) is browsed by its key.
+            func browsable(_ s: EditorSnapshot) -> String? {
+                s.active.flatMap { s.tabs.indices.contains($0) ? (s.tabs[$0].path ?? editorReviewHeadKey(s.tabs[$0])) : nil }
+            }
+            let front = browsable(now)
             let browsing = front != nil && front == treeBrowsed
-            if front != old.active.flatMap({ old.tabs.indices.contains($0) ? old.tabs[$0].path : nil }) {
+            if front != browsable(old) {
                 treeBrowsed = nil
             }
             if !browsing, editorFrontTabArrived(old: old, now: now), isFocusedPane, !saveAsRequested,
@@ -685,8 +689,8 @@ struct EditorPane: View {
                 let reply = await dispatchReply("review_step", ["delta": .integer(Int64(delta ?? 1)), "from": .string(thread)])
                 var to: String?
                 if case .object(let o)? = reply, case .string(let t)? = o["thread"] { to = t }
-                let key = to.flatMap { host.reviews.thread($0) }
-                    .map { editorTabKey(.file(path: $0.root + "/" + $0.path, root: $0.root)) }
+                // The tab it opened in: its file, or a picked ticket's at its PR's head.
+                let key = to.flatMap { host.reviews.thread($0) }.map { editorTabKey(host.reviews.subject($0)) }
                 host.renderer?.focusReview(thread: to, key: key)
             default: break
             }

@@ -286,6 +286,51 @@ private func render(_ s: EditorSnapshot, _ rendered: inout [String: EditorRender
     #expect(r.calls.count == 2)
 }
 
+// A picked ticket's thread in its PR-head tab (the commit tab): its boxes are sent for that tab, on
+// GitHub's own lines, and only its PR's head's threads are; the working tree's file draws none of them.
+@MainActor @Test func aHeadTabIsSentItsPickedThreadsBoxes() {
+    let head = "a\nb\nc\nd\n"
+    var reviews = EditorReviewsState.empty
+    func thread(_ id: String, _ line: Int, sha: String) -> ReviewThreadState {
+        ReviewThreadState(id: id, path: "a.go", line: line, comments: [ReviewCommentState(author: "lena", body: "Nit", createdAt: "")],
+                          number: 213, headSHA: sha, repo: "github.com/initech/api", root: "/p")
+    }
+    reviews.reads.shown["INI-140"] = .init(viewer: "me", threads: [thread("P1", 3, sha: "def"), thread("P9", 2, sha: "old")])
+    var d = EditorTab.diff(root: "/p", path: "a.go", group: .changed, source: .commit(GitCommitRef(id: "def", path: "a.go")))
+    d.diffState = GitDiffState(original: "", modified: head, language: "go", binary: false, bytes: 1, lines: 4,
+                               truncated: false, error: nil, loading: false)
+    let r = RecordingRenderer()
+    var sent: [String: [ReviewBox]] = [:]
+    editorShowReviews(EditorSnapshot(tabs: [d], active: 0), buffer: nil, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls == ["reviews \(editorTabKey(d)) [\"P1\"]"])
+    #expect(sent[editorTabKey(d)]?.first?.line == 3)
+    #expect(sent[editorTabKey(d)]?.first?.note == nil)
+    #expect(reviews.thread("P1")?.id == "P1")
+    #expect(!reviews.isCurrent("P1"))
+    #expect(reviews.subject(thread("P1", 3, sha: "def")) == d.subject)
+    // The working tree's file of the same path: a picked thread is never drawn there.
+    editorShowReviews(EditorSnapshot(tabs: [tab("/p/a.go", head)], active: 0), buffer: head, reviews: reviews, sent: &sent, to: r)
+    #expect(r.calls.count == 1)
+    // Still loading, or its commit not here: nothing is sent.
+    d.diffState?.error = "fatal: bad object def"
+    #expect(editorReviewBoxes(d, reviews) == nil)
+}
+
+// A shown diff whose cursor the store moved (a thread opened at its line in a head tab) is revealed
+// there; the page's own selection is never touched.
+@Test func aShownDiffsCursorMoveIsRevealed() {
+    var s = EditorSnapshot(tabs: [diffTab(loaded("a\n", "b\nc\nd\n"))], active: 0)
+    let after = editorRenderedAfter(editorRenderSteps(rendered: [:], active: nil, snapshot: s), rendered: [:], snapshot: s)
+    s.tabs[0].cursor = EditorPosition(line: 3, column: 1)
+    let steps = editorRenderSteps(rendered: after, active: "diff:changed:/p/api/b.go", snapshot: s)
+    #expect(steps == [.reveal(key: "diff:changed:/p/api/b.go", cursor: EditorPosition(line: 3, column: 1), selection: nil)])
+    let again = editorRenderedAfter(steps, rendered: after, snapshot: s)
+    #expect(editorRenderSteps(rendered: again, active: "diff:changed:/p/api/b.go", snapshot: s).isEmpty)
+    s.tabs[0].cursor = EditorPosition(line: 2, column: 1)
+    s.tabs[0].selection = EditorRange(start: EditorPosition(line: 1, column: 1), end: EditorPosition(line: 2, column: 1))
+    #expect(editorRenderSteps(rendered: again, active: "diff:changed:/p/api/b.go", snapshot: s).isEmpty)
+}
+
 @MainActor @Test func aFindStepReachesTheRendererLast() {
     var s = EditorSnapshot(tabs: [tab("/p/a.go", "a")], active: 0)
     s.find = EditorFindRequest(query: "q", caseSensitive: true, wholeWord: false, regex: true, serial: 3)

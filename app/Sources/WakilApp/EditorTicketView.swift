@@ -517,7 +517,7 @@ struct EditorTicketView: View {
         let row = ticketThreadRow(t, elsewhere: elsewhere)
         return Button {
             guard row.elsewhere == nil else { return }
-            browsed = t.root + "/" + t.path
+            browsed = browsedKey(t)
             Task { await dispatch("review_open", ["thread": .string(t.id)]) }
         } label: {
             // Two lines so a narrow column reads the row whole (walk, 2026-10-27): the avatar, the
@@ -555,13 +555,29 @@ struct EditorTicketView: View {
 
     /// ⌥↓ / ⌥↑ from the column: `review_step` from the thread whose box holds the cursor. The file it
     /// opens is browsing, so the keyboard stays here and the next ⌥↓ steps again.
+    /// A ticket picked from In flight steps its own branch's threads, opening at its PR's head.
     private func step(_ delta: Int) {
-        guard let b = branch else { return }
+        let picked = steppedPick
+        guard let b = picked?.branch ?? branch else { return }
         let from = editorCursorThread(tab, reviews)
-        if let to = reviewStep(reviewOpenThreads(b.prs), from: from, delta: delta) { browsed = to.root + "/" + to.path }
+        if let to = reviewStep(reviewOpenThreads(b.prs), from: from, delta: delta) { browsed = browsedKey(to) }
         var params: [String: JSONValue] = ["delta": .integer(Int64(delta))]
         if let from { params["from"] = .string(from) }
+        if let key = picked?.key { params["ticket"] = .string(key) }
         Task { await dispatch("review_step", params) }
+    }
+
+    /// The ticket picked from In flight and its branch, when the view shows one this branch does not carry.
+    private var steppedPick: (key: String, branch: TicketBranchState)? {
+        guard let key = column.ticketShown, let b = state.shownBranches[key],
+              !(branch?.tickets.contains { $0.key == key } ?? false) else { return nil }
+        return (key, b)
+    }
+
+    /// What a thread's row browses: its file, or — a picked ticket's on another branch — its head tab.
+    private func browsedKey(_ t: ReviewThreadState) -> String {
+        if case .diff = reviews.subject(t) { return editorTabKey(reviews.subject(t)) }
+        return t.root + "/" + t.path
     }
 
     // MARK: - The record

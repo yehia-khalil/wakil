@@ -92,11 +92,15 @@ func reviewTime(_ iso: String) -> String {
 public func reviewBoxes(threads: [ReviewThreadState], path: String, root: String,
                         headTexts: [String: String], buffer: String, drafts: [String: String],
                         sending: Set<String>, answers: [String: String] = [:], viewer: String = "",
-                        draftRecords: [String: TicketDraftState] = [:], now: Date = Date()) -> [ReviewBox] {
+                        draftRecords: [String: TicketDraftState] = [:], now: Date = Date(),
+                        headSHA: String? = nil) -> [ReviewBox] {
     let mine = threads.filter { $0.root == root }
     let open = reviewOpenThreads([PullRequestState(number: 0, threads: mine)])
     var seen: Set<String> = []
-    let boxes = mine.filter { !$0.outdated && root + "/" + $0.path == path && seen.insert($0.id).inserted }.map { t in
+    // A head tab (`headSHA`) draws only the threads of PRs whose head is that commit.
+    let boxes = mine.filter {
+        !$0.outdated && root + "/" + $0.path == path && (headSHA == nil || $0.headSHA == headSHA) && seen.insert($0.id).inserted
+    }.map { t in
         let p = reviewPlacement(headText: headTexts[t.headSHA], buffer: buffer, line: max(1, t.line))
         let first = t.comments.first
         let who = t.resolvedBy.map { !viewer.isEmpty && $0 == viewer ? "you" : $0 }
@@ -124,6 +128,37 @@ public struct EditorReviewHead: Sendable, Hashable {
     public init(root: String, path: String, sha: String) { self.root = root; self.path = path; self.sha = sha }
 }
 
+/// The PR head's commit `.diff` tab a thread opens in when its PR is not on the branch its root has
+/// checked out (a ticket picked from In flight or Waiting on you): the same read-only "file at a
+/// commit" tab blame's Open Changes opens (`editor_open_commit_diff`), the file at the head commit on
+/// its modified side. Its boxes are placed on GitHub's own lines — they are that commit's.
+public func editorReviewHeadSubject(_ t: ReviewThreadState) -> EditorTabSubject {
+    .diff(root: t.root, path: t.path, group: .changed, source: .commit(GitCommitRef(id: t.headSHA, path: t.path)))
+}
+
+/// The tab a thread opens in: its file in the working tree when its PR is on the branch the root has
+/// checked out (`current`), else the file at its PR's head commit, read-only (piece 2's ruling: an
+/// other branch's line numbers are not the working tree's).
+public func editorReviewSubject(_ t: ReviewThreadState, current: Bool) -> EditorTabSubject {
+    current || t.headSHA.isEmpty ? .file(path: t.root + "/" + t.path, root: t.root) : editorReviewHeadSubject(t)
+}
+
+/// A head tab's key, what the Ticket column's thread row browses (the keyboard stays in the column);
+/// nil for any other tab.
+public func editorReviewHeadKey(_ tab: EditorTab) -> String? {
+    guard case .diff(_, let rel, _, .commit(let c)?) = tab.subject, c.parentPath == nil, c.path == rel else { return nil }
+    return editorTabKey(tab)
+}
+
+/// What a head tab says, whole, when the PR's head commit cannot be shown here (Rule 8): not
+/// fetched (Wakil does not fetch it), so the line is GitHub's and may differ from the working tree.
+public func reviewHeadMissing(sha: String, line: Int, git: String) -> String {
+    let id = sha.isEmpty ? "(GitHub named none)" : String(sha.prefix(7))
+    return "The pull request's head commit \(id) is not in this repository, so the file cannot be shown as it is "
+        + "there; Wakil does not fetch it — fetch the branch to read it. The thread is on line \(line) at that commit "
+        + "(\(reviewLineMayDiffer) in the working tree). git said: \(git)"
+}
+
 /// What the editor panes draw review boxes from, store-wide (`EditorShared.reviews`): each root's
 /// read threads and its viewer, the drafts and the sends (`registerTicketActions` mirrors them from
 /// `EditorTicketStore`), and the head texts read so far (`WindowModel+Ticket`). Draft text is here
@@ -143,10 +178,14 @@ public struct EditorReviewsState: Sendable, Equatable {
         public var answers: [String: String]
         /// Each draft whole — its author, its time, whether it replaced the operator's — by thread.
         public var draftRecords: [String: TicketDraftState]
+        /// The branches of tickets picked from In flight, by ticket key: their threads are drawn only
+        /// in a head tab (`editorReviewHeadSubject`), never in the working tree's files.
+        public var shown: [String: Root]
         public init(byRoot: [String: Root] = [:], drafts: [String: String] = [:], sending: Set<String> = [],
-                    answers: [String: String] = [:], draftRecords: [String: TicketDraftState] = [:]) {
+                    answers: [String: String] = [:], draftRecords: [String: TicketDraftState] = [:],
+                    shown: [String: Root] = [:]) {
             self.byRoot = byRoot; self.drafts = drafts; self.sending = sending; self.answers = answers
-            self.draftRecords = draftRecords
+            self.draftRecords = draftRecords; self.shown = shown
         }
     }
     public var reads: Reads
@@ -160,11 +199,20 @@ public struct EditorReviewsState: Sendable, Equatable {
     }
     public static let empty = EditorReviewsState()
 
-    /// The thread by its id, in any root's read.
+    /// The thread by its id, in any root's read, then a picked ticket's.
     public func thread(_ id: String) -> ReviewThreadState? {
         for r in reads.byRoot.values { if let t = r.threads.first(where: { $0.id == id }) { return t } }
+        for k in reads.shown.keys.sorted() { if let t = reads.shown[k]?.threads.first(where: { $0.id == id }) { return t } }
         return nil
     }
+
+    /// Whether the thread is on the branch its root has checked out: its box is drawn in the file.
+    public func isCurrent(_ id: String) -> Bool {
+        reads.byRoot.values.contains { $0.threads.contains { $0.id == id } }
+    }
+
+    /// The tab a thread opens in (`editorReviewSubject`).
+    public func subject(_ t: ReviewThreadState) -> EditorTabSubject { editorReviewSubject(t, current: isCurrent(t.id)) }
 
     /// Keeps only the head texts some read thread still needs: a push moves the head, and the old
     /// commit's texts go.
@@ -198,10 +246,33 @@ public func editorReviewHeadsWanted(_ tab: EditorTab, _ reviews: EditorReviewsSt
     return out
 }
 
-/// A file tab's boxes, placed against `buffer` (the tab's text when nil). Nil for a diff or scratch
-/// tab, and while a head text its threads need is still being read — a box drawn raw first would
-/// jump when it lands. A file with no drawn threads has none.
+/// A head tab's commit and its file at that commit, once read: nil for any other tab, while it
+/// loads, and when the commit could not be shown (its error says so whole).
+private func editorReviewHeadTab(_ tab: EditorTab) -> (root: String, rel: String, sha: String, text: String)? {
+    guard case .diff(let root, let rel, _, .commit(let c)?) = tab.subject, c.parentPath == nil, c.path == rel,
+          let d = tab.diffState, !d.loading, d.error == nil, !d.binary, !d.truncated else { return nil }
+    return (root, rel, c.id, d.modified)
+}
+
+/// A head tab's boxes: the threads of PRs whose head is its commit, on GitHub's own lines. The
+/// "1 of 5" counts the branch the threads are on — the root's own, else the picked ticket's.
+private func editorReviewHeadBoxes(_ h: (root: String, rel: String, sha: String, text: String),
+                                   _ reviews: EditorReviewsState) -> [ReviewBox] {
+    let reads = [reviews.reads.byRoot[h.root]].compactMap { $0 } + reviews.reads.shown.keys.sorted().compactMap { reviews.reads.shown[$0] }
+    guard let read = reads.first(where: { $0.threads.contains { $0.root == h.root && $0.path == h.rel && $0.headSHA == h.sha } })
+    else { return [] }
+    return reviewBoxes(threads: read.threads, path: h.root + "/" + h.rel, root: h.root, headTexts: [h.sha: h.text],
+                       buffer: h.text, drafts: reviews.reads.drafts, sending: reviews.reads.sending,
+                       answers: reviews.reads.answers, viewer: read.viewer, draftRecords: reviews.reads.draftRecords,
+                       headSHA: h.sha)
+}
+
+/// A file tab's boxes, placed against `buffer` (the tab's text when nil); a head tab's on its
+/// commit's text. Nil for any other diff tab or a scratch tab, and while a head text its threads need
+/// is still being read — a box drawn raw first would jump when it lands. A file with no drawn
+/// threads has none.
 public func editorReviewBoxes(_ tab: EditorTab, buffer: String? = nil, _ reviews: EditorReviewsState) -> [ReviewBox]? {
+    if let h = editorReviewHeadTab(tab) { return editorReviewHeadBoxes(h, reviews) }
     guard let f = editorReviewFile(tab) else { return nil }
     guard editorReviewHeadsWanted(tab, reviews).isEmpty else { return nil }
     let root = reviews.reads.byRoot[f.root]
@@ -238,9 +309,9 @@ func editorReadReviewHead(_ git: any ToolCaller, _ h: EditorReviewHead) async ->
 }
 
 /// Sends the shown tab's review boxes when they differ from what `sent` says the page holds for
-/// that key: only for a file tab, placed against `buffer` (the text the page holds, typing
-/// included). A diff or scratch tab is sent nothing, and a file whose head texts are still being
-/// read keeps what it shows.
+/// that key: for a file tab, placed against `buffer` (the text the page holds, typing included); for
+/// a head tab, on its commit's text. Any other diff tab or a scratch tab is sent nothing, and a file
+/// whose head texts are still being read keeps what it shows.
 @MainActor public func editorShowReviews(_ snapshot: EditorSnapshot, buffer: String?, reviews: EditorReviewsState,
                                          sent: inout [String: [ReviewBox]], to renderer: any EditorRenderer) {
     guard let i = snapshot.active, i < snapshot.tabs.count else { return }

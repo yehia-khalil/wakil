@@ -134,6 +134,10 @@ public func editorRenderSteps(rendered: [String: EditorRendered], active: String
                 if key != active || r?.original != o || r?.text != m {
                     steps.append(.diff(key: key, original: o, modified: m, language: t.language,
                                        cursor: t.cursor, scrollTop: t.scrollTop))
+                } else if let r, t.cursor != r.cursor, t.selection == nil {
+                    // The shown diff's cursor moved by the store (a review thread opened at its line in
+                    // a head tab): revealed there. A selection being made is never touched.
+                    steps.append(.reveal(key: key, cursor: t.cursor, selection: nil))
                 }
             }
         } else if let r = rendered[key] {
@@ -189,6 +193,7 @@ public func editorRenderedAfter(_ steps: [EditorRenderStep], rendered: [String: 
                 out[key] = EditorRendered(text: m, language: language, readOnly: true, agentSerial: 0,
                                           cursor: t.cursor, selection: nil, original: o)
             }
+            out[key]?.cursor = t.cursor
         } else {
             out[key] = EditorRendered(text: t.text, language: t.language, readOnly: t.readOnly,
                                       agentSerial: t.lastAgentEdit?.serial ?? 0, cursor: t.cursor,

@@ -384,6 +384,145 @@ private func isNeedsConfirmation(_ error: any Error) -> Bool {
         #expect(v.records["INI-140"] == nil)
     }
 
+    // MARK: A picked ticket's thread opens at its PR's head, read-only (operator, piece 3's look)
+
+    /// INI-140 picked from In flight on `ini-140-deploy`, a branch the root has not checked out: its
+    /// PR's head is `def456` and its threads are P1, P2 (P2 at src/auth/token.go:41).
+    private func otherBranchFixture() async throws -> TicketFixture {
+        let f = try await ticketFixture()
+        _ = try await f.store.read(root: "/p/api")
+        await f.ticket.set("ticket_in_flight", .object([
+            "waitingOnYou": .array([]), "partial": .array([]),
+            "inFlight": .array([.object(["key": .string("INI-140"), "title": .string("Deploy"), "status": .string("To Do"),
+                                         "state": .string("#213 · open"), "root": .string("/p/api"),
+                                         "branch": .string("ini-140-deploy"), "pr": .integer(213)])]),
+        ]))
+        _ = try await f.store.inFlight()
+        await f.ticket.set("ticket_record", .object(["key": .string("INI-140")]))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let text = String(decoding: try encoder.encode(ticketBranchJSON(branch: "ini-140-deploy")), as: UTF8.self)
+            .replacingOccurrences(of: "INI-142", with: "INI-140").replacingOccurrences(of: "abc123", with: "def456")
+            .replacingOccurrences(of: #""number":212"#, with: #""number":213"#)
+            .replacingOccurrences(of: #""id":"T"#, with: #""id":"P"#)
+        await f.ticket.set("ticket_branch", try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)))
+        try await f.dispatch("ticket_show", ["pane": .string(f.editor.pane), "key": .string("INI-140")], origin: .ui, confirmation: nil)
+        let deadline = Date().addingTimeInterval(2)
+        while await f.editor.panes.editorReviews().reads.shown["INI-140"] == nil {
+            guard Date() < deadline else { Issue.record("the picked branch never reached the panes"); break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        return f
+    }
+
+    private static let headSubject = EditorTabSubject.diff(
+        root: "/p/api", path: "src/auth/token.go", group: .changed,
+        source: .commit(GitCommitRef(id: "def456", path: "src/auth/token.go")))
+
+    /// (a) The thread opens the file at the PR's head commit in the commit tab, read-only, at its
+    /// line, its box drawn there on GitHub's line; ⌥↓ from it steps the picked branch's threads.
+    @Test func aPickedOtherBranchThreadOpensAtItsPRHead() async throws {
+        let f = try await otherBranchFixture()
+        let head = (1...50).map { "head \($0)" }.joined(separator: "\n")
+        await f.editor.git.set(show: "/p/api|src/auth/token.go|commit:def456", head)
+        try await f.dispatch("review_open", ["pane": .string(f.editor.pane), "thread": .string("P2")], origin: .ui, confirmation: nil)
+        let s = await f.editor.snapshot()
+        let tab = try #require(s.active.map { s.tabs[$0] })
+        #expect(tab.subject == Self.headSubject)
+        #expect(tab.readOnly)
+        #expect(tab.cursor.line == 41)
+        #expect(tab.diffState?.modified == head)
+        #expect(tab.diffState?.error == nil)
+        let boxes = try #require(editorReviewBoxes(tab, await f.editor.panes.editorReviews()))
+        #expect(boxes.map(\.thread) == ["P2"])
+        #expect(boxes.first?.line == 41)
+        #expect(boxes.first?.note == nil)
+        #expect(boxes.first?.position == "2 of 2")
+        #expect(editorCursorThread(tab, await f.editor.panes.editorReviews()) == "P2")
+
+        // ⌥↓ from its box: the picked branch's next thread, at its head too — never the root's own.
+        await f.editor.git.set(show: "/p/api|src/auth/session.go|commit:def456", (1...100).map { "s \($0)" }.joined(separator: "\n"))
+        let step = try await f.dispatch("review_step", ["pane": .string(f.editor.pane), "delta": .integer(1), "from": .string("P2")],
+                                        origin: .ui, confirmation: nil)
+        guard case .object(let r) = step else { Issue.record("no reply"); return }
+        #expect(r["thread"] == .string("P1"))
+        let t = await f.editor.snapshot()
+        let stepped = try #require(t.active.map { t.tabs[$0] })
+        #expect(stepped.subject == .diff(root: "/p/api", path: "src/auth/session.go", group: .changed,
+                                         source: .commit(GitCommitRef(id: "def456", path: "src/auth/session.go"))))
+        #expect(stepped.cursor.line == 88)
+        // The column's ⌥↓ names the picked ticket: its branch is stepped with no box under the cursor.
+        let fromColumn = try await f.dispatch("review_step", ["pane": .string(f.editor.pane), "delta": .integer(1),
+                                                              "ticket": .string("INI-140"), "from": .string("P1")],
+                                              origin: .ui, confirmation: nil)
+        guard case .object(let c) = fromColumn else { Issue.record("no reply"); return }
+        #expect(c["thread"] == .string("P2"))
+    }
+
+    /// (b) The working tree and the current branch's tabs are untouched: the open file tab keeps its
+    /// text, cursor and its own branch's boxes — never the picked thread's — and an agent's open
+    /// leaves it in front.
+    @Test func aPickedThreadLeavesTheWorkingTreeAndItsTabsAlone() async throws {
+        let f = try await otherBranchFixture()
+        let tree = (1...50).map { "tree \($0)" }.joined(separator: "\n")
+        await f.editor.files.put("/p/api/src/auth/token.go", tree)
+        await f.editor.git.set(show: "/p/api|src/auth/token.go|commit:abc123", tree)
+        await f.editor.git.set(show: "/p/api|src/auth/token.go|commit:def456", (1...50).map { "head \($0)" }.joined(separator: "\n"))
+        try await f.dispatch("editor_open", ["pane": .string(f.editor.pane), "path": .string("/p/api/src/auth/token.go"),
+                                             "line": .integer(7)])
+        let before = await f.editor.snapshot()
+        let fileTab = try #require(before.active.map { before.tabs[$0] })
+        let gitCalls = await f.editor.git.calls.filter { !$0.hasPrefix("git_show") && !$0.hasPrefix("git_status") }
+
+        try await f.dispatch("review_open", ["pane": .string(f.editor.pane), "thread": .string("P2")])
+        let s = await f.editor.snapshot()
+        // An agent's open: the head tab is there, behind; the front tab is the operator's file.
+        #expect(s.tabs.contains { $0.subject == Self.headSubject })
+        #expect(s.active.map { s.tabs[$0].subject } == fileTab.subject)
+        let after = try #require(s.tabs.first { $0.path == "/p/api/src/auth/token.go" })
+        #expect(after.text == tree)
+        #expect(after.cursor == fileTab.cursor)
+        #expect(await f.editor.files.text(of: "/p/api/src/auth/token.go") == tree)
+        #expect(await f.editor.git.calls.filter { !$0.hasPrefix("git_show") && !$0.hasPrefix("git_status") } == gitCalls)
+        // The file tab draws its own branch's threads only, once its head text is read.
+        var reviews = await f.editor.panes.editorReviews()
+        let own = EditorReviewHead(root: "/p/api", path: "src/auth/token.go", sha: "abc123")
+        reviews.heads[own] = tree
+        reviews.fetched.insert(own)
+        #expect(editorReviewBoxes(after, reviews)?.map(\.thread) == ["T2"])
+    }
+
+    /// (c) The root's own branch's thread still opens in the working-tree file, as before.
+    @Test func theCurrentBranchsThreadStillOpensInTheFile() async throws {
+        let f = try await otherBranchFixture()
+        await f.editor.files.put("/p/api/src/auth/token.go", (1...50).map { "line \($0)" }.joined(separator: "\n"))
+        await f.editor.git.set(show: "/p/api|src/auth/token.go|commit:abc123", (1...50).map { "line \($0)" }.joined(separator: "\n"))
+        try await f.dispatch("review_open", ["pane": .string(f.editor.pane), "thread": .string("T2")], origin: .ui, confirmation: nil)
+        let s = await f.editor.snapshot()
+        let tab = try #require(s.active.map { s.tabs[$0] })
+        #expect(tab.subject == .file(path: "/p/api/src/auth/token.go", root: "/p/api"))
+        #expect(tab.cursor.line == 41)
+        #expect(!s.tabs.contains { $0.diffState != nil })
+    }
+
+    /// (d) The PR's head commit is not here: nothing is fetched, and the tab says so whole — the
+    /// commit, that the line may differ, and git's own words.
+    @Test func aHeadNotHereIsSaidWholeInTheTab() async throws {
+        let f = try await otherBranchFixture()
+        let git = "fatal: bad object def456"
+        await f.editor.git.set(showError: "/p/api|src/auth/token.go|commit:def456", git)
+        await f.editor.git.set(showError: "/p/api|src/auth/token.go|commit-parent:def456", git)
+        try await f.dispatch("review_open", ["pane": .string(f.editor.pane), "thread": .string("P2")], origin: .ui, confirmation: nil)
+        let s = await f.editor.snapshot()
+        let tab = try #require(s.active.map { s.tabs[$0] })
+        #expect(tab.subject == Self.headSubject)
+        #expect(tab.diffState?.error == reviewHeadMissing(sha: "def456", line: 41, git: git))
+        #expect(tab.diffState?.error?.contains(reviewLineMayDiffer) == true)
+        #expect(tab.diffState?.error?.hasSuffix(git) == true)
+        #expect(editorReviewBoxes(tab, await f.editor.panes.editorReviews()) == nil)
+        #expect(await !f.editor.git.calls.contains { $0.contains("fetch") })
+    }
+
     @Test func reviewOpenLeavesTheColumnOnTicket() async throws {
         let f = try await ticketFixture()
         await f.editor.files.put("/p/api/src/auth/token.go", (1...50).map { "line \($0)" }.joined(separator: "\n"))

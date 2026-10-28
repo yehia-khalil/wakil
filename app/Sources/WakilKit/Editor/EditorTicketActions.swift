@@ -20,6 +20,10 @@ struct EditorTicketHooks: Sendable {
     /// Reads these head texts into the panes' review state now (`git_show` rev `commit:<sha>`), so a
     /// thread's box can be placed before its file opens at it.
     var readHeads: @Sendable ([EditorReviewHead]) async -> Void = { _ in }
+    /// Opens a thread's file as it is at its PR's head commit (`editorReviewHeadSubject`), read-only,
+    /// at `line`, once its texts are read: in front when `focus` (the operator's), else behind the
+    /// front tab (an agent's open takes nothing, Rule 6). A commit not here says so in the tab, whole.
+    var openAtHead: @Sendable (_ pane: String, _ thread: ReviewThreadState, _ line: Int, _ focus: Bool) async -> Void = { _, _, _, _ in }
 }
 
 /// The Ticket view's readable state, kept store-wide for every editor pane (Invariant 3):
@@ -96,6 +100,8 @@ func registerTicketActions(
                 reading: await store.reading(root: root), error: await store.failure(root: root))
             if let b { reviews[root] = .init(viewer: b.viewer, threads: b.prs.flatMap(\.threads)) }
         }
+        var shown: [String: EditorReviewsState.Root] = [:]
+        for (key, b) in await store.shownBranches() { shown[key] = .init(viewer: b.viewer, threads: b.prs.flatMap(\.threads)) }
         let records = await store.allDraftRecords()
         let drafts = records.mapValues(\.text)
         var branches: [String: TicketBranchState] = [:]
@@ -112,7 +118,7 @@ func registerTicketActions(
                                drafts: records.keys.sorted().map { .init(thread: $0, by: records[$0]?.by ?? "") },
                                handoff: await store.handOff()),
             reviews: EditorReviewsState.Reads(byRoot: reviews, drafts: drafts, sending: await store.allSending(),
-                                              answers: await store.allAnswers(), draftRecords: records),
+                                              answers: await store.allAnswers(), draftRecords: records, shown: shown),
             view: view)
     }
     await store.setOnChange { await mirror() }
@@ -188,7 +194,16 @@ func registerTicketActions(
     /// Opens a thread's file at its box: a file not placed yet (not open, or its head text not read)
     /// has its head text read here, and the cursor moved onto the box once it is placed — so the
     /// box ⌥↓ steps to is on the cursor's line, never a line the box is not on.
+    ///
+    /// A thread whose PR is not on the branch its root has checked out (a ticket picked from In flight
+    /// or Waiting on you) opens its file as it is at the PR's head commit, read-only, its box on
+    /// GitHub's line there: the working tree and its tabs are untouched.
     @Sendable func openThread(_ t: ReviewThreadState, pane: String) async throws {
+        let current = await store.branch(root: t.root)?.prs.contains { $0.threads.contains { $0.id == t.id } } ?? false
+        if case .diff = editorReviewSubject(t, current: current) {
+            await editor.openAtHead(pane, t, max(1, t.line), ActionRegistry.dispatchOrigin != .agent)
+            return
+        }
         let path = t.root + "/" + t.path
         try await editor.openFile(pane, path, await placedLine(t, pane: pane))
         guard let tab = await panes.editorSnapshot(paneId: pane).tabs.first(where: { $0.path == path && $0.diffState == nil })
@@ -547,7 +562,9 @@ func registerTicketActions(
     await registry.register(Action(
         name: "review_open",
         description: "Open a review thread's file at its line in an editor pane; the column stays where it was. "
-            + "thread is the thread's id from ticket_read. With no pane, the focused or first editor pane.",
+            + "thread is the thread's id from ticket_read. With no pane, the focused or first editor pane. A thread "
+            + "of a branch the root has not checked out (a ticket picked from In flight) opens its file as it is at "
+            + "its PR's head commit, read-only, behind the front tab when an agent asks.",
         kind: .control, audience: .agentReachable,
         schema: schema(["thread": string, "pane": string], required: ["thread"]),
         handler: { params in
@@ -564,21 +581,32 @@ func registerTicketActions(
         name: "review_step",
         description: "Open the next (delta 1) or previous (delta -1) open review thread of the branch the editor "
             + "pane follows, across files, wrapping; from is the thread to step from, else the one under the "
-            + "cursor, else the start. The column stays where it was.",
+            + "cursor, else the start. ticket (a key picked from In flight) or a from on a picked ticket's "
+            + "branch steps that branch, its threads opening at its PR's head, read-only. The column stays where it was.",
         kind: .control, audience: .agentReachable,
-        schema: schema(["delta": integer, "from": string, "pane": string], required: ["delta"]),
+        schema: schema(["delta": integer, "from": string, "ticket": string, "pane": string], required: ["delta"]),
         handler: { params in
             guard case .object(let o) = params, let delta = o["delta"]?.intValue else {
                 throw StandardActionError.missingParam(action: "review_step", param: "delta")
             }
             let pane = try await editor.pane(params, "review_step")
-            let threads = await followed(pane).asyncFlatMap { await store.branch(root: $0) }.map { reviewOpenThreads($0.prs) } ?? []
             var from = optionalString(params, "from")
             if from == nil {
                 // The thread whose box is on the cursor's line, as placed.
                 let s = await panes.editorSnapshot(paneId: pane)
                 from = editorCursorThread(s.active.flatMap { $0 < s.tabs.count ? s.tabs[$0] : nil }, await panes.editorReviews())
             }
+            // The branch stepped: a picked ticket's (`ticket`), else the one the pane follows when it
+            // holds `from`, else the one that does — a picked ticket's box steps its own branch.
+            let followedRead = await followed(pane).asyncFlatMap { await store.branch(root: $0) }
+            let holds = { (b: TicketBranchState?) in b?.prs.contains { $0.threads.contains { $0.id == from } } ?? false }
+            var stepped = followedRead
+            if let key = optionalString(params, "ticket"), let b = await store.shownBranches()[key] {
+                stepped = b
+            } else if from != nil, !holds(followedRead), let b = await store.branch(holding: from!) {
+                stepped = b
+            }
+            let threads = stepped.map { reviewOpenThreads($0.prs) } ?? []
             guard let t = reviewStep(threads, from: from, delta: delta) else {
                 throw TicketActionError(description: "review_step: the branch has no open review threads")
             }

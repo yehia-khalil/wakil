@@ -571,16 +571,22 @@ public func registerEditorActions(
     /// preview slot, cancelling the fetch of what it held, and a pinned one is added. A row no longer
     /// in its group opens reading "No longer changed" (Rule 7), fetching nothing.
     /// A pinned read-only diff tab of a stash's or (3a-v-a) a commit's change to one file, focused when
-    /// already open — the same file from the same source is one tab.
-    @Sendable func openSourceDiff(_ pane: String, root: String, path: String, group: GitGroup, source: EditorDiffSource) async {
+    /// already open — the same file from the same source is one tab. `at` moves its cursor there (a
+    /// review thread's line); `focus` false leaves the front tab in front (an agent's open, Rule 6)
+    /// unless the pane has none.
+    @Sendable func openSourceDiff(_ pane: String, root: String, path: String, group: GitGroup, source: EditorDiffSource,
+                                  at: EditorPosition? = nil, focus: Bool = true) async {
         let subject = EditorTabSubject.diff(root: root, path: path, group: group, source: source)
         let flight: Task<Void, Never>? = await panes.updateEditor(paneId: pane, create: true) { s in
             if let i = s.tabs.firstIndex(where: { $0.subject == subject }) {
-                s.active = i
+                if focus || s.active == nil { s.active = i }
+                if let at { s.tabs[i].cursor = at; s.tabs[i].selection = nil }
                 return nil
             }
-            s.tabs.append(EditorTab.diff(root: root, path: path, group: group, source: source))
-            s.active = s.tabs.count - 1
+            var tab = EditorTab.diff(root: root, path: path, group: group, source: source)
+            if let at { tab.cursor = at }
+            s.tabs.append(tab)
+            if focus || s.active == nil { s.active = s.tabs.count - 1 }
             return fetchDiff(pane, subject, status: nil)
         }
         await persist(pane)
@@ -2366,6 +2372,19 @@ public func registerEditorActions(
                     let gen = await panes.editorReviewHeadsGeneration()
                     for h in heads {
                         await panes.landEditorReviewHead(h, text: await editorReadReviewHead(git, h), generation: gen)
+                    }
+                },
+                openAtHead: { pane, t, line, focus in
+                    // Blame's commit tab, reused: the file at the PR's head on its modified side. Nothing
+                    // is fetched — a head not here says so in the tab, whole (Rule 8).
+                    let subject = editorReviewHeadSubject(t)
+                    guard case .diff(let root, let path, let group, let source?) = subject else { return }
+                    await openSourceDiff(pane, root: root, path: path, group: group, source: source,
+                                         at: EditorPosition(line: line, column: 1), focus: focus)
+                    await panes.updateEditor(paneId: pane) { s in
+                        guard let i = s.tabs.firstIndex(where: { $0.subject == subject }),
+                              let e = s.tabs[i].diffState?.error, !e.hasPrefix("The pull request's head commit") else { return }
+                        s.tabs[i].diffState?.error = reviewHeadMissing(sha: t.headSHA, line: line, git: e)
                     }
                 }),
             roots: roots, organization: organization, handOff: handOff)
