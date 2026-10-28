@@ -13,8 +13,8 @@ struct EditorTicketHooks: Sendable {
     let updateColumn: @Sendable (String, @escaping @Sendable (inout EditorColumnState) -> Void) async -> EditorColumnState
     /// Opens `path` in `pane` at `line` (`editor_open`'s body), the column untouched.
     let openFile: @Sendable (_ pane: String, _ path: String, _ line: Int) async throws -> Void
-    /// Opens a new editor pane, focused, and answers its id (`ticket_open` with none open).
-    var openEditorPane: @Sendable () async throws -> String = {
+    /// Opens a new editor pane — focused or not — and answers its id (`ticket_open` with none open).
+    var openEditorPane: @Sendable (_ focus: Bool) async throws -> String = { _ in
         throw TicketActionError(description: "ticket_open: no canvas to open an editor pane on")
     }
     /// Reads these head texts into the panes' review state now (`git_show` rev `commit:<sha>`), so a
@@ -122,24 +122,30 @@ func registerTicketActions(
         guard all.contains(root) else { throw GitActionError.notAProjectRoot(action: action, root: root, roots: all) }
         return root
     }
-    /// A root `ticket_open` or `ticket_show` names (F7): the caller's own project's, or another
-    /// project's of the organisation — any root the organisation's last In flight read names, since
+    /// A root `ticket_open` or `ticket_show` names (F7): one of `roots()` — the caller's own
+    /// project's (an agent session's are its own place's, `gitRootPaths(forCaller:)`) — or another
+    /// project's of the window's organisation: any root its last In flight read names, since
     /// wakil-ticket read those from the organisation's projects (and reads a branch in no other).
-    /// Read only: nothing is switched or written there. An agent session of another organisation
-    /// than the window's gets its own roots alone, the window's read being of the window's (Invariant 4).
+    /// Read only: nothing is switched or written there. That read is of the window's organisation,
+    /// so an agent session of another one is checked against its own project's roots only, and
+    /// refused as any root param is (Invariant 4). A refusal says which rule refused it (Rule 7).
     @Sendable func orgRoot(_ params: JSONValue, _ action: String) async throws -> String {
         let root = try param(params, "root", action)
         let own = await roots()
         if own.contains(root) { return root }
-        var org: [String] = []
-        let away = pinnedPlace(of: ActionRegistry.dispatchCaller)
         let windowOrg = await organization()
-        if away == nil || away?.organization == windowOrg, let s = await store.lastInFlight() {
-            for r in s.waitingOnYou + s.inFlight where !r.root.isEmpty && !own.contains(r.root) && !org.contains(r.root) {
-                org.append(r.root)
-            }
+        if let away = pinnedPlace(of: ActionRegistry.dispatchCaller), away.organization != windowOrg {
+            throw GitActionError.notAProjectRoot(action: action, root: root, roots: own)
         }
-        guard org.contains(root) else { throw GitActionError.notAProjectRoot(action: action, root: root, roots: own + org) }
+        var all = own
+        if let s = await store.lastInFlight() {
+            for r in s.waitingOnYou + s.inFlight where !r.root.isEmpty && !all.contains(r.root) { all.append(r.root) }
+        }
+        guard all.contains(root) else {
+            let org = windowOrg.map { $0.isEmpty ? "this organisation" : $0 } ?? "this organisation"
+            throw TicketActionError(description: "\(action): \(root) is not a root of any project of \(org) "
+                + "(roots: \(all.joined(separator: ", "))); nothing was shown")
+        }
         return root
     }
     /// The place a draft or a record line names: `root`, checked as `projectRoot` checks it, with
@@ -432,12 +438,15 @@ func registerTicketActions(
                     named = TicketShownAt(root: "", branch: "", repo: r.repo, pr: pr)
                 }
             }
+            // The operator's own open takes the keyboard to the pane; an agent's shows the ticket there
+            // and leaves the keyboard where the operator was (Rule 6).
+            let focus = ActionRegistry.dispatchOrigin != .agent
             let pane: String
             if let front = await frontPane() {
-                try? await layout?.focus(id: front)
+                if focus { try? await layout?.focus(id: front) }
                 pane = front
             } else {
-                pane = try await editor.openEditorPane()
+                pane = try await editor.openEditorPane(focus)
             }
             // The followed branch's own ticket shows as the branch's, not as a pick.
             if let k = key, let root = await followed(pane), let own = await store.branch(root: root),

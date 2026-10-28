@@ -2356,9 +2356,9 @@ public func registerEditorActions(
                     try await openFile(pane, path: path, at: EditorPosition(line: line, column: 1), selection: nil,
                                        preview: false, action: "review_open")
                 },
-                openEditorPane: {
+                openEditorPane: { focus in
                     guard let layout else { throw StandardActionError.missingParam(action: "ticket_open", param: "pane") }
-                    return await layout.open(kind: "editor", title: Pane.defaultTitle(kind: "editor")).id
+                    return await layout.open(kind: "editor", title: Pane.defaultTitle(kind: "editor"), focus: focus).id
                 },
                 readHeads: { heads in
                     guard let git = gitStatus?.git else { return }

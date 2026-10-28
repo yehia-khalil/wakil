@@ -1068,8 +1068,8 @@ private func names(_ f: TicketFixture) async -> [String] { await f.ticket.calls.
 
 /// An In flight read with INI-140 on `/p/api`, a keyless PR #215 on `/p/web`, INI-150 in another
 /// project's root (`/q/billing`, project umbrella) and a review request #300 no project holds.
-private func openFixture(editorPane: Bool = true) async throws -> TicketFixture {
-    let f = try await ticketFixture(editorPane: editorPane)
+private func openFixture(organization: String = "initech", editorPane: Bool = true) async throws -> TicketFixture {
+    let f = try await ticketFixture(organization: organization, editorPane: editorPane)
     func row(_ key: String, root: String, branch: String, pr: Int, project: String = "api",
              repo: String = "github.com/initech/api", review: Bool = false) -> JSONValue {
         .object(["key": .string(key), "title": .string("t"), "root": .string(root), "branch": .string(branch),
@@ -1223,9 +1223,61 @@ private func openedView(_ f: TicketFixture, until done: @Sendable (EditorTicketV
         try await f.dispatch("ticket_open", ["key": .string("INI-150"), "root": .string("/elsewhere"),
                                              "branch": .string("ini-150-export")], origin: .ui, confirmation: nil)
     } throws: { error in
-        guard case GitActionError.notAProjectRoot(_, let root, let roots) = error else { return false }
-        return root == "/elsewhere" && roots.contains("/q/billing") && roots.contains("/p/api")
+        // The organisation-wide rule, said as such: never "the active project" over other projects' roots.
+        "\(error)" == "ticket_open: /elsewhere is not a root of any project of initech "
+            + "(roots: /p/api, /p/web, /q/billing); nothing was shown"
     }
     #expect(await f.ticket.count("ticket_branch") == reads)
+    #expect(await f.editor.snapshot().column?.ticketShownAt == TicketShownAt(root: "/q/billing", branch: "ini-150-export"))
+}
+
+/// Rule 6: an agent's open shows the ticket in the front editor but leaves the operator's keyboard
+/// where it was; the operator's own open takes it there (`openFocusesTheFrontEditor`).
+@Test func anAgentsOpenNeverTakesTheKeyboard() async throws {
+    let f = try await openFixture()
+    let other = await f.editor.layout.open(kind: "terminal", title: "Terminal").id
+    try await f.dispatch("ticket_open", ["key": .string("INI-140")], origin: .agent, confirmation: nil)
+    #expect(await f.editor.layout.snapshot().focusedId == other)
+    let c = await f.editor.snapshot().column
+    #expect(c?.view == .ticket && c?.ticketShown == "INI-140")
+
+    // With no editor pane, an agent's open opens one, unfocused; the operator's opens one focused.
+    let g = try await openFixture(editorPane: false)
+    let terminal = await g.editor.layout.open(kind: "terminal", title: "Terminal").id
+    try await g.dispatch("ticket_open", ["key": .string("INI-140")], origin: .agent, confirmation: nil)
+    let snap = await g.editor.layout.snapshot()
+    let editor = try #require(snap.panes.first { $0.kind == "editor" }?.id)
+    #expect(snap.focusedId == terminal)
+    #expect(await g.editor.panes.editorSnapshot(paneId: editor).column?.ticketShown == "INI-140")
+
+    let h = try await openFixture(editorPane: false)
+    _ = await h.editor.layout.open(kind: "terminal", title: "Terminal")
+    try await h.dispatch("ticket_open", ["key": .string("INI-140")], origin: .ui, confirmation: nil)
+    let opened = await h.editor.layout.snapshot()
+    #expect(opened.focusedId == opened.panes.first { $0.kind == "editor" }?.id)
+}
+
+/// Invariant 4: the window's In flight read is of its own organisation, so an agent session of another
+/// organisation opens none of its other projects' roots — refused as any root param is, per project.
+@Test func anAgentOfAnotherOrganisationCannotOpenThisOnesRoots() async throws {
+    let f = try await openFixture()
+    let umbrella = DispatchCaller(place: Place(organization: "umbrella", project: "api", environment: "staging"),
+                                  session: "s1", conversation: "c1")
+    let reads = await f.ticket.count("ticket_branch")
+    await #expect {
+        try await f.dispatch("ticket_open", ["key": .string("INI-150"), "root": .string("/q/billing"),
+                                             "branch": .string("ini-150-export")], caller: umbrella, confirmation: nil)
+    } throws: { error in
+        guard case GitActionError.notAProjectRoot(_, let root, let roots) = error else { return false }
+        return root == "/q/billing" && roots == ["/p/api", "/p/web"]
+    }
+    #expect(await f.ticket.count("ticket_branch") == reads)
+    #expect(await f.editor.snapshot().column?.ticketShown == nil)
+
+    // An agent session of the window's own organisation opens it, as the operator does.
+    let initech = DispatchCaller(place: Place(organization: "initech", project: "api", environment: "staging"),
+                                 session: "s2", conversation: "c2")
+    try await f.dispatch("ticket_open", ["key": .string("INI-150"), "root": .string("/q/billing"),
+                                         "branch": .string("ini-150-export")], caller: initech, confirmation: nil)
     #expect(await f.editor.snapshot().column?.ticketShownAt == TicketShownAt(root: "/q/billing", branch: "ini-150-export"))
 }
