@@ -711,14 +711,17 @@ public struct EditorTicketViewState: Sendable, Equatable {
     /// The branch of a ticket picked from In flight, by key, and why one could not be read.
     public var shownBranches: [String: TicketBranchState]
     public var shownBranchFailures: [String: String]
+    /// Why the organisation's reply drafts could not be read, whole; nil after a load that came back.
+    public var draftsFailure: String?
 
     public init(roots: [String] = [], branches: [String: TicketBranchState] = [:], reading: Set<String> = [],
                 failures: [String: String] = [:], inFlight: InFlightState? = nil, records: [String: TicketRecordState] = [:],
                 recordFailures: [String: String] = [:], shownBranches: [String: TicketBranchState] = [:],
-                shownBranchFailures: [String: String] = [:]) {
+                shownBranchFailures: [String: String] = [:], draftsFailure: String? = nil) {
         self.roots = roots; self.branches = branches; self.reading = reading; self.failures = failures
         self.inFlight = inFlight; self.records = records; self.recordFailures = recordFailures
         self.shownBranches = shownBranches; self.shownBranchFailures = shownBranchFailures
+        self.draftsFailure = draftsFailure
     }
     public static let empty = EditorTicketViewState()
 

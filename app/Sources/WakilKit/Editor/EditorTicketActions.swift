@@ -97,7 +97,8 @@ func registerTicketActions(
                                          records: await store.shownRecords(),
                                          recordFailures: await store.shownRecordFailures(),
                                          shownBranches: await store.shownBranches(),
-                                         shownBranchFailures: await store.shownBranchFailures())
+                                         shownBranchFailures: await store.shownBranchFailures(),
+                                         draftsFailure: await store.draftsFailure())
         await panes.setEditorTicketMirror(
             EditorTicketMirror(roots: rs, byRoot: byRoot,
                                drafts: records.keys.sorted().map { .init(thread: $0, by: records[$0]?.by ?? "") }),
@@ -506,6 +507,12 @@ func registerTicketActions(
         handler: { params in
             let action = "review_reply_draft_restore"
             let thread = try param(params, "thread", action)
+            // The store holds the window's organisation's drafts alone (Invariant 4): an agent session
+            // of another organisation restores nothing in it.
+            if let away = pinnedPlace(of: ActionRegistry.dispatchCaller), away.organization != (await organization()) {
+                throw TicketActionError(description: "\(action): this window shows another organisation than "
+                    + "\(away.organization); nothing was written")
+            }
             do {
                 try await store.restoreDraft(thread: thread)
             } catch let e as TicketReadError {

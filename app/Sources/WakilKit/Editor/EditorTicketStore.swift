@@ -38,6 +38,7 @@ public actor EditorTicketStore {
     private var failures: [String: String] = [:]
     /// The window's organisation's reply drafts, as its `tickets/drafts.json` last answered them.
     private var drafts: [String: TicketDraftState] = [:]
+    private var draftsLoadFailure: String?
     private var sendingThreads: Set<String> = []
     /// What GitHub answered beside a reply it posted, by thread, whole: the reply is posted all the same.
     private var answers: [String: String] = [:]
@@ -361,14 +362,28 @@ public actor EditorTicketStore {
 
     public func allDraftRecords() -> [String: TicketDraftState] { drafts }
 
+    /// Why the last drafts load failed, whole (Rule 8); nil after one that came back.
+    public func draftsFailure() -> String? { draftsLoadFailure }
+
     /// Reads the window's organisation's drafts (`ticket_drafts`), as a relaunch or an org switch
     /// finds them. A load from before an org switch lands on a newer generation and is dropped.
     public func loadDrafts() async throws {
         let gen = generation
-        let content = try await windowCall("ticket_drafts", [:], timeout: MCPClient.readReplyTimeout)
-        let read = try ticketDecode(TicketDraftsState.self, content, tool: "ticket_drafts")
+        let read: TicketDraftsState
+        do {
+            let content = try await windowCall("ticket_drafts", [:], timeout: MCPClient.readReplyTimeout)
+            read = try ticketDecode(TicketDraftsState.self, content, tool: "ticket_drafts")
+        } catch {
+            // Said whole where the Ticket view says its reads' errors (Rule 8), never drawn as no drafts.
+            if gen == generation {
+                draftsLoadFailure = "Reply drafts could not be read: \(error)"
+                await changed()
+            }
+            throw error
+        }
         guard gen == generation else { return }
         drafts = read.drafts
+        draftsLoadFailure = nil
         await changed()
     }
 
@@ -378,6 +393,10 @@ public actor EditorTicketStore {
     /// and the store keeps what it had. `by` is the dispatcher's (`ticketDraftBy`), never params.
     public func setDraft(thread: String, text: String?, by: String, conversation: String?, root: String?,
                          branch: String?) async throws {
+        // The text the thread's draft already holds is not an edit: nothing is written, so a Send of
+        // an agent's words, declined or failed, leaves them the agent's and the operator's replaced
+        // text restorable (spec: "an operator's later edit simply wins" — a Send is not one).
+        if let text, !text.isEmpty, drafts[thread]?.text == text { return }
         var args: [String: JSONValue] = ["thread": .string(thread), "by": .string(by)]
         if let text, !text.isEmpty { args["text"] = .string(text) }
         for (k, v) in [("conversation", conversation), ("root", root), ("branch", branch)] {
@@ -441,6 +460,7 @@ public actor EditorTicketStore {
         current = [:]
         failures = [:]
         drafts = [:]
+        draftsLoadFailure = nil
         sendingThreads = []
         answers = [:]
         inFlightRead = nil

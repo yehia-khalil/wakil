@@ -76,6 +76,7 @@ struct EditorTicketView: View {
                 }
                 if branch != nil, let failure { whole(failure, id: "editor.ticket.failure") }
                 if let writeError { whole(writeError, id: "editor.ticket.writeError") }
+                if let drafts = state.draftsFailure { whole(drafts, id: "editor.ticket.draftsFailure") }
                 partialLines
             }
             .padding(Space.m)

@@ -633,6 +633,8 @@ struct EditorPane: View {
             case "send":
                 guard let t, let body = text, !body.isEmpty, host.beginReviewSend(thread) else { return }
                 // The text as sent is the draft until the post succeeds (a failed or refused Send keeps it).
+                // Unchanged text writes nothing (`EditorTicketStore.setDraft`): an agent's draft stays the
+                // agent's, and the operator's replaced one restorable, until the post lands.
                 await dispatch("review_reply_draft", ["thread": .string(thread), "text": .string(body)])
                 await dispatch("review_reply_send", [
                     "root": .string(t.root), "repo": .string(t.repo), "pr": .integer(Int64(t.number)),
