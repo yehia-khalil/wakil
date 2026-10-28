@@ -30,17 +30,36 @@ The probe binary read its own item with no prompt, as expected for the creator.
 
 ## For the operator, not yet measured
 
-Run from the worktree root, `/Users/yehia/Desktop/scripts/wakil-public-3d-iv`. The probe script is gone;
-(b) needs an item written by a different binary than `/usr/bin/security`, so recreate the
-essence: a ten-line Swift file with `SecKeychainOpen(file)` then `SecItemAdd` of a generic password
-(`kSecAttrService` `wakil:probe:browser-login:default`, `kSecAttrAccount` `127.0.0.1:8123 walker`,
-`kSecValueData` `probe-pass-1`, `kSecUseKeychain` the opened keychain), after
-`security create-keychain -p x .scratch/3d-iv/b.keychain`.
+Run every command from the worktree root. (b) needs an item written by a binary other than
+`/usr/bin/security`, so first build the writer below. It touches the throwaway keychain file only, with
+the test value only.
+
+```sh
+mkdir -p .scratch/3d-iv
+security create-keychain -p x "$PWD/.scratch/3d-iv/b.keychain"
+security unlock-keychain -p x "$PWD/.scratch/3d-iv/b.keychain"
+cat > .scratch/3d-iv/writer.swift <<'SWIFT'
+import Foundation
+import Security
+var kc: SecKeychain?
+guard SecKeychainOpen(CommandLine.arguments[1], &kc) == errSecSuccess, let k = kc else { exit(1) }
+let q: [String: Any] = [
+    kSecClass as String: kSecClassGenericPassword,
+    kSecAttrService as String: "wakil:probe:browser-login:default",
+    kSecAttrAccount as String: "127.0.0.1:8123 walker",
+    kSecValueData as String: Data("probe-pass-1".utf8),
+    kSecUseKeychain as String: k,
+]
+print("add", SecItemAdd(q as CFDictionary, nil))
+SWIFT
+swiftc -o .scratch/3d-iv/writer .scratch/3d-iv/writer.swift 2>/dev/null
+.scratch/3d-iv/writer "$PWD/.scratch/3d-iv/b.keychain"
+```
 
 | # | Check | Command | Expected |
 |---|---|---|---|
-| (b) | The agent's route prompts and prints nothing | `/usr/bin/security find-generic-password -s wakil:probe:browser-login:default -a "127.0.0.1:8123 walker" -w /Users/yehia/Desktop/scripts/wakil-public-3d-iv/.scratch/3d-iv/b.keychain` then **Deny** | A macOS dialog asks for access; after Deny the exit status is 36 or 128 and `probe-pass-1` is not printed. **If it prints the value with no dialog, stop: ruling 1's argument fails; ask before Task 3.** |
-| (e) | What a rebuild shows | `make app-bundle` twice (in `/Users/yehia/Desktop/scripts/wakil-public-3d-iv`), with an item written by the first build, then read it from the second | The second build's first read shows *"Wakil wants to use your confidential information stored in … in your keychain"*; **Always Allow** holds until the next build. Record the exact words. |
-| (f) | The tab state holds no password | In the app, open `e2e/fixtures/pages/form.html`, type `probe-pass-1` into the password field, switch tabs, then `grep -c probe-pass-1 ~/.wakil/orgs/<org>/browser/tabs/*.state` | Every file reports 0. Then switch the field to `type=text` in the inspector, type it again, leave the tab, repeat the grep; record the count, which is the edge. **If the first grep finds the value, add a task before Task 8 that writes no tab state for a page with a filled password.** |
+| (b) | The agent's route prompts and prints nothing | `/usr/bin/security find-generic-password -s wakil:probe:browser-login:default -a "127.0.0.1:8123 walker" -w "$PWD/.scratch/3d-iv/b.keychain"` then **Deny** the dialog | A macOS dialog asks for access, and after Deny `probe-pass-1` is not printed. Record the exit status (not known beforehand). **If it prints the value with no dialog, stop: ruling 1's argument fails; ask before Task 3.** |
+| (e) | What a rebuild shows | Covered by the plan's walk row 10 (rebuild, then fill), since the item must be written by the app itself. No standalone command: it needs `make app-bundle` twice and the app's own read | The second build's first read shows *"Wakil wants to use your confidential information stored in … in your keychain"*, and **Always Allow** holds until the next build. Record the exact words. |
+| (f) | The tab state holds no password | In the app, open `e2e/fixtures/pages/form.html`, type `probe-pass-1` into the password field, switch tabs, then `grep -c probe-pass-1 ~/.wakil/orgs/personal/browser/tabs/*.state` | Every file reports 0. Then switch the field to `type=text` in the inspector, type it again, leave the tab, and repeat the grep; record the count, which is the edge. **If the first grep finds the value, add a task before Task 8 that writes no tab state for a page with a filled password.** |
 
-Delete `.scratch/3d-iv/b.keychain` afterwards with `security delete-keychain`.
+Afterwards: `security delete-keychain "$PWD/.scratch/3d-iv/b.keychain"; rm -r .scratch/3d-iv`.
