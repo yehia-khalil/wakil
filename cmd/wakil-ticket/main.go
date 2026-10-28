@@ -141,16 +141,27 @@ type handoffArg struct {
 }
 
 type handoffWriteArg struct {
-	Op            string      `json:"op" jsonschema:"add or end"`
+	Op            string      `json:"op" jsonschema:"add, end or carry"`
 	Key           string      `json:"key,omitempty" jsonschema:"add: the ticket key, or pr:<host>/<owner>/<repo>#<n> for a PR with no ticket key"`
 	Handoff       *handoffArg `json:"handoff,omitempty" jsonschema:"add: the hand-off"`
 	MayPush       bool        `json:"mayPush,omitempty" jsonschema:"add: the operator's May push switch at Start"`
 	Conversations []string    `json:"conversations,omitempty" jsonschema:"end: the conversations whose hand-offs end, or with keepLive the live ones to keep"`
 	KeepLive      bool        `json:"keepLive,omitempty" jsonschema:"end: end every open hand-off whose conversation is not listed"`
+	From          string      `json:"from,omitempty" jsonschema:"carry: the handed conversation a resume started from"`
+	To            string      `json:"to,omitempty" jsonschema:"carry: the new conversation the resume started"`
 }
 
 type handoffWriteResult struct {
-	Handoff *wakilcore.TicketHandoff `json:"handoff,omitempty" jsonschema:"add: the hand-off as kept, with its id"`
+	Key     string                   `json:"key,omitempty" jsonschema:"carry: the ticket key, or pr:<host>/<owner>/<repo>#<n>, the hand-off is kept by"`
+	Handoff *wakilcore.TicketHandoff `json:"handoff,omitempty" jsonschema:"add: the hand-off as kept, with its id; carry: the new conversation's, none when from was never handed"`
+}
+
+type conversationArg struct {
+	Conversation string `json:"conversation" jsonschema:"a conversation's id"`
+}
+
+type mayPushResult struct {
+	MayPush bool `json:"mayPush" jsonschema:"on only when exactly one stored hand-off names the conversation and it says on"`
 }
 
 type handoffDefaultsResult struct {
@@ -324,7 +335,7 @@ func newServer() *mcp.Server {
 			return nil, draftsResult{Drafts: m}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "ticket_handoff_write", Description: "Writes. add keeps a hand-off in the ticket's record (a PR with no ticket key: by its PR, no record) with its May push, and makes its harness, provider and May push the organization's defaults; end marks open hand-offs ended: the conversations listed, or with keepLive every one not listed. Only from the Wakil window."},
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_handoff_write", Description: "Writes. add keeps a hand-off in the ticket's record (a PR with no ticket key: by its PR, no record) with its May push, and makes its harness, provider and May push the organization's defaults; end marks open hand-offs ended: the conversations listed, or with keepLive every one not listed; carry gives conversation to the hand-off of conversation from (a resume into a new conversation), May push as from reads it, the defaults untouched. Only from the Wakil window."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, a handoffWriteArg) (*mcp.CallToolResult, handoffWriteResult, error) {
 			if err := assertWindow("ticket_handoff_write"); err != nil {
 				return toolErr(err), handoffWriteResult{}, nil
@@ -338,6 +349,15 @@ func newServer() *mcp.Server {
 				return toolErr(err), handoffWriteResult{}, nil
 			}
 			return nil, out, nil
+		})
+
+	mcp.AddTool(s, &mcp.Tool{Name: "ticket_handoff_may_push", Description: "Read-only. A conversation's May push, from its stored hand-off: on only when exactly one hand-off names it and it says on; anything else, an unreadable file included, is off."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, a conversationArg) (*mcp.CallToolResult, mayPushResult, error) {
+			org, err := wakilcore.CurrentOrg()
+			if err != nil {
+				return toolErr(err), mayPushResult{}, nil
+			}
+			return nil, mayPushResult{MayPush: wakilcore.TicketHandoffMayPush(org, strings.TrimSpace(a.Conversation))}, nil
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "ticket_handoff_defaults", Description: "Read-only. The harness, provider and May push the organization's last hand-off started with, and whether there was one."},
@@ -374,8 +394,11 @@ func writeHandoff(org string, a handoffWriteArg, now time.Time) (handoffWriteRes
 		return handoffWriteResult{Handoff: &added}, nil
 	case "end":
 		return handoffWriteResult{}, wakilcore.EndTicketHandoffs(org, a.Conversations, a.KeepLive, now)
+	case "carry":
+		key, h, err := wakilcore.CarryTicketHandoff(org, strings.TrimSpace(a.From), strings.TrimSpace(a.To), now)
+		return handoffWriteResult{Key: key, Handoff: h}, err
 	}
-	return handoffWriteResult{}, wakilcore.UserError("a hand-off op is add or end, not " + strconvQuote(a.Op))
+	return handoffWriteResult{}, wakilcore.UserError("a hand-off op is add, end or carry, not " + strconvQuote(a.Op))
 }
 
 // githubForRoot is the organization's GitHub client for the root's remote host.

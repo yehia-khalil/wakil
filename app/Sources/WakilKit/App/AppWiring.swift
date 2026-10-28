@@ -48,6 +48,9 @@ public struct WakilWiring: Sendable {
     /// Conversations 2 of 3. The window's live conversations, for `session_list`; pointed at
     /// the window by `useActiveContext(of:)` once there is one.
     public let liveLookup: LiveConversationLookup
+    /// Ticket noticing. The window's hand-off Start and Cancel, for `ticket_hand_off`; pointed at
+    /// the window by `useActiveContext(of:)` once there is one.
+    public let handOffLookup: TicketHandOffLookup
     public let contextClient: MCPClient?
     public let databaseClient: MCPClient?
     /// `wakil-http`, in the window (#185).
@@ -269,6 +272,13 @@ public struct WakilWiring: Sendable {
         liveLookup.use({ [weak model] place in
             await model?.liveConversationRows(in: place) ?? []
         }, organization: { [weak model] in await model?.organization })
+        // Ticket noticing: the operator's Start and Cancel reach the window's hand-off.
+        handOffLookup.use(start: { [weak model] r, reserved in
+            guard let model else { throw TicketHandOffError(description: "no window to start the hand-off in") }
+            return try await model.startHandOff(r, reserved: reserved)
+        }, cancel: { [weak model] conversation in
+            await model?.cancelHandOff(conversation)
+        })
     }
 
     /// Stops every Wakil-owned MCP client, terminating their child
@@ -421,6 +431,7 @@ public struct WakilWiring: Sendable {
         let conversationRequests = ConversationBroker()
         let agentLookup = ActiveAgentLookup()
         let liveLookup = LiveConversationLookup()
+        let handOffLookup = TicketHandOffLookup()
         let terminals = TerminalStore(panes: panes)
         await registerStandardActions(
             into: registry, context: routed(.context, contextClient), panes: panes,
@@ -558,6 +569,7 @@ public struct WakilWiring: Sendable {
             shellContext: shellContext,
             agentLookup: agentLookup,
             liveLookup: liveLookup,
+            handOffLookup: handOffLookup,
             contextClient: contextClient,
             databaseClient: databaseClient,
             httpClient: httpClient,

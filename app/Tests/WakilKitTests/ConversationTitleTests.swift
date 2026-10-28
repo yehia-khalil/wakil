@@ -34,7 +34,7 @@ func theTitleIsTheFirstMessageCutTo48(_ message: String, _ title: String) {
     #expect(live.json == .object([
         "conversation": .string("c1"), "session": .null, "organization": .string("o"),
         "project": .string("p"), "environment": .string("e"), "title": .string("t"),
-        "state": .string("working"), "onScreen": .bool(true),
+        "state": .string("working"), "onScreen": .bool(true), "handed": .bool(false),
     ]))
 }
 

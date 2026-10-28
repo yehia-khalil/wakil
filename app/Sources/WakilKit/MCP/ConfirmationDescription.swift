@@ -28,6 +28,23 @@ public func confirmationDescription(action: String, params: JSONValue) -> String
     case "editor_changes_stash_drop_all":
         guard case .object(let o) = params, case .array(let ids)? = o["ids"] else { return nil }
         return "drop \(ids.count) stash\(ids.count == 1 ? "" : "es") in \(rootName(o))"
+    // Ticket noticing: a handed agent's remote and history writes ask (`handedAgentPrice`), and
+    // carry no statement of their own.
+    case "editor_changes_push":
+        guard case .object(let o) = params else { return nil }
+        return "push \(rootName(o))'s current branch to its upstream"
+    case "editor_changes_sync":
+        guard case .object(let o) = params else { return nil }
+        return "pull \(rootName(o))'s upstream, then push its current branch"
+    case "editor_changes_publish":
+        guard case .object(let o) = params else { return nil }
+        return "publish \(rootName(o))'s current branch to origin and set it as the upstream"
+    case "editor_changes_merge":
+        guard case .object(let o) = params, case .string(let branch)? = o["branch"] else { return nil }
+        return "merge \(branch) into \(rootName(o))'s current branch"
+    case "editor_changes_rebase":
+        guard case .object(let o) = params, case .string(let onto)? = o["onto"] else { return nil }
+        return "rebase \(rootName(o))'s current branch onto \(onto)"
     // 3a-v-b: the conflict writes that throw work away.
     case "editor_changes_abort":
         guard case .object(let o) = params else { return nil }

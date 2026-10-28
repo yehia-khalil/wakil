@@ -246,3 +246,83 @@ func TestMayPushAnyUnreadableFileReadsOff(t *testing.T) {
 		})
 	}
 }
+
+// A handed conversation resumed into a new conversation carries its hand-off: the new id reads
+// the operator's May push, the original keeps its own, and the defaults are not touched.
+func TestCarryHandoffToANewConversation(t *testing.T) {
+	localOrg(t)
+	addHandoff(t, "INI-142", "c1", true)
+	if err := EndTicketHandoffs("initech", nil, true, ticketNow); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeHandoffDefaults("initech", HandoffDefaults{Harness: "claude-code", Provider: "other", MayPush: false}); err != nil {
+		t.Fatal(err)
+	}
+	key, h, err := CarryTicketHandoff("initech", "c1", "c2", ticketNow)
+	if err != nil || h == nil {
+		t.Fatalf("carry = %q %+v %v", key, h, err)
+	}
+	if key != "INI-142" || h.Conversation != "c2" || h.ID != "h2" || !h.MayPush || h.Ended != nil || h.Thread != "PRRT_1" {
+		t.Errorf("carried = %q %+v", key, h)
+	}
+	if !TicketHandoffMayPush("initech", "c2") || !TicketHandoffMayPush("initech", "c1") {
+		t.Error("carried May push reads off")
+	}
+	if d, _, _ := ReadHandoffDefaults("initech"); d.Provider != "other" {
+		t.Errorf("a carry wrote the defaults: %+v", d)
+	}
+}
+
+// Nothing to carry from a conversation never handed: no hand-off, no error.
+func TestCarryFromAConversationNeverHanded(t *testing.T) {
+	localOrg(t)
+	addHandoff(t, "INI-142", "c1", true)
+	key, h, err := CarryTicketHandoff("initech", "c-other", "c2", ticketNow)
+	if err != nil || h != nil || key != "" {
+		t.Errorf("carry = %q %+v %v", key, h, err)
+	}
+	if TicketHandoffMayPush("initech", "c2") {
+		t.Error("an uncarried conversation reads May push on")
+	}
+}
+
+// A conversation handed twice carries May push off (its own reads off); a PR hand-off carries
+// under its PR key.
+func TestCarryFailsClosedAndKeepsPRKeys(t *testing.T) {
+	localOrg(t)
+	addHandoff(t, "INI-142", "c1", true)
+	if err := EndTicketHandoffs("initech", []string{"c1"}, false, ticketNow); err != nil {
+		t.Fatal(err)
+	}
+	addHandoff(t, "INI-142", "c1", true)
+	if _, h, err := CarryTicketHandoff("initech", "c1", "c2", ticketNow); err != nil || h == nil || h.MayPush {
+		t.Errorf("carried from a twice-handed conversation = %+v %v", h, err)
+	}
+	if TicketHandoffMayPush("initech", "c2") {
+		t.Error("carried from a twice-handed conversation reads May push on")
+	}
+	pr := PRHandoffKey("github.com/initech/api", 215)
+	addHandoff(t, pr, "c3", true)
+	key, h, err := CarryTicketHandoff("initech", "c3", "c4", ticketNow)
+	if err != nil || key != pr || h == nil || !h.MayPush {
+		t.Errorf("PR carry = %q %+v %v", key, h, err)
+	}
+	if hs, _ := ReadPRHandoffs("initech", pr); len(hs) != 2 {
+		t.Errorf("PR hand-offs = %+v", hs)
+	}
+}
+
+// An unreadable file refuses the carry: the new conversation has no hand-off, so it reads off.
+func TestCarryRefusedOverAnUnreadableFile(t *testing.T) {
+	localOrg(t)
+	addHandoff(t, "INI-142", "c1", true)
+	if err := os.WriteFile(filepath.Join(ticketDir(t), "INI-150.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := CarryTicketHandoff("initech", "c1", "c2", ticketNow); err == nil {
+		t.Error("a carry over an unreadable record succeeded")
+	}
+	if TicketHandoffMayPush("initech", "c2") {
+		t.Error("a failed carry reads May push on")
+	}
+}

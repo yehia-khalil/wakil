@@ -150,6 +150,16 @@ func handoffIDs(hs []TicketHandoff) []string {
 // the ticket's record; for a PR key, a record that is never written, carrying the key and its
 // hand-offs.
 func AddTicketHandoff(org, key string, h TicketHandoff, mayPush bool, now time.Time) (TicketRecord, error) {
+	r, err := addTicketHandoff(org, key, h, mayPush, now)
+	if err != nil {
+		return TicketRecord{}, err
+	}
+	return r, writeHandoffDefaults(org, HandoffDefaults{Harness: h.Harness, Provider: h.Provider, MayPush: mayPush, At: now.UTC().Format(time.RFC3339)})
+}
+
+// addTicketHandoff is AddTicketHandoff without the defaults: a carry keeps what the operator's
+// last Start left there.
+func addTicketHandoff(org, key string, h TicketHandoff, mayPush bool, now time.Time) (TicketRecord, error) {
 	if strings.TrimSpace(h.Conversation) == "" {
 		return TicketRecord{}, UserError("a hand-off needs its conversation")
 	}
@@ -222,7 +232,41 @@ func AddTicketHandoff(org, key string, h TicketHandoff, mayPush bool, now time.T
 			return TicketRecord{}, err
 		}
 	}
-	return out, writeHandoffDefaults(org, HandoffDefaults{Harness: h.Harness, Provider: h.Provider, MayPush: mayPush, At: at})
+	return out, nil
+}
+
+// CarryTicketHandoff gives conversation to the hand-off of conversation from — a handed
+// conversation resumed into a new conversation — so the new one is priced as handed: a copy under
+// the same key (ticket or PR), with its own id, live, logged, and May push as from reads it
+// (TicketHandoffMayPush: off unless from has exactly one hand-off and it says on). The newest of
+// from's hand-offs is the one copied. No hand-off of from is no carry: an empty key and no error.
+// Any file that cannot be read refuses it, so to has no hand-off and reads May push off. The
+// organisation's defaults are not touched.
+func CarryTicketHandoff(org, from, to string, now time.Time) (string, *TicketHandoff, error) {
+	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
+		return "", nil, UserError("a carry needs the conversation it is from and the one it is to")
+	}
+	found, err := conversationHandoffsByKey(org, from)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(found) == 0 {
+		return "", nil, nil
+	}
+	newest := found[0]
+	for _, f := range found[1:] {
+		if f.handoff.At > newest.handoff.At {
+			newest = f
+		}
+	}
+	h := newest.handoff
+	h.Conversation, h.ID = to, ""
+	r, err := addTicketHandoff(org, newest.key, h, len(found) == 1 && h.MayPush, now)
+	if err != nil {
+		return "", nil, err
+	}
+	added := r.Handoffs[len(r.Handoffs)-1]
+	return newest.key, &added, nil
 }
 
 func handoffDefaultsPaths(org string) (file, lock string, err error) {
@@ -418,11 +462,29 @@ func OpenTicketHandoffs(org string) (map[string][]TicketHandoff, error) {
 // organisation's records and PRs. Any file it cannot read is an error: a hand-off in it may be
 // the conversation's.
 func conversationHandoffs(org, conversation string) ([]TicketHandoff, error) {
+	found, err := conversationHandoffsByKey(org, conversation)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TicketHandoff, len(found))
+	for i, f := range found {
+		out[i] = f.handoff
+	}
+	return out, nil
+}
+
+type keyedHandoff struct {
+	key     string
+	handoff TicketHandoff
+}
+
+// conversationHandoffsByKey is conversationHandoffs with the key (ticket or PR) each is kept by.
+func conversationHandoffsByKey(org, conversation string) ([]keyedHandoff, error) {
 	keys, err := ticketRecordKeys(org)
 	if err != nil {
 		return nil, err
 	}
-	var out []TicketHandoff
+	var out []keyedHandoff
 	for _, key := range keys {
 		r, err := ReadTicketRecord(org, key)
 		if err != nil {
@@ -430,7 +492,7 @@ func conversationHandoffs(org, conversation string) ([]TicketHandoff, error) {
 		}
 		for _, h := range r.Handoffs {
 			if h.Conversation == conversation {
-				out = append(out, h)
+				out = append(out, keyedHandoff{r.Key, h})
 			}
 		}
 	}
@@ -442,10 +504,10 @@ func conversationHandoffs(org, conversation string) ([]TicketHandoff, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, hs := range m {
+	for key, hs := range m {
 		for _, h := range hs {
 			if h.Conversation == conversation {
-				out = append(out, h)
+				out = append(out, keyedHandoff{key, h})
 			}
 		}
 	}

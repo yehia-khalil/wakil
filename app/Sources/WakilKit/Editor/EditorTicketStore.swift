@@ -271,6 +271,55 @@ public actor EditorTicketStore {
                                                           "keepLive": .bool(true)], timeout: MCPClient.mutationReplyTimeout)
     }
 
+    // MARK: - A handed conversation's hand-off (ticket noticing, Task 9)
+    //
+    // Each is the conversation's own organisation's (`caller`, routed to its place's process), not
+    // the window's: a hand-off outlives an organisation switch (Invariant 4).
+
+    /// Keeps a started hand-off (`ticket_handoff_write` `add`) under `key` — a ticket key, or
+    /// `pr:<repo>#<n>` for a PR with no key — with the operator's May push.
+    public func addHandoff(key: String, handoff: JSONValue, mayPush: Bool, as caller: DispatchCaller) async throws {
+        _ = try await routedCall("ticket_handoff_write", ["op": .string("add"), "key": .string(key), "handoff": handoff,
+                                                          "mayPush": .bool(mayPush)], as: caller, timeout: MCPClient.mutationReplyTimeout)
+    }
+
+    /// Ends one conversation's hand-off (`ticket_handoff_write` `end`): it closed.
+    public func endHandoff(conversation: String, as caller: DispatchCaller) async throws {
+        _ = try await routedCall("ticket_handoff_write", ["op": .string("end"), "conversations": .array([.string(conversation)])],
+                                 as: caller, timeout: MCPClient.mutationReplyTimeout)
+    }
+
+    /// Carries the hand-off of conversation `from` to `to` (`ticket_handoff_write` `carry`): the
+    /// key it is kept by and the carried hand-off, or nil when `from` was never handed.
+    public func carryHandoff(from: String, to: String, as caller: DispatchCaller) async throws
+        -> (key: String, handoff: [String: JSONValue])? {
+        let content = try await routedCall("ticket_handoff_write", ["op": .string("carry"), "from": .string(from), "to": .string(to)],
+                                           as: caller, timeout: MCPClient.mutationReplyTimeout)
+        guard case .object(let h)? = content["handoff"] else { return nil }
+        guard case .string(let key)? = content["key"] else {
+            throw TicketReadError(description: "ticket_handoff_write answered a carry with no key")
+        }
+        return (key, h)
+    }
+
+    /// The conversation's May push as its stored hand-off says (`ticket_handoff_may_push`): on only
+    /// when the answer says exactly that; a failed read, or any other answer, is off.
+    public func handoffMayPush(conversation: String, as caller: DispatchCaller) async -> Bool {
+        let content = try? await routedCall("ticket_handoff_may_push", ["conversation": .string(conversation)],
+                                            as: caller, timeout: MCPClient.readReplyTimeout)
+        return content?["mayPush"] == .bool(true)
+    }
+
+    private func routedCall(_ tool: String, _ args: [String: JSONValue], as caller: DispatchCaller,
+                            timeout: TimeInterval) async throws -> [String: JSONValue] {
+        guard let ticket else {
+            throw TicketReadError(description: StandardActionError.missingClient(action: tool, role: "ticket").description)
+        }
+        return try await ActionRegistry.$dispatchCaller.withValue(caller) {
+            try await ticketCall(ticket, tool, args, timeout: timeout)
+        }
+    }
+
     /// The last In flight read, for the view.
     public func lastInFlight() -> InFlightState? { inFlightRead }
 

@@ -52,6 +52,9 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
     public let productionEnvironment: Bool
     /// The conversation the chip stands for, by its id: the one its click returns to.
     public let conversation: String
+    /// Why a handed conversation's hand-off could not be recorded or carried, whole (Rule 8):
+    /// in the chip's tooltip and its accessibility hint. Nil for any other.
+    public let handoffNote: String?
     /// The conversation: several chips can stand for one place.
     public var id: String { conversation }
 
@@ -65,10 +68,11 @@ public struct AgentChip: Identifiable, Equatable, Sendable {
 
     init(
         place: Place, state: State, productionEnvironment: Bool, conversation: String,
-        title: String = newConversationTitle, ordinal: Int = 1
+        title: String = newConversationTitle, ordinal: Int = 1, handoffNote: String? = nil
     ) {
         self.place = place
         self.conversation = conversation
+        self.handoffNote = handoffNote
         self.state = state
         self.title = title
         self.ordinal = ordinal

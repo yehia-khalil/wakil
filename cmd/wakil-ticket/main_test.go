@@ -1291,3 +1291,41 @@ func TestHandoffToolsAddEndAndDefaults(t *testing.T) {
 		t.Errorf("unknown op refused with %q", msg)
 	}
 }
+
+// May push reads from the stored hand-off, anywhere; a carry gives a resumed conversation the
+// hand-off and its May push, and only from the window.
+func TestHandoffMayPushAndCarryTools(t *testing.T) {
+	newFixture(t, "git@github.com:initech/api.git", "ini-142-login", "Keep the org")
+	cs := connect(t)
+	if b := call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c1"}); !strings.Contains(string(b), `"mayPush":false`) {
+		t.Errorf("before any hand-off = %s", b)
+	}
+	call(t, cs, "ticket_handoff_write", map[string]any{"op": "add", "key": "INI-142", "mayPush": true,
+		"handoff": map[string]any{"conversation": "c1", "thread": "T_1", "harness": "claude-code", "provider": "anthropic"}})
+	if b := call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c1"}); !strings.Contains(string(b), `"mayPush":true`) {
+		t.Errorf("handed with May push = %s", b)
+	}
+	b := call(t, cs, "ticket_handoff_write", map[string]any{"op": "carry", "from": "c1", "to": "c2"})
+	var carried struct {
+		Key     string                   `json:"key"`
+		Handoff *wakilcore.TicketHandoff `json:"handoff"`
+	}
+	if err := json.Unmarshal(b, &carried); err != nil {
+		t.Fatal(err)
+	}
+	if carried.Key != "INI-142" || carried.Handoff == nil || carried.Handoff.Conversation != "c2" || carried.Handoff.Thread != "T_1" {
+		t.Errorf("carried = %s", b)
+	}
+	if b := call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c2"}); !strings.Contains(string(b), `"mayPush":true`) {
+		t.Errorf("carried May push = %s", b)
+	}
+	if b := call(t, cs, "ticket_handoff_write", map[string]any{"op": "carry", "from": "c-never", "to": "c3"}); strings.Contains(string(b), `"handoff"`) {
+		t.Errorf("a carry from a conversation never handed = %s", b)
+	}
+	t.Setenv("WAKIL_IN_WINDOW", "")
+	cs = connect(t)
+	if msg := callErr(t, cs, "ticket_handoff_write", map[string]any{"op": "carry", "from": "c1", "to": "c4"}); !strings.Contains(msg, "Wakil window") {
+		t.Errorf("a carry outside the window = %q", msg)
+	}
+	call(t, cs, "ticket_handoff_may_push", map[string]any{"conversation": "c1"})
+}

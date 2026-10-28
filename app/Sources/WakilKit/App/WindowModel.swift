@@ -325,6 +325,8 @@ public final class WindowModel {
     /// Every write to `status`, counted, so the palette can tell a failure its run wrote from
     /// an older one still showing (`paletteFailure(since:)`).
     @ObservationIgnored private var statusWrites = 0
+    /// Writes `status` from an extension in another file (a hand-off's failure, whole).
+    func say(_ text: String) { status = text }
 
     /// The gate's own sentence, when a pane's last `runFromQueryLine` was
     /// given something that is neither a read nor a mutation — keyed by
@@ -1499,6 +1501,10 @@ public final class WindowModel {
         // Conversations 3 of 3: a session of a conversation since closed acts for nothing.
         registry.setCallerRefusal { [weak self] action, caller in
             await self?.closedConversationRefusal(action, caller)
+        }
+        // Ticket noticing: a handed conversation's git writes are priced tighter.
+        registry.setHandedLookup { [weak self] caller in
+            await self?.handedPricing(for: caller)
         }
         registry.setScopeLookup { [weak self] caller in
             guard pinnedPlace(of: caller) != nil else { return nil }
@@ -8588,6 +8594,12 @@ public final class WindowModel {
             name: "session_record_parent",
             params: .object(["child": .string(child), "parent": .string(parent)]),
             origin: .ui, caller: caller, confirmation: nil)
+        // F16: a session of a handed conversation resumed into another conversation carries
+        // its hand-off there, so the gate keeps applying. The conversation's own resumes and forks
+        // keep its id, and with it the hand-off.
+        if agent.handoff == nil, let inheritedRoot, inheritedRoot != agent.id {
+            await carryHandOff(from: inheritedRoot, to: agent, root: thread.cwd)
+        }
         // Last, and only once the swap has actually happened: the canvas
         // follows the conversation. A resume that returned early above
         // never reaches here, so a refused resume leaves the arrangement
@@ -9048,7 +9060,8 @@ public final class WindowModel {
                 else { return nil }
                 return AgentChip(
                     place: agent.place, state: state, productionEnvironment: agent.productionEnvironment,
-                    conversation: agent.id, title: agent.title, ordinal: ordinals[agent.place, default: 1])
+                    conversation: agent.id, title: agent.title, ordinal: ordinals[agent.place, default: 1],
+                    handoffNote: agent.handoffFailure)
             }
             .sorted {
                 ($0.place.organization, $0.place.project, $0.place.environment, $0.ordinal)
@@ -9078,7 +9091,7 @@ public final class WindowModel {
                         waiting: waiting.contains(agent.id), failed: agent.unseenFailure,
                         working: agent.turnInFlight, done: agent.unseenResult),
                     onScreen: agent === shown, lastActivity: agent.lastActivity,
-                    isProduction: agent.productionEnvironment)
+                    isProduction: agent.productionEnvironment, handoff: agent.handoff)
             }
     }
 
@@ -9256,7 +9269,7 @@ public final class WindowModel {
     /// `placeRemoved`: the place itself was removed (`closeConversations`), so its arrangement is
     /// not written back under a name that is gone, and the place shows nothing after it — neither
     /// its next conversation, which closes too, nor its Landing.
-    private func endConversation(_ agent: PlaceAgent, placeRemoved: Bool = false) async {
+    func endConversation(_ agent: PlaceAgent, placeRemoved: Bool = false) async {
         guard conversations[agent.id] === agent, closing.insert(agent.id).inserted else { return }
         defer { closing.remove(agent.id) }
         if closeQuestion?.conversation == agent.id { closeQuestion = nil }
@@ -9295,6 +9308,8 @@ public final class WindowModel {
         }
         if let scope { await releaseCanvas(scope) }
         retainAgentPlace()
+        // Ticket noticing: its hand-off ends with it.
+        if agent.handoff != nil { await endHandOff(of: agent) }
         onConversationClosed?(agent.id)
     }
 
@@ -9608,6 +9623,22 @@ public final class WindowModel {
             defer { landingBecoming = nil }
             tellScreenChange()
         }
+        return created
+    }
+
+    /// `agent(for:)`'s off-screen sibling (ticket noticing, Task 9): a new conversation in `place`,
+    /// on `providerId`, listed and given its chip, but shown nowhere — no place's screen names it,
+    /// nothing reserved is taken and the screen is not told of a change — so a hand-off starts
+    /// beside whatever the operator is doing (Invariant 5). Its first `send` starts its session.
+    func backgroundAgent(in place: Place, providerId: String) -> PlaceAgent {
+        let id = UUID().uuidString
+        let created = PlaceAgent(
+            id: id, place: place, providerId: providerId,
+            mirror: TerminalMirrorFeed(panes: panes, layout: layout), ordinal: conversationsMade)
+        conversationsMade += 1
+        conversations[id] = created
+        conversationOrder.append(id)
+        refreshChipProduction(of: created)
         return created
     }
 
@@ -10309,6 +10340,8 @@ public final class WindowModel {
             agent.turnInFlight = false
             agent.noteResult()
             markUnseen(failed: isError, for: agent)
+            // A handed agent's turn ending may have pushed or drafted: its ticket is read again.
+            if agent.handoff != nil { Task { [weak self] in await self?.handOffTurnEnded(agent) } }
         }
         // Task 15, fix round 1 (Critical): `Date()` is captured exactly
         // here, at the one place a harness event actually arrives, and

@@ -137,10 +137,10 @@ extension WindowModel {
     /// conversation is not live end (a quit or the switch left them with none), then its In flight is
     /// read. Started, not awaited.
     func ticketOrganizationReady() {
-        guard let ticket else { return }
-        let live = liveConversations().map(\.id)
+        guard ticket != nil else { return }
         Task { @MainActor [weak self] in
-            try? await ticket.endStaleHandoffs(live: live)
+            // A failed end is said whole in the status (`endStaleHandOffs`); the read runs all the same.
+            await self?.endStaleHandOffs()
             await self?.ticketNeedsRead(force: true)
         }
     }

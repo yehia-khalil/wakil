@@ -215,7 +215,8 @@ private struct AgentChipView: View {
             // One per conversation, by its place and ordinal (ruling 2), so a check can press the
             // chip it means — and a place's three parts, joined by `/`, can never spell `more`.
             .accessibilityIdentifier(chip.identifier)
-            .help("Switch to \(chip.label)\(chip.state.suffix)")
+            .accessibilityHint(chip.handoffNote ?? "")
+            .help("Switch to \(chip.label)\(chip.state.suffix)" + (chip.handoffNote.map { "\n" + $0 } ?? ""))
     }
 }
 

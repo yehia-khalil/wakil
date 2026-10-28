@@ -51,6 +51,32 @@ public func conversationTitle(_ firstMessage: String) -> String {
     return head.joined(separator: " ") + " … " + tail.joined(separator: " ")
 }
 
+/// The hand-off a handed conversation carries (ticket noticing, Task 9): the ticket key (nil for
+/// a PR with no key), its PR, the thread it was handed from (nil from the header or ⌘P), the root
+/// and branch it works on, and May push as the Start or the carried record said it.
+public struct PlaceAgentHandoff: Sendable, Equatable {
+    public let key: String?
+    public let pr: Int?
+    public let thread: String?
+    public let root: String
+    public let branch: String
+    public let mayPush: Bool
+
+    public init(key: String?, pr: Int?, thread: String?, root: String, branch: String, mayPush: Bool) {
+        self.key = key
+        self.pr = pr
+        self.thread = thread
+        self.root = root
+        self.branch = branch
+        self.mayPush = mayPush
+    }
+
+    /// The same hand-off with May push as the gate prices it now.
+    func priced(mayPush: Bool) -> PlaceAgentHandoff {
+        PlaceAgentHandoff(key: key, pr: pr, thread: thread, root: root, branch: branch, mayPush: mayPush)
+    }
+}
+
 /// One live conversation as the window lists it.
 public struct LiveConversation: Sendable, Equatable {
     public let id: String
@@ -63,10 +89,13 @@ public struct LiveConversation: Sendable, Equatable {
     /// Whether its place's environment is production, so its row keeps production red
     /// (Invariant 8): the chip's own reading (`PlaceAgent.productionEnvironment`).
     public let isProduction: Bool
+    /// The hand-off it was started by, when it is handed (ticket noticing): `session_list` says
+    /// `handed`, and then its key and thread.
+    public let handoff: PlaceAgentHandoff?
 
     public init(
         id: String, session: String?, place: Place, title: String, state: ConversationState,
-        onScreen: Bool, lastActivity: Date, isProduction: Bool = false
+        onScreen: Bool, lastActivity: Date, isProduction: Bool = false, handoff: PlaceAgentHandoff? = nil
     ) {
         self.id = id
         self.session = session
@@ -76,6 +105,7 @@ public struct LiveConversation: Sendable, Equatable {
         self.onScreen = onScreen
         self.lastActivity = lastActivity
         self.isProduction = isProduction
+        self.handoff = handoff
     }
 
     /// `<org> · <project> · <environment>`, empty members left out: the chip's label.
@@ -84,7 +114,7 @@ public struct LiveConversation: Sendable, Equatable {
     }
 
     public var json: JSONValue {
-        .object([
+        var o: [String: JSONValue] = [
             "conversation": .string(id),
             "session": session.map { .string($0) } ?? .null,
             "organization": .string(place.organization),
@@ -93,6 +123,12 @@ public struct LiveConversation: Sendable, Equatable {
             "title": .string(title),
             "state": .string(state.rawValue),
             "onScreen": .bool(onScreen),
-        ])
+            "handed": .bool(handoff != nil),
+        ]
+        if let handoff {
+            o["key"] = handoff.key.map { .string($0) } ?? .null
+            o["thread"] = handoff.thread.map { .string($0) } ?? .null
+        }
+        return .object(o)
     }
 }

@@ -560,3 +560,93 @@ private func pricedAction(_ name: String, _ kind: ActionKind, ran: Ran, probe: P
     #expect(await registry.proposal(name: "plain", params: .null, caller: caller) == nil)
     #expect(await registry.proposal(name: "nope", params: .null, caller: caller) == nil)
 }
+
+// MARK: - A handed agent's git writes (ticket noticing, Task 9)
+
+private let handedGitWrites = ["editor_changes_push", "editor_changes_sync", "editor_changes_publish",
+                               "editor_changes_merge", "editor_changes_rebase"]
+
+/// A registry holding the five git writes priced as shipped (allow everywhere, Decision 44) and a
+/// handed lookup answering `handoff` for conversation `c-handed` only.
+private func handedRegistry(_ handoff: PlaceAgentHandoff?) async -> ActionRegistry {
+    let r = ActionRegistry(journalDirectory: testScratchRoot.appendingPathComponent(UUID().uuidString), sessionId: "s1")
+    for name in handedGitWrites + ["editor_changes_commit"] {
+        await r.register(Action(name: name, description: "test", kind: .mutate, audience: .agentReachable,
+                                schema: .object([:]), handler: { _ in .object(["ok": .bool(true)]) },
+                                price: (production: .allow, otherwise: .allow)))
+    }
+    r.setHandedLookup { caller in caller.conversation == "c-handed" ? handoff : nil }
+    return r
+}
+
+private func handOff(mayPush: Bool) -> PlaceAgentHandoff {
+    PlaceAgentHandoff(key: "INI-142", pr: 212, thread: "PRRT_1", root: "/p/api", branch: "ini-142-login", mayPush: mayPush)
+}
+
+/// Whether an unconfirmed dispatch ran (`true`) or was gated (`false`).
+private func runs(_ r: ActionRegistry, _ name: String, origin: ActionOrigin, conversation: String) async throws -> Bool {
+    do {
+        _ = try await r.dispatch(name: name, params: .object([:]), origin: origin,
+                                 caller: .test("staging", session: "s", conversation: conversation), confirmation: nil)
+        return true
+    } catch ActionError.needsConfirmation {
+        return false
+    }
+}
+
+/// Every git write × May push × handed or not: a handed agent's publish, merge and rebase ask
+/// always, its push and sync unless May push; an agent not handed and the operator run them all.
+@Test func handedGitWritesMatrix() async throws {
+    for mayPush in [false, true] {
+        let r = await handedRegistry(handOff(mayPush: mayPush))
+        for name in handedGitWrites {
+            let pushLike = name == "editor_changes_push" || name == "editor_changes_sync"
+            #expect(try await runs(r, name, origin: .agent, conversation: "c-handed") == (pushLike && mayPush),
+                    "\(name) mayPush \(mayPush), handed")
+            #expect(try await runs(r, name, origin: .agent, conversation: "c-other"), "\(name) mayPush \(mayPush), not handed")
+            #expect(try await runs(r, name, origin: .ui, conversation: "c-handed"), "\(name) mayPush \(mayPush), operator")
+        }
+        #expect(try await runs(r, "editor_changes_commit", origin: .agent, conversation: "c-handed"))
+    }
+}
+
+/// A handed agent's push parks on the confirmation plane (`ConfirmationBroker`) with a sentence of
+/// its own — as do its sync, publish, merge and rebase — and runs once approved; the operator's push
+/// runs.
+@Test func registryGatesAHandedAgentsPush() async throws {
+    let r = await handedRegistry(handOff(mayPush: false))
+    let broker = ConfirmationBroker(timeout: .seconds(60))
+    let surface = MCPSurface(registry: r, panes: PaneStore(), layout: LayoutStore(), confirmations: broker)
+    let statements = [
+        "editor_changes_push": "push api's current branch to its upstream",
+        "editor_changes_sync": "pull api's upstream, then push its current branch",
+        "editor_changes_publish": "publish api's current branch to origin and set it as the upstream",
+        "editor_changes_merge": "merge main into api's current branch",
+        "editor_changes_rebase": "rebase api's current branch onto main",
+    ]
+    for name in handedGitWrites {
+        let call = JSONRPCMessage(id: .number(1), method: "tools/call", params: .object([
+            "name": .string(name),
+            "arguments": .object(["root": .string("/p/api"), "branch": .string("main"), "onto": .string("main")])]))
+        let reply = Task { await handle(call, surface: surface, caller: { .test("staging", session: "s", conversation: "c-handed") }) }
+        let deadline = Date().addingTimeInterval(5)
+        while await broker.all().isEmpty, Date() < deadline { await Task.yield() }
+        guard let parked = await broker.all().values.first else {
+            Issue.record("\(name) did not park: \(String(describing: await reply.value?.error))"); return
+        }
+        #expect(parked.origin == .agent)
+        #expect(parked.statement == statements[name], "\(name)")
+        await broker.approve(id: parked.id)
+        #expect(await reply.value?.error == nil, "\(name)")
+        let outcomes = try await r.journalEntries().filter { $0.action == name }.map(\.outcome)
+        #expect(outcomes == ["gated", "ok"], "\(name)")
+    }
+    #expect(try await runs(r, "editor_changes_push", origin: .ui, conversation: "c-handed"))
+}
+
+/// May push on: the handed agent's push runs unasked, its publish still asks.
+@Test func mayPushAllowsPushButNotPublish() async throws {
+    let r = await handedRegistry(handOff(mayPush: true))
+    #expect(try await runs(r, "editor_changes_push", origin: .agent, conversation: "c-handed"))
+    #expect(!(try await runs(r, "editor_changes_publish", origin: .agent, conversation: "c-handed")))
+}
